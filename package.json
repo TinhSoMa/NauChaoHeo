@@ -1,0 +1,60 @@
+{
+  "name": "nauchaoheo",
+  "version": "1.0.0",
+  "description": "Tool cá nhân siêu cấp vipro của tính cute",
+  "main": "./out/main/index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TinhSoMa/NauChaoHeo.git"
+  },
+  "keywords": [
+    "electron",
+    "vite",
+    "react",
+    "veo3",
+    "prompt-builder"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/TinhSoMa/NauChaoHeo/issues"
+  },
+  "homepage": "https://github.com/TinhSoMa/NauChaoHeo#readme",
+  "dependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.12.0",
+    "tailwind-merge": "^3.4.0",
+    "zustand": "^5.0.10"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.1.2",
+    "autoprefixer": "^10.4.23",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^3.1.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
