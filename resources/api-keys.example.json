@@ -1,0 +1,16 @@
+[
+  {
+    "email": "account1@gmail.com",
+    "projects": [
+      { "projectName": "Project-1", "apiKey": "AIzaSy..." },
+      { "projectName": "Project-2", "apiKey": "AIzaSy..." }
+    ]
+  },
+  {
+    "email": "account2@gmail.com",
+    "projects": [
+      { "projectName": "Project-1", "apiKey": "AIzaSy..." },
+      { "projectName": "Project-2", "apiKey": "AIzaSy..." }
+    ]
+  }
+]

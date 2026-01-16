@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { registerAllHandlers } from './ipc'
 
 function createWindow(): void {
   // Tạo cửa sổ ứng dụng
@@ -44,6 +45,9 @@ function createWindow(): void {
 app.whenReady().then(() => {
   // Thiết lập app ID cho Windows
   electronApp.setAppUserModelId('com.veo3promptbuilder')
+
+  // Đăng ký IPC handlers
+  registerAllHandlers()
 
   // Tối ưu hóa shortcuts trong development
   app.on('browser-window-created', (_, window) => {

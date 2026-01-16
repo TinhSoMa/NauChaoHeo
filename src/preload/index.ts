@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { createGeminiAPI, GeminiAPI } from './geminiApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -12,7 +13,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   invoke: (channel: string, data?: unknown) => {
     return ipcRenderer.invoke(channel, data)
-  }
+  },
+
+  // Gemini API
+  gemini: createGeminiAPI()
 })
 
 // Declare types for the exposed API
@@ -22,6 +26,7 @@ declare global {
       sendMessage: (channel: string, data: unknown) => void
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void
       invoke: (channel: string, data?: unknown) => Promise<unknown>
+      gemini: GeminiAPI
     }
   }
 }
