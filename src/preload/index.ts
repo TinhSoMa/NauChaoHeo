@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { createGeminiAPI, GeminiAPI } from './geminiApi'
+import { createCaptionAPI, createTTSAPI, CaptionAPI, TTSAPI } from './captionApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -16,7 +17,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Gemini API
-  gemini: createGeminiAPI()
+  gemini: createGeminiAPI(),
+
+  // Caption API (dịch phụ đề)
+  caption: createCaptionAPI(),
+
+  // TTS API (text-to-speech)
+  tts: createTTSAPI(),
 })
 
 // Declare types for the exposed API
@@ -27,6 +34,9 @@ declare global {
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void
       invoke: (channel: string, data?: unknown) => Promise<unknown>
       gemini: GeminiAPI
+      caption: CaptionAPI
+      tts: TTSAPI
     }
   }
 }
+

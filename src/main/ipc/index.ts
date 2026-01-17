@@ -3,6 +3,8 @@
  */
 
 import { registerGeminiHandlers } from './geminiHandlers';
+import { registerCaptionHandlers } from './captionHandlers';
+import { registerTTSHandlers } from './ttsHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -13,10 +15,17 @@ export function registerAllHandlers(): void {
   // Đăng ký Gemini handlers
   registerGeminiHandlers();
 
-  // Thêm các handlers khác ở đây...
+  // Đăng ký Caption handlers (dịch phụ đề)
+  registerCaptionHandlers();
+
+  // Đăng ký TTS handlers (text-to-speech)
+  registerTTSHandlers();
 
   console.log('[IPC] Đã đăng ký xong tất cả handlers');
 }
 
 // Export individual handlers
 export { registerGeminiHandlers } from './geminiHandlers';
+export { registerCaptionHandlers } from './captionHandlers';
+export { registerTTSHandlers } from './ttsHandlers';
+

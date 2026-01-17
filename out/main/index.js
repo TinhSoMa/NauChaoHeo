@@ -4,6 +4,8 @@ const path = require("path");
 const utils = require("@electron-toolkit/utils");
 const fs = require("fs");
 const crypto = require("crypto");
+const fs$1 = require("fs/promises");
+const child_process = require("child_process");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -23,6 +25,7 @@ function _interopNamespaceDefault(e) {
 const path__namespace = /* @__PURE__ */ _interopNamespaceDefault(path);
 const fs__namespace = /* @__PURE__ */ _interopNamespaceDefault(fs);
 const crypto__namespace = /* @__PURE__ */ _interopNamespaceDefault(crypto);
+const fs__namespace$1 = /* @__PURE__ */ _interopNamespaceDefault(fs$1);
 const GEMINI_IPC_CHANNELS = {
   // API Key Management
   GET_NEXT_API_KEY: "gemini:getNextApiKey",
@@ -1194,9 +1197,870 @@ function registerGeminiHandlers() {
   );
   console.log("[IPC] Đã đăng ký xong Gemini handlers");
 }
+const CAPTION_IPC_CHANNELS = {
+  // Caption
+  PARSE_SRT: "caption:parseSrt",
+  TRANSLATE: "caption:translate",
+  TRANSLATE_PROGRESS: "caption:translateProgress",
+  EXPORT_SRT: "caption:exportSrt",
+  // TTS
+  TTS_GENERATE: "tts:generate",
+  TTS_PROGRESS: "tts:progress",
+  TTS_GET_VOICES: "tts:getVoices",
+  // Audio Merge
+  AUDIO_ANALYZE: "audio:analyze",
+  AUDIO_MERGE: "audio:merge",
+  AUDIO_MERGE_PROGRESS: "audio:mergeProgress"
+};
+const VIETNAMESE_VOICES = [
+  { name: "vi-VN-HoaiMyNeural", displayName: "Hoài My (Nữ)", language: "vi-VN", gender: "Female" },
+  { name: "vi-VN-NamMinhNeural", displayName: "Nam Minh (Nam)", language: "vi-VN", gender: "Male" }
+];
+const DEFAULT_VOICE = "vi-VN-HoaiMyNeural";
+const DEFAULT_RATE = "+0%";
+const DEFAULT_VOLUME = "+0%";
+function srtTimeToMs(timeStr) {
+  const normalized = timeStr.trim().replace(".", ",");
+  const [time, ms] = normalized.split(",");
+  const [hours, minutes, seconds] = time.split(":").map(Number);
+  return (hours * 3600 + minutes * 60 + seconds) * 1e3 + Number(ms);
+}
+async function parseSrtFile(filePath) {
+  console.log(`[SrtParser] Đang parse file: ${path__namespace.basename(filePath)}`);
+  try {
+    await fs__namespace$1.access(filePath);
+    const content = await fs__namespace$1.readFile(filePath, "utf-8");
+    const entries = [];
+    const blocks = content.trim().split(/\n\s*\n/);
+    for (const block of blocks) {
+      const lines = block.trim().split("\n");
+      if (lines.length < 3) continue;
+      try {
+        const index = parseInt(lines[0].trim(), 10);
+        if (isNaN(index)) continue;
+        const timeLine = lines[1].trim();
+        const timeMatch = timeLine.match(/(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/);
+        if (!timeMatch) continue;
+        const startTime = timeMatch[1].replace(".", ",");
+        const endTime = timeMatch[2].replace(".", ",");
+        const startMs = srtTimeToMs(startTime);
+        const endMs = srtTimeToMs(endTime);
+        const text = lines.slice(2).join(" ").trim();
+        if (text) {
+          entries.push({
+            index,
+            startTime,
+            endTime,
+            startMs,
+            endMs,
+            durationMs: endMs - startMs,
+            text
+          });
+        }
+      } catch (err) {
+        console.warn(`[SrtParser] Lỗi parse block: ${lines[0]}`);
+        continue;
+      }
+    }
+    console.log(`[SrtParser] Parse thành công: ${entries.length} entries`);
+    return {
+      success: true,
+      entries,
+      totalEntries: entries.length,
+      filePath
+    };
+  } catch (error) {
+    const errorMsg = `Lỗi đọc file SRT: ${error}`;
+    console.error(`[SrtParser] ${errorMsg}`);
+    return {
+      success: false,
+      entries: [],
+      totalEntries: 0,
+      filePath,
+      error: errorMsg
+    };
+  }
+}
+async function exportToSrt(entries, outputPath, useTranslated = true) {
+  console.log(`[SrtParser] Đang export ${entries.length} entries ra: ${path__namespace.basename(outputPath)}`);
+  try {
+    const dir = path__namespace.dirname(outputPath);
+    await fs__namespace$1.mkdir(dir, { recursive: true });
+    const srtContent = entries.map((entry, idx) => {
+      const text = useTranslated && entry.translatedText ? entry.translatedText : entry.text;
+      return `${idx + 1}
+${entry.startTime} --> ${entry.endTime}
+${text}`;
+    }).join("\n\n");
+    await fs__namespace$1.writeFile(outputPath, srtContent + "\n", "utf-8");
+    console.log(`[SrtParser] Export thành công: ${outputPath}`);
+    return { success: true };
+  } catch (error) {
+    const errorMsg = `Lỗi export SRT: ${error}`;
+    console.error(`[SrtParser] ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
+}
+function msToSrtTime(ms) {
+  const hours = Math.floor(ms / 36e5);
+  const minutes = Math.floor(ms % 36e5 / 6e4);
+  const seconds = Math.floor(ms % 6e4 / 1e3);
+  const milliseconds = ms % 1e3;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")},${String(milliseconds).padStart(3, "0")}`;
+}
+function extractTextFromContent(content) {
+  if (!content) return "";
+  if (content.startsWith("{") && content.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(content);
+      return parsed.text || content;
+    } catch {
+      return content;
+    }
+  }
+  return content;
+}
+async function parseDraftJson(filePath) {
+  console.log(`[DraftParser] Đang parse: ${filePath}`);
+  try {
+    const fileContent = await fs__namespace$1.readFile(filePath, "utf-8");
+    const data = JSON.parse(fileContent);
+    const entries = [];
+    if (data.extra_info?.subtitle_fragment_info_list) {
+      const fragments = data.extra_info.subtitle_fragment_info_list;
+      for (const fragment of fragments) {
+        if (fragment.subtitle_cache_info) {
+          try {
+            const cacheInfo = JSON.parse(fragment.subtitle_cache_info);
+            if (cacheInfo.sentence_list) {
+              for (const sentence of cacheInfo.sentence_list) {
+                const startMs = sentence.start_time || 0;
+                const endMs = sentence.end_time || 0;
+                const text = sentence.text || "";
+                if (text) {
+                  entries.push({
+                    index: entries.length + 1,
+                    startTime: msToSrtTime(startMs),
+                    endTime: msToSrtTime(endMs),
+                    startMs,
+                    endMs,
+                    durationMs: endMs - startMs,
+                    text,
+                    translatedText: sentence.translation_text || void 0
+                  });
+                }
+              }
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+    }
+    if (entries.length === 0 && data.materials?.texts && data.tracks) {
+      console.log("[DraftParser] Sử dụng phương pháp materials.texts + tracks");
+      const textTracks = data.tracks.filter((t) => t.type === "text");
+      for (const track of textTracks) {
+        if (track.segments) {
+          for (const segment of track.segments) {
+            const materialId = segment.material_id;
+            const startMs = segment.target_timerange?.start || 0;
+            const durationMs = segment.target_timerange?.duration || 0;
+            const endMs = startMs + durationMs;
+            const textMaterial = data.materials.texts.find((t) => t.id === materialId);
+            if (textMaterial) {
+              const text = extractTextFromContent(textMaterial.content) || textMaterial.recognize_text || "";
+              if (text) {
+                entries.push({
+                  index: entries.length + 1,
+                  startTime: msToSrtTime(startMs),
+                  endTime: msToSrtTime(endMs),
+                  startMs,
+                  endMs,
+                  durationMs,
+                  text
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    if (entries.length === 0 && data.materials?.texts) {
+      console.log("[DraftParser] Sử dụng phương pháp materials.texts (không có timing)");
+      for (const textItem of data.materials.texts) {
+        const text = extractTextFromContent(textItem.content) || textItem.recognize_text || "";
+        if (text) {
+          entries.push({
+            index: entries.length + 1,
+            startTime: "00:00:00,000",
+            endTime: "00:00:00,000",
+            startMs: 0,
+            endMs: 0,
+            durationMs: 0,
+            text
+          });
+        }
+      }
+    }
+    entries.sort((a, b) => a.startMs - b.startMs);
+    entries.forEach((entry, idx) => {
+      entry.index = idx + 1;
+    });
+    console.log(`[DraftParser] Đã parse ${entries.length} entries`);
+    return {
+      success: true,
+      entries,
+      totalEntries: entries.length,
+      filePath
+    };
+  } catch (error) {
+    console.error("[DraftParser] Lỗi:", error);
+    return {
+      success: false,
+      entries: [],
+      totalEntries: 0,
+      filePath,
+      error: String(error)
+    };
+  }
+}
+function splitForTranslation(entries, linesPerBatch = 50) {
+  console.log(`[TextSplitter] Chia ${entries.length} entries thành batches (${linesPerBatch} dòng/batch)`);
+  const batches = [];
+  const totalBatches = Math.ceil(entries.length / linesPerBatch);
+  for (let i = 0; i < totalBatches; i++) {
+    const startIndex = i * linesPerBatch;
+    const endIndex = Math.min(startIndex + linesPerBatch, entries.length);
+    const batchEntries = entries.slice(startIndex, endIndex);
+    batches.push({
+      batchIndex: i,
+      startIndex,
+      endIndex,
+      entries: batchEntries,
+      texts: batchEntries.map((e) => e.text)
+    });
+  }
+  console.log(`[TextSplitter] Đã chia thành ${batches.length} batches`);
+  return batches;
+}
+function mergeTranslatedTexts(entries, translatedTexts) {
+  console.log(`[TextSplitter] Merge ${translatedTexts.length} translated texts`);
+  return entries.map((entry, index) => ({
+    ...entry,
+    translatedText: translatedTexts[index] || entry.text
+  }));
+}
+function createTranslationPrompt(texts, targetLanguage = "Vietnamese") {
+  const numberedLines = texts.map((text, i) => `[${i + 1}] ${text}`).join("\n");
+  return `Dịch các dòng subtitle sau sang tiếng ${targetLanguage}.
+Quy tắc:
+1. Dịch tự nhiên, phù hợp ngữ cảnh
+2. Giữ nguyên số thứ tự [1], [2], ...
+3. Không thêm giải thích
+4. Mỗi dòng dịch tương ứng với dòng gốc
+
+Nội dung cần dịch:
+${numberedLines}
+
+Kết quả (chỉ trả về các dòng đã dịch, giữ nguyên format [số]):`;
+}
+function parseTranslationResponse(response, expectedCount) {
+  console.log(`[TextSplitter] Parse translation response, expected ${expectedCount} lines`);
+  const results = [];
+  const lines = response.trim().split("\n");
+  const linePattern = /^\[?(\d+)\]?[.):]?\s*(.+)$/;
+  for (const line of lines) {
+    const match = line.trim().match(linePattern);
+    if (match) {
+      const index = parseInt(match[1], 10) - 1;
+      const text = match[2].trim();
+      if (index >= 0 && index < expectedCount) {
+        results[index] = text;
+      }
+    }
+  }
+  for (let i = 0; i < expectedCount; i++) {
+    if (!results[i]) {
+      results[i] = "";
+      console.warn(`[TextSplitter] Thiếu dịch cho dòng ${i + 1}`);
+    }
+  }
+  console.log(`[TextSplitter] Parse được ${results.filter((r) => r).length}/${expectedCount} dòng`);
+  return results;
+}
+async function translateBatch(batch, model, targetLanguage) {
+  console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
+  const prompt = createTranslationPrompt(batch.texts, targetLanguage);
+  try {
+    const response = await callGeminiWithRotation(prompt, model);
+    if (!response.success || !response.data) {
+      return {
+        success: false,
+        translatedTexts: [],
+        error: response.error || "Không có response"
+      };
+    }
+    const translatedTexts = parseTranslationResponse(response.data, batch.texts.length);
+    const validCount = translatedTexts.filter((t) => t.trim()).length;
+    if (validCount < batch.texts.length * 0.8) {
+      console.warn(
+        `[CaptionTranslator] Batch ${batch.batchIndex + 1}: Chỉ dịch được ${validCount}/${batch.texts.length}`
+      );
+    }
+    return {
+      success: true,
+      translatedTexts
+    };
+  } catch (error) {
+    console.error(`[CaptionTranslator] Lỗi dịch batch ${batch.batchIndex + 1}:`, error);
+    return {
+      success: false,
+      translatedTexts: [],
+      error: String(error)
+    };
+  }
+}
+async function translateAll(options, progressCallback) {
+  const {
+    entries,
+    targetLanguage = "Vietnamese",
+    model = GEMINI_MODELS.FLASH_2_5,
+    linesPerBatch = 50
+  } = options;
+  console.log(`[CaptionTranslator] Bắt đầu dịch ${entries.length} entries`);
+  console.log(`[CaptionTranslator] Model: ${model}, Target: ${targetLanguage}`);
+  const batches = splitForTranslation(entries, linesPerBatch);
+  const allTranslatedTexts = new Array(entries.length).fill("");
+  const errors = [];
+  let translatedCount = 0;
+  let failedCount = 0;
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    if (progressCallback) {
+      progressCallback({
+        current: batch.startIndex,
+        total: entries.length,
+        batchIndex: i,
+        totalBatches: batches.length,
+        status: "translating",
+        message: `Đang dịch batch ${i + 1}/${batches.length}...`
+      });
+    }
+    let retryCount = 0;
+    const maxRetries = 2;
+    let batchResult = await translateBatch(batch, model, targetLanguage);
+    while (!batchResult.success && retryCount < maxRetries) {
+      retryCount++;
+      console.log(`[CaptionTranslator] Retry ${retryCount}/${maxRetries} cho batch ${i + 1}`);
+      await new Promise((resolve) => setTimeout(resolve, 2e3));
+      batchResult = await translateBatch(batch, model, targetLanguage);
+    }
+    if (batchResult.success) {
+      for (let j = 0; j < batchResult.translatedTexts.length; j++) {
+        const globalIndex = batch.startIndex + j;
+        allTranslatedTexts[globalIndex] = batchResult.translatedTexts[j];
+        if (batchResult.translatedTexts[j].trim()) {
+          translatedCount++;
+        } else {
+          failedCount++;
+        }
+      }
+    } else {
+      errors.push(`Batch ${i + 1}: ${batchResult.error}`);
+      failedCount += batch.texts.length;
+    }
+    if (i < batches.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1e3));
+    }
+  }
+  const resultEntries = mergeTranslatedTexts(entries, allTranslatedTexts);
+  if (progressCallback) {
+    progressCallback({
+      current: entries.length,
+      total: entries.length,
+      batchIndex: batches.length,
+      totalBatches: batches.length,
+      status: "completed",
+      message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`
+    });
+  }
+  console.log(
+    `[CaptionTranslator] Hoàn thành: ${translatedCount} dịch, ${failedCount} lỗi`
+  );
+  return {
+    success: failedCount === 0,
+    entries: resultEntries,
+    totalLines: entries.length,
+    translatedLines: translatedCount,
+    failedLines: failedCount,
+    errors: errors.length > 0 ? errors : void 0
+  };
+}
+function registerCaptionHandlers() {
+  console.log("[CaptionHandlers] Đăng ký handlers...");
+  electron.ipcMain.handle(
+    "dialog:openFile",
+    async (_event, options) => {
+      console.log("[CaptionHandlers] Mở dialog chọn file...");
+      const result = await electron.dialog.showOpenDialog({
+        properties: ["openFile"],
+        filters: options?.filters || [{ name: "All Files", extensions: ["*"] }]
+      });
+      return result;
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.PARSE_SRT,
+    async (_event, filePath) => {
+      console.log(`[CaptionHandlers] Parse SRT: ${filePath}`);
+      try {
+        const result = await parseSrtFile(filePath);
+        return { success: result.success, data: result, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi parse SRT:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "caption:parseDraft",
+    async (_event, filePath) => {
+      console.log(`[CaptionHandlers] Parse Draft JSON: ${filePath}`);
+      try {
+        const result = await parseDraftJson(filePath);
+        return { success: result.success, data: result, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi parse Draft:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TRANSLATE,
+    async (event, options) => {
+      console.log(`[CaptionHandlers] Translate: ${options.entries.length} entries`);
+      try {
+        const progressCallback = (progress) => {
+          const window = electron.BrowserWindow.fromWebContents(event.sender);
+          if (window) {
+            window.webContents.send(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS, progress);
+          }
+        };
+        const result = await translateAll(options, progressCallback);
+        return { success: result.success, data: result, error: result.errors?.join(", ") };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi translate:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.EXPORT_SRT,
+    async (_event, entries, outputPath) => {
+      console.log(`[CaptionHandlers] Export SRT: ${entries.length} entries -> ${outputPath}`);
+      try {
+        const result = await exportToSrt(entries, outputPath, true);
+        if (result.success) {
+          return { success: true, data: outputPath };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi export SRT:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  console.log("[CaptionHandlers] Đã đăng ký handlers thành công");
+}
+function getSafeFilename(index, text, ext = "wav") {
+  const safeText = text.slice(0, 30).replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF\s-]/g, "").replace(/\s+/g, "_").trim();
+  return `${index.toString().padStart(3, "0")}_${safeText || "audio"}.${ext}`;
+}
+async function generateSingleAudio(text, outputPath, voice = DEFAULT_VOICE, rate = DEFAULT_RATE, volume = DEFAULT_VOLUME) {
+  return new Promise((resolve) => {
+    const args = [
+      "--voice",
+      voice,
+      "--rate",
+      rate,
+      "--volume",
+      volume,
+      "--text",
+      text,
+      "--write-media",
+      outputPath
+    ];
+    console.log(`[TTS] Tạo audio: ${path__namespace.basename(outputPath)}`);
+    const proc = child_process.spawn("edge-tts", args, {
+      windowsHide: true,
+      shell: true
+    });
+    let stderr = "";
+    proc.stderr?.on("data", (data) => {
+      stderr += data.toString();
+    });
+    proc.on("close", async (code) => {
+      if (code === 0) {
+        try {
+          const stats = await fs__namespace$1.stat(outputPath);
+          if (stats.size > 0) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: "File created but empty" });
+          }
+        } catch {
+          resolve({ success: false, error: "File not created" });
+        }
+      } else {
+        resolve({ success: false, error: stderr || `Exit code: ${code}` });
+      }
+    });
+    proc.on("error", (err) => {
+      resolve({ success: false, error: `Spawn error: ${err.message}` });
+    });
+    setTimeout(() => {
+      proc.kill();
+      resolve({ success: false, error: "Timeout" });
+    }, 3e4);
+  });
+}
+async function generateBatchAudio(entries, options, progressCallback) {
+  const {
+    voice = DEFAULT_VOICE,
+    rate = DEFAULT_RATE,
+    volume = DEFAULT_VOLUME,
+    outputFormat = "wav",
+    outputDir,
+    maxConcurrent = 5
+  } = options;
+  if (!outputDir) {
+    return {
+      success: false,
+      audioFiles: [],
+      totalGenerated: 0,
+      totalFailed: entries.length,
+      outputDir: "",
+      errors: ["outputDir is required"]
+    };
+  }
+  console.log(`[TTS] Bắt đầu tạo ${entries.length} audio files`);
+  console.log(`[TTS] Voice: ${voice}, Rate: ${rate}, Format: ${outputFormat}`);
+  await fs__namespace$1.mkdir(outputDir, { recursive: true });
+  const audioFiles = [];
+  const errors = [];
+  let completed = 0;
+  for (let i = 0; i < entries.length; i += maxConcurrent) {
+    const batch = entries.slice(i, i + maxConcurrent);
+    const batchPromises = batch.map(async (entry, batchIdx) => {
+      const text = entry.translatedText || entry.text;
+      const filename = getSafeFilename(entry.index, text, outputFormat);
+      const outputPath = path__namespace.join(outputDir, filename);
+      try {
+        const stats = await fs__namespace$1.stat(outputPath);
+        if (stats.size > 0) {
+          console.log(`[TTS] Skip (existed): ${filename}`);
+          return {
+            index: entry.index,
+            path: outputPath,
+            startMs: entry.startMs,
+            durationMs: entry.durationMs,
+            success: true
+          };
+        }
+      } catch {
+      }
+      const result = await generateSingleAudio(text, outputPath, voice, rate, volume);
+      completed++;
+      if (progressCallback) {
+        progressCallback({
+          current: completed,
+          total: entries.length,
+          status: "generating",
+          currentFile: filename,
+          message: result.success ? `Đã tạo: ${filename}` : `Lỗi: ${filename}`
+        });
+      }
+      if (result.success) {
+        return {
+          index: entry.index,
+          path: outputPath,
+          startMs: entry.startMs,
+          durationMs: entry.durationMs,
+          success: true
+        };
+      } else {
+        errors.push(`${filename}: ${result.error}`);
+        return {
+          index: entry.index,
+          path: outputPath,
+          startMs: entry.startMs,
+          durationMs: entry.durationMs,
+          success: false,
+          error: result.error
+        };
+      }
+    });
+    const batchResults = await Promise.all(batchPromises);
+    audioFiles.push(...batchResults);
+    if (i + maxConcurrent < entries.length) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  audioFiles.sort((a, b) => a.startMs - b.startMs);
+  const totalGenerated = audioFiles.filter((f) => f.success).length;
+  const totalFailed = audioFiles.filter((f) => !f.success).length;
+  console.log(`[TTS] Hoàn thành: ${totalGenerated} thành công, ${totalFailed} lỗi`);
+  if (progressCallback) {
+    progressCallback({
+      current: entries.length,
+      total: entries.length,
+      status: "completed",
+      currentFile: "",
+      message: `Hoàn thành: ${totalGenerated}/${entries.length} files`
+    });
+  }
+  return {
+    success: totalFailed === 0,
+    audioFiles,
+    totalGenerated,
+    totalFailed,
+    outputDir,
+    errors: errors.length > 0 ? errors : void 0
+  };
+}
+async function getAudioDuration(audioPath) {
+  return new Promise((resolve) => {
+    const proc = child_process.spawn("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      audioPath
+    ], {
+      windowsHide: true,
+      shell: true
+    });
+    let stdout = "";
+    proc.stdout?.on("data", (data) => {
+      stdout += data.toString();
+    });
+    proc.on("close", () => {
+      const duration = parseFloat(stdout.trim());
+      if (!isNaN(duration)) {
+        resolve(Math.round(duration * 1e3));
+      } else {
+        resolve(0);
+      }
+    });
+    proc.on("error", () => {
+      resolve(0);
+    });
+  });
+}
+const BATCH_SIZE = 32;
+async function analyzeAudioFiles(audioFiles, srtDuration) {
+  console.log(`[AudioMerger] Phân tích ${audioFiles.length} audio files`);
+  const segments = [];
+  let maxOverflowRatio = 1;
+  let overflowCount = 0;
+  for (const file of audioFiles) {
+    if (!file.success) continue;
+    const actualDuration = await getAudioDuration(file.path);
+    const overflow = actualDuration - file.durationMs;
+    const overflowPercent = file.durationMs > 0 ? overflow / file.durationMs * 100 : 0;
+    const segment = {
+      index: file.index,
+      audioPath: file.path,
+      srtStartMs: file.startMs,
+      srtEndMs: file.startMs + file.durationMs,
+      srtDurationMs: file.durationMs,
+      actualDurationMs: actualDuration,
+      overflowMs: overflow,
+      overflowPercent
+    };
+    segments.push(segment);
+    if (overflow > 0) {
+      overflowCount++;
+      const ratio = actualDuration / file.durationMs;
+      if (ratio > maxOverflowRatio) {
+        maxOverflowRatio = ratio;
+      }
+    }
+  }
+  const recommendedScale = maxOverflowRatio > 1 ? Math.min(maxOverflowRatio * 1.05, 1.4) : 1;
+  const analysis = {
+    totalSegments: segments.length,
+    overflowSegments: overflowCount,
+    maxOverflowRatio,
+    recommendedTimeScale: recommendedScale,
+    originalDurationMs: srtDuration,
+    adjustedDurationMs: Math.round(srtDuration * recommendedScale),
+    segments
+  };
+  console.log(`[AudioMerger] Phân tích xong: ${overflowCount} segments vượt thời gian`);
+  console.log(`[AudioMerger] Scale đề xuất: ${recommendedScale.toFixed(2)}x`);
+  return analysis;
+}
+async function mergeSmallBatch(files, outputPath) {
+  return new Promise((resolve) => {
+    const args = ["-y"];
+    const filterParts = [];
+    files.forEach((file, idx) => {
+      args.push("-i", file.path);
+      filterParts.push(`[${idx}:a]adelay=${file.startMs}|${file.startMs}[a${idx}]`);
+    });
+    const mixInputs = files.map((_, idx) => `[a${idx}]`).join("");
+    const filterComplex = filterParts.join(";") + `;${mixInputs}amix=inputs=${files.length}:duration=longest:dropout_transition=0:normalize=0[out]`;
+    args.push("-filter_complex", filterComplex);
+    args.push("-map", "[out]");
+    if (outputPath.toLowerCase().endsWith(".wav")) {
+      args.push("-c:a", "pcm_s16le");
+    } else {
+      args.push("-c:a", "libmp3lame", "-b:a", "192k");
+    }
+    args.push(outputPath);
+    const proc = child_process.spawn("ffmpeg", args, {
+      windowsHide: true,
+      shell: true
+    });
+    proc.on("close", (code) => {
+      resolve(code === 0);
+    });
+    proc.on("error", () => {
+      resolve(false);
+    });
+  });
+}
+async function mergeAudioFiles(audioFiles, outputPath, timeScale = 1) {
+  console.log(`[AudioMerger] Ghép ${audioFiles.length} files, scale: ${timeScale}x`);
+  const validFiles = audioFiles.filter((f) => f.success);
+  if (validFiles.length === 0) {
+    return {
+      success: false,
+      outputPath,
+      error: "Không có file audio hợp lệ để ghép"
+    };
+  }
+  const timeline = validFiles.map((file) => ({
+    path: file.path,
+    startMs: Math.round(file.startMs * timeScale)
+  }));
+  timeline.sort((a, b) => a.startMs - b.startMs);
+  await fs__namespace$1.mkdir(path__namespace.dirname(outputPath), { recursive: true });
+  try {
+    if (timeline.length === 1) {
+      await fs__namespace$1.copyFile(timeline[0].path, outputPath);
+      return { success: true, outputPath };
+    }
+    const tempFiles = [];
+    const outputDir = path__namespace.dirname(outputPath);
+    const baseName = path__namespace.basename(outputPath, path__namespace.extname(outputPath));
+    const ext = path__namespace.extname(outputPath);
+    for (let i = 0; i < timeline.length; i += BATCH_SIZE) {
+      const batch = timeline.slice(i, i + BATCH_SIZE);
+      const batchIdx = Math.floor(i / BATCH_SIZE);
+      console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${Math.ceil(timeline.length / BATCH_SIZE)}`);
+      const tempPath = path__namespace.join(outputDir, `${baseName}_temp_${batchIdx}${ext}`);
+      const success2 = await mergeSmallBatch(batch, tempPath);
+      if (!success2) {
+        for (const tf of tempFiles) {
+          try {
+            await fs__namespace$1.unlink(tf);
+          } catch {
+          }
+        }
+        return { success: false, outputPath, error: `Lỗi ghép batch ${batchIdx + 1}` };
+      }
+      tempFiles.push(tempPath);
+    }
+    if (tempFiles.length === 1) {
+      await fs__namespace$1.rename(tempFiles[0], outputPath);
+      return { success: true, outputPath };
+    }
+    console.log(`[AudioMerger] Ghép ${tempFiles.length} batch files...`);
+    const finalTimeline = tempFiles.map((p, idx) => ({ path: p, startMs: 0 }));
+    const success = await mergeSmallBatch(finalTimeline, outputPath);
+    for (const tf of tempFiles) {
+      try {
+        await fs__namespace$1.unlink(tf);
+      } catch {
+      }
+    }
+    if (success) {
+      console.log(`[AudioMerger] Ghép thành công: ${outputPath}`);
+      return { success: true, outputPath };
+    } else {
+      return { success: false, outputPath, error: "Lỗi ghép final" };
+    }
+  } catch (error) {
+    console.error(`[AudioMerger] Lỗi:`, error);
+    return { success: false, outputPath, error: String(error) };
+  }
+}
+function registerTTSHandlers() {
+  console.log("[TTSHandlers] Đăng ký handlers...");
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_GET_VOICES,
+    async () => {
+      console.log("[TTSHandlers] Get voices");
+      return { success: true, data: VIETNAMESE_VOICES };
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_GENERATE,
+    async (event, entries, options) => {
+      console.log(`[TTSHandlers] Generate TTS: ${entries.length} entries`);
+      try {
+        const progressCallback = (progress) => {
+          const window = electron.BrowserWindow.fromWebContents(event.sender);
+          if (window) {
+            window.webContents.send(CAPTION_IPC_CHANNELS.TTS_PROGRESS, progress);
+          }
+        };
+        const result = await generateBatchAudio(entries, options, progressCallback);
+        return { success: result.success, data: result, error: result.errors?.join(", ") };
+      } catch (error) {
+        console.error("[TTSHandlers] Lỗi generate TTS:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.AUDIO_ANALYZE,
+    async (_event, audioFiles, srtDuration) => {
+      console.log(`[TTSHandlers] Analyze audio: ${audioFiles.length} files`);
+      try {
+        const analysis = await analyzeAudioFiles(audioFiles, srtDuration);
+        return { success: true, data: analysis };
+      } catch (error) {
+        console.error("[TTSHandlers] Lỗi analyze audio:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.AUDIO_MERGE,
+    async (event, audioFiles, outputPath, timeScale = 1) => {
+      console.log(`[TTSHandlers] Merge audio: ${audioFiles.length} files -> ${outputPath}`);
+      try {
+        const result = await mergeAudioFiles(audioFiles, outputPath, timeScale);
+        return { success: result.success, data: result, error: result.error };
+      } catch (error) {
+        console.error("[TTSHandlers] Lỗi merge audio:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  console.log("[TTSHandlers] Đã đăng ký handlers thành công");
+}
 function registerAllHandlers() {
   console.log("[IPC] Đang đăng ký tất cả handlers...");
   registerGeminiHandlers();
+  registerCaptionHandlers();
+  registerTTSHandlers();
   console.log("[IPC] Đã đăng ký xong tất cả handlers");
 }
 function createWindow() {

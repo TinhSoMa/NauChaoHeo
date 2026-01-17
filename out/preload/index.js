@@ -32,6 +32,46 @@ function createGeminiAPI() {
     translateText: (text, targetLanguage, model) => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.TRANSLATE_TEXT, text, targetLanguage, model)
   };
 }
+const CAPTION_IPC_CHANNELS = {
+  // Caption
+  PARSE_SRT: "caption:parseSrt",
+  TRANSLATE: "caption:translate",
+  TRANSLATE_PROGRESS: "caption:translateProgress",
+  EXPORT_SRT: "caption:exportSrt",
+  // TTS
+  TTS_GENERATE: "tts:generate",
+  TTS_PROGRESS: "tts:progress",
+  TTS_GET_VOICES: "tts:getVoices",
+  // Audio Merge
+  AUDIO_ANALYZE: "audio:analyze",
+  AUDIO_MERGE: "audio:merge"
+};
+function createCaptionAPI() {
+  return {
+    parseSrt: (filePath) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.PARSE_SRT, filePath),
+    parseDraft: (filePath) => electron.ipcRenderer.invoke("caption:parseDraft", filePath),
+    exportSrt: (entries, outputPath) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.EXPORT_SRT, entries, outputPath),
+    translate: (options) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE, options),
+    onTranslateProgress: (callback) => {
+      electron.ipcRenderer.on(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS, (_event, progress) => {
+        callback(progress);
+      });
+    }
+  };
+}
+function createTTSAPI() {
+  return {
+    getVoices: () => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_GET_VOICES),
+    generate: (entries, options) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_GENERATE, entries, options),
+    onProgress: (callback) => {
+      electron.ipcRenderer.on(CAPTION_IPC_CHANNELS.TTS_PROGRESS, (_event, progress) => {
+        callback(progress);
+      });
+    },
+    analyzeAudio: (audioFiles, srtDuration) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_ANALYZE, audioFiles, srtDuration),
+    mergeAudio: (audioFiles, outputPath, timeScale = 1) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_MERGE, audioFiles, outputPath, timeScale)
+  };
+}
 electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Example API methods - add more as needed
   sendMessage: (channel, data) => {
@@ -44,5 +84,9 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
     return electron.ipcRenderer.invoke(channel, data);
   },
   // Gemini API
-  gemini: createGeminiAPI()
+  gemini: createGeminiAPI(),
+  // Caption API (dịch phụ đề)
+  caption: createCaptionAPI(),
+  // TTS API (text-to-speech)
+  tts: createTTSAPI()
 });
