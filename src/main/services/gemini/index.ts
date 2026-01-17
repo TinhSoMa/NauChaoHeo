@@ -5,7 +5,7 @@
 // API Key Management
 export { getApiManager, ApiKeyManager } from './apiManager';
 export * from './apiConfig';
-export { EMBEDDED_API_KEYS, getEmbeddedKeys, countTotalKeys, countAccounts } from './apiKeys';
+export * from './apiKeys';
 
 // Gemini Service
 export {

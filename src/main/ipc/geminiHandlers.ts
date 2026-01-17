@@ -4,23 +4,8 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { GEMINI_IPC_CHANNELS, KeyInfo, ApiStats, GeminiResponse, EmbeddedAccount, EmbeddedProject } from '../../shared/types/gemini';
-import {
-  getApiManager,
-  callGeminiWithRotation,
-  translateText,
-  GEMINI_MODELS,
-  GeminiModel,
-} from '../services/gemini';
-import {
-  importFromJson,
-  exportToJson,
-  addAccount,
-  removeAccount,
-  removeProject,
-  hasKeys,
-  getKeysFileLocation,
-  loadApiKeys,
-} from '../services/gemini/apiKeys';
+import * as Gemini from '../services/gemini';
+
 
 // Import ApiResponse type từ shared nếu cần
 interface IpcApiResponse<T = unknown> {
@@ -40,7 +25,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.GET_NEXT_API_KEY,
     async (): Promise<IpcApiResponse<{ apiKey: string | null; keyInfo: KeyInfo | null }>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         const { apiKey, keyInfo } = manager.getNextApiKey();
         return { success: true, data: { apiKey, keyInfo } };
       } catch (error) {
@@ -55,7 +40,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.GET_ALL_AVAILABLE_KEYS,
     async (): Promise<IpcApiResponse<KeyInfo[]>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         const keys = manager.getAllAvailableKeys();
         return { success: true, data: keys };
       } catch (error) {
@@ -70,7 +55,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.GET_STATS,
     async (): Promise<IpcApiResponse<ApiStats>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         const stats = manager.getStats();
         return { success: true, data: stats };
       } catch (error) {
@@ -85,7 +70,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.RECORD_SUCCESS,
     async (_event: IpcMainInvokeEvent, apiKey: string): Promise<IpcApiResponse<boolean>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.recordSuccess(apiKey);
         return { success: true, data: true };
       } catch (error) {
@@ -100,7 +85,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.RECORD_RATE_LIMIT,
     async (_event: IpcMainInvokeEvent, apiKey: string): Promise<IpcApiResponse<boolean>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.recordRateLimitError(apiKey);
         return { success: true, data: true };
       } catch (error) {
@@ -115,7 +100,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.RECORD_EXHAUSTED,
     async (_event: IpcMainInvokeEvent, apiKey: string): Promise<IpcApiResponse<boolean>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.recordQuotaExhausted(apiKey);
         return { success: true, data: true };
       } catch (error) {
@@ -130,7 +115,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.RECORD_ERROR,
     async (_event: IpcMainInvokeEvent, apiKey: string, errorMessage: string): Promise<IpcApiResponse<boolean>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.recordError(apiKey, errorMessage);
         return { success: true, data: true };
       } catch (error) {
@@ -145,7 +130,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.RESET_ALL_STATUS,
     async (): Promise<IpcApiResponse<boolean>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.resetAllStatusExceptDisabled();
         return { success: true, data: true };
       } catch (error) {
@@ -160,7 +145,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.RELOAD_CONFIG,
     async (): Promise<IpcApiResponse<boolean>> => {
       try {
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.reload();
         return { success: true, data: true };
       } catch (error) {
@@ -176,10 +161,10 @@ export function registerGeminiHandlers(): void {
     async (
       _event: IpcMainInvokeEvent,
       prompt: string | object,
-      model?: GeminiModel
+      model?: Gemini.GeminiModel
     ): Promise<IpcApiResponse<GeminiResponse>> => {
       try {
-        const result = await callGeminiWithRotation(prompt, model || GEMINI_MODELS.FLASH_2_5);
+        const result = await Gemini.callGeminiWithRotation(prompt, model || Gemini.GEMINI_MODELS.FLASH_2_5);
         return { success: true, data: result };
       } catch (error) {
         console.error('[IPC] Lỗi callGemini:', error);
@@ -195,17 +180,17 @@ export function registerGeminiHandlers(): void {
       _event: IpcMainInvokeEvent,
       text: string,
       targetLanguage?: string,
-      model?: GeminiModel
+      model?: Gemini.GeminiModel
     ): Promise<IpcApiResponse<GeminiResponse>> => {
       try {
-        const result = await translateText(
+        const result = await Gemini.translateText(
           text,
           targetLanguage || 'Vietnamese',
-          model || GEMINI_MODELS.FLASH_2_5
+          model || Gemini.GEMINI_MODELS.FLASH_2_5
         );
         return { success: true, data: result };
       } catch (error) {
-        console.error('[IPC] Lỗi translateText:', error);
+        console.error('[IPC] Lỗi Gemini.translateText:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -221,10 +206,10 @@ export function registerGeminiHandlers(): void {
     async (_event: IpcMainInvokeEvent, jsonString: string): Promise<IpcApiResponse<{ count: number }>> => {
       try {
         console.log('[IPC] Đang import API keys...');
-        const result = importFromJson(jsonString);
+        const result = Gemini.importFromJson(jsonString);
         if (result.success) {
           // Reload API manager sau khi import
-          const manager = getApiManager();
+          const manager = Gemini.getApiManager();
           manager.reload();
           console.log(`[IPC] Import thành công ${result.count} keys`);
           return { success: true, data: { count: result.count } };
@@ -243,7 +228,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.KEYS_EXPORT,
     async (): Promise<IpcApiResponse<string>> => {
       try {
-        const json = exportToJson();
+        const json = Gemini.exportToJson();
         console.log('[IPC] Đã export API keys');
         return { success: true, data: json };
       } catch (error) {
@@ -263,9 +248,9 @@ export function registerGeminiHandlers(): void {
     ): Promise<IpcApiResponse<EmbeddedAccount>> => {
       try {
         console.log(`[IPC] Thêm account: ${email} với ${projects.length} projects`);
-        const account = addAccount(email, projects);
+        const account = Gemini.addAccount(email, projects);
         // Reload API manager
-        const manager = getApiManager();
+        const manager = Gemini.getApiManager();
         manager.reload();
         return { success: true, data: account };
       } catch (error) {
@@ -281,10 +266,10 @@ export function registerGeminiHandlers(): void {
     async (_event: IpcMainInvokeEvent, email: string): Promise<IpcApiResponse<boolean>> => {
       try {
         console.log(`[IPC] Xóa account: ${email}`);
-        const removed = removeAccount(email);
+        const removed = Gemini.removeAccount(email);
         if (removed) {
           // Reload API manager
-          const manager = getApiManager();
+          const manager = Gemini.getApiManager();
           manager.reload();
         }
         return { success: true, data: removed };
@@ -305,10 +290,10 @@ export function registerGeminiHandlers(): void {
     ): Promise<IpcApiResponse<boolean>> => {
       try {
         console.log(`[IPC] Xóa project ${projectName} từ account ${email}`);
-        const removed = removeProject(email, projectName);
+        const removed = Gemini.removeProject(email, projectName);
         if (removed) {
           // Reload API manager
-          const manager = getApiManager();
+          const manager = Gemini.getApiManager();
           manager.reload();
         }
         return { success: true, data: removed };
@@ -324,7 +309,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.KEYS_HAS_KEYS,
     async (): Promise<IpcApiResponse<boolean>> => {
       try {
-        const has = hasKeys();
+        const has = Gemini.hasKeys();
         return { success: true, data: has };
       } catch (error) {
         console.error('[IPC] Lỗi kiểm tra keys:', error);
@@ -338,7 +323,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION,
     async (): Promise<IpcApiResponse<string>> => {
       try {
-        const location = getKeysFileLocation();
+        const location = Gemini.getKeysFileLocation();
         return { success: true, data: location };
       } catch (error) {
         console.error('[IPC] Lỗi lấy đường dẫn keys:', error);
@@ -352,7 +337,7 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.KEYS_GET_ALL,
     async (): Promise<IpcApiResponse<EmbeddedAccount[]>> => {
       try {
-        const accounts = loadApiKeys();
+        const accounts = Gemini.loadApiKeys();
         // Ẩn API key, chỉ hiển thị 8 ký tự đầu
         const maskedAccounts = accounts.map(acc => ({
           ...acc,

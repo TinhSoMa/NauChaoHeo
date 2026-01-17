@@ -8,11 +8,12 @@ import { GeminiResponse, KeyInfo } from '../../../shared/types/gemini';
 import {
   GEMINI_API_BASE,
   GEMINI_MODELS,
-  GeminiModel,
+  type GeminiModel,
 } from '../../../shared/constants/api';
 
 // Re-export để các module khác có thể import từ đây
-export { GEMINI_MODELS, GeminiModel };
+export { GEMINI_MODELS };
+export type { GeminiModel };
 
 /**
  * Gọi Gemini API với một prompt và API key cụ thể
