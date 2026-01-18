@@ -3,6 +3,14 @@
  * Khai báo các types cho window object được expose từ preload script
  */
 
+// ============================================
+// CSS MODULES TYPE DECLARATION
+// ============================================
+declare module '*.module.css' {
+  const classes: { [key: string]: string };
+  export default classes;
+}
+
 // Response type từ IPC
 interface IpcApiResponse<T = unknown> {
   success: boolean;

@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useThemeEffect } from './hooks/useTheme';
 import { AppLayout } from './components/layout/AppLayout';
 import { CaptionTranslator } from './components/caption';
+import { Settings } from './components/settings/Settings';
 
 // Placeholder Pages
 const Veo3Page = () => (
@@ -27,6 +28,7 @@ function App() {
           <Route path="/" element={<Navigate to="/translator" replace />} />
           <Route path="/translator" element={<CaptionTranslator />} />
           <Route path="/veo3" element={<Veo3Page />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<div>404: Page Not Found</div>} />
         </Route>
       </Routes>
