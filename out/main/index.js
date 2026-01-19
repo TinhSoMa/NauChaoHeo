@@ -6,6 +6,8 @@ const fs = require("fs");
 const crypto = require("crypto");
 const fs$1 = require("fs/promises");
 const child_process = require("child_process");
+const uuid = require("uuid");
+const Database = require("better-sqlite3");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -48,7 +50,8 @@ const GEMINI_IPC_CHANNELS = {
   KEYS_REMOVE_PROJECT: "gemini:keys:removeProject",
   KEYS_HAS_KEYS: "gemini:keys:hasKeys",
   KEYS_GET_LOCATION: "gemini:keys:getLocation",
-  KEYS_GET_ALL: "gemini:keys:getAll"
+  KEYS_GET_ALL: "gemini:keys:getAll",
+  KEYS_GET_ALL_WITH_STATUS: "gemini:keys:getAllWithStatus"
 };
 const KEYS_FILE_NAME = "api-keys.encrypted";
 const ENCRYPTION_SECRET = "NauChaoHeo-Gemini-Keys-v1";
@@ -203,11 +206,41 @@ function hasKeys() {
   const accounts = loadApiKeys();
   return accounts.some((acc) => acc.projects.length > 0);
 }
+function countTotalKeys$1() {
+  const accounts = loadApiKeys();
+  return accounts.reduce((sum, acc) => sum + acc.projects.length, 0);
+}
 function getKeysFileLocation() {
   return getKeysFilePath();
 }
 function getEmbeddedKeys() {
   return loadApiKeys();
+}
+function countTotalKeys() {
+  return countTotalKeys$1();
+}
+function tryImportDevKeys() {
+  if (countTotalKeys() > 0) {
+    console.log("[ApiKeys] Đã có keys trong storage, bỏ qua auto-import");
+    return;
+  }
+  const devKeysPath = "d:\\NauChaoHeo\\gemini_keys.json";
+  if (fs__namespace.existsSync(devKeysPath)) {
+    console.log(`[ApiKeys] Tìm thấy file keys dev tại: ${devKeysPath}`);
+    try {
+      const content = fs__namespace.readFileSync(devKeysPath, "utf-8");
+      const result = importFromJson(content);
+      if (result.success) {
+        console.log(`[ApiKeys] Auto-import thành công: ${result.count} keys`);
+      } else {
+        console.error(`[ApiKeys] Auto-import thất bại: ${result.error}`);
+      }
+    } catch (error) {
+      console.error("[ApiKeys] Lỗi đọc file dev keys:", error);
+    }
+  } else {
+    console.log("[ApiKeys] Không tìm thấy file gemini_keys.json");
+  }
 }
 const DEFAULT_SETTINGS = {
   globalCooldownSeconds: 65,
@@ -534,10 +567,11 @@ class ApiKeyManager {
       return { apiKey: null, keyInfo: null };
     }
     const numAccounts = accounts.length;
-    const numProjects = 5;
+    const numProjects = Math.max(...accounts.map((acc) => acc.projects.length), 1);
     const state = this.getRotationState();
     let currentAccIdx = state.currentAccountIndex || 0;
     let currentProjIdx = state.currentProjectIndex || 0;
+    console.log(`[ApiManager] Bắt đầu tìm key từ acc_${currentAccIdx + 1}/project_${currentProjIdx + 1}`);
     const totalAttempts = numAccounts * numProjects;
     let attempts = 0;
     while (attempts < totalAttempts) {
@@ -564,6 +598,7 @@ class ApiKeyManager {
             nextAccIdx = 0;
             nextProjIdx = (projIdx + 1) % numProjects;
             state.rotationRound = (state.rotationRound || 1) + 1;
+            console.log(`[ApiManager] Đã hết accounts, chuyển sang project ${nextProjIdx + 1}`);
           }
           state.currentAccountIndex = nextAccIdx;
           state.currentProjectIndex = nextProjIdx;
@@ -577,9 +612,13 @@ class ApiKeyManager {
       if (currentAccIdx >= numAccounts) {
         currentAccIdx = 0;
         currentProjIdx++;
+        console.log(`[ApiManager] Đã hết accounts cho project ${currentProjIdx}, chuyển sang project ${currentProjIdx + 1}`);
       }
       attempts++;
     }
+    state.currentAccountIndex = currentAccIdx % numAccounts;
+    state.currentProjectIndex = currentProjIdx % numProjects;
+    this.saveConfig();
     console.warn("[ApiManager] Không còn key available nào");
     return { apiKey: null, keyInfo: null };
   }
@@ -626,19 +665,23 @@ class ApiKeyManager {
    */
   resetAllStatusExceptDisabled() {
     console.log("[ApiManager] Đang reset tất cả trạng thái keys...");
+    let resetCount = 0;
     for (const account of this.config.accounts) {
       for (const project of account.projects) {
         const status = project.status;
-        if (status === STATUS_RATE_LIMITED || status === STATUS_EXHAUSTED) {
+        if (status === STATUS_RATE_LIMITED || status === STATUS_EXHAUSTED || status === STATUS_ERROR) {
           project.status = STATUS_AVAILABLE;
           project.limitTracking.rateLimitResetAt = null;
           project.limitTracking.dailyLimitResetAt = null;
           project.limitTracking.minuteRequestCount = 0;
+          project.stats.lastErrorMessage = "";
+          resetCount++;
+          console.log(`[ApiManager] Reset project: ${project.projectName} (was: ${status})`);
         }
       }
     }
     this.saveConfig();
-    console.log("[ApiManager] Đã reset xong");
+    console.log(`[ApiManager] Đã reset ${resetCount} project(s)`);
   }
   /**
    * Ghi nhận request thành công
@@ -1195,6 +1238,39 @@ function registerGeminiHandlers() {
       }
     }
   );
+  electron.ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS,
+    async () => {
+      try {
+        const manager = getApiManager();
+        const stats = manager.getStats();
+        const config = manager.config;
+        if (!config || !config.accounts) {
+          return { success: true, data: [] };
+        }
+        const accountsWithStatus = config.accounts.map((acc) => ({
+          email: acc.email || acc.accountId,
+          accountId: acc.accountId,
+          accountStatus: acc.accountStatus || "active",
+          projects: acc.projects.map((p) => ({
+            projectName: p.projectName,
+            status: p.status || "available",
+            apiKey: p.apiKey.substring(0, 8) + "..." + p.apiKey.substring(p.apiKey.length - 4),
+            totalRequestsToday: p.stats?.totalRequestsToday || 0,
+            lastUsed: p.stats?.lastUsed || null,
+            errorMessage: p.stats?.lastError || null
+          }))
+        }));
+        return {
+          success: true,
+          data: accountsWithStatus
+        };
+      } catch (error) {
+        console.error("[IPC] Lỗi lấy accounts với status:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
   console.log("[IPC] Đã đăng ký xong Gemini handlers");
 }
 const CAPTION_IPC_CHANNELS = {
@@ -1203,10 +1279,12 @@ const CAPTION_IPC_CHANNELS = {
   TRANSLATE: "caption:translate",
   TRANSLATE_PROGRESS: "caption:translateProgress",
   EXPORT_SRT: "caption:exportSrt",
+  SPLIT: "caption:split",
   // TTS
   TTS_GENERATE: "tts:generate",
   TTS_PROGRESS: "tts:progress",
   TTS_GET_VOICES: "tts:getVoices",
+  TTS_TRIM_SILENCE: "tts:trimSilence",
   // Audio Merge
   AUDIO_ANALYZE: "audio:analyze",
   AUDIO_MERGE: "audio:merge",
@@ -1489,6 +1567,57 @@ function parseTranslationResponse(response, expectedCount) {
   console.log(`[TextSplitter] Parse được ${results.filter((r) => r).length}/${expectedCount} dòng`);
   return results;
 }
+async function splitText(options) {
+  const { entries, splitByLines, value, outputDir } = options;
+  console.log(`[TextSplitter] Split text: ${entries.length} entries, splitByLines=${splitByLines}, value=${value}`);
+  try {
+    if (!fs__namespace.existsSync(outputDir)) {
+      fs__namespace.mkdirSync(outputDir, { recursive: true });
+    }
+    const files = [];
+    let batches;
+    if (splitByLines) {
+      batches = [];
+      for (let i = 0; i < entries.length; i += value) {
+        batches.push(entries.slice(i, i + value));
+      }
+    } else {
+      const partsCount = Math.max(1, Math.min(value, entries.length));
+      const entriesPerPart = Math.ceil(entries.length / partsCount);
+      batches = [];
+      for (let i = 0; i < partsCount; i++) {
+        const start = i * entriesPerPart;
+        const end = Math.min(start + entriesPerPart, entries.length);
+        if (start < entries.length) {
+          batches.push(entries.slice(start, end));
+        }
+      }
+    }
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const fileName = `part_${String(i + 1).padStart(3, "0")}.txt`;
+      const filePath = path__namespace.join(outputDir, fileName);
+      const content = batch.map((entry) => entry.text).join("\n");
+      fs__namespace.writeFileSync(filePath, content, "utf-8");
+      files.push(filePath);
+      console.log(`[TextSplitter] Đã ghi file: ${filePath} (${batch.length} dòng)`);
+    }
+    console.log(`[TextSplitter] Đã chia thành ${files.length} files`);
+    return {
+      success: true,
+      partsCount: files.length,
+      files
+    };
+  } catch (error) {
+    console.error("[TextSplitter] Lỗi split text:", error);
+    return {
+      success: false,
+      partsCount: 0,
+      files: [],
+      error: String(error)
+    };
+  }
+}
 async function translateBatch(batch, model, targetLanguage) {
   console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
   const prompt = createTranslationPrompt(batch.texts, targetLanguage);
@@ -1667,6 +1796,19 @@ function registerCaptionHandlers() {
         return { success: false, error: result.error };
       } catch (error) {
         console.error("[CaptionHandlers] Lỗi export SRT:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.SPLIT,
+    async (_event, options) => {
+      console.log(`[CaptionHandlers] Split: ${options.entries.length} entries, splitByLines=${options.splitByLines}, value=${options.value}`);
+      try {
+        const result = await splitText(options);
+        return { success: result.success, data: { partsCount: result.partsCount, files: result.files }, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi split:", error);
         return { success: false, error: String(error) };
       }
     }
@@ -2000,6 +2142,48 @@ async function mergeAudioFiles(audioFiles, outputPath, timeScale = 1) {
     return { success: false, outputPath, error: String(error) };
   }
 }
+async function trimSilence(inputPath) {
+  return new Promise((resolve) => {
+    const tempPath = inputPath.replace(/\.(wav|mp3)$/i, "_temp.$1");
+    const args = [
+      "-y",
+      "-i",
+      inputPath,
+      "-af",
+      "silenceremove=start_periods=1:start_threshold=-50dB"
+    ];
+    if (inputPath.toLowerCase().endsWith(".wav")) {
+      args.push("-c:a", "pcm_s16le");
+    } else {
+      args.push("-c:a", "libmp3lame", "-b:a", "192k");
+    }
+    args.push(tempPath);
+    const proc = child_process.spawn("ffmpeg", args, {
+      windowsHide: true,
+      shell: true
+    });
+    proc.on("close", async (code) => {
+      if (code === 0) {
+        try {
+          await fs__namespace$1.unlink(inputPath);
+          await fs__namespace$1.rename(tempPath, inputPath);
+          resolve(true);
+        } catch {
+          resolve(false);
+        }
+      } else {
+        try {
+          await fs__namespace$1.unlink(tempPath);
+        } catch {
+        }
+        resolve(false);
+      }
+    });
+    proc.on("error", () => {
+      resolve(false);
+    });
+  });
+}
 function registerTTSHandlers() {
   console.log("[TTSHandlers] Đăng ký handlers...");
   electron.ipcMain.handle(
@@ -2054,13 +2238,430 @@ function registerTTSHandlers() {
       }
     }
   );
+  electron.ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE,
+    async (_event, audioPaths) => {
+      console.log(`[TTSHandlers] Trim silence: ${audioPaths.length} files`);
+      try {
+        let trimmedCount = 0;
+        let failedCount = 0;
+        const errors = [];
+        for (const audioPath of audioPaths) {
+          const success = await trimSilence(audioPath);
+          if (success) {
+            trimmedCount++;
+          } else {
+            failedCount++;
+            errors.push(`Không thể trim: ${audioPath}`);
+          }
+        }
+        const result = {
+          success: failedCount === 0,
+          trimmedCount,
+          failedCount,
+          errors: errors.length > 0 ? errors : void 0
+        };
+        return { success: result.success, data: result, error: result.errors?.join(", ") };
+      } catch (error) {
+        console.error("[TTSHandlers] Lỗi trim silence:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
   console.log("[TTSHandlers] Đã đăng ký handlers thành công");
+}
+async function parseStoryFile(filePath) {
+  try {
+    const fileContent = await fs$1.readFile(filePath, "utf-8");
+    const chapters = [];
+    const chapterRegex = /===\s*(.*?)\s*===/g;
+    let match;
+    const matches = [];
+    while ((match = chapterRegex.exec(fileContent)) !== null) {
+      matches.push({
+        title: match[1].trim(),
+        // "第1章 寒门之子"
+        index: match.index,
+        length: match[0].length
+      });
+    }
+    if (matches.length === 0) {
+      chapters.push({
+        id: "1",
+        title: "Toàn bộ nội dung",
+        content: fileContent
+      });
+      return { success: true, chapters };
+    }
+    for (let i = 0; i < matches.length; i++) {
+      const currentMatch = matches[i];
+      const nextMatch = matches[i + 1];
+      const contentStart = currentMatch.index + currentMatch.length;
+      const contentEnd = nextMatch ? nextMatch.index : fileContent.length;
+      const content = fileContent.slice(contentStart, contentEnd).trim();
+      chapters.push({
+        id: String(i + 1),
+        title: currentMatch.title,
+        content
+      });
+    }
+    return { success: true, chapters };
+  } catch (error) {
+    console.error("Error parsing story file:", error);
+    return { success: false, error: String(error) };
+  }
+}
+let db = null;
+function getDatabase() {
+  if (!db) {
+    if (electron.app) {
+      const userDataPath = electron.app.getPath("userData");
+      const dbPath = path.join(userDataPath, "nauchaoheo.db");
+      console.log("[Database] Path:", dbPath);
+      db = new Database(dbPath);
+    } else {
+      throw new Error("Database not initialized and app is not ready");
+    }
+  }
+  return db;
+}
+function initDatabase() {
+  const userDataPath = electron.app.getPath("userData");
+  if (!fs.existsSync(userDataPath)) {
+    fs.mkdirSync(userDataPath, { recursive: true });
+  }
+  const dbPath = path.join(userDataPath, "nauchaoheo.db");
+  console.log("[Database] Initializing at:", dbPath);
+  db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS prompts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      source_lang TEXT NOT NULL,
+      target_lang TEXT NOT NULL,
+      content TEXT NOT NULL,
+      is_default INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  console.log("[Database] Schema initialized");
+}
+class PromptService {
+  static getAll() {
+    const db2 = getDatabase();
+    const rows = db2.prepare("SELECT * FROM prompts ORDER BY created_at DESC").all();
+    return rows.map(this.mapRow);
+  }
+  static getById(id) {
+    const db2 = getDatabase();
+    const row = db2.prepare("SELECT * FROM prompts WHERE id = ?").get(id);
+    if (!row) return null;
+    return this.mapRow(row);
+  }
+  static create(data) {
+    const db2 = getDatabase();
+    const now = Date.now();
+    const prompt = {
+      id: uuid.v4(),
+      ...data,
+      isDefault: data.isDefault || false,
+      createdAt: now,
+      updatedAt: now
+    };
+    const transaction = db2.transaction(() => {
+      if (prompt.isDefault) {
+        db2.prepare(`
+                UPDATE prompts 
+                SET is_default = 0 
+                WHERE source_lang = ? AND target_lang = ?
+            `).run(prompt.sourceLang, prompt.targetLang);
+      }
+      db2.prepare(`
+          INSERT INTO prompts (id, name, description, source_lang, target_lang, content, is_default, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+        prompt.id,
+        prompt.name,
+        prompt.description || null,
+        prompt.sourceLang,
+        prompt.targetLang,
+        prompt.content,
+        prompt.isDefault ? 1 : 0,
+        prompt.createdAt,
+        prompt.updatedAt
+      );
+    });
+    transaction();
+    return prompt;
+  }
+  static update(id, data) {
+    const db2 = getDatabase();
+    const existing = this.getById(id);
+    if (!existing) throw new Error(`Prompt with id ${id} not found`);
+    const updated = {
+      ...existing,
+      ...data,
+      updatedAt: Date.now()
+    };
+    const transaction = db2.transaction(() => {
+      if (updated.isDefault && !existing.isDefault) {
+        db2.prepare(`
+                  UPDATE prompts 
+                  SET is_default = 0 
+                  WHERE source_lang = ? AND target_lang = ?
+              `).run(updated.sourceLang, updated.targetLang);
+      }
+      db2.prepare(`
+            UPDATE prompts 
+            SET name = ?, description = ?, source_lang = ?, target_lang = ?, content = ?, is_default = ?, updated_at = ?
+            WHERE id = ?
+          `).run(
+        updated.name,
+        updated.description || null,
+        updated.sourceLang,
+        updated.targetLang,
+        updated.content,
+        updated.isDefault ? 1 : 0,
+        updated.updatedAt,
+        id
+      );
+    });
+    transaction();
+    return updated;
+  }
+  static delete(id) {
+    const db2 = getDatabase();
+    const result = db2.prepare("DELETE FROM prompts WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+  static setDefault(id) {
+    const prompt = this.getById(id);
+    if (!prompt) return false;
+    const db2 = getDatabase();
+    const transaction = db2.transaction(() => {
+      db2.prepare(`
+              UPDATE prompts 
+              SET is_default = 0 
+              WHERE source_lang = ? AND target_lang = ?
+          `).run(prompt.sourceLang, prompt.targetLang);
+      db2.prepare("UPDATE prompts SET is_default = 1 WHERE id = ?").run(id);
+    });
+    transaction();
+    return true;
+  }
+  static mapRow(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      sourceLang: row.source_lang,
+      targetLang: row.target_lang,
+      content: row.content,
+      isDefault: Boolean(row.is_default),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+}
+class StoryService {
+  /**
+   * Translates a chapter using prepared prompt and Gemini API
+   */
+  static async translateChapter(preparedPrompt) {
+    try {
+      console.log("[StoryService] Starting translation...");
+      const result = await callGeminiWithRotation(
+        preparedPrompt,
+        GEMINI_MODELS.FLASH_2_5
+      );
+      if (result.success) {
+        return { success: true, data: result.data };
+      } else {
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      console.error("[StoryService] Error translating chapter:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+  /**
+   * Prepares the translation prompt by fetching the appropriate prompt from the database
+   * and injecting the chapter content.
+   */
+  static async prepareTranslationPrompt(chapterContent, sourceLang, targetLang) {
+    try {
+      const prompts = PromptService.getAll();
+      const matchingPrompt = prompts.find(
+        (p) => p.sourceLang === sourceLang && p.targetLang === targetLang && p.isDefault
+      ) || prompts.find(
+        (p) => p.sourceLang === sourceLang && p.targetLang === targetLang
+      );
+      if (!matchingPrompt) {
+        return {
+          success: false,
+          error: `No translation prompt found for ${sourceLang} -> ${targetLang}`
+        };
+      }
+      let promptData;
+      try {
+        promptData = JSON.parse(matchingPrompt.content);
+      } catch (e) {
+        return { success: false, error: "Invalid prompt content format (not valid JSON)" };
+      }
+      const injectContent = (obj) => {
+        if (typeof obj === "string") {
+          if (obj === "{{text}}" || obj === "{{TEXT_TRUYEN_TRUNG_QUOC}}" || obj === "{{input}}") {
+            return chapterContent.split(/\r?\n/).filter((line) => line.trim() !== "");
+          }
+          let newStr = obj;
+          if (newStr.includes("{{text}}")) newStr = newStr.replace("{{text}}", chapterContent);
+          if (newStr.includes("{{TEXT_TRUYEN_TRUNG_QUOC}}")) newStr = newStr.replace("{{TEXT_TRUYEN_TRUNG_QUOC}}", chapterContent);
+          if (newStr.includes("{{input}}")) newStr = newStr.replace("{{input}}", chapterContent);
+          return newStr;
+        }
+        if (Array.isArray(obj)) {
+          return obj.map((item) => injectContent(item));
+        }
+        if (typeof obj === "object" && obj !== null) {
+          const result = {};
+          for (const key in obj) {
+            result[key] = injectContent(obj[key]);
+          }
+          return result;
+        }
+        return obj;
+      };
+      if (Array.isArray(promptData)) {
+        let contentInjected = false;
+        const preparedMessages = promptData.map((msg) => {
+          if (msg.role === "user" && typeof msg.content === "string") {
+            const originalContent = msg.content;
+            const newContent = injectContent(msg.content);
+            if (originalContent !== newContent) {
+              contentInjected = true;
+            }
+            return { ...msg, content: newContent };
+          }
+          return msg;
+        });
+        if (!contentInjected) {
+          let lastUserMsgIndex = -1;
+          for (let i = preparedMessages.length - 1; i >= 0; i--) {
+            if (preparedMessages[i].role === "user") {
+              lastUserMsgIndex = i;
+              break;
+            }
+          }
+          if (lastUserMsgIndex !== -1) {
+            preparedMessages[lastUserMsgIndex].content += "\n\n" + chapterContent;
+          } else {
+            preparedMessages.push({ role: "user", content: chapterContent });
+          }
+        }
+        return { success: true, prompt: preparedMessages };
+      } else if (typeof promptData === "object" && promptData !== null) {
+        const preparedPrompt = injectContent(promptData);
+        return { success: true, prompt: preparedPrompt };
+      }
+      return { success: false, error: "Prompt content must be a JSON array or object" };
+    } catch (error) {
+      console.error("Error preparing translation prompt:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+}
+const STORY_IPC_CHANNELS = {
+  PARSE: "story:parse",
+  PREPARE_PROMPT: "story:preparePrompt",
+  SAVE_PROMPT: "story:savePrompt",
+  TRANSLATE_CHAPTER: "story:translateChapter"
+};
+const PROMPT_IPC_CHANNELS = {
+  GET_ALL: "prompt:getAll",
+  GET_BY_ID: "prompt:getById",
+  CREATE: "prompt:create",
+  UPDATE: "prompt:update",
+  DELETE: "prompt:delete",
+  SET_DEFAULT: "prompt:setDefault"
+};
+function registerStoryHandlers() {
+  console.log("[StoryHandlers] Đăng ký handlers...");
+  electron.ipcMain.handle(
+    STORY_IPC_CHANNELS.PARSE,
+    async (_event, filePath) => {
+      console.log(`[StoryHandlers] Parse story: ${filePath}`);
+      return await parseStoryFile(filePath);
+    }
+  );
+  electron.ipcMain.handle(
+    STORY_IPC_CHANNELS.PREPARE_PROMPT,
+    async (_event, { chapterContent, sourceLang, targetLang }) => {
+      console.log(`[StoryHandlers] Prepare prompt logic: ${sourceLang} -> ${targetLang}`);
+      return await StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang);
+    }
+  );
+  electron.ipcMain.handle(
+    STORY_IPC_CHANNELS.SAVE_PROMPT,
+    async (_event, content) => {
+      console.log("[StoryHandlers] Save prompt to file...");
+      const { canceled, filePath } = await electron.dialog.showSaveDialog({
+        title: "Lưu Prompt",
+        defaultPath: "prompt.txt",
+        filters: [{ name: "Text Files", extensions: ["txt"] }]
+      });
+      if (canceled || !filePath) {
+        return { success: false, error: "User canceled" };
+      }
+      try {
+        await fs__namespace$1.writeFile(filePath, content, "utf-8");
+        return { success: true, filePath };
+      } catch (error) {
+        console.error("Error saving file:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
+    async (_event, prompt) => {
+      console.log("[StoryHandlers] Translate chapter...");
+      return await StoryService.translateChapter(prompt);
+    }
+  );
+  console.log("[StoryHandlers] Đã đăng ký handlers thành công");
+}
+function registerPromptHandlers() {
+  console.log("[PromptHandlers] Đăng ký handlers...");
+  electron.ipcMain.handle(PROMPT_IPC_CHANNELS.GET_ALL, async () => {
+    return PromptService.getAll();
+  });
+  electron.ipcMain.handle(PROMPT_IPC_CHANNELS.GET_BY_ID, async (_event, id) => {
+    return PromptService.getById(id);
+  });
+  electron.ipcMain.handle(PROMPT_IPC_CHANNELS.CREATE, async (_event, data) => {
+    return PromptService.create(data);
+  });
+  electron.ipcMain.handle(PROMPT_IPC_CHANNELS.UPDATE, async (_event, { id, ...data }) => {
+    return PromptService.update(id, data);
+  });
+  electron.ipcMain.handle(PROMPT_IPC_CHANNELS.DELETE, async (_event, id) => {
+    return PromptService.delete(id);
+  });
+  electron.ipcMain.handle(PROMPT_IPC_CHANNELS.SET_DEFAULT, async (_event, id) => {
+    return PromptService.setDefault(id);
+  });
+  console.log("[PromptHandlers] Đã đăng ký handlers thành công");
 }
 function registerAllHandlers() {
   console.log("[IPC] Đang đăng ký tất cả handlers...");
   registerGeminiHandlers();
   registerCaptionHandlers();
   registerTTSHandlers();
+  registerStoryHandlers();
+  registerPromptHandlers();
   console.log("[IPC] Đã đăng ký xong tất cả handlers");
 }
 function createWindow() {
@@ -2093,7 +2694,9 @@ function createWindow() {
 }
 electron.app.whenReady().then(() => {
   utils.electronApp.setAppUserModelId("com.veo3promptbuilder");
+  initDatabase();
   registerAllHandlers();
+  tryImportDevKeys();
   electron.app.on("browser-window-created", (_, window) => {
     utils.optimizer.watchWindowShortcuts(window);
   });

@@ -66,3 +66,40 @@ export function countAccounts(): number {
  * Sử dụng getEmbeddedKeys() để lấy keys từ storage
  */
 export const EMBEDDED_API_KEYS: EmbeddedAccount[] = [];
+
+/**
+ * Thử import keys từ file gemini_keys.json ở thư mục gốc (cho môi trường dev)
+ * Chỉ chạy nếu chưa có keys trong storage
+ */
+import * as fs from 'fs';
+import * as path from 'path';
+
+export function tryImportDevKeys(): void {
+  // Kiểm tra nếu đã có keys thì thôi
+  if (countTotalKeys() > 0) {
+    console.log('[ApiKeys] Đã có keys trong storage, bỏ qua auto-import');
+    return;
+  }
+
+  // Đường dẫn cố định cho dev environment (theo yêu cầu user)
+  // Hoặc tìm ở root project
+  const devKeysPath = 'd:\\NauChaoHeo\\gemini_keys.json';
+  
+  if (fs.existsSync(devKeysPath)) {
+    console.log(`[ApiKeys] Tìm thấy file keys dev tại: ${devKeysPath}`);
+    try {
+      const content = fs.readFileSync(devKeysPath, 'utf-8');
+      const result = importFromJson(content);
+      if (result.success) {
+        console.log(`[ApiKeys] Auto-import thành công: ${result.count} keys`);
+      } else {
+        console.error(`[ApiKeys] Auto-import thất bại: ${result.error}`);
+      }
+    } catch (error) {
+       console.error('[ApiKeys] Lỗi đọc file dev keys:', error);
+    }
+  } else {
+    console.log('[ApiKeys] Không tìm thấy file gemini_keys.json');
+  }
+}
+

@@ -35,6 +35,14 @@ export interface GeminiAPI {
   // Gemini API calls
   callGemini: (prompt: string | object, model?: string) => Promise<IpcApiResponse<GeminiResponse>>;
   translateText: (text: string, targetLanguage?: string, model?: string) => Promise<IpcApiResponse<GeminiResponse>>;
+  
+  // Key Storage Management
+  importKeys: (jsonString: string) => Promise<IpcApiResponse<{ count: number }>>;
+  exportKeys: () => Promise<IpcApiResponse<string>>;
+  hasKeys: () => Promise<IpcApiResponse<boolean>>;
+  getKeysLocation: () => Promise<IpcApiResponse<string>>;
+  getAllKeys: () => Promise<IpcApiResponse<any[]>>; // Sử dụng any[] hoặc EmbeddedAccount[] nếu import được
+  getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
 }
 
 /**
@@ -68,5 +76,13 @@ export function createGeminiAPI(): GeminiAPI {
 
     translateText: (text: string, targetLanguage?: string, model?: string) =>
       ipcRenderer.invoke(GEMINI_IPC_CHANNELS.TRANSLATE_TEXT, text, targetLanguage, model),
+
+    // Key Storage Management
+    importKeys: (jsonString: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_IMPORT, jsonString),
+    exportKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_EXPORT),
+    hasKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_HAS_KEYS),
+    getKeysLocation: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION),
+    getAllKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL),
+    getAllKeysWithStatus: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS),
   };
 }

@@ -1,0 +1,159 @@
+/**
+ * CaptionTranslator Styles - CSS Module
+ * Tách riêng từ component để dễ quản lý
+ */
+
+.container {
+  width: 100%;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.leftColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.rightColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.header {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+  grid-column: 1 / -1;
+}
+
+.section {
+  padding: 16px;
+  border-radius: 12px;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 12px;
+}
+
+
+
+.select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+
+.selectSmall {
+  width: auto;
+  min-width: 80px;
+  margin-left: 8px;
+}
+
+
+
+.label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+  display: block;
+}
+
+.text {
+  color: var(--color-text-primary);
+}
+
+.textMuted {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.progressBar {
+  height: 8px;
+  border-radius: 4px;
+  background-color: var(--color-surface);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.flexRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+
+
+/* Step Checkboxes */
+.stepCheckboxes {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* Split Config */
+.splitConfig {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+/* Buttons Row */
+.buttonsRow {
+  display: flex;
+  gap: 12px;
+}
+
+/* Progress Section */
+.progressSection {
+  margin-top: 16px;
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+/* File Type Selection */
+.fileTypeSelection {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}

@@ -23,6 +23,7 @@ export {
   mergeTranslatedTexts,
   createTranslationPrompt,
   parseTranslationResponse,
+  splitText,
   type TextBatch,
 } from './textSplitter';
 

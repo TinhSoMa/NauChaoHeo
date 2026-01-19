@@ -72,6 +72,30 @@ export interface TranslationProgress {
 }
 
 // ============================================
+// SPLIT TEXT
+// ============================================
+
+/**
+ * Options cho việc chia nhỏ text
+ */
+export interface SplitOptions {
+  entries: SubtitleEntry[];
+  splitByLines: boolean;   // true = chia theo số dòng, false = chia theo số phần
+  value: number;           // Số dòng/file hoặc số phần
+  outputDir: string;       // Thư mục output
+}
+
+/**
+ * Kết quả chia nhỏ text
+ */
+export interface SplitResult {
+  success: boolean;
+  partsCount: number;
+  files: string[];
+  error?: string;
+}
+
+// ============================================
 // TTS (Text-to-Speech)
 // ============================================
 
@@ -175,6 +199,16 @@ export interface MergeResult {
   error?: string;
 }
 
+/**
+ * Kết quả trim silence
+ */
+export interface TrimSilenceResult {
+  success: boolean;
+  trimmedCount: number;
+  failedCount: number;
+  errors?: string[];
+}
+
 // ============================================
 // IPC CHANNELS
 // ============================================
@@ -185,11 +219,13 @@ export const CAPTION_IPC_CHANNELS = {
   TRANSLATE: 'caption:translate',
   TRANSLATE_PROGRESS: 'caption:translateProgress',
   EXPORT_SRT: 'caption:exportSrt',
+  SPLIT: 'caption:split',
   
   // TTS
   TTS_GENERATE: 'tts:generate',
   TTS_PROGRESS: 'tts:progress',
   TTS_GET_VOICES: 'tts:getVoices',
+  TTS_TRIM_SILENCE: 'tts:trimSilence',
   
   // Audio Merge
   AUDIO_ANALYZE: 'audio:analyze',

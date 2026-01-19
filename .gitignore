@@ -1,2 +1,8 @@
 .env
 node_modules
+ffmpeg.exe
+ffprobe.exe
+project-context
+lessons-learned
+scripts
+context-index.json
