@@ -162,5 +162,6 @@ export const GEMINI_IPC_CHANNELS = {
   KEYS_HAS_KEYS: 'gemini:keys:hasKeys',
   KEYS_GET_LOCATION: 'gemini:keys:getLocation',
   KEYS_GET_ALL: 'gemini:keys:getAll',
+  KEYS_GET_ALL_WITH_STATUS: 'gemini:keys:getAllWithStatus',
 } as const;
 

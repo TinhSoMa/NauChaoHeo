@@ -14,8 +14,11 @@ import {
   TTSResult,
   TTSProgress,
   MergeResult,
+  TrimSilenceResult,
   VoiceInfo,
   AudioFile,
+  SplitOptions,
+  SplitResult,
 } from '../shared/types/caption';
 
 // Response type từ IPC
@@ -37,6 +40,9 @@ export interface CaptionAPI {
   // Translation
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
+
+  // Split text files
+  split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
 }
 
 /**
@@ -63,6 +69,9 @@ export interface TTSAPI {
     outputPath: string,
     timeScale?: number
   ) => Promise<IpcApiResponse<MergeResult>>;
+
+  // Trim Silence
+  trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
 }
 
 /**
@@ -87,6 +96,9 @@ export function createCaptionAPI(): CaptionAPI {
         callback(progress);
       });
     },
+
+    split: (options: SplitOptions) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options),
   };
 }
 
@@ -111,5 +123,8 @@ export function createTTSAPI(): TTSAPI {
 
     mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale: number = 1.0) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_MERGE, audioFiles, outputPath, timeScale),
+
+    trimSilence: (audioPaths: string[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths),
   };
 }

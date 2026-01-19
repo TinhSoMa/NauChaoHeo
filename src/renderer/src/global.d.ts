@@ -69,6 +69,14 @@ interface GeminiAPI {
   // Gemini API calls
   callGemini: (prompt: string | object, model?: string) => Promise<IpcApiResponse<GeminiApiResponse>>;
   translateText: (text: string, targetLanguage?: string, model?: string) => Promise<IpcApiResponse<GeminiApiResponse>>;
+
+  // Key Storage Management
+  importKeys: (jsonString: string) => Promise<IpcApiResponse<{ count: number }>>;
+  exportKeys: () => Promise<IpcApiResponse<string>>;
+  hasKeys: () => Promise<IpcApiResponse<boolean>>;
+  getKeysLocation: () => Promise<IpcApiResponse<string>>;
+  getAllKeys: () => Promise<IpcApiResponse<any[]>>;
+  getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
 }
 
 // ============================================
@@ -120,6 +128,20 @@ interface TranslationProgress {
   message: string;
 }
 
+interface SplitOptions {
+  entries: SubtitleEntry[];
+  splitByLines: boolean;
+  value: number;
+  outputDir: string;
+}
+
+interface SplitResult {
+  success: boolean;
+  partsCount: number;
+  files: string[];
+  error?: string;
+}
+
 /**
  * Caption API interface
  */
@@ -129,6 +151,7 @@ interface CaptionAPI {
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
+  split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
 }
 
 // ============================================
@@ -177,6 +200,13 @@ interface MergeResult {
   error?: string;
 }
 
+interface TrimSilenceResult {
+  success: boolean;
+  trimmedCount: number;
+  failedCount: number;
+  errors?: string[];
+}
+
 interface VoiceInfo {
   name: string;
   displayName: string;
@@ -193,6 +223,7 @@ interface TTSAPI {
   onProgress: (callback: (progress: TTSProgress) => void) => void;
   analyzeAudio: (audioFiles: AudioFile[], srtDuration: number) => Promise<IpcApiResponse<unknown>>;
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;
+  trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
 }
 
 /**

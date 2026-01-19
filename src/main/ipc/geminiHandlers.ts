@@ -354,5 +354,44 @@ export function registerGeminiHandlers(): void {
     }
   );
 
+  // Lấy tất cả accounts với trạng thái chi tiết
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS,
+    async (): Promise<IpcApiResponse<any[]>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const stats = manager.getStats();
+        const config = (manager as any).config;
+        
+        if (!config || !config.accounts) {
+          return { success: true, data: [] };
+        }
+        
+        // Trả về accounts với status chi tiết của từng project
+        const accountsWithStatus = config.accounts.map((acc: any) => ({
+          email: acc.email || acc.accountId,
+          accountId: acc.accountId,
+          accountStatus: acc.accountStatus || 'active',
+          projects: acc.projects.map((p: any) => ({
+            projectName: p.projectName,
+            status: p.status || 'available',
+            apiKey: p.apiKey.substring(0, 8) + '...' + p.apiKey.substring(p.apiKey.length - 4),
+            totalRequestsToday: p.stats?.totalRequestsToday || 0,
+            lastUsed: p.stats?.lastUsed || null,
+            errorMessage: p.stats?.lastError || null,
+          })),
+        }));
+        
+        return { 
+          success: true, 
+          data: accountsWithStatus,
+        };
+      } catch (error) {
+        console.error('[IPC] Lỗi lấy accounts với status:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   console.log('[IPC] Đã đăng ký xong Gemini handlers');
 }

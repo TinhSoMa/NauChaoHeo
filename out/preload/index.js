@@ -13,7 +13,14 @@ const GEMINI_IPC_CHANNELS = {
   RELOAD_CONFIG: "gemini:reloadConfig",
   // Gemini API calls
   CALL_GEMINI: "gemini:callApi",
-  TRANSLATE_TEXT: "gemini:translateText"
+  TRANSLATE_TEXT: "gemini:translateText",
+  // Key Storage Management
+  KEYS_IMPORT: "gemini:keys:import",
+  KEYS_EXPORT: "gemini:keys:export",
+  KEYS_HAS_KEYS: "gemini:keys:hasKeys",
+  KEYS_GET_LOCATION: "gemini:keys:getLocation",
+  KEYS_GET_ALL: "gemini:keys:getAll",
+  KEYS_GET_ALL_WITH_STATUS: "gemini:keys:getAllWithStatus"
 };
 function createGeminiAPI() {
   return {
@@ -29,7 +36,14 @@ function createGeminiAPI() {
     reloadConfig: () => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.RELOAD_CONFIG),
     // Gemini API calls
     callGemini: (prompt, model) => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.CALL_GEMINI, prompt, model),
-    translateText: (text, targetLanguage, model) => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.TRANSLATE_TEXT, text, targetLanguage, model)
+    translateText: (text, targetLanguage, model) => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.TRANSLATE_TEXT, text, targetLanguage, model),
+    // Key Storage Management
+    importKeys: (jsonString) => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_IMPORT, jsonString),
+    exportKeys: () => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_EXPORT),
+    hasKeys: () => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_HAS_KEYS),
+    getKeysLocation: () => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION),
+    getAllKeys: () => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL),
+    getAllKeysWithStatus: () => electron.ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS)
   };
 }
 const CAPTION_IPC_CHANNELS = {
@@ -38,10 +52,12 @@ const CAPTION_IPC_CHANNELS = {
   TRANSLATE: "caption:translate",
   TRANSLATE_PROGRESS: "caption:translateProgress",
   EXPORT_SRT: "caption:exportSrt",
+  SPLIT: "caption:split",
   // TTS
   TTS_GENERATE: "tts:generate",
   TTS_PROGRESS: "tts:progress",
   TTS_GET_VOICES: "tts:getVoices",
+  TTS_TRIM_SILENCE: "tts:trimSilence",
   // Audio Merge
   AUDIO_ANALYZE: "audio:analyze",
   AUDIO_MERGE: "audio:merge"
@@ -56,7 +72,8 @@ function createCaptionAPI() {
       electron.ipcRenderer.on(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS, (_event, progress) => {
         callback(progress);
       });
-    }
+    },
+    split: (options) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options)
   };
 }
 function createTTSAPI() {
@@ -69,7 +86,8 @@ function createTTSAPI() {
       });
     },
     analyzeAudio: (audioFiles, srtDuration) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_ANALYZE, audioFiles, srtDuration),
-    mergeAudio: (audioFiles, outputPath, timeScale = 1) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_MERGE, audioFiles, outputPath, timeScale)
+    mergeAudio: (audioFiles, outputPath, timeScale = 1) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_MERGE, audioFiles, outputPath, timeScale),
+    trimSilence: (audioPaths) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths)
   };
 }
 electron.contextBridge.exposeInMainWorld("electronAPI", {

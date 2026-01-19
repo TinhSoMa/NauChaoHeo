@@ -2,6 +2,8 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
+import { initDatabase } from './database/schema'
+import { tryImportDevKeys } from './services/gemini/apiKeys'
 
 function createWindow(): void {
   // Tạo cửa sổ ứng dụng
@@ -46,8 +48,14 @@ app.whenReady().then(() => {
   // Thiết lập app ID cho Windows
   electronApp.setAppUserModelId('com.veo3promptbuilder')
 
+  // Khởi tạo Database
+  initDatabase()
+
   // Đăng ký IPC handlers
   registerAllHandlers()
+
+  // Auto import dev keys
+  tryImportDevKeys()
 
   // Tối ưu hóa shortcuts trong development
   app.on('browser-window-created', (_, window) => {

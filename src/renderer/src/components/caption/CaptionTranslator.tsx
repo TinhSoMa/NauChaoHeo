@@ -1,9 +1,31 @@
 /**
  * CaptionTranslator - Giao diện dịch caption tự động
- * Sử dụng CSS variables từ globals.css
+ * Sử dụng CSS Module và 6 bước xử lý
  */
 
 import { useState, useCallback } from 'react';
+import styles from './CaptionTranslator.module.css';
+import { Button } from '../common/Button';
+import { Input } from '../common/Input';
+import { RadioButton } from '../common/RadioButton';
+import { Checkbox } from '../common/Checkbox';
+import {
+  GEMINI_MODELS,
+  VOICES,
+  RATE_OPTIONS,
+  VOLUME_OPTIONS,
+  STEP_LABELS,
+  LINES_PER_FILE_OPTIONS,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_VOICE,
+  DEFAULT_RATE,
+  DEFAULT_VOLUME,
+  DEFAULT_SRT_SPEED,
+  DEFAULT_SPLIT_BY_LINES,
+  DEFAULT_LINES_PER_FILE,
+  DEFAULT_NUMBER_OF_PARTS,
+  DEFAULT_INPUT_TYPE,
+} from '../../config/captionConfig';
 
 // ============================================
 // TYPES
@@ -31,168 +53,61 @@ interface TTSProgress {
   message: string;
 }
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 type ProcessStatus = 'idle' | 'running' | 'success' | 'error';
 
-// ============================================
-// CONSTANTS
-// ============================================
-const GEMINI_MODELS = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh)' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Chất lượng)' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Dự phòng)' },
-];
-
-const VOICES = [
-  { value: 'vi-VN-HoaiMyNeural', label: 'Hoài My (Nữ)' },
-  { value: 'vi-VN-NamMinhNeural', label: 'Nam Minh (Nam)' },
-];
-
-const RATE_OPTIONS = ['+0%', '+10%', '+20%', '+30%', '+40%', '+50%'];
-const VOLUME_OPTIONS = ['+0%', '+10%', '+20%', '+30%'];
-
-// ============================================
-// STYLES - Sử dụng inline styles với CSS variables
-// ============================================
-const styles = {
-  container: {
-    maxWidth: '800px',
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  },
-  header: {
-    fontSize: '24px',
-    fontWeight: 'bold',
-    color: 'var(--color-primary)',
-  },
-  section: {
-    padding: '16px',
-    borderRadius: '12px',
-    backgroundColor: 'var(--color-card)',
-    border: '1px solid var(--color-border)',
-  },
-  sectionTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: 'var(--color-primary)',
-    marginBottom: '12px',
-  },
-  input: {
-    flex: 1,
-    padding: '8px 12px',
-    borderRadius: '8px',
-    backgroundColor: 'var(--color-surface)',
-    border: '1px solid var(--color-border)',
-    color: 'var(--color-text-primary)',
-    fontSize: '14px',
-    outline: 'none',
-  },
-  select: {
-    width: '100%',
-    padding: '8px 12px',
-    borderRadius: '8px',
-    backgroundColor: 'var(--color-surface)',
-    border: '1px solid var(--color-border)',
-    color: 'var(--color-text-primary)',
-    fontSize: '14px',
-    outline: 'none',
-  },
-  button: {
-    padding: '8px 16px',
-    borderRadius: '8px',
-    backgroundColor: 'var(--color-primary)',
-    color: 'var(--color-text-invert)',
-    fontSize: '14px',
-    fontWeight: '500',
-    border: 'none',
-    cursor: 'pointer',
-  },
-  buttonSuccess: {
-    flex: 1,
-    padding: '12px',
-    borderRadius: '8px',
-    backgroundColor: 'var(--color-success)',
-    color: 'white',
-    fontSize: '14px',
-    fontWeight: '600',
-    border: 'none',
-    cursor: 'pointer',
-  },
-  buttonDanger: {
-    flex: 1,
-    padding: '12px',
-    borderRadius: '8px',
-    backgroundColor: 'var(--color-error)',
-    color: 'white',
-    fontSize: '14px',
-    fontWeight: '600',
-    border: 'none',
-    cursor: 'pointer',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-  },
-  label: {
-    fontSize: '12px',
-    color: 'var(--color-text-secondary)',
-    marginBottom: '4px',
-    display: 'block',
-  },
-  text: {
-    color: 'var(--color-text-primary)',
-  },
-  textMuted: {
-    color: 'var(--color-text-secondary)',
-    fontSize: '14px',
-  },
-  progressBar: {
-    height: '8px',
-    borderRadius: '4px',
-    backgroundColor: 'var(--color-surface)',
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s',
-  },
-  flexRow: {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-  },
-  grid2: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '16px',
-  },
-  checkbox: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer',
-  },
-};
+// Hàm validate các bước (phải liên tiếp từ 1 nếu chọn nhiều bước)
+function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
+  if (steps.length === 0) {
+    return { valid: false, error: 'Hãy chọn ít nhất 1 bước!' };
+  }
+  
+  if (steps.length > 1) {
+    const sorted = [...steps].sort((a, b) => a - b);
+    
+    // Rule 1: Phải bắt đầu từ bước 1
+    if (sorted[0] !== 1) {
+      return { valid: false, error: 'Khi chọn nhiều bước, phải bắt đầu từ Bước 1!' };
+    }
+    
+    // Rule 2: Các bước phải liên tiếp
+    const isConsecutive = sorted.every((s, i) => 
+      i === 0 || s === sorted[i - 1] + 1
+    );
+    
+    if (!isConsecutive) {
+      return { valid: false, error: 'Các bước phải liên tiếp (1→2→3→4→5→6)!' };
+    }
+  }
+  
+  return { valid: true };
+}
 
 // ============================================
 // COMPONENT
 // ============================================
 export function CaptionTranslator() {
   // State - Config
-  const [inputType, setInputType] = useState<'srt' | 'draft'>('srt');
+  const [inputType, setInputType] = useState<'srt' | 'draft'>(DEFAULT_INPUT_TYPE);
   const [filePath, setFilePath] = useState('');
   const [entries, setEntries] = useState<SubtitleEntry[]>([]);
-  const [geminiModel, setGeminiModel] = useState(GEMINI_MODELS[0].value);
-  const [voice, setVoice] = useState(VOICES[0].value);
-  const [rate, setRate] = useState('+30%');
-  const [volume, setVolume] = useState('+30%');
-  const [srtSpeed, setSrtSpeed] = useState(1.0);
+  const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
+  const [voice, setVoice] = useState(DEFAULT_VOICE);
+  const [rate, setRate] = useState(DEFAULT_RATE);
+  const [volume, setVolume] = useState(DEFAULT_VOLUME);
+  const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
   
-  // State - Steps (1: Input, 2: Dịch, 3: TTS)
-  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3]));
+  // State - Split Config
+  const [splitByLines, setSplitByLines] = useState(DEFAULT_SPLIT_BY_LINES);
+  const [linesPerFile, setLinesPerFile] = useState(DEFAULT_LINES_PER_FILE);
+  const [numberOfParts, setNumberOfParts] = useState(DEFAULT_NUMBER_OF_PARTS);
+  
+  // State - Audio files (để dùng cho Trim và Merge)
+  const [audioFiles, setAudioFiles] = useState<Array<{ path: string; startMs: number }>>([]);
+  const [audioDir, setAudioDir] = useState('');
+  
+  // State - Steps (1: Input, 2: Split, 3: Dịch, 4: TTS, 5: Trim, 6: Merge)
+  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6]));
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [status, setStatus] = useState<ProcessStatus>('idle');
   const [progress, setProgress] = useState({ current: 0, total: 0, message: 'Sẵn sàng.' });
@@ -249,9 +164,12 @@ export function CaptionTranslator() {
 
   // Run selected steps
   const handleStart = useCallback(async () => {
-    const steps = Array.from(enabledSteps).sort();
-    if (steps.length === 0) {
-      setProgress({ ...progress, message: 'Hãy chọn ít nhất 1 bước!' });
+    const steps = Array.from(enabledSteps).sort() as Step[];
+    
+    // Validate các bước
+    const validation = validateSteps(steps);
+    if (!validation.valid) {
+      setProgress({ ...progress, message: validation.error || 'Lỗi validation!' });
       return;
     }
 
@@ -265,10 +183,15 @@ export function CaptionTranslator() {
       setProgress({ current: p.current, total: p.total, message: p.message });
     });
 
+    // Biến lưu trữ audio files và output dir giữa các bước
+    let currentAudioFiles: Array<{ path: string; startMs: number }> = [];
+    let currentOutputDir = '';
+
     try {
       for (const step of steps) {
         setCurrentStep(step);
         
+        // ========== STEP 1: INPUT ==========
         if (step === 1) {
           if (entries.length === 0 && filePath) {
             const parseResult = inputType === 'srt'
@@ -278,11 +201,31 @@ export function CaptionTranslator() {
               setEntries(parseResult.data.entries);
             }
           }
-          setProgress({ current: 1, total: 1, message: 'Bước 1: Đã load file SRT' });
+          setProgress({ current: 1, total: 1, message: 'Bước 1: Đã load file input' });
         }
         
+        // ========== STEP 2: SPLIT ==========
         if (step === 2) {
-          setProgress({ current: 0, total: entries.length, message: 'Bước 2: Đang dịch...' });
+          setProgress({ current: 0, total: 1, message: 'Bước 2: Đang chia nhỏ text...' });
+          
+          const splitValue = splitByLines ? linesPerFile : numberOfParts;
+          const result = await window.electronAPI.caption.split({
+            entries,
+            splitByLines,
+            value: splitValue,
+            outputDir: filePath.replace(/[^/\\]+$/, 'auto/text'),
+          });
+
+          if (result.success && result.data) {
+            setProgress({ current: 1, total: 1, message: `Bước 2: Đã tạo ${result.data.partsCount} phần` });
+          } else {
+            throw new Error(result.error || 'Lỗi chia file');
+          }
+        }
+        
+        // ========== STEP 3: DỊCH ==========
+        if (step === 3) {
+          setProgress({ current: 0, total: entries.length, message: 'Bước 3: Đang dịch...' });
           
           const result = await window.electronAPI.caption.translate({
             entries,
@@ -295,28 +238,63 @@ export function CaptionTranslator() {
             setEntries(result.data.entries);
             const outputPath = filePath.replace(/\.(srt|json)$/i, '_translated.srt');
             await window.electronAPI.caption.exportSrt(result.data.entries, outputPath);
-            setProgress({ current: result.data.translatedLines, total: result.data.totalLines, message: `Bước 2: Đã dịch ${result.data.translatedLines} dòng` });
+            setProgress({ current: result.data.translatedLines, total: result.data.totalLines, message: `Bước 3: Đã dịch ${result.data.translatedLines} dòng` });
           } else {
             throw new Error(result.error);
           }
         }
         
-        if (step === 3) {
-          const outputDir = filePath.replace(/[^/\\]+$/, 'audio_output');
-          setProgress({ current: 0, total: entries.length, message: 'Bước 3: Đang tạo audio...' });
+        // ========== STEP 4: TTS ==========
+        if (step === 4) {
+          currentOutputDir = filePath.replace(/[^/\\]+$/, 'audio_output');
+          setAudioDir(currentOutputDir);
+          setProgress({ current: 0, total: entries.length, message: 'Bước 4: Đang tạo audio...' });
           
           const result = await window.electronAPI.tts.generate(entries, {
             voice,
             rate,
             volume,
-            outputDir,
+            outputDir: currentOutputDir,
             outputFormat: 'wav',
           });
 
           if (result.success && result.data) {
-            const mergedPath = `${outputDir}/merged_audio.wav`;
-            await window.electronAPI.tts.mergeAudio(result.data.audioFiles, mergedPath, srtSpeed);
-            setProgress({ current: result.data.totalGenerated, total: entries.length, message: `Bước 3: Đã tạo ${result.data.totalGenerated} audio` });
+            currentAudioFiles = result.data.audioFiles;
+            setAudioFiles(result.data.audioFiles);
+            setProgress({ current: result.data.totalGenerated, total: entries.length, message: `Bước 4: Đã tạo ${result.data.totalGenerated} audio` });
+          } else {
+            throw new Error(result.error || 'Lỗi tạo audio');
+          }
+        }
+        
+        // ========== STEP 5: TRIM SILENCE ==========
+        if (step === 5) {
+          const filesToTrim = currentAudioFiles.length > 0 ? currentAudioFiles : audioFiles;
+          setProgress({ current: 0, total: filesToTrim.length, message: 'Bước 5: Đang cắt khoảng lặng...' });
+          
+          const result = await window.electronAPI.tts.trimSilence(filesToTrim.map(f => f.path));
+
+          if (result.success && result.data) {
+            setProgress({ current: result.data.trimmedCount, total: filesToTrim.length, message: `Bước 5: Đã trim ${result.data.trimmedCount} files` });
+          } else {
+            throw new Error(result.error || 'Lỗi trim silence');
+          }
+        }
+        
+        // ========== STEP 6: MERGE AUDIO ==========
+        if (step === 6) {
+          const filesToMerge = currentAudioFiles.length > 0 ? currentAudioFiles : audioFiles;
+          const outputDir = currentOutputDir || audioDir;
+          const mergedPath = `${outputDir}/merged_audio.wav`;
+          setProgress({ current: 0, total: 1, message: 'Bước 6: Đang ghép audio...' });
+          
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await window.electronAPI.tts.mergeAudio(filesToMerge as any, mergedPath, srtSpeed);
+
+          if (result.success) {
+            setProgress({ current: 1, total: 1, message: `Bước 6: Đã ghép audio thành công` });
+          } else {
+            throw new Error(result.error || 'Lỗi ghép audio');
           }
         }
       }
@@ -329,7 +307,7 @@ export function CaptionTranslator() {
     }
 
     setCurrentStep(null);
-  }, [enabledSteps, entries, filePath, geminiModel, voice, rate, volume, srtSpeed]);
+  }, [enabledSteps, entries, filePath, inputType, geminiModel, voice, rate, volume, srtSpeed, splitByLines, linesPerFile, numberOfParts, audioFiles, audioDir, progress]);
 
   const handleStop = useCallback(() => {
     setStatus('idle');
@@ -343,176 +321,210 @@ export function CaptionTranslator() {
   };
 
   return (
-    <div style={styles.container}>
+    <div className={styles.container}>
       {/* Header */}
-      <h1 style={styles.header}>Dịch Caption Tự Động</h1>
+      <h1 className={styles.header}>Dịch Caption Tự Động</h1>
 
-      {/* Section 1: File Input */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>1. Chọn file đầu vào</div>
-        
-        {/* Radio buttons chọn loại file */}
-        <div style={{ display: 'flex', gap: '24px', marginBottom: '12px' }}>
-          <label style={styles.checkbox}>
-            <input
-              type="radio"
+      {/* Cột trái: Input, Model, TTS */}
+      <div className={styles.leftColumn}>
+        {/* Section 1: File Input */}
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>1. Chọn file đầu vào</div>
+          
+            <div className={styles.fileTypeSelection}>
+            <RadioButton
+              label="File SRT"
               checked={inputType === 'srt'}
               onChange={() => setInputType('srt')}
+              name="inputType"
             />
-            <span style={styles.text}>File SRT</span>
-          </label>
-          <label style={styles.checkbox}>
-            <input
-              type="radio"
+            <RadioButton
+              label="Draft JSON (CapCut)"
+              description="Dịch trực tiếp từ CapCut"
               checked={inputType === 'draft'}
               onChange={() => setInputType('draft')}
+              name="inputType"
             />
-            <span style={styles.text}>Draft JSON (CapCut)</span>
-          </label>
-        </div>
-
-        {/* File input */}
-        <div style={styles.flexRow}>
-          <input
-            type="text"
-            value={filePath}
-            onChange={(e) => setFilePath(e.target.value)}
-            placeholder={inputType === 'srt' ? 'Đường dẫn file .srt' : 'Đường dẫn file draft_content.json'}
-            style={styles.input}
-          />
-          <button onClick={handleBrowseFile} style={styles.button}>
-            Browse
-          </button>
-        </div>
-        {entries.length > 0 && (
-          <p style={{ ...styles.textMuted, marginTop: '8px' }}>Đã load: {entries.length} dòng</p>
-        )}
-      </div>
-
-      {/* Section 2: Gemini Model */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>2. Cấu hình Gemini Model</div>
-        <select
-          value={geminiModel}
-          onChange={(e) => setGeminiModel(e.target.value)}
-          style={styles.select}
-        >
-          {GEMINI_MODELS.map(m => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Section 3: TTS Config */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>3. Cấu hình Giọng đọc (TTS)</div>
-        <div style={styles.grid2}>
-          <div>
-            <label style={styles.label}>Giọng đọc</label>
-            <select value={voice} onChange={(e) => setVoice(e.target.value)} style={styles.select}>
-              {VOICES.map(v => (
-                <option key={v.value} value={v.value}>{v.label}</option>
-              ))}
-            </select>
           </div>
-          <div>
-            <label style={styles.label}>Tốc độ SRT</label>
-            <input
+
+          <div className={styles.flexRow}>
+            <Input
+              value={filePath}
+              onChange={(e) => setFilePath(e.target.value)}
+              placeholder={inputType === 'srt' ? 'Đường dẫn file .srt' : 'Đường dẫn file draft_content.json'}
+            />
+            <Button onClick={handleBrowseFile}>
+              Browse
+            </Button>
+          </div>
+          {entries.length > 0 && (
+            <p className={styles.textMuted} style={{ marginTop: '8px' }}>Đã load: {entries.length} dòng</p>
+          )}
+        </div>
+
+        {/* Section 3: Gemini Model */}
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>3. Cấu hình Gemini Model</div>
+          <select
+            value={geminiModel}
+            onChange={(e) => setGeminiModel(e.target.value)}
+            className={styles.select}
+          >
+            {GEMINI_MODELS.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Section 4: TTS Config */}
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>4. Cấu hình Giọng đọc (TTS)</div>
+          <div className={styles.grid2}>
+            <div>
+              <label className={styles.label}>Giọng đọc</label>
+              <select value={voice} onChange={(e) => setVoice(e.target.value)} className={styles.select}>
+                {VOICES.map(v => (
+                  <option key={v.value} value={v.value}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={styles.label}>Tốc độ SRT</label>
+            <Input
               type="number"
               value={srtSpeed}
               onChange={(e) => setSrtSpeed(Number(e.target.value))}
               min={1}
               max={2}
               step={0.1}
-              style={styles.input}
             />
+            </div>
           </div>
-        </div>
-        <div style={{ ...styles.grid2, marginTop: '12px' }}>
-          <div>
-            <label style={styles.label}>Tốc độ đọc</label>
-            <select value={rate} onChange={(e) => setRate(e.target.value)} style={styles.select}>
-              {RATE_OPTIONS.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label style={styles.label}>Âm lượng</label>
-            <select value={volume} onChange={(e) => setVolume(e.target.value)} style={styles.select}>
-              {VOLUME_OPTIONS.map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+          <div className={styles.grid2} style={{ marginTop: '12px' }}>
+            <div>
+              <label className={styles.label}>Tốc độ đọc</label>
+              <select value={rate} onChange={(e) => setRate(e.target.value)} className={styles.select}>
+                {RATE_OPTIONS.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={styles.label}>Âm lượng</label>
+              <select value={volume} onChange={(e) => setVolume(e.target.value)} className={styles.select}>
+                {VOLUME_OPTIONS.map(v => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Section 4: Controls */}
-      <div style={styles.section}>
-        <div style={styles.sectionTitle}>4. Điều khiển & Tiến độ</div>
-        
-        {/* Step Checkboxes */}
-        <div style={{ display: 'flex', gap: '24px', marginBottom: '16px' }}>
-          {([1, 2, 3] as Step[]).map(step => (
-            <label key={step} style={styles.checkbox}>
-              <input
-                type="checkbox"
+      {/* Cột phải: Split, Controls */}
+      <div className={styles.rightColumn}>
+        {/* Section 2: Split Config */}
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>2. Cấu hình chia nhỏ Text</div>
+          <div className={styles.splitConfig}>
+
+            <RadioButton
+              label="Dòng/file"
+              checked={splitByLines}
+              onChange={() => setSplitByLines(true)}
+              name="splitConfig"
+            >
+              <select 
+                value={linesPerFile} 
+                onChange={(e) => setLinesPerFile(Number(e.target.value))}
+                className={`${styles.select} ${styles.selectSmall} ${!splitByLines ? styles.disabled : ''}`}
+                disabled={!splitByLines}
+                onClick={(e) => e.stopPropagation()}
+                style={{ marginTop: '8px' }}
+              >
+                {LINES_PER_FILE_OPTIONS.map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </RadioButton>
+
+            <RadioButton
+              label="Số phần"
+              checked={!splitByLines}
+              onChange={() => setSplitByLines(false)}
+              name="splitConfig"
+            >
+              <Input
+                type="number"
+                value={numberOfParts}
+                onChange={(e) => setNumberOfParts(Number(e.target.value))}
+                min={2}
+                max={20}
+                variant="small"
+                disabled={splitByLines}
+                onClick={(e) => e.stopPropagation()}
+                containerClassName={splitByLines ? styles.disabled : ''}
+                style={{ marginTop: '8px' }}
+              />
+            </RadioButton>
+          </div>
+        </div>
+
+        {/* Section 5: Controls */}
+        <div className={styles.section} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div className={styles.sectionTitle}>5. Điều khiển & Tiến độ</div>
+          
+          {/* Step Checkboxes */}
+          <div className={styles.stepCheckboxes}>
+            {([1, 2, 3, 4, 5, 6] as Step[]).map(step => (
+              <Checkbox
+                key={step}
+                label={STEP_LABELS[step - 1]}
                 checked={enabledSteps.has(step)}
                 onChange={() => toggleStep(step)}
+                highlight={currentStep === step}
               />
-              <span style={{
-                ...styles.text,
-                color: currentStep === step ? 'var(--color-warning)' : 'var(--color-text-primary)',
-                fontWeight: currentStep === step ? 600 : 400,
-              }}>
-                {['Input', 'Dịch', 'TTS'][step - 1]}
-              </span>
-            </label>
-          ))}
-        </div>
-
-        {/* Buttons */}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={handleStart}
-            disabled={status === 'running'}
-            style={{
-              ...styles.buttonSuccess,
-              ...(status === 'running' ? styles.buttonDisabled : {}),
-            }}
-          >
-            ▶ START
-          </button>
-          <button
-            onClick={handleStop}
-            disabled={status !== 'running'}
-            style={{
-              ...styles.buttonDanger,
-              ...(status !== 'running' ? styles.buttonDisabled : {}),
-            }}
-          >
-            ⏹ STOP
-          </button>
-        </div>
-
-        {/* Progress */}
-        <div style={{ marginTop: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={styles.textMuted}>{progress.message}</span>
-            {progress.total > 0 && <span style={styles.textMuted}>{progress.current}/{progress.total}</span>}
+            ))}
           </div>
-          {progress.total > 0 && (
-            <div style={styles.progressBar}>
-              <div
-                style={{
-                  ...styles.progressFill,
-                  width: `${(progress.current / progress.total) * 100}%`,
-                  backgroundColor: getProgressColor(),
-                }}
-              />
+
+          {/* Buttons */}
+          <div className={styles.buttonsRow}>
+            <Button
+              onClick={handleStart}
+              disabled={status === 'running'}
+              variant="success"
+              fullWidth
+            >
+              ▶ START
+            </Button>
+            <Button
+              onClick={handleStop}
+              disabled={status !== 'running'}
+              variant="danger"
+              fullWidth
+            >
+              ⏹ STOP
+            </Button>
+          </div>
+
+          {/* Progress */}
+          <div className={styles.progressSection} style={{ marginTop: 'auto', paddingTop: '16px' }}>
+            <div className={styles.progressHeader}>
+              <span className={styles.textMuted}>{progress.message}</span>
+              {progress.total > 0 && <span className={styles.textMuted}>{progress.current}/{progress.total}</span>}
             </div>
-          )}
+            {progress.total > 0 && (
+              <div className={styles.progressBar}>
+                <div
+                  className={styles.progressFill}
+                  style={{
+                    width: `${(progress.current / progress.total) * 100}%`,
+                    backgroundColor: getProgressColor(),
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

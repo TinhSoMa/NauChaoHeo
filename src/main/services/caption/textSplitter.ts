@@ -3,7 +3,9 @@
  * Giúp tránh rate limit và tối ưu hiệu suất
  */
 
-import { SubtitleEntry } from '../../../shared/types/caption';
+import { SubtitleEntry, SplitOptions, SplitResult } from '../../../shared/types/caption';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Một batch text để dịch
@@ -126,4 +128,72 @@ export function parseTranslationResponse(
   
   console.log(`[TextSplitter] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`);
   return results;
+}
+
+/**
+ * Chia entries thành nhiều file text
+ * @param options - SplitOptions
+ */
+export async function splitText(options: SplitOptions): Promise<SplitResult> {
+  const { entries, splitByLines, value, outputDir } = options;
+  console.log(`[TextSplitter] Split text: ${entries.length} entries, splitByLines=${splitByLines}, value=${value}`);
+
+  try {
+    // Tạo thư mục output nếu chưa tồn tại
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const files: string[] = [];
+    let batches: SubtitleEntry[][];
+
+    if (splitByLines) {
+      // Chia theo số dòng mỗi file
+      batches = [];
+      for (let i = 0; i < entries.length; i += value) {
+        batches.push(entries.slice(i, i + value));
+      }
+    } else {
+      // Chia đều thành N phần
+      const partsCount = Math.max(1, Math.min(value, entries.length));
+      const entriesPerPart = Math.ceil(entries.length / partsCount);
+      batches = [];
+      for (let i = 0; i < partsCount; i++) {
+        const start = i * entriesPerPart;
+        const end = Math.min(start + entriesPerPart, entries.length);
+        if (start < entries.length) {
+          batches.push(entries.slice(start, end));
+        }
+      }
+    }
+
+    // Ghi từng batch vào file
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const fileName = `part_${String(i + 1).padStart(3, '0')}.txt`;
+      const filePath = path.join(outputDir, fileName);
+      
+      // Nội dung file: mỗi dòng là text của một entry
+      const content = batch.map(entry => entry.text).join('\n');
+      fs.writeFileSync(filePath, content, 'utf-8');
+      
+      files.push(filePath);
+      console.log(`[TextSplitter] Đã ghi file: ${filePath} (${batch.length} dòng)`);
+    }
+
+    console.log(`[TextSplitter] Đã chia thành ${files.length} files`);
+    return {
+      success: true,
+      partsCount: files.length,
+      files,
+    };
+  } catch (error) {
+    console.error('[TextSplitter] Lỗi split text:', error);
+    return {
+      success: false,
+      partsCount: 0,
+      files: [],
+      error: String(error),
+    };
+  }
 }

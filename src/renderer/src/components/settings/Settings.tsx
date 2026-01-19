@@ -11,11 +11,52 @@ import {
   Save, 
   RotateCcw,
   ArrowLeft,
-  ChevronRight
+  ChevronRight,
+  Key,
+  Upload,
+  Download,
+  RefreshCw
 } from 'lucide-react';
+import { EmbeddedAccount } from '@shared/types/gemini';
 import styles from './Settings.module.css';
+import { Button } from '../common/Button';
+import { Input } from '../common/Input';
+import {
+  GEMINI_MODELS,
+  VOICES,
+  RATE_OPTIONS,
+  VOLUME_OPTIONS,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_VOICE,
+  DEFAULT_RATE,
+  DEFAULT_VOLUME,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_RETRY_COUNT,
+} from '../../config/captionConfig';
 
-type SettingsTab = 'overview' | 'output' | 'translation' | 'tts' | 'app';
+// ============================================
+// APP CONFIG (Theme & Language - không liên quan caption)
+// ============================================
+
+type ThemeMode = 'light' | 'dark' | 'system';
+type AppLanguage = 'vi' | 'en';
+
+const THEME_OPTIONS = [
+  { value: 'light' as ThemeMode, label: 'Sáng' },
+  { value: 'dark' as ThemeMode, label: 'Tối' },
+  { value: 'system' as ThemeMode, label: 'Theo hệ thống' },
+];
+
+const LANGUAGE_OPTIONS = [
+  { value: 'vi' as AppLanguage, label: 'Tiếng Việt' },
+  { value: 'en' as AppLanguage, label: 'English' },
+];
+
+const DEFAULT_THEME: ThemeMode = 'dark';
+const DEFAULT_APP_LANGUAGE: AppLanguage = 'vi';
+const DEFAULT_AUTO_OPEN_OUTPUT = true;
+
+type SettingsTab = 'overview' | 'output' | 'translation' | 'tts' | 'app' | 'apikeys';
 
 // ============================================
 // COMPONENT
@@ -26,21 +67,26 @@ export function Settings() {
 
   // State - Output Settings
   const [outputDir, setOutputDir] = useState('');
-  const [autoOpenOutput, setAutoOpenOutput] = useState(true);
+  const [autoOpenOutput, setAutoOpenOutput] = useState(DEFAULT_AUTO_OPEN_OUTPUT);
   
   // State - Translation Settings
-  const [defaultModel, setDefaultModel] = useState('gemini-2.5-flash');
-  const [batchSize, setBatchSize] = useState(50);
-  const [retryCount, setRetryCount] = useState(3);
+  const [defaultModel, setDefaultModel] = useState(DEFAULT_GEMINI_MODEL);
+  const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
+  const [retryCount, setRetryCount] = useState(DEFAULT_RETRY_COUNT);
   
   // State - TTS Settings
-  const [defaultVoice, setDefaultVoice] = useState('vi-VN-HoaiMyNeural');
-  const [defaultRate, setDefaultRate] = useState('+30%');
-  const [defaultVolume, setDefaultVolume] = useState('+30%');
+  const [defaultVoice, setDefaultVoice] = useState(DEFAULT_VOICE);
+  const [defaultRate, setDefaultRate] = useState(DEFAULT_RATE);
+  const [defaultVolume, setDefaultVolume] = useState(DEFAULT_VOLUME);
   
   // State - App Settings
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
-  const [language, setLanguage] = useState('vi');
+  const [theme, setTheme] = useState<ThemeMode>(DEFAULT_THEME);
+  const [language, setLanguage] = useState<AppLanguage>(DEFAULT_APP_LANGUAGE);
+
+  // State - API Keys
+  const [apiAccounts, setApiAccounts] = useState<EmbeddedAccount[]>([]);
+  const [keysLocation, setKeysLocation] = useState<string>('');
+  const [keysLoading, setKeysLoading] = useState(false);
 
   // Browse output directory
   const handleBrowseOutput = useCallback(async () => {
@@ -74,18 +120,112 @@ export function Settings() {
     alert('Đã lưu cài đặt!');
   }, [outputDir, autoOpenOutput, defaultModel, batchSize, retryCount, defaultVoice, defaultRate, defaultVolume, theme, language]);
 
+  // Load API keys info
+  const loadApiKeysInfo = useCallback(async () => {
+    try {
+      setKeysLoading(true);
+      // Sử dụng API mới có trạng thái chi tiết
+      const accountsRes = await window.electronAPI.gemini.getAllKeysWithStatus();
+      if (accountsRes.success && accountsRes.data) {
+        setApiAccounts(accountsRes.data);
+      }
+      
+      const locRes = await window.electronAPI.gemini.getKeysLocation();
+      if (locRes.success && locRes.data) {
+        setKeysLocation(locRes.data);
+      }
+    } catch (err) {
+      console.error('Lỗi load API keys:', err);
+    } finally {
+      setKeysLoading(false);
+    }
+  }, []);
+
+  // Effect to load keys when tab changes to apikeys
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    if (tab === 'apikeys') {
+      loadApiKeysInfo();
+    }
+  };
+
+  // Import JSON handler
+  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const res = await window.electronAPI.gemini.importKeys(text);
+      if (res.success) {
+        alert(`Import thành công ${res.data?.count} keys!`);
+        loadApiKeysInfo();
+      } else {
+        alert(`Lỗi import: ${res.error}`);
+      }
+    } catch (err) {
+      console.error('Lỗi đọc file:', err);
+      alert('Không thể đọc file JSON');
+    }
+    // Reset input
+    e.target.value = '';
+  };
+
+  // Export JSON handler
+  const handleExportJson = async () => {
+    try {
+      const res = await window.electronAPI.gemini.exportKeys();
+      if (res.success && res.data) {
+        // Create blob and download link
+        const blob = new Blob([res.data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'gemini_keys_export.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert(`Lỗi export: ${res.error}`);
+      }
+    } catch (err) {
+      console.error('Lỗi export JSON:', err);
+      alert('Không thể export file JSON');
+    }
+  };
+
+  // Reset all key status
+  const handleResetAllKeyStatus = async () => {
+    if (!confirm('Bạn có chắc muốn reset trạng thái tất cả API keys không? Các keys bị lỗi hoặc rate limit sẽ được khôi phục về trạng thái available.')) {
+      return;
+    }
+    try {
+      const res = await window.electronAPI.gemini.resetAllStatus();
+      if (res.success) {
+        alert('Đã reset trạng thái tất cả keys thành công!');
+        loadApiKeysInfo();
+      } else {
+        alert(`Lỗi: ${res.error}`);
+      }
+    } catch (err) {
+      console.error('[Settings] Lỗi reset status:', err);
+      alert('Không thể reset trạng thái keys');
+    }
+  };
+
   // Reset settings
   const handleReset = useCallback(() => {
     setOutputDir('');
-    setAutoOpenOutput(true);
-    setDefaultModel('gemini-2.5-flash');
-    setBatchSize(50);
-    setRetryCount(3);
-    setDefaultVoice('vi-VN-HoaiMyNeural');
-    setDefaultRate('+30%');
-    setDefaultVolume('+30%');
-    setTheme('dark');
-    setLanguage('vi');
+    setAutoOpenOutput(DEFAULT_AUTO_OPEN_OUTPUT);
+    setDefaultModel(DEFAULT_GEMINI_MODEL);
+    setBatchSize(DEFAULT_BATCH_SIZE);
+    setRetryCount(DEFAULT_RETRY_COUNT);
+    setDefaultVoice(DEFAULT_VOICE);
+    setDefaultRate(DEFAULT_RATE);
+    setDefaultVolume(DEFAULT_VOLUME);
+    setTheme(DEFAULT_THEME);
+    setLanguage(DEFAULT_APP_LANGUAGE);
   }, []);
 
   const menuItems = [
@@ -113,33 +253,40 @@ export function Settings() {
       desc: 'Chỉnh theme sáng/tối và ngôn ngữ hiển thị',
       icon: Palette 
     },
+    { 
+      id: 'apikeys', 
+      label: 'API Keys', 
+      desc: 'Quản lý danh sách Gemini API Keys',
+      icon: Key 
+    },
   ];
 
   // Helper to render Detail Wrapper
   const renderDetail = (title: string, content: React.ReactNode) => (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <button 
-          className={styles.backButton} 
+        <Button 
+          variant="secondary"
+          iconOnly
           onClick={() => setActiveTab('overview')}
           title="Quay lại"
         >
           <ArrowLeft size={20} />
-        </button>
+        </Button>
         <div className={styles.detailTitle}>{title}</div>
       </div>
       <div className={styles.detailContent}>
         {content}
         
         <div className={styles.saveBar}>
-          <button onClick={handleReset} className={styles.buttonSecondary}>
+          <Button onClick={handleReset} variant="secondary">
             <RotateCcw size={16} />
             Đặt lại mặc định
-          </button>
-          <button onClick={handleSave} className={styles.button}>
+          </Button>
+          <Button onClick={handleSave} variant="primary">
             <Save size={16} />
             Lưu cài đặt
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -162,7 +309,7 @@ export function Settings() {
                 <div 
                   key={item.id} 
                   className={styles.card}
-                  onClick={() => setActiveTab(item.id as SettingsTab)}
+                  onClick={() => handleTabChange(item.id as SettingsTab)}
                 >
                   <div className={styles.cardIcon}>
                     <Icon size={24} />
@@ -190,16 +337,14 @@ export function Settings() {
               <span className={styles.labelDesc}>Mặc định sẽ lưu cùng thư mục với file gốc nếu bỏ trống</span>
             </div>
             <div className={styles.flexRow}>
-              <input
-                type="text"
+              <Input
                 value={outputDir}
                 onChange={(e) => setOutputDir(e.target.value)}
-                placeholder="Mặc định (Source folder)"
-                className={styles.input}
+                placeholder="Ví dụ: D:\Subtitles\Output"
               />
-              <button onClick={handleBrowseOutput} className={styles.buttonSecondary}>
-                Chọn
-              </button>
+              <Button onClick={handleBrowseOutput}>
+                Browse
+              </Button>
             </div>
           </div>
 
@@ -225,9 +370,9 @@ export function Settings() {
               onChange={(e) => setDefaultModel(e.target.value)}
               className={styles.select}
             >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+              {GEMINI_MODELS.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
             </select>
           </div>
 
@@ -236,13 +381,13 @@ export function Settings() {
               <span className={styles.labelText}>Batch Size</span>
               <span className={styles.labelDesc}>Số dòng caption xử lý trong một lần gọi API</span>
             </div>
-            <input
+            <Input
               type="number"
               value={batchSize}
               onChange={(e) => setBatchSize(Number(e.target.value))}
               min={10}
               max={200}
-              className={styles.inputSmall}
+              variant="small"
             />
           </div>
 
@@ -251,13 +396,13 @@ export function Settings() {
               <span className={styles.labelText}>Retry Count</span>
               <span className={styles.labelDesc}>Số lần thử lại khi gặp lỗi API</span>
             </div>
-            <input
+            <Input
               type="number"
               value={retryCount}
               onChange={(e) => setRetryCount(Number(e.target.value))}
               min={0}
               max={10}
-              className={styles.inputSmall}
+              variant="small"
             />
           </div>
         </div>
@@ -274,8 +419,9 @@ export function Settings() {
               onChange={(e) => setDefaultVoice(e.target.value)}
               className={styles.select}
             >
-              <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ)</option>
-              <option value="vi-VN-NamMinhNeural">Nam Minh (Nam)</option>
+              {VOICES.map(v => (
+                <option key={v.value} value={v.value}>{v.label}</option>
+              ))}
             </select>
           </div>
 
@@ -288,7 +434,7 @@ export function Settings() {
               onChange={(e) => setDefaultRate(e.target.value)}
               className={styles.select}
             >
-              {['+0%', '+10%', '+20%', '+30%', '+40%', '+50%'].map(r => (
+              {RATE_OPTIONS.map(r => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
@@ -303,7 +449,7 @@ export function Settings() {
               onChange={(e) => setDefaultVolume(e.target.value)}
               className={styles.select}
             >
-              {['+0%', '+10%', '+20%', '+30%'].map(v => (
+              {VOLUME_OPTIONS.map(v => (
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>
@@ -319,12 +465,12 @@ export function Settings() {
             </div>
             <select
               value={theme}
-              onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}
+              onChange={(e) => setTheme(e.target.value as ThemeMode)}
               className={styles.select}
             >
-              <option value="light">Sáng</option>
-              <option value="dark">Tối</option>
-              <option value="system">Theo hệ thống</option>
+              {THEME_OPTIONS.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
             </select>
           </div>
 
@@ -334,12 +480,146 @@ export function Settings() {
             </div>
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) => setLanguage(e.target.value as AppLanguage)}
               className={styles.select}
             >
-              <option value="vi">Tiếng Việt</option>
-              <option value="en">English</option>
+              {LANGUAGE_OPTIONS.map(l => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
             </select>
+          </div>
+        </div>
+      ))}
+
+      {activeTab === 'apikeys' && renderDetail('API Keys', (
+        <div className={styles.section}>
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Quản lý Keys</span>
+              <span className={styles.labelDesc}>
+                File lưu trữ: {keysLocation || 'Chưa xác định'}
+              </span>
+            </div>
+            <div className={styles.flexRow}>
+              <input
+                type="file"
+                accept=".json"
+                style={{ display: 'none' }}
+                id="import-json-input"
+                onChange={handleImportJson}
+              />
+              <Button 
+                onClick={() => document.getElementById('import-json-input')?.click()}
+                variant="secondary"
+              >
+                <Upload size={16} /> Import JSON
+              </Button>
+              <Button onClick={handleExportJson} variant="secondary">
+                <Download size={16} /> Export JSON
+              </Button>
+              <Button onClick={handleResetAllKeyStatus} variant="danger">
+                <RefreshCw size={16} /> Reset Status
+              </Button>
+            </div>
+          </div>
+
+          <div className={styles.divider} style={{ margin: '20px 0', borderTop: '1px solid var(--border-color)' }} />
+
+          <div className={styles.row} style={{ display: 'block' }}>
+            <div className={styles.label} style={{ marginBottom: 12 }}>
+              <span className={styles.labelText}>Danh sách tài khoản ({apiAccounts.length})</span>
+            </div>
+            
+            <div className={styles.accountList} style={{ 
+              background: 'var(--bg-secondary)', 
+              borderRadius: 8, 
+              padding: 12,
+              maxHeight: 400,
+              overflowY: 'auto'
+            }}>
+              {keysLoading ? (
+                <div style={{ textAlign: 'center', padding: 20 }}>Đang tải...</div>
+              ) : apiAccounts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-secondary)' }}>
+                  Chưa có API key nào. Hãy import file JSON.
+                </div>
+              ) : (
+                apiAccounts.map((acc, index) => (
+                  <div key={index} style={{ 
+                    marginBottom: 12, 
+                    padding: 10, 
+                    background: 'var(--bg-primary)', 
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>{acc.email}</div>
+                    <div style={{ fontSize: '0.9em', color: 'var(--text-secondary)' }}>
+                      {acc.projects.length} Projects:
+                    </div>
+                    <div style={{ paddingLeft: 12, marginTop: 4 }}>
+                      {acc.projects.map((p: any, pIndex: number) => {
+                        // Màu sắc theo trạng thái
+                        const statusColors: Record<string, { bg: string; text: string; label: string }> = {
+                          'available': { bg: '#10b98120', text: '#10b981', label: 'OK' },
+                          'rate_limited': { bg: '#f59e0b20', text: '#f59e0b', label: 'Rate Limited' },
+                          'exhausted': { bg: '#6366f120', text: '#6366f1', label: 'Exhausted' },
+                          'error': { bg: '#ef444420', text: '#ef4444', label: 'Lỗi' },
+                        };
+                        const statusStyle = statusColors[p.status] || statusColors['available'];
+                        
+                        return (
+                          <div key={pIndex} style={{ 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            fontSize: '0.85em', 
+                            fontFamily: 'monospace',
+                            marginBottom: 4,
+                            padding: '4px 8px',
+                            borderRadius: 4,
+                            background: 'var(--bg-secondary)',
+                          }}>
+                            {/* Status badge */}
+                            <span style={{
+                              fontSize: '0.75em',
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              background: statusStyle.bg,
+                              color: statusStyle.text,
+                              fontWeight: 600,
+                              minWidth: 70,
+                              textAlign: 'center',
+                            }}>
+                              {statusStyle.label}
+                            </span>
+                            
+                            {/* Project name */}
+                            <span style={{ color: 'var(--text-primary)', flex: 1 }}>
+                              {p.projectName}
+                            </span>
+                            
+                            {/* Request count */}
+                            {p.totalRequestsToday > 0 && (
+                              <span style={{ 
+                                fontSize: '0.75em',
+                                color: 'var(--text-tertiary)',
+                              }}>
+                                {p.totalRequestsToday} reqs
+                              </span>
+                            )}
+                            
+                            {/* API Key (masked) */}
+                            <span style={{ color: 'var(--text-tertiary)' }}>
+                              {p.apiKey}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       ))}

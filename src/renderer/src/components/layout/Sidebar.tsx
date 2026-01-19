@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { BookOpen, Video, Settings, FolderClosed, Menu, ChevronsLeft, ChevronsRight, Sun, Moon } from 'lucide-react';
+import { BookOpen, Video, Settings, FolderClosed, ChevronsLeft, ChevronsRight, Sun, Moon, Subtitles } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useThemeStore } from '../../hooks/useTheme';
@@ -16,7 +16,8 @@ export const Sidebar = () => {
   const { theme, toggleTheme } = useThemeStore();
 
   const navItems = [
-    { icon: BookOpen, label: 'Story Translator', path: '/translator' },
+    { icon: Subtitles, label: 'Dịch Caption', path: '/translator' },
+    { icon: BookOpen, label: 'Dịch Truyện AI', path: '/story-translator' },
     { icon: Video, label: 'Veo3 AI Prompt', path: '/veo3' },
   ];
 
@@ -34,7 +35,7 @@ export const Sidebar = () => {
     >
       <div className="p-4 flex items-center justify-between border-b border-border h-16">
         {!collapsed && (
-          <h1 className="font-bold text-xl bg-gradient-to-r from-primary to-primary-light bg-clip-text text-transparent truncate">
+          <h1 className="font-bold text-xl bg-linear-to-r from-primary to-primary-light bg-clip-text text-transparent truncate">
             AI Toolkit
           </h1>
         )}
@@ -67,7 +68,7 @@ export const Sidebar = () => {
                 : "text-text-secondary hover:bg-surface hover:text-text-primary"
             )}
           >
-            <item.icon size={22} className={cn("min-w-[22px]", collapsed && "mx-auto")} />
+            <item.icon size={22} className={cn("min-w-5.5", collapsed && "mx-auto")} />
             {!collapsed && <span className="font-medium whitespace-nowrap">{item.label}</span>}
             
             {/* Tooltip for collapsed state */}
@@ -92,7 +93,7 @@ export const Sidebar = () => {
                 : "text-text-secondary hover:bg-surface hover:text-text-primary"
             )}
           >
-            <item.icon size={22} className={cn("min-w-[22px]", collapsed && "mx-auto")} />
+            <item.icon size={22} className={cn("min-w-5.5", collapsed && "mx-auto")} />
             {!collapsed && <span className="font-medium whitespace-nowrap">{item.label}</span>}
           </NavLink>
         ))}

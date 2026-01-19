@@ -134,5 +134,26 @@ export function registerCaptionHandlers(): void {
     }
   );
 
+  // ============================================
+  // SPLIT TEXT
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.SPLIT,
+    async (
+      _event: IpcMainInvokeEvent,
+      options: { entries: SubtitleEntry[]; splitByLines: boolean; value: number; outputDir: string }
+    ): Promise<IpcResponse<{ partsCount: number; files: string[] }>> => {
+      console.log(`[CaptionHandlers] Split: ${options.entries.length} entries, splitByLines=${options.splitByLines}, value=${options.value}`);
+
+      try {
+        const result = await CaptionService.splitText(options);
+        return { success: result.success, data: { partsCount: result.partsCount, files: result.files }, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi split:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   console.log('[CaptionHandlers] Đã đăng ký handlers thành công');
 }

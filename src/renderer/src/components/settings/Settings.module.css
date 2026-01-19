@@ -112,25 +112,7 @@
   flex-shrink: 0;
 }
 
-.backButton {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  transition: all 0.2s;
-}
 
-.backButton:hover {
-  background-color: var(--color-border);
-  color: var(--color-text-primary);
-  transform: translateX(-2px);
-}
 
 .detailTitle {
   font-size: 20px;
@@ -193,26 +175,7 @@
 }
 
 /* Input & Select */
-.input {
-  padding: 8px 12px;
-  border-radius: 8px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  font-size: 14px;
-  outline: none;
-  min-width: 240px;
-  transition: border-color 0.2s;
-}
 
-.input:focus {
-  border-color: var(--color-primary);
-}
-
-.inputSmall {
-  composes: input;
-  min-width: 100px;
-}
 
 .select {
   padding: 8px 12px;
@@ -232,40 +195,7 @@
 }
 
 /* Buttons */
-.button {
-  padding: 10px 20px;
-  border-radius: 8px;
-  background-color: var(--color-primary);
-  color: var(--color-text-invert);
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  cursor: pointer;
-  transition: opacity 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 
-.button:hover {
-  opacity: 0.9;
-}
-
-.buttonSecondary {
-  padding: 8px 16px;
-  border-radius: 8px;
-  background-color: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 14px;
-  font-weight: 500;
-  border: 1px solid var(--color-border);
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.buttonSecondary:hover {
-  background-color: var(--color-border);
-}
 
 /* Toggle */
 .toggle {

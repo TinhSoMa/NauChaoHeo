@@ -10,6 +10,7 @@ import {
   TTSResult,
   MergeOptions,
   MergeResult,
+  TrimSilenceResult,
   VIETNAMESE_VOICES,
   VoiceInfo,
 } from '../../shared/types/caption';
@@ -111,6 +112,47 @@ export function registerTTSHandlers(): void {
         return { success: result.success, data: result, error: result.error };
       } catch (error) {
         console.error('[TTSHandlers] Lỗi merge audio:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // TRIM SILENCE
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE,
+    async (
+      _event: IpcMainInvokeEvent,
+      audioPaths: string[]
+    ): Promise<IpcResponse<TrimSilenceResult>> => {
+      console.log(`[TTSHandlers] Trim silence: ${audioPaths.length} files`);
+
+      try {
+        let trimmedCount = 0;
+        let failedCount = 0;
+        const errors: string[] = [];
+
+        for (const audioPath of audioPaths) {
+          const success = await TTSService.trimSilence(audioPath);
+          if (success) {
+            trimmedCount++;
+          } else {
+            failedCount++;
+            errors.push(`Không thể trim: ${audioPath}`);
+          }
+        }
+
+        const result: TrimSilenceResult = {
+          success: failedCount === 0,
+          trimmedCount,
+          failedCount,
+          errors: errors.length > 0 ? errors : undefined,
+        };
+
+        return { success: result.success, data: result, error: result.errors?.join(', ') };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi trim silence:', error);
         return { success: false, error: String(error) };
       }
     }

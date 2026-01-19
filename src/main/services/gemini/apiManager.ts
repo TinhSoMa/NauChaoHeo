@@ -231,12 +231,15 @@ export class ApiKeyManager {
     }
 
     const numAccounts = accounts.length;
-    const numProjects = 5; // Fixed 5 projects per account
+    // Tính số projects thực tế (không cố định 5)
+    const numProjects = Math.max(...accounts.map(acc => acc.projects.length), 1);
 
     // Lấy state hiện tại
     const state = this.getRotationState();
     let currentAccIdx = state.currentAccountIndex || 0;
     let currentProjIdx = state.currentProjectIndex || 0;
+
+    console.log(`[ApiManager] Bắt đầu tìm key từ acc_${currentAccIdx + 1}/project_${currentProjIdx + 1}`);
 
     // Thử tìm key available, quét qua tất cả accounts/projects
     const totalAttempts = numAccounts * numProjects;
@@ -268,7 +271,7 @@ export class ApiKeyManager {
             projectIndex: projIdx,
           };
 
-          // Cập nhật state cho lần request tiếp theo
+          // Cập nhật state cho lần request tiếp theo (QUAN TRỌNG: tăng trước khi lưu)
           let nextAccIdx = accIdx + 1;
           let nextProjIdx = projIdx;
 
@@ -277,6 +280,7 @@ export class ApiKeyManager {
             nextAccIdx = 0;
             nextProjIdx = (projIdx + 1) % numProjects;
             state.rotationRound = (state.rotationRound || 1) + 1;
+            console.log(`[ApiManager] Đã hết accounts, chuyển sang project ${nextProjIdx + 1}`);
           }
 
           state.currentAccountIndex = nextAccIdx;
@@ -290,15 +294,21 @@ export class ApiKeyManager {
         }
       }
 
-      // Thử account tiếp theo
+      // Key không available, thử vị trí tiếp theo theo thuật toán quét ngang
       currentAccIdx++;
       if (currentAccIdx >= numAccounts) {
         currentAccIdx = 0;
         currentProjIdx++;
+        console.log(`[ApiManager] Đã hết accounts cho project ${currentProjIdx}, chuyển sang project ${currentProjIdx + 1}`);
       }
 
       attempts++;
     }
+
+    // Cập nhật state để lần gọi tiếp theo bắt đầu đúng vị trí
+    state.currentAccountIndex = currentAccIdx % numAccounts;
+    state.currentProjectIndex = currentProjIdx % numProjects;
+    this.saveConfig();
 
     // Không tìm thấy key available nào
     console.warn('[ApiManager] Không còn key available nào');
@@ -357,21 +367,26 @@ export class ApiKeyManager {
    */
   resetAllStatusExceptDisabled(): void {
     console.log('[ApiManager] Đang reset tất cả trạng thái keys...');
+    let resetCount = 0;
 
     for (const account of this.config.accounts) {
       for (const project of account.projects) {
         const status = project.status;
-        if (status === STATUS_RATE_LIMITED || status === STATUS_EXHAUSTED) {
+        // Reset tất cả các trạng thái lỗi, trừ 'disabled'
+        if (status === STATUS_RATE_LIMITED || status === STATUS_EXHAUSTED || status === STATUS_ERROR) {
           project.status = STATUS_AVAILABLE;
           project.limitTracking.rateLimitResetAt = null;
           project.limitTracking.dailyLimitResetAt = null;
           project.limitTracking.minuteRequestCount = 0;
+          project.stats.lastErrorMessage = '';
+          resetCount++;
+          console.log(`[ApiManager] Reset project: ${project.projectName} (was: ${status})`);
         }
       }
     }
 
     this.saveConfig();
-    console.log('[ApiManager] Đã reset xong');
+    console.log(`[ApiManager] Đã reset ${resetCount} project(s)`);
   }
 
   /**
