@@ -9,6 +9,7 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
+import { useProjectOutput } from '../../hooks/useProjectOutput';
 import {
   GEMINI_MODELS,
   VOICES,
@@ -87,11 +88,14 @@ function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
 // COMPONENT
 // ============================================
 export function CaptionTranslator() {
+  // Project output paths
+  const { captionFolder } = useProjectOutput();
+  
   // State - Config
   const [inputType, setInputType] = useState<'srt' | 'draft'>(DEFAULT_INPUT_TYPE);
   const [filePath, setFilePath] = useState('');
   const [entries, setEntries] = useState<SubtitleEntry[]>([]);
-  const [geminiModel, setGeminiModel] = useState(DEFAULT_GEMINI_MODEL);
+  const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
   const [voice, setVoice] = useState(DEFAULT_VOICE);
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
@@ -208,12 +212,17 @@ export function CaptionTranslator() {
         if (step === 2) {
           setProgress({ current: 0, total: 1, message: 'Bước 2: Đang chia nhỏ text...' });
           
+          // Sử dụng project folder hoặc fallback sang thư mục gốc của file
+          const textOutputDir = captionFolder 
+            ? `${captionFolder}/text` 
+            : filePath.replace(/[^/\\]+$/, 'auto/text');
+          
           const splitValue = splitByLines ? linesPerFile : numberOfParts;
           const result = await window.electronAPI.caption.split({
             entries,
             splitByLines,
             value: splitValue,
-            outputDir: filePath.replace(/[^/\\]+$/, 'auto/text'),
+            outputDir: textOutputDir,
           });
 
           if (result.success && result.data) {
@@ -236,8 +245,11 @@ export function CaptionTranslator() {
 
           if (result.success && result.data) {
             setEntries(result.data.entries);
-            const outputPath = filePath.replace(/\.(srt|json)$/i, '_translated.srt');
-            await window.electronAPI.caption.exportSrt(result.data.entries, outputPath);
+            // Sử dụng project folder hoặc fallback
+            const srtOutputPath = captionFolder 
+              ? `${captionFolder}/srt/${Date.now()}_translated.srt`
+              : filePath.replace(/\.(srt|json)$/i, '_translated.srt');
+            await window.electronAPI.caption.exportSrt(result.data.entries, srtOutputPath);
             setProgress({ current: result.data.translatedLines, total: result.data.totalLines, message: `Bước 3: Đã dịch ${result.data.translatedLines} dòng` });
           } else {
             throw new Error(result.error);
@@ -246,7 +258,10 @@ export function CaptionTranslator() {
         
         // ========== STEP 4: TTS ==========
         if (step === 4) {
-          currentOutputDir = filePath.replace(/[^/\\]+$/, 'audio_output');
+          // Sử dụng project folder hoặc fallback
+          currentOutputDir = captionFolder 
+            ? `${captionFolder}/audio` 
+            : filePath.replace(/[^/\\]+$/, 'audio_output');
           setAudioDir(currentOutputDir);
           setProgress({ current: 0, total: entries.length, message: 'Bước 4: Đang tạo audio...' });
           

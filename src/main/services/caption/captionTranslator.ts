@@ -75,7 +75,7 @@ export async function translateAll(
   const {
     entries,
     targetLanguage = 'Vietnamese',
-    model = GEMINI_MODELS.FLASH_2_5,
+    model = GEMINI_MODELS.FLASH_3_0,
     linesPerBatch = 50,
   } = options;
 
@@ -177,7 +177,7 @@ export async function translateAll(
 export async function translateSingleText(
   text: string,
   targetLanguage: string = 'Vietnamese',
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
 ): Promise<{ success: boolean; translatedText: string; error?: string }> {
   const prompt = `Dịch đoạn text sau sang tiếng ${targetLanguage}. Chỉ trả về bản dịch, không giải thích:
 

@@ -4,15 +4,17 @@
  */
 
 import { getApiManager } from './apiManager';
-import { GeminiResponse, KeyInfo } from '../../../shared/types/gemini';
-import {
+import { 
+  GeminiResponse, 
+  KeyInfo,
   GEMINI_API_BASE,
   GEMINI_MODELS,
+  getGeminiModelInfo,
   type GeminiModel,
-} from '../../../shared/constants/api';
+} from '../../../shared/types/gemini';
 
 // Re-export để các module khác có thể import từ đây
-export { GEMINI_MODELS };
+export { GEMINI_MODELS, getGeminiModelInfo };
 export type { GeminiModel };
 
 /**
@@ -21,7 +23,7 @@ export type { GeminiModel };
 export async function callGeminiApi(
   prompt: string | object,
   apiKey: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
 ): Promise<GeminiResponse> {
   try {
     const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
@@ -92,7 +94,7 @@ export async function callGeminiApi(
  */
 export async function callGeminiWithRotation(
   prompt: string | object,
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5,
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0,
   maxRetries: number = 10
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
   const manager = getApiManager();
@@ -172,7 +174,7 @@ export async function callGeminiWithRotation(
 export async function translateText(
   text: string,
   targetLanguage: string = 'Vietnamese',
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
 ): Promise<GeminiResponse> {
   const prompt = {
     task: 'translation',
@@ -197,33 +199,15 @@ export async function translateText(
 export async function chat(
   message: string,
   apiKey: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
 ): Promise<GeminiResponse> {
   return callGeminiApi(message, apiKey, model);
 }
 
 /**
- * Lấy thông tin model
+ * Lấy thông tin model - Alias cho getGeminiModelInfo
  */
 export function getModelInfo(model: GeminiModel): { name: string; description: string } {
-  const modelInfo: Record<GeminiModel, { name: string; description: string }> = {
-    'gemini-2.5-flash': {
-      name: 'Gemini 2.5 Flash',
-      description: 'Model mới nhất, nhanh và thông minh',
-    },
-    'gemini-2.0-flash': {
-      name: 'Gemini 2.0 Flash',
-      description: 'Model nhanh, hiệu suất cao',
-    },
-    'gemini-1.5-flash': {
-      name: 'Gemini 1.5 Flash',
-      description: 'Model ổn định, tiết kiệm quota',
-    },
-    'gemini-1.5-pro': {
-      name: 'Gemini 1.5 Pro',
-      description: 'Model mạnh nhất, phù hợp task phức tạp',
-    },
-  };
-
-  return modelInfo[model] || { name: model, description: 'Không có mô tả' };
+  const info = getGeminiModelInfo(model);
+  return { name: info.name, description: info.description };
 }

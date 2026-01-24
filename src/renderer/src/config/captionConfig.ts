@@ -4,21 +4,21 @@
  */
 
 // ============================================
-// GEMINI MODELS
+// GEMINI MODELS - Import từ file tập trung
 // ============================================
 
-export interface GeminiModelOption {
-  value: string;
-  label: string;
-}
+import { 
+  GEMINI_MODEL_LIST, 
+  DEFAULT_GEMINI_MODEL as SHARED_DEFAULT_MODEL,
+  type GeminiModelInfo 
+} from '../../../shared/types/gemini';
 
-export const GEMINI_MODELS: GeminiModelOption[] = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh)' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Chất lượng)' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Dự phòng)' },
-];
+// Re-export để sử dụng trong UI components
+export { GEMINI_MODEL_LIST, type GeminiModelInfo };
 
-export const DEFAULT_GEMINI_MODEL = GEMINI_MODELS[0].value;
+// Alias cho compatibility
+export const GEMINI_MODELS = GEMINI_MODEL_LIST.map(m => ({ value: m.id, label: m.label }));
+export const DEFAULT_GEMINI_MODEL = SHARED_DEFAULT_MODEL;
 
 // ============================================
 // TTS VOICES

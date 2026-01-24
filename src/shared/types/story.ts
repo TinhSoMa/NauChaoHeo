@@ -21,5 +21,6 @@ export const STORY_IPC_CHANNELS = {
   PARSE: 'story:parse',
   PREPARE_PROMPT: 'story:preparePrompt',
   SAVE_PROMPT: 'story:savePrompt',
-  TRANSLATE_CHAPTER: 'story:translateChapter'
+  TRANSLATE_CHAPTER: 'story:translateChapter',
+  CREATE_EBOOK: 'story:createEbook'
 } as const;

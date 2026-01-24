@@ -48,9 +48,28 @@ export function registerStoryHandlers(): void {
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
-    async (_event: IpcMainInvokeEvent, prompt: any) => {
-      console.log('[StoryHandlers] Translate chapter...');
-      return await StoryService.StoryService.translateChapter(prompt);
+    async (_event: IpcMainInvokeEvent, payload: any) => {
+      // console.log('[StoryHandlers] Translate chapter params:', payload);
+      // Support legacy call (just prompt) or new call (options object)
+      // If payload is the prompt directly (array or object check), treat as legacy API method.
+      // But typically we should standardize.
+      // Let's assume payload is the Options object if it has 'prompt' key.
+      
+      let options = payload;
+      if (!payload.prompt && (Array.isArray(payload) || payload.role)) {
+          // It's just the prompt structure
+          options = { prompt: payload, method: 'API' };
+      }
+      
+      return await StoryService.StoryService.translateChapter(options);
+    }
+  );
+
+  ipcMain.handle(
+    STORY_IPC_CHANNELS.CREATE_EBOOK,
+    async (_event: IpcMainInvokeEvent, options: any) => {
+        console.log('[StoryHandlers] Create ebook:', options.title);
+        return await StoryService.StoryService.createEbook(options);
     }
   );
 

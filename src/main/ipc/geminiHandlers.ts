@@ -164,7 +164,7 @@ export function registerGeminiHandlers(): void {
       model?: Gemini.GeminiModel
     ): Promise<IpcApiResponse<GeminiResponse>> => {
       try {
-        const result = await Gemini.callGeminiWithRotation(prompt, model || Gemini.GEMINI_MODELS.FLASH_2_5);
+        const result = await Gemini.callGeminiWithRotation(prompt, model || Gemini.GEMINI_MODELS.FLASH_3_0);
         return { success: true, data: result };
       } catch (error) {
         console.error('[IPC] Lỗi callGemini:', error);
@@ -186,7 +186,7 @@ export function registerGeminiHandlers(): void {
         const result = await Gemini.translateText(
           text,
           targetLanguage || 'Vietnamese',
-          model || Gemini.GEMINI_MODELS.FLASH_2_5
+          model || Gemini.GEMINI_MODELS.FLASH_3_0
         );
         return { success: true, data: result };
       } catch (error) {

@@ -1,3 +1,8 @@
+/**
+ * Prompt Service - Quản lý prompt templates
+ * Sử dụng SQLite database
+ */
+
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../database/schema';
 import { TranslationPrompt, CreatePromptDTO } from '../../shared/types/prompt';

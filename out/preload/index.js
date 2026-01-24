@@ -90,6 +90,72 @@ function createTTSAPI() {
     trimSilence: (audioPaths) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths)
   };
 }
+const PROJECT_IPC_CHANNELS = {
+  // Project CRUD
+  GET_ALL: "project:getAll",
+  GET_BY_ID: "project:getById",
+  CREATE: "project:create",
+  UPDATE: "project:update",
+  DELETE: "project:delete",
+  // Translations
+  SAVE_TRANSLATION: "project:saveTranslation",
+  GET_TRANSLATIONS: "project:getTranslations",
+  GET_TRANSLATION: "project:getTranslation",
+  // History
+  GET_HISTORY: "project:getHistory"
+};
+const projectApi = {
+  getAll: () => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_ALL),
+  getById: (id) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_BY_ID, id),
+  create: (data) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.CREATE, data),
+  update: (id, data) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.UPDATE, id, data),
+  delete: (id) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.DELETE, id),
+  saveTranslation: (data) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.SAVE_TRANSLATION, data),
+  getTranslations: (projectId) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_TRANSLATIONS, projectId),
+  getTranslation: (projectId, chapterId) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_TRANSLATION, projectId, chapterId),
+  getHistory: (projectId, limit) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_HISTORY, projectId, limit)
+};
+const APP_SETTINGS_IPC_CHANNELS = {
+  GET_ALL: "appSettings:getAll",
+  UPDATE: "appSettings:update",
+  GET_PROJECTS_BASE_PATH: "appSettings:getProjectsBasePath",
+  SET_PROJECTS_BASE_PATH: "appSettings:setProjectsBasePath",
+  ADD_RECENT_PROJECT: "appSettings:addRecentProject",
+  GET_RECENT_PROJECT_IDS: "appSettings:getRecentProjectIds",
+  GET_LAST_ACTIVE_PROJECT_ID: "appSettings:getLastActiveProjectId",
+  REMOVE_FROM_RECENT: "appSettings:removeFromRecent"
+};
+function createAppSettingsAPI() {
+  return {
+    getAll: () => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.GET_ALL),
+    update: (partial) => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.UPDATE, partial),
+    getProjectsBasePath: () => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.GET_PROJECTS_BASE_PATH),
+    setProjectsBasePath: (basePath) => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.SET_PROJECTS_BASE_PATH, basePath),
+    addRecentProject: (projectId) => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.ADD_RECENT_PROJECT, projectId),
+    getRecentProjectIds: () => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.GET_RECENT_PROJECT_IDS),
+    getLastActiveProjectId: () => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.GET_LAST_ACTIVE_PROJECT_ID),
+    removeFromRecent: (projectId) => electron.ipcRenderer.invoke(APP_SETTINGS_IPC_CHANNELS.REMOVE_FROM_RECENT, projectId)
+  };
+}
+const appSettingsApi = createAppSettingsAPI();
+const CHANNELS = {
+  GET_ALL: "geminiChat:getAll",
+  GET_ACTIVE: "geminiChat:getActive",
+  GET_BY_ID: "geminiChat:getById",
+  CREATE: "geminiChat:create",
+  UPDATE: "geminiChat:update",
+  DELETE: "geminiChat:delete",
+  SEND_MESSAGE: "geminiChat:sendMessage"
+};
+const geminiChatApi = {
+  getAll: () => electron.ipcRenderer.invoke(CHANNELS.GET_ALL),
+  getActive: () => electron.ipcRenderer.invoke(CHANNELS.GET_ACTIVE),
+  getById: (id) => electron.ipcRenderer.invoke(CHANNELS.GET_BY_ID, id),
+  create: (data) => electron.ipcRenderer.invoke(CHANNELS.CREATE, data),
+  update: (id, data) => electron.ipcRenderer.invoke(CHANNELS.UPDATE, id, data),
+  delete: (id) => electron.ipcRenderer.invoke(CHANNELS.DELETE, id),
+  sendMessage: (message, configId, context) => electron.ipcRenderer.invoke(CHANNELS.SEND_MESSAGE, message, configId, context)
+};
 electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Example API methods - add more as needed
   sendMessage: (channel, data) => {
@@ -106,5 +172,11 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Caption API (dịch phụ đề)
   caption: createCaptionAPI(),
   // TTS API (text-to-speech)
-  tts: createTTSAPI()
+  tts: createTTSAPI(),
+  // Project API (quan ly du an dich)
+  project: projectApi,
+  // App Settings API (cai dat ung dung)
+  appSettings: appSettingsApi,
+  // Gemini Chat API (cau hinh Gemini web)
+  geminiChat: geminiChatApi
 });

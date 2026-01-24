@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { BookOpen, Video, Settings, FolderClosed, ChevronsLeft, ChevronsRight, Sun, Moon, Subtitles } from 'lucide-react';
+import { BookOpen, Video, Settings, FolderClosed, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { useThemeStore } from '../../hooks/useTheme';
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -13,11 +12,12 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
-  const { theme, toggleTheme } = useThemeStore();
 
   const navItems = [
-    { icon: Subtitles, label: 'Dịch Caption', path: '/translator' },
-    { icon: BookOpen, label: 'Dịch Truyện AI', path: '/story-translator' },
+    { icon: Subtitles, label: 'Dich Caption', path: '/translator' },
+    { icon: BookOpen, label: 'Dich Truyen AI', path: '/story-translator' },
+    { icon: MessageCircle, label: 'Dich Truyen (Web)', path: '/story-web' },
+    { icon: MessageCircle, label: 'Chat Gemini', path: '/gemini-chat' },
     { icon: Video, label: 'Veo3 AI Prompt', path: '/veo3' },
   ];
 
@@ -40,13 +40,6 @@ export const Sidebar = () => {
           </h1>
         )}
         <div className="flex items-center gap-1 ml-auto">
-          <button
-            onClick={toggleTheme}
-            className="p-2 hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg transition-colors"
-            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
           <button 
             onClick={() => setCollapsed(!collapsed)}
             className="p-2 hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg transition-colors"

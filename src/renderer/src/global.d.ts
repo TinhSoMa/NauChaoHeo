@@ -226,6 +226,98 @@ interface TTSAPI {
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
 }
 
+// ============================================
+// PROJECT API TYPES
+// ============================================
+
+/**
+ * Project API interface cho quản lý dự án dịch
+ */
+interface ProjectAPI {
+  getAll: () => Promise<IpcApiResponse<any[]>>;
+  getById: (id: string) => Promise<IpcApiResponse<any>>;
+  create: (data: any) => Promise<IpcApiResponse<any>>;
+  update: (id: string, data: any) => Promise<IpcApiResponse<any>>;
+  delete: (id: string) => Promise<IpcApiResponse<boolean>>;
+  saveTranslation: (data: any) => Promise<IpcApiResponse<any>>;
+  getTranslations: (projectId: string) => Promise<IpcApiResponse<any[]>>;
+  getTranslation: (projectId: string, chapterId: string) => Promise<IpcApiResponse<any>>;
+  getHistory: (projectId: string, limit?: number) => Promise<IpcApiResponse<any[]>>;
+}
+
+// ============================================
+// APP SETTINGS API TYPES
+// ============================================
+
+interface AppSettings {
+  projectsBasePath: string | null;
+  theme: 'light' | 'dark' | 'system';
+  language: 'vi' | 'en';
+  recentProjectIds: string[];
+  lastActiveProjectId: string | null;
+}
+
+/**
+ * App Settings API interface
+ */
+interface AppSettingsAPI {
+  getAll: () => Promise<IpcApiResponse<AppSettings>>;
+  update: (partial: Partial<AppSettings>) => Promise<IpcApiResponse<AppSettings>>;
+  getProjectsBasePath: () => Promise<IpcApiResponse<string>>;
+  setProjectsBasePath: (basePath: string | null) => Promise<IpcApiResponse<void>>;
+  addRecentProject: (projectId: string) => Promise<IpcApiResponse<void>>;
+  getRecentProjectIds: () => Promise<IpcApiResponse<string[]>>;
+  getLastActiveProjectId: () => Promise<IpcApiResponse<string | null>>;
+  removeFromRecent: (projectId: string) => Promise<IpcApiResponse<void>>;
+}
+
+// ============================================
+// GEMINI CHAT API TYPES
+// ============================================
+
+interface GeminiChatConfig {
+  id: string;
+  name: string;
+  cookie: string;
+  blLabel: string;
+  fSid: string;
+  atToken: string;
+  convId: string;
+  respId: string;
+  candId: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface CreateGeminiChatConfigDTO {
+  name?: string;
+  cookie: string;
+  blLabel?: string;
+  fSid?: string;
+  atToken?: string;
+  convId?: string;
+  respId?: string;
+  candId?: string;
+}
+
+interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfigDTO> {
+  isActive?: boolean;
+}
+
+/**
+ * Gemini Chat API interface
+ */
+interface GeminiChatAPI {
+  getAll: () => Promise<IpcApiResponse<GeminiChatConfig[]>>;
+  getActive: () => Promise<IpcApiResponse<GeminiChatConfig | null>>;
+  getById: (id: string) => Promise<IpcApiResponse<GeminiChatConfig | null>>;
+  create: (data: CreateGeminiChatConfigDTO) => Promise<IpcApiResponse<GeminiChatConfig>>;
+  update: (id: string, data: UpdateGeminiChatConfigDTO) => Promise<IpcApiResponse<GeminiChatConfig | null>>;
+  delete: (id: string) => Promise<IpcApiResponse<boolean>>;
+  sendMessage: (message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => Promise<IpcApiResponse<{ text: string; context: { conversationId: string; responseId: string; choiceId: string } }>>;
+}
+
 /**
  * Mở rộng Window interface để bao gồm electronAPI
  * Được expose từ preload/index.ts thông qua contextBridge
@@ -233,7 +325,7 @@ interface TTSAPI {
 declare global {
   interface Window {
     electronAPI: {
-      // Các method cơ bản
+      // Cac method co ban
       sendMessage: (channel: string, data: unknown) => void;
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void;
       invoke: (channel: string, data?: unknown) => Promise<unknown>;
@@ -241,11 +333,20 @@ declare global {
       // Gemini API
       gemini: GeminiAPI;
 
-      // Caption API (dịch phụ đề)
+      // Caption API (dich phu de)
       caption: CaptionAPI;
 
       // TTS API (text-to-speech)
       tts: TTSAPI;
+
+      // Project API (quan ly du an dich)
+      project: ProjectAPI;
+
+      // App Settings API (cai dat ung dung)
+      appSettings: AppSettingsAPI;
+
+      // Gemini Chat API (cau hinh Gemini web)
+      geminiChat: GeminiChatAPI;
     };
   }
 }

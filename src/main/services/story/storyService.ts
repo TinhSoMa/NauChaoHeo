@@ -1,5 +1,6 @@
 import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
+import { GeminiChatService } from '../geminiChatService';
 
 /**
  * Story Service - Handles story translation logic
@@ -8,19 +9,82 @@ export class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
    */
-  static async translateChapter(preparedPrompt: any): Promise<{ success: boolean; data?: string; error?: string }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', webConfigId?: string, context?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any }> {
     try {
-      console.log('[StoryService] Starting translation...');
+      console.log('[StoryService] Starting translation...', options.method || 'API');
       
-      const result = await GeminiService.callGeminiWithRotation(
-        preparedPrompt, 
-        GeminiService.GEMINI_MODELS.FLASH_2_5
-      );
-      
-      if (result.success) {
-        return { success: true, data: result.data };
+      if (options.method === 'WEB') {
+           // WEB METHOD (Gemini Protocol)
+           if (!options.webConfigId) {
+             return { success: false, error: 'Web Config ID is required for WEB method' };
+           }
+
+           // Extract text from prompt (assuming preparedPrompt results in structured object/array)
+           
+           // Extract text from prompt (assuming preparedPrompt results in structured object/array)
+           let promptText = "";
+           const preparedPrompt = options.prompt;
+           
+           if (typeof preparedPrompt === 'string') {
+               promptText = preparedPrompt;
+           } else if (Array.isArray(preparedPrompt)) {
+               // Chat history format: find the last user message
+               const lastUserMsg = [...preparedPrompt].reverse().find(m => m.role === 'user');
+               if (lastUserMsg) promptText = lastUserMsg.content;
+           } else if (typeof preparedPrompt === 'object') {
+               // Fallback: stringify? Or specific field?
+               // Based on current promptService, it returns array or object.
+               // Let's assume we want the full structured instruction. 
+               // BUT Gemini Web Chat usually takes a single string message. 
+               // We might need to flatten it or just take the content.
+                promptText = JSON.stringify(preparedPrompt); 
+               // Logic refinement: Web Interface is "Chat", so we send the "Prompt" as the message.
+               // If preparedPrompt is chat history (Role/Content), we might lose history if we just send last message?
+               // NO, Gemini Web *maintains* history via Context IDs. We just send the NEW message.
+               
+               // So if preparedPrompt contains the FULL history including system instructions, we are kinda double-dipping?
+               // Ideally for Web Chat updates: We just want the NEW chapter content + instruction.
+               // However, `prepareTranslationPrompt` returns a full constructed prompt.
+               
+               // Quick Fix: Convert the whole structure to a string representation if complex, 
+               // OR better: Just extract the actual chapter content if we can, but `prepareTranslationPrompt` has already merged it.
+               
+               // Let's use the Last User Message Content if array, else Stringify.
+                if (Array.isArray(preparedPrompt)) {
+                    const lastMsg = preparedPrompt[preparedPrompt.length - 1];
+                     if (lastMsg && lastMsg.role === 'user') promptText = lastMsg.content;
+                     else promptText = JSON.stringify(preparedPrompt);
+                }
+           }
+            
+            console.log('[StoryService] Extracted promptText length:', promptText.length);
+            if (!promptText) console.warn('[StoryService] promptText is empty!');
+
+           const result = await GeminiChatService.sendMessage(promptText, options.webConfigId, options.context);
+           
+           if (result.success && result.data) {
+             console.log('[StoryService] Translation completed.');
+             return { 
+                 success: true, 
+                 data: result.data.text,
+                 context: result.data.context // Return new context
+             };
+           } else {
+             return { success: false, error: result.error || 'Gemini Web Error' };
+           }
+
       } else {
-        return { success: false, error: result.error };
+          // API METHOD (Default)
+          const result = await GeminiService.callGeminiWithRotation(
+            options.prompt, 
+            GeminiService.GEMINI_MODELS.FLASH_3_0
+          );
+          
+          if (result.success) {
+            return { success: true, data: result.data };
+          } else {
+            return { success: false, error: result.error };
+          }
       }
     } catch (error) {
       console.error('[StoryService] Error translating chapter:', error);
@@ -134,6 +198,60 @@ export class StoryService {
     } catch (error) {
       console.error('Error preparing translation prompt:', error);
       return { success: false, error: String(error) };
+    }
+  }
+  static async createEbook(options: { 
+      chapters: { title: string; content: string }[], 
+      title: string, 
+      author?: string, 
+      outputDir?: string,
+      filename?: string,
+      cover?: string
+  }): Promise<{ success: boolean; filePath?: string; error?: string }> {
+    try {
+        const nodepub = require('nodepub');
+        const path = require('path');
+        const os = require('os');
+        const fs = require('fs');
+        
+        const { chapters, title, author, outputDir, filename, cover } = options;
+        
+        // Define output path
+        const downloadDir = outputDir || path.join(os.homedir(), 'Downloads');
+        const safeTitle = (filename || title).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        
+        // nodepub uses document metadata
+        const metadata = {
+            id: safeTitle,
+            title: title,
+            author: author || 'AI Translator',
+            cover: cover
+        };
+
+        const epub = nodepub.document(metadata);
+        
+        for (const chapter of chapters) {
+             const htmlContent = chapter.content
+                 .replace(/\n/g, '<br/>')
+                 .replace(/  /g, '&nbsp;&nbsp;');
+             epub.addSection(chapter.title, htmlContent);
+        }
+
+        const finalPath = path.join(downloadDir, `${safeTitle}.epub`);
+
+        return new Promise(async (resolve) => {
+             try {
+                 await epub.writeEPUB(downloadDir, safeTitle);
+                 // nodepub writes to [folder]/[filename].epub
+                 resolve({ success: true, filePath: finalPath });
+             } catch (e) {
+                 resolve({ success: false, error: String(e) });
+             }
+        });
+
+    } catch (error) {
+        console.error('[StoryService] Error creating ebook:', error);
+        return { success: false, error: String(error) };
     }
   }
 }

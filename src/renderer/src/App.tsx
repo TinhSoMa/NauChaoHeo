@@ -3,7 +3,11 @@ import { useThemeEffect } from './hooks/useTheme';
 import { AppLayout } from './components/layout/AppLayout';
 import { CaptionTranslator } from './components/caption';
 import { StoryTranslator } from './components/story';
+import { StoryTranslatorWeb } from './components/story/StoryTranslatorWeb';
+import { GeminiChat } from './components/gemini';
+import { ProjectList } from './components/project';
 import { Settings } from './components/settings/Settings';
+import { RequireProject } from './components/common/RequireProject';
 
 // Placeholder Pages
 const Veo3Page = () => (
@@ -26,9 +30,20 @@ function App() {
     <HashRouter>
       <Routes>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Navigate to="/translator" replace />} />
-          <Route path="/translator" element={<CaptionTranslator />} />
-          <Route path="/story-translator" element={<StoryTranslator />} />
+          <Route path="/" element={<Navigate to="/projects" replace />} />
+          <Route path="/projects" element={<ProjectList />} />
+          <Route path="/translator" element={
+            <RequireProject featureName="Dich Caption">
+              <CaptionTranslator />
+            </RequireProject>
+          } />
+          <Route path="/story-translator" element={
+            <RequireProject featureName="Dich Truyen AI">
+              <StoryTranslator />
+            </RequireProject>
+          } />
+          <Route path="/story-web" element={<StoryTranslatorWeb />} />
+          <Route path="/gemini-chat" element={<GeminiChat />} />
           <Route path="/veo3" element={<Veo3Page />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<div>404: Page Not Found</div>} />
@@ -39,4 +54,3 @@ function App() {
 }
 
 export default App;
-

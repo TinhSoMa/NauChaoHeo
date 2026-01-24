@@ -28,6 +28,13 @@ const path__namespace = /* @__PURE__ */ _interopNamespaceDefault(path);
 const fs__namespace = /* @__PURE__ */ _interopNamespaceDefault(fs);
 const crypto__namespace = /* @__PURE__ */ _interopNamespaceDefault(crypto);
 const fs__namespace$1 = /* @__PURE__ */ _interopNamespaceDefault(fs$1);
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_MODELS = {
+  FLASH_3_0: "gemini-3-flash-preview",
+  FLASH_2_5: "gemini-2.5-flash",
+  FLASH_2_0: "gemini-2.0-flash",
+  FLASH_2_5_LITE: "gemini-2.5-flash-lite"
+};
 const GEMINI_IPC_CHANNELS = {
   // API Key Management
   GET_NEXT_API_KEY: "gemini:getNextApiKey",
@@ -242,7 +249,7 @@ function tryImportDevKeys() {
     console.log("[ApiKeys] Không tìm thấy file gemini_keys.json");
   }
 }
-const DEFAULT_SETTINGS = {
+const DEFAULT_SETTINGS$1 = {
   globalCooldownSeconds: 65,
   defaultRpmLimit: 15,
   maxRpdLimit: 1500,
@@ -318,7 +325,7 @@ function createFreshState() {
     return createDefaultAccountState(accountId, acc.projects.length);
   });
   return {
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...DEFAULT_SETTINGS$1 },
     rotationState: { ...DEFAULT_ROTATION_STATE },
     accounts: accountsState
   };
@@ -369,7 +376,7 @@ function getMergedConfig() {
     };
   });
   return {
-    settings: state.settings || { ...DEFAULT_SETTINGS },
+    settings: state.settings || { ...DEFAULT_SETTINGS$1 },
     rotationState: state.rotationState || { ...DEFAULT_ROTATION_STATE },
     accounts: mergedAccounts
   };
@@ -841,14 +848,7 @@ function getApiManager() {
   }
   return managerInstance;
 }
-const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_MODELS = {
-  FLASH_2_5: "gemini-2.5-flash",
-  FLASH_2_0: "gemini-2.0-flash",
-  FLASH_1_5: "gemini-1.5-flash",
-  PRO_1_5: "gemini-1.5-pro"
-};
-async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_2_5) {
+async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0) {
   try {
     const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
     const promptText = typeof prompt === "string" ? prompt : JSON.stringify(prompt, null, 2);
@@ -898,7 +898,7 @@ async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_2_5) {
     return { success: false, error: String(error) };
   }
 }
-async function callGeminiWithRotation(prompt, model = GEMINI_MODELS.FLASH_2_5, maxRetries = 10) {
+async function callGeminiWithRotation(prompt, model = GEMINI_MODELS.FLASH_3_0, maxRetries = 10) {
   const manager = getApiManager();
   const stats = manager.getStats();
   if (stats.totalProjects === 0) {
@@ -950,7 +950,7 @@ async function callGeminiWithRotation(prompt, model = GEMINI_MODELS.FLASH_2_5, m
   }
   return { success: false, error: `Thất bại sau ${triedKeys.size} lần thử: ${lastError}` };
 }
-async function translateText(text, targetLanguage = "Vietnamese", model = GEMINI_MODELS.FLASH_2_5) {
+async function translateText(text, targetLanguage = "Vietnamese", model = GEMINI_MODELS.FLASH_3_0) {
   const prompt = {
     task: "translation",
     source_text: text,
@@ -1089,7 +1089,7 @@ function registerGeminiHandlers() {
     GEMINI_IPC_CHANNELS.CALL_GEMINI,
     async (_event, prompt, model) => {
       try {
-        const result = await callGeminiWithRotation(prompt, model || GEMINI_MODELS.FLASH_2_5);
+        const result = await callGeminiWithRotation(prompt, model || GEMINI_MODELS.FLASH_3_0);
         return { success: true, data: result };
       } catch (error) {
         console.error("[IPC] Lỗi callGemini:", error);
@@ -1104,7 +1104,7 @@ function registerGeminiHandlers() {
         const result = await translateText(
           text,
           targetLanguage || "Vietnamese",
-          model || GEMINI_MODELS.FLASH_2_5
+          model || GEMINI_MODELS.FLASH_3_0
         );
         return { success: true, data: result };
       } catch (error) {
@@ -1654,7 +1654,7 @@ async function translateAll(options, progressCallback) {
   const {
     entries,
     targetLanguage = "Vietnamese",
-    model = GEMINI_MODELS.FLASH_2_5,
+    model = GEMINI_MODELS.FLASH_3_0,
     linesPerBatch = 50
   } = options;
   console.log(`[CaptionTranslator] Bắt đầu dịch ${entries.length} entries`);
@@ -2272,44 +2272,94 @@ function registerTTSHandlers() {
 }
 async function parseStoryFile(filePath) {
   try {
-    const fileContent = await fs$1.readFile(filePath, "utf-8");
-    const chapters = [];
-    const chapterRegex = /===\s*(.*?)\s*===/g;
-    let match;
-    const matches = [];
-    while ((match = chapterRegex.exec(fileContent)) !== null) {
-      matches.push({
-        title: match[1].trim(),
-        // "第1章 寒门之子"
-        index: match.index,
-        length: match[0].length
-      });
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".epub") {
+      return await parseEpubFile(filePath);
+    } else {
+      return await parseTxtFile(filePath);
     }
-    if (matches.length === 0) {
-      chapters.push({
-        id: "1",
-        title: "Toàn bộ nội dung",
-        content: fileContent
-      });
-      return { success: true, chapters };
-    }
-    for (let i = 0; i < matches.length; i++) {
-      const currentMatch = matches[i];
-      const nextMatch = matches[i + 1];
-      const contentStart = currentMatch.index + currentMatch.length;
-      const contentEnd = nextMatch ? nextMatch.index : fileContent.length;
-      const content = fileContent.slice(contentStart, contentEnd).trim();
-      chapters.push({
-        id: String(i + 1),
-        title: currentMatch.title,
-        content
-      });
-    }
-    return { success: true, chapters };
   } catch (error) {
     console.error("Error parsing story file:", error);
     return { success: false, error: String(error) };
   }
+}
+const EPub = require("epub");
+async function parseEpubFile(filePath) {
+  return new Promise((resolve) => {
+    const epub = new EPub(filePath);
+    epub.on("error", (err) => {
+      resolve({ success: false, error: String(err) });
+    });
+    epub.on("end", async () => {
+      try {
+        const chapters = [];
+        const getChapterText = (id) => {
+          return new Promise((res, rej) => {
+            epub.getChapter(id, (err, text) => {
+              if (err) rej(err);
+              else res(text);
+            });
+          });
+        };
+        let pIndex = 1;
+        for (const chapterRef of epub.flow) {
+          if (!chapterRef.id) continue;
+          try {
+            const html = await getChapterText(chapterRef.id);
+            let text = html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+            text = text.replace(/\n\s*\n/g, "\n\n").trim();
+            if (!text) continue;
+            chapters.push({
+              id: String(pIndex++),
+              title: chapterRef.title || `Chapter ${pIndex}`,
+              content: text
+            });
+          } catch (e) {
+            console.error(`Failed to load chapter ${chapterRef.id}:`, e);
+          }
+        }
+        resolve({ success: true, chapters });
+      } catch (e) {
+        resolve({ success: false, error: String(e) });
+      }
+    });
+    epub.parse();
+  });
+}
+async function parseTxtFile(filePath) {
+  const fileContent = await fs$1.readFile(filePath, "utf-8");
+  const chapters = [];
+  const chapterRegex = /===\s*(.*?)\s*===/g;
+  let match;
+  const matches = [];
+  while ((match = chapterRegex.exec(fileContent)) !== null) {
+    matches.push({
+      title: match[1].trim(),
+      index: match.index,
+      length: match[0].length
+    });
+  }
+  if (matches.length === 0) {
+    chapters.push({
+      id: "1",
+      title: "Toàn bộ nội dung",
+      content: fileContent
+    });
+    return { success: true, chapters };
+  }
+  for (let i = 0; i < matches.length; i++) {
+    const currentMatch = matches[i];
+    const nextMatch = matches[i + 1];
+    const contentStart = currentMatch.index + currentMatch.length;
+    const contentEnd = nextMatch ? nextMatch.index : fileContent.length;
+    const content = fileContent.slice(contentStart, contentEnd).trim();
+    chapters.push({
+      id: String(i + 1),
+      title: currentMatch.title,
+      content
+    });
+  }
+  return { success: true, chapters };
 }
 let db = null;
 function getDatabase() {
@@ -2347,7 +2397,23 @@ function initDatabase() {
       updated_at INTEGER NOT NULL
     );
   `);
-  console.log("[Database] Schema initialized");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_config (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT 'default',
+      cookie TEXT NOT NULL,
+      bl_label TEXT,
+      f_sid TEXT,
+      at_token TEXT,
+      conv_id TEXT,
+      resp_id TEXT,
+      cand_id TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  console.log("[Database] Schema initialized (prompts, gemini_chat_config)");
 }
 class PromptService {
   static getAll() {
@@ -2466,21 +2532,367 @@ class PromptService {
     };
   }
 }
+const F_SID = "7493167831294892309";
+const BL_LABEL = "boq_assistant-bard-web-server_20260121.00_p1";
+const HL_LANG = "vi";
+class GeminiChatServiceClass {
+  // Lay tat ca cau hinh
+  getAll() {
+    const db2 = getDatabase();
+    try {
+      const rows = db2.prepare("SELECT * FROM gemini_chat_config ORDER BY updated_at DESC").all();
+      return rows.map(this.mapRow);
+    } catch (e) {
+      console.error("Error get all", e);
+      return [];
+    }
+  }
+  // Lay cau hinh dang active
+  getActive() {
+    const db2 = getDatabase();
+    try {
+      const row = db2.prepare("SELECT * FROM gemini_chat_config WHERE is_active = 1 LIMIT 1").get();
+      return row ? this.mapRow(row) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  // Lay cau hinh theo ID
+  getById(id) {
+    const db2 = getDatabase();
+    try {
+      const row = db2.prepare("SELECT * FROM gemini_chat_config WHERE id = ?").get(id);
+      return row ? this.mapRow(row) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  // Tao moi cau hinh
+  create(data) {
+    const db2 = getDatabase();
+    const now = Date.now();
+    const id = uuid.v4();
+    try {
+      db2.prepare("UPDATE gemini_chat_config SET is_active = 0").run();
+      db2.prepare(`
+        INSERT INTO gemini_chat_config (
+            id, name, cookie, bl_label, f_sid, at_token, 
+            conv_id, resp_id, cand_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(
+        id,
+        data.name || "default",
+        data.cookie,
+        data.blLabel || "",
+        data.fSid || "",
+        data.atToken || "",
+        data.convId || "",
+        data.respId || "",
+        data.candId || "",
+        now,
+        now
+      );
+    } catch (e) {
+      console.error("Error creating", e);
+      throw e;
+    }
+    console.log("[GeminiChatService] Da tao cau hinh moi:", id);
+    return this.getById(id);
+  }
+  // Cap nhat cau hinh
+  // Cap nhat cau hinh
+  update(id, data) {
+    const db2 = getDatabase();
+    const existing = this.getById(id);
+    if (!existing) {
+      console.error("[GeminiChatService] Khong tim thay cau hinh:", id);
+      return null;
+    }
+    const now = Date.now();
+    const updates = ["updated_at = @updated_at"];
+    const params = { updated_at: now, id };
+    if (data.name !== void 0) {
+      updates.push("name = @name");
+      params.name = data.name;
+    }
+    if (data.cookie !== void 0) {
+      updates.push("cookie = @cookie");
+      params.cookie = data.cookie;
+    }
+    if (data.blLabel !== void 0) {
+      updates.push("bl_label = @blLabel");
+      params.blLabel = data.blLabel;
+    }
+    if (data.fSid !== void 0) {
+      updates.push("f_sid = @fSid");
+      params.fSid = data.fSid;
+    }
+    if (data.atToken !== void 0) {
+      updates.push("at_token = @atToken");
+      params.atToken = data.atToken;
+    }
+    if (data.convId !== void 0) {
+      updates.push("conv_id = @convId");
+      params.convId = data.convId;
+    }
+    if (data.respId !== void 0) {
+      updates.push("resp_id = @respId");
+      params.respId = data.respId;
+    }
+    if (data.candId !== void 0) {
+      updates.push("cand_id = @candId");
+      params.candId = data.candId;
+    }
+    if (data.isActive !== void 0) {
+      if (data.isActive) {
+        db2.prepare("UPDATE gemini_chat_config SET is_active = 0").run();
+      }
+      updates.push("is_active = @isActive");
+      params.isActive = data.isActive ? 1 : 0;
+    }
+    const sql = `UPDATE gemini_chat_config SET ${updates.join(", ")} WHERE id = @id`;
+    try {
+      db2.prepare(sql).run(params);
+    } catch (e) {
+      console.error("[GeminiChatService] Update Failed:", e);
+      throw e;
+    }
+    return this.getById(id);
+  }
+  // Xoa cau hinh
+  delete(id) {
+    const db2 = getDatabase();
+    const result = db2.prepare("DELETE FROM gemini_chat_config WHERE id = ?").run(id);
+    return result.changes > 0;
+  }
+  // Map row tu database sang object
+  mapRow(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      cookie: row.cookie,
+      blLabel: row.bl_label,
+      fSid: row.f_sid,
+      atToken: row.at_token,
+      convId: row.conv_id,
+      respId: row.resp_id,
+      candId: row.cand_id,
+      isActive: row.is_active === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  static {
+    this.reqIdCounter = 21477148;
+  }
+  async sendMessage(message, configId, context) {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 2e3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      console.log(`[GeminiChatService] Sending message (Attempt ${attempt}/${MAX_RETRIES})...`);
+      const result = await this._sendMessageInternal(message, configId, context);
+      if (result.success) {
+        return result;
+      }
+      if (attempt < MAX_RETRIES) {
+        console.log(`[GeminiChatService] Request failed, retrying in ${RETRY_DELAY_MS}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      } else {
+        console.error(`[GeminiChatService] All ${MAX_RETRIES} attempts failed.`);
+        return result;
+      }
+    }
+    return { success: false, error: "Unexpected error in retry loop" };
+  }
+  async _sendMessageInternal(message, configId, context) {
+    const config = this.getById(configId);
+    if (!config) {
+      return { success: false, error: `Config not found: ${configId}` };
+    }
+    const { cookie, blLabel: configBlLabel, fSid: configFSid, atToken } = config;
+    const blLabel = configBlLabel || BL_LABEL;
+    const fSid = configFSid || F_SID;
+    if (!configBlLabel || !configFSid) {
+      console.log("[GeminiChatService] Using fallback values for blLabel/fSid");
+    }
+    const hl = HL_LANG;
+    GeminiChatServiceClass.reqIdCounter += 100;
+    const reqId = String(GeminiChatServiceClass.reqIdCounter);
+    let contextArray = ["", "", ""];
+    if (context) {
+      contextArray = [context.conversationId, context.responseId, context.choiceId];
+      console.log("[GeminiChatService] Using context:", contextArray);
+    }
+    const innerPayload = [
+      [message],
+      null,
+      contextArray
+    ];
+    const fReq = JSON.stringify([null, JSON.stringify(innerPayload)]);
+    const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
+    const params = new URLSearchParams({
+      "bl": blLabel,
+      "_reqid": reqId,
+      "rt": "c",
+      "f.sid": fSid,
+      "hl": hl
+    });
+    const url = `${baseUrl}?${params.toString()}`;
+    const body = new URLSearchParams({
+      "f.req": fReq,
+      "at": atToken
+    });
+    try {
+      console.log("[GeminiChatService] Fetching:", url);
+      console.log("[GeminiChatService] >>> fetch START");
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Host": "gemini.google.com",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Origin": "https://gemini.google.com",
+          "Referer": "https://gemini.google.com/",
+          "Cookie": cookie
+        },
+        body: body.toString()
+      });
+      console.log("[GeminiChatService] >>> fetch END, status:", response.status);
+      if (!response.ok) {
+        const txt = await response.text();
+        console.error("[GeminiChatService] Gemini Error:", response.status, txt.substring(0, 200));
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+      console.log("[GeminiChatService] >>> Reading response text...");
+      const responseText = await response.text();
+      console.log("[GeminiChatService] >>> Response text length:", responseText.length);
+      if (responseText.length < 500) {
+        console.warn("[GeminiChatService] >>> Small response (possible error):", responseText);
+      }
+      const lines = responseText.split("\n");
+      let foundText = "";
+      let newContext = { conversationId: "", responseId: "", choiceId: "" };
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          let jsonPart = trimmed;
+          if (/^\d+$/.test(jsonPart)) continue;
+          const dataObj = JSON.parse(jsonPart);
+          if (Array.isArray(dataObj) && dataObj.length > 0) {
+            const payloadItem = dataObj[0];
+            if (Array.isArray(payloadItem) && payloadItem.length > 2 && payloadItem[2]) {
+              if (typeof payloadItem[2] === "string") {
+                const innerData = JSON.parse(payloadItem[2]);
+                if (Array.isArray(innerData) && innerData.length >= 5) {
+                  if (innerData[1]) {
+                    const idString = String(innerData[1]);
+                    if (idString.includes(",")) {
+                      const parts = idString.split(",");
+                      newContext.conversationId = parts[0] || "";
+                      newContext.responseId = parts[1] || "";
+                    } else {
+                      newContext.conversationId = idString;
+                    }
+                  }
+                  if (!newContext.responseId && innerData[11]) {
+                    newContext.responseId = String(innerData[11]);
+                  }
+                  if (!newContext.responseId && innerData[3]) {
+                    newContext.responseId = String(innerData[3]);
+                  }
+                  const candidates = innerData[4];
+                  if (Array.isArray(candidates) && candidates.length > 0) {
+                    const candidate = candidates[0];
+                    if (candidate && candidate.length > 1 && candidate[1] && candidate[1].length > 0) {
+                      const txt = candidate[1][0];
+                      if (txt) {
+                        foundText = txt;
+                      }
+                      if (candidate[0]) newContext.choiceId = String(candidate[0]);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+        }
+      }
+      if (foundText) {
+        if (!newContext.conversationId && context) newContext.conversationId = context.conversationId;
+        if (!newContext.responseId && context) newContext.responseId = context.responseId;
+        if (!newContext.choiceId && context) newContext.choiceId = context.choiceId;
+        console.log(`[GeminiChatService] Received response (${foundText.length} chars)`);
+        console.log("[GeminiChatService] Parsed context:", newContext);
+        return {
+          success: true,
+          data: {
+            text: foundText,
+            context: newContext
+          }
+        };
+      } else {
+        console.error("[GeminiChatService] No text found in response!");
+        return { success: false, error: "No text found in response" };
+      }
+    } catch (error) {
+      console.error("[GeminiChatService] Fetch Error:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+}
+const GeminiChatService = new GeminiChatServiceClass();
 class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
    */
-  static async translateChapter(preparedPrompt) {
+  static async translateChapter(options) {
     try {
-      console.log("[StoryService] Starting translation...");
-      const result = await callGeminiWithRotation(
-        preparedPrompt,
-        GEMINI_MODELS.FLASH_2_5
-      );
-      if (result.success) {
-        return { success: true, data: result.data };
+      console.log("[StoryService] Starting translation...", options.method || "API");
+      if (options.method === "WEB") {
+        if (!options.webConfigId) {
+          return { success: false, error: "Web Config ID is required for WEB method" };
+        }
+        let promptText = "";
+        const preparedPrompt = options.prompt;
+        if (typeof preparedPrompt === "string") {
+          promptText = preparedPrompt;
+        } else if (Array.isArray(preparedPrompt)) {
+          const lastUserMsg = [...preparedPrompt].reverse().find((m) => m.role === "user");
+          if (lastUserMsg) promptText = lastUserMsg.content;
+        } else if (typeof preparedPrompt === "object") {
+          promptText = JSON.stringify(preparedPrompt);
+          if (Array.isArray(preparedPrompt)) {
+            const lastMsg = preparedPrompt[preparedPrompt.length - 1];
+            if (lastMsg && lastMsg.role === "user") promptText = lastMsg.content;
+            else promptText = JSON.stringify(preparedPrompt);
+          }
+        }
+        console.log("[StoryService] Extracted promptText length:", promptText.length);
+        if (!promptText) console.warn("[StoryService] promptText is empty!");
+        const result = await GeminiChatService.sendMessage(promptText, options.webConfigId, options.context);
+        if (result.success && result.data) {
+          console.log("[StoryService] Translation completed.");
+          return {
+            success: true,
+            data: result.data.text,
+            context: result.data.context
+            // Return new context
+          };
+        } else {
+          return { success: false, error: result.error || "Gemini Web Error" };
+        }
       } else {
-        return { success: false, error: result.error };
+        const result = await callGeminiWithRotation(
+          options.prompt,
+          GEMINI_MODELS.FLASH_3_0
+        );
+        if (result.success) {
+          return { success: true, data: result.data };
+        } else {
+          return { success: false, error: result.error };
+        }
       }
     } catch (error) {
       console.error("[StoryService] Error translating chapter:", error);
@@ -2572,12 +2984,47 @@ class StoryService {
       return { success: false, error: String(error) };
     }
   }
+  static async createEbook(options) {
+    try {
+      const nodepub = require("nodepub");
+      const path2 = require("path");
+      const os = require("os");
+      const fs2 = require("fs");
+      const { chapters, title, author, outputDir, filename, cover } = options;
+      const downloadDir = outputDir || path2.join(os.homedir(), "Downloads");
+      const safeTitle = (filename || title).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      const metadata = {
+        id: safeTitle,
+        title,
+        author: author || "AI Translator",
+        cover
+      };
+      const epub = nodepub.document(metadata);
+      for (const chapter of chapters) {
+        const htmlContent = chapter.content.replace(/\n/g, "<br/>").replace(/  /g, "&nbsp;&nbsp;");
+        epub.addSection(chapter.title, htmlContent);
+      }
+      const finalPath = path2.join(downloadDir, `${safeTitle}.epub`);
+      return new Promise(async (resolve) => {
+        try {
+          await epub.writeEPUB(downloadDir, safeTitle);
+          resolve({ success: true, filePath: finalPath });
+        } catch (e) {
+          resolve({ success: false, error: String(e) });
+        }
+      });
+    } catch (error) {
+      console.error("[StoryService] Error creating ebook:", error);
+      return { success: false, error: String(error) };
+    }
+  }
 }
 const STORY_IPC_CHANNELS = {
   PARSE: "story:parse",
   PREPARE_PROMPT: "story:preparePrompt",
   SAVE_PROMPT: "story:savePrompt",
-  TRANSLATE_CHAPTER: "story:translateChapter"
+  TRANSLATE_CHAPTER: "story:translateChapter",
+  CREATE_EBOOK: "story:createEbook"
 };
 const PROMPT_IPC_CHANNELS = {
   GET_ALL: "prompt:getAll",
@@ -2626,9 +3073,19 @@ function registerStoryHandlers() {
   );
   electron.ipcMain.handle(
     STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
-    async (_event, prompt) => {
-      console.log("[StoryHandlers] Translate chapter...");
-      return await StoryService.translateChapter(prompt);
+    async (_event, payload) => {
+      let options = payload;
+      if (!payload.prompt && (Array.isArray(payload) || payload.role)) {
+        options = { prompt: payload, method: "API" };
+      }
+      return await StoryService.translateChapter(options);
+    }
+  );
+  electron.ipcMain.handle(
+    STORY_IPC_CHANNELS.CREATE_EBOOK,
+    async (_event, options) => {
+      console.log("[StoryHandlers] Create ebook:", options.title);
+      return await StoryService.createEbook(options);
     }
   );
   console.log("[StoryHandlers] Đã đăng ký handlers thành công");
@@ -2655,6 +3112,678 @@ function registerPromptHandlers() {
   });
   console.log("[PromptHandlers] Đã đăng ký handlers thành công");
 }
+const DEFAULT_SETTINGS = {
+  projectsBasePath: null,
+  theme: "dark",
+  language: "vi",
+  recentProjectIds: [],
+  lastActiveProjectId: null
+};
+class AppSettingsServiceClass {
+  constructor() {
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.settingsPath = "";
+  }
+  /**
+   * Initialize the service - must be called after app is ready
+   */
+  initialize() {
+    const userDataPath = electron.app.getPath("userData");
+    this.settingsPath = path__namespace.join(userDataPath, "appSettings.json");
+    this.load();
+    console.log("[AppSettings] Initialized at:", this.settingsPath);
+  }
+  /**
+   * Load settings from file
+   */
+  load() {
+    try {
+      if (fs__namespace.existsSync(this.settingsPath)) {
+        const content = fs__namespace.readFileSync(this.settingsPath, "utf-8");
+        const loaded = JSON.parse(content);
+        this.settings = { ...DEFAULT_SETTINGS, ...loaded };
+        console.log("[AppSettings] Loaded settings successfully");
+      } else {
+        console.log("[AppSettings] No settings file found, using defaults");
+        this.settings = { ...DEFAULT_SETTINGS };
+      }
+    } catch (error) {
+      console.error("[AppSettings] Error loading settings:", error);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
+  }
+  /**
+   * Save settings to file
+   */
+  save() {
+    try {
+      fs__namespace.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
+      console.log("[AppSettings] Saved settings");
+    } catch (error) {
+      console.error("[AppSettings] Error saving settings:", error);
+    }
+  }
+  /**
+   * Get all settings
+   */
+  getAll() {
+    return { ...this.settings };
+  }
+  /**
+   * Update settings (partial update)
+   */
+  update(partial) {
+    this.settings = { ...this.settings, ...partial };
+    this.save();
+    return this.getAll();
+  }
+  /**
+   * Get projects base path (returns custom path + NauChapHeoContent or default)
+   * Projects will be stored in: [selectedPath]/NauChapHeoContent/
+   */
+  getProjectsBasePath() {
+    if (this.settings.projectsBasePath) {
+      return path__namespace.join(this.settings.projectsBasePath, "NauChapHeoContent");
+    }
+    return path__namespace.join(electron.app.getPath("userData"), "projects");
+  }
+  /**
+   * Set projects base path and create NauChapHeoContent folder
+   */
+  setProjectsBasePath(basePath) {
+    this.settings.projectsBasePath = basePath;
+    this.save();
+    if (basePath) {
+      const fullPath = path__namespace.join(basePath, "NauChapHeoContent");
+      if (!fs__namespace.existsSync(fullPath)) {
+        fs__namespace.mkdirSync(fullPath, { recursive: true });
+        console.log("[AppSettings] Created NauChapHeoContent folder:", fullPath);
+      }
+    }
+  }
+  /**
+   * Add project to recent list
+   */
+  addRecentProject(projectId) {
+    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    this.settings.recentProjectIds.unshift(projectId);
+    this.settings.recentProjectIds = this.settings.recentProjectIds.slice(0, 5);
+    this.settings.lastActiveProjectId = projectId;
+    this.save();
+  }
+  /**
+   * Get last active project ID
+   */
+  getLastActiveProjectId() {
+    return this.settings.lastActiveProjectId;
+  }
+  /**
+   * Get recent project IDs
+   */
+  getRecentProjectIds() {
+    return [...this.settings.recentProjectIds];
+  }
+  /**
+   * Clear last active project
+   */
+  clearLastActiveProject() {
+    this.settings.lastActiveProjectId = null;
+    this.save();
+  }
+  /**
+   * Remove project from recent list (when deleted)
+   */
+  removeFromRecent(projectId) {
+    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    if (this.settings.lastActiveProjectId === projectId) {
+      this.settings.lastActiveProjectId = null;
+    }
+    this.save();
+  }
+}
+const AppSettingsService = new AppSettingsServiceClass();
+const DEFAULT_PROJECT_SETTINGS = {
+  sourceLang: "zh",
+  targetLang: "vi",
+  geminiModel: "gemini-3-flash-preview",
+  autoSave: true
+};
+const PROJECT_IPC_CHANNELS = {
+  // Project CRUD
+  GET_ALL: "project:getAll",
+  GET_BY_ID: "project:getById",
+  CREATE: "project:create",
+  UPDATE: "project:update",
+  DELETE: "project:delete",
+  // Translations
+  SAVE_TRANSLATION: "project:saveTranslation",
+  GET_TRANSLATIONS: "project:getTranslations",
+  GET_TRANSLATION: "project:getTranslation",
+  // History
+  GET_HISTORY: "project:getHistory"
+};
+function getProjectsBasePath() {
+  return AppSettingsService.getProjectsBasePath();
+}
+function ensureProjectsFolder() {
+  const basePath = getProjectsBasePath();
+  if (!fs__namespace.existsSync(basePath)) {
+    fs__namespace.mkdirSync(basePath, { recursive: true });
+  }
+}
+function ensureDir(dirPath) {
+  if (!fs__namespace.existsSync(dirPath)) {
+    fs__namespace.mkdirSync(dirPath, { recursive: true });
+  }
+}
+function getProjectJsonPath(projectFolder) {
+  return path__namespace.join(projectFolder, "project.json");
+}
+function getTranslationsDir(projectFolder) {
+  return path__namespace.join(projectFolder, "translations");
+}
+function getHistoryPath(projectFolder) {
+  return path__namespace.join(projectFolder, "history.json");
+}
+function readJsonFile(filePath) {
+  try {
+    if (fs__namespace.existsSync(filePath)) {
+      const content = fs__namespace.readFileSync(filePath, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch (error) {
+    console.error(`[ProjectService] Error reading ${filePath}:`, error);
+  }
+  return null;
+}
+function writeJsonFile(filePath, data) {
+  try {
+    ensureDir(path__namespace.dirname(filePath));
+    fs__namespace.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (error) {
+    console.error(`[ProjectService] Error writing ${filePath}:`, error);
+    throw error;
+  }
+}
+class ProjectService {
+  /**
+   * Get all projects by scanning project folders
+   */
+  static getAll() {
+    try {
+      ensureProjectsFolder();
+      const basePath = getProjectsBasePath();
+      const entries = fs__namespace.readdirSync(basePath, { withFileTypes: true });
+      const projects = [];
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const projectFolder = path__namespace.join(basePath, entry.name);
+          const projectJsonPath = getProjectJsonPath(projectFolder);
+          const project = readJsonFile(projectJsonPath);
+          if (project) {
+            projects.push(project);
+          }
+        }
+      }
+      projects.sort((a, b) => b.updatedAt - a.updatedAt);
+      return projects;
+    } catch (error) {
+      console.error("[ProjectService] Error getting all projects:", error);
+      return [];
+    }
+  }
+  /**
+   * Get project by ID
+   */
+  static getById(id) {
+    try {
+      const basePath = getProjectsBasePath();
+      const projectFolder = path__namespace.join(basePath, id);
+      const projectJsonPath = getProjectJsonPath(projectFolder);
+      return readJsonFile(projectJsonPath);
+    } catch (error) {
+      console.error(`[ProjectService] Error getting project ${id}:`, error);
+      return null;
+    }
+  }
+  /**
+   * Create new project
+   */
+  static create(data) {
+    ensureProjectsFolder();
+    const now = Date.now();
+    const sanitizedName = data.name.trim().replace(/[<>:"/\\|?*]/g, "_").substring(0, 100);
+    const id = sanitizedName;
+    const basePath = getProjectsBasePath();
+    const projectFolder = path__namespace.join(basePath, sanitizedName);
+    ensureDir(projectFolder);
+    ensureDir(getTranslationsDir(projectFolder));
+    const settings = {
+      ...DEFAULT_PROJECT_SETTINGS,
+      ...data.settings
+    };
+    const project = {
+      id,
+      name: data.name,
+      sourceFilePath: data.sourceFilePath,
+      projectFolderPath: projectFolder,
+      settings,
+      totalChapters: data.totalChapters || 0,
+      translatedChapters: 0,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    };
+    writeJsonFile(getProjectJsonPath(projectFolder), project);
+    writeJsonFile(getHistoryPath(projectFolder), []);
+    this.logAction(id, "created", `Tạo dự án: ${project.name}`);
+    console.log(`[ProjectService] Created project: ${project.name} (${id})`);
+    return project;
+  }
+  /**
+   * Update project
+   */
+  static update(id, data) {
+    const existing = this.getById(id);
+    if (!existing) return null;
+    const now = Date.now();
+    const updated = {
+      ...existing,
+      ...data,
+      settings: data.settings ? { ...existing.settings, ...data.settings } : existing.settings,
+      updatedAt: now
+    };
+    writeJsonFile(getProjectJsonPath(updated.projectFolderPath), updated);
+    if (data.settings) {
+      this.logAction(id, "settings_changed", "Cập nhật cài đặt dự án");
+    }
+    console.log(`[ProjectService] Updated project: ${id}`);
+    return updated;
+  }
+  /**
+   * Delete project
+   */
+  static delete(id) {
+    const project = this.getById(id);
+    if (!project) return false;
+    if (fs__namespace.existsSync(project.projectFolderPath)) {
+      fs__namespace.rmSync(project.projectFolderPath, { recursive: true, force: true });
+    }
+    console.log(`[ProjectService] Deleted project: ${id}`);
+    return true;
+  }
+  // ============================================
+  // TRANSLATIONS
+  // ============================================
+  /**
+   * Save chapter translation to JSON file
+   */
+  static saveTranslation(data) {
+    const project = this.getById(data.projectId);
+    if (!project) {
+      throw new Error(`Project not found: ${data.projectId}`);
+    }
+    const now = Date.now();
+    const translationsDir = getTranslationsDir(project.projectFolderPath);
+    ensureDir(translationsDir);
+    const translationPath = path__namespace.join(translationsDir, `${data.chapterId}.json`);
+    const existing = readJsonFile(translationPath);
+    const translation = {
+      projectId: data.projectId,
+      chapterId: data.chapterId,
+      chapterTitle: data.chapterTitle,
+      originalContent: data.originalContent,
+      translatedContent: data.translatedContent,
+      translatedAt: now
+    };
+    writeJsonFile(translationPath, translation);
+    if (!existing) {
+      this.updateTranslatedCount(data.projectId);
+      this.logAction(data.projectId, "translated", `Dịch chương: ${data.chapterTitle}`);
+    }
+    console.log(`[ProjectService] Saved translation for chapter: ${data.chapterTitle}`);
+    return translation;
+  }
+  /**
+   * Get all translations for a project
+   */
+  static getTranslations(projectId) {
+    const project = this.getById(projectId);
+    if (!project) return [];
+    const translationsDir = getTranslationsDir(project.projectFolderPath);
+    if (!fs__namespace.existsSync(translationsDir)) return [];
+    const translations = [];
+    const files = fs__namespace.readdirSync(translationsDir);
+    for (const file of files) {
+      if (file.endsWith(".json")) {
+        const filePath = path__namespace.join(translationsDir, file);
+        const translation = readJsonFile(filePath);
+        if (translation) {
+          translations.push(translation);
+        }
+      }
+    }
+    translations.sort((a, b) => a.translatedAt - b.translatedAt);
+    return translations;
+  }
+  /**
+   * Get single translation
+   */
+  static getTranslation(projectId, chapterId) {
+    const project = this.getById(projectId);
+    if (!project) return null;
+    const translationPath = path__namespace.join(getTranslationsDir(project.projectFolderPath), `${chapterId}.json`);
+    return readJsonFile(translationPath);
+  }
+  /**
+   * Update translated count in project
+   */
+  static updateTranslatedCount(projectId) {
+    const project = this.getById(projectId);
+    if (!project) return;
+    const translations = this.getTranslations(projectId);
+    this.update(projectId, {
+      translatedChapters: translations.length
+    });
+  }
+  // ============================================
+  // HISTORY
+  // ============================================
+  /**
+   * Log action to history.json
+   */
+  static logAction(projectId, action, details) {
+    try {
+      const project = this.getById(projectId);
+      if (!project) return;
+      const historyPath = getHistoryPath(project.projectFolderPath);
+      const history = readJsonFile(historyPath) || [];
+      const newAction = {
+        id: `${action}_${Date.now()}`,
+        projectId,
+        action,
+        details,
+        timestamp: Date.now()
+      };
+      history.push(newAction);
+      const trimmed = history.slice(-100);
+      writeJsonFile(historyPath, trimmed);
+    } catch (error) {
+      console.error(`[ProjectService] Error logging action:`, error);
+    }
+  }
+  /**
+   * Get project history
+   */
+  static getHistory(projectId, limit = 50) {
+    const project = this.getById(projectId);
+    if (!project) return [];
+    const historyPath = getHistoryPath(project.projectFolderPath);
+    const history = readJsonFile(historyPath) || [];
+    return history.slice(-limit).reverse();
+  }
+}
+function registerProjectHandlers() {
+  console.log("[ProjectHandlers] Đăng ký handlers...");
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_ALL, async () => {
+    try {
+      const projects = ProjectService.getAll();
+      return { success: true, data: projects };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error getting projects:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_BY_ID, async (_, id) => {
+    try {
+      const project = ProjectService.getById(id);
+      if (!project) {
+        return { success: false, error: "Project not found" };
+      }
+      return { success: true, data: project };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error getting project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.CREATE, async (_, data) => {
+    try {
+      const project = ProjectService.create(data);
+      return { success: true, data: project };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error creating project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.UPDATE, async (_, id, data) => {
+    try {
+      const project = ProjectService.update(id, data);
+      if (!project) {
+        return { success: false, error: "Project not found" };
+      }
+      return { success: true, data: project };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error updating project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.DELETE, async (_, id) => {
+    try {
+      const result = ProjectService.delete(id);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error deleting project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.SAVE_TRANSLATION, async (_, data) => {
+    try {
+      const translation = ProjectService.saveTranslation(data);
+      return { success: true, data: translation };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error saving translation:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_TRANSLATIONS, async (_, projectId) => {
+    try {
+      const translations = ProjectService.getTranslations(projectId);
+      return { success: true, data: translations };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error getting translations:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_TRANSLATION, async (_, projectId, chapterId) => {
+    try {
+      const translation = ProjectService.getTranslation(projectId, chapterId);
+      return { success: true, data: translation };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error getting translation:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_HISTORY, async (_, projectId, limit) => {
+    try {
+      const history = ProjectService.getHistory(projectId, limit);
+      return { success: true, data: history };
+    } catch (error) {
+      console.error("[ProjectHandlers] Error getting history:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  console.log("[ProjectHandlers] Đã đăng ký handlers thành công");
+}
+const APP_SETTINGS_IPC_CHANNELS = {
+  GET_ALL: "appSettings:getAll",
+  UPDATE: "appSettings:update",
+  GET_PROJECTS_BASE_PATH: "appSettings:getProjectsBasePath",
+  SET_PROJECTS_BASE_PATH: "appSettings:setProjectsBasePath",
+  ADD_RECENT_PROJECT: "appSettings:addRecentProject",
+  GET_RECENT_PROJECT_IDS: "appSettings:getRecentProjectIds",
+  GET_LAST_ACTIVE_PROJECT_ID: "appSettings:getLastActiveProjectId",
+  REMOVE_FROM_RECENT: "appSettings:removeFromRecent"
+};
+function registerAppSettingsHandlers() {
+  console.log("[AppSettingsHandlers] Đăng ký handlers...");
+  electron.ipcMain.handle("dialog:openDirectory", async () => {
+    console.log("[AppSettingsHandlers] Mở dialog chọn thư mục...");
+    const result = await electron.dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"]
+    });
+    return result;
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.GET_ALL, async () => {
+    try {
+      const settings = AppSettingsService.getAll();
+      return { success: true, data: settings };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error getting settings:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.UPDATE, async (_, partial) => {
+    try {
+      const settings = AppSettingsService.update(partial);
+      return { success: true, data: settings };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error updating settings:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.GET_PROJECTS_BASE_PATH, async () => {
+    try {
+      const basePath = AppSettingsService.getProjectsBasePath();
+      return { success: true, data: basePath };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error getting projects base path:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.SET_PROJECTS_BASE_PATH, async (_, basePath) => {
+    try {
+      AppSettingsService.setProjectsBasePath(basePath);
+      return { success: true };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error setting projects base path:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.ADD_RECENT_PROJECT, async (_, projectId) => {
+    try {
+      AppSettingsService.addRecentProject(projectId);
+      return { success: true };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error adding recent project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.GET_RECENT_PROJECT_IDS, async () => {
+    try {
+      const ids = AppSettingsService.getRecentProjectIds();
+      return { success: true, data: ids };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error getting recent projects:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.GET_LAST_ACTIVE_PROJECT_ID, async () => {
+    try {
+      const id = AppSettingsService.getLastActiveProjectId();
+      return { success: true, data: id };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error getting last active project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.REMOVE_FROM_RECENT, async (_, projectId) => {
+    try {
+      AppSettingsService.removeFromRecent(projectId);
+      return { success: true };
+    } catch (error) {
+      console.error("[AppSettingsHandlers] Error removing from recent:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  console.log("[AppSettingsHandlers] Đã đăng ký handlers thành công");
+}
+const CHANNELS = {
+  GET_ALL: "geminiChat:getAll",
+  GET_ACTIVE: "geminiChat:getActive",
+  GET_BY_ID: "geminiChat:getById",
+  CREATE: "geminiChat:create",
+  UPDATE: "geminiChat:update",
+  DELETE: "geminiChat:delete",
+  SEND_MESSAGE: "geminiChat:sendMessage"
+};
+function registerGeminiChatHandlers() {
+  console.log("[GeminiChatHandlers] Dang ky handlers...");
+  electron.ipcMain.handle(CHANNELS.GET_ALL, async () => {
+    try {
+      const configs = GeminiChatService.getAll();
+      return { success: true, data: configs };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi getAll:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.GET_ACTIVE, async () => {
+    try {
+      const config = GeminiChatService.getActive();
+      return { success: true, data: config };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi getActive:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.GET_BY_ID, async (_, id) => {
+    try {
+      const config = GeminiChatService.getById(id);
+      return { success: true, data: config };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi getById:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.CREATE, async (_, data) => {
+    try {
+      const config = GeminiChatService.create(data);
+      return { success: true, data: config };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi create:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.UPDATE, async (_, id, data) => {
+    try {
+      const config = GeminiChatService.update(id, data);
+      return { success: true, data: config };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi update:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.DELETE, async (_, id) => {
+    try {
+      const result = GeminiChatService.delete(id);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi delete:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.SEND_MESSAGE, async (_, message, configId, context) => {
+    try {
+      console.log("[GeminiChatHandlers] sendMessage, configId:", configId, "context:", context);
+      const result = await GeminiChatService.sendMessage(message, configId, context);
+      return result;
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi sendMessage:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  console.log("[GeminiChatHandlers] Da dang ky handlers thanh cong");
+}
 function registerAllHandlers() {
   console.log("[IPC] Đang đăng ký tất cả handlers...");
   registerGeminiHandlers();
@@ -2662,7 +3791,10 @@ function registerAllHandlers() {
   registerTTSHandlers();
   registerStoryHandlers();
   registerPromptHandlers();
-  console.log("[IPC] Đã đăng ký xong tất cả handlers");
+  registerProjectHandlers();
+  registerAppSettingsHandlers();
+  registerGeminiChatHandlers();
+  console.log("[IPC] Da dang ky xong tat ca handlers");
 }
 function createWindow() {
   const mainWindow = new electron.BrowserWindow({
@@ -2695,6 +3827,7 @@ function createWindow() {
 electron.app.whenReady().then(() => {
   utils.electronApp.setAppUserModelId("com.veo3promptbuilder");
   initDatabase();
+  AppSettingsService.initialize();
   registerAllHandlers();
   tryImportDevKeys();
   electron.app.on("browser-window-created", (_, window) => {

@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
 import { initDatabase } from './database/schema'
 import { tryImportDevKeys } from './services/gemini/apiKeys'
+import { AppSettingsService } from './services/appSettings'
 
 function createWindow(): void {
   // Tạo cửa sổ ứng dụng
@@ -48,8 +49,11 @@ app.whenReady().then(() => {
   // Thiết lập app ID cho Windows
   electronApp.setAppUserModelId('com.veo3promptbuilder')
 
-  // Khởi tạo Database
+  // Khởi tạo Database (chỉ cho prompts table)
   initDatabase()
+
+  // Khởi tạo App Settings
+  AppSettingsService.initialize()
 
   // Đăng ký IPC handlers
   registerAllHandlers()
