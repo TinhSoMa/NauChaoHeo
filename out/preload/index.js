@@ -145,7 +145,9 @@ const CHANNELS = {
   CREATE: "geminiChat:create",
   UPDATE: "geminiChat:update",
   DELETE: "geminiChat:delete",
-  SEND_MESSAGE: "geminiChat:sendMessage"
+  SEND_MESSAGE: "geminiChat:sendMessage",
+  GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
+  SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig"
 };
 const geminiChatApi = {
   getAll: () => electron.ipcRenderer.invoke(CHANNELS.GET_ALL),
@@ -154,7 +156,41 @@ const geminiChatApi = {
   create: (data) => electron.ipcRenderer.invoke(CHANNELS.CREATE, data),
   update: (id, data) => electron.ipcRenderer.invoke(CHANNELS.UPDATE, id, data),
   delete: (id) => electron.ipcRenderer.invoke(CHANNELS.DELETE, id),
-  sendMessage: (message, configId, context) => electron.ipcRenderer.invoke(CHANNELS.SEND_MESSAGE, message, configId, context)
+  sendMessage: (message, configId, context) => electron.ipcRenderer.invoke(CHANNELS.SEND_MESSAGE, message, configId, context),
+  // Cookie config
+  getCookieConfig: () => electron.ipcRenderer.invoke(CHANNELS.GET_COOKIE_CONFIG),
+  saveCookieConfig: (data) => electron.ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data)
+};
+const PROXY_IPC_CHANNELS = {
+  GET_ALL: "proxy:getAll",
+  ADD: "proxy:add",
+  REMOVE: "proxy:remove",
+  UPDATE: "proxy:update",
+  TEST: "proxy:test",
+  GET_STATS: "proxy:getStats",
+  IMPORT: "proxy:import",
+  EXPORT: "proxy:export",
+  RESET: "proxy:reset"
+  // Reset failed counts
+};
+const proxyApi = {
+  getAll: () => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_ALL),
+  add: (config) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.ADD, config),
+  remove: (id) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.REMOVE, id),
+  update: (id, updates) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.UPDATE, id, updates),
+  test: (id) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST, id),
+  getStats: async () => {
+    return electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_STATS);
+  },
+  import: async (data) => {
+    return electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.IMPORT, data);
+  },
+  export: async () => {
+    return electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.EXPORT);
+  },
+  reset: async () => {
+    return electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.RESET);
+  }
 };
 electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Example API methods - add more as needed
@@ -178,5 +214,7 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   // App Settings API (cai dat ung dung)
   appSettings: appSettingsApi,
   // Gemini Chat API (cau hinh Gemini web)
-  geminiChat: geminiChatApi
+  geminiChat: geminiChatApi,
+  // Proxy API (quan ly proxy rotation)
+  proxy: proxyApi
 });

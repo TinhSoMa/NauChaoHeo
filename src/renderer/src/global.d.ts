@@ -255,6 +255,7 @@ interface AppSettings {
   language: 'vi' | 'en';
   recentProjectIds: string[];
   lastActiveProjectId: string | null;
+  useProxy: boolean;
 }
 
 /**
@@ -285,6 +286,10 @@ interface GeminiChatConfig {
   convId: string;
   respId: string;
   candId: string;
+  reqId?: string;
+  userAgent?: string;
+  acceptLanguage?: string;
+  platform?: string;
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
@@ -299,10 +304,24 @@ interface CreateGeminiChatConfigDTO {
   convId?: string;
   respId?: string;
   candId?: string;
+  reqId?: string;
+  userAgent?: string;
+  acceptLanguage?: string;
+  platform?: string;
 }
 
 interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfigDTO> {
   isActive?: boolean;
+}
+
+// Interface cho cookie config (bảng gemini_cookie - chỉ 1 dòng)
+interface GeminiCookieConfig {
+  cookie: string;
+  blLabel: string;
+  fSid: string;
+  atToken: string;
+  reqId?: string;
+  updatedAt: number;
 }
 
 /**
@@ -316,12 +335,62 @@ interface GeminiChatAPI {
   update: (id: string, data: UpdateGeminiChatConfigDTO) => Promise<IpcApiResponse<GeminiChatConfig | null>>;
   delete: (id: string) => Promise<IpcApiResponse<boolean>>;
   sendMessage: (message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => Promise<IpcApiResponse<{ text: string; context: { conversationId: string; responseId: string; choiceId: string } }>>;
+  
+  // Cookie config methods (bảng gemini_cookie)
+  getCookieConfig: () => Promise<IpcApiResponse<GeminiCookieConfig | null>>;
+  saveCookieConfig: (data: { cookie: string; blLabel: string; fSid: string; atToken: string; reqId?: string }) => Promise<IpcApiResponse<null>>;
 }
 
 /**
  * Mở rộng Window interface để bao gồm electronAPI
  * Được expose từ preload/index.ts thông qua contextBridge
  */
+
+// Proxy API types
+interface ProxyConfig {
+  id: string;
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  type: 'http' | 'https' | 'socks5';
+  enabled: boolean;
+  successCount?: number;
+  failedCount?: number;
+  lastUsedAt?: number;
+  createdAt: number;
+}
+
+interface ProxyStats {
+  id: string;
+  host: string;
+  port: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  lastUsedAt?: number;
+  isHealthy: boolean;
+}
+
+interface ProxyTestResult {
+  success: boolean;
+  latency?: number;
+  error?: string;
+  testedAt: number;
+}
+
+interface ProxyAPI {
+  getAll: () => Promise<{ success: boolean; data?: ProxyConfig[]; error?: string }>;
+  add: (config: Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>) => Promise<{ success: boolean; data?: ProxyConfig; error?: string }>;
+  remove: (id: string) => Promise<{ success: boolean; error?: string }>;
+  update: (id: string, updates: Partial<ProxyConfig>) => Promise<{ success: boolean; error?: string }>;
+  test: (id: string) => Promise<ProxyTestResult>;
+  getStats: () => Promise<{ success: boolean; data?: ProxyStats[]; error?: string }>;
+  import: (data: string) => Promise<{ success: boolean; added?: number; skipped?: number; error?: string }>;
+  export: () => Promise<{ success: boolean; data?: string; error?: string }>;
+  reset: () => Promise<{ success: boolean; error?: string }>;
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -347,9 +416,11 @@ declare global {
 
       // Gemini Chat API (cau hinh Gemini web)
       geminiChat: GeminiChatAPI;
+
+      // Proxy API (quan ly proxy rotation)
+      proxy: ProxyAPI;
     };
   }
 }
 
 export {};
-

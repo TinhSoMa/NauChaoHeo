@@ -4,6 +4,7 @@ import { createCaptionAPI, createTTSAPI, CaptionAPI, TTSAPI } from './captionApi
 import { projectApi, ProjectAPI } from './projectApi'
 import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
 import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
+import { proxyApi, ProxyAPI } from './proxyApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -36,6 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Gemini Chat API (cau hinh Gemini web)
   geminiChat: geminiChatApi,
+
+  // Proxy API (quan ly proxy rotation)
+  proxy: proxyApi,
 })
 
 // Declare types for the exposed API
@@ -51,6 +55,7 @@ declare global {
       project: ProjectAPI
       appSettings: AppSettingsAPI
       geminiChat: GeminiChatAPI
+      proxy: ProxyAPI
     }
   }
 }

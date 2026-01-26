@@ -1,4 +1,27 @@
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 const electron = require("electron");
 const path = require("path");
 const utils = require("@electron-toolkit/utils");
@@ -848,7 +871,320 @@ function getApiManager() {
   }
   return managerInstance;
 }
-async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0) {
+class SessionContextManager {
+  constructor() {
+    this.currentContext = null;
+  }
+  /**
+   * Get the current active session context
+   */
+  getCurrentContext() {
+    return this.currentContext ? { ...this.currentContext } : null;
+  }
+  /**
+   * Update session context with new values
+   */
+  updateContext(newContext) {
+    if (!this.currentContext) {
+      this.currentContext = {
+        conversationId: "",
+        responseId: "",
+        choiceId: ""
+      };
+    }
+    this.currentContext = {
+      ...this.currentContext,
+      ...newContext
+    };
+    console.log("[SessionContextManager] Context updated:", this.currentContext);
+  }
+  /**
+   * Set complete context (replaces current)
+   */
+  setContext(context) {
+    this.currentContext = context ? { ...context } : null;
+    console.log("[SessionContextManager] Context set:", this.currentContext);
+  }
+  /**
+   * Reset/clear the session context (start new conversation)
+   */
+  resetSession() {
+    this.currentContext = null;
+    console.log("[SessionContextManager] Session reset");
+  }
+  /**
+   * Parse session context from Gemini API response (Fetch mode)
+   * Extracts conversationId, responseId, choiceId from response array structure
+   */
+  parseFromFetchResponse(responseText) {
+    const newContext = {
+      conversationId: "",
+      responseId: "",
+      choiceId: ""
+    };
+    try {
+      const cleanedText = responseText.replace(/^\)\]\}'\n/, "");
+      const parsed = JSON.parse(cleanedText);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const innerData = parsed[0];
+        if (Array.isArray(innerData) && innerData.length > 1) {
+          if (innerData[1]) {
+            newContext.conversationId = String(innerData[1]);
+          }
+          if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
+            const candidate = innerData[4][0];
+            if (Array.isArray(candidate) && candidate.length > 1) {
+              if (Array.isArray(candidate[1])) {
+                newContext.responseId = String(candidate[1][0] || "");
+                newContext.choiceId = String(candidate[1][1] || "");
+              }
+            }
+          }
+        }
+      }
+      console.log("[SessionContextManager] Parsed context from fetch response:", newContext);
+    } catch (error) {
+      console.error("[SessionContextManager] Failed to parse fetch response:", error);
+    }
+    return newContext;
+  }
+  /**
+   * Parse session context from Gemini API streaming response
+   * Extracts conversationId, responseId, choiceId from stream chunks
+   */
+  parseFromStreamResponse(responseText) {
+    const newContext = {
+      conversationId: "",
+      responseId: "",
+      choiceId: ""
+    };
+    try {
+      const lines = responseText.split("\n").filter((line) => line.trim());
+      for (const line of lines) {
+        const cleanedLine = line.replace(/^\)\]\}'\n?/, "").trim();
+        if (!cleanedLine || cleanedLine.length < 2) continue;
+        try {
+          const parsed = JSON.parse(cleanedLine);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const innerData = parsed[0];
+            if (Array.isArray(innerData) && innerData.length > 1) {
+              if (innerData[1] && !newContext.conversationId) {
+                newContext.conversationId = String(innerData[1]);
+              }
+              if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
+                const candidate = innerData[4][0];
+                if (Array.isArray(candidate) && candidate.length > 1) {
+                  if (Array.isArray(candidate[1])) {
+                    if (candidate[1][0]) newContext.responseId = String(candidate[1][0]);
+                    if (candidate[1][1]) newContext.choiceId = String(candidate[1][1]);
+                  }
+                }
+              }
+            }
+          }
+        } catch (parseError) {
+          continue;
+        }
+      }
+      console.log("[SessionContextManager] Parsed context from stream response:", newContext);
+    } catch (error) {
+      console.error("[SessionContextManager] Failed to parse stream response:", error);
+    }
+    return newContext;
+  }
+  /**
+   * Check if we have a valid active session
+   */
+  hasActiveSession() {
+    return this.currentContext !== null && this.currentContext.conversationId !== "";
+  }
+  /**
+   * Format context for request payload
+   */
+  formatForRequest() {
+    if (!this.currentContext) {
+      return ["", "", ""];
+    }
+    return [
+      this.currentContext.conversationId,
+      this.currentContext.responseId,
+      this.currentContext.choiceId
+    ];
+  }
+}
+let instance$2 = null;
+function getSessionContextManager() {
+  if (!instance$2) {
+    instance$2 = new SessionContextManager();
+  }
+  return instance$2;
+}
+class ConfigurationService {
+  // Cache for 5 seconds
+  constructor(database) {
+    this.cachedConfig = null;
+    this.cacheTimestamp = 0;
+    this.CACHE_TTL_MS = 5e3;
+    this.db = database;
+  }
+  /**
+   * Validate cookie configuration
+   */
+  validateConfig(config) {
+    const errors = [];
+    if (!config.cookie || !config.cookie.trim()) {
+      errors.push("Cookie is required");
+    } else {
+      if (!config.cookie.includes("__Secure-1PSID")) {
+        errors.push("Cookie must contain __Secure-1PSID");
+      }
+      if (!config.cookie.includes("__Secure-3PSID")) {
+        errors.push("Cookie must contain __Secure-3PSID");
+      }
+    }
+    if (!config.blLabel || !config.blLabel.trim()) {
+      errors.push("BL_LABEL is required");
+    }
+    if (!config.fSid || !config.fSid.trim()) {
+      errors.push("F_SID is required");
+    }
+    if (!config.atToken || !config.atToken.trim()) {
+      errors.push("AT_TOKEN is required");
+    }
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+  /**
+   * Get active cookie configuration (with caching)
+   */
+  getActiveConfig() {
+    const now = Date.now();
+    if (this.cachedConfig && now - this.cacheTimestamp < this.CACHE_TTL_MS) {
+      return { ...this.cachedConfig };
+    }
+    try {
+      const row = this.db.prepare("SELECT * FROM gemini_cookie WHERE id = 1").get();
+      if (row) {
+        const config = {
+          cookie: row.cookie,
+          blLabel: row.bl_label,
+          fSid: row.f_sid,
+          atToken: row.at_token,
+          reqId: row.req_id,
+          updatedAt: row.updated_at
+        };
+        this.cachedConfig = config;
+        this.cacheTimestamp = now;
+        return { ...config };
+      }
+      return null;
+    } catch (error) {
+      console.error("[ConfigurationService] Error fetching config:", error);
+      return null;
+    }
+  }
+  /**
+   * Save or update cookie configuration
+   */
+  saveConfig(config) {
+    const validation = this.validateConfig(config);
+    if (!validation.valid) {
+      return {
+        success: false,
+        error: `Validation failed: ${validation.errors.join(", ")}`
+      };
+    }
+    try {
+      const now = Date.now();
+      const existing = this.db.prepare("SELECT id FROM gemini_cookie WHERE id = 1").get();
+      if (existing) {
+        this.db.prepare(
+          `UPDATE gemini_cookie 
+             SET cookie = ?, bl_label = ?, f_sid = ?, at_token = ?, req_id = ?, updated_at = ?
+             WHERE id = 1`
+        ).run(
+          config.cookie,
+          config.blLabel,
+          config.fSid,
+          config.atToken,
+          config.reqId || null,
+          now
+        );
+      } else {
+        this.db.prepare(
+          `INSERT INTO gemini_cookie (id, cookie, bl_label, f_sid, at_token, req_id, updated_at)
+             VALUES (1, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          config.cookie,
+          config.blLabel,
+          config.fSid,
+          config.atToken,
+          config.reqId || null,
+          now
+        );
+      }
+      this.invalidateCache();
+      console.log("[ConfigurationService] Config saved successfully");
+      return { success: true };
+    } catch (error) {
+      console.error("[ConfigurationService] Error saving config:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Update only the reqId field (for incrementing request counter)
+   */
+  updateReqId(reqId) {
+    try {
+      this.db.prepare("UPDATE gemini_cookie SET req_id = ?, updated_at = ? WHERE id = 1").run(reqId, Date.now());
+      this.invalidateCache();
+      return { success: true };
+    } catch (error) {
+      console.error("[ConfigurationService] Error updating reqId:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+  /**
+   * Check if a valid configuration exists
+   */
+  hasValidConfig() {
+    const config = this.getActiveConfig();
+    if (!config) return false;
+    const validation = this.validateConfig(config);
+    return validation.valid;
+  }
+  /**
+   * Invalidate the cache (force refresh on next access)
+   */
+  invalidateCache() {
+    this.cachedConfig = null;
+    this.cacheTimestamp = 0;
+  }
+  /**
+   * Get configuration age in milliseconds
+   */
+  getConfigAge() {
+    const config = this.getActiveConfig();
+    if (!config) return null;
+    return Date.now() - config.updatedAt;
+  }
+}
+let instance$1 = null;
+function getConfigurationService(database) {
+  if (!instance$1) {
+    instance$1 = new ConfigurationService(database);
+  }
+  return instance$1;
+}
+async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0, useProxy = true) {
   try {
     const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
     const promptText = typeof prompt === "string" ? prompt : JSON.stringify(prompt, null, 2);
@@ -859,40 +1195,69 @@ async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0) {
         }
       ]
     };
-    console.log(`[GeminiService] Gọi Gemini API với model: ${model}`);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-    if (response.status === 429) {
-      return { success: false, error: "RATE_LIMIT" };
-    }
-    if (response.status === 404) {
-      return { success: false, error: `Model ${model} không tồn tại` };
-    }
-    if (!response.ok) {
-      try {
-        const errorDetail = await response.json();
-        const errorMsg = errorDetail?.error?.message || "Lỗi không xác định";
-        console.error(`[GeminiService] API Error ${response.status}: ${errorMsg}`);
-        return { success: false, error: `API Error: ${errorMsg}` };
-      } catch {
-        console.error(`[GeminiService] API Error ${response.status}: ${response.statusText}`);
-        return { success: false, error: `HTTP ${response.status}` };
+    console.log(`[GeminiService] Gọi Gemini API với model: ${model}${useProxy ? " (via proxy)" : ""}`);
+    if (useProxy) {
+      const { makeRequestWithProxy } = await Promise.resolve().then(() => require("./chunks/apiClient-DctWUVp7.js"));
+      const result = await makeRequestWithProxy(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: payload,
+        timeout: 3e4,
+        // 30s cho translation
+        useProxy: true
+      });
+      if (!result.success) {
+        if (result.error?.includes("429")) {
+          return { success: false, error: "RATE_LIMIT" };
+        }
+        return { success: false, error: result.error };
       }
-    }
-    const result = await response.json();
-    if (result.candidates && result.candidates.length > 0) {
-      const candidate = result.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        const text = candidate.content.parts[0]?.text || "";
-        return { success: true, data: text.trim() };
+      const responseData = result.data;
+      if (responseData.candidates && responseData.candidates.length > 0) {
+        const candidate = responseData.candidates[0];
+        if (candidate.content && candidate.content.parts) {
+          const text = candidate.content.parts[0]?.text || "";
+          return { success: true, data: text.trim() };
+        }
       }
+      return { success: false, error: "Response không có nội dung" };
+    } else {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.status === 429) {
+        return { success: false, error: "RATE_LIMIT" };
+      }
+      if (response.status === 404) {
+        return { success: false, error: `Model ${model} không tồn tại` };
+      }
+      if (!response.ok) {
+        try {
+          const errorDetail = await response.json();
+          const errorMsg = errorDetail?.error?.message || "Lỗi không xác định";
+          console.error(`[GeminiService] API Error ${response.status}: ${errorMsg}`);
+          return { success: false, error: `API Error: ${errorMsg}` };
+        } catch {
+          console.error(`[GeminiService] API Error ${response.status}: ${response.statusText}`);
+          return { success: false, error: `HTTP ${response.status}` };
+        }
+      }
+      const result = await response.json();
+      if (result.candidates && result.candidates.length > 0) {
+        const candidate = result.candidates[0];
+        if (candidate.content && candidate.content.parts) {
+          const text = candidate.content.parts[0]?.text || "";
+          return { success: true, data: text.trim() };
+        }
+      }
+      return { success: false, error: "Response không có nội dung" };
     }
-    return { success: false, error: "Response không có nội dung" };
   } catch (error) {
     console.error("[GeminiService] Lỗi gọi API:", error);
     return { success: false, error: String(error) };
@@ -903,6 +1268,15 @@ async function callGeminiWithRotation(prompt, model = GEMINI_MODELS.FLASH_3_0, m
   const stats = manager.getStats();
   if (stats.totalProjects === 0) {
     return { success: false, error: "Không có API key nào trong hệ thống" };
+  }
+  let useProxySetting = true;
+  try {
+    const { AppSettingsService: AppSettingsService2 } = await Promise.resolve().then(() => appSettings);
+    const settings = AppSettingsService2.getAll();
+    useProxySetting = settings.useProxy;
+    console.log(`[GeminiService] Proxy setting: ${useProxySetting ? "enabled" : "disabled"}`);
+  } catch (error) {
+    console.warn("[GeminiService] Could not load proxy setting, using default (enabled)");
   }
   let lastError = "";
   let rateLimitedCount = 0;
@@ -922,7 +1296,7 @@ async function callGeminiWithRotation(prompt, model = GEMINI_MODELS.FLASH_3_0, m
     }
     triedKeys.add(apiKey);
     console.log(`[GeminiService] Thử API key #${triedKeys.size} (${keyInfo.name})`);
-    const response = await callGeminiApi(prompt, apiKey, model);
+    const response = await callGeminiApi(prompt, apiKey, model, useProxySetting);
     if (response.success) {
       manager.recordSuccess(apiKey);
       console.log(`[GeminiService] Thành công với ${keyInfo.name}`);
@@ -2408,12 +2782,95 @@ function initDatabase() {
       conv_id TEXT,
       resp_id TEXT,
       cand_id TEXT,
+      req_id TEXT,
+      user_agent TEXT,
+      accept_language TEXT,
+      platform TEXT,
       is_active INTEGER DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
   `);
-  console.log("[Database] Schema initialized (prompts, gemini_chat_config)");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  try {
+    const tableInfo = db.pragma("table_info(gemini_chat_config)");
+    const columnNames = tableInfo.map((col) => col.name);
+    if (!columnNames.includes("req_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT");
+      console.log("[Database] Added missing column: req_id");
+    }
+    if (!columnNames.includes("user_agent")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT");
+      console.log("[Database] Added missing column: user_agent");
+    }
+    if (!columnNames.includes("accept_language")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT");
+      console.log("[Database] Added missing column: accept_language");
+    }
+    if (!columnNames.includes("platform")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT");
+      console.log("[Database] Added missing column: platform");
+    }
+  } catch (e) {
+    console.error("[Database] Migration error:", e);
+  }
+  try {
+    const cookieData = db.prepare("SELECT * FROM gemini_cookie WHERE id = 1").get();
+    const configCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_config").get();
+    if (cookieData && configCount.count === 0) {
+      console.log("[Database] Migrating data from gemini_cookie to gemini_chat_config...");
+      const now = Date.now();
+      const { v4: uuidv4 } = require("uuid");
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        "Migrated Config",
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log("[Database] Migration from gemini_cookie completed");
+    }
+  } catch (e) {
+    console.log("[Database] No migration needed from gemini_cookie");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS proxies (
+      id TEXT PRIMARY KEY,
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      username TEXT,
+      password TEXT,
+      type TEXT DEFAULT 'http' CHECK(type IN ('http', 'https', 'socks5')),
+      enabled INTEGER DEFAULT 1,
+      platform TEXT,
+      country TEXT,
+      city TEXT,
+      success_count INTEGER DEFAULT 0,
+      failed_count INTEGER DEFAULT 0,
+      last_used_at INTEGER,
+      created_at INTEGER NOT NULL,
+      UNIQUE(host, port)
+    );
+  `);
+  console.log("[Database] Schema initialized (prompts, gemini_chat_config, gemini_cookie, proxies)");
 }
 class PromptService {
   static getAll() {
@@ -2532,10 +2989,91 @@ class PromptService {
     };
   }
 }
-const F_SID = "7493167831294892309";
-const BL_LABEL = "boq_assistant-bard-web-server_20260121.00_p1";
 const HL_LANG = "vi";
+const BROWSER_PROFILES = [
+  {
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    platform: "Windows",
+    secChUa: `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
+    secChUaPlatform: `"Windows"`
+  },
+  {
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+    platform: "Windows",
+    secChUa: `"Not_A Brand";v="8", "Chromium";v="121", "Microsoft Edge";v="121"`,
+    secChUaPlatform: `"Windows"`
+  },
+  {
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    platform: "macOS",
+    secChUa: `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
+    secChUaPlatform: `"macOS"`
+  },
+  {
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+    platform: "Windows",
+    secChUa: "",
+    // Firefox often empty or different
+    secChUaPlatform: `"Windows"`
+  }
+];
+function getRandomBrowserProfile() {
+  return BROWSER_PROFILES[Math.floor(Math.random() * BROWSER_PROFILES.length)];
+}
 class GeminiChatServiceClass {
+  constructor() {
+    this.configuredSessions = /* @__PURE__ */ new Set();
+    this.rotationIndex = 0;
+  }
+  // Helper: Generate initial REQ_ID (Random Prefix + Fixed 4-digit Suffix logic)
+  // Format matches log: e.g. 4180921 (7 digits)
+  // We want range approx 3000000 - 5000000 initially, with random 4 digits at end.
+  generateInitialReqId() {
+    const prefix = Math.floor(Math.random() * (45 - 30) + 30);
+    const suffix = Math.floor(Math.random() * 9e3 + 1e3);
+    return String(prefix * 1e5 + suffix);
+  }
+  // =======================================================
+  // COOKIE CONFIG (Bảng riêng, chỉ 1 dòng)
+  // =======================================================
+  getCookieConfig() {
+    const db2 = getDatabase();
+    const configService = getConfigurationService(db2);
+    return configService.getActiveConfig();
+  }
+  saveCookieConfig(config) {
+    const db2 = getDatabase();
+    const configService = getConfigurationService(db2);
+    const result = configService.saveConfig(config);
+    return result.success;
+  }
+  updateReqId(reqId) {
+    const db2 = getDatabase();
+    const configService = getConfigurationService(db2);
+    const result = configService.updateReqId(reqId);
+    return result.success;
+  }
+  // =======================================================
+  // ROUND-ROBIN ROTATION (similar to geminiService.ts)
+  // =======================================================
+  /**
+   * Get next active config in round-robin order
+   * Returns null if no active configs available
+   */
+  getNextActiveConfig() {
+    const activeConfigs = this.getAll().filter((c) => c.isActive);
+    if (activeConfigs.length === 0) {
+      console.warn("[GeminiChatService] No active configs available for rotation");
+      return null;
+    }
+    const config = activeConfigs[this.rotationIndex % activeConfigs.length];
+    this.rotationIndex = (this.rotationIndex + 1) % activeConfigs.length;
+    console.log(`[GeminiChatService] Selected config for rotation: ${config.name} (${this.rotationIndex}/${activeConfigs.length})`);
+    return config;
+  }
+  // =======================================================
+  // OLD CONFIG METHODS (gemini_chat_config table)
+  // =======================================================
   // Lay tat ca cau hinh
   getAll() {
     const db2 = getDatabase();
@@ -2573,12 +3111,15 @@ class GeminiChatServiceClass {
     const now = Date.now();
     const id = uuid.v4();
     try {
-      db2.prepare("UPDATE gemini_chat_config SET is_active = 0").run();
+      const profile = getRandomBrowserProfile();
+      console.log("[GeminiChatService] Creating config with profile:", data.userAgent ? "Custom" : profile.platform);
       db2.prepare(`
         INSERT INTO gemini_chat_config (
             id, name, cookie, bl_label, f_sid, at_token, 
-            conv_id, resp_id, cand_id, is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            conv_id, resp_id, cand_id, req_id, 
+            user_agent, accept_language, platform,
+            is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         `).run(
         id,
         data.name || "default",
@@ -2589,6 +3130,10 @@ class GeminiChatServiceClass {
         data.convId || "",
         data.respId || "",
         data.candId || "",
+        data.reqId || this.generateInitialReqId(),
+        data.userAgent || profile.userAgent,
+        data.acceptLanguage || null,
+        data.platform || profile.platform,
         now,
         now
       );
@@ -2639,16 +3184,37 @@ class GeminiChatServiceClass {
       updates.push("resp_id = @respId");
       params.respId = data.respId;
     }
+    if (data.convId !== void 0) {
+      updates.push("conv_id = @convId");
+      params.convId = data.convId;
+    }
+    if (data.respId !== void 0) {
+      updates.push("resp_id = @respId");
+      params.respId = data.respId;
+    }
     if (data.candId !== void 0) {
       updates.push("cand_id = @candId");
       params.candId = data.candId;
     }
+    if (data.reqId !== void 0) {
+      updates.push("req_id = @reqId");
+      params.reqId = data.reqId;
+    }
     if (data.isActive !== void 0) {
-      if (data.isActive) {
-        db2.prepare("UPDATE gemini_chat_config SET is_active = 0").run();
-      }
       updates.push("is_active = @isActive");
       params.isActive = data.isActive ? 1 : 0;
+    }
+    if (data.userAgent !== void 0) {
+      updates.push("user_agent = @userAgent");
+      params.userAgent = data.userAgent;
+    }
+    if (data.acceptLanguage !== void 0) {
+      updates.push("accept_language = @acceptLanguage");
+      params.acceptLanguage = data.acceptLanguage;
+    }
+    if (data.platform !== void 0) {
+      updates.push("platform = @platform");
+      params.platform = data.platform;
     }
     const sql = `UPDATE gemini_chat_config SET ${updates.join(", ")} WHERE id = @id`;
     try {
@@ -2677,26 +3243,127 @@ class GeminiChatServiceClass {
       convId: row.conv_id,
       respId: row.resp_id,
       candId: row.cand_id,
+      reqId: row.req_id,
+      userAgent: row.user_agent,
+      acceptLanguage: row.accept_language,
+      platform: row.platform,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
   }
-  static {
-    this.reqIdCounter = 21477148;
+  // =======================================================
+  // HELPER: SET FLASH MODEL (ONE TIME PER SESSION)
+  // =======================================================
+  async setFlashModel(config) {
+    try {
+      const MODEL_ID = "56fdd199312815e2";
+      const innerReq = JSON.stringify([
+        [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, MODEL_ID],
+        [["last_selected_mode_id_on_web"]]
+      ]);
+      const fReq = JSON.stringify([
+        [["L5adhe", innerReq, null, "generic"]]
+      ]);
+      if (!config.blLabel || !config.fSid || !config.atToken) {
+        console.error("[GeminiChatService] Missing required config fields for Flash Model");
+        return;
+      }
+      const qs = new URLSearchParams({
+        rpcids: "L5adhe",
+        "source-path": "/app",
+        bl: config.blLabel,
+        "f.sid": config.fSid,
+        hl: HL_LANG,
+        pageId: "none",
+        _reqid: config.reqId || "0",
+        rt: "c"
+      });
+      const body = new URLSearchParams();
+      body.append("f.req", fReq);
+      body.append("at", config.atToken);
+      body.append("", "");
+      console.log(`[GeminiChatService] Setting Flash Model preference...`);
+      const response = await fetch(`https://gemini.google.com/_/BardChatUi/data/batchexecute?${qs.toString()}`, {
+        method: "POST",
+        headers: {
+          "accept": "*/*",
+          "accept-encoding": "gzip, deflate, br, zstd",
+          "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
+          "cache-control": "no-cache",
+          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "origin": "https://gemini.google.com",
+          "pragma": "no-cache",
+          "referer": "https://gemini.google.com/",
+          "sec-ch-ua": config.userAgent ? `"Not(A:Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"` : '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
+          "sec-ch-ua-arch": '"x86"',
+          "sec-ch-ua-bitness": '"64"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": config.platform ? `"${config.platform}"` : '"Windows"',
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin",
+          "user-agent": config.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
+          "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
+          "x-goog-ext-73010989-jspb": "[0]",
+          "x-same-domain": "1",
+          "Cookie": config.cookie
+        },
+        body
+      });
+      if (response.ok) {
+        console.log(`[GeminiChatService] Set Flash Model SUCCESS`);
+      } else {
+        console.warn(`[GeminiChatService] Set Flash Model FAILED: ${response.status}`);
+      }
+    } catch (e) {
+      console.error(`[GeminiChatService] Error setting Flash Model:`, e);
+    }
   }
+  // =======================================================
+  // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
+  // =======================================================
   async sendMessage(message, configId, context) {
     const MAX_RETRIES = 3;
-    const RETRY_DELAY_MS = 2e3;
+    const MIN_DELAY_MS = 2e3;
+    const MAX_DELAY_MS = 1e4;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       console.log(`[GeminiChatService] Sending message (Attempt ${attempt}/${MAX_RETRIES})...`);
-      const result = await this._sendMessageInternal(message, configId, context);
+      let config = null;
+      if (configId) {
+        config = this.getById(configId);
+        if (!config) {
+          console.error(`[GeminiChatService] Config ID ${configId} not found.`);
+          return { success: false, error: `Config ID ${configId} not found` };
+        }
+      } else {
+        config = this.getNextActiveConfig();
+        if (!config) {
+          const cookieConfig = this.getCookieConfig();
+          if (cookieConfig) {
+            config = {
+              id: "legacy",
+              name: "Legacy Cookie",
+              ...cookieConfig,
+              isActive: true,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+          } else {
+            return { success: false, error: "No active web configurations found." };
+          }
+        }
+      }
+      console.log(`[GeminiChatService] Request using config: ${config.name} (ID: ${config.id})`);
+      const result = await this._sendMessageInternal(message, config, context);
       if (result.success) {
         return result;
       }
       if (attempt < MAX_RETRIES) {
-        console.log(`[GeminiChatService] Request failed, retrying in ${RETRY_DELAY_MS}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+        console.log(`[GeminiChatService] Request failed, retrying in ${retryDelay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
       } else {
         console.error(`[GeminiChatService] All ${MAX_RETRIES} attempts failed.`);
         return result;
@@ -2704,20 +3371,54 @@ class GeminiChatServiceClass {
     }
     return { success: false, error: "Unexpected error in retry loop" };
   }
-  async _sendMessageInternal(message, configId, context) {
-    const config = this.getById(configId);
-    if (!config) {
-      return { success: false, error: `Config not found: ${configId}` };
+  async _sendMessageInternal(message, config, context) {
+    const { cookie, blLabel, fSid, atToken } = config;
+    if (!cookie || !blLabel || !fSid || !atToken) {
+      const missing = [];
+      if (!cookie) missing.push("cookie");
+      if (!blLabel) missing.push("blLabel");
+      if (!fSid) missing.push("fSid");
+      if (!atToken) missing.push("atToken");
+      return { success: false, error: `Missing required config fields: ${missing.join(", ")}` };
     }
-    const { cookie, blLabel: configBlLabel, fSid: configFSid, atToken } = config;
-    const blLabel = configBlLabel || BL_LABEL;
-    const fSid = configFSid || F_SID;
-    if (!configBlLabel || !configFSid) {
-      console.log("[GeminiChatService] Using fallback values for blLabel/fSid");
+    if (!config.userAgent || !config.platform) {
+      console.warn(`[GeminiChatService] Config ${config.id} missing browser profile. Assigning persistent profile...`);
+      const profile = getRandomBrowserProfile();
+      config.userAgent = profile.userAgent;
+      config.platform = profile.platform;
+      if (config.id !== "legacy") {
+        try {
+          const db2 = getDatabase();
+          db2.prepare("UPDATE gemini_chat_config SET user_agent = ?, platform = ? WHERE id = ?").run(profile.userAgent, profile.platform, config.id);
+        } catch (e) {
+          console.error("[GeminiChatService] Failed to persist browser profile", e);
+        }
+      }
     }
-    const hl = HL_LANG;
-    GeminiChatServiceClass.reqIdCounter += 100;
-    const reqId = String(GeminiChatServiceClass.reqIdCounter);
+    const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : HL_LANG;
+    const matchingProfile = BROWSER_PROFILES.find((p) => p.userAgent === config.userAgent) || BROWSER_PROFILES[0];
+    const secChUa = matchingProfile.secChUa;
+    const secChUaPlatform = config.platform ? `"${config.platform}"` : matchingProfile.secChUaPlatform;
+    let currentReqIdStr = config.reqId;
+    if (!currentReqIdStr) {
+      currentReqIdStr = this.generateInitialReqId();
+    }
+    const nextReqIdNum = parseInt(currentReqIdStr) + 1e5;
+    const reqId = String(nextReqIdNum);
+    if (config.id !== "legacy") {
+      try {
+        const db2 = getDatabase();
+        db2.prepare("UPDATE gemini_chat_config SET req_id = ? WHERE id = ?").run(reqId, config.id);
+        config.reqId = reqId;
+      } catch (e) {
+        console.warn("[GeminiChatService] Failed to update req_id in DB", e);
+      }
+    }
+    const sessionKey = `config_${config.id}`;
+    if (!this.configuredSessions.has(sessionKey)) {
+      await this.setFlashModel(config);
+      this.configuredSessions.add(sessionKey);
+    }
     let contextArray = ["", "", ""];
     if (context) {
       contextArray = [context.conversationId, context.responseId, context.choiceId];
@@ -2740,19 +3441,36 @@ class GeminiChatServiceClass {
     const url = `${baseUrl}?${params.toString()}`;
     const body = new URLSearchParams({
       "f.req": fReq,
-      "at": atToken
+      "at": atToken,
+      "": ""
+      // Empty param như trong HAR
     });
     try {
       console.log("[GeminiChatService] Fetching:", url);
-      console.log("[GeminiChatService] >>> fetch START");
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          "Host": "gemini.google.com",
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Origin": "https://gemini.google.com",
-          "Referer": "https://gemini.google.com/",
+          "accept": "*/*",
+          "accept-encoding": "gzip, deflate, br, zstd",
+          "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
+          "cache-control": "no-cache",
+          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "origin": "https://gemini.google.com",
+          "pragma": "no-cache",
+          "referer": "https://gemini.google.com/",
+          "sec-ch-ua": secChUa,
+          "sec-ch-ua-arch": '"x86"',
+          "sec-ch-ua-bitness": '"64"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": secChUaPlatform,
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin",
+          "user-agent": config.userAgent,
+          "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
+          "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
+          "x-goog-ext-73010989-jspb": "[0]",
+          "x-same-domain": "1",
           "Cookie": cookie
         },
         body: body.toString()
@@ -2769,9 +3487,10 @@ class GeminiChatServiceClass {
       if (responseText.length < 500) {
         console.warn("[GeminiChatService] >>> Small response (possible error):", responseText);
       }
-      const lines = responseText.split("\n");
+      const sessionManager = getSessionContextManager();
+      const newContext = sessionManager.parseFromFetchResponse(responseText);
       let foundText = "";
-      let newContext = { conversationId: "", responseId: "", choiceId: "" };
+      const lines = responseText.split("\n").filter((line) => line.trim());
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
@@ -2785,22 +3504,6 @@ class GeminiChatServiceClass {
               if (typeof payloadItem[2] === "string") {
                 const innerData = JSON.parse(payloadItem[2]);
                 if (Array.isArray(innerData) && innerData.length >= 5) {
-                  if (innerData[1]) {
-                    const idString = String(innerData[1]);
-                    if (idString.includes(",")) {
-                      const parts = idString.split(",");
-                      newContext.conversationId = parts[0] || "";
-                      newContext.responseId = parts[1] || "";
-                    } else {
-                      newContext.conversationId = idString;
-                    }
-                  }
-                  if (!newContext.responseId && innerData[11]) {
-                    newContext.responseId = String(innerData[11]);
-                  }
-                  if (!newContext.responseId && innerData[3]) {
-                    newContext.responseId = String(innerData[3]);
-                  }
                   const candidates = innerData[4];
                   if (Array.isArray(candidates) && candidates.length > 0) {
                     const candidate = candidates[0];
@@ -2809,7 +3512,6 @@ class GeminiChatServiceClass {
                       if (txt) {
                         foundText = txt;
                       }
-                      if (candidate[0]) newContext.choiceId = String(candidate[0]);
                     }
                   }
                 }
@@ -2833,13 +3535,218 @@ class GeminiChatServiceClass {
           }
         };
       } else {
-        console.error("[GeminiChatService] No text found in response!");
-        return { success: false, error: "No text found in response" };
+        console.error("[GeminiChatService] No text found in response! Resetting session...");
+        this.configuredSessions.delete("cookie_config");
+        throw new Error("No text found in response - Session reset");
       }
     } catch (error) {
       console.error("[GeminiChatService] Fetch Error:", error);
       return { success: false, error: String(error) };
     }
+  }
+  // ... (existing code)
+  // =======================================================
+  // STREAM MESSAGE
+  // =======================================================
+  async streamMessage(message, configId, context, onData, onError, onDone) {
+    const MAX_RETRIES = 3;
+    const MIN_DELAY_MS = 2e3;
+    const MAX_DELAY_MS = 1e4;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      console.log(`[GeminiChatService] Streaming message (Attempt ${attempt}/${MAX_RETRIES})...`);
+      let config = null;
+      if (configId) {
+        config = this.getById(configId);
+        if (!config) throw new Error(`Config ID ${configId} not found`);
+      } else {
+        config = this.getNextActiveConfig();
+        if (!config) {
+          const cookieConfig = this.getCookieConfig();
+          if (cookieConfig) {
+            config = { id: "legacy", name: "Legacy Cookie", ...cookieConfig, isActive: true, createdAt: 0, updatedAt: 0 };
+          } else {
+            throw new Error("No active web configurations found for streaming");
+          }
+        }
+      }
+      try {
+        await this._streamMessageInternal(message, config, context, onData);
+        onDone();
+        return;
+      } catch (error) {
+        console.error(`[GeminiChatService] Stream failed (Attempt ${attempt}):`, error);
+        if (attempt < MAX_RETRIES) {
+          const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+          console.log(`[GeminiChatService] Retrying in ${retryDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        } else {
+          onError(String(error));
+          return;
+        }
+      }
+    }
+  }
+  async _streamMessageInternal(message, config, context, onData) {
+    const { cookie, blLabel, fSid, atToken } = config;
+    if (!cookie || !blLabel || !fSid || !atToken) {
+      throw new Error("Missing required config fields in Stream Mode");
+    }
+    const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : HL_LANG;
+    if (!config.userAgent || !config.platform) {
+      const profile = getRandomBrowserProfile();
+      config.userAgent = profile.userAgent;
+      config.platform = profile.platform;
+      if (config.id !== "legacy") {
+        try {
+          const db2 = getDatabase();
+          db2.prepare("UPDATE gemini_chat_config SET user_agent = ?, platform = ? WHERE id = ?").run(profile.userAgent, profile.platform, config.id);
+        } catch (e) {
+        }
+      }
+    }
+    const matchingProfile = BROWSER_PROFILES.find((p) => p.userAgent === config.userAgent) || BROWSER_PROFILES[0];
+    const secChUa = matchingProfile.secChUa;
+    const secChUaPlatform = config.platform ? `"${config.platform}"` : matchingProfile.secChUaPlatform;
+    let currentReqIdStr = config.reqId;
+    if (!currentReqIdStr) currentReqIdStr = this.generateInitialReqId();
+    const nextReqIdNum = parseInt(currentReqIdStr) + 1e5;
+    const reqId = String(nextReqIdNum);
+    if (config.id !== "legacy") {
+      try {
+        const db2 = getDatabase();
+        db2.prepare("UPDATE gemini_chat_config SET req_id = ? WHERE id = ?").run(reqId, config.id);
+        config.reqId = reqId;
+      } catch (e) {
+        console.warn("[GeminiChatService] Failed to update req_id in DB", e);
+      }
+    }
+    const sessionKey = `config_${config.id}`;
+    if (!this.configuredSessions.has(sessionKey)) {
+      await this.setFlashModel(config);
+      this.configuredSessions.add(sessionKey);
+    }
+    let contextArray = ["", "", ""];
+    if (context) {
+      contextArray = [context.conversationId, context.responseId, context.choiceId];
+    }
+    const innerPayload = [
+      [message],
+      null,
+      contextArray
+    ];
+    const fReq = JSON.stringify([null, JSON.stringify(innerPayload)]);
+    const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
+    const params = new URLSearchParams({
+      "bl": blLabel,
+      "_reqid": reqId,
+      "rt": "c",
+      "f.sid": fSid,
+      "hl": hl
+    });
+    const url = `${baseUrl}?${params.toString()}`;
+    const body = new URLSearchParams({
+      "f.req": fReq,
+      "at": atToken,
+      "": ""
+    });
+    console.log("[GeminiChatService] Streaming from:", url);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "accept": "*/*",
+        "accept-encoding": "gzip, deflate, br, zstd",
+        "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
+        "cache-control": "no-cache",
+        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "origin": "https://gemini.google.com",
+        "pragma": "no-cache",
+        "referer": "https://gemini.google.com/",
+        "sec-ch-ua": secChUa,
+        "sec-ch-ua-arch": '"x86"',
+        "sec-ch-ua-bitness": '"64"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": secChUaPlatform,
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "user-agent": config.userAgent,
+        "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
+        "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
+        "x-goog-ext-73010989-jspb": "[0]",
+        "x-same-domain": "1",
+        "Cookie": cookie
+      },
+      body: body.toString()
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("[GeminiChatService] Stream HTTP Error:", response.status, errText.substring(0, 300));
+      throw new Error(`HTTP ${response.status}`);
+    }
+    if (!response.body) throw new Error("No response body");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let fullResponse = "";
+    let hasReceivedText = false;
+    let lastTextLength = 0;
+    const sessionManager = getSessionContextManager();
+    let newContext = context ? { ...context } : { conversationId: "", responseId: "", choiceId: "" };
+    let chunkCount = 0;
+    let lineCount = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunkText = decoder.decode(value, { stream: true });
+        buffer += chunkText;
+        fullResponse += chunkText;
+        while (buffer.includes("\n")) {
+          const lineEnd = buffer.indexOf("\n");
+          const line = buffer.substring(0, lineEnd);
+          buffer = buffer.substring(lineEnd + 1);
+          lineCount++;
+          if (!line.trim()) continue;
+          try {
+            if (line.startsWith(")]}'")) continue;
+            if (/^\d+$/.test(line.trim())) continue;
+            const data = JSON.parse(line);
+            if (Array.isArray(data) && data[0] && Array.isArray(data[0]) && data[0][2]) {
+              const innerDataStr = data[0][2];
+              const innerData = JSON.parse(innerDataStr);
+              if (innerData && Array.isArray(innerData)) {
+                if (innerData[4] && Array.isArray(innerData[4]) && innerData[4][0]) {
+                  const candidate = innerData[4][0];
+                  if (candidate[1] && Array.isArray(candidate[1]) && candidate[1][0]) {
+                    const fullText = candidate[1][0];
+                    hasReceivedText = true;
+                    const currentLength = fullText.length;
+                    if (currentLength > lastTextLength) {
+                      chunkCount++;
+                      const delta = fullText.substring(lastTextLength);
+                      console.log(`[GeminiChatService] Chunk #${chunkCount} | +${delta.length} chars | Total: ${currentLength}`);
+                      onData({ text: delta });
+                      lastTextLength = currentLength;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    console.log(`[GeminiChatService] Stream Stats: ${lineCount} lines, ${chunkCount} chunks, ${lastTextLength} chars total`);
+    if (!hasReceivedText) {
+      console.error("[GeminiChatService] No text found in stream response! Resetting session...");
+      this.configuredSessions.delete("cookie_config");
+      throw new Error("No text found in response - Session reset");
+    }
+    newContext = sessionManager.parseFromStreamResponse(fullResponse);
+    onData({ text: "", context: newContext });
   }
 }
 const GeminiChatService = new GeminiChatServiceClass();
@@ -2849,7 +3756,7 @@ class StoryService {
    */
   static async translateChapter(options) {
     try {
-      console.log("[StoryService] Starting translation...", options.method || "API");
+      console.log("[StoryService] Starting translation...", options.method || "API", options.model || "default");
       if (options.method === "WEB") {
         if (!options.webConfigId) {
           return { success: false, error: "Web Config ID is required for WEB method" };
@@ -2884,9 +3791,10 @@ class StoryService {
           return { success: false, error: result.error || "Gemini Web Error" };
         }
       } else {
+        const modelToUse = options.model || GEMINI_MODELS.FLASH_3_0;
         const result = await callGeminiWithRotation(
           options.prompt,
-          GEMINI_MODELS.FLASH_3_0
+          modelToUse
         );
         if (result.success) {
           return { success: true, data: result.data };
@@ -2993,11 +3901,19 @@ class StoryService {
       const { chapters, title, author, outputDir, filename, cover } = options;
       const downloadDir = outputDir || path2.join(os.homedir(), "Downloads");
       const safeTitle = (filename || title).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      let coverPath = cover;
+      let tempCoverPath = void 0;
+      if (!coverPath) {
+        const coverBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+        tempCoverPath = path2.join(os.tmpdir(), `cover_${Date.now()}.png`);
+        fs2.writeFileSync(tempCoverPath, coverBuffer);
+        coverPath = tempCoverPath;
+      }
       const metadata = {
         id: safeTitle,
         title,
         author: author || "AI Translator",
-        cover
+        cover: coverPath
       };
       const epub = nodepub.document(metadata);
       for (const chapter of chapters) {
@@ -3008,8 +3924,17 @@ class StoryService {
       return new Promise(async (resolve) => {
         try {
           await epub.writeEPUB(downloadDir, safeTitle);
+          if (tempCoverPath && fs2.existsSync(tempCoverPath)) {
+            fs2.unlinkSync(tempCoverPath);
+          }
           resolve({ success: true, filePath: finalPath });
         } catch (e) {
+          if (tempCoverPath && fs2.existsSync(tempCoverPath)) {
+            try {
+              fs2.unlinkSync(tempCoverPath);
+            } catch {
+            }
+          }
           resolve({ success: false, error: String(e) });
         }
       });
@@ -3024,6 +3949,8 @@ const STORY_IPC_CHANNELS = {
   PREPARE_PROMPT: "story:preparePrompt",
   SAVE_PROMPT: "story:savePrompt",
   TRANSLATE_CHAPTER: "story:translateChapter",
+  TRANSLATE_CHAPTER_STREAM: "story:translateChapterStream",
+  TRANSLATE_CHAPTER_STREAM_REPLY: "story:translateChapterStreamReply",
   CREATE_EBOOK: "story:createEbook"
 };
 const PROMPT_IPC_CHANNELS = {
@@ -3033,6 +3960,18 @@ const PROMPT_IPC_CHANNELS = {
   UPDATE: "prompt:update",
   DELETE: "prompt:delete",
   SET_DEFAULT: "prompt:setDefault"
+};
+const PROXY_IPC_CHANNELS = {
+  GET_ALL: "proxy:getAll",
+  ADD: "proxy:add",
+  REMOVE: "proxy:remove",
+  UPDATE: "proxy:update",
+  TEST: "proxy:test",
+  GET_STATS: "proxy:getStats",
+  IMPORT: "proxy:import",
+  EXPORT: "proxy:export",
+  RESET: "proxy:reset"
+  // Reset failed counts
 };
 function registerStoryHandlers() {
   console.log("[StoryHandlers] Đăng ký handlers...");
@@ -3081,6 +4020,43 @@ function registerStoryHandlers() {
       return await StoryService.translateChapter(options);
     }
   );
+  electron.ipcMain.on(
+    STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM,
+    async (event, payload) => {
+      const { prompt, webConfigId, context } = payload;
+      try {
+        GeminiChatService.streamMessage(
+          prompt,
+          webConfigId,
+          context,
+          (data) => {
+            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+              success: true,
+              data
+            });
+          },
+          (error) => {
+            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+              success: false,
+              error
+            });
+          },
+          () => {
+            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+              success: true,
+              done: true
+            });
+          }
+        );
+      } catch (e) {
+        console.error("Stream setup error:", e);
+        event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+          success: false,
+          error: String(e)
+        });
+      }
+    }
+  );
   electron.ipcMain.handle(
     STORY_IPC_CHANNELS.CREATE_EBOOK,
     async (_event, options) => {
@@ -3117,7 +4093,9 @@ const DEFAULT_SETTINGS = {
   theme: "dark",
   language: "vi",
   recentProjectIds: [],
-  lastActiveProjectId: null
+  lastActiveProjectId: null,
+  useProxy: true
+  // Mặc định bật proxy
 };
 class AppSettingsServiceClass {
   constructor() {
@@ -3242,6 +4220,10 @@ class AppSettingsServiceClass {
   }
 }
 const AppSettingsService = new AppSettingsServiceClass();
+const appSettings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  AppSettingsService
+}, Symbol.toStringTag, { value: "Module" }));
 const DEFAULT_PROJECT_SETTINGS = {
   sourceLang: "zh",
   targetLang: "vi",
@@ -3714,7 +4696,10 @@ const CHANNELS = {
   CREATE: "geminiChat:create",
   UPDATE: "geminiChat:update",
   DELETE: "geminiChat:delete",
-  SEND_MESSAGE: "geminiChat:sendMessage"
+  SEND_MESSAGE: "geminiChat:sendMessage",
+  // Cookie Config (bảng riêng)
+  GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
+  SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig"
 };
 function registerGeminiChatHandlers() {
   console.log("[GeminiChatHandlers] Dang ky handlers...");
@@ -3733,6 +4718,24 @@ function registerGeminiChatHandlers() {
       return { success: true, data: config };
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi getActive:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.GET_COOKIE_CONFIG, async () => {
+    try {
+      const config = GeminiChatService.getCookieConfig();
+      return { success: true, data: config };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi getCookieConfig:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.SAVE_COOKIE_CONFIG, async (_, data) => {
+    try {
+      const success = GeminiChatService.saveCookieConfig(data);
+      return { success, data: null };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi saveCookieConfig:", error);
       return { success: false, error: String(error) };
     }
   });
@@ -3784,6 +4787,638 @@ function registerGeminiChatHandlers() {
   });
   console.log("[GeminiChatHandlers] Da dang ky handlers thanh cong");
 }
+class ProxyDatabase {
+  /**
+   * Get all proxies
+   */
+  static getAll() {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      SELECT * FROM proxies ORDER BY created_at DESC
+    `);
+    const rows = stmt.all();
+    return rows.map((row) => ({
+      id: row.id,
+      host: row.host,
+      port: row.port,
+      username: row.username || void 0,
+      password: row.password || void 0,
+      type: row.type,
+      enabled: row.enabled === 1,
+      platform: row.platform || void 0,
+      country: row.country || void 0,
+      city: row.city || void 0,
+      successCount: row.success_count || 0,
+      failedCount: row.failed_count || 0,
+      lastUsedAt: row.last_used_at || void 0,
+      createdAt: row.created_at
+    }));
+  }
+  /**
+   * Get proxy by ID
+   */
+  static getById(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`SELECT * FROM proxies WHERE id = ?`);
+    const row = stmt.get(id);
+    if (!row) return null;
+    return {
+      id: row.id,
+      host: row.host,
+      port: row.port,
+      username: row.username || void 0,
+      password: row.password || void 0,
+      type: row.type,
+      enabled: row.enabled === 1,
+      platform: row.platform || void 0,
+      country: row.country || void 0,
+      city: row.city || void 0,
+      successCount: row.success_count || 0,
+      failedCount: row.failed_count || 0,
+      lastUsedAt: row.last_used_at || void 0,
+      createdAt: row.created_at
+    };
+  }
+  /**
+   * Create new proxy
+   */
+  static create(proxy) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      INSERT INTO proxies (
+        id, host, port, username, password, type, enabled,
+        platform, country, city, success_count, failed_count,
+        last_used_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      proxy.id,
+      proxy.host,
+      proxy.port,
+      proxy.username || null,
+      proxy.password || null,
+      proxy.type,
+      proxy.enabled ? 1 : 0,
+      proxy.platform || null,
+      proxy.country || null,
+      proxy.city || null,
+      0,
+      // success_count
+      0,
+      // failed_count
+      proxy.lastUsedAt || null,
+      proxy.createdAt
+    );
+    return {
+      ...proxy,
+      successCount: 0,
+      failedCount: 0
+    };
+  }
+  /**
+   * Update proxy
+   */
+  static update(id, updates) {
+    const db2 = getDatabase();
+    const fields = [];
+    const values = [];
+    if (updates.host !== void 0) {
+      fields.push("host = ?");
+      values.push(updates.host);
+    }
+    if (updates.port !== void 0) {
+      fields.push("port = ?");
+      values.push(updates.port);
+    }
+    if (updates.username !== void 0) {
+      fields.push("username = ?");
+      values.push(updates.username || null);
+    }
+    if (updates.password !== void 0) {
+      fields.push("password = ?");
+      values.push(updates.password || null);
+    }
+    if (updates.type !== void 0) {
+      fields.push("type = ?");
+      values.push(updates.type);
+    }
+    if (updates.enabled !== void 0) {
+      fields.push("enabled = ?");
+      values.push(updates.enabled ? 1 : 0);
+    }
+    if (updates.platform !== void 0) {
+      fields.push("platform = ?");
+      values.push(updates.platform || null);
+    }
+    if (updates.country !== void 0) {
+      fields.push("country = ?");
+      values.push(updates.country || null);
+    }
+    if (updates.city !== void 0) {
+      fields.push("city = ?");
+      values.push(updates.city || null);
+    }
+    if (updates.successCount !== void 0) {
+      fields.push("success_count = ?");
+      values.push(updates.successCount);
+    }
+    if (updates.failedCount !== void 0) {
+      fields.push("failed_count = ?");
+      values.push(updates.failedCount);
+    }
+    if (updates.lastUsedAt !== void 0) {
+      fields.push("last_used_at = ?");
+      values.push(updates.lastUsedAt);
+    }
+    if (fields.length === 0) return false;
+    values.push(id);
+    const stmt = db2.prepare(`UPDATE proxies SET ${fields.join(", ")} WHERE id = ?`);
+    const result = stmt.run(...values);
+    return result.changes > 0;
+  }
+  /**
+   * Delete proxy
+   */
+  static delete(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`DELETE FROM proxies WHERE id = ?`);
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+  /**
+   * Check if proxy exists by host:port
+   */
+  static exists(host, port) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`SELECT COUNT(*) as count FROM proxies WHERE host = ? AND port = ?`);
+    const result = stmt.get(host, port);
+    return result.count > 0;
+  }
+  /**
+   * Increment success count
+   */
+  static incrementSuccess(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      UPDATE proxies 
+      SET success_count = success_count + 1,
+          failed_count = 0,
+          last_used_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+  /**
+   * Increment failed count
+   */
+  static incrementFailed(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      UPDATE proxies 
+      SET failed_count = failed_count + 1,
+          last_used_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+  /**
+   * Delete all proxies
+   */
+  static deleteAll() {
+    const db2 = getDatabase();
+    db2.prepare(`DELETE FROM proxies`).run();
+  }
+}
+class ProxyManager {
+  constructor() {
+    this.currentIndex = 0;
+    this.maxFailedCount = 5;
+    this.settings = {
+      maxRetries: 3,
+      timeout: 1e4,
+      maxFailedCount: 5,
+      enableRotation: true,
+      fallbackToDirect: true
+    };
+    console.log("[ProxyManager] Initialized with database storage");
+  }
+  /**
+   * Lấy proxy tiếp theo theo round-robin
+   * @returns Proxy config hoặc null nếu không có proxy khả dụng
+   */
+  getNextProxy() {
+    if (!this.settings.enableRotation) {
+      return null;
+    }
+    const allProxies = ProxyDatabase.getAll();
+    const availableProxies = allProxies.filter(
+      (p) => p.enabled && (p.failedCount || 0) < this.maxFailedCount
+    );
+    if (availableProxies.length === 0) {
+      console.warn("[ProxyManager] Không có proxy khả dụng");
+      return null;
+    }
+    const proxy = availableProxies[this.currentIndex % availableProxies.length];
+    this.currentIndex = (this.currentIndex + 1) % availableProxies.length;
+    console.log(`[ProxyManager] Sử dụng proxy: ${proxy.host}:${proxy.port} (${proxy.type})`);
+    return proxy;
+  }
+  /**
+   * Đánh dấu proxy thành công
+   */
+  markProxySuccess(proxyId) {
+    try {
+      ProxyDatabase.incrementSuccess(proxyId);
+      const proxy = ProxyDatabase.getById(proxyId);
+      if (proxy) {
+        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} thành công (${proxy.successCount} success)`);
+      }
+    } catch (error) {
+      console.error("[ProxyManager] Lỗi markProxySuccess:", error);
+    }
+  }
+  /**
+   * Đánh dấu proxy thất bại
+   */
+  markProxyFailed(proxyId, error) {
+    try {
+      ProxyDatabase.incrementFailed(proxyId);
+      const proxy = ProxyDatabase.getById(proxyId);
+      if (proxy) {
+        console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} thất bại (${proxy.failedCount || 0}/${this.maxFailedCount})`, error);
+        if ((proxy.failedCount || 0) >= this.maxFailedCount) {
+          ProxyDatabase.update(proxyId, { enabled: false });
+          console.error(`[ProxyManager] 🚫 Đã disable proxy ${proxy.host}:${proxy.port} do lỗi quá nhiều lần`);
+        }
+      }
+    } catch (error2) {
+      console.error("[ProxyManager] Lỗi markProxyFailed:", error2);
+    }
+  }
+  /**
+   * Thêm proxy mới
+   */
+  addProxy(config) {
+    const newProxy = {
+      ...config,
+      id: `proxy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: Date.now(),
+      successCount: 0,
+      failedCount: 0
+    };
+    const created = ProxyDatabase.create(newProxy);
+    console.log(`[ProxyManager] ➕ Đã thêm proxy: ${created.host}:${created.port}`);
+    return created;
+  }
+  /**
+   * Xóa proxy
+   */
+  removeProxy(proxyId) {
+    const proxy = ProxyDatabase.getById(proxyId);
+    if (proxy) {
+      const deleted = ProxyDatabase.delete(proxyId);
+      if (deleted) {
+        console.log(`[ProxyManager] ➖ Đã xóa proxy: ${proxy.host}:${proxy.port}`);
+        return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Cập nhật proxy
+   */
+  updateProxy(proxyId, updates) {
+    const updated = ProxyDatabase.update(proxyId, updates);
+    if (updated) {
+      const proxy = ProxyDatabase.getById(proxyId);
+      if (proxy) {
+        console.log(`[ProxyManager] 🔄 Đã cập nhật proxy: ${proxy.host}:${proxy.port}`);
+      }
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Lấy tất cả proxies
+   */
+  getAllProxies() {
+    return ProxyDatabase.getAll();
+  }
+  /**
+   * Lấy thống kê của tất cả proxies
+   */
+  getStats() {
+    const proxies = ProxyDatabase.getAll();
+    return proxies.map((proxy) => {
+      const total = (proxy.successCount || 0) + (proxy.failedCount || 0);
+      const successRate = total > 0 ? (proxy.successCount || 0) / total : 0;
+      return {
+        id: proxy.id,
+        host: proxy.host,
+        port: proxy.port,
+        successCount: proxy.successCount || 0,
+        failedCount: proxy.failedCount || 0,
+        successRate: Math.round(successRate * 100),
+        lastUsedAt: proxy.lastUsedAt,
+        isHealthy: proxy.enabled && (proxy.failedCount || 0) < this.maxFailedCount
+      };
+    });
+  }
+  /**
+   * Test proxy hoạt động không
+   */
+  async testProxy(proxyId) {
+    const proxy = ProxyDatabase.getById(proxyId);
+    if (!proxy) {
+      return { success: false, error: "Proxy không tồn tại" };
+    }
+    try {
+      const startTime = Date.now();
+      const { default: fetch2 } = await import("node-fetch");
+      const { HttpsProxyAgent } = await import("https-proxy-agent");
+      const proxyUrl = proxy.username ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}` : `${proxy.type}://${proxy.host}:${proxy.port}`;
+      const agent = new HttpsProxyAgent(proxyUrl);
+      const response = await fetch2("https://httpbin.org/ip", {
+        method: "GET",
+        agent,
+        timeout: this.settings.timeout
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const latency = Date.now() - startTime;
+      const data = await response.json();
+      console.log(`[ProxyManager] ✅ Test proxy thành công: ${proxy.host}:${proxy.port} (${latency}ms) - IP: ${data.origin}`);
+      return { success: true, latency };
+    } catch (error) {
+      console.error(`[ProxyManager] ❌ Test proxy thất bại: ${proxy.host}:${proxy.port}`, error);
+      return { success: false, error: String(error) };
+    }
+  }
+  /**
+   * Import proxies từ JSON string hoặc array
+   */
+  importProxies(data) {
+    let proxiesToImport = [];
+    if (typeof data === "string") {
+      try {
+        const parsed = JSON.parse(data);
+        proxiesToImport = Array.isArray(parsed) ? parsed : parsed.proxies || [];
+      } catch (e) {
+        console.error("[ProxyManager] Lỗi parse JSON:", e);
+        return { added: 0, skipped: 0 };
+      }
+    } else {
+      proxiesToImport = data;
+    }
+    let added = 0;
+    let skipped = 0;
+    for (const proxy of proxiesToImport) {
+      const exists = ProxyDatabase.exists(proxy.host, proxy.port);
+      if (exists) {
+        skipped++;
+        continue;
+      }
+      this.addProxy(proxy);
+      added++;
+    }
+    console.log(`[ProxyManager] Import hoàn thành: ${added} added, ${skipped} skipped`);
+    return { added, skipped };
+  }
+  /**
+   * Export proxies
+   */
+  exportProxies() {
+    const proxies = ProxyDatabase.getAll();
+    return JSON.stringify({
+      proxies,
+      settings: this.settings
+    }, null, 2);
+  }
+  /**
+   * Kiểm tra có nên fallback về direct connection không
+   */
+  shouldFallbackToDirect() {
+    return this.settings.fallbackToDirect;
+  }
+  /**
+   * Reset failed count của tất cả proxies
+   */
+  resetAllFailedCounts() {
+    const proxies = ProxyDatabase.getAll();
+    proxies.forEach((proxy) => {
+      ProxyDatabase.update(proxy.id, { failedCount: 0, enabled: true });
+    });
+    console.log("[ProxyManager] 🔄 Đã reset failed count của tất cả proxies");
+  }
+}
+let instance = null;
+function getProxyManager() {
+  if (!instance) {
+    instance = new ProxyManager();
+  }
+  return instance;
+}
+function registerProxyHandlers() {
+  console.log("[ProxyHandlers] Đăng ký handlers...");
+  const manager = getProxyManager();
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.GET_ALL,
+    async () => {
+      try {
+        const proxies = manager.getAllProxies();
+        const maskedProxies = proxies.map((p) => ({
+          ...p,
+          password: p.password ? "***MASKED***" : void 0
+        }));
+        return { success: true, data: maskedProxies };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi get all proxies:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.ADD,
+    async (_event, config) => {
+      try {
+        console.log(`[ProxyHandlers] Thêm proxy: ${config.host}:${config.port}`);
+        const newProxy = manager.addProxy(config);
+        const maskedProxy = {
+          ...newProxy,
+          password: newProxy.password ? "***MASKED***" : void 0
+        };
+        return { success: true, data: maskedProxy };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi add proxy:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.REMOVE,
+    async (_event, proxyId) => {
+      try {
+        console.log(`[ProxyHandlers] Xóa proxy: ${proxyId}`);
+        const removed = manager.removeProxy(proxyId);
+        if (removed) {
+          return { success: true };
+        } else {
+          return { success: false, error: "Proxy không tồn tại" };
+        }
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi remove proxy:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.UPDATE,
+    async (_event, proxyId, updates) => {
+      try {
+        console.log(`[ProxyHandlers] Cập nhật proxy: ${proxyId}`);
+        const updated = manager.updateProxy(proxyId, updates);
+        if (updated) {
+          return { success: true };
+        } else {
+          return { success: false, error: "Proxy không tồn tại" };
+        }
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi update proxy:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.TEST,
+    async (_event, proxyId) => {
+      try {
+        console.log(`[ProxyHandlers] Test proxy: ${proxyId}`);
+        const result = await manager.testProxy(proxyId);
+        return {
+          success: result.success,
+          latency: result.latency,
+          error: result.error,
+          testedAt: Date.now()
+        };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi test proxy:", error);
+        return {
+          success: false,
+          error: String(error),
+          testedAt: Date.now()
+        };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.GET_STATS,
+    async () => {
+      try {
+        const stats = manager.getStats();
+        return { success: true, data: stats };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi get stats:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.IMPORT,
+    async (_event, data) => {
+      try {
+        console.log("[ProxyHandlers] Import proxies...");
+        const result = manager.importProxies(data);
+        return { success: true, ...result };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi import proxies:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.EXPORT,
+    async () => {
+      try {
+        console.log("[ProxyHandlers] Export proxies...");
+        const data = manager.exportProxies();
+        return { success: true, data };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi export proxies:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "proxy:bulkImportWebshare",
+    async (_event, text) => {
+      try {
+        console.log("[ProxyHandlers] Bulk import Webshare proxies...");
+        const { parseWebshareProxies } = await Promise.resolve().then(() => require("./chunks/webshareParser-jlBvLl5E.js"));
+        const proxiesToAdd = parseWebshareProxies(text);
+        if (proxiesToAdd.length === 0) {
+          return { success: false, error: "Không parse được proxy nào từ input" };
+        }
+        let added = 0;
+        let skipped = 0;
+        for (const proxyConfig of proxiesToAdd) {
+          const allProxies = manager.getAllProxies();
+          const exists = allProxies.some((p) => p.host === proxyConfig.host && p.port === proxyConfig.port);
+          if (exists) {
+            skipped++;
+            continue;
+          }
+          manager.addProxy(proxyConfig);
+          added++;
+        }
+        console.log(`[ProxyHandlers] Bulk import complete: ${added} added, ${skipped} skipped`);
+        return { success: true, added, skipped };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi bulk import Webshare:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "proxy:quickAddWebshare",
+    async () => {
+      try {
+        console.log("[ProxyHandlers] Quick add Webshare free proxies...");
+        const { getWebshareFreeProxies } = await Promise.resolve().then(() => require("./chunks/webshareParser-jlBvLl5E.js"));
+        const proxiesToAdd = getWebshareFreeProxies();
+        let added = 0;
+        for (const proxyConfig of proxiesToAdd) {
+          const allProxies = manager.getAllProxies();
+          const exists = allProxies.some((p) => p.host === proxyConfig.host && p.port === proxyConfig.port);
+          if (exists) {
+            continue;
+          }
+          manager.addProxy(proxyConfig);
+          added++;
+        }
+        console.log(`[ProxyHandlers] Quick add complete: ${added} proxies added`);
+        return { success: true, added };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi quick add Webshare:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.RESET,
+    async () => {
+      try {
+        console.log("[ProxyHandlers] Reset all proxies...");
+        manager.resetAllFailedCounts();
+        return { success: true };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi reset proxies:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  console.log("[ProxyHandlers] Đã đăng ký handlers thành công");
+}
 function registerAllHandlers() {
   console.log("[IPC] Đang đăng ký tất cả handlers...");
   registerGeminiHandlers();
@@ -3794,6 +5429,7 @@ function registerAllHandlers() {
   registerProjectHandlers();
   registerAppSettingsHandlers();
   registerGeminiChatHandlers();
+  registerProxyHandlers();
   console.log("[IPC] Da dang ky xong tat ca handlers");
 }
 function createWindow() {
@@ -3845,3 +5481,4 @@ electron.app.on("window-all-closed", () => {
     electron.app.quit();
   }
 });
+exports.getProxyManager = getProxyManager;

@@ -65,11 +65,107 @@ export function initDatabase(): void {
       conv_id TEXT,
       resp_id TEXT,
       cand_id TEXT,
+      req_id TEXT,
+      user_agent TEXT,
+      accept_language TEXT,
+      platform TEXT,
       is_active INTEGER DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
   `);
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config)');
+  // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
+  // Chỉ có 1 dòng duy nhất (id = 1)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Migration: Add missing columns if not exists
+  try {
+    const tableInfo = db.pragma('table_info(gemini_chat_config)') as any[];
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('req_id')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
+        console.log('[Database] Added missing column: req_id');
+    }
+    if (!columnNames.includes('user_agent')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
+        console.log('[Database] Added missing column: user_agent');
+    }
+    if (!columnNames.includes('accept_language')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
+        console.log('[Database] Added missing column: accept_language');
+    }
+    if (!columnNames.includes('platform')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
+        console.log('[Database] Added missing column: platform');
+    }
+  } catch (e) {
+      console.error('[Database] Migration error:', e);
+  }
+
+  // Migration: Copy data from gemini_cookie to gemini_chat_config if needed
+  try {
+    const cookieData = db.prepare('SELECT * FROM gemini_cookie WHERE id = 1').get() as any;
+    const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
+    
+    if (cookieData && configCount.count === 0) {
+      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      const now = Date.now();
+      const { v4: uuidv4 } = require('uuid');
+      
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        'Migrated Config',
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log('[Database] Migration from gemini_cookie completed');
+    }
+  } catch (e) {
+    // Ignore if gemini_cookie doesn't exist or migration fails
+    console.log('[Database] No migration needed from gemini_cookie');
+  }
+
+  // Create proxies table - lưu proxy rotation config
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS proxies (
+      id TEXT PRIMARY KEY,
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      username TEXT,
+      password TEXT,
+      type TEXT DEFAULT 'http' CHECK(type IN ('http', 'https', 'socks5')),
+      enabled INTEGER DEFAULT 1,
+      platform TEXT,
+      country TEXT,
+      city TEXT,
+      success_count INTEGER DEFAULT 0,
+      failed_count INTEGER DEFAULT 0,
+      last_used_at INTEGER,
+      created_at INTEGER NOT NULL,
+      UNIQUE(host, port)
+    );
+  `);
+
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_cookie, proxies)');
 }

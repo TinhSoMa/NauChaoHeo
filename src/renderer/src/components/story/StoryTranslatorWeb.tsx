@@ -3,7 +3,14 @@ import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } fr
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { FileText, CheckSquare, Square, Check, MessageSquare, Ban, Clock, Loader2 } from 'lucide-react';
+import { FileText, CheckSquare, Square, Check, MessageSquare, Ban, Clock, Loader2, Monitor, Settings } from 'lucide-react';
+
+// Browser config interface
+interface BrowserConfig {
+  userAgent: string | null;
+  platform: string | null;
+  acceptLanguage: string | null;
+}
 
 export function StoryTranslatorWeb() {
   const [filePath, setFilePath] = useState('');
@@ -13,13 +20,15 @@ export function StoryTranslatorWeb() {
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
+  const [processingTimes, setProcessingTimes] = useState<Map<string, number>>(new Map()); // Luu thoi gian xl (ms)
   const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   
-  // Web Config State
-  const [webConfigs, setWebConfigs] = useState<any[]>([]);
+  // New Config Configs
+  const [webConfigs, setWebConfigs] = useState<{label: string, value: string, platform?: string | null}[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<string>('');
+  const [selectedBrowserConfig, setSelectedBrowserConfig] = useState<BrowserConfig | null>(null);
   
   // Session Context State (Conversation Memory)
   const [sessionContext, setSessionContext] = useState<{ conversationId: string; responseId: string; choiceId: string } | null>(null);
@@ -39,21 +48,56 @@ export function StoryTranslatorWeb() {
   };
 
   useEffect(() => {
-    loadWebConfigs();
+    loadConfigurations();
   }, []);
 
-  const loadWebConfigs = async () => {
+  const loadConfigurations = async () => {
     try {
-        const result = await window.electronAPI.geminiChat.getAll();
-        if (result.success && result.data) {
-            setWebConfigs(result.data);
-            // Auto select active one
-            const active = result.data.find((c: any) => c.isActive);
-            if (active) setSelectedConfigId(active.id);
-            else if (result.data.length > 0) setSelectedConfigId(result.data[0].id);
+        // 1. Get List of Configs
+        const configsResult = await window.electronAPI.geminiChat.getAll();
+        if (configsResult.success && configsResult.data) {
+            const options = configsResult.data.map(c => ({
+                label: c.name || c.id.substring(0, 8),
+                value: c.id,
+                platform: c.platform
+            }));
+            setWebConfigs(options);
+            
+            // Auto-select active config or first one
+            const activeConfig = configsResult.data.find(c => c.isActive);
+            if (activeConfig) {
+                setSelectedConfigId(activeConfig.id);
+                updateBrowserConfig(activeConfig.id, configsResult.data);
+            } else if (options.length > 0) {
+                setSelectedConfigId(options[0].value);
+                updateBrowserConfig(options[0].value, configsResult.data);
+            }
         }
+
     } catch (e) {
         console.error('Error loading config:', e);
+    }
+  };
+
+  const updateBrowserConfig = async (configId: string, configs?: any[]) => {
+    try {
+        let configData;
+        if (configs) {
+            configData = configs.find(c => c.id === configId);
+        } else {
+            const result = await window.electronAPI.geminiChat.getById(configId);
+            if (result.success) configData = result.data;
+        }
+        
+        if (configData) {
+            setSelectedBrowserConfig({
+                userAgent: configData.userAgent || null,
+                platform: configData.platform || null,
+                acceptLanguage: configData.acceptLanguage || null
+            });
+        }
+    } catch (e) {
+        console.error('Error loading browser config:', e);
     }
   };
 
@@ -103,9 +147,17 @@ export function StoryTranslatorWeb() {
       }
   }
 
+
+
+  // ... (existing helper functions)
+
   const handleTranslate = async () => {
     if (!selectedChapterId) return;
-    if (!selectedConfigId) { alert('Vui lòng chọn cấu hình Web!'); return; }
+    if (!selectedChapterId) return;
+    if (!selectedConfigId) { 
+        alert('Vui lòng chọn Cấu hình Web!'); 
+        return; 
+    }
     
     // Reset Context override? No, maybe user wants to continue even single clicks.
     // If user wants to START NEW conversation, we might need a button for that.
@@ -125,7 +177,9 @@ export function StoryTranslatorWeb() {
       if (!prepareResult.success || !prepareResult.prompt) throw new Error(prepareResult.error);
 
       // 2. Send to Gemini Web
-      // Pass current sessionContext if exists
+      const startTime = Date.now();
+      
+      // --- FETCH MODE (Original) ---
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
           prompt: prepareResult.prompt,
           method: 'WEB',
@@ -139,6 +193,10 @@ export function StoryTranslatorWeb() {
           next.set(selectedChapterId, translateResult.data!);
           return next;
         });
+        
+        // Update Processing Time
+        const duration = Date.now() - startTime;
+        setProcessingTimes(prev => new Map(prev).set(selectedChapterId, duration));
         
         // Update Session Context from response
         if (translateResult.context) {
@@ -156,6 +214,23 @@ export function StoryTranslatorWeb() {
       setStatus('idle');
     }
   };
+
+  // ... (existing code: Auto-Pack State, helpers, etc)
+
+  // ... Update Return JSX with Toggle ...
+  
+  // Inside return (...), adjust the Select area
+  /*
+        <div className="md:col-span-3 relative group">
+             <Select label="Cấu hình Web" value={selectedConfigId} onChange={e => setSelectedConfigId(e.target.value)} options={configOptions} />
+             ...
+        </div>
+        
+        <div className="md:col-span-2">
+             <Select label="Chế độ" value={useStream ? 'stream' : 'fetch'} onChange={e => setUseStream(e.target.value === 'stream')} options={[{value: 'fetch', label: 'Fetch (Chờ)'}, {value: 'stream', label: 'Stream (Live)'}]} />
+        </div>
+  */
+
 
   // Auto-Pack State
   const [packInterval, setPackInterval] = useState<number>(0); // 0: None, -1: End, >0: Interval
@@ -182,7 +257,10 @@ export function StoryTranslatorWeb() {
   };
 
   const handleTranslateAll = async () => {
-    if (!selectedConfigId) { alert('Vui lòng chọn cấu hình Web!'); return; }
+    if (!selectedConfigId) { 
+      alert('Vui lòng chọn Cấu hình Web!'); 
+      return; 
+    }
     
     const chaptersToTranslate = chapters.filter(c => isChapterIncluded(c.id) && !translatedChapters.has(c.id));
     if (chaptersToTranslate.length === 0) { alert('Đã dịch xong!'); return; }
@@ -234,6 +312,7 @@ export function StoryTranslatorWeb() {
                  setWaitingTime(Math.floor((Date.now() - startTime) / 1000));
              }, 1000);
              
+             // --- FETCH MODE (Original Batch) ---
              const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
                 prompt: prepareResult.prompt,
                 method: 'WEB',
@@ -260,9 +339,12 @@ export function StoryTranslatorWeb() {
                     return next;
                 });
                 
-                // Track for packing and local map
                 chaptersSinceLastPack.push(chapter);
                 sessionMap.set(chapter.id, translatedText);
+
+                // Update Processing Time
+                const duration = Date.now() - startTime;
+                setProcessingTimes(prev => new Map(prev).set(chapter.id, duration));
 
                 // Auto-Pack Interval Logic
                 if (packInterval > 0 && chaptersSinceLastPack.length >= packInterval) {
@@ -361,8 +443,6 @@ export function StoryTranslatorWeb() {
       { value: -1, label: 'Đóng gói khi xong' },
   ];
 
-  const configOptions = webConfigs.map(c => ({ value: c.id, label: c.name || 'Unnamed Config' }));
-
   return (
     <div className="flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full">
       <div className="flex justify-between items-center">
@@ -371,17 +451,41 @@ export function StoryTranslatorWeb() {
           Dịch Truyện (Google Web)
         </h1>
         <div className="flex gap-2 items-center">
+             {selectedBrowserConfig && (
+               <div className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded border border-blue-200 flex items-center gap-1" title={selectedBrowserConfig.userAgent || 'Chưa có User-Agent'}>
+                 <Monitor size={12} />
+                 <span>{selectedBrowserConfig.platform || 'Auto Browser'}</span>
+               </div>
+             )}
+             {!selectedConfigId && (
+                 <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded border border-red-200">
+                    Chưa chọn Config
+                 </span>
+             )}
              {sessionContext && (
                  <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded border border-green-200">
                     Đang nhớ ngữ cảnh ({sessionContext.conversationId})
                  </span>
              )}
              <Button onClick={resetSession} variant="secondary" className="text-xs h-8">Reset Session</Button>
+             <Button 
+               onClick={() => {
+                 // Navigate to Settings tab
+                 const event = new CustomEvent('navigate-to-settings', { detail: { tab: 'gemini-chat' } });
+                 window.dispatchEvent(event);
+               }} 
+               variant="secondary" 
+               className="text-xs h-8 flex items-center gap-1"
+               title="Mở cài đặt Gemini Chat"
+             >
+               <Settings size={14} />
+               Cài đặt
+             </Button>
         </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-card border border-border rounded-xl">
-        <div className="md:col-span-3 flex flex-col gap-2">
+        <div className="md:col-span-4 flex flex-col gap-2">
              <label className="text-sm font-medium">File Truyện</label>
              <div className="flex gap-2">
                <Input value={filePath} readOnly placeholder="Chọn file..." containerClassName="flex-1" />
@@ -389,13 +493,31 @@ export function StoryTranslatorWeb() {
              </div>
         </div>
         
-        <div className="md:col-span-3">
-             <Select label="Cấu hình Web" value={selectedConfigId} onChange={e => setSelectedConfigId(e.target.value)} options={configOptions} />
+        <div className="md:col-span-3 relative group">
+             <Select 
+               label="Cấu hình Web" 
+               value={selectedConfigId} 
+               onChange={e => {
+                 setSelectedConfigId(e.target.value);
+                 updateBrowserConfig(e.target.value);
+               }} 
+               options={webConfigs} 
+             />
+             {selectedBrowserConfig && (
+               <div className="absolute right-2 top-9 flex items-center gap-1 pointer-events-none">
+                 <Monitor size={14} className="text-muted-foreground" />
+                 <span className="text-xs text-muted-foreground">
+                   {selectedBrowserConfig.platform || 'Auto'}
+                 </span>
+               </div>
+             )}
         </div>
-        
+
         <div className="md:col-span-2">
              <Select label="Đóng gói Ebook" value={packInterval} onChange={e => setPackInterval(Number(e.target.value))} options={PACK_OPTIONS} />
         </div>
+        
+
 
         <div className="md:col-span-2">
           <Select label="Ngôn ngữ gốc" value={sourceLang} onChange={e => setSourceLang(e.target.value)} options={LANG_OPTIONS} />
@@ -469,6 +591,11 @@ export function StoryTranslatorWeb() {
                    {isChapterIncluded(c.id) && <Check size={10} className={selectedChapterId === c.id ? 'text-primary' : 'text-white'} />}
                 </button>
                 <span className={`truncate text-sm flex-1 ${!isChapterIncluded(c.id) && 'opacity-50 line-through'}`}>{c.title}</span>
+                {processingTimes.has(c.id) && (
+                    <span className="text-[10px] text-gray-400 font-mono">
+                        {(processingTimes.get(c.id)! / 1000).toFixed(1)}s
+                    </span>
+                )}
                 {translatedChapters.has(c.id) && <Check size={14} className="text-green-400" />}
               </div>
             ))}

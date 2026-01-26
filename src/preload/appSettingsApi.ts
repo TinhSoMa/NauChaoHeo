@@ -23,6 +23,7 @@ export interface AppSettings {
   language: 'vi' | 'en';
   recentProjectIds: string[];
   lastActiveProjectId: string | null;
+  useProxy: boolean;
 }
 
 interface IpcApiResponse<T = unknown> {

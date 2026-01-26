@@ -9,9 +9,9 @@ export class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', webConfigId?: string, context?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any }> {
     try {
-      console.log('[StoryService] Starting translation...', options.method || 'API');
+      console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
       if (options.method === 'WEB') {
            // WEB METHOD (Gemini Protocol)
@@ -75,9 +75,12 @@ export class StoryService {
 
       } else {
           // API METHOD (Default)
+          // Use the model from options, or fallback to FLASH_3_0
+          const modelToUse = (options.model as any) || GeminiService.GEMINI_MODELS.FLASH_3_0;
+          
           const result = await GeminiService.callGeminiWithRotation(
             options.prompt, 
-            GeminiService.GEMINI_MODELS.FLASH_3_0
+            modelToUse
           );
           
           if (result.success) {
@@ -220,12 +223,24 @@ export class StoryService {
         const downloadDir = outputDir || path.join(os.homedir(), 'Downloads');
         const safeTitle = (filename || title).replace(/[^a-z0-9]/gi, '_').toLowerCase();
         
+        // Create temporary cover file if needed
+        let coverPath: string | undefined = cover;
+        let tempCoverPath: string | undefined = undefined;
+        
+        if (!coverPath) {
+            // Create a simple 1x1 transparent PNG as temp cover
+            const coverBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+            tempCoverPath = path.join(os.tmpdir(), `cover_${Date.now()}.png`);
+            fs.writeFileSync(tempCoverPath, coverBuffer);
+            coverPath = tempCoverPath;
+        }
+        
         // nodepub uses document metadata
         const metadata = {
             id: safeTitle,
             title: title,
             author: author || 'AI Translator',
-            cover: cover
+            cover: coverPath
         };
 
         const epub = nodepub.document(metadata);
@@ -242,9 +257,19 @@ export class StoryService {
         return new Promise(async (resolve) => {
              try {
                  await epub.writeEPUB(downloadDir, safeTitle);
+                 
+                 // Clean up temp cover file if created
+                 if (tempCoverPath && fs.existsSync(tempCoverPath)) {
+                     fs.unlinkSync(tempCoverPath);
+                 }
+                 
                  // nodepub writes to [folder]/[filename].epub
                  resolve({ success: true, filePath: finalPath });
              } catch (e) {
+                 // Clean up temp cover file on error too
+                 if (tempCoverPath && fs.existsSync(tempCoverPath)) {
+                     try { fs.unlinkSync(tempCoverPath); } catch {}
+                 }
                  resolve({ success: false, error: String(e) });
              }
         });

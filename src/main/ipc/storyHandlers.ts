@@ -1,6 +1,7 @@
 import { ipcMain, IpcMainInvokeEvent, dialog } from 'electron';
 import * as fs from 'fs/promises';
 import * as StoryService from '../services/story';
+import { GeminiChatService } from '../services/geminiChatService';
 import { STORY_IPC_CHANNELS } from '../../shared/types';
 
 export function registerStoryHandlers(): void {
@@ -62,6 +63,46 @@ export function registerStoryHandlers(): void {
       }
       
       return await StoryService.StoryService.translateChapter(options);
+    }
+  );
+
+  ipcMain.on(
+    STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM,
+    async (event, payload: any) => {
+        const { prompt, webConfigId, context } = payload;
+        // console.log('[StoryHandlers] Streaming request...');
+        
+        try {
+            GeminiChatService.streamMessage(
+                prompt,
+                webConfigId,
+                context,
+                (data) => {
+                    event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+                        success: true,
+                        data: data
+                    });
+                },
+                (error) => {
+                    event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+                        success: false,
+                        error: error
+                    });
+                },
+                () => {
+                    event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+                        success: true,
+                        done: true
+                    });
+                }
+            );
+        } catch (e) {
+            console.error('Stream setup error:', e);
+            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
+                 success: false,
+                 error: String(e)
+            });
+        }
     }
   );
 

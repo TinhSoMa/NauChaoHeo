@@ -1,6 +1,6 @@
 /**
- * GeminiChatSettings - Cau hinh ket noi Gemini qua giao dien web
- * Bao gom chuc nang Auto-parse tu raw input
+ * GeminiChatSettings - Cấu hình kết nối Gemini qua giao diện web
+ * Hỗ trợ nhiều tài khoản và cấu hình trình duyệt (Browser Profile)
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -9,516 +9,550 @@ import {
   Globe,
   Hash,
   Shield,
-  MessageSquare,
-  Info,
-  Clipboard,
   Sparkles,
   Save,
-  RotateCcw,
-  ArrowLeft
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Check,
+  X,
+  Monitor,
+  Laptop,
+  Clipboard
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import styles from './Settings.module.css';
 
+// Type definitions matching backend DTOs
+interface GeminiChatConfig {
+  id: string;
+  name: string;
+  cookie: string;
+  blLabel: string;
+  fSid: string;
+  atToken: string;
+  convId: string;
+  respId: string;
+  candId: string;
+  reqId?: string;
+  userAgent?: string;
+  acceptLanguage?: string;
+  platform?: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 interface GeminiChatSettingsProps {
   onBack: () => void;
 }
 
+// Default constants
+const DEFAULT_UA = "";
+const DEFAULT_LANG = "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4";
+
+// Browser Presets (matching geminiChatService.ts BROWSER_PROFILES)
+const BROWSER_PRESETS = [
+  {
+    label: "Chrome / Windows",
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    platform: "Windows",
+    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
+  },
+  {
+    label: "Edge / Windows",
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
+    platform: "Windows",
+    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
+  },
+  {
+    label: "Chrome / macOS",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    platform: "macOS",
+    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
+  },
+  {
+    label: "Firefox / Windows",
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+    platform: "Windows",
+    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
+  },
+  {
+    label: "Tùy chỉnh / Custom",
+    userAgent: "",
+    platform: "Windows",
+    acceptLanguage: DEFAULT_LANG
+  }
+];
+
 export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
-  // State cho raw input (de dan va auto-parse)
-  const [rawInput, setRawInput] = useState<string>('');
-  
-  // State cho cac truong da parse
-  const [cookie, setCookie] = useState<string>('');
-  const [blLabel, setBlLabel] = useState<string>('');
-  const [fSid, setFSid] = useState<string>('');
-  const [atToken, setAtToken] = useState<string>('');
-  const [convId, setConvId] = useState<string>('');
-  const [respId, setRespId] = useState<string>('');
-  const [candId, setCandId] = useState<string>('');
-  
-  // State UI
-  const [parseStatus, setParseStatus] = useState<string>('');
-  const [saveStatus, setSaveStatus] = useState<string>('');
+  // Mode: 'list' | 'edit' | 'create'
+  const [mode, setMode] = useState<'list' | 'edit' | 'create'>('list');
+  const [configs, setConfigs] = useState<GeminiChatConfig[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [currentConfigId, setCurrentConfigId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // Load cau hinh hien tai khi mount
-  useEffect(() => {
-    const loadActiveConfig = async () => {
-      try {
-        setIsLoading(true);
-        const result = await window.electronAPI.geminiChat.getActive();
-        if (result.success && result.data) {
-          const config = result.data;
-          setCurrentConfigId(config.id);
-          setCookie(config.cookie || '');
-          setBlLabel(config.blLabel || '');
-          setFSid(config.fSid || '');
-          setAtToken(config.atToken || '');
-          setConvId(config.convId || '');
-          setRespId(config.respId || '');
-          setCandId(config.candId || '');
-          console.log('[GeminiChatSettings] Da tai cau hinh:', config.id);
-        } else {
-          console.log('[GeminiChatSettings] Khong co cau hinh nao');
-        }
-      } catch (error) {
-        console.error('[GeminiChatSettings] Loi khi tai cau hinh:', error);
-      } finally {
-        setIsLoading(false);
+  // Editing State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<{
+    name: string;
+    cookie: string;
+    blLabel: string;
+    fSid: string;
+    atToken: string;
+    userAgent: string;
+    acceptLanguage: string;
+    platform: string;
+    isActive: boolean;
+  }>({
+    name: '',
+    cookie: '',
+    blLabel: '',
+    fSid: '',
+    atToken: '',
+    userAgent: DEFAULT_UA,
+    acceptLanguage: DEFAULT_LANG,
+    platform: 'Windows',
+    isActive: true
+  });
+  
+  // Auto-parse State
+  const [rawInput, setRawInput] = useState<string>('');
+  const [parseStatus, setParseStatus] = useState<string>('');
+  const [selectedPreset, setSelectedPreset] = useState<string>('4'); // Default to Custom
+
+  // Load configs
+  const loadConfigs = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const result = await window.electronAPI.geminiChat.getAll();
+      if (result.success && result.data) {
+        setConfigs(result.data);
+      } else {
+        setErrorMessage(result.error || 'Không thể tải danh sách cấu hình');
       }
-    };
-
-    loadActiveConfig();
+    } catch (error) {
+      console.error('Error loading configs:', error);
+      setErrorMessage(String(error));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Ham tu dong parse du lieu tu raw input
+  useEffect(() => {
+    loadConfigs();
+  }, [loadConfigs]);
+
+  // Handle Edit/Create actions
+  const handleCreate = () => {
+    setMode('create');
+    setEditingId(null);
+    setFormData({
+      name: `Account ${configs.length + 1}`,
+      cookie: '',
+      blLabel: '',
+      fSid: '',
+      atToken: '',
+      userAgent: DEFAULT_UA,
+      acceptLanguage: DEFAULT_LANG,
+      platform: 'Windows',
+      isActive: true
+    });
+    setRawInput('');
+    setParseStatus('');
+  };
+
+  const handleEdit = (config: GeminiChatConfig) => {
+    setMode('edit');
+    setEditingId(config.id);
+    setFormData({
+      name: config.name,
+      cookie: config.cookie,
+      blLabel: config.blLabel,
+      fSid: config.fSid,
+      atToken: config.atToken,
+      userAgent: config.userAgent || DEFAULT_UA,
+      acceptLanguage: config.acceptLanguage || DEFAULT_LANG,
+      platform: config.platform || 'Windows',
+      isActive: config.isActive
+    });
+    setRawInput('');
+    setParseStatus('');
+  };
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Bạn có chắc muốn xóa cấu hình này?')) {
+      try {
+        const result = await window.electronAPI.geminiChat.delete(id);
+        if (result.success) {
+          loadConfigs();
+        } else {
+          alert('Lỗi xóa: ' + result.error);
+        }
+      } catch (error) {
+        alert('Lỗi: ' + error);
+      }
+    }
+  };
+
+  const handleToggleActive = async (config: GeminiChatConfig, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const result = await window.electronAPI.geminiChat.update(config.id, { isActive: !config.isActive });
+      if (result.success) {
+        loadConfigs();
+      }
+    } catch (error) {
+      console.error('Error toggling active:', error);
+    }
+  };
+
+
+  // Auto-parse logic (reused from previous version)
   const handleAutoParse = useCallback(() => {
     if (!rawInput.trim()) {
-      setParseStatus('Vui long dan du lieu vao o tren truoc');
+      setParseStatus('Vui lòng dán dữ liệu vào ô trên trước');
       return;
     }
 
     let foundCount = 0;
     const text = rawInput;
+    const newData = { ...formData };
 
-    // Parse Cookie - ho tro nhieu dinh dang
-    // 1. curl -b "cookie_string"
+    // Parse Cookie
     const curlCookieMatch = text.match(/-b\s+\^?"([^"]+)\^?"/);
     if (curlCookieMatch && curlCookieMatch[1]) {
-      setCookie(curlCookieMatch[1].trim());
+      newData.cookie = curlCookieMatch[1].trim();
       foundCount++;
     } else {
-      // 2. Cookie: header format
       const cookieHeaderMatch = text.match(/Cookie:\s*(.+?)(?:\r?\n|$)/i);
       if (cookieHeaderMatch && cookieHeaderMatch[1]) {
-        setCookie(cookieHeaderMatch[1].trim());
+        newData.cookie = cookieHeaderMatch[1].trim();
         foundCount++;
       } else {
-        // 3. Tim chuoi chua __Secure-1PSID
         const securePsidMatch = text.match(/(__Secure-1PSID=[^;\s]+(?:;[^"]+)?)/);
         if (securePsidMatch && securePsidMatch[1]) {
-          setCookie(securePsidMatch[1].trim());
+          newData.cookie = securePsidMatch[1].trim();
           foundCount++;
         }
       }
     }
 
-    // Parse BL_LABEL - tim bl=... trong URL (ho tro escape char ^)
-    const blPatterns = [
-      /[?&]bl=([^&\s^"]+)/,
-      /bl=([^&\s^"]+)/,
-    ];
-    for (const pattern of blPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        setBlLabel(decodeURIComponent(match[1].replace(/\^/g, '')));
+    // Parse BL, F_SID, AT_TOKEN
+    const blMatch = text.match(/[?&]bl=([^&\s^"]+)/) || text.match(/bl=([^&\s^"]+)/);
+    if (blMatch && blMatch[1]) {
+        newData.blLabel = decodeURIComponent(blMatch[1].replace(/\^/g, ''));
         foundCount++;
-        break;
-      }
     }
 
-    // Parse F_SID - tim f.sid=... trong URL (ho tro escape char ^)
-    const fsidPatterns = [
-      /[?&]f\.sid=([^&\s^"]+)/,
-      /f\.sid=([^&\s^"]+)/,
-    ];
-    for (const pattern of fsidPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        setFSid(match[1].replace(/\^/g, ''));
+    const fsidMatch = text.match(/[?&]f\.sid=([^&\s^"]+)/) || text.match(/f\.sid=([^&\s^"]+)/);
+    if (fsidMatch && fsidMatch[1]) {
+        newData.fSid = fsidMatch[1].replace(/\^/g, '');
         foundCount++;
-        break;
-      }
     }
 
-    // Parse AT_TOKEN - tim at=... trong body (ho tro URL encoded)
-    const atPatterns = [
-      // URL encoded format: at=...%3A... (co the co escape ^)
-      /[&?]at=([^&\s^"]+)/,
-      /at=([^&\s^"]+)/,
-      /"at":\s*"([^"]+)"/,
-    ];
-    for (const pattern of atPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
+    const atMatch = text.match(/[&?]at=([^&\s^"]+)/) || text.match(/at=([^&\s^"]+)/) || text.match(/"at":\s*"([^"]+)"/);
+    if (atMatch && atMatch[1]) {
         try {
-          // Decode URL encoded value va loai bo escape chars
-          let atValue = match[1].replace(/\^/g, '');
-          atValue = decodeURIComponent(atValue);
-          setAtToken(atValue);
-          foundCount++;
+            let atValue = atMatch[1].replace(/\^/g, '');
+            newData.atToken = decodeURIComponent(atValue);
         } catch {
-          setAtToken(match[1].replace(/\^/g, ''));
-          foundCount++;
+            newData.atToken = atMatch[1].replace(/\^/g, '');
         }
-        break;
-      }
-    }
-
-    // Parse Conversation IDs tu f.req JSON (ho tro URL encoded)
-    // Tim c_ pattern (URL encoded: c_... hoac %22c_...%22)
-    const convPatterns = [
-      /%22(c_[a-zA-Z0-9]+)%22/,
-      /["']?(c_[a-zA-Z0-9]+)["']?/,
-    ];
-    for (const pattern of convPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        setConvId(match[1]);
         foundCount++;
-        break;
-      }
     }
 
-    // Tim r_ pattern
-    const respPatterns = [
-      /%22(r_[a-zA-Z0-9]+)%22/,
-      /["']?(r_[a-zA-Z0-9]+)["']?/,
-    ];
-    for (const pattern of respPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        setRespId(match[1]);
+    // Try parsing UA
+    const uaMatch = text.match(/User-Agent:\s*(.+?)(?:\r?\n|$)/i) || text.match(/-A\s+"([^"]+)"/);
+    if (uaMatch && uaMatch[1]) {
+        newData.userAgent = uaMatch[1].trim();
         foundCount++;
-        break;
-      }
     }
 
-    // Tim rc_ pattern
-    const candPatterns = [
-      /%22(rc_[a-zA-Z0-9]+)%22/,
-      /["']?(rc_[a-zA-Z0-9]+)["']?/,
-    ];
-    for (const pattern of candPatterns) {
-      const match = text.match(pattern);
-      if (match && match[1]) {
-        setCandId(match[1]);
-        foundCount++;
-        break;
-      }
-    }
-
+    setFormData(newData);
+    
     if (foundCount > 0) {
-      setParseStatus(`Da tim thay ${foundCount} truong. Vui long kiem tra va chinh sua neu can.`);
+      setParseStatus(`Đã tìm thấy ${foundCount} trường thông tin.`);
     } else {
-      setParseStatus('Khong tim thay du lieu hop le. Vui long kiem tra lai noi dung da dan.');
+      setParseStatus('Không tìm thấy dữ liệu hợp lệ.');
     }
-  }, [rawInput]);
+  }, [rawInput, formData]);
 
-  // Ham luu vao database
-  const handleSave = useCallback(async () => {
-    if (!cookie.trim()) {
-      setSaveStatus('Vui long nhap Cookie');
-      return;
+  const handlePresetChange = (index: string) => {
+    setSelectedPreset(index);
+    const preset = BROWSER_PRESETS[parseInt(index)];
+    if (preset) {
+      setFormData({
+        ...formData,
+        userAgent: preset.userAgent,
+        platform: preset.platform,
+        acceptLanguage: preset.acceptLanguage
+      });
+    }
+  };
+
+
+  const handleSave = async () => {
+    if (!formData.cookie || !formData.blLabel || !formData.fSid || !formData.atToken) {
+        alert('Vui lòng nhập đầy đủ 4 trường bắt buộc: Cookie, BL Label, F.SID, AT Token');
+        return;
     }
 
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      setSaveStatus('Dang luu...');
+        const payload = { ...formData };
+        // Clean strings
+        payload.cookie = payload.cookie.replace(/\^/g, '').trim();
+        payload.blLabel = payload.blLabel.replace(/\^/g, '').trim();
+        payload.fSid = payload.fSid.replace(/\^/g, '').trim();
+        payload.atToken = payload.atToken.replace(/\^/g, '').trim();
 
-      const configData = {
-        name: 'default',
-        cookie,
-        blLabel,
-        fSid,
-        atToken,
-        convId,
-        respId,
-        candId,
-      };
-
-      let result;
-      if (currentConfigId) {
-        // Cap nhat cau hinh hien tai
-        result = await window.electronAPI.geminiChat.update(currentConfigId, configData);
-      } else {
-        // Tao cau hinh moi
-        result = await window.electronAPI.geminiChat.create(configData);
-        if (result.success && result.data) {
-          setCurrentConfigId(result.data.id);
+        let result;
+        if (mode === 'create') {
+            result = await window.electronAPI.geminiChat.create(payload);
+        } else {
+            result = await window.electronAPI.geminiChat.update(editingId!, payload);
         }
-      }
 
-      if (result.success) {
-        setSaveStatus('Da luu cau hinh thanh cong!');
-        console.log('[GeminiChatSettings] Da luu cau hinh:', result.data);
-        
-        // Clear status sau 3 giay
-        setTimeout(() => setSaveStatus(''), 3000);
-      } else {
-        setSaveStatus(`Loi: ${result.error || 'Khong the luu cau hinh'}`);
-      }
-    } catch (error) {
-      console.error('[GeminiChatSettings] Loi khi luu:', error);
-      setSaveStatus(`Loi: ${String(error)}`);
+        if (result.success) {
+            setMode('list');
+            loadConfigs();
+        } else {
+            alert('Lỗi lưu: ' + result.error);
+        }
+    } catch (e) {
+        alert('Lỗi: ' + e);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  }, [cookie, blLabel, fSid, atToken, convId, respId, candId, currentConfigId]);
+  };
 
-  // Ham reset
-  const handleReset = useCallback(() => {
-    setRawInput('');
-    setCookie('');
-    setBlLabel('');
-    setFSid('');
-    setAtToken('');
-    setConvId('');
-    setRespId('');
-    setCandId('');
-    setParseStatus('');
-    setSaveStatus('');
-    setCurrentConfigId(null);
-  }, []);
 
+  // --- RENDER LIST VIEW ---
+  if (mode === 'list') {
+    return (
+      <div className={styles.detailContainer}>
+        <div className={styles.detailHeader}>
+          <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại"><ArrowLeft size={20} /></Button>
+          <div className="flex-1">
+             <div className={styles.detailTitle}>Danh sách Tài khoản (Proxy)</div>
+          </div>
+          <Button onClick={handleCreate} variant="primary"><Plus size={16} className="mr-2" /> Thêm mới</Button>
+        </div>
+
+        <div className={styles.detailContent}>
+           {errorMessage && <div className="p-4 bg-red-100 text-red-700 rounded-lg">{errorMessage}</div>}
+           
+           <div className="grid grid-cols-1 gap-4">
+             {configs.map(config => (
+               <div key={config.id} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4 flex items-center gap-4 hover:border-[var(--color-primary)] transition-colors cursor-pointer group" onClick={() => handleEdit(config)}>
+                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${config.isActive ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                    {config.isActive ? <Check size={20} /> : <X size={20} />}
+                 </div>
+                 
+                 <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                        <span className="font-semibold text-lg">{config.name}</span>
+                        {config.id === 'legacy' ? <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Legacy</span> : null}
+                    </div>
+                    <div className="text-sm text-[var(--color-text-secondary)] flex gap-4 mt-1">
+                        <span className="flex items-center gap-1"><Monitor size={12}/> {config.platform || 'Unknown'}</span>
+                        <span className="truncate max-w-[200px] opacity-70">{config.cookie.substring(0, 30)}...</span>
+                    </div>
+                 </div>
+
+                 <div className="flex items-center gap-2">
+                    <button 
+                        onClick={(e) => handleToggleActive(config, e)}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${config.isActive ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                    >
+                        {config.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                    
+                    <Button variant="danger" iconOnly onClick={(e) => handleDelete(config.id, e)} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Trash2 size={16} />
+                    </Button>
+                 </div>
+               </div>
+             ))}
+
+             {configs.length === 0 && !isLoading && (
+                 <div className="text-center py-20 text-gray-400">
+                     Chưa có tài khoản nào. Nhấn "Thêm mới" để cấu hình.
+                 </div>
+             )}
+           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER EDIT/CREATE VIEW ---
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <Button 
-          variant="secondary"
-          iconOnly
-          onClick={onBack}
-          title="Quay lại"
-        >
-          <ArrowLeft size={20} />
-        </Button>
-        <div className={styles.detailTitle}>Gemini Chat (Web)</div>
+        <Button variant="secondary" iconOnly onClick={() => setMode('list')} title="Quay lại"><ArrowLeft size={20} /></Button>
+        <div className={styles.detailTitle}>{mode === 'create' ? 'Thêm tài khoản mới' : 'Chỉnh sửa tài khoản'}</div>
       </div>
       
       <div className={styles.detailContent}>
+        {/* Name & Active */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={styles.section}>
+                <div className={styles.row}>
+                    <div className={styles.label}>
+                       <span className={styles.labelText}>Tên cấu hình</span>
+                    </div>
+                    <Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="VD: Chrome Windows, Account 1..." />
+                </div>
+            </div>
+             <div className={`${styles.section} flex items-center p-4 gap-4`}>
+                <span className="font-medium">Trạng thái hoạt động</span>
+                <button 
+                    onClick={() => setFormData({...formData, isActive: !formData.isActive})}
+                    className={`relative w-11 h-6 rounded-full transition-colors ${formData.isActive ? 'bg-green-500' : 'bg-gray-300'}`}
+                >
+                    <div className={`absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform ${formData.isActive ? 'translate-x-5' : ''}`} />
+                </button>
+                <span className="text-sm text-gray-500">{formData.isActive ? 'Sẽ được sử dụng để xoay vòng' : 'Tạm vô hiệu hóa'}</span>
+            </div>
+        </div>
+
+        {/* Auto Parse */}
         <div className={styles.section}>
-          {/* Auto-parse section */}
-          <div className={styles.row} style={{ display: 'block' }}>
-            <div className={styles.label} style={{ marginBottom: 8 }}>
-              <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Clipboard size={18} />
-                Dán dữ liệu để tự động phân tích
-              </span>
-              <span className={styles.labelDesc}>
-                Dán nội dung từ DevTools (Headers, URL, Body) vào đây. Hệ thống sẽ tự động tách các thông số.
-              </span>
-            </div>
-            <textarea
-              value={rawInput}
-              onChange={(e) => setRawInput(e.target.value)}
-              placeholder="Dán nội dung từ DevTools vào đây...&#10;Ví dụ: Copy toàn bộ Headers, URL hoặc Payload từ request StreamGenerate"
-              rows={5}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                fontFamily: 'monospace',
-                fontSize: '0.85em',
-                resize: 'vertical',
-              }}
-            />
-            <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
-              <Button onClick={handleAutoParse} variant="primary">
-                <Sparkles size={16} />
-                Tự động phân tích
-              </Button>
-              {parseStatus && (
-                <span style={{ 
-                  fontSize: '0.9em', 
-                  color: parseStatus.includes('tìm thấy') ? 'var(--color-success)' : 'var(--color-warning)' 
-                }}>
-                  {parseStatus}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className={styles.divider} style={{ margin: '24px 0', borderTop: '2px dashed var(--border-color)' }} />
-
-          {/* Cookie */}
-          <div className={styles.row} style={{ display: 'block' }}>
-            <div className={styles.label} style={{ marginBottom: 8 }}>
-              <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Cookie size={18} />
-                Nhóm Định danh (Cookie)
-              </span>
-              <span className={styles.labelDesc}>
-                Cookie xác thực từ trình duyệt. Chứa __Secure-1PSID, __Secure-3PSID và các mã bảo mật khác.
-              </span>
-            </div>
-            <textarea
-              value={cookie}
-              onChange={(e) => setCookie(e.target.value)}
-              placeholder="__Secure-1PSID=...; __Secure-3PSID=..."
-              rows={3}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                fontFamily: 'monospace',
-                fontSize: '0.85em',
-                resize: 'vertical',
-              }}
-            />
-          </div>
-
-          <div className={styles.divider} style={{ margin: '20px 0', borderTop: '1px solid var(--border-color)' }} />
-
-          {/* BL_LABEL */}
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Globe size={18} />
-                BL_LABEL (Build Label)
-              </span>
-              <span className={styles.labelDesc}>
-                Số hiệu phiên bản server Gemini. Lấy từ URL tham số bl=
-              </span>
-            </div>
-            <Input
-              value={blLabel}
-              onChange={(e) => setBlLabel(e.target.value)}
-              placeholder="boq_assistant-bard-web-server_20260114.02_p1"
-            />
-          </div>
-
-          {/* F_SID */}
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Hash size={18} />
-                F_SID (Session ID)
-              </span>
-              <span className={styles.labelDesc}>
-                ID phiên làm việc. Lấy từ URL tham số f.sid=
-              </span>
-            </div>
-            <Input
-              value={fSid}
-              onChange={(e) => setFSid(e.target.value)}
-              placeholder="3363005882250450321"
-            />
-          </div>
-
-          <div className={styles.divider} style={{ margin: '20px 0', borderTop: '1px solid var(--border-color)' }} />
-
-          {/* AT_TOKEN */}
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Shield size={18} />
-                AT_TOKEN (Action Token/SNlM0e)
-              </span>
-              <span className={styles.labelDesc}>
-                Mã xác thực hành động. Thay đổi theo phiên làm việc. Lấy từ Body request hoặc cuối URL.
-              </span>
-            </div>
-            <Input
-              value={atToken}
-              onChange={(e) => setAtToken(e.target.value)}
-              placeholder="APwZiaoy65HsGUeSUvXYtP3x7tjV:1768919013678"
-            />
-          </div>
-
-          <div className={styles.divider} style={{ margin: '20px 0', borderTop: '1px solid var(--border-color)' }} />
-
-          {/* Conversation context */}
-          <div className={styles.row} style={{ display: 'block' }}>
-            <div className={styles.label} style={{ marginBottom: 12 }}>
-              <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MessageSquare size={18} />
-                Ngữ cảnh cuộc trò chuyện
-              </span>
-              <span className={styles.labelDesc}>
-                Các ID này nằm trong tham số f.req để Gemini nhớ lịch sử chat. Giữ nguyên trong suốt một cuộc chat.
-              </span>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingLeft: 12, borderLeft: '3px solid var(--color-primary-500)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ minWidth: 100, fontWeight: 500, color: 'var(--text-secondary)' }}>c_ (Conv ID)</span>
-                <Input
-                  value={convId}
-                  onChange={(e) => setConvId(e.target.value)}
-                  placeholder="c_a859b4357153da9f"
-                  style={{ flex: 1 }}
+             <div className={styles.row} style={{ display: 'block' }}>
+                <div className={styles.label} style={{ marginBottom: 8 }}>
+                  <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Clipboard size={18} /> Tự động phân tích
+                  </span>
+                  <span className={styles.labelDesc}>Dán headers/curl từ DevTools để tự động điền các trường bên dưới</span>
+                </div>
+                <textarea 
+                    value={rawInput}
+                    onChange={e => setRawInput(e.target.value)}
+                    rows={3}
+                    className="w-full p-3 rounded-lg border bg-[var(--bg-secondary)] font-mono text-xs"
+                    placeholder="Paste curl or raw headers here..."
                 />
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ minWidth: 100, fontWeight: 500, color: 'var(--text-secondary)' }}>r_ (Resp ID)</span>
-                <Input
-                  value={respId}
-                  onChange={(e) => setRespId(e.target.value)}
-                  placeholder="r_ef70dfe2509b430b"
-                  style={{ flex: 1 }}
-                />
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ minWidth: 100, fontWeight: 500, color: 'var(--text-secondary)' }}>rc_ (Cand ID)</span>
-                <Input
-                  value={candId}
-                  onChange={(e) => setCandId(e.target.value)}
-                  placeholder="rc_824a3f26d3d9d70a"
-                  style={{ flex: 1 }}
-                />
-              </div>
-            </div>
+                <div className="flex gap-4 items-center mt-2">
+                    <Button onClick={handleAutoParse} variant="primary" className="h-8 text-xs"><Sparkles size={14} className="mr-1"/> Phân tích</Button>
+                    {parseStatus && <span className="text-xs text-green-600">{parseStatus}</span>}
+                </div>
+             </div>
+        </div>
+
+        {/* Core Auth Fields */}
+        <div className={styles.section}>
+          <div className="p-4 border-b font-medium bg-[var(--color-surface)]">Thông tin xác thực (Bắt buộc)</div>
+          
+          <div className={styles.row} style={{display:'block'}}>
+             <div className="mb-1 font-medium text-sm flex items-center gap-2"><Cookie size={14} /> Cookie</div>
+             <textarea 
+                value={formData.cookie}
+                onChange={e => setFormData({...formData, cookie: e.target.value})}
+                rows={2}
+                className="w-full p-2 rounded border bg-[var(--bg-secondary)] font-mono text-xs"
+                placeholder="__Secure-1PSID=...; __Secure-3PSID=..."
+             />
           </div>
 
-          {/* Info Box */}
-          <div style={{
-            marginTop: 20,
-            padding: 16,
-            borderRadius: 8,
-            background: 'var(--color-primary-500)10',
-            border: '1px solid var(--color-primary-500)40',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, marginBottom: 8, color: 'var(--color-primary-500)' }}>
-              <Info size={18} />
-              Hướng dẫn lấy thông tin
-            </div>
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: '0.9em', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              <li><strong>Cookie</strong>: DevTools → Network → Chọn request → Tab Headers → Cookie</li>
-              <li><strong>BL_LABEL, F_SID</strong>: Xem trong URL của request StreamGenerate (tham số bl=, f.sid=)</li>
-              <li><strong>AT_TOKEN</strong>: Trong Payload/Body của request (tham số at=)</li>
-              <li><strong>c_, r_, rc_</strong>: Trong nội dung f.req của request (dạng JSON)</li>
-            </ul>
+           <div className={styles.row}>
+             <div className="flex flex-col">
+                <span className="font-medium text-sm flex items-center gap-2"><Globe size={14} /> BL_LABEL</span>
+                <span className="text-xs text-gray-500">Từ URL parameter bl=...</span>
+             </div>
+             <Input value={formData.blLabel} onChange={e => setFormData({...formData, blLabel: e.target.value})} containerClassName="w-1/2" />
+          </div>
+
+          <div className={styles.row}>
+             <div className="flex flex-col">
+                <span className="font-medium text-sm flex items-center gap-2"><Hash size={14} /> F_SID</span>
+                <span className="text-xs text-gray-500">Từ URL parameter f.sid=...</span>
+             </div>
+             <Input value={formData.fSid} onChange={e => setFormData({...formData, fSid: e.target.value})} containerClassName="w-1/2" />
+          </div>
+
+          <div className={styles.row}>
+              <div className="flex flex-col">
+                <span className="font-medium text-sm flex items-center gap-2"><Shield size={14} /> AT_TOKEN</span>
+                <span className="text-xs text-gray-500">Từ Body parameter at=...</span>
+             </div>
+             <Input value={formData.atToken} onChange={e => setFormData({...formData, atToken: e.target.value})} containerClassName="w-1/2" />
           </div>
         </div>
 
-        {/* Save bar */}
+        {/* Browser Profile */}
+        <div className={styles.section}>
+           <div className="p-4 border-b font-medium bg-[var(--color-surface)] flex items-center gap-2">
+              <Laptop size={16} /> Hồ sơ trình duyệt (Browser Profile)
+           </div>
+
+           {/* Preset Selection */}
+           <div className={styles.row}>
+             <div className="flex flex-col gap-1">
+                <span className="font-medium text-sm flex items-center gap-2">
+                  <Sparkles size={14} /> Chọn preset trình duyệt
+                </span>
+                <span className="text-xs text-gray-500">Chọn preset sẽ tự động điền thông tin bên dưới</span>
+             </div>
+             <select 
+                value={selectedPreset}
+                onChange={e => handlePresetChange(e.target.value)}
+                className={styles.select}
+             >
+                {BROWSER_PRESETS.map((preset, idx) => (
+                  <option key={idx} value={idx}>{preset.label}</option>
+                ))}
+             </select>
+           </div>
+
+           <div className={styles.row}>
+             <div className="flex flex-col gap-1">
+                <span className="font-medium text-sm">Platform / OS</span>
+                <span className="text-xs text-gray-500">Hệ điều hành giả lập</span>
+             </div>
+             <select 
+                value={formData.platform}
+                onChange={e => setFormData({...formData, platform: e.target.value})}
+                className={styles.select}
+             >
+                <option value="Windows">Windows</option>
+                <option value="macOS">macOS</option>
+                <option value="Linux">Linux</option>
+                <option value="Android">Android</option>
+                <option value="iOS">iOS</option>
+             </select>
+           </div>
+
+           <div className={styles.row} style={{display:'block'}}>
+             <div className="mb-2 font-medium text-sm">User Agent</div>
+             <textarea 
+                value={formData.userAgent}
+                onChange={e => setFormData({...formData, userAgent: e.target.value})}
+                rows={2}
+                className="w-full p-2 rounded border bg-[var(--bg-secondary)] font-mono text-xs"
+             />
+           </div>
+
+           <div className={styles.row} style={{display:'block'}}>
+             <div className="mb-2 font-medium text-sm">Accept-Language</div>
+             <Input value={formData.acceptLanguage} onChange={e => setFormData({...formData, acceptLanguage: e.target.value})} />
+           </div>
+        </div>
+
+        {/* Footer Actions */}
         <div className={styles.saveBar}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-            {saveStatus && (
-              <span style={{
-                fontSize: '0.9em',
-                color: saveStatus.includes('thanh cong') ? 'var(--color-success)' :
-                       saveStatus.includes('Loi') ? 'var(--color-error)' : 'var(--text-secondary)'
-              }}>
-                {saveStatus}
-              </span>
-            )}
-            {isLoading && (
-              <span style={{ fontSize: '0.9em', color: 'var(--text-secondary)' }}>
-                Dang xu ly...
-              </span>
-            )}
-          </div>
-          <Button onClick={handleReset} variant="secondary" disabled={isLoading}>
-            <RotateCcw size={16} />
-            Dat lai
+          <Button variant="secondary" onClick={() => setMode('list')} disabled={isLoading}>
+            Hủy
           </Button>
           <Button onClick={handleSave} variant="primary" disabled={isLoading}>
-            <Save size={16} />
-            {isLoading ? 'Dang luu...' : 'Luu cau hinh'}
+            <Save size={16} className="mr-2" />
+            {isLoading ? 'Đang lưu...' : (mode === 'create' ? 'Tạo mới' : 'Cập nhật')}
           </Button>
         </div>
+
       </div>
     </div>
   );

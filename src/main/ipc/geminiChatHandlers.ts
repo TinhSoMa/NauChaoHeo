@@ -14,6 +14,10 @@ const CHANNELS = {
   UPDATE: 'geminiChat:update',
   DELETE: 'geminiChat:delete',
   SEND_MESSAGE: 'geminiChat:sendMessage',
+  
+  // Cookie Config (bảng riêng)
+  GET_COOKIE_CONFIG: 'geminiChat:getCookieConfig',
+  SAVE_COOKIE_CONFIG: 'geminiChat:saveCookieConfig',
 };
 
 export function registerGeminiChatHandlers(): void {
@@ -37,6 +41,29 @@ export function registerGeminiChatHandlers(): void {
       return { success: true, data: config };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi getActive:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ===== COOKIE CONFIG HANDLERS =====
+  // Lấy cookie config (bảng riêng, chỉ 1 dòng)
+  ipcMain.handle(CHANNELS.GET_COOKIE_CONFIG, async () => {
+    try {
+      const config = GeminiChatService.getCookieConfig();
+      return { success: true, data: config };
+    } catch (error) {
+      console.error('[GeminiChatHandlers] Loi getCookieConfig:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Lưu cookie config (tự động INSERT hoặc UPDATE)
+  ipcMain.handle(CHANNELS.SAVE_COOKIE_CONFIG, async (_, data: { cookie: string; blLabel: string; fSid: string; atToken: string; reqId?: string }) => {
+    try {
+      const success = GeminiChatService.saveCookieConfig(data);
+      return { success, data: null };
+    } catch (error) {
+      console.error('[GeminiChatHandlers] Loi saveCookieConfig:', error);
       return { success: false, error: String(error) };
     }
   });

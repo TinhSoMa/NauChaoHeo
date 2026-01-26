@@ -10,7 +10,8 @@ import {
   Volume2, 
   Palette, 
   Key,
-  MessageCircle
+  MessageCircle,
+  Network
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -23,6 +24,7 @@ import { TtsSettings } from './TtsSettings';
 import { AppSettings } from './AppSettings';
 import { ApiKeysSettings } from './ApiKeysSettings';
 import { GeminiChatSettings } from './GeminiChatSettings';
+import { ProxySettings } from './ProxySettings';
 
 // Menu items configuration
 const menuItems: SettingsMenuItem[] = [
@@ -62,6 +64,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Cấu hình kết nối Gemini qua giao diện web',
     icon: MessageCircle 
   },
+  { 
+    id: 'proxy', 
+    label: 'Proxy Rotation', 
+    desc: 'Quản lý proxy rotation để tránh rate limit',
+    icon: Network 
+  },
 ];
 
 export function Settings() {
@@ -92,6 +100,7 @@ export function Settings() {
       {activeTab === 'app' && <AppSettings onBack={handleBack} />}
       {activeTab === 'apikeys' && <ApiKeysSettings onBack={handleBack} />}
       {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
+      {activeTab === 'proxy' && <ProxySettings />}
     </div>
   );
 }

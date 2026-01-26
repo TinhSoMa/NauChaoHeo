@@ -35,6 +35,16 @@ export interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfi
   isActive?: boolean;
 }
 
+// Interface cho cookie config (bảng riêng, chỉ 1 dòng)
+export interface GeminiCookieConfig {
+  cookie: string;
+  blLabel: string;
+  fSid: string;
+  atToken: string;
+  reqId?: string;
+  updatedAt: number;
+}
+
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -50,6 +60,8 @@ const CHANNELS = {
   UPDATE: 'geminiChat:update',
   DELETE: 'geminiChat:delete',
   SEND_MESSAGE: 'geminiChat:sendMessage',
+  GET_COOKIE_CONFIG: 'geminiChat:getCookieConfig',
+  SAVE_COOKIE_CONFIG: 'geminiChat:saveCookieConfig',
 };
 
 // API interface
@@ -61,6 +73,10 @@ export interface GeminiChatAPI {
   update: (id: string, data: UpdateGeminiChatConfigDTO) => Promise<ApiResponse<GeminiChatConfig | null>>;
   delete: (id: string) => Promise<ApiResponse<boolean>>;
   sendMessage: (message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => Promise<ApiResponse<{ text: string; context: { conversationId: string; responseId: string; choiceId: string } }>>;
+  
+  // Cookie config methods
+  getCookieConfig: () => Promise<ApiResponse<GeminiCookieConfig | null>>;
+  saveCookieConfig: (data: { cookie: string; blLabel: string; fSid: string; atToken: string; reqId?: string }) => Promise<ApiResponse<null>>;
 }
 
 // API implementation
@@ -72,4 +88,8 @@ export const geminiChatApi: GeminiChatAPI = {
   update: (id, data) => ipcRenderer.invoke(CHANNELS.UPDATE, id, data),
   delete: (id) => ipcRenderer.invoke(CHANNELS.DELETE, id),
   sendMessage: (message, configId, context) => ipcRenderer.invoke(CHANNELS.SEND_MESSAGE, message, configId, context),
+  
+  // Cookie config
+  getCookieConfig: () => ipcRenderer.invoke(CHANNELS.GET_COOKIE_CONFIG),
+  saveCookieConfig: (data) => ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data),
 };
