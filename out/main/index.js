@@ -1184,6 +1184,138 @@ function getConfigurationService(database) {
   }
   return instance$1;
 }
+const DEFAULT_SETTINGS = {
+  projectsBasePath: null,
+  theme: "dark",
+  language: "vi",
+  recentProjectIds: [],
+  lastActiveProjectId: null,
+  useProxy: true
+  // Mặc định bật proxy
+};
+class AppSettingsServiceClass {
+  constructor() {
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.settingsPath = "";
+  }
+  /**
+   * Initialize the service - must be called after app is ready
+   */
+  initialize() {
+    const userDataPath = electron.app.getPath("userData");
+    this.settingsPath = path__namespace.join(userDataPath, "appSettings.json");
+    this.load();
+    console.log("[AppSettings] Initialized at:", this.settingsPath);
+  }
+  /**
+   * Load settings from file
+   */
+  load() {
+    try {
+      if (fs__namespace.existsSync(this.settingsPath)) {
+        const content = fs__namespace.readFileSync(this.settingsPath, "utf-8");
+        const loaded = JSON.parse(content);
+        this.settings = { ...DEFAULT_SETTINGS, ...loaded };
+        console.log("[AppSettings] Loaded settings successfully");
+      } else {
+        console.log("[AppSettings] No settings file found, using defaults");
+        this.settings = { ...DEFAULT_SETTINGS };
+      }
+    } catch (error) {
+      console.error("[AppSettings] Error loading settings:", error);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
+  }
+  /**
+   * Save settings to file
+   */
+  save() {
+    try {
+      fs__namespace.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
+      console.log("[AppSettings] Saved settings");
+    } catch (error) {
+      console.error("[AppSettings] Error saving settings:", error);
+    }
+  }
+  /**
+   * Get all settings
+   */
+  getAll() {
+    return { ...this.settings };
+  }
+  /**
+   * Update settings (partial update)
+   */
+  update(partial) {
+    this.settings = { ...this.settings, ...partial };
+    this.save();
+    return this.getAll();
+  }
+  /**
+   * Get projects base path (returns custom path + NauChapHeoContent or default)
+   * Projects will be stored in: [selectedPath]/NauChapHeoContent/
+   */
+  getProjectsBasePath() {
+    if (this.settings.projectsBasePath) {
+      return path__namespace.join(this.settings.projectsBasePath, "NauChapHeoContent");
+    }
+    return path__namespace.join(electron.app.getPath("userData"), "projects");
+  }
+  /**
+   * Set projects base path and create NauChapHeoContent folder
+   */
+  setProjectsBasePath(basePath) {
+    this.settings.projectsBasePath = basePath;
+    this.save();
+    if (basePath) {
+      const fullPath = path__namespace.join(basePath, "NauChapHeoContent");
+      if (!fs__namespace.existsSync(fullPath)) {
+        fs__namespace.mkdirSync(fullPath, { recursive: true });
+        console.log("[AppSettings] Created NauChapHeoContent folder:", fullPath);
+      }
+    }
+  }
+  /**
+   * Add project to recent list
+   */
+  addRecentProject(projectId) {
+    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    this.settings.recentProjectIds.unshift(projectId);
+    this.settings.recentProjectIds = this.settings.recentProjectIds.slice(0, 5);
+    this.settings.lastActiveProjectId = projectId;
+    this.save();
+  }
+  /**
+   * Get last active project ID
+   */
+  getLastActiveProjectId() {
+    return this.settings.lastActiveProjectId;
+  }
+  /**
+   * Get recent project IDs
+   */
+  getRecentProjectIds() {
+    return [...this.settings.recentProjectIds];
+  }
+  /**
+   * Clear last active project
+   */
+  clearLastActiveProject() {
+    this.settings.lastActiveProjectId = null;
+    this.save();
+  }
+  /**
+   * Remove project from recent list (when deleted)
+   */
+  removeFromRecent(projectId) {
+    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    if (this.settings.lastActiveProjectId === projectId) {
+      this.settings.lastActiveProjectId = null;
+    }
+    this.save();
+  }
+}
+const AppSettingsService = new AppSettingsServiceClass();
 async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0, useProxy = true) {
   try {
     const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
@@ -1271,8 +1403,7 @@ async function callGeminiWithRotation(prompt, model = GEMINI_MODELS.FLASH_3_0, m
   }
   let useProxySetting = true;
   try {
-    const { AppSettingsService: AppSettingsService2 } = await Promise.resolve().then(() => appSettings);
-    const settings = AppSettingsService2.getAll();
+    const settings = AppSettingsService.getAll();
     useProxySetting = settings.useProxy;
     console.log(`[GeminiService] Proxy setting: ${useProxySetting ? "enabled" : "disabled"}`);
   } catch (error) {
@@ -4088,142 +4219,6 @@ function registerPromptHandlers() {
   });
   console.log("[PromptHandlers] Đã đăng ký handlers thành công");
 }
-const DEFAULT_SETTINGS = {
-  projectsBasePath: null,
-  theme: "dark",
-  language: "vi",
-  recentProjectIds: [],
-  lastActiveProjectId: null,
-  useProxy: true
-  // Mặc định bật proxy
-};
-class AppSettingsServiceClass {
-  constructor() {
-    this.settings = { ...DEFAULT_SETTINGS };
-    this.settingsPath = "";
-  }
-  /**
-   * Initialize the service - must be called after app is ready
-   */
-  initialize() {
-    const userDataPath = electron.app.getPath("userData");
-    this.settingsPath = path__namespace.join(userDataPath, "appSettings.json");
-    this.load();
-    console.log("[AppSettings] Initialized at:", this.settingsPath);
-  }
-  /**
-   * Load settings from file
-   */
-  load() {
-    try {
-      if (fs__namespace.existsSync(this.settingsPath)) {
-        const content = fs__namespace.readFileSync(this.settingsPath, "utf-8");
-        const loaded = JSON.parse(content);
-        this.settings = { ...DEFAULT_SETTINGS, ...loaded };
-        console.log("[AppSettings] Loaded settings successfully");
-      } else {
-        console.log("[AppSettings] No settings file found, using defaults");
-        this.settings = { ...DEFAULT_SETTINGS };
-      }
-    } catch (error) {
-      console.error("[AppSettings] Error loading settings:", error);
-      this.settings = { ...DEFAULT_SETTINGS };
-    }
-  }
-  /**
-   * Save settings to file
-   */
-  save() {
-    try {
-      fs__namespace.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
-      console.log("[AppSettings] Saved settings");
-    } catch (error) {
-      console.error("[AppSettings] Error saving settings:", error);
-    }
-  }
-  /**
-   * Get all settings
-   */
-  getAll() {
-    return { ...this.settings };
-  }
-  /**
-   * Update settings (partial update)
-   */
-  update(partial) {
-    this.settings = { ...this.settings, ...partial };
-    this.save();
-    return this.getAll();
-  }
-  /**
-   * Get projects base path (returns custom path + NauChapHeoContent or default)
-   * Projects will be stored in: [selectedPath]/NauChapHeoContent/
-   */
-  getProjectsBasePath() {
-    if (this.settings.projectsBasePath) {
-      return path__namespace.join(this.settings.projectsBasePath, "NauChapHeoContent");
-    }
-    return path__namespace.join(electron.app.getPath("userData"), "projects");
-  }
-  /**
-   * Set projects base path and create NauChapHeoContent folder
-   */
-  setProjectsBasePath(basePath) {
-    this.settings.projectsBasePath = basePath;
-    this.save();
-    if (basePath) {
-      const fullPath = path__namespace.join(basePath, "NauChapHeoContent");
-      if (!fs__namespace.existsSync(fullPath)) {
-        fs__namespace.mkdirSync(fullPath, { recursive: true });
-        console.log("[AppSettings] Created NauChapHeoContent folder:", fullPath);
-      }
-    }
-  }
-  /**
-   * Add project to recent list
-   */
-  addRecentProject(projectId) {
-    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
-    this.settings.recentProjectIds.unshift(projectId);
-    this.settings.recentProjectIds = this.settings.recentProjectIds.slice(0, 5);
-    this.settings.lastActiveProjectId = projectId;
-    this.save();
-  }
-  /**
-   * Get last active project ID
-   */
-  getLastActiveProjectId() {
-    return this.settings.lastActiveProjectId;
-  }
-  /**
-   * Get recent project IDs
-   */
-  getRecentProjectIds() {
-    return [...this.settings.recentProjectIds];
-  }
-  /**
-   * Clear last active project
-   */
-  clearLastActiveProject() {
-    this.settings.lastActiveProjectId = null;
-    this.save();
-  }
-  /**
-   * Remove project from recent list (when deleted)
-   */
-  removeFromRecent(projectId) {
-    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
-    if (this.settings.lastActiveProjectId === projectId) {
-      this.settings.lastActiveProjectId = null;
-    }
-    this.save();
-  }
-}
-const AppSettingsService = new AppSettingsServiceClass();
-const appSettings = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  AppSettingsService
-}, Symbol.toStringTag, { value: "Module" }));
 const DEFAULT_PROJECT_SETTINGS = {
   sourceLang: "zh",
   targetLang: "vi",

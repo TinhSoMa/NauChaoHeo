@@ -4,6 +4,7 @@
  */
 
 import { getApiManager } from './apiManager';
+import { AppSettingsService } from '../appSettings';
 import { 
   GeminiResponse, 
   KeyInfo,
@@ -145,7 +146,6 @@ export async function callGeminiWithRotation(
   // Load proxy setting from AppSettings
   let useProxySetting = true; // Default
   try {
-    const { AppSettingsService } = await import('../appSettings');
     const settings = AppSettingsService.getAll();
     useProxySetting = settings.useProxy;
     console.log(`[GeminiService] Proxy setting: ${useProxySetting ? 'enabled' : 'disabled'}`);
