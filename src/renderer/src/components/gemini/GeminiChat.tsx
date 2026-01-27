@@ -6,6 +6,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Send, Loader2, Trash2, Copy, Check, Plus, MessageSquare, RefreshCw } from 'lucide-react';
 import { Button } from '../common/Button';
+import { useProjectContext } from '../../context/ProjectContext';
 
 interface ChatMessage {
   id: string;
@@ -26,6 +27,10 @@ interface ChatSession {
 
 
 export function GeminiChat() {
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = useRef(false);
+  const saveTimeoutRef = useRef<number | null>(null);
+
   // State quan ly session
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -45,10 +50,71 @@ export function GeminiChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const getChatFileName = (sessionId: string) => `chat-${sessionId}.json`;
+
+  const loadChatMessages = async (sessionId: string) => {
+    if (!projectId) return;
+
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: 'gemini',
+        fileName: getChatFileName(sessionId)
+      });
+
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data) as ChatMessage[];
+        setMessages(saved);
+      } else {
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error('[GeminiChat] Loi tai log chat:', err);
+      setMessages([]);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  };
+
+  const saveChatMessages = async (sessionId: string, currentMessages: ChatMessage[]) => {
+    if (!projectId) return;
+
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: 'gemini',
+      fileName: getChatFileName(sessionId),
+      content: currentMessages
+    });
+  };
+
   // Load danh sach sessions khi khoi dong
   useEffect(() => {
     loadSessions();
   }, []);
+
+  useEffect(() => {
+    if (!projectId || !paths || !activeSessionId) return;
+    hasLoadedRef.current = false;
+    loadChatMessages(activeSessionId);
+  }, [projectId, paths, activeSessionId]);
+
+  useEffect(() => {
+    if (!projectId || !paths || !activeSessionId || !hasLoadedRef.current) return;
+
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveChatMessages(activeSessionId, messages);
+    }, 500);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [projectId, paths, activeSessionId, messages]);
 
   // Scroll xuong cuoi khi co tin nhan moi
   useEffect(() => {

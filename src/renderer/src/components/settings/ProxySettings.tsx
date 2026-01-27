@@ -3,9 +3,14 @@ import { ProxyConfig, ProxyStats } from '@shared/types/proxy';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { Plus, Trash2, TestTube, Check, X, Download, Upload, RotateCcw, FileText } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, TestTube, Check, X, Download, Upload, RotateCcw, FileText } from 'lucide-react';
+import styles from './Settings.module.css';
 
-export function ProxySettings() {
+interface ProxySettingsProps {
+  onBack: () => void;
+}
+
+export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [proxies, setProxies] = useState<ProxyConfig[]>([]);
   const [stats, setStats] = useState<ProxyStats[]>([]);
   const [loading, setLoading] = useState(false);
@@ -284,344 +289,326 @@ export function ProxySettings() {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-text-primary">Quản lý Proxy</h2>
-          <p className="text-sm text-text-secondary mt-1">
-            Cấu hình proxy rotation để tránh rate limit khi gọi API
-          </p>
-        </div>
-        
-        {/* Global Proxy Toggle */}
-        <div className="flex items-center gap-4 bg-surface border border-border rounded-xl px-4 py-3 mr-4">
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-text-primary">Sử dụng Proxy</span>
-            <span className="text-xs text-text-tertiary">
-              {useProxy ? 'Đang bật' : 'Đang tắt'}
-            </span>
-          </div>
-          <button
-            onClick={() => handleToggleUseProxy(!useProxy)}
-            className={`relative w-14 h-7 rounded-full transition-colors ${
-              useProxy ? 'bg-green-500' : 'bg-gray-600'
-            }`}
-          >
-            <div
-              className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                useProxy ? 'translate-x-7' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-        
-        <div className="flex gap-2">
-          <Button onClick={() => setShowBulkImport(true)} variant="secondary" className="h-9 px-4">
-            <FileText size={16} />
-            Bulk Import (Webshare)
-          </Button>
-          <Button onClick={handleImport} variant="secondary" className="h-9 px-4">
-            <Upload size={16} />
-            Import JSON
-          </Button>
-          <Button onClick={handleResetAll} variant="secondary" className="h-9 px-4" disabled={proxies.length === 0}>
-            <RotateCcw size={16} />
-            Reset All
-          </Button>
-          <Button onClick={handleExport} variant="secondary" className="h-9 px-4" disabled={proxies.length === 0}>
-            <Download size={16} />
-            Export
-          </Button>
-          <Button onClick={() => setShowAddForm(true)} variant="primary" className="h-9 px-4">
-            <Plus size={16} />
-            Thêm Proxy
-          </Button>
-        </div>
+    <div className={styles.detailContainer}>
+      <div className={styles.detailHeader}>
+        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
+          <ArrowLeft size={20} />
+        </Button>
+        <div className={styles.detailTitle}>Quản lý Proxy</div>
       </div>
+      
+      <div className={styles.detailContent}>
+        <div className={styles.section}>
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Sử dụng Proxy</span>
+              <span className={styles.labelDesc}>Bật/tắt sử dụng proxy toàn cục cho ứng dụng</span>
+            </div>
+            <button
+              onClick={() => handleToggleUseProxy(!useProxy)}
+              className={`${styles.toggle} ${useProxy ? styles.toggleActive : ''}`}
+            >
+              <div className={`${styles.toggleKnob} ${useProxy ? styles.toggleKnobActive : ''}`} />
+            </button>
+          </div>
+        </div>
 
-      {/* Add Proxy Form */}
-      {showAddForm && (
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Thêm Proxy Mới</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Host/IP"
-              placeholder="123.45.67.89"
-              value={formData.host}
-              onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-            />
-            <Input
-              label="Port"
-              type="number"
-              placeholder="8080"
-              value={formData.port.toString()}
-              onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })}
-            />
-            <Input
-              label="Username (tùy chọn)"
-              placeholder="user123"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-            />
-            <Input
-              label="Password (tùy chọn)"
-              type="password"
-              placeholder="••••••"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            />
-            <Select
-              label="Loại Proxy"
-              value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-              options={[
-                { value: 'http', label: 'HTTP' },
-                { value: 'https', label: 'HTTPS' },
-                { value: 'socks5', label: 'SOCKS5' },
-              ]}
-            />
-            <div className="flex items-end gap-2">
-              <label className="flex items-center gap-2 h-10 px-3 bg-surface rounded border border-border cursor-pointer hover:bg-surface/80 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={formData.enabled}
-                  onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                  className="w-4 h-4"
+        {/* Add Proxy Form */}
+        {showAddForm && (
+          <div className={styles.section}>
+            <div className={styles.row}>
+              <div className={styles.label}>
+                <span className={styles.labelText}>Thêm Proxy Mới</span>
+              </div>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <div className={styles.flexRow}>
+                <Input
+                  label="Host/IP"
+                  placeholder="123.45.67.89"
+                  value={formData.host}
+                  onChange={(e) => setFormData({ ...formData, host: e.target.value })}
                 />
-                <span className="text-sm text-text-primary">Kích hoạt ngay</span>
-              </label>
+                <Input
+                  label="Port"
+                  type="number"
+                  placeholder="8080"
+                  value={formData.port.toString()}
+                  onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })}
+                />
+              </div>
+              <div className={styles.flexRow}>
+                <Input
+                  label="Username (tùy chọn)"
+                  placeholder="user123"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                />
+                <Input
+                  label="Password (tùy chọn)"
+                  type="password"
+                  placeholder="••••••"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                />
+              </div>
+              <div className={styles.flexRow}>
+                <Select
+                  label="Loại Proxy"
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                  options={[
+                    { value: 'http', label: 'HTTP' },
+                    { value: 'https', label: 'HTTPS' },
+                    { value: 'socks5', label: 'SOCKS5' },
+                  ]}
+                />
+                <label className={styles.flexRow}>
+                  <input
+                    type="checkbox"
+                    checked={formData.enabled}
+                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                  />
+                  <span>Kích hoạt ngay</span>
+                </label>
+              </div>
+              <div className={styles.flexRow}>
+                <Button onClick={handleAddProxy} variant="primary">
+                  <Plus size={16} />
+                  Thêm
+                </Button>
+                <Button onClick={() => setShowAddForm(false)} variant="secondary">
+                  Hủy
+                </Button>
+              </div>
             </div>
           </div>
-          <div className="flex gap-2 mt-4">
-            <Button onClick={handleAddProxy} variant="primary">
-              <Plus size={16} />
-              Thêm
-            </Button>
-            <Button onClick={() => setShowAddForm(false)} variant="secondary">
-              Hủy
-            </Button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Bulk Import Form (Webshare) */}
-      {showBulkImport && (
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-text-primary">Bulk Import Webshare Proxies</h3>
-            <Button onClick={handleQuickAddWebshare} variant="secondary" className="text-xs h-8 px-3">
-              ⚡ Quick Add 10 Free Proxies
-            </Button>
-          </div>
-          
-          <p className="text-sm text-text-secondary mb-3">
-            Paste danh sách proxy từ Webshare (mỗi dòng: <code className="text-xs bg-surface px-1 py-0.5 rounded">ip,port,username,password,country,city</code>)
-          </p>
-          
-          <textarea
-            className="w-full h-40 p-3 bg-surface border border-border rounded text-sm font-mono text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder={`142.111.48.253,7030,qfdakzos,7fvhf24fe3ud,US,Los Angeles
-23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo
-198.23.239.134,6540,qfdakzos,7fvhf24fe3ud,US,Buffalo
-...`}
-            value={bulkImportText}
-            onChange={(e) => setBulkImportText(e.target.value)}
-          />
-          
-          <div className="flex gap-2 mt-4">
-            <Button onClick={handleBulkImport} variant="primary">
-              <Upload size={16} />
-              Import ({bulkImportText.trim().split('\n').filter(l => l.trim()).length} proxies)
-            </Button>
-            <Button onClick={() => { setShowBulkImport(false); setBulkImportText(''); }} variant="secondary">
-              Hủy
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Proxy List */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-border bg-surface/50">
-          <h3 className="font-semibold text-text-primary">
-            Danh sách Proxy ({proxies.length})
-          </h3>
-        </div>
-
-        {loading ? (
-          <div className="p-8 text-center text-text-secondary">
-            Đang tải...
-          </div>
-        ) : proxies.length === 0 ? (
-          <div className="p-8 text-center text-text-secondary">
-            <p>Chưa có proxy nào.</p>
-            <p className="text-sm mt-2">Nhấn "Thêm Proxy" để bắt đầu.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-surface/30 text-xs text-text-secondary uppercase tracking-wider">
-                <tr>
-                  <th className="px-4 py-3 text-left">Trạng thái</th>
-                  <th className="px-4 py-3 text-left">Host:Port</th>
-                  <th className="px-4 py-3 text-left">Platform</th>
-                  <th className="px-4 py-3 text-left">Location</th>
-                  <th className="px-4 py-3 text-left">Loại</th>
-                  <th className="px-4 py-3 text-left">Credentials</th>
-                  <th className="px-4 py-3 text-center">Success Rate</th>
-                  <th className="px-4 py-3 text-center">Thành công</th>
-                  <th className="px-4 py-3 text-center">Thất bại</th>
-                  <th className="px-4 py-3 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {proxies.map((proxy) => {
-                  const proxyStats = getProxyStats(proxy.id);
-                  const isTesting = testingIds.has(proxy.id);
-
-                  return (
-                    <tr key={proxy.id} className="hover:bg-surface/20 transition-colors">
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {proxy.enabled ? (
-                            proxyStats?.isHealthy ? (
-                              <Check size={16} className="text-green-500" />
-                            ) : (
-                              <X size={16} className="text-yellow-500" />
-                            )
-                          ) : (
-                            <X size={16} className="text-gray-500" />
-                          )}
-                          <span className={`text-xs ${proxy.enabled ? (proxyStats?.isHealthy ? 'text-green-500' : 'text-yellow-500') : 'text-gray-500'}`}>
-                            {proxy.enabled ? (proxyStats?.isHealthy ? 'Sẵn sàng' : 'Lỗi') : 'Tắt'}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Host:Port */}
-                      <td className="px-4 py-3">
-                        <code className="text-sm text-text-primary font-mono">
-                          {proxy.host}:{proxy.port}
-                        </code>
-                      </td>
-
-                      {/* Platform */}
-                      <td className="px-4 py-3">
-                        {proxy.platform ? (
-                          <span className="text-xs px-2 py-1 bg-blue-500/10 border border-blue-500/30 rounded text-blue-500">
-                            {proxy.platform}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-text-tertiary italic">-</span>
-                        )}
-                      </td>
-
-                      {/* Location */}
-                      <td className="px-4 py-3 text-xs text-text-secondary">
-                        {proxy.country || proxy.city ? (
-                          <div className="flex flex-col gap-0.5">
-                            {proxy.country && <span className="font-semibold">{proxy.country}</span>}
-                            {proxy.city && <span className="text-text-tertiary">{proxy.city}</span>}
-                          </div>
-                        ) : (
-                          <span className="text-text-tertiary italic">-</span>
-                        )}
-                      </td>
-
-                      {/* Type */}
-                      <td className="px-4 py-3">
-                        <span className="text-xs px-2 py-1 bg-surface rounded text-text-secondary uppercase">
-                          {proxy.type}
-                        </span>
-                      </td>
-
-                      {/* Credentials */}
-                      <td className="px-4 py-3 text-sm text-text-secondary">
-                        {proxy.username ? (
-                          <span className="font-mono text-xs">
-                            {proxy.username}:***
-                          </span>
-                        ) : (
-                          <span className="text-text-tertiary italic">Không có</span>
-                        )}
-                      </td>
-
-                      {/* Success Rate */}
-                      <td className="px-4 py-3 text-center">
-                        {proxyStats ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="w-20 h-2 bg-surface rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${proxyStats.successRate >= 80 ? 'bg-green-500' : proxyStats.successRate >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                style={{ width: `${proxyStats.successRate}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-text-secondary w-10 text-right">
-                              {proxyStats.successRate}%
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-text-tertiary">-</span>
-                        )}
-                      </td>
-
-                      {/* Success Count */}
-                      <td className="px-4 py-3 text-center text-sm text-green-600 font-mono">
-                        {proxyStats?.successCount || 0}
-                      </td>
-
-                      {/* Failed Count */}
-                      <td className="px-4 py-3 text-center text-sm text-red-600 font-mono">
-                        {proxyStats?.failedCount || 0}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleToggleProxy(proxy.id, proxy.enabled)}
-                            className={`p-2 rounded hover:bg-surface transition-colors ${proxy.enabled ? 'text-green-500' : 'text-gray-500'}`}
-                            title={proxy.enabled ? 'Tắt' : 'Bật'}
-                          >
-                            <RotateCcw size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleTestProxy(proxy.id)}
-                            disabled={isTesting}
-                            className="p-2 rounded hover:bg-surface transition-colors text-blue-500 disabled:opacity-50"
-                            title="Test proxy"
-                          >
-                            <TestTube size={16} className={isTesting ? 'animate-pulse' : ''} />
-                          </button>
-                          <button
-                            onClick={() => handleRemoveProxy(proxy.id)}
-                            className="p-2 rounded hover:bg-surface transition-colors text-red-500"
-                            title="Xóa"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {/* Bulk Import Form */}
+        {showBulkImport && (
+          <div className={styles.section}>
+            <div className={styles.row}>
+              <div className={styles.label}>
+                <span className={styles.labelText}>Bulk Import Webshare Proxies</span>
+              </div>
+              <Button onClick={handleQuickAddWebshare} variant="secondary">
+                ⚡ Quick Add 10 Free Proxies
+              </Button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                Paste danh sách proxy từ Webshare (mỗi dòng: ip,port,username,password,country,city)
+              </p>
+              <textarea
+                className={styles.select}
+                style={{ width: '100%', height: '120px', resize: 'none', marginBottom: '12px' }}
+                placeholder={`142.111.48.253,7030,qfdakzos,7fvhf24fe3ud,US,Los Angeles
+23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo`}
+                value={bulkImportText}
+                onChange={(e) => setBulkImportText(e.target.value)}
+              />
+              <div className={styles.flexRow}>
+                <Button onClick={handleBulkImport} variant="primary">
+                  <Upload size={16} />
+                  Import ({bulkImportText.trim().split('\n').filter(l => l.trim()).length} proxies)
+                </Button>
+                <Button onClick={() => { setShowBulkImport(false); setBulkImportText(''); }} variant="secondary">
+                  Hủy
+                </Button>
+              </div>
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Info Box */}
-      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
-        <h4 className="font-semibold text-blue-500 mb-2">ℹ️ Lưu ý</h4>
-        <ul className="text-sm text-text-secondary space-y-1 list-disc list-inside">
-          <li>Proxy được rotation tự động theo round-robin khi gọi API</li>
-          <li>Proxy bị tắt tự động sau 5 lỗi liên tiếp</li>
-          <li>Nếu tất cả proxy đều thất bại, hệ thống sẽ fallback về direct connection</li>
-          <li>Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định</li>
-        </ul>
+        {/* Proxy List */}
+        <div className={styles.section}>
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Danh sách Proxy ({proxies.length})</span>
+            </div>
+            <div className={styles.flexRow}>
+              <Button onClick={() => setShowBulkImport(true)} variant="secondary">
+                <FileText size={16} />
+                Bulk Import (Webshare)
+              </Button>
+              <Button onClick={handleImport} variant="secondary">
+                <Upload size={16} />
+                Import JSON
+              </Button>
+              <Button onClick={handleResetAll} variant="secondary" disabled={proxies.length === 0}>
+                <RotateCcw size={16} />
+                Reset All
+              </Button>
+              <Button onClick={handleExport} variant="secondary" disabled={proxies.length === 0}>
+                <Download size={16} />
+                Export
+              </Button>
+              <Button onClick={() => setShowAddForm(true)} variant="primary">
+                <Plus size={16} />
+                Thêm Proxy
+              </Button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+              Đang tải...
+            </div>
+          ) : proxies.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+              <p>Chưa có proxy nào.</p>
+              <p style={{ fontSize: '14px', marginTop: '8px' }}>Nhấn "Thêm Proxy" để bắt đầu.</p>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ backgroundColor: 'var(--color-surface)', fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <tr>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Trạng thái</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Host:Port</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Platform</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Location</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Loại</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Credentials</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Success Rate</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Thành công</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Thất bại</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {proxies.map((proxy) => {
+                    const proxyStats = getProxyStats(proxy.id);
+                    const isTesting = testingIds.has(proxy.id);
+
+                    return (
+                      <tr key={proxy.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {proxy.enabled ? (
+                              proxyStats?.isHealthy ? (
+                                <Check size={16} style={{ color: 'green' }} />
+                              ) : (
+                                <X size={16} style={{ color: 'orange' }} />
+                              )
+                            ) : (
+                              <X size={16} style={{ color: 'gray' }} />
+                            )}
+                            <span style={{ fontSize: '12px', color: proxy.enabled ? (proxyStats?.isHealthy ? 'green' : 'orange') : 'gray' }}>
+                              {proxy.enabled ? (proxyStats?.isHealthy ? 'Sẵn sàng' : 'Lỗi') : 'Tắt'}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <code style={{ fontSize: '14px', color: 'var(--color-text-primary)', fontFamily: 'monospace' }}>
+                            {proxy.host}:{proxy.port}
+                          </code>
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          {proxy.platform ? (
+                            <span style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', color: '#3b82f6' }}>
+                              {proxy.platform}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>-</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                          {proxy.country || proxy.city ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              {proxy.country && <span style={{ fontWeight: '500' }}>{proxy.country}</span>}
+                              {proxy.city && <span style={{ color: 'var(--color-text-tertiary)' }}>{proxy.city}</span>}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>-</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: 'var(--color-surface)', borderRadius: '6px', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
+                            {proxy.type}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                          {proxy.username ? (
+                            <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                              {proxy.username}:***
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>Không có</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                          {proxyStats ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                              <div style={{ width: '80px', height: '4px', backgroundColor: 'var(--color-surface)', borderRadius: '2px', overflow: 'hidden' }}>
+                                <div
+                                  style={{
+                                    height: '100%',
+                                    backgroundColor: proxyStats.successRate >= 80 ? 'green' : proxyStats.successRate >= 50 ? 'orange' : 'red',
+                                    width: `${proxyStats.successRate}%`
+                                  }}
+                                />
+                              </div>
+                              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', width: '40px', textAlign: 'right' }}>
+                                {proxyStats.successRate}%
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>-</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: 'green', fontFamily: 'monospace' }}>
+                          {proxyStats?.successCount || 0}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: 'red', fontFamily: 'monospace' }}>
+                          {proxyStats?.failedCount || 0}
+                        </td>
+                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                            <button
+                              onClick={() => handleToggleProxy(proxy.id, proxy.enabled)}
+                              style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: proxy.enabled ? 'green' : 'gray' }}
+                              title={proxy.enabled ? 'Tắt' : 'Bật'}
+                            >
+                              <RotateCcw size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleTestProxy(proxy.id)}
+                              disabled={isTesting}
+                              style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: 'blue', opacity: isTesting ? 0.5 : 1 }}
+                              title="Test proxy"
+                            >
+                              <TestTube size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveProxy(proxy.id)}
+                              style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: 'red' }}
+                              title="Xóa"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Info Box */}
+        <div style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '12px', padding: '16px' }}>
+          <h4 style={{ fontWeight: '500', color: '#3b82f6', marginBottom: '8px' }}>ℹ️ Lưu ý</h4>
+          <ul style={{ fontSize: '14px', color: 'var(--color-text-secondary)', listStyle: 'disc', listStylePosition: 'inside', margin: 0, paddingLeft: '16px' }}>
+            <li>Proxy được rotation tự động theo round-robin khi gọi API</li>
+            <li>Proxy bị tắt tự động sau 5 lỗi liên tiếp</li>
+            <li>Nếu tất cả proxy đều thất bại, hệ thống sẽ fallback về direct connection</li>
+            <li>Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

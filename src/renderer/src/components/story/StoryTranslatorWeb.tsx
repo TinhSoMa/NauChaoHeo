@@ -4,6 +4,7 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { FileText, CheckSquare, Square, Check, MessageSquare, Ban, Clock, Loader2, Monitor, Settings } from 'lucide-react';
+import { useProjectContext } from '../../context/ProjectContext';
 
 // Browser config interface
 interface BrowserConfig {
@@ -13,6 +14,10 @@ interface BrowserConfig {
 }
 
 export function StoryTranslatorWeb() {
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = useRef(false);
+  const saveTimeoutRef = useRef<number | null>(null);
+
   const [filePath, setFilePath] = useState('');
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
@@ -42,6 +47,74 @@ export function StoryTranslatorWeb() {
   const [isWaitingResponse, setIsWaitingResponse] = useState<boolean>(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const STORY_WEB_STATE_FILE = 'story-translator-web.json';
+
+  const loadStoryWebState = async () => {
+    if (!projectId) return;
+
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: 'story',
+        fileName: STORY_WEB_STATE_FILE
+      });
+
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data) as {
+          filePath?: string;
+          sourceLang?: string;
+          targetLang?: string;
+          selectedChapterId?: string | null;
+          chapters?: Chapter[];
+          translatedEntries?: Array<[string, string]>;
+          excludedChapterIds?: string[];
+          viewMode?: 'original' | 'translated';
+          selectedConfigId?: string;
+          sessionContext?: { conversationId: string; responseId: string; choiceId: string } | null;
+        };
+
+        if (saved.filePath) setFilePath(saved.filePath);
+        if (saved.sourceLang) setSourceLang(saved.sourceLang);
+        if (saved.targetLang) setTargetLang(saved.targetLang);
+        if (typeof saved.selectedChapterId !== 'undefined') setSelectedChapterId(saved.selectedChapterId);
+        if (saved.chapters) setChapters(saved.chapters);
+        if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
+        if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
+        if (saved.viewMode) setViewMode(saved.viewMode);
+        if (saved.selectedConfigId) setSelectedConfigId(saved.selectedConfigId);
+        if (typeof saved.sessionContext !== 'undefined') setSessionContext(saved.sessionContext);
+      }
+    } catch (error) {
+      console.error('[StoryTranslatorWeb] Loi khi tai du lieu project:', error);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  };
+
+  const saveStoryWebState = async () => {
+    if (!projectId) return;
+
+    const payload = {
+      filePath,
+      sourceLang,
+      targetLang,
+      selectedChapterId,
+      chapters,
+      translatedEntries: Array.from(translatedChapters.entries()),
+      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      viewMode,
+      selectedConfigId,
+      sessionContext
+    };
+
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: 'story',
+      fileName: STORY_WEB_STATE_FILE,
+      content: payload
+    });
+  };
+
   const handleStop = () => {
       stopRef.current = true;
       console.log('[StoryTranslator] Stop requested by user.');
@@ -50,6 +123,42 @@ export function StoryTranslatorWeb() {
   useEffect(() => {
     loadConfigurations();
   }, []);
+
+  useEffect(() => {
+    if (!projectId || !paths) return;
+    loadStoryWebState();
+  }, [projectId, paths]);
+
+  useEffect(() => {
+    if (!projectId || !paths || !hasLoadedRef.current) return;
+
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveStoryWebState();
+    }, 500);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [
+    projectId,
+    paths,
+    filePath,
+    sourceLang,
+    targetLang,
+    selectedChapterId,
+    chapters,
+    translatedChapters,
+    excludedChapterIds,
+    viewMode,
+    selectedConfigId,
+    sessionContext
+  ]);
 
   const loadConfigurations = async () => {
     try {

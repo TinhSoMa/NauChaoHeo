@@ -235,6 +235,22 @@ interface ProjectMetadata {
   name: string;
   createdAt: number;
   updatedAt: number;
+  paths: ProjectPaths;
+}
+
+interface ProjectPaths {
+  story: string;
+  caption: string;
+  tts: string;
+  gemini: string;
+}
+
+interface ProjectResolvedPaths {
+  root: string;
+  story: string;
+  caption: string;
+  tts: string;
+  gemini: string;
 }
 
 /**
@@ -244,6 +260,10 @@ interface ProjectAPI {
   openProject: (projectId: string) => Promise<IpcApiResponse<void>>;
   createAndOpen: (projectName: string) => Promise<IpcApiResponse<ProjectMetadata>>;
   scanProjects: () => Promise<IpcApiResponse<ProjectMetadata[]>>;
+  getMetadata: (projectId: string) => Promise<IpcApiResponse<ProjectMetadata>>;
+  getResolvedPaths: (projectId: string) => Promise<IpcApiResponse<ProjectResolvedPaths>>;
+  readFeatureFile: (payload: { projectId: string; feature: keyof ProjectPaths; fileName: string }) => Promise<IpcApiResponse<string | null>>;
+  writeFeatureFile: (payload: { projectId: string; feature: keyof ProjectPaths; fileName: string; content: unknown }) => Promise<IpcApiResponse<void>>;
   getProjectsPath: () => Promise<IpcApiResponse<string | null>>;
   setProjectsPath: (path: string) => Promise<IpcApiResponse<void>>;
 }

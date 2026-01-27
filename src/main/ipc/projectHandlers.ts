@@ -2,11 +2,65 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { PROJECT_IPC_CHANNELS, ProjectMetadata } from '../../shared/types/project'
+import {
+  PROJECT_IPC_CHANNELS,
+  ProjectMetadata,
+  ProjectPaths,
+  ProjectFeature,
+  ProjectResolvedPaths
+} from '../../shared/types/project'
 import { createEditorWindow } from '../windowManager'
 import { AppSettingsService } from '../services/appSettings'
 
 const PROJECT_FILE = 'project.json'
+const DEFAULT_PROJECT_PATHS: ProjectPaths = {
+  story: 'story',
+  caption: 'caption',
+  tts: 'tts',
+  gemini: 'gemini-chat'
+}
+
+function getProjectsBasePathOrThrow(): string {
+  const basePath = AppSettingsService.getProjectsBasePath()
+  if (!basePath) {
+    throw new Error('Chưa cấu hình thư mục Projects trong Settings')
+  }
+  return basePath
+}
+
+function readProjectMetadata(projectId: string): ProjectMetadata {
+  const basePath = getProjectsBasePathOrThrow()
+  const projectPath = path.join(basePath, projectId)
+  const metadataPath = path.join(projectPath, PROJECT_FILE)
+
+  if (!fs.existsSync(metadataPath)) {
+    throw new Error('Không tìm thấy project.json')
+  }
+
+  const content = fs.readFileSync(metadataPath, 'utf-8')
+  const metadata: ProjectMetadata = JSON.parse(content)
+
+  if (!metadata.paths) {
+    metadata.paths = { ...DEFAULT_PROJECT_PATHS }
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
+  }
+
+  return metadata
+}
+
+function resolveProjectPaths(projectId: string): ProjectResolvedPaths {
+  const basePath = getProjectsBasePathOrThrow()
+  const metadata = readProjectMetadata(projectId)
+  const projectRoot = path.join(basePath, projectId)
+
+  return {
+    root: projectRoot,
+    story: path.join(projectRoot, metadata.paths.story),
+    caption: path.join(projectRoot, metadata.paths.caption),
+    tts: path.join(projectRoot, metadata.paths.tts),
+    gemini: path.join(projectRoot, metadata.paths.gemini)
+  }
+}
 
 // Quét thư mục projects để tìm tất cả project hợp lệ
 function scanProjects(basePath: string): ProjectMetadata[] {
@@ -29,6 +83,9 @@ function scanProjects(basePath: string): ProjectMetadata[] {
         try {
           const content = fs.readFileSync(metadataPath, 'utf-8')
           const metadata: ProjectMetadata = JSON.parse(content)
+          if (!metadata.paths) {
+            metadata.paths = { ...DEFAULT_PROJECT_PATHS }
+          }
           projects.push(metadata)
         } catch (err) {
           console.error(`[ProjectHandlers] Lỗi đọc metadata của project ${entry.name}:`, err)
@@ -56,12 +113,20 @@ function createProject(basePath: string, projectName: string): ProjectMetadata |
     // Tạo thư mục project
     fs.mkdirSync(projectPath, { recursive: true })
 
+    // Tạo thư mục con theo cấu hình feature
+    const featureFolders = Object.values(DEFAULT_PROJECT_PATHS)
+    for (const folderName of featureFolders) {
+      const featurePath = path.join(projectPath, folderName)
+      fs.mkdirSync(featurePath, { recursive: true })
+    }
+
     // Tạo metadata
     const metadata: ProjectMetadata = {
       id: projectId,
       name: projectName,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      paths: { ...DEFAULT_PROJECT_PATHS }
     }
 
     // Lưu file project.json
@@ -78,6 +143,90 @@ function createProject(basePath: string, projectName: string): ProjectMetadata |
 
 // Xử lý luồng mở project và tráo đổi cửa sổ Dashboard ↔ Editor
 export function registerProjectHandlers(): void {
+  ipcMain.handle(PROJECT_IPC_CHANNELS.GET_METADATA, async (_event, projectId: string) => {
+    try {
+      if (!projectId) {
+        return { success: false, error: 'Thiếu projectId' }
+      }
+
+      const metadata = readProjectMetadata(projectId)
+      return { success: true, data: metadata }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle(PROJECT_IPC_CHANNELS.GET_RESOLVED_PATHS, async (_event, projectId: string) => {
+    try {
+      if (!projectId) {
+        return { success: false, error: 'Thiếu projectId' }
+      }
+
+      const paths = resolveProjectPaths(projectId)
+      return { success: true, data: paths }
+    } catch (error) {
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle(
+    PROJECT_IPC_CHANNELS.READ_FEATURE_FILE,
+    async (_event, payload: { projectId: string; feature: ProjectFeature; fileName: string }) => {
+      try {
+        const { projectId, feature, fileName } = payload
+        if (!projectId || !feature || !fileName) {
+          return { success: false, error: 'Thiếu tham số' }
+        }
+
+        const metadata = readProjectMetadata(projectId)
+        const basePath = getProjectsBasePathOrThrow()
+        const projectRoot = path.join(basePath, projectId)
+        const featureDir = path.join(projectRoot, metadata.paths[feature])
+        const filePath = path.join(featureDir, fileName)
+
+        if (!fs.existsSync(filePath)) {
+          return { success: true, data: null }
+        }
+
+        const content = fs.readFileSync(filePath, 'utf-8')
+        return { success: true, data: content }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    PROJECT_IPC_CHANNELS.WRITE_FEATURE_FILE,
+    async (
+      _event,
+      payload: { projectId: string; feature: ProjectFeature; fileName: string; content: unknown }
+    ) => {
+      try {
+        const { projectId, feature, fileName, content } = payload
+        if (!projectId || !feature || !fileName) {
+          return { success: false, error: 'Thiếu tham số' }
+        }
+
+        const metadata = readProjectMetadata(projectId)
+        const basePath = getProjectsBasePathOrThrow()
+        const projectRoot = path.join(basePath, projectId)
+        const featureDir = path.join(projectRoot, metadata.paths[feature])
+        const filePath = path.join(featureDir, fileName)
+
+        if (!fs.existsSync(featureDir)) {
+          fs.mkdirSync(featureDir, { recursive: true })
+        }
+
+        const dataToWrite = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
+        fs.writeFileSync(filePath, dataToWrite, 'utf-8')
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    }
+  )
+
   ipcMain.handle(PROJECT_IPC_CHANNELS.OPEN, async (event, projectId: string) => {
     try {
       if (!projectId) {

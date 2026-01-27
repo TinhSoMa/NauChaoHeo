@@ -100,7 +100,7 @@ export function Settings() {
       {activeTab === 'app' && <AppSettings onBack={handleBack} />}
       {activeTab === 'apikeys' && <ApiKeysSettings onBack={handleBack} />}
       {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
-      {activeTab === 'proxy' && <ProxySettings />}
+      {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}
     </div>
   );
 }

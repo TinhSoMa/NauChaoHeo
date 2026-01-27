@@ -7,6 +7,12 @@ interface ProjectMetadata {
   name: string
   createdAt: number
   updatedAt: number
+  paths: {
+    story: string
+    caption: string
+    tts: string
+    gemini: string
+  }
 }
 
 // Dashboard chọn project - quét từ thư mục được cấu hình
@@ -202,7 +208,7 @@ export function ProjectDashboard() {
                     className="text-left rounded-xl border border-border bg-card hover:bg-surface p-4 transition-all hover:border-border-hover"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                         <FolderOpen size={18} className="text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">

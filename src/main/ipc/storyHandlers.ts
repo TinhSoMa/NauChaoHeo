@@ -7,6 +7,20 @@ import { STORY_IPC_CHANNELS } from '../../shared/types';
 export function registerStoryHandlers(): void {
   console.log('[StoryHandlers] Đăng ký handlers...');
 
+  ipcMain.removeHandler('dialog:showSaveDialog');
+  ipcMain.handle(
+    'dialog:showSaveDialog',
+    async (_event: IpcMainInvokeEvent, options?: { title?: string; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => {
+      const result = await dialog.showSaveDialog({
+        title: options?.title,
+        defaultPath: options?.defaultPath,
+        filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+      });
+
+      return result;
+    }
+  );
+
   ipcMain.handle(
     STORY_IPC_CHANNELS.PARSE,
     async (_event: IpcMainInvokeEvent, filePath: string) => {

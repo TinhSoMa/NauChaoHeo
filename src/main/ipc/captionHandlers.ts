@@ -45,6 +45,31 @@ export function registerCaptionHandlers(): void {
   );
 
   // ============================================
+  // DIALOG SAVE FILE
+  // ============================================
+  ipcMain.handle(
+    'dialog:showSaveDialog',
+    async (
+      _event: IpcMainInvokeEvent,
+      options?: {
+        title?: string;
+        defaultPath?: string;
+        filters?: { name: string; extensions: string[] }[];
+      }
+    ) => {
+      console.log('[CaptionHandlers] Mở dialog lưu file...');
+
+      const result = await dialog.showSaveDialog({
+        title: options?.title,
+        defaultPath: options?.defaultPath,
+        filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+      });
+
+      return result;
+    }
+  );
+
+  // ============================================
   // PARSE SRT
   // ============================================
   ipcMain.handle(

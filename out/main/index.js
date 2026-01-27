@@ -2227,6 +2227,18 @@ function registerCaptionHandlers() {
     }
   );
   electron.ipcMain.handle(
+    "dialog:showSaveDialog",
+    async (_event, options) => {
+      console.log("[CaptionHandlers] Mở dialog lưu file...");
+      const result = await electron.dialog.showSaveDialog({
+        title: options?.title,
+        defaultPath: options?.defaultPath,
+        filters: options?.filters || [{ name: "All Files", extensions: ["*"] }]
+      });
+      return result;
+    }
+  );
+  electron.ipcMain.handle(
     CAPTION_IPC_CHANNELS.PARSE_SRT,
     async (_event, filePath) => {
       console.log(`[CaptionHandlers] Parse SRT: ${filePath}`);
@@ -4090,11 +4102,27 @@ const PROJECT_IPC_CHANNELS = {
   OPEN: "project:open",
   CREATE_AND_OPEN: "project:createAndOpen",
   SCAN_PROJECTS: "project:scanProjects",
+  GET_METADATA: "project:getMetadata",
+  GET_RESOLVED_PATHS: "project:getResolvedPaths",
+  READ_FEATURE_FILE: "project:readFeatureFile",
+  WRITE_FEATURE_FILE: "project:writeFeatureFile",
   GET_PROJECTS_PATH: "project:getProjectsPath",
   SET_PROJECTS_PATH: "project:setProjectsPath"
 };
 function registerStoryHandlers() {
   console.log("[StoryHandlers] Đăng ký handlers...");
+  electron.ipcMain.removeHandler("dialog:showSaveDialog");
+  electron.ipcMain.handle(
+    "dialog:showSaveDialog",
+    async (_event, options) => {
+      const result = await electron.dialog.showSaveDialog({
+        title: options?.title,
+        defaultPath: options?.defaultPath,
+        filters: options?.filters || [{ name: "All Files", extensions: ["*"] }]
+      });
+      return result;
+    }
+  );
   electron.ipcMain.handle(
     STORY_IPC_CHANNELS.PARSE,
     async (_event, filePath) => {
@@ -4279,6 +4307,46 @@ function createEditorWindow(projectId) {
   return editorWindow;
 }
 const PROJECT_FILE = "project.json";
+const DEFAULT_PROJECT_PATHS = {
+  story: "story",
+  caption: "caption",
+  tts: "tts",
+  gemini: "gemini-chat"
+};
+function getProjectsBasePathOrThrow() {
+  const basePath = AppSettingsService.getProjectsBasePath();
+  if (!basePath) {
+    throw new Error("Chưa cấu hình thư mục Projects trong Settings");
+  }
+  return basePath;
+}
+function readProjectMetadata(projectId) {
+  const basePath = getProjectsBasePathOrThrow();
+  const projectPath = path__namespace.join(basePath, projectId);
+  const metadataPath = path__namespace.join(projectPath, PROJECT_FILE);
+  if (!fs__namespace.existsSync(metadataPath)) {
+    throw new Error("Không tìm thấy project.json");
+  }
+  const content = fs__namespace.readFileSync(metadataPath, "utf-8");
+  const metadata = JSON.parse(content);
+  if (!metadata.paths) {
+    metadata.paths = { ...DEFAULT_PROJECT_PATHS };
+    fs__namespace.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
+  }
+  return metadata;
+}
+function resolveProjectPaths(projectId) {
+  const basePath = getProjectsBasePathOrThrow();
+  const metadata = readProjectMetadata(projectId);
+  const projectRoot = path__namespace.join(basePath, projectId);
+  return {
+    root: projectRoot,
+    story: path__namespace.join(projectRoot, metadata.paths.story),
+    caption: path__namespace.join(projectRoot, metadata.paths.caption),
+    tts: path__namespace.join(projectRoot, metadata.paths.tts),
+    gemini: path__namespace.join(projectRoot, metadata.paths.gemini)
+  };
+}
 function scanProjects(basePath) {
   try {
     if (!fs__namespace.existsSync(basePath)) {
@@ -4295,6 +4363,9 @@ function scanProjects(basePath) {
         try {
           const content = fs__namespace.readFileSync(metadataPath, "utf-8");
           const metadata = JSON.parse(content);
+          if (!metadata.paths) {
+            metadata.paths = { ...DEFAULT_PROJECT_PATHS };
+          }
           projects.push(metadata);
         } catch (err) {
           console.error(`[ProjectHandlers] Lỗi đọc metadata của project ${entry.name}:`, err);
@@ -4315,11 +4386,17 @@ function createProject(basePath, projectName) {
       throw new Error("Project đã tồn tại");
     }
     fs__namespace.mkdirSync(projectPath, { recursive: true });
+    const featureFolders = Object.values(DEFAULT_PROJECT_PATHS);
+    for (const folderName of featureFolders) {
+      const featurePath = path__namespace.join(projectPath, folderName);
+      fs__namespace.mkdirSync(featurePath, { recursive: true });
+    }
     const metadata = {
       id: projectId,
       name: projectName,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      paths: { ...DEFAULT_PROJECT_PATHS }
     };
     const metadataPath = path__namespace.join(projectPath, PROJECT_FILE);
     fs__namespace.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
@@ -4331,6 +4408,75 @@ function createProject(basePath, projectName) {
   }
 }
 function registerProjectHandlers() {
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_METADATA, async (_event, projectId) => {
+    try {
+      if (!projectId) {
+        return { success: false, error: "Thiếu projectId" };
+      }
+      const metadata = readProjectMetadata(projectId);
+      return { success: true, data: metadata };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_RESOLVED_PATHS, async (_event, projectId) => {
+    try {
+      if (!projectId) {
+        return { success: false, error: "Thiếu projectId" };
+      }
+      const paths = resolveProjectPaths(projectId);
+      return { success: true, data: paths };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(
+    PROJECT_IPC_CHANNELS.READ_FEATURE_FILE,
+    async (_event, payload) => {
+      try {
+        const { projectId, feature, fileName } = payload;
+        if (!projectId || !feature || !fileName) {
+          return { success: false, error: "Thiếu tham số" };
+        }
+        const metadata = readProjectMetadata(projectId);
+        const basePath = getProjectsBasePathOrThrow();
+        const projectRoot = path__namespace.join(basePath, projectId);
+        const featureDir = path__namespace.join(projectRoot, metadata.paths[feature]);
+        const filePath = path__namespace.join(featureDir, fileName);
+        if (!fs__namespace.existsSync(filePath)) {
+          return { success: true, data: null };
+        }
+        const content = fs__namespace.readFileSync(filePath, "utf-8");
+        return { success: true, data: content };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROJECT_IPC_CHANNELS.WRITE_FEATURE_FILE,
+    async (_event, payload) => {
+      try {
+        const { projectId, feature, fileName, content } = payload;
+        if (!projectId || !feature || !fileName) {
+          return { success: false, error: "Thiếu tham số" };
+        }
+        const metadata = readProjectMetadata(projectId);
+        const basePath = getProjectsBasePathOrThrow();
+        const projectRoot = path__namespace.join(basePath, projectId);
+        const featureDir = path__namespace.join(projectRoot, metadata.paths[feature]);
+        const filePath = path__namespace.join(featureDir, fileName);
+        if (!fs__namespace.existsSync(featureDir)) {
+          fs__namespace.mkdirSync(featureDir, { recursive: true });
+        }
+        const dataToWrite = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+        fs__namespace.writeFileSync(filePath, dataToWrite, "utf-8");
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
   electron.ipcMain.handle(PROJECT_IPC_CHANNELS.OPEN, async (event, projectId) => {
     try {
       if (!projectId) {
