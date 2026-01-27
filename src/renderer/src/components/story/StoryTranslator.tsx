@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
-import { TranslationProject, ChapterTranslation } from '@shared/types/project';
+// import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -9,10 +9,11 @@ import { Select } from '../common/Select';
 import { BookOpen, FileText, CheckSquare, Square, Check, StopCircle, Download, Loader, Clock } from 'lucide-react';
 
 export function StoryTranslator() {
-  const [searchParams] = useSearchParams();
-  const projectId = searchParams.get('projectId');
+  // No projectId needed anymore
+  // const [searchParams] = useSearchParams();
+  // const projectId = searchParams.get('projectId');
   
-  const [currentProject, setCurrentProject] = useState<TranslationProject | null>(null);
+  // const [currentProject, setCurrentProject] = useState<TranslationProject | null>(null);
   const [filePath, setFilePath] = useState('');
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
@@ -48,69 +49,7 @@ export function StoryTranslator() {
     return () => clearInterval(interval);
   }, [processingChapters.size]);
 
-  // Load project if ID is present
-  useEffect(() => {
-    if (projectId) {
-      loadProject(projectId);
-    }
-  }, [projectId]);
-
-  const loadProject = async (id: string) => {
-    try {
-      setStatus('running');
-      console.log('Loading project:', id);
-      
-      // 1. Get Project Details
-      const projectResult = await window.electronAPI.project.getById(id);
-      if (!projectResult.success || !projectResult.data) {
-        alert('Không tìm thấy dự án!');
-        return;
-      }
-      const project = projectResult.data;
-      setCurrentProject(project);
-      setFilePath(project.sourceFilePath || '');
-      setSourceLang(project.settings.sourceLang);
-      setTargetLang(project.settings.targetLang);
-      setModel(project.settings.model || 'gemini-3-flash-preview');
-
-      // 2. Parse Story File (only if exists)
-      if (project.sourceFilePath) {
-        const parseResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PARSE, project.sourceFilePath) as ParseStoryResult;
-        if (parseResult.success && parseResult.chapters) {
-          setChapters(parseResult.chapters);
-          if (parseResult.chapters.length > 0) {
-             setSelectedChapterId(parseResult.chapters[0].id);
-          }
-        }
-      } else {
-        setChapters([]);
-        setTranslatedChapters(new Map());
-      }
-
-      // 3. Load Translations
-      console.log('[StoryTranslator] Loading translations for project:', id);
-      const transResult = await window.electronAPI.project.getTranslations(id);
-      console.log('[StoryTranslator] Translations result:', transResult);
-      if (transResult.success && transResult.data) {
-        console.log('[StoryTranslator] Found translations:', transResult.data.length);
-        const transMap = new Map<string, string>();
-        transResult.data.forEach((t: ChapterTranslation) => {
-          console.log('[StoryTranslator] Mapping chapter:', t.chapterId, t.chapterTitle);
-          transMap.set(t.chapterId, t.translatedContent);
-        });
-        setTranslatedChapters(transMap);
-        console.log('[StoryTranslator] translatedChapters Map size:', transMap.size);
-      } else {
-        console.log('[StoryTranslator] No translations or error:', transResult.error);
-      }
-
-    } catch (error) {
-      console.error('Error loading project:', error);
-      alert('Lỗi tải dự án!');
-    } finally {
-      setStatus('idle');
-    }
-  };
+  // Removed loadProject logic completely
 
   // Kiem tra chuong co duoc chon de dich khong
   const isChapterIncluded = (chapterId: string) => !excludedChapterIds.has(chapterId);
@@ -144,7 +83,6 @@ export function StoryTranslator() {
   // Debug logging
   console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
   console.log('[StoryTranslator] Render - status:', status);
-  console.log('[StoryTranslator] Render - currentProject:', currentProject?.name);
   console.log('[StoryTranslator] Render - chapters.length:', chapters.length);
 
   const handleBrowse = async () => {
@@ -155,23 +93,6 @@ export function StoryTranslator() {
     if (!result.canceled && result.filePaths.length > 0) {
       const path = result.filePaths[0];
       setFilePath(path);
-      
-      // Update Project if active - lưu đường dẫn file vào project
-      if (currentProject) {
-        try {
-          const updateResult = await window.electronAPI.project.update(currentProject.id, {
-            sourceFilePath: path,
-            totalChapters: 0, // Will be updated after parsing
-          });
-          if (updateResult.success && updateResult.data) {
-            setCurrentProject(updateResult.data);
-            console.log('[StoryTranslator] Đã lưu đường dẫn file vào project:', path);
-          }
-        } catch (e) {
-          console.error('[StoryTranslator] Lỗi lưu đường dẫn file:', e);
-        }
-      }
-
       parseFile(path);
     }
   };
@@ -187,15 +108,13 @@ export function StoryTranslator() {
           setExcludedChapterIds(new Set());
           if (parseResult.chapters.length > 0) {
              setSelectedChapterId(parseResult.chapters[0].id);
-             // Không reset translatedChapters để giữ cache nếu cùng file
+             // Không reset translatedChapters - nhưng logic cũ giữ cache nếu cùng file.
+             // Ở đây vì không còn project, nếu parse file mới thì nên reset dịch?
+             // Hoặc user muốn giữ bản dịch cũ? 
+             // Tạm thời reset nếu đổi file khác (logic này chưa implement strict check path change).
+             // Nhưng ở đây parseFile được gọi khi browse file MỚI.
+             setTranslatedChapters(new Map()); 
              setViewMode('original');
-          }
-          
-          // Cập nhật số chương cho project
-          if (currentProject) {
-            await window.electronAPI.project.update(currentProject.id, {
-              totalChapters: parseResult.chapters.length,
-            });
           }
         } else {
           console.error('[StoryTranslator] Loi parse file:', parseResult.error);
@@ -220,7 +139,6 @@ export function StoryTranslator() {
     if (!chapter) return;
 
     setStatus('running');
-    // Không cần reset translatedContent vì dùng Map cache
     
     try {
       console.log('[StoryTranslator] Dang chuan bi prompt...');
@@ -252,16 +170,7 @@ export function StoryTranslator() {
           return next;
         });
 
-        // Nếu đang trong Project, lưu vào DB
-        if (currentProject) {
-          await window.electronAPI.project.saveTranslation({
-            projectId: currentProject.id,
-            chapterId: selectedChapterId,
-            chapterTitle: chapter.title,
-            originalContent: chapter.content,
-            translatedContent: translateResult.data!
-          });
-        }
+        // REMOVED: Saving to Project DB
 
         setViewMode('translated');
         console.log('[StoryTranslator] Dich thanh cong!');
@@ -355,16 +264,7 @@ export function StoryTranslator() {
             return next;
           });
 
-          // Nếu đang trong Project, lưu vào DB
-          if (currentProject) {
-            await window.electronAPI.project.saveTranslation({
-              projectId: currentProject.id,
-              chapterId: chapter.id,
-              chapterTitle: chapter.title,
-              originalContent: chapter.content,
-              translatedContent: translateResult.data!
-            });
-          }
+          // REMOVED: Saving to Project DB
 
           console.log(`[StoryTranslator] ✅ Dịch xong: ${chapter.title}`);
           return { id: chapter.id, text: translateResult.data! };
@@ -464,9 +364,10 @@ export function StoryTranslator() {
 
   // Export all translations to EPUB ebook
   const handleExportEbook = async () => {
-    if (!currentProject) {
-      alert('Vui lòng mở một dự án trước khi export!');
-      return;
+    // REMOVED check project
+    if (chapters.length === 0) {
+        alert('Chưa có nội dung để export!');
+        return;
     }
 
     if (translatedChapters.size === 0) {
@@ -479,53 +380,59 @@ export function StoryTranslator() {
     try {
       console.log('[StoryTranslator] Bắt đầu export ebook...');
       
-      // 1. Lấy tất cả bản dịch từ project (đảm bảo sync với DB)
-      const transResult = await window.electronAPI.project.getTranslations(currentProject.id);
-      
-      if (!transResult.success || !transResult.data || transResult.data.length === 0) {
-        alert('Không tìm thấy bản dịch nào để export!');
-        setExportStatus('idle');
-        return;
+      // 1. Ask user for save location
+      const saveDialogResult = await window.electronAPI.invoke('dialog:showSaveDialog', {
+          title: 'Lưu Ebook EPUB',
+          defaultPath: `output_${sourceLang}-${targetLang}.epub`,
+          filters: [{ name: 'EPUB Ebook', extensions: ['epub'] }]
+      }) as { canceled: boolean; filePath?: string };
+
+      if (saveDialogResult.canceled || !saveDialogResult.filePath) {
+          setExportStatus('idle');
+          return;
       }
 
-      // 2. Sắp xếp chapters theo thứ tự (parse chapterId as number if possible)
-      const sortedTranslations = [...transResult.data].sort((a: ChapterTranslation, b: ChapterTranslation) => {
-        const numA = parseInt(a.chapterId);
-        const numB = parseInt(b.chapterId);
-        if (!isNaN(numA) && !isNaN(numB)) {
-          return numA - numB;
-        }
-        return a.chapterId.localeCompare(b.chapterId);
-      });
+      // 2. Prepare chapters directly from Map (in order of original chapters)
+      const ebookChapters: { title: string; content: string }[] = [];
+      
+      for (const chapter of chapters) {
+          if (translatedChapters.has(chapter.id)) {
+              ebookChapters.push({
+                  title: chapter.title,
+                  content: translatedChapters.get(chapter.id)!
+              });
+          }
+      }
 
-      // 3. Chuẩn bị chapters data cho ebook
-      const ebookChapters = sortedTranslations.map((t: ChapterTranslation) => ({
-        title: t.chapterTitle,
-        content: t.translatedContent
-      }));
+      if (ebookChapters.length === 0) {
+          alert('Lỗi: Không tìm thấy nội dung đã dịch khớp với các chương hiện có.');
+          setExportStatus('idle');
+          return;
+      }
 
       console.log(`[StoryTranslator] Đóng gói ${ebookChapters.length} chương...`);
+      const outputDir = saveDialogResult.filePath.substring(0, saveDialogResult.filePath.lastIndexOf('\\')); // simplistic dirname for windows
+      const filename = saveDialogResult.filePath.substring(saveDialogResult.filePath.lastIndexOf('\\') + 1).replace('.epub', '');
 
-      // 4. Gọi service tạo ebook - lưu vào thư mục project
+      // 4. Gọi service tạo ebook
+      // Note: We need to adjust how we pass outputDir/filename because `createEbook` logic in backend might be rigid about `outputDir` + `filename`.
+      // Or we can modify backend `createEbook` to accept exact `outputPath`.
+      // Current: `outputDir`, `filename`. 
+      // Let's rely on `outputDir` being the folder and `filename` being the name.
+      
       const result = await window.electronAPI.invoke(
         STORY_IPC_CHANNELS.CREATE_EBOOK,
         {
           chapters: ebookChapters,
-          title: currentProject.name,
+          title: filename, // Use filename as title for now
           author: 'AI Translator',
-          filename: `${currentProject.name}_${sourceLang}-${targetLang}`,
-          outputDir: currentProject.projectFolderPath // Lưu trong thư mục project
+          filename: filename,
+          outputDir: outputDir 
         }
       ) as { success: boolean; filePath?: string; error?: string };
 
       if (result.success && result.filePath) {
         console.log('[StoryTranslator] Export thành công:', result.filePath);
-        
-        // 5. Cập nhật outputFilePath trong project
-        await window.electronAPI.project.update(currentProject.id, {
-          outputFilePath: result.filePath
-        });
-
         alert(`✅ Đã export thành công!\n\nFile: ${result.filePath}\n\nSố chương: ${ebookChapters.length}`);
       } else {
         throw new Error(result.error || 'Export thất bại');
@@ -552,9 +459,9 @@ export function StoryTranslator() {
     <div className="flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-primary">
-          {currentProject ? `Dự Án: ${currentProject.name}` : 'Dịch Truyện AI'}
+          Dịch Truyện AI
         </h1>
-        {currentProject && (
+        {chapters.length > 0 && (
           <div className="flex items-center gap-3">
             <span className="text-sm px-3 py-1 bg-primary/10 text-primary rounded-full">
               Đã dịch: {translatedChapters.size}/{chapters.length} chương
@@ -584,7 +491,6 @@ export function StoryTranslator() {
                value={filePath}
                onChange={(e) => setFilePath(e.target.value)}
                containerClassName="flex-1"
-               readOnly={!!currentProject} // Lock text input if in project to avoid confusion? Or allow edit?
              />
              <Button onClick={handleBrowse} variant="secondary" className="shrink-0">
                <FileText size={16} />

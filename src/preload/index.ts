@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { createGeminiAPI, GeminiAPI } from './geminiApi'
 import { createCaptionAPI, createTTSAPI, CaptionAPI, TTSAPI } from './captionApi'
-import { projectApi, ProjectAPI } from './projectApi'
+// import { projectApi, ProjectAPI } from './projectApi'
 import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
 import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
 import { proxyApi, ProxyAPI } from './proxyApi'
@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tts: createTTSAPI(),
 
   // Project API (quan ly du an dich)
-  project: projectApi,
+  // project: projectApi,
 
   // App Settings API (cai dat ung dung)
   appSettings: appSettingsApi,
@@ -52,7 +52,7 @@ declare global {
       gemini: GeminiAPI
       caption: CaptionAPI
       tts: TTSAPI
-      project: ProjectAPI
+      // project: ProjectAPI
       appSettings: AppSettingsAPI
       geminiChat: GeminiChatAPI
       proxy: ProxyAPI

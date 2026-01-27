@@ -7,7 +7,7 @@ import { registerCaptionHandlers } from './captionHandlers';
 import { registerTTSHandlers } from './ttsHandlers';
 import { registerStoryHandlers } from './storyHandlers';
 import { registerPromptHandlers } from './promptHandlers';
-import { registerProjectHandlers } from './projectHandlers';
+// import { registerProjectHandlers } from './projectHandlers';
 import { registerAppSettingsHandlers } from './appSettingsHandlers';
 import { registerGeminiChatHandlers } from './geminiChatHandlers';
 import { registerProxyHandlers } from './proxyHandlers'; // Thêm import cho proxy handlers
@@ -34,7 +34,7 @@ export function registerAllHandlers(): void {
   registerPromptHandlers();
 
   // Đăng ký Project handlers (quản lý dự án dịch)
-  registerProjectHandlers();
+  // registerProjectHandlers();
 
   // Dang ky App Settings handlers
   registerAppSettingsHandlers();
@@ -54,7 +54,7 @@ export { registerCaptionHandlers } from './captionHandlers';
 export { registerTTSHandlers } from './ttsHandlers';
 export { registerStoryHandlers } from './storyHandlers';
 export { registerPromptHandlers } from './promptHandlers';
-export { registerProjectHandlers } from './projectHandlers';
+// export { registerProjectHandlers } from './projectHandlers';
 export { registerAppSettingsHandlers } from './appSettingsHandlers';
 export { registerGeminiChatHandlers } from './geminiChatHandlers';
 export { registerProxyHandlers } from './proxyHandlers';

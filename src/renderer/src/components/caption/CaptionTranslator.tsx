@@ -9,7 +9,7 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
-import { useProjectOutput } from '../../hooks/useProjectOutput';
+// import { useProjectOutput } from '../../hooks/useProjectOutput';
 import {
   GEMINI_MODELS,
   VOICES,
@@ -89,7 +89,8 @@ function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
 // ============================================
 export function CaptionTranslator() {
   // Project output paths
-  const { captionFolder } = useProjectOutput();
+  // const { captionFolder } = useProjectOutput();
+  const captionFolder = null; // Removed project output
   
   // State - Config
   const [inputType, setInputType] = useState<'srt' | 'draft'>(DEFAULT_INPUT_TYPE);

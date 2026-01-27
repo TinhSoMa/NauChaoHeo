@@ -12,20 +12,18 @@ import * as path from 'path';
 // ============================================
 
 export interface AppSettings {
-  projectsBasePath: string | null; // null = use default userData/projects
   theme: 'light' | 'dark' | 'system';
   language: 'vi' | 'en';
-  recentProjectIds: string[]; // IDs của các project gần đây, tối đa 5
-  lastActiveProjectId: string | null; // Project cuối cùng được chọn
+  // recentProjectIds: string[]; // IDs của các project gần đây, tối đa 5
+  // lastActiveProjectId: string | null; // Project cuối cùng được chọn
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  projectsBasePath: null,
   theme: 'dark',
   language: 'vi',
-  recentProjectIds: [],
-  lastActiveProjectId: null,
+  // recentProjectIds: [],
+  // lastActiveProjectId: null,
   useProxy: true, // Mặc định bật proxy
 };
 
@@ -100,80 +98,15 @@ class AppSettingsServiceClass {
   }
 
   /**
-   * Get projects base path (returns custom path + NauChapHeoContent or default)
-   * Projects will be stored in: [selectedPath]/NauChapHeoContent/
+   * Remove project from recent list (when deleted) - REMOVED
    */
-  getProjectsBasePath(): string {
-    if (this.settings.projectsBasePath) {
-      return path.join(this.settings.projectsBasePath, 'NauChapHeoContent');
-    }
-    return path.join(app.getPath('userData'), 'projects');
-  }
-
-  /**
-   * Set projects base path and create NauChapHeoContent folder
-   */
-  setProjectsBasePath(basePath: string | null): void {
-    this.settings.projectsBasePath = basePath;
-    this.save();
-    
-    // Auto-create NauChapHeoContent folder if custom path is set
-    if (basePath) {
-      const fullPath = path.join(basePath, 'NauChapHeoContent');
-      if (!fs.existsSync(fullPath)) {
-        fs.mkdirSync(fullPath, { recursive: true });
-        console.log('[AppSettings] Created NauChapHeoContent folder:', fullPath);
-      }
-    }
-  }
-
-  /**
-   * Add project to recent list
-   */
-  addRecentProject(projectId: string): void {
-    // Remove if already exists
-    this.settings.recentProjectIds = this.settings.recentProjectIds.filter(id => id !== projectId);
-    // Add to front
-    this.settings.recentProjectIds.unshift(projectId);
-    // Keep only last 5
-    this.settings.recentProjectIds = this.settings.recentProjectIds.slice(0, 5);
-    // Also update last active
-    this.settings.lastActiveProjectId = projectId;
-    this.save();
-  }
-
-  /**
-   * Get last active project ID
-   */
-  getLastActiveProjectId(): string | null {
-    return this.settings.lastActiveProjectId;
-  }
-
-  /**
-   * Get recent project IDs
-   */
-  getRecentProjectIds(): string[] {
-    return [...this.settings.recentProjectIds];
-  }
-
-  /**
-   * Clear last active project
-   */
-  clearLastActiveProject(): void {
-    this.settings.lastActiveProjectId = null;
-    this.save();
-  }
-
-  /**
-   * Remove project from recent list (when deleted)
-   */
-  removeFromRecent(projectId: string): void {
-    this.settings.recentProjectIds = this.settings.recentProjectIds.filter(id => id !== projectId);
-    if (this.settings.lastActiveProjectId === projectId) {
-      this.settings.lastActiveProjectId = null;
-    }
-    this.save();
-  }
+  // removeFromRecent(projectId: string): void {
+  //   this.settings.recentProjectIds = this.settings.recentProjectIds.filter(id => id !== projectId);
+  //   if (this.settings.lastActiveProjectId === projectId) {
+  //     this.settings.lastActiveProjectId = null;
+  //   }
+  //   this.save();
+  // }
 }
 
 // Singleton instance
