@@ -14,16 +14,18 @@ import * as path from 'path';
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   language: 'vi' | 'en';
-  // recentProjectIds: string[]; // IDs của các project gần đây, tối đa 5
-  // lastActiveProjectId: string | null; // Project cuối cùng được chọn
+  projectsBasePath: string | null;
+  recentProjectIds: string[]; // IDs của các project gần đây, tối đa 10
+  lastActiveProjectId: string | null; // Project cuối cùng được chọn
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
-  // recentProjectIds: [],
-  // lastActiveProjectId: null,
+  projectsBasePath: null,
+  recentProjectIds: [],
+  lastActiveProjectId: null,
   useProxy: true, // Mặc định bật proxy
 };
 
@@ -88,6 +90,15 @@ class AppSettingsServiceClass {
     return { ...this.settings };
   }
 
+  getProjectsBasePath(): string | null {
+    return this.settings.projectsBasePath ?? null;
+  }
+
+  setProjectsBasePath(basePath: string | null): void {
+    this.settings.projectsBasePath = basePath ?? null;
+    this.save();
+  }
+
   /**
    * Update settings (partial update)
    */
@@ -95,6 +106,40 @@ class AppSettingsServiceClass {
     this.settings = { ...this.settings, ...partial };
     this.save();
     return this.getAll();
+  }
+
+  addRecentProject(projectId: string): void {
+    if (!projectId) return;
+    // Đưa lên đầu danh sách, loại bỏ trùng lặp, giới hạn 10
+    const filtered = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    this.settings.recentProjectIds = [projectId, ...filtered].slice(0, 10);
+    this.settings.lastActiveProjectId = projectId;
+    this.save();
+  }
+
+  getRecentProjectIds(): string[] {
+    return [...this.settings.recentProjectIds];
+  }
+
+  getLastActiveProjectId(): string | null {
+    return this.settings.lastActiveProjectId ?? null;
+  }
+
+  setLastActiveProjectId(projectId: string | null): void {
+    this.settings.lastActiveProjectId = projectId ?? null;
+    if (projectId) {
+      this.addRecentProject(projectId);
+    } else {
+      this.save();
+    }
+  }
+
+  removeFromRecent(projectId: string): void {
+    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    if (this.settings.lastActiveProjectId === projectId) {
+      this.settings.lastActiveProjectId = null;
+    }
+    this.save();
   }
 
   /**

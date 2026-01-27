@@ -23,8 +23,8 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 const electron = require("electron");
-const path = require("path");
 const utils = require("@electron-toolkit/utils");
+const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const fs$1 = require("fs/promises");
@@ -1187,8 +1187,9 @@ function getConfigurationService(database) {
 const DEFAULT_SETTINGS = {
   theme: "dark",
   language: "vi",
-  // recentProjectIds: [],
-  // lastActiveProjectId: null,
+  projectsBasePath: null,
+  recentProjectIds: [],
+  lastActiveProjectId: null,
   useProxy: true
   // Mặc định bật proxy
 };
@@ -1242,6 +1243,13 @@ class AppSettingsServiceClass {
   getAll() {
     return { ...this.settings };
   }
+  getProjectsBasePath() {
+    return this.settings.projectsBasePath ?? null;
+  }
+  setProjectsBasePath(basePath) {
+    this.settings.projectsBasePath = basePath ?? null;
+    this.save();
+  }
   /**
    * Update settings (partial update)
    */
@@ -1249,6 +1257,34 @@ class AppSettingsServiceClass {
     this.settings = { ...this.settings, ...partial };
     this.save();
     return this.getAll();
+  }
+  addRecentProject(projectId) {
+    if (!projectId) return;
+    const filtered = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    this.settings.recentProjectIds = [projectId, ...filtered].slice(0, 10);
+    this.settings.lastActiveProjectId = projectId;
+    this.save();
+  }
+  getRecentProjectIds() {
+    return [...this.settings.recentProjectIds];
+  }
+  getLastActiveProjectId() {
+    return this.settings.lastActiveProjectId ?? null;
+  }
+  setLastActiveProjectId(projectId) {
+    this.settings.lastActiveProjectId = projectId ?? null;
+    if (projectId) {
+      this.addRecentProject(projectId);
+    } else {
+      this.save();
+    }
+  }
+  removeFromRecent(projectId) {
+    this.settings.recentProjectIds = this.settings.recentProjectIds.filter((id) => id !== projectId);
+    if (this.settings.lastActiveProjectId === projectId) {
+      this.settings.lastActiveProjectId = null;
+    }
+    this.save();
   }
   /**
    * Remove project from recent list (when deleted) - REMOVED
@@ -1275,7 +1311,7 @@ async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0, us
     };
     console.log(`[GeminiService] Gọi Gemini API với model: ${model}${useProxy ? " (via proxy)" : ""}`);
     if (useProxy) {
-      const { makeRequestWithProxy } = await Promise.resolve().then(() => require("./chunks/apiClient-DctWUVp7.js"));
+      const { makeRequestWithProxy } = await Promise.resolve().then(() => require("./chunks/apiClient-kIhLgAH8.js"));
       const result = await makeRequestWithProxy(url, {
         method: "POST",
         headers: {
@@ -4050,6 +4086,13 @@ const PROXY_IPC_CHANNELS = {
   RESET: "proxy:reset"
   // Reset failed counts
 };
+const PROJECT_IPC_CHANNELS = {
+  OPEN: "project:open",
+  CREATE_AND_OPEN: "project:createAndOpen",
+  SCAN_PROJECTS: "project:scanProjects",
+  GET_PROJECTS_PATH: "project:getProjectsPath",
+  SET_PROJECTS_PATH: "project:setProjectsPath"
+};
 function registerStoryHandlers() {
   console.log("[StoryHandlers] Đăng ký handlers...");
   electron.ipcMain.handle(
@@ -4164,6 +4207,204 @@ function registerPromptHandlers() {
     return PromptService.setDefault(id);
   });
   console.log("[PromptHandlers] Đã đăng ký handlers thành công");
+}
+let dashboardWindow = null;
+const editorWindows = /* @__PURE__ */ new Map();
+function buildRendererUrl(route, params) {
+  const search = params ? new URLSearchParams(params).toString() : "";
+  const hashPath = route.startsWith("/") ? route : `/${route}`;
+  const hash = search ? `${hashPath}?${search}` : hashPath;
+  if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+    return `${process.env["ELECTRON_RENDERER_URL"]}#${hash}`;
+  }
+  const filePath = path.join(__dirname, "../renderer/index.html");
+  return `file://${filePath}#${hash}`;
+}
+function createBaseWindow() {
+  return new electron.BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "../preload/index.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false
+    }
+  });
+}
+function attachCommonHandlers(win) {
+  win.webContents.setWindowOpenHandler((details) => {
+    electron.shell.openExternal(details.url);
+    return { action: "deny" };
+  });
+}
+function createDashboardWindow() {
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+    dashboardWindow.focus();
+    return dashboardWindow;
+  }
+  dashboardWindow = createBaseWindow();
+  attachCommonHandlers(dashboardWindow);
+  dashboardWindow.on("ready-to-show", () => {
+    dashboardWindow?.maximize();
+    dashboardWindow?.show();
+  });
+  const url = buildRendererUrl("/projects");
+  dashboardWindow.loadURL(url);
+  dashboardWindow.on("closed", () => {
+    dashboardWindow = null;
+  });
+  console.log("[Cửa sổ] Đã mở Dashboard");
+  return dashboardWindow;
+}
+function createEditorWindow(projectId) {
+  const editorWindow = createBaseWindow();
+  attachCommonHandlers(editorWindow);
+  editorWindow.on("ready-to-show", () => {
+    editorWindow.maximize();
+    editorWindow.show();
+  });
+  const url = buildRendererUrl("story-translator", { projectId });
+  editorWindow.loadURL(url);
+  editorWindow.on("closed", () => {
+    editorWindows.delete(projectId);
+    if (!dashboardWindow || dashboardWindow.isDestroyed()) {
+      createDashboardWindow();
+    }
+  });
+  editorWindows.set(projectId, editorWindow);
+  console.log(`[Cửa sổ] Đã mở Editor cho project ${projectId}`);
+  return editorWindow;
+}
+const PROJECT_FILE = "project.json";
+function scanProjects(basePath) {
+  try {
+    if (!fs__namespace.existsSync(basePath)) {
+      console.log("[ProjectHandlers] Thư mục projects không tồn tại:", basePath);
+      return [];
+    }
+    const entries = fs__namespace.readdirSync(basePath, { withFileTypes: true });
+    const projects = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const projectPath = path__namespace.join(basePath, entry.name);
+      const metadataPath = path__namespace.join(projectPath, PROJECT_FILE);
+      if (fs__namespace.existsSync(metadataPath)) {
+        try {
+          const content = fs__namespace.readFileSync(metadataPath, "utf-8");
+          const metadata = JSON.parse(content);
+          projects.push(metadata);
+        } catch (err) {
+          console.error(`[ProjectHandlers] Lỗi đọc metadata của project ${entry.name}:`, err);
+        }
+      }
+    }
+    return projects.sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch (error) {
+    console.error("[ProjectHandlers] Lỗi quét thư mục projects:", error);
+    return [];
+  }
+}
+function createProject(basePath, projectName) {
+  try {
+    const projectId = projectName.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+    const projectPath = path__namespace.join(basePath, projectId);
+    if (fs__namespace.existsSync(projectPath)) {
+      throw new Error("Project đã tồn tại");
+    }
+    fs__namespace.mkdirSync(projectPath, { recursive: true });
+    const metadata = {
+      id: projectId,
+      name: projectName,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    const metadataPath = path__namespace.join(projectPath, PROJECT_FILE);
+    fs__namespace.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
+    console.log("[ProjectHandlers] Đã tạo project:", projectId);
+    return metadata;
+  } catch (error) {
+    console.error("[ProjectHandlers] Lỗi tạo project:", error);
+    return null;
+  }
+}
+function registerProjectHandlers() {
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.OPEN, async (event, projectId) => {
+    try {
+      if (!projectId) {
+        console.error("[Lỗi] Thiếu projectId để mở project");
+        return { success: false, error: "Thiếu projectId để mở project" };
+      }
+      createEditorWindow(projectId);
+      AppSettingsService.addRecentProject(projectId);
+      const currentWin = electron.BrowserWindow.fromWebContents(event.sender);
+      if (currentWin) {
+        currentWin.close();
+      }
+      console.log(`[Hệ thống] Đã mở project ${projectId} và đóng Dashboard`);
+      return { success: true };
+    } catch (error) {
+      console.error("[Lỗi] Không thể chuyển đổi cửa sổ:", error);
+      return { success: false, error: "Chuyển đổi cửa sổ thất bại" };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.CREATE_AND_OPEN, async (event, projectName) => {
+    try {
+      if (!projectName || !projectName.trim()) {
+        return { success: false, error: "Thiếu tên project" };
+      }
+      const basePath = AppSettingsService.getProjectsBasePath();
+      if (!basePath) {
+        return { success: false, error: "Chưa cấu hình thư mục Projects trong Settings" };
+      }
+      const metadata = createProject(basePath, projectName.trim());
+      if (!metadata) {
+        return { success: false, error: "Không thể tạo project" };
+      }
+      createEditorWindow(metadata.id);
+      AppSettingsService.setLastActiveProjectId(metadata.id);
+      const currentWin = electron.BrowserWindow.fromWebContents(event.sender);
+      if (currentWin) {
+        currentWin.close();
+      }
+      console.log(`[Hệ thống] Đã tạo và mở project ${metadata.id}`);
+      return { success: true, data: metadata };
+    } catch (error) {
+      console.error("[Lỗi] Không thể tạo và mở project:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.SCAN_PROJECTS, async () => {
+    try {
+      const basePath = AppSettingsService.getProjectsBasePath();
+      if (!basePath) {
+        return { success: true, data: [] };
+      }
+      const projects = scanProjects(basePath);
+      return { success: true, data: projects };
+    } catch (error) {
+      console.error("[Lỗi] Không thể quét projects:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.GET_PROJECTS_PATH, async () => {
+    try {
+      const basePath = AppSettingsService.getProjectsBasePath();
+      return { success: true, data: basePath };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(PROJECT_IPC_CHANNELS.SET_PROJECTS_PATH, async (event, newPath) => {
+    try {
+      AppSettingsService.setProjectsBasePath(newPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
 }
 const APP_SETTINGS_IPC_CHANNELS = {
   GET_ALL: "appSettings:getAll",
@@ -4995,38 +5236,11 @@ function registerAllHandlers() {
   registerTTSHandlers();
   registerStoryHandlers();
   registerPromptHandlers();
+  registerProjectHandlers();
   registerAppSettingsHandlers();
   registerGeminiChatHandlers();
   registerProxyHandlers();
   console.log("[IPC] Da dang ky xong tat ca handlers");
-}
-function createWindow() {
-  const mainWindow = new electron.BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false,
-    // Ẩn cho đến khi sẵn sàng
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, "../preload/index.js"),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false
-    }
-  });
-  mainWindow.on("ready-to-show", () => {
-    mainWindow.maximize();
-    mainWindow.show();
-  });
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    electron.shell.openExternal(details.url);
-    return { action: "deny" };
-  });
-  if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-  } else {
-    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
-  }
 }
 electron.app.whenReady().then(() => {
   utils.electronApp.setAppUserModelId("com.veo3promptbuilder");
@@ -5037,10 +5251,10 @@ electron.app.whenReady().then(() => {
   electron.app.on("browser-window-created", (_, window) => {
     utils.optimizer.watchWindowShortcuts(window);
   });
-  createWindow();
+  createDashboardWindow();
   electron.app.on("activate", () => {
     if (electron.BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createDashboardWindow();
     }
   });
 });

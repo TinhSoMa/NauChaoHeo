@@ -6,6 +6,8 @@ import { StoryTranslator } from './components/story';
 import { StoryTranslatorWeb } from './components/story/StoryTranslatorWeb';
 import { GeminiChat } from './components/gemini';
 import { Settings } from './components/settings/Settings';
+import { ProjectDashboard } from './components/project/ProjectDashboard';
+import { SettingsStandalone } from './components/project/SettingsStandalone';
 
 // Placeholder Pages
 const Veo3Page = () => (
@@ -27,9 +29,13 @@ function App() {
   return (
     <HashRouter>
       <Routes>
+        {/* Dashboard độc lập, không dùng AppLayout */}
+        <Route path="/projects" element={<ProjectDashboard />} />
+        <Route path="/settings-standalone" element={<SettingsStandalone />} />
+
+        {/* Các màn Editor sử dụng layout chính */}
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/story-translator" replace />} />
-          {/* <Route path="/projects" element={<ProjectList />} /> */}
           <Route path="/translator" element={<CaptionTranslator />} />
           <Route path="/story-translator" element={<StoryTranslator />} />
           <Route path="/story-web" element={<StoryTranslatorWeb />} />

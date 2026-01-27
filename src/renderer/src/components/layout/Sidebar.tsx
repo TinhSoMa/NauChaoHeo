@@ -22,7 +22,6 @@ export const Sidebar = () => {
   ];
 
   const bottomItems = [
-    // { icon: FolderClosed, label: 'Projects', path: '/projects' },
     { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 

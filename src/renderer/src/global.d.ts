@@ -230,19 +230,22 @@ interface TTSAPI {
 // PROJECT API TYPES
 // ============================================
 
+interface ProjectMetadata {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /**
  * Project API interface cho quản lý dự án dịch
  */
 interface ProjectAPI {
-  getAll: () => Promise<IpcApiResponse<any[]>>;
-  getById: (id: string) => Promise<IpcApiResponse<any>>;
-  create: (data: any) => Promise<IpcApiResponse<any>>;
-  update: (id: string, data: any) => Promise<IpcApiResponse<any>>;
-  delete: (id: string) => Promise<IpcApiResponse<boolean>>;
-  saveTranslation: (data: any) => Promise<IpcApiResponse<any>>;
-  getTranslations: (projectId: string) => Promise<IpcApiResponse<any[]>>;
-  getTranslation: (projectId: string, chapterId: string) => Promise<IpcApiResponse<any>>;
-  getHistory: (projectId: string, limit?: number) => Promise<IpcApiResponse<any[]>>;
+  openProject: (projectId: string) => Promise<IpcApiResponse<void>>;
+  createAndOpen: (projectName: string) => Promise<IpcApiResponse<ProjectMetadata>>;
+  scanProjects: () => Promise<IpcApiResponse<ProjectMetadata[]>>;
+  getProjectsPath: () => Promise<IpcApiResponse<string | null>>;
+  setProjectsPath: (path: string) => Promise<IpcApiResponse<void>>;
 }
 
 // ============================================

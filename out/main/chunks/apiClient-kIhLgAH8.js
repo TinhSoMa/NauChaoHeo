@@ -24,8 +24,8 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 const index = require("../index.js");
 require("electron");
-require("path");
 require("@electron-toolkit/utils");
+require("path");
 require("fs");
 require("crypto");
 require("fs/promises");

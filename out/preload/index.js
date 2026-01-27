@@ -90,6 +90,20 @@ function createTTSAPI() {
     trimSilence: (audioPaths) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths)
   };
 }
+const PROJECT_IPC_CHANNELS = {
+  OPEN: "project:open",
+  CREATE_AND_OPEN: "project:createAndOpen",
+  SCAN_PROJECTS: "project:scanProjects",
+  GET_PROJECTS_PATH: "project:getProjectsPath",
+  SET_PROJECTS_PATH: "project:setProjectsPath"
+};
+const projectApi = {
+  openProject: (projectId) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.OPEN, projectId),
+  createAndOpen: (projectName) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.CREATE_AND_OPEN, projectName),
+  scanProjects: () => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.SCAN_PROJECTS),
+  getProjectsPath: () => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_PROJECTS_PATH),
+  setProjectsPath: (path) => electron.ipcRenderer.invoke(PROJECT_IPC_CHANNELS.SET_PROJECTS_PATH, path)
+};
 const APP_SETTINGS_IPC_CHANNELS = {
   GET_ALL: "appSettings:getAll",
   UPDATE: "appSettings:update",
@@ -185,7 +199,7 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   // TTS API (text-to-speech)
   tts: createTTSAPI(),
   // Project API (quan ly du an dich)
-  // project: projectApi,
+  project: projectApi,
   // App Settings API (cai dat ung dung)
   appSettings: appSettingsApi,
   // Gemini Chat API (cau hinh Gemini web)
