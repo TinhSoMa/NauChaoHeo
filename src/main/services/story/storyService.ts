@@ -9,16 +9,12 @@ export class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string }> {
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
       if (options.method === 'WEB') {
            // WEB METHOD (Gemini Protocol)
-           if (!options.webConfigId) {
-             return { success: false, error: 'Web Config ID is required for WEB method' };
-           }
-
            // Extract text from prompt (assuming preparedPrompt results in structured object/array)
            
            // Extract text from prompt (assuming preparedPrompt results in structured object/array)
@@ -60,17 +56,19 @@ export class StoryService {
             console.log('[StoryService] Extracted promptText length:', promptText.length);
             if (!promptText) console.warn('[StoryService] promptText is empty!');
 
-           const result = await GeminiChatService.sendMessage(promptText, options.webConfigId, options.context);
+           const webConfigId = options.webConfigId?.trim() || '';
+           const result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context);
            
            if (result.success && result.data) {
              console.log('[StoryService] Translation completed.');
              return { 
                  success: true, 
                  data: result.data.text,
-                 context: result.data.context // Return new context
+                 context: result.data.context, // Return new context
+                 configId: result.configId
              };
            } else {
-             return { success: false, error: result.error || 'Gemini Web Error' };
+             return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId };
            }
 
       } else {

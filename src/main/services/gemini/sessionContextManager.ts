@@ -69,33 +69,56 @@ export class SessionContextManager {
     };
 
     try {
-      // Remove ")]}'" prefix if exists
-      const cleanedText = responseText.replace(/^\)\]\}'\n/, '');
-      const parsed = JSON.parse(cleanedText);
+      const lines = responseText.split('\n');
 
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const innerData = parsed[0];
-        if (Array.isArray(innerData) && innerData.length > 1) {
-          // Index 1 contains conversation ID
-          if (innerData[1]) {
-            newContext.conversationId = String(innerData[1]);
-          }
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith(")]}'")) continue;
+        if (/^\d+$/.test(trimmed)) continue;
 
-          // Index 4 contains candidates array
-          if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
-            const candidate = innerData[4][0];
-            if (Array.isArray(candidate) && candidate.length > 1) {
-              // Index 1 contains response ID and choice ID
-              if (Array.isArray(candidate[1])) {
-                newContext.responseId = String(candidate[1][0] || '');
-                newContext.choiceId = String(candidate[1][1] || '');
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (!Array.isArray(parsed) || parsed.length === 0) continue;
+
+          for (const payloadItem of parsed) {
+            if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+            if (payloadItem[0] !== 'wrb.fr') continue;
+            if (typeof payloadItem[2] !== 'string') continue;
+
+            const innerData = JSON.parse(payloadItem[2]);
+            if (!Array.isArray(innerData)) continue;
+
+            // innerData[1] = [conversationId, responseId]
+            if (Array.isArray(innerData[1])) {
+              if (innerData[1][0] && !newContext.conversationId) {
+                newContext.conversationId = String(innerData[1][0]);
+              }
+              if (innerData[1][1] && !newContext.responseId) {
+                newContext.responseId = String(innerData[1][1]);
+              }
+            }
+
+            // innerData[4][0][0] = choiceId
+            if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
+              const candidate = innerData[4][0];
+              if (Array.isArray(candidate) && candidate[0] && !newContext.choiceId) {
+                newContext.choiceId = String(candidate[0]);
               }
             }
           }
+        } catch {
+          // Skip invalid JSON lines
+          continue;
         }
       }
 
-      console.log('[SessionContextManager] Parsed context from fetch response:', newContext);
+      const contextSummary = {
+        conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : '',
+        responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
+        choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ''
+      };
+      console.log('[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):', contextSummary);
     } catch (error) {
       console.error('[SessionContextManager] Failed to parse fetch response:', error);
     }
@@ -124,23 +147,29 @@ export class SessionContextManager {
 
         try {
           const parsed = JSON.parse(cleanedLine);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const innerData = parsed[0];
-            if (Array.isArray(innerData) && innerData.length > 1) {
-              // Extract conversation ID
-              if (innerData[1] && !newContext.conversationId) {
-                newContext.conversationId = String(innerData[1]);
-              }
+          if (!Array.isArray(parsed) || parsed.length === 0) continue;
 
-              // Extract response ID and choice ID from candidates
-              if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
-                const candidate = innerData[4][0];
-                if (Array.isArray(candidate) && candidate.length > 1) {
-                  if (Array.isArray(candidate[1])) {
-                    if (candidate[1][0]) newContext.responseId = String(candidate[1][0]);
-                    if (candidate[1][1]) newContext.choiceId = String(candidate[1][1]);
-                  }
-                }
+          for (const payloadItem of parsed) {
+            if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+            if (payloadItem[0] !== 'wrb.fr') continue;
+            if (typeof payloadItem[2] !== 'string') continue;
+
+            const innerData = JSON.parse(payloadItem[2]);
+            if (!Array.isArray(innerData)) continue;
+
+            if (Array.isArray(innerData[1])) {
+              if (innerData[1][0] && !newContext.conversationId) {
+                newContext.conversationId = String(innerData[1][0]);
+              }
+              if (innerData[1][1] && !newContext.responseId) {
+                newContext.responseId = String(innerData[1][1]);
+              }
+            }
+
+            if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
+              const candidate = innerData[4][0];
+              if (Array.isArray(candidate) && candidate[0] && !newContext.choiceId) {
+                newContext.choiceId = String(candidate[0]);
               }
             }
           }

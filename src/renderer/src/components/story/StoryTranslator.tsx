@@ -5,7 +5,7 @@ import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { BookOpen, FileText, CheckSquare, Square, Check, StopCircle, Download, Loader, Clock } from 'lucide-react';
+import { BookOpen, FileText, CheckSquare, Square, StopCircle, Download, Loader, Clock } from 'lucide-react';
 import { useProjectContext } from '../../context/ProjectContext';
 
 export function StoryTranslator() {
@@ -16,12 +16,17 @@ export function StoryTranslator() {
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
   const [model, setModel] = useState('gemini-3-flash-preview');
+  const [translateMode, setTranslateMode] = useState<'api' | 'token' | 'both'>('api');
   const [status, setStatus] = useState('idle');
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   // Map lưu trữ bản dịch theo chapterId
   const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
   const [chapterModels, setChapterModels] = useState<Map<string, string>>(new Map());
+  const [chapterMethods, setChapterMethods] = useState<Map<string, 'api' | 'token'>>(new Map());
+  const [translatedTitles, setTranslatedTitles] = useState<Map<string, string>>(new Map());
+  const [tokenConfigId, setTokenConfigId] = useState<string | null>(null);
+  const [tokenContext, setTokenContext] = useState<{ conversationId: string; responseId: string; choiceId: string } | null>(null);
   const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
   // Danh sach cac chuong bi loai tru khoi dich thuat
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
@@ -34,8 +39,18 @@ export function StoryTranslator() {
   const [fontSize, setFontSize] = useState<number>(18);
   const [lineHeight, setLineHeight] = useState<number>(1.8);
   // Chapter processing tracking
-  const [processingChapters, setProcessingChapters] = useState<Map<string, { startTime: number; workerId: number }>>(new Map());
+  const [processingChapters, setProcessingChapters] = useState<
+    Map<string, { startTime: number; workerId: number; channel: 'api' | 'token' }>
+  >(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
+
+  const extractTranslatedTitle = (text: string, fallbackId: string) => {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return lines[0] || `Chương ${fallbackId}`;
+  };
 
   // Update elapsed time every second
   useEffect(() => {
@@ -78,6 +93,12 @@ export function StoryTranslator() {
 
   // Dem so chuong duoc chon
   const selectedChapterCount = chapters.length - excludedChapterIds.size;
+
+  const getWorkerChannel = (workerId: number): 'api' | 'token' => {
+    if (translateMode === 'api') return 'api';
+    if (translateMode === 'token') return 'token';
+    return workerId === 1 ? 'token' : 'api';
+  };
 
   // Debug logging
   console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
@@ -146,9 +167,13 @@ export function StoryTranslator() {
           sourceLang?: string;
           targetLang?: string;
           model?: string;
+          translateMode?: 'api' | 'token' | 'both';
           translatedEntries?: Array<[string, string]>;
           chapterModels?: Array<[string, string]>;
+          chapterMethods?: Array<[string, 'api' | 'token']>;
           translatedTitles?: Array<{ id: string; title: string }>;
+          tokenConfigId?: string | null;
+          tokenContext?: { conversationId: string; responseId: string; choiceId: string } | null;
           viewMode?: 'original' | 'translated';
           excludedChapterIds?: string[];
           selectedChapterId?: string | null;
@@ -157,8 +182,19 @@ export function StoryTranslator() {
         if (saved.sourceLang) setSourceLang(saved.sourceLang);
         if (saved.targetLang) setTargetLang(saved.targetLang);
         if (saved.model) setModel(saved.model);
+        if (saved.translateMode) setTranslateMode(saved.translateMode);
         if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
         if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
+        if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
+        if (saved.translatedTitles) {
+          setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title] as [string, string])));
+        }
+        if (typeof saved.tokenConfigId !== 'undefined') {
+          setTokenConfigId(saved.tokenConfigId || null);
+        }
+        if (typeof saved.tokenContext !== 'undefined') {
+          setTokenContext(saved.tokenContext || null);
+        }
 
         let parsedOk = false;
         if (saved.filePath) {
@@ -184,14 +220,6 @@ export function StoryTranslator() {
   const saveStoryState = async () => {
     if (!projectId) return;
 
-    const extractTranslatedTitle = (text: string, fallbackId: string) => {
-      const lines = text
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-      return lines[0] || `Chương ${fallbackId}`;
-    };
-
     // Các thuộc tính được lưu vào project/story/story-translator.json:
     // - filePath: đường dẫn file input gốc (không lưu text gốc)
     // - sourceLang/targetLang: cặp ngôn ngữ dịch
@@ -211,6 +239,11 @@ export function StoryTranslator() {
       return [chapterId, usedModel] as [string, string];
     });
 
+    const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
+      const usedMethod = chapterMethods.get(chapterId) || (translateMode === 'token' ? 'token' : 'api');
+      return [chapterId, usedMethod] as [string, 'api' | 'token'];
+    });
+
     const translatedTitles = orderedTranslatedEntries.map(([chapterId, content]) => ({
       id: chapterId,
       title: extractTranslatedTitle(content, chapterId)
@@ -221,9 +254,13 @@ export function StoryTranslator() {
       sourceLang,
       targetLang,
       model,
+      translateMode,
       translatedEntries: orderedTranslatedEntries,
       chapterModels: orderedChapterModels,
+      chapterMethods: orderedChapterMethods,
       translatedTitles,
+      tokenConfigId,
+      tokenContext,
       viewMode,
       excludedChapterIds: Array.from(excludedChapterIds.values()),
       selectedChapterId
@@ -265,9 +302,14 @@ export function StoryTranslator() {
     sourceLang,
     targetLang,
     model,
+    translateMode,
     chapters,
     translatedChapters,
     chapterModels,
+    chapterMethods,
+    translatedTitles,
+    tokenConfigId,
+    tokenContext,
     viewMode,
     excludedChapterIds,
     selectedChapterId
@@ -303,11 +345,17 @@ export function StoryTranslator() {
 
       console.log('[StoryTranslator] Da chuan bi prompt, dang gui den Gemini...');
       
+      const method = translateMode === 'token' ? 'WEB' : 'API';
+      const methodKey: 'api' | 'token' = method === 'WEB' ? 'token' : 'api';
+
       // 2. Send to Gemini for Translation
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
-        model: model
-      }) as { success: boolean; data?: string; error?: string };
+        model: model,
+        method,
+        context: method === 'WEB' ? tokenContext : undefined,
+        webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined
+      }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
       if (translateResult.success && translateResult.data) {
         // Lưu bản dịch vào Map cache
@@ -317,11 +365,30 @@ export function StoryTranslator() {
           return next;
         });
 
+        setTranslatedTitles(prev => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, extractTranslatedTitle(translateResult.data!, selectedChapterId));
+          return next;
+        });
+
         setChapterModels(prev => {
           const next = new Map(prev);
           next.set(selectedChapterId, model);
           return next;
         });
+
+        setChapterMethods(prev => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, methodKey);
+          return next;
+        });
+
+        if (translateResult.context) {
+          setTokenContext(translateResult.context);
+        }
+        if (translateResult.configId) {
+          setTokenConfigId(translateResult.configId);
+        }
 
         // REMOVED: Saving to Project DB
 
@@ -360,7 +427,7 @@ export function StoryTranslator() {
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     setShouldStop(false); // Reset stop flag
 
-    const MAX_CONCURRENT = 5; // Số lượng tối đa chạy song song
+    const MAX_CONCURRENT = translateMode === 'both' ? 6 : translateMode === 'token' ? 1 : 5; // token chạy 1 worker, api chạy 5, both: 5 API + 1 Token
     const MIN_DELAY = 5000; // 5 giây
     const MAX_DELAY = 30000; // 30 giây
     let completed = 0;
@@ -377,10 +444,12 @@ export function StoryTranslator() {
       
       setSelectedChapterId(chapter.id);
       
+      const channel = getWorkerChannel(workerId);
+
       // Mark as processing
       setProcessingChapters(prev => {
         const next = new Map(prev);
-        next.set(chapter.id, { startTime: Date.now(), workerId });
+        next.set(chapter.id, { startTime: Date.now(), workerId, channel });
         return next;
       });
       
@@ -400,14 +469,19 @@ export function StoryTranslator() {
           return null;
         }
 
+        const method = channel === 'token' ? 'WEB' : 'API';
+
         // 2. Send to Gemini for Translation
         const translateResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, 
           {
             prompt: prepareResult.prompt,
-            model: model
+            model: model,
+            method,
+            context: method === 'WEB' ? tokenContext : undefined,
+            webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined
           }
-        ) as { success: boolean; data?: string; error?: string };
+        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
         if (translateResult.success && translateResult.data) {
           // Cập nhật UI NGAY khi dịch xong
@@ -417,11 +491,30 @@ export function StoryTranslator() {
             return next;
           });
 
+          setTranslatedTitles(prev => {
+            const next = new Map(prev);
+            next.set(chapter.id, extractTranslatedTitle(translateResult.data!, chapter.id));
+            return next;
+          });
+
           setChapterModels(prev => {
             const next = new Map(prev);
             next.set(chapter.id, model);
             return next;
           });
+
+          setChapterMethods(prev => {
+            const next = new Map(prev);
+            next.set(chapter.id, channel);
+            return next;
+          });
+
+          if (translateResult.context) {
+            setTokenContext(translateResult.context);
+          }
+          if (translateResult.configId) {
+            setTokenConfigId(translateResult.configId);
+          }
 
           // REMOVED: Saving to Project DB
 
@@ -649,8 +742,8 @@ export function StoryTranslator() {
       </div>
       
       {/* Configuration Section */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-card border border-border rounded-xl">
-        <div className="md:col-span-3 flex flex-col gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-card border border-border rounded-xl">
+        <div className="md:col-span-3 flex flex-col gap-1">
            <label className="text-sm font-medium text-text-secondary">File Truyện</label>
            <div className="flex gap-2">
              <Input 
@@ -659,7 +752,7 @@ export function StoryTranslator() {
                onChange={(e) => setFilePath(e.target.value)}
                containerClassName="flex-1"
              />
-             <Button onClick={handleBrowse} variant="secondary" className="shrink-0">
+             <Button onClick={handleBrowse} variant="secondary" className="shrink-0 h-9 px-3">
                <FileText size={16} />
              </Button>
            </div>
@@ -683,7 +776,7 @@ export function StoryTranslator() {
           />
         </div>
 
-        <div className="md:col-span-3">
+        <div className="md:col-span-2">
           <Select
             label="Model AI"
             value={model}
@@ -695,12 +788,25 @@ export function StoryTranslator() {
           />
         </div>
 
+        <div className="md:col-span-1">
+          <Select
+            label="Chế độ dịch"
+            value={translateMode}
+            onChange={(e) => setTranslateMode(e.target.value as 'api' | 'token' | 'both')}
+            options={[
+              { value: 'api', label: 'API' },
+              { value: 'token', label: 'Token' },
+              { value: 'both', label: 'Kết hợp (API + Token)' }
+            ]}
+          />
+        </div>
+
         <div className="md:col-span-2 flex items-end gap-2">
           <Button 
             onClick={handleTranslate} 
             variant="secondary" 
             disabled={!filePath || status === 'running' || !selectedChapterId}
-            className="flex-1"
+            className="flex-1 h-9 px-3"
             title="Dịch chương đang chọn"
           >
             <BookOpen size={16} />
@@ -710,7 +816,7 @@ export function StoryTranslator() {
             <Button 
               onClick={handleStopTranslation}
               variant="secondary"
-              className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
               title="Dừng dịch batch hiện tại"
             >
               <StopCircle size={16} />
@@ -721,7 +827,7 @@ export function StoryTranslator() {
               onClick={handleTranslateAll} 
               variant="primary" 
               disabled={!filePath || status === 'running' || selectedChapterCount === 0}
-              className="flex-1"
+              className="flex-1 h-9 px-3"
               title="Dịch tất cả chương được chọn"
             >
               <BookOpen size={16} />
@@ -771,6 +877,7 @@ export function StoryTranslator() {
               const elapsedTime = isProcessing && processingInfo 
                 ? Math.floor((Date.now() - processingInfo.startTime) / 1000)
                 : 0;
+              const hasTranslatedTitle = translatedTitles.has(chapter.id) || translatedChapters.has(chapter.id);
               
               return (
               <div
@@ -819,13 +926,25 @@ export function StoryTranslator() {
                     !isChapterIncluded(chapter.id) ? 'opacity-50 line-through' : ''
                   }`}
                 >
-                  {chapter.title}
+                  <span className={hasTranslatedTitle ? 'text-emerald-500' : 'text-text-secondary'}>
+                    {translatedTitles.get(chapter.id)
+                      || (translatedChapters.has(chapter.id)
+                        ? extractTranslatedTitle(translatedChapters.get(chapter.id) || '', chapter.id)
+                        : chapter.title)}
+                  </span>
                   
                   {/* Processing Indicator */}
                   {isProcessing && processingInfo && (
                     <span className={`flex items-center gap-1 shrink-0 text-xs ${
                       selectedChapterId === chapter.id ? 'text-yellow-300' : 'text-yellow-500'
                     }`}>
+                      <span className={`px-1.5 py-0.5 rounded border ${
+                        selectedChapterId === chapter.id
+                          ? 'border-yellow-300/60 bg-yellow-300/10'
+                          : 'border-yellow-500/60 bg-yellow-500/10'
+                      }`}>
+                        {processingInfo.channel === 'api' ? 'API' : 'TOKEN'}
+                      </span>
                       <Loader size={12} className="animate-spin" />
                       <span className="font-mono">W{processingInfo.workerId}</span>
                       <Clock size={10} />
@@ -833,12 +952,7 @@ export function StoryTranslator() {
                     </span>
                   )}
                   
-                  {/* Hiển thị icon nếu chương đã dịch */}
-                  {!isProcessing && translatedChapters.has(chapter.id) && (
-                    <Check size={14} className={`shrink-0 ${
-                      selectedChapterId === chapter.id ? 'text-green-300' : 'text-green-500'
-                    }`} />
-                  )}
+                  {/* Hiển thị tên chương đã dịch thay vì dấu tích */}
                 </button>
               </div>
             )})}

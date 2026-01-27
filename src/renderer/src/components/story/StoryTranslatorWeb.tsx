@@ -29,6 +29,7 @@ export function StoryTranslatorWeb() {
   const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [useProxy, setUseProxy] = useState(true);
   
   // New Config Configs
   const [webConfigs, setWebConfigs] = useState<{label: string, value: string, platform?: string | null}[]>([]);
@@ -120,8 +121,32 @@ export function StoryTranslatorWeb() {
       console.log('[StoryTranslator] Stop requested by user.');
   };
 
+  const loadProxySetting = async () => {
+    try {
+      const result = await window.electronAPI.appSettings.getAll();
+      if (result.success && result.data) {
+        setUseProxy(result.data.useProxy);
+      }
+    } catch (error) {
+      console.error('[StoryTranslatorWeb] Lỗi load proxy setting:', error);
+    }
+  };
+
+  const handleToggleUseProxy = async (enabled: boolean) => {
+    try {
+      const result = await window.electronAPI.appSettings.update({ useProxy: enabled });
+      if (result.success) {
+        setUseProxy(enabled);
+        console.log(`[StoryTranslatorWeb] Proxy ${enabled ? 'enabled' : 'disabled'} globally`);
+      }
+    } catch (error) {
+      console.error('[StoryTranslatorWeb] Lỗi toggle proxy:', error);
+    }
+  };
+
   useEffect(() => {
     loadConfigurations();
+    loadProxySetting();
   }, []);
 
   useEffect(() => {
@@ -566,6 +591,18 @@ export function StoryTranslatorWeb() {
                  <span>{selectedBrowserConfig.platform || 'Auto Browser'}</span>
                </div>
              )}
+             <div className="flex items-center gap-2 text-xs px-2 py-1 bg-surface rounded border border-border">
+               <span className="text-muted-foreground">Proxy</span>
+               <button
+                 onClick={() => handleToggleUseProxy(!useProxy)}
+                 className={`relative w-10 h-5 rounded-full transition-colors ${useProxy ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                 title={useProxy ? 'Tắt proxy' : 'Bật proxy'}
+               >
+                 <span
+                   className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${useProxy ? 'translate-x-5' : ''}`}
+                 />
+               </button>
+             </div>
              {!selectedConfigId && (
                  <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded border border-red-200">
                     Chưa chọn Config
@@ -609,6 +646,7 @@ export function StoryTranslatorWeb() {
                onChange={e => {
                  setSelectedConfigId(e.target.value);
                  updateBrowserConfig(e.target.value);
+                 setSessionContext(null);
                }} 
                options={webConfigs} 
              />

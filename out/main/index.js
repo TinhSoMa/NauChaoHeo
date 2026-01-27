@@ -923,26 +923,46 @@ class SessionContextManager {
       choiceId: ""
     };
     try {
-      const cleanedText = responseText.replace(/^\)\]\}'\n/, "");
-      const parsed = JSON.parse(cleanedText);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const innerData = parsed[0];
-        if (Array.isArray(innerData) && innerData.length > 1) {
-          if (innerData[1]) {
-            newContext.conversationId = String(innerData[1]);
-          }
-          if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
-            const candidate = innerData[4][0];
-            if (Array.isArray(candidate) && candidate.length > 1) {
-              if (Array.isArray(candidate[1])) {
-                newContext.responseId = String(candidate[1][0] || "");
-                newContext.choiceId = String(candidate[1][1] || "");
+      const lines = responseText.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith(")]}'")) continue;
+        if (/^\d+$/.test(trimmed)) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (!Array.isArray(parsed) || parsed.length === 0) continue;
+          for (const payloadItem of parsed) {
+            if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+            if (payloadItem[0] !== "wrb.fr") continue;
+            if (typeof payloadItem[2] !== "string") continue;
+            const innerData = JSON.parse(payloadItem[2]);
+            if (!Array.isArray(innerData)) continue;
+            if (Array.isArray(innerData[1])) {
+              if (innerData[1][0] && !newContext.conversationId) {
+                newContext.conversationId = String(innerData[1][0]);
+              }
+              if (innerData[1][1] && !newContext.responseId) {
+                newContext.responseId = String(innerData[1][1]);
+              }
+            }
+            if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
+              const candidate = innerData[4][0];
+              if (Array.isArray(candidate) && candidate[0] && !newContext.choiceId) {
+                newContext.choiceId = String(candidate[0]);
               }
             }
           }
+        } catch {
+          continue;
         }
       }
-      console.log("[SessionContextManager] Parsed context from fetch response:", newContext);
+      const contextSummary = {
+        conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : "",
+        responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
+        choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ""
+      };
+      console.log("[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):", contextSummary);
     } catch (error) {
       console.error("[SessionContextManager] Failed to parse fetch response:", error);
     }
@@ -965,20 +985,25 @@ class SessionContextManager {
         if (!cleanedLine || cleanedLine.length < 2) continue;
         try {
           const parsed = JSON.parse(cleanedLine);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const innerData = parsed[0];
-            if (Array.isArray(innerData) && innerData.length > 1) {
-              if (innerData[1] && !newContext.conversationId) {
-                newContext.conversationId = String(innerData[1]);
+          if (!Array.isArray(parsed) || parsed.length === 0) continue;
+          for (const payloadItem of parsed) {
+            if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+            if (payloadItem[0] !== "wrb.fr") continue;
+            if (typeof payloadItem[2] !== "string") continue;
+            const innerData = JSON.parse(payloadItem[2]);
+            if (!Array.isArray(innerData)) continue;
+            if (Array.isArray(innerData[1])) {
+              if (innerData[1][0] && !newContext.conversationId) {
+                newContext.conversationId = String(innerData[1][0]);
               }
-              if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
-                const candidate = innerData[4][0];
-                if (Array.isArray(candidate) && candidate.length > 1) {
-                  if (Array.isArray(candidate[1])) {
-                    if (candidate[1][0]) newContext.responseId = String(candidate[1][0]);
-                    if (candidate[1][1]) newContext.choiceId = String(candidate[1][1]);
-                  }
-                }
+              if (innerData[1][1] && !newContext.responseId) {
+                newContext.responseId = String(innerData[1][1]);
+              }
+            }
+            if (Array.isArray(innerData[4]) && innerData[4].length > 0) {
+              const candidate = innerData[4][0];
+              if (Array.isArray(candidate) && candidate[0] && !newContext.choiceId) {
+                newContext.choiceId = String(candidate[0]);
               }
             }
           }
@@ -3114,6 +3139,438 @@ class PromptService {
     };
   }
 }
+class ProxyDatabase {
+  /**
+   * Get all proxies
+   */
+  static getAll() {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      SELECT * FROM proxies ORDER BY created_at DESC
+    `);
+    const rows = stmt.all();
+    return rows.map((row) => ({
+      id: row.id,
+      host: row.host,
+      port: row.port,
+      username: row.username || void 0,
+      password: row.password || void 0,
+      type: row.type,
+      enabled: row.enabled === 1,
+      platform: row.platform || void 0,
+      country: row.country || void 0,
+      city: row.city || void 0,
+      successCount: row.success_count || 0,
+      failedCount: row.failed_count || 0,
+      lastUsedAt: row.last_used_at || void 0,
+      createdAt: row.created_at
+    }));
+  }
+  /**
+   * Get proxy by ID
+   */
+  static getById(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`SELECT * FROM proxies WHERE id = ?`);
+    const row = stmt.get(id);
+    if (!row) return null;
+    return {
+      id: row.id,
+      host: row.host,
+      port: row.port,
+      username: row.username || void 0,
+      password: row.password || void 0,
+      type: row.type,
+      enabled: row.enabled === 1,
+      platform: row.platform || void 0,
+      country: row.country || void 0,
+      city: row.city || void 0,
+      successCount: row.success_count || 0,
+      failedCount: row.failed_count || 0,
+      lastUsedAt: row.last_used_at || void 0,
+      createdAt: row.created_at
+    };
+  }
+  /**
+   * Create new proxy
+   */
+  static create(proxy) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      INSERT INTO proxies (
+        id, host, port, username, password, type, enabled,
+        platform, country, city, success_count, failed_count,
+        last_used_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      proxy.id,
+      proxy.host,
+      proxy.port,
+      proxy.username || null,
+      proxy.password || null,
+      proxy.type,
+      proxy.enabled ? 1 : 0,
+      proxy.platform || null,
+      proxy.country || null,
+      proxy.city || null,
+      0,
+      // success_count
+      0,
+      // failed_count
+      proxy.lastUsedAt || null,
+      proxy.createdAt
+    );
+    return {
+      ...proxy,
+      successCount: 0,
+      failedCount: 0
+    };
+  }
+  /**
+   * Update proxy
+   */
+  static update(id, updates) {
+    const db2 = getDatabase();
+    const fields = [];
+    const values = [];
+    if (updates.host !== void 0) {
+      fields.push("host = ?");
+      values.push(updates.host);
+    }
+    if (updates.port !== void 0) {
+      fields.push("port = ?");
+      values.push(updates.port);
+    }
+    if (updates.username !== void 0) {
+      fields.push("username = ?");
+      values.push(updates.username || null);
+    }
+    if (updates.password !== void 0) {
+      fields.push("password = ?");
+      values.push(updates.password || null);
+    }
+    if (updates.type !== void 0) {
+      fields.push("type = ?");
+      values.push(updates.type);
+    }
+    if (updates.enabled !== void 0) {
+      fields.push("enabled = ?");
+      values.push(updates.enabled ? 1 : 0);
+    }
+    if (updates.platform !== void 0) {
+      fields.push("platform = ?");
+      values.push(updates.platform || null);
+    }
+    if (updates.country !== void 0) {
+      fields.push("country = ?");
+      values.push(updates.country || null);
+    }
+    if (updates.city !== void 0) {
+      fields.push("city = ?");
+      values.push(updates.city || null);
+    }
+    if (updates.successCount !== void 0) {
+      fields.push("success_count = ?");
+      values.push(updates.successCount);
+    }
+    if (updates.failedCount !== void 0) {
+      fields.push("failed_count = ?");
+      values.push(updates.failedCount);
+    }
+    if (updates.lastUsedAt !== void 0) {
+      fields.push("last_used_at = ?");
+      values.push(updates.lastUsedAt);
+    }
+    if (fields.length === 0) return false;
+    values.push(id);
+    const stmt = db2.prepare(`UPDATE proxies SET ${fields.join(", ")} WHERE id = ?`);
+    const result = stmt.run(...values);
+    return result.changes > 0;
+  }
+  /**
+   * Delete proxy
+   */
+  static delete(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`DELETE FROM proxies WHERE id = ?`);
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+  /**
+   * Check if proxy exists by host:port
+   */
+  static exists(host, port) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`SELECT COUNT(*) as count FROM proxies WHERE host = ? AND port = ?`);
+    const result = stmt.get(host, port);
+    return result.count > 0;
+  }
+  /**
+   * Increment success count
+   */
+  static incrementSuccess(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      UPDATE proxies 
+      SET success_count = success_count + 1,
+          failed_count = 0,
+          last_used_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+  /**
+   * Increment failed count
+   */
+  static incrementFailed(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      UPDATE proxies 
+      SET failed_count = failed_count + 1,
+          last_used_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+  /**
+   * Delete all proxies
+   */
+  static deleteAll() {
+    const db2 = getDatabase();
+    db2.prepare(`DELETE FROM proxies`).run();
+  }
+}
+class ProxyManager {
+  constructor() {
+    this.currentIndex = 0;
+    this.maxFailedCount = 5;
+    this.settings = {
+      maxRetries: 3,
+      timeout: 1e4,
+      maxFailedCount: 5,
+      enableRotation: true,
+      fallbackToDirect: true
+    };
+    console.log("[ProxyManager] Initialized with database storage");
+  }
+  /**
+   * Lấy proxy tiếp theo theo round-robin
+   * @returns Proxy config hoặc null nếu không có proxy khả dụng
+   */
+  getNextProxy() {
+    if (!this.settings.enableRotation) {
+      return null;
+    }
+    const allProxies = ProxyDatabase.getAll();
+    const availableProxies = allProxies.filter(
+      (p) => p.enabled && (p.failedCount || 0) < this.maxFailedCount
+    );
+    if (availableProxies.length === 0) {
+      console.warn("[ProxyManager] Không có proxy khả dụng");
+      return null;
+    }
+    const proxy = availableProxies[this.currentIndex % availableProxies.length];
+    this.currentIndex = (this.currentIndex + 1) % availableProxies.length;
+    console.log(`[ProxyManager] Sử dụng proxy: ${proxy.host}:${proxy.port} (${proxy.type})`);
+    return proxy;
+  }
+  /**
+   * Đánh dấu proxy thành công
+   */
+  markProxySuccess(proxyId) {
+    try {
+      ProxyDatabase.incrementSuccess(proxyId);
+      const proxy = ProxyDatabase.getById(proxyId);
+      if (proxy) {
+        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} thành công (${proxy.successCount} success)`);
+      }
+    } catch (error) {
+      console.error("[ProxyManager] Lỗi markProxySuccess:", error);
+    }
+  }
+  /**
+   * Đánh dấu proxy thất bại
+   */
+  markProxyFailed(proxyId, error) {
+    try {
+      ProxyDatabase.incrementFailed(proxyId);
+      const proxy = ProxyDatabase.getById(proxyId);
+      if (proxy) {
+        console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} thất bại (${proxy.failedCount || 0}/${this.maxFailedCount})`, error);
+        if ((proxy.failedCount || 0) >= this.maxFailedCount) {
+          ProxyDatabase.update(proxyId, { enabled: false });
+          console.error(`[ProxyManager] 🚫 Đã disable proxy ${proxy.host}:${proxy.port} do lỗi quá nhiều lần`);
+        }
+      }
+    } catch (error2) {
+      console.error("[ProxyManager] Lỗi markProxyFailed:", error2);
+    }
+  }
+  /**
+   * Thêm proxy mới
+   */
+  addProxy(config) {
+    const newProxy = {
+      ...config,
+      id: `proxy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: Date.now(),
+      successCount: 0,
+      failedCount: 0
+    };
+    const created = ProxyDatabase.create(newProxy);
+    console.log(`[ProxyManager] ➕ Đã thêm proxy: ${created.host}:${created.port}`);
+    return created;
+  }
+  /**
+   * Xóa proxy
+   */
+  removeProxy(proxyId) {
+    const proxy = ProxyDatabase.getById(proxyId);
+    if (proxy) {
+      const deleted = ProxyDatabase.delete(proxyId);
+      if (deleted) {
+        console.log(`[ProxyManager] ➖ Đã xóa proxy: ${proxy.host}:${proxy.port}`);
+        return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Cập nhật proxy
+   */
+  updateProxy(proxyId, updates) {
+    const updated = ProxyDatabase.update(proxyId, updates);
+    if (updated) {
+      const proxy = ProxyDatabase.getById(proxyId);
+      if (proxy) {
+        console.log(`[ProxyManager] 🔄 Đã cập nhật proxy: ${proxy.host}:${proxy.port}`);
+      }
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Lấy tất cả proxies
+   */
+  getAllProxies() {
+    return ProxyDatabase.getAll();
+  }
+  /**
+   * Lấy thống kê của tất cả proxies
+   */
+  getStats() {
+    const proxies = ProxyDatabase.getAll();
+    return proxies.map((proxy) => {
+      const total = (proxy.successCount || 0) + (proxy.failedCount || 0);
+      const successRate = total > 0 ? (proxy.successCount || 0) / total : 0;
+      return {
+        id: proxy.id,
+        host: proxy.host,
+        port: proxy.port,
+        successCount: proxy.successCount || 0,
+        failedCount: proxy.failedCount || 0,
+        successRate: Math.round(successRate * 100),
+        lastUsedAt: proxy.lastUsedAt,
+        isHealthy: proxy.enabled && (proxy.failedCount || 0) < this.maxFailedCount
+      };
+    });
+  }
+  /**
+   * Test proxy hoạt động không
+   */
+  async testProxy(proxyId) {
+    const proxy = ProxyDatabase.getById(proxyId);
+    if (!proxy) {
+      return { success: false, error: "Proxy không tồn tại" };
+    }
+    try {
+      const startTime = Date.now();
+      const { default: fetch2 } = await import("node-fetch");
+      const { HttpsProxyAgent } = await import("https-proxy-agent");
+      const proxyUrl = proxy.username ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}` : `${proxy.type}://${proxy.host}:${proxy.port}`;
+      const agent = new HttpsProxyAgent(proxyUrl);
+      const response = await fetch2("https://httpbin.org/ip", {
+        method: "GET",
+        agent,
+        timeout: this.settings.timeout
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const latency = Date.now() - startTime;
+      const data = await response.json();
+      console.log(`[ProxyManager] ✅ Test proxy thành công: ${proxy.host}:${proxy.port} (${latency}ms) - IP: ${data.origin}`);
+      return { success: true, latency };
+    } catch (error) {
+      console.error(`[ProxyManager] ❌ Test proxy thất bại: ${proxy.host}:${proxy.port}`, error);
+      return { success: false, error: String(error) };
+    }
+  }
+  /**
+   * Import proxies từ JSON string hoặc array
+   */
+  importProxies(data) {
+    let proxiesToImport = [];
+    if (typeof data === "string") {
+      try {
+        const parsed = JSON.parse(data);
+        proxiesToImport = Array.isArray(parsed) ? parsed : parsed.proxies || [];
+      } catch (e) {
+        console.error("[ProxyManager] Lỗi parse JSON:", e);
+        return { added: 0, skipped: 0 };
+      }
+    } else {
+      proxiesToImport = data;
+    }
+    let added = 0;
+    let skipped = 0;
+    for (const proxy of proxiesToImport) {
+      const exists = ProxyDatabase.exists(proxy.host, proxy.port);
+      if (exists) {
+        skipped++;
+        continue;
+      }
+      this.addProxy(proxy);
+      added++;
+    }
+    console.log(`[ProxyManager] Import hoàn thành: ${added} added, ${skipped} skipped`);
+    return { added, skipped };
+  }
+  /**
+   * Export proxies
+   */
+  exportProxies() {
+    const proxies = ProxyDatabase.getAll();
+    return JSON.stringify({
+      proxies,
+      settings: this.settings
+    }, null, 2);
+  }
+  /**
+   * Kiểm tra có nên fallback về direct connection không
+   */
+  shouldFallbackToDirect() {
+    return this.settings.fallbackToDirect;
+  }
+  /**
+   * Reset failed count của tất cả proxies
+   */
+  resetAllFailedCounts() {
+    const proxies = ProxyDatabase.getAll();
+    proxies.forEach((proxy) => {
+      ProxyDatabase.update(proxy.id, { failedCount: 0, enabled: true });
+    });
+    console.log("[ProxyManager] 🔄 Đã reset failed count của tất cả proxies");
+  }
+}
+let instance = null;
+function getProxyManager() {
+  if (!instance) {
+    instance = new ProxyManager();
+  }
+  return instance;
+}
 const HL_LANG = "vi";
 const BROWSER_PROFILES = [
   {
@@ -3147,8 +3604,106 @@ function getRandomBrowserProfile() {
 }
 class GeminiChatServiceClass {
   constructor() {
-    this.configuredSessions = /* @__PURE__ */ new Set();
+    this.proxyAssignments = /* @__PURE__ */ new Map();
+    this.proxyInUse = /* @__PURE__ */ new Set();
+    this.proxyRotationIndex = 0;
+    this.proxyMaxFailedCount = 5;
     this.rotationIndex = 0;
+  }
+  getUseProxySetting() {
+    try {
+      const settings = AppSettingsService.getAll();
+      return settings.useProxy;
+    } catch (error) {
+      console.warn("[GeminiChatService] Không tải được cài đặt proxy, dùng mặc định (bật)");
+      return true;
+    }
+  }
+  async createProxyAgent(proxy, timeoutMs) {
+    if (!proxy) return void 0;
+    const { HttpsProxyAgent } = await import("https-proxy-agent");
+    const { SocksProxyAgent } = await import("socks-proxy-agent");
+    const proxyScheme = proxy.type === "socks5" ? "socks5h" : proxy.type;
+    const proxyUrl = proxy.username ? `${proxyScheme}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}` : `${proxyScheme}://${proxy.host}:${proxy.port}`;
+    if (proxy.type === "socks5") {
+      return new SocksProxyAgent(proxyUrl, { timeout: timeoutMs });
+    }
+    return new HttpsProxyAgent(proxyUrl, {
+      timeout: timeoutMs,
+      rejectUnauthorized: false,
+      keepAlive: false
+    });
+  }
+  async fetchWithProxy(url, fetchOptions, timeoutMs, accountKey) {
+    const useProxy = this.getUseProxySetting();
+    const proxyManager = getProxyManager();
+    let currentProxy = null;
+    if (useProxy) {
+      currentProxy = this.getOrAssignProxy(accountKey);
+    }
+    const { default: fetch2 } = await import("node-fetch");
+    try {
+      const agent = await this.createProxyAgent(currentProxy, timeoutMs);
+      const response = await fetch2(url, { ...fetchOptions, ...agent ? { agent } : {} });
+      if (response.ok) {
+        if (currentProxy) {
+          proxyManager.markProxySuccess(currentProxy.id);
+        }
+        return { response, usedProxy: currentProxy };
+      }
+      if (currentProxy) {
+        proxyManager.markProxyFailed(currentProxy.id, `HTTP ${response.status}`);
+        this.releaseProxy(accountKey, currentProxy.id);
+      }
+      if (!currentProxy && useProxy && proxyManager.shouldFallbackToDirect()) {
+        const directResponse = await fetch2(url, fetchOptions);
+        return { response: directResponse, usedProxy: null };
+      }
+      return { response, usedProxy: currentProxy };
+    } catch (error) {
+      if (currentProxy) {
+        proxyManager.markProxyFailed(currentProxy.id, error?.message || String(error));
+        this.releaseProxy(accountKey, currentProxy.id);
+      }
+      if (!currentProxy && useProxy && proxyManager.shouldFallbackToDirect()) {
+        const directResponse = await fetch2(url, fetchOptions);
+        return { response: directResponse, usedProxy: null };
+      }
+      throw error;
+    }
+  }
+  getOrAssignProxy(accountKey) {
+    getProxyManager();
+    const assignedId = this.proxyAssignments.get(accountKey);
+    if (assignedId) {
+      const assigned = this.getAvailableProxies().find((p) => p.id === assignedId);
+      if (assigned) {
+        return assigned;
+      }
+      this.releaseProxy(accountKey, assignedId);
+    }
+    const available = this.getAvailableProxies().filter((p) => !this.proxyInUse.has(p.id));
+    if (available.length === 0) {
+      console.warn(`[GeminiChatService] Không còn proxy trống cho tài khoản ${accountKey}`);
+      return null;
+    }
+    const proxy = available[this.proxyRotationIndex % available.length];
+    this.proxyRotationIndex = (this.proxyRotationIndex + 1) % available.length;
+    this.proxyAssignments.set(accountKey, proxy.id);
+    this.proxyInUse.add(proxy.id);
+    return proxy;
+  }
+  releaseProxy(accountKey, proxyId) {
+    const assignedId = this.proxyAssignments.get(accountKey);
+    if (assignedId === proxyId) {
+      this.proxyAssignments.delete(accountKey);
+    }
+    this.proxyInUse.delete(proxyId);
+  }
+  getAvailableProxies() {
+    const proxyManager = getProxyManager();
+    const allProxies = proxyManager.getAllProxies();
+    return allProxies.filter((p) => p.enabled && (p.failedCount || 0) < this.proxyMaxFailedCount);
   }
   // Helper: Generate initial REQ_ID (Random Prefix + Fixed 4-digit Suffix logic)
   // Format matches log: e.g. 4180921 (7 digits)
@@ -3193,7 +3748,7 @@ class GeminiChatServiceClass {
     }
     const config = activeConfigs[this.rotationIndex % activeConfigs.length];
     this.rotationIndex = (this.rotationIndex + 1) % activeConfigs.length;
-    console.log(`[GeminiChatService] Selected config for rotation: ${config.name} (${this.rotationIndex}/${activeConfigs.length})`);
+    console.log(`[GeminiChatService] Đã chọn cấu hình luân phiên: ${config.name} (${this.rotationIndex}/${activeConfigs.length})`);
     return config;
   }
   // =======================================================
@@ -3378,75 +3933,6 @@ class GeminiChatServiceClass {
     };
   }
   // =======================================================
-  // HELPER: SET FLASH MODEL (ONE TIME PER SESSION)
-  // =======================================================
-  async setFlashModel(config) {
-    try {
-      const MODEL_ID = "56fdd199312815e2";
-      const innerReq = JSON.stringify([
-        [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, MODEL_ID],
-        [["last_selected_mode_id_on_web"]]
-      ]);
-      const fReq = JSON.stringify([
-        [["L5adhe", innerReq, null, "generic"]]
-      ]);
-      if (!config.blLabel || !config.fSid || !config.atToken) {
-        console.error("[GeminiChatService] Missing required config fields for Flash Model");
-        return;
-      }
-      const qs = new URLSearchParams({
-        rpcids: "L5adhe",
-        "source-path": "/app",
-        bl: config.blLabel,
-        "f.sid": config.fSid,
-        hl: HL_LANG,
-        pageId: "none",
-        _reqid: config.reqId || "0",
-        rt: "c"
-      });
-      const body = new URLSearchParams();
-      body.append("f.req", fReq);
-      body.append("at", config.atToken);
-      body.append("", "");
-      console.log(`[GeminiChatService] Setting Flash Model preference...`);
-      const response = await fetch(`https://gemini.google.com/_/BardChatUi/data/batchexecute?${qs.toString()}`, {
-        method: "POST",
-        headers: {
-          "accept": "*/*",
-          "accept-encoding": "gzip, deflate, br, zstd",
-          "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
-          "cache-control": "no-cache",
-          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-          "origin": "https://gemini.google.com",
-          "pragma": "no-cache",
-          "referer": "https://gemini.google.com/",
-          "sec-ch-ua": config.userAgent ? `"Not(A:Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"` : '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
-          "sec-ch-ua-arch": '"x86"',
-          "sec-ch-ua-bitness": '"64"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": config.platform ? `"${config.platform}"` : '"Windows"',
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-          "user-agent": config.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-          "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
-          "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
-          "x-goog-ext-73010989-jspb": "[0]",
-          "x-same-domain": "1",
-          "Cookie": config.cookie
-        },
-        body
-      });
-      if (response.ok) {
-        console.log(`[GeminiChatService] Set Flash Model SUCCESS`);
-      } else {
-        console.warn(`[GeminiChatService] Set Flash Model FAILED: ${response.status}`);
-      }
-    } catch (e) {
-      console.error(`[GeminiChatService] Error setting Flash Model:`, e);
-    }
-  }
-  // =======================================================
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
   async sendMessage(message, configId, context) {
@@ -3454,13 +3940,13 @@ class GeminiChatServiceClass {
     const MIN_DELAY_MS = 2e3;
     const MAX_DELAY_MS = 1e4;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      console.log(`[GeminiChatService] Sending message (Attempt ${attempt}/${MAX_RETRIES})...`);
+      console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
       let config = null;
       if (configId) {
         config = this.getById(configId);
         if (!config) {
-          console.error(`[GeminiChatService] Config ID ${configId} not found.`);
-          return { success: false, error: `Config ID ${configId} not found` };
+          console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
+          return { success: false, error: `Không tìm thấy cấu hình ID ${configId}` };
         }
       } else {
         config = this.getNextActiveConfig();
@@ -3476,22 +3962,22 @@ class GeminiChatServiceClass {
               updatedAt: Date.now()
             };
           } else {
-            return { success: false, error: "No active web configurations found." };
+            return { success: false, error: "Không có cấu hình web đang hoạt động." };
           }
         }
       }
-      console.log(`[GeminiChatService] Request using config: ${config.name} (ID: ${config.id})`);
+      console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id})`);
       const result = await this._sendMessageInternal(message, config, context);
       if (result.success) {
-        return result;
+        return { ...result, configId: config.id };
       }
       if (attempt < MAX_RETRIES) {
         const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
-        console.log(`[GeminiChatService] Request failed, retrying in ${retryDelay}ms...`);
+        console.log(`[GeminiChatService] Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
       } else {
-        console.error(`[GeminiChatService] All ${MAX_RETRIES} attempts failed.`);
-        return result;
+        console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
+        return { ...result, configId: config.id };
       }
     }
     return { success: false, error: "Unexpected error in retry loop" };
@@ -3507,7 +3993,7 @@ class GeminiChatServiceClass {
       return { success: false, error: `Missing required config fields: ${missing.join(", ")}` };
     }
     if (!config.userAgent || !config.platform) {
-      console.warn(`[GeminiChatService] Config ${config.id} missing browser profile. Assigning persistent profile...`);
+      console.warn(`[GeminiChatService] Cấu hình ${config.id} thiếu hồ sơ trình duyệt. Đang gán hồ sơ cố định...`);
       const profile = getRandomBrowserProfile();
       config.userAgent = profile.userAgent;
       config.platform = profile.platform;
@@ -3516,7 +4002,7 @@ class GeminiChatServiceClass {
           const db2 = getDatabase();
           db2.prepare("UPDATE gemini_chat_config SET user_agent = ?, platform = ? WHERE id = ?").run(profile.userAgent, profile.platform, config.id);
         } catch (e) {
-          console.error("[GeminiChatService] Failed to persist browser profile", e);
+          console.error("[GeminiChatService] Không thể lưu hồ sơ trình duyệt", e);
         }
       }
     }
@@ -3524,6 +4010,7 @@ class GeminiChatServiceClass {
     const matchingProfile = BROWSER_PROFILES.find((p) => p.userAgent === config.userAgent) || BROWSER_PROFILES[0];
     const secChUa = matchingProfile.secChUa;
     const secChUaPlatform = config.platform ? `"${config.platform}"` : matchingProfile.secChUaPlatform;
+    const safeCookie = (cookie || "").replace(/[\r\n]+/g, "");
     let currentReqIdStr = config.reqId;
     if (!currentReqIdStr) {
       currentReqIdStr = this.generateInitialReqId();
@@ -3536,18 +4023,18 @@ class GeminiChatServiceClass {
         db2.prepare("UPDATE gemini_chat_config SET req_id = ? WHERE id = ?").run(reqId, config.id);
         config.reqId = reqId;
       } catch (e) {
-        console.warn("[GeminiChatService] Failed to update req_id in DB", e);
+        console.warn("[GeminiChatService] Không thể cập nhật req_id trong DB", e);
       }
-    }
-    const sessionKey = `config_${config.id}`;
-    if (!this.configuredSessions.has(sessionKey)) {
-      await this.setFlashModel(config);
-      this.configuredSessions.add(sessionKey);
     }
     let contextArray = ["", "", ""];
     if (context) {
       contextArray = [context.conversationId, context.responseId, context.choiceId];
-      console.log("[GeminiChatService] Using context:", contextArray);
+      const contextInfo = {
+        conversationId: context.conversationId ? `${String(context.conversationId).slice(0, 24)}...` : "",
+        responseId: context.responseId ? `${String(context.responseId).slice(0, 24)}...` : "",
+        choiceId: context.choiceId ? `${String(context.choiceId).slice(0, 24)}...` : ""
+      };
+      console.log("[GeminiChatService] Dùng ngữ cảnh (tóm tắt):", contextInfo);
     }
     const innerPayload = [
       [message],
@@ -3571,213 +4058,8 @@ class GeminiChatServiceClass {
       // Empty param như trong HAR
     });
     try {
-      console.log("[GeminiChatService] Fetching:", url);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "accept": "*/*",
-          "accept-encoding": "gzip, deflate, br, zstd",
-          "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
-          "cache-control": "no-cache",
-          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-          "origin": "https://gemini.google.com",
-          "pragma": "no-cache",
-          "referer": "https://gemini.google.com/",
-          "sec-ch-ua": secChUa,
-          "sec-ch-ua-arch": '"x86"',
-          "sec-ch-ua-bitness": '"64"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": secChUaPlatform,
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-          "user-agent": config.userAgent,
-          "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
-          "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
-          "x-goog-ext-73010989-jspb": "[0]",
-          "x-same-domain": "1",
-          "Cookie": cookie
-        },
-        body: body.toString()
-      });
-      console.log("[GeminiChatService] >>> fetch END, status:", response.status);
-      if (!response.ok) {
-        const txt = await response.text();
-        console.error("[GeminiChatService] Gemini Error:", response.status, txt.substring(0, 200));
-        return { success: false, error: `HTTP ${response.status}` };
-      }
-      console.log("[GeminiChatService] >>> Reading response text...");
-      const responseText = await response.text();
-      console.log("[GeminiChatService] >>> Response text length:", responseText.length);
-      if (responseText.length < 500) {
-        console.warn("[GeminiChatService] >>> Small response (possible error):", responseText);
-      }
-      const sessionManager = getSessionContextManager();
-      const newContext = sessionManager.parseFromFetchResponse(responseText);
-      let foundText = "";
-      const lines = responseText.split("\n").filter((line) => line.trim());
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          let jsonPart = trimmed;
-          if (/^\d+$/.test(jsonPart)) continue;
-          const dataObj = JSON.parse(jsonPart);
-          if (Array.isArray(dataObj) && dataObj.length > 0) {
-            const payloadItem = dataObj[0];
-            if (Array.isArray(payloadItem) && payloadItem.length > 2 && payloadItem[2]) {
-              if (typeof payloadItem[2] === "string") {
-                const innerData = JSON.parse(payloadItem[2]);
-                if (Array.isArray(innerData) && innerData.length >= 5) {
-                  const candidates = innerData[4];
-                  if (Array.isArray(candidates) && candidates.length > 0) {
-                    const candidate = candidates[0];
-                    if (candidate && candidate.length > 1 && candidate[1] && candidate[1].length > 0) {
-                      const txt = candidate[1][0];
-                      if (txt) {
-                        foundText = txt;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-        }
-      }
-      if (foundText) {
-        if (!newContext.conversationId && context) newContext.conversationId = context.conversationId;
-        if (!newContext.responseId && context) newContext.responseId = context.responseId;
-        if (!newContext.choiceId && context) newContext.choiceId = context.choiceId;
-        console.log(`[GeminiChatService] Received response (${foundText.length} chars)`);
-        console.log("[GeminiChatService] Parsed context:", newContext);
-        return {
-          success: true,
-          data: {
-            text: foundText,
-            context: newContext
-          }
-        };
-      } else {
-        console.error("[GeminiChatService] No text found in response! Resetting session...");
-        this.configuredSessions.delete("cookie_config");
-        throw new Error("No text found in response - Session reset");
-      }
-    } catch (error) {
-      console.error("[GeminiChatService] Fetch Error:", error);
-      return { success: false, error: String(error) };
-    }
-  }
-  // ... (existing code)
-  // =======================================================
-  // STREAM MESSAGE
-  // =======================================================
-  async streamMessage(message, configId, context, onData, onError, onDone) {
-    const MAX_RETRIES = 3;
-    const MIN_DELAY_MS = 2e3;
-    const MAX_DELAY_MS = 1e4;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      console.log(`[GeminiChatService] Streaming message (Attempt ${attempt}/${MAX_RETRIES})...`);
-      let config = null;
-      if (configId) {
-        config = this.getById(configId);
-        if (!config) throw new Error(`Config ID ${configId} not found`);
-      } else {
-        config = this.getNextActiveConfig();
-        if (!config) {
-          const cookieConfig = this.getCookieConfig();
-          if (cookieConfig) {
-            config = { id: "legacy", name: "Legacy Cookie", ...cookieConfig, isActive: true, createdAt: 0, updatedAt: 0 };
-          } else {
-            throw new Error("No active web configurations found for streaming");
-          }
-        }
-      }
-      try {
-        await this._streamMessageInternal(message, config, context, onData);
-        onDone();
-        return;
-      } catch (error) {
-        console.error(`[GeminiChatService] Stream failed (Attempt ${attempt}):`, error);
-        if (attempt < MAX_RETRIES) {
-          const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
-          console.log(`[GeminiChatService] Retrying in ${retryDelay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, retryDelay));
-        } else {
-          onError(String(error));
-          return;
-        }
-      }
-    }
-  }
-  async _streamMessageInternal(message, config, context, onData) {
-    const { cookie, blLabel, fSid, atToken } = config;
-    if (!cookie || !blLabel || !fSid || !atToken) {
-      throw new Error("Missing required config fields in Stream Mode");
-    }
-    const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : HL_LANG;
-    if (!config.userAgent || !config.platform) {
-      const profile = getRandomBrowserProfile();
-      config.userAgent = profile.userAgent;
-      config.platform = profile.platform;
-      if (config.id !== "legacy") {
-        try {
-          const db2 = getDatabase();
-          db2.prepare("UPDATE gemini_chat_config SET user_agent = ?, platform = ? WHERE id = ?").run(profile.userAgent, profile.platform, config.id);
-        } catch (e) {
-        }
-      }
-    }
-    const matchingProfile = BROWSER_PROFILES.find((p) => p.userAgent === config.userAgent) || BROWSER_PROFILES[0];
-    const secChUa = matchingProfile.secChUa;
-    const secChUaPlatform = config.platform ? `"${config.platform}"` : matchingProfile.secChUaPlatform;
-    let currentReqIdStr = config.reqId;
-    if (!currentReqIdStr) currentReqIdStr = this.generateInitialReqId();
-    const nextReqIdNum = parseInt(currentReqIdStr) + 1e5;
-    const reqId = String(nextReqIdNum);
-    if (config.id !== "legacy") {
-      try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE gemini_chat_config SET req_id = ? WHERE id = ?").run(reqId, config.id);
-        config.reqId = reqId;
-      } catch (e) {
-        console.warn("[GeminiChatService] Failed to update req_id in DB", e);
-      }
-    }
-    const sessionKey = `config_${config.id}`;
-    if (!this.configuredSessions.has(sessionKey)) {
-      await this.setFlashModel(config);
-      this.configuredSessions.add(sessionKey);
-    }
-    let contextArray = ["", "", ""];
-    if (context) {
-      contextArray = [context.conversationId, context.responseId, context.choiceId];
-    }
-    const innerPayload = [
-      [message],
-      null,
-      contextArray
-    ];
-    const fReq = JSON.stringify([null, JSON.stringify(innerPayload)]);
-    const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
-    const params = new URLSearchParams({
-      "bl": blLabel,
-      "_reqid": reqId,
-      "rt": "c",
-      "f.sid": fSid,
-      "hl": hl
-    });
-    const url = `${baseUrl}?${params.toString()}`;
-    const body = new URLSearchParams({
-      "f.req": fReq,
-      "at": atToken,
-      "": ""
-    });
-    console.log("[GeminiChatService] Streaming from:", url);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
+      console.log("[GeminiChatService] Đang gửi request:", url);
+      const headers = {
         "accept": "*/*",
         "accept-encoding": "gzip, deflate, br, zstd",
         "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
@@ -3786,7 +4068,6 @@ class GeminiChatServiceClass {
         "origin": "https://gemini.google.com",
         "pragma": "no-cache",
         "referer": "https://gemini.google.com/",
-        "sec-ch-ua": secChUa,
         "sec-ch-ua-arch": '"x86"',
         "sec-ch-ua-bitness": '"64"',
         "sec-ch-ua-mobile": "?0",
@@ -3794,85 +4075,119 @@ class GeminiChatServiceClass {
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-origin",
-        "user-agent": config.userAgent,
+        "user-agent": config.userAgent || matchingProfile.userAgent,
         "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
         "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
         "x-goog-ext-73010989-jspb": "[0]",
         "x-same-domain": "1",
-        "Cookie": cookie
-      },
-      body: body.toString()
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[GeminiChatService] Stream HTTP Error:", response.status, errText.substring(0, 300));
-      throw new Error(`HTTP ${response.status}`);
-    }
-    if (!response.body) throw new Error("No response body");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
-    let fullResponse = "";
-    let hasReceivedText = false;
-    let lastTextLength = 0;
-    const sessionManager = getSessionContextManager();
-    let newContext = context ? { ...context } : { conversationId: "", responseId: "", choiceId: "" };
-    let chunkCount = 0;
-    let lineCount = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunkText = decoder.decode(value, { stream: true });
-        buffer += chunkText;
-        fullResponse += chunkText;
-        while (buffer.includes("\n")) {
-          const lineEnd = buffer.indexOf("\n");
-          const line = buffer.substring(0, lineEnd);
-          buffer = buffer.substring(lineEnd + 1);
-          lineCount++;
-          if (!line.trim()) continue;
+        "Cookie": safeCookie
+      };
+      if (secChUa) {
+        headers["sec-ch-ua"] = secChUa;
+      }
+      const MAX_CONTROL_RETRIES = 2;
+      for (let controlAttempt = 1; controlAttempt <= MAX_CONTROL_RETRIES; controlAttempt++) {
+        const { response, usedProxy } = await this.fetchWithProxy(
+          url,
+          {
+            method: "POST",
+            headers,
+            body: body.toString()
+          },
+          15e3,
+          config.id
+        );
+        console.log("[GeminiChatService] >>> Kết thúc fetch, trạng thái:", response.status);
+        if (!response.ok) {
+          const txt = await response.text();
+          console.error("[GeminiChatService] Lỗi Gemini:", response.status, txt.substring(0, 200));
+          return { success: false, error: `HTTP ${response.status}` };
+        }
+        console.log("[GeminiChatService] >>> Đang đọc nội dung phản hồi...");
+        const responseText = await response.text();
+        let foundText = "";
+        let hasWrbFr = false;
+        let hasContentPayload = false;
+        for (const line of responseText.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith(")]}'")) continue;
+          if (/^\d+$/.test(trimmed)) continue;
           try {
-            if (line.startsWith(")]}'")) continue;
-            if (/^\d+$/.test(line.trim())) continue;
-            const data = JSON.parse(line);
-            if (Array.isArray(data) && data[0] && Array.isArray(data[0]) && data[0][2]) {
-              const innerDataStr = data[0][2];
-              const innerData = JSON.parse(innerDataStr);
-              if (innerData && Array.isArray(innerData)) {
-                if (innerData[4] && Array.isArray(innerData[4]) && innerData[4][0]) {
-                  const candidate = innerData[4][0];
-                  if (candidate[1] && Array.isArray(candidate[1]) && candidate[1][0]) {
-                    const fullText = candidate[1][0];
-                    hasReceivedText = true;
-                    const currentLength = fullText.length;
-                    if (currentLength > lastTextLength) {
-                      chunkCount++;
-                      const delta = fullText.substring(lastTextLength);
-                      console.log(`[GeminiChatService] Chunk #${chunkCount} | +${delta.length} chars | Total: ${currentLength}`);
-                      onData({ text: delta });
-                      lastTextLength = currentLength;
-                    }
+            const dataObj = JSON.parse(trimmed);
+            if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
+            for (const payloadItem of dataObj) {
+              if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+              if (payloadItem[0] !== "wrb.fr") continue;
+              hasWrbFr = true;
+              if (typeof payloadItem[2] !== "string") continue;
+              const innerData = JSON.parse(payloadItem[2]);
+              if (!Array.isArray(innerData) || innerData.length < 5) continue;
+              const candidates = innerData[4];
+              if (Array.isArray(candidates) && candidates.length > 0) {
+                const candidate = candidates[0];
+                if (candidate && candidate.length > 1) {
+                  const textSource = candidate[1];
+                  const txt = Array.isArray(textSource) ? textSource[0] : textSource;
+                  if (typeof txt === "string" && txt) {
+                    foundText = txt;
+                    hasContentPayload = true;
                   }
                 }
               }
             }
-          } catch (e) {
+          } catch {
           }
         }
+        console.log("[GeminiChatService] >>> Độ dài phản hồi:", responseText.length);
+        if (responseText.length < 500) {
+          console.warn("[GeminiChatService] >>> Phản hồi ngắn (có thể lỗi):", responseText);
+        }
+        const sessionManager = getSessionContextManager();
+        const newContext = sessionManager.parseFromFetchResponse(responseText);
+        if (foundText) {
+          if (!newContext.conversationId && context) newContext.conversationId = context.conversationId;
+          if (!newContext.responseId && context) newContext.responseId = context.responseId;
+          if (!newContext.choiceId && context) newContext.choiceId = context.choiceId;
+          console.log(`[GeminiChatService] Nhận phản hồi thành công (${foundText.length} ký tự)`);
+          const contextSummary = {
+            conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : "",
+            responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
+            choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ""
+          };
+          console.log("[GeminiChatService] Ngữ cảnh (tóm tắt):", contextSummary);
+          return {
+            success: true,
+            data: {
+              text: foundText,
+              context: newContext
+            }
+          };
+        }
+        if (hasWrbFr && !hasContentPayload && controlAttempt < MAX_CONTROL_RETRIES) {
+          console.warn("[GeminiChatService] Phản hồi điều khiển, đang gửi lại nhanh...");
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          continue;
+        }
+        if (hasWrbFr && !hasContentPayload) {
+          console.warn("[GeminiChatService] Phản hồi điều khiển (chưa có nội dung), sẽ retry ở vòng ngoài...");
+          throw new Error("Phản hồi điều khiển (chưa có nội dung)");
+        }
+        console.error("[GeminiChatService] Không tìm thấy nội dung trong phản hồi!");
+        if (usedProxy) {
+          const proxyManager = getProxyManager();
+          proxyManager.markProxyFailed(usedProxy.id, "Empty response");
+          this.releaseProxy(config.id, usedProxy.id);
+        }
+        throw new Error("Không tìm thấy nội dung trong phản hồi");
       }
-    } finally {
-      reader.releaseLock();
+      return { success: false, error: "Không nhận được phản hồi hợp lệ từ máy chủ" };
+    } catch (error) {
+      console.error("[GeminiChatService] Lỗi fetch:", error);
+      return { success: false, error: String(error) };
     }
-    console.log(`[GeminiChatService] Stream Stats: ${lineCount} lines, ${chunkCount} chunks, ${lastTextLength} chars total`);
-    if (!hasReceivedText) {
-      console.error("[GeminiChatService] No text found in stream response! Resetting session...");
-      this.configuredSessions.delete("cookie_config");
-      throw new Error("No text found in response - Session reset");
-    }
-    newContext = sessionManager.parseFromStreamResponse(fullResponse);
-    onData({ text: "", context: newContext });
   }
+  // ... (existing code)
 }
 const GeminiChatService = new GeminiChatServiceClass();
 class StoryService {
@@ -3883,9 +4198,6 @@ class StoryService {
     try {
       console.log("[StoryService] Starting translation...", options.method || "API", options.model || "default");
       if (options.method === "WEB") {
-        if (!options.webConfigId) {
-          return { success: false, error: "Web Config ID is required for WEB method" };
-        }
         let promptText = "";
         const preparedPrompt = options.prompt;
         if (typeof preparedPrompt === "string") {
@@ -3903,17 +4215,19 @@ class StoryService {
         }
         console.log("[StoryService] Extracted promptText length:", promptText.length);
         if (!promptText) console.warn("[StoryService] promptText is empty!");
-        const result = await GeminiChatService.sendMessage(promptText, options.webConfigId, options.context);
+        const webConfigId = options.webConfigId?.trim() || "";
+        const result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context);
         if (result.success && result.data) {
           console.log("[StoryService] Translation completed.");
           return {
             success: true,
             data: result.data.text,
-            context: result.data.context
+            context: result.data.context,
             // Return new context
+            configId: result.configId
           };
         } else {
-          return { success: false, error: result.error || "Gemini Web Error" };
+          return { success: false, error: result.error || "Gemini Web Error", configId: result.configId };
         }
       } else {
         const modelToUse = options.model || GEMINI_MODELS.FLASH_3_0;
@@ -4074,8 +4388,6 @@ const STORY_IPC_CHANNELS = {
   PREPARE_PROMPT: "story:preparePrompt",
   SAVE_PROMPT: "story:savePrompt",
   TRANSLATE_CHAPTER: "story:translateChapter",
-  TRANSLATE_CHAPTER_STREAM: "story:translateChapterStream",
-  TRANSLATE_CHAPTER_STREAM_REPLY: "story:translateChapterStreamReply",
   CREATE_EBOOK: "story:createEbook"
 };
 const PROMPT_IPC_CHANNELS = {
@@ -4166,43 +4478,6 @@ function registerStoryHandlers() {
         options = { prompt: payload, method: "API" };
       }
       return await StoryService.translateChapter(options);
-    }
-  );
-  electron.ipcMain.on(
-    STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM,
-    async (event, payload) => {
-      const { prompt, webConfigId, context } = payload;
-      try {
-        GeminiChatService.streamMessage(
-          prompt,
-          webConfigId,
-          context,
-          (data) => {
-            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
-              success: true,
-              data
-            });
-          },
-          (error) => {
-            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
-              success: false,
-              error
-            });
-          },
-          () => {
-            event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
-              success: true,
-              done: true
-            });
-          }
-        );
-      } catch (e) {
-        console.error("Stream setup error:", e);
-        event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, {
-          success: false,
-          error: String(e)
-        });
-      }
     }
   );
   electron.ipcMain.handle(
@@ -4742,438 +5017,6 @@ function registerGeminiChatHandlers() {
     }
   });
   console.log("[GeminiChatHandlers] Da dang ky handlers thanh cong");
-}
-class ProxyDatabase {
-  /**
-   * Get all proxies
-   */
-  static getAll() {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`
-      SELECT * FROM proxies ORDER BY created_at DESC
-    `);
-    const rows = stmt.all();
-    return rows.map((row) => ({
-      id: row.id,
-      host: row.host,
-      port: row.port,
-      username: row.username || void 0,
-      password: row.password || void 0,
-      type: row.type,
-      enabled: row.enabled === 1,
-      platform: row.platform || void 0,
-      country: row.country || void 0,
-      city: row.city || void 0,
-      successCount: row.success_count || 0,
-      failedCount: row.failed_count || 0,
-      lastUsedAt: row.last_used_at || void 0,
-      createdAt: row.created_at
-    }));
-  }
-  /**
-   * Get proxy by ID
-   */
-  static getById(id) {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`SELECT * FROM proxies WHERE id = ?`);
-    const row = stmt.get(id);
-    if (!row) return null;
-    return {
-      id: row.id,
-      host: row.host,
-      port: row.port,
-      username: row.username || void 0,
-      password: row.password || void 0,
-      type: row.type,
-      enabled: row.enabled === 1,
-      platform: row.platform || void 0,
-      country: row.country || void 0,
-      city: row.city || void 0,
-      successCount: row.success_count || 0,
-      failedCount: row.failed_count || 0,
-      lastUsedAt: row.last_used_at || void 0,
-      createdAt: row.created_at
-    };
-  }
-  /**
-   * Create new proxy
-   */
-  static create(proxy) {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`
-      INSERT INTO proxies (
-        id, host, port, username, password, type, enabled,
-        platform, country, city, success_count, failed_count,
-        last_used_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      proxy.id,
-      proxy.host,
-      proxy.port,
-      proxy.username || null,
-      proxy.password || null,
-      proxy.type,
-      proxy.enabled ? 1 : 0,
-      proxy.platform || null,
-      proxy.country || null,
-      proxy.city || null,
-      0,
-      // success_count
-      0,
-      // failed_count
-      proxy.lastUsedAt || null,
-      proxy.createdAt
-    );
-    return {
-      ...proxy,
-      successCount: 0,
-      failedCount: 0
-    };
-  }
-  /**
-   * Update proxy
-   */
-  static update(id, updates) {
-    const db2 = getDatabase();
-    const fields = [];
-    const values = [];
-    if (updates.host !== void 0) {
-      fields.push("host = ?");
-      values.push(updates.host);
-    }
-    if (updates.port !== void 0) {
-      fields.push("port = ?");
-      values.push(updates.port);
-    }
-    if (updates.username !== void 0) {
-      fields.push("username = ?");
-      values.push(updates.username || null);
-    }
-    if (updates.password !== void 0) {
-      fields.push("password = ?");
-      values.push(updates.password || null);
-    }
-    if (updates.type !== void 0) {
-      fields.push("type = ?");
-      values.push(updates.type);
-    }
-    if (updates.enabled !== void 0) {
-      fields.push("enabled = ?");
-      values.push(updates.enabled ? 1 : 0);
-    }
-    if (updates.platform !== void 0) {
-      fields.push("platform = ?");
-      values.push(updates.platform || null);
-    }
-    if (updates.country !== void 0) {
-      fields.push("country = ?");
-      values.push(updates.country || null);
-    }
-    if (updates.city !== void 0) {
-      fields.push("city = ?");
-      values.push(updates.city || null);
-    }
-    if (updates.successCount !== void 0) {
-      fields.push("success_count = ?");
-      values.push(updates.successCount);
-    }
-    if (updates.failedCount !== void 0) {
-      fields.push("failed_count = ?");
-      values.push(updates.failedCount);
-    }
-    if (updates.lastUsedAt !== void 0) {
-      fields.push("last_used_at = ?");
-      values.push(updates.lastUsedAt);
-    }
-    if (fields.length === 0) return false;
-    values.push(id);
-    const stmt = db2.prepare(`UPDATE proxies SET ${fields.join(", ")} WHERE id = ?`);
-    const result = stmt.run(...values);
-    return result.changes > 0;
-  }
-  /**
-   * Delete proxy
-   */
-  static delete(id) {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`DELETE FROM proxies WHERE id = ?`);
-    const result = stmt.run(id);
-    return result.changes > 0;
-  }
-  /**
-   * Check if proxy exists by host:port
-   */
-  static exists(host, port) {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`SELECT COUNT(*) as count FROM proxies WHERE host = ? AND port = ?`);
-    const result = stmt.get(host, port);
-    return result.count > 0;
-  }
-  /**
-   * Increment success count
-   */
-  static incrementSuccess(id) {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`
-      UPDATE proxies 
-      SET success_count = success_count + 1,
-          failed_count = 0,
-          last_used_at = ?
-      WHERE id = ?
-    `);
-    stmt.run(Date.now(), id);
-  }
-  /**
-   * Increment failed count
-   */
-  static incrementFailed(id) {
-    const db2 = getDatabase();
-    const stmt = db2.prepare(`
-      UPDATE proxies 
-      SET failed_count = failed_count + 1,
-          last_used_at = ?
-      WHERE id = ?
-    `);
-    stmt.run(Date.now(), id);
-  }
-  /**
-   * Delete all proxies
-   */
-  static deleteAll() {
-    const db2 = getDatabase();
-    db2.prepare(`DELETE FROM proxies`).run();
-  }
-}
-class ProxyManager {
-  constructor() {
-    this.currentIndex = 0;
-    this.maxFailedCount = 5;
-    this.settings = {
-      maxRetries: 3,
-      timeout: 1e4,
-      maxFailedCount: 5,
-      enableRotation: true,
-      fallbackToDirect: true
-    };
-    console.log("[ProxyManager] Initialized with database storage");
-  }
-  /**
-   * Lấy proxy tiếp theo theo round-robin
-   * @returns Proxy config hoặc null nếu không có proxy khả dụng
-   */
-  getNextProxy() {
-    if (!this.settings.enableRotation) {
-      return null;
-    }
-    const allProxies = ProxyDatabase.getAll();
-    const availableProxies = allProxies.filter(
-      (p) => p.enabled && (p.failedCount || 0) < this.maxFailedCount
-    );
-    if (availableProxies.length === 0) {
-      console.warn("[ProxyManager] Không có proxy khả dụng");
-      return null;
-    }
-    const proxy = availableProxies[this.currentIndex % availableProxies.length];
-    this.currentIndex = (this.currentIndex + 1) % availableProxies.length;
-    console.log(`[ProxyManager] Sử dụng proxy: ${proxy.host}:${proxy.port} (${proxy.type})`);
-    return proxy;
-  }
-  /**
-   * Đánh dấu proxy thành công
-   */
-  markProxySuccess(proxyId) {
-    try {
-      ProxyDatabase.incrementSuccess(proxyId);
-      const proxy = ProxyDatabase.getById(proxyId);
-      if (proxy) {
-        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} thành công (${proxy.successCount} success)`);
-      }
-    } catch (error) {
-      console.error("[ProxyManager] Lỗi markProxySuccess:", error);
-    }
-  }
-  /**
-   * Đánh dấu proxy thất bại
-   */
-  markProxyFailed(proxyId, error) {
-    try {
-      ProxyDatabase.incrementFailed(proxyId);
-      const proxy = ProxyDatabase.getById(proxyId);
-      if (proxy) {
-        console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} thất bại (${proxy.failedCount || 0}/${this.maxFailedCount})`, error);
-        if ((proxy.failedCount || 0) >= this.maxFailedCount) {
-          ProxyDatabase.update(proxyId, { enabled: false });
-          console.error(`[ProxyManager] 🚫 Đã disable proxy ${proxy.host}:${proxy.port} do lỗi quá nhiều lần`);
-        }
-      }
-    } catch (error2) {
-      console.error("[ProxyManager] Lỗi markProxyFailed:", error2);
-    }
-  }
-  /**
-   * Thêm proxy mới
-   */
-  addProxy(config) {
-    const newProxy = {
-      ...config,
-      id: `proxy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: Date.now(),
-      successCount: 0,
-      failedCount: 0
-    };
-    const created = ProxyDatabase.create(newProxy);
-    console.log(`[ProxyManager] ➕ Đã thêm proxy: ${created.host}:${created.port}`);
-    return created;
-  }
-  /**
-   * Xóa proxy
-   */
-  removeProxy(proxyId) {
-    const proxy = ProxyDatabase.getById(proxyId);
-    if (proxy) {
-      const deleted = ProxyDatabase.delete(proxyId);
-      if (deleted) {
-        console.log(`[ProxyManager] ➖ Đã xóa proxy: ${proxy.host}:${proxy.port}`);
-        return true;
-      }
-    }
-    return false;
-  }
-  /**
-   * Cập nhật proxy
-   */
-  updateProxy(proxyId, updates) {
-    const updated = ProxyDatabase.update(proxyId, updates);
-    if (updated) {
-      const proxy = ProxyDatabase.getById(proxyId);
-      if (proxy) {
-        console.log(`[ProxyManager] 🔄 Đã cập nhật proxy: ${proxy.host}:${proxy.port}`);
-      }
-      return true;
-    }
-    return false;
-  }
-  /**
-   * Lấy tất cả proxies
-   */
-  getAllProxies() {
-    return ProxyDatabase.getAll();
-  }
-  /**
-   * Lấy thống kê của tất cả proxies
-   */
-  getStats() {
-    const proxies = ProxyDatabase.getAll();
-    return proxies.map((proxy) => {
-      const total = (proxy.successCount || 0) + (proxy.failedCount || 0);
-      const successRate = total > 0 ? (proxy.successCount || 0) / total : 0;
-      return {
-        id: proxy.id,
-        host: proxy.host,
-        port: proxy.port,
-        successCount: proxy.successCount || 0,
-        failedCount: proxy.failedCount || 0,
-        successRate: Math.round(successRate * 100),
-        lastUsedAt: proxy.lastUsedAt,
-        isHealthy: proxy.enabled && (proxy.failedCount || 0) < this.maxFailedCount
-      };
-    });
-  }
-  /**
-   * Test proxy hoạt động không
-   */
-  async testProxy(proxyId) {
-    const proxy = ProxyDatabase.getById(proxyId);
-    if (!proxy) {
-      return { success: false, error: "Proxy không tồn tại" };
-    }
-    try {
-      const startTime = Date.now();
-      const { default: fetch2 } = await import("node-fetch");
-      const { HttpsProxyAgent } = await import("https-proxy-agent");
-      const proxyUrl = proxy.username ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}` : `${proxy.type}://${proxy.host}:${proxy.port}`;
-      const agent = new HttpsProxyAgent(proxyUrl);
-      const response = await fetch2("https://httpbin.org/ip", {
-        method: "GET",
-        agent,
-        timeout: this.settings.timeout
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const latency = Date.now() - startTime;
-      const data = await response.json();
-      console.log(`[ProxyManager] ✅ Test proxy thành công: ${proxy.host}:${proxy.port} (${latency}ms) - IP: ${data.origin}`);
-      return { success: true, latency };
-    } catch (error) {
-      console.error(`[ProxyManager] ❌ Test proxy thất bại: ${proxy.host}:${proxy.port}`, error);
-      return { success: false, error: String(error) };
-    }
-  }
-  /**
-   * Import proxies từ JSON string hoặc array
-   */
-  importProxies(data) {
-    let proxiesToImport = [];
-    if (typeof data === "string") {
-      try {
-        const parsed = JSON.parse(data);
-        proxiesToImport = Array.isArray(parsed) ? parsed : parsed.proxies || [];
-      } catch (e) {
-        console.error("[ProxyManager] Lỗi parse JSON:", e);
-        return { added: 0, skipped: 0 };
-      }
-    } else {
-      proxiesToImport = data;
-    }
-    let added = 0;
-    let skipped = 0;
-    for (const proxy of proxiesToImport) {
-      const exists = ProxyDatabase.exists(proxy.host, proxy.port);
-      if (exists) {
-        skipped++;
-        continue;
-      }
-      this.addProxy(proxy);
-      added++;
-    }
-    console.log(`[ProxyManager] Import hoàn thành: ${added} added, ${skipped} skipped`);
-    return { added, skipped };
-  }
-  /**
-   * Export proxies
-   */
-  exportProxies() {
-    const proxies = ProxyDatabase.getAll();
-    return JSON.stringify({
-      proxies,
-      settings: this.settings
-    }, null, 2);
-  }
-  /**
-   * Kiểm tra có nên fallback về direct connection không
-   */
-  shouldFallbackToDirect() {
-    return this.settings.fallbackToDirect;
-  }
-  /**
-   * Reset failed count của tất cả proxies
-   */
-  resetAllFailedCounts() {
-    const proxies = ProxyDatabase.getAll();
-    proxies.forEach((proxy) => {
-      ProxyDatabase.update(proxy.id, { failedCount: 0, enabled: true });
-    });
-    console.log("[ProxyManager] 🔄 Đã reset failed count của tất cả proxies");
-  }
-}
-let instance = null;
-function getProxyManager() {
-  if (!instance) {
-    instance = new ProxyManager();
-  }
-  return instance;
 }
 function registerProxyHandlers() {
   console.log("[ProxyHandlers] Đăng ký handlers...");
