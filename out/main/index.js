@@ -3634,8 +3634,8 @@ class GeminiChatServiceClass {
       keepAlive: false
     });
   }
-  async fetchWithProxy(url, fetchOptions, timeoutMs, accountKey) {
-    const useProxy = this.getUseProxySetting();
+  async fetchWithProxy(url, fetchOptions, timeoutMs, accountKey, useProxyOverride) {
+    const useProxy = typeof useProxyOverride === "boolean" ? useProxyOverride : this.getUseProxySetting();
     const proxyManager = getProxyManager();
     let currentProxy = null;
     if (useProxy) {
@@ -3935,7 +3935,7 @@ class GeminiChatServiceClass {
   // =======================================================
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
-  async sendMessage(message, configId, context) {
+  async sendMessage(message, configId, context, useProxyOverride) {
     const MAX_RETRIES = 3;
     const MIN_DELAY_MS = 2e3;
     const MAX_DELAY_MS = 1e4;
@@ -3967,7 +3967,7 @@ class GeminiChatServiceClass {
         }
       }
       console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id})`);
-      const result = await this._sendMessageInternal(message, config, context);
+      const result = await this._sendMessageInternal(message, config, context, useProxyOverride);
       if (result.success) {
         return { ...result, configId: config.id };
       }
@@ -3982,7 +3982,7 @@ class GeminiChatServiceClass {
     }
     return { success: false, error: "Unexpected error in retry loop" };
   }
-  async _sendMessageInternal(message, config, context) {
+  async _sendMessageInternal(message, config, context, useProxyOverride) {
     const { cookie, blLabel, fSid, atToken } = config;
     if (!cookie || !blLabel || !fSid || !atToken) {
       const missing = [];
@@ -4095,7 +4095,8 @@ class GeminiChatServiceClass {
             body: body.toString()
           },
           15e3,
-          config.id
+          config.id,
+          useProxyOverride
         );
         console.log("[GeminiChatService] >>> Kết thúc fetch, trạng thái:", response.status);
         if (!response.ok) {
@@ -4216,7 +4217,7 @@ class StoryService {
         console.log("[StoryService] Extracted promptText length:", promptText.length);
         if (!promptText) console.warn("[StoryService] promptText is empty!");
         const webConfigId = options.webConfigId?.trim() || "";
-        const result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context);
+        const result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
         if (result.success && result.data) {
           console.log("[StoryService] Translation completed.");
           return {

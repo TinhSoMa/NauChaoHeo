@@ -147,9 +147,10 @@ class GeminiChatServiceClass {
         url: string,
         fetchOptions: any,
         timeoutMs: number,
-        accountKey: string
+        accountKey: string,
+        useProxyOverride?: boolean
     ): Promise<{ response: any; usedProxy: ProxyConfig | null }> {
-        const useProxy = this.getUseProxySetting();
+        const useProxy = typeof useProxyOverride === 'boolean' ? useProxyOverride : this.getUseProxySetting();
         const proxyManager = getProxyManager();
         let currentProxy: ProxyConfig | null = null;
 
@@ -473,78 +474,69 @@ class GeminiChatServiceClass {
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
 
-    async sendMessage(message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
-    const MAX_RETRIES = 3;
-    const MIN_DELAY_MS = 2000;
-    const MAX_DELAY_MS = 10000;
+        async sendMessage(message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }, useProxyOverride?: boolean): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+        const MAX_RETRIES = 3;
+        const MIN_DELAY_MS = 2000;
+        const MAX_DELAY_MS = 10000;
     
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
       
-      // CONFIG SELECTION LOGIC
-      let config: GeminiChatConfig | null = null;
+            // CONFIG SELECTION LOGIC
+            let config: GeminiChatConfig | null = null;
       
-      if (configId) {
-          // Case 1: Use specific config
-          config = this.getById(configId);
-          if (!config) {
-              console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
-               return { success: false, error: `Không tìm thấy cấu hình ID ${configId}` };
-          }
-      } else {
-          // Case 2: Round-robin rotation (getNextActiveConfig)
-          config = this.getNextActiveConfig();
-          if (!config) {
-               // Fallback to legacy cookie config (mapped to GeminiChatConfig structure)
-               const cookieConfig = this.getCookieConfig();
-               if (cookieConfig) {
-                   // Map legacy to new structure just for runtime use
-                   config = {
-                       id: 'legacy',
-                       name: 'Legacy Cookie',
-                       ...cookieConfig,
-                       isActive: true,
-                       createdAt: Date.now(),
-                       updatedAt: Date.now()
-                   } as GeminiChatConfig;
-               } else {
-                   return { success: false, error: 'Không có cấu hình web đang hoạt động.' };
-               }
-          }
-      }
+            if (configId) {
+                    // Case 1: Use specific config
+                    config = this.getById(configId);
+                    if (!config) {
+                            console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
+                             return { success: false, error: `Không tìm thấy cấu hình ID ${configId}` };
+                    }
+            } else {
+                    // Case 2: Round-robin rotation (getNextActiveConfig)
+                    config = this.getNextActiveConfig();
+                    if (!config) {
+                             // Fallback to legacy cookie config (mapped to GeminiChatConfig structure)
+                             const cookieConfig = this.getCookieConfig();
+                             if (cookieConfig) {
+                                     // Map legacy to new structure just for runtime use
+                                     config = {
+                                             id: 'legacy',
+                                             name: 'Legacy Cookie',
+                                             ...cookieConfig,
+                                             isActive: true,
+                                             createdAt: Date.now(),
+                                             updatedAt: Date.now()
+                                     } as GeminiChatConfig;
+                             } else {
+                                     return { success: false, error: 'Không có cấu hình web đang hoạt động.' };
+                             }
+                    }
+            }
 
-    console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id})`);
+        console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id})`);
 
-            const result = await this._sendMessageInternal(message, config, context);
+                        const result = await this._sendMessageInternal(message, config, context, useProxyOverride);
       
-      if (result.success) {
-                return { ...result, configId: config.id };
-      }
+            if (result.success) {
+                                return { ...result, configId: config.id };
+            }
       
-      // If failed, check if we should retry
-      if (attempt < MAX_RETRIES) {
-        // If we are ROTATING (no specific configId), should we get a NEW config for retry?
-        // User request: "Concurrent requests ... not switch failure on account".
-        // But for reliable delivery, sticking to same or switching?
-        // Let's stick to the current logic: Retry loop is for TRANSIENT errors.
-        // If config is bad (Auth error), maybe we should fail fast?
-        // For now, simple retry with same or next config?
-        // If we are in rotation mode (no ID), getting next active config for retry makes sense.
-        // But the loop is here.
-        
-        const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
-        console.log(`[GeminiChatService] Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      } else {
-        console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-        return { ...result, configId: config.id }; // Return last error
-      }
+            // If failed, check if we should retry
+            if (attempt < MAX_RETRIES) {
+                const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+                console.log(`[GeminiChatService] Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+            } else {
+                console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
+                return { ...result, configId: config.id }; // Return last error
+            }
+        }
+    
+        return { success: false, error: 'Unexpected error in retry loop' };
     }
-    
-    return { success: false, error: 'Unexpected error in retry loop' };
-  }
 
-  private async _sendMessageInternal(message: string, config: GeminiChatConfig, context?: { conversationId: string; responseId: string; choiceId: string }): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string }> {
+    private async _sendMessageInternal(message: string, config: GeminiChatConfig, context?: { conversationId: string; responseId: string; choiceId: string }, useProxyOverride?: boolean): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string }> {
     const { cookie, blLabel, fSid, atToken } = config;
     
     // Validate required fields
@@ -692,7 +684,8 @@ class GeminiChatServiceClass {
                             body: body.toString()
                         },
                         15000,
-                        config.id
+                        config.id,
+                        useProxyOverride
                     );
 
                     console.log('[GeminiChatService] >>> Kết thúc fetch, trạng thái:', response.status);

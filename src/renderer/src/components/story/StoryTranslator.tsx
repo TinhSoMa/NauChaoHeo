@@ -65,6 +65,23 @@ export function StoryTranslator() {
 
   const STORY_STATE_FILE = 'story-translator.json';
 
+  const loadConfigurations = async () => {
+    try {
+      const configsResult = await window.electronAPI.geminiChat.getAll();
+      if (configsResult.success && configsResult.data) {
+        const configs = configsResult.data;
+        const activeConfig = configs.find(c => c.isActive);
+        const fallbackConfig = configs[0];
+        const nextId = tokenConfigId || activeConfig?.id || fallbackConfig?.id || null;
+        if (nextId && nextId !== tokenConfigId) {
+          setTokenConfigId(nextId);
+        }
+      }
+    } catch (e) {
+      console.error('[StoryTranslator] Error loading config:', e);
+    }
+  };
+
   // Kiem tra chuong co duoc chon de dich khong
   const isChapterIncluded = (chapterId: string) => !excludedChapterIds.has(chapterId);
 
@@ -280,6 +297,18 @@ export function StoryTranslator() {
   }, [projectId, paths]);
 
   useEffect(() => {
+    loadConfigurations();
+  }, []);
+
+  useEffect(() => {
+    if (translateMode === 'token' || translateMode === 'both') {
+      if (!tokenConfigId) {
+        loadConfigurations();
+      }
+    }
+  }, [translateMode, tokenConfigId]);
+
+  useEffect(() => {
     if (!projectId || !paths || !hasLoadedRef.current) return;
 
     if (saveTimeoutRef.current) {
@@ -348,13 +377,22 @@ export function StoryTranslator() {
       const method = translateMode === 'token' ? 'WEB' : 'API';
       const methodKey: 'api' | 'token' = method === 'WEB' ? 'token' : 'api';
 
+      if (method === 'WEB' && !tokenConfigId) {
+        await loadConfigurations();
+        if (!tokenConfigId) {
+          alert('Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+          return;
+        }
+      }
+
       // 2. Send to Gemini for Translation
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
         model: model,
         method,
         context: method === 'WEB' ? tokenContext : undefined,
-        webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined
+        webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined,
+        useProxy: method === 'WEB'
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
       if (translateResult.success && translateResult.data) {
@@ -383,7 +421,7 @@ export function StoryTranslator() {
           return next;
         });
 
-        if (translateResult.context) {
+        if (translateResult.context && translateResult.context.conversationId) {
           setTokenContext(translateResult.context);
         }
         if (translateResult.configId) {
@@ -471,6 +509,14 @@ export function StoryTranslator() {
 
         const method = channel === 'token' ? 'WEB' : 'API';
 
+        if (method === 'WEB' && !tokenConfigId) {
+          await loadConfigurations();
+          if (!tokenConfigId) {
+            console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+            return null;
+          }
+        }
+
         // 2. Send to Gemini for Translation
         const translateResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, 
@@ -479,7 +525,8 @@ export function StoryTranslator() {
             model: model,
             method,
             context: method === 'WEB' ? tokenContext : undefined,
-            webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined
+            webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined,
+            useProxy: method === 'WEB'
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
@@ -509,7 +556,7 @@ export function StoryTranslator() {
             return next;
           });
 
-          if (translateResult.context) {
+          if (translateResult.context && translateResult.context.conversationId) {
             setTokenContext(translateResult.context);
           }
           if (translateResult.configId) {
