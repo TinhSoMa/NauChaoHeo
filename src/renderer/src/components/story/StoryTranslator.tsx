@@ -8,6 +8,27 @@ import { Select } from '../common/Select';
 import { BookOpen, FileText, CheckSquare, Square, StopCircle, Download, Loader, Clock } from 'lucide-react';
 import { useProjectContext } from '../../context/ProjectContext';
 
+interface GeminiChatConfigLite {
+  id: string;
+  cookie: string;
+  atToken: string;
+  isActive: boolean;
+}
+
+type TokenContext = { conversationId: string; responseId: string; choiceId: string };
+
+const extractCookieKey = (cookie: string): string => {
+  const trimmed = cookie.trim();
+  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
+  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || '';
+  const combined = [psid1, psid3].filter(Boolean).join('|');
+  return combined || trimmed;
+};
+
+const buildTokenKey = (config: GeminiChatConfigLite): string => {
+  return `${extractCookieKey(config.cookie || '')}|${(config.atToken || '').trim()}`;
+};
+
 export function StoryTranslator() {
   const { projectId, paths } = useProjectContext();
   const hasLoadedRef = useRef(false);
@@ -26,7 +47,8 @@ export function StoryTranslator() {
   const [chapterMethods, setChapterMethods] = useState<Map<string, 'api' | 'token'>>(new Map());
   const [translatedTitles, setTranslatedTitles] = useState<Map<string, string>>(new Map());
   const [tokenConfigId, setTokenConfigId] = useState<string | null>(null);
-  const [tokenContext, setTokenContext] = useState<{ conversationId: string; responseId: string; choiceId: string } | null>(null);
+  const [tokenConfigs, setTokenConfigs] = useState<GeminiChatConfigLite[]>([]);
+  const [tokenContexts, setTokenContexts] = useState<Map<string, TokenContext>>(new Map());
   const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
   // Danh sach cac chuong bi loai tru khoi dich thuat
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
@@ -69,10 +91,17 @@ export function StoryTranslator() {
     try {
       const configsResult = await window.electronAPI.geminiChat.getAll();
       if (configsResult.success && configsResult.data) {
-        const configs = configsResult.data;
-        const activeConfig = configs.find(c => c.isActive);
-        const fallbackConfig = configs[0];
-        const nextId = tokenConfigId || activeConfig?.id || fallbackConfig?.id || null;
+        const configs = configsResult.data as GeminiChatConfigLite[];
+        setTokenConfigs(configs);
+
+        const activeConfigs = configs.filter(c => c.isActive);
+        const uniqueActive = activeConfigs.filter((config, index) => {
+          const key = buildTokenKey(config);
+          return activeConfigs.findIndex(c => buildTokenKey(c) === key) === index;
+        });
+
+        const fallbackConfig = uniqueActive[0] || configs[0];
+        const nextId = tokenConfigId || fallbackConfig?.id || null;
         if (nextId && nextId !== tokenConfigId) {
           setTokenConfigId(nextId);
         }
@@ -115,6 +144,38 @@ export function StoryTranslator() {
     if (translateMode === 'api') return 'api';
     if (translateMode === 'token') return 'token';
     return workerId === 1 ? 'token' : 'api';
+  };
+
+  const getDistinctActiveTokenConfigs = (configs: GeminiChatConfigLite[]) => {
+    const activeConfigs = configs.filter(c => c.isActive);
+    const seenKeys = new Set<string>();
+    const distinct: GeminiChatConfigLite[] = [];
+    for (const config of activeConfigs) {
+      const key = buildTokenKey(config);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      distinct.push(config);
+    }
+    return distinct;
+  };
+
+  const getTokenConfigById = (id: string | null): GeminiChatConfigLite | null => {
+    if (!id) return null;
+    return tokenConfigs.find(c => c.id === id) || null;
+  };
+
+  const getPreferredTokenConfig = (): GeminiChatConfigLite | null => {
+    const direct = getTokenConfigById(tokenConfigId);
+    if (direct) return direct;
+
+    const distinctActive = getDistinctActiveTokenConfigs(tokenConfigs);
+    if (distinctActive.length === 0) return null;
+
+    const fallback = distinctActive[0];
+    if (fallback && fallback.id !== tokenConfigId) {
+      setTokenConfigId(fallback.id);
+    }
+    return fallback;
   };
 
   // Debug logging
@@ -190,7 +251,8 @@ export function StoryTranslator() {
           chapterMethods?: Array<[string, 'api' | 'token']>;
           translatedTitles?: Array<{ id: string; title: string }>;
           tokenConfigId?: string | null;
-          tokenContext?: { conversationId: string; responseId: string; choiceId: string } | null;
+          tokenContext?: TokenContext | null;
+          tokenContexts?: Array<[string, TokenContext]>;
           viewMode?: 'original' | 'translated';
           excludedChapterIds?: string[];
           selectedChapterId?: string | null;
@@ -209,8 +271,10 @@ export function StoryTranslator() {
         if (typeof saved.tokenConfigId !== 'undefined') {
           setTokenConfigId(saved.tokenConfigId || null);
         }
-        if (typeof saved.tokenContext !== 'undefined') {
-          setTokenContext(saved.tokenContext || null);
+        if (saved.tokenContexts && saved.tokenContexts.length > 0) {
+          setTokenContexts(new Map(saved.tokenContexts));
+        } else if (saved.tokenContext && saved.tokenConfigId) {
+          setTokenContexts(new Map([[saved.tokenConfigId, saved.tokenContext]]));
         }
 
         let parsedOk = false;
@@ -277,7 +341,7 @@ export function StoryTranslator() {
       chapterMethods: orderedChapterMethods,
       translatedTitles,
       tokenConfigId,
-      tokenContext,
+      tokenContexts: Array.from(tokenContexts.entries()),
       viewMode,
       excludedChapterIds: Array.from(excludedChapterIds.values()),
       selectedChapterId
@@ -338,7 +402,7 @@ export function StoryTranslator() {
     chapterMethods,
     translatedTitles,
     tokenConfigId,
-    tokenContext,
+    tokenContexts,
     viewMode,
     excludedChapterIds,
     selectedChapterId
@@ -377,9 +441,11 @@ export function StoryTranslator() {
       const method = translateMode === 'token' ? 'WEB' : 'API';
       const methodKey: 'api' | 'token' = method === 'WEB' ? 'token' : 'api';
 
-      if (method === 'WEB' && !tokenConfigId) {
+      let selectedTokenConfig = method === 'WEB' ? getPreferredTokenConfig() : null;
+      if (method === 'WEB' && !selectedTokenConfig) {
         await loadConfigurations();
-        if (!tokenConfigId) {
+        selectedTokenConfig = getPreferredTokenConfig();
+        if (!selectedTokenConfig) {
           alert('Không tìm thấy Cấu hình Web để chạy chế độ Token.');
           return;
         }
@@ -390,8 +456,7 @@ export function StoryTranslator() {
         prompt: prepareResult.prompt,
         model: model,
         method,
-        context: method === 'WEB' ? tokenContext : undefined,
-        webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined,
+        webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
         useProxy: method === 'WEB'
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
@@ -421,8 +486,12 @@ export function StoryTranslator() {
           return next;
         });
 
-        if (translateResult.context && translateResult.context.conversationId) {
-          setTokenContext(translateResult.context);
+        if (translateResult.context && translateResult.context.conversationId && translateResult.configId) {
+          setTokenContexts(prev => {
+            const next = new Map(prev);
+            next.set(translateResult.configId!, translateResult.context!);
+            return next;
+          });
         }
         if (translateResult.configId) {
           setTokenConfigId(translateResult.configId);
@@ -465,7 +534,6 @@ export function StoryTranslator() {
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     setShouldStop(false); // Reset stop flag
 
-    const MAX_CONCURRENT = translateMode === 'both' ? 6 : translateMode === 'token' ? 1 : 5; // token chạy 1 worker, api chạy 5, both: 5 API + 1 Token
     const MIN_DELAY = 5000; // 5 giây
     const MAX_DELAY = 30000; // 30 giây
     let completed = 0;
@@ -473,7 +541,13 @@ export function StoryTranslator() {
     const results: Array<{ id: string; text: string } | null> = [];
 
     // Helper function để dịch 1 chapter
-    const translateChapter = async (chapter: Chapter, index: number, workerId: number): Promise<{ id: string; text: string } | null> => {
+    const translateChapter = async (
+      chapter: Chapter,
+      index: number,
+      workerId: number,
+      channelOverride?: 'api' | 'token',
+      tokenConfigOverride?: GeminiChatConfigLite | null
+    ): Promise<{ id: string; text: string } | null> => {
       // Kiểm tra nếu người dùng đã nhấn Dừng
       if (shouldStop) {
         console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
@@ -482,7 +556,7 @@ export function StoryTranslator() {
       
       setSelectedChapterId(chapter.id);
       
-      const channel = getWorkerChannel(workerId);
+      const channel = channelOverride || getWorkerChannel(workerId);
 
       // Mark as processing
       setProcessingChapters(prev => {
@@ -509,9 +583,14 @@ export function StoryTranslator() {
 
         const method = channel === 'token' ? 'WEB' : 'API';
 
-        if (method === 'WEB' && !tokenConfigId) {
+        let selectedTokenConfig = method === 'WEB'
+          ? (tokenConfigOverride || getPreferredTokenConfig())
+          : null;
+
+        if (method === 'WEB' && !selectedTokenConfig) {
           await loadConfigurations();
-          if (!tokenConfigId) {
+          selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
+          if (!selectedTokenConfig) {
             console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
             return null;
           }
@@ -524,8 +603,7 @@ export function StoryTranslator() {
             prompt: prepareResult.prompt,
             model: model,
             method,
-            context: method === 'WEB' ? tokenContext : undefined,
-            webConfigId: method === 'WEB' ? tokenConfigId || undefined : undefined,
+            webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
             useProxy: method === 'WEB'
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
@@ -556,8 +634,12 @@ export function StoryTranslator() {
             return next;
           });
 
-          if (translateResult.context && translateResult.context.conversationId) {
-            setTokenContext(translateResult.context);
+          if (translateResult.context && translateResult.context.conversationId && translateResult.configId) {
+            setTokenContexts(prev => {
+              const next = new Map(prev);
+              next.set(translateResult.configId!, translateResult.context!);
+              return next;
+            });
           }
           if (translateResult.configId) {
             setTokenConfigId(translateResult.configId);
@@ -585,7 +667,7 @@ export function StoryTranslator() {
     };
 
     // Worker function - xử lý từng chapter liên tục
-    const worker = async (workerId: number) => {
+    const worker = async (workerId: number, channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
       console.log(`[StoryTranslator] 🚀 Worker ${workerId} started`);
       
       while (currentIndex < chaptersToTranslate.length && !shouldStop) {
@@ -608,7 +690,7 @@ export function StoryTranslator() {
           break;
         }
         
-        const result = await translateChapter(chapter, index, workerId);
+        const result = await translateChapter(chapter, index, workerId, channel, tokenConfig);
         results.push(result);
         
         completed++;
@@ -620,11 +702,41 @@ export function StoryTranslator() {
       console.log(`[StoryTranslator] ✓ Worker ${workerId} finished`);
     };
 
-    // Khởi động MAX_CONCURRENT workers song song
-    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${MAX_CONCURRENT} workers song song`);
-    const workers = Array.from({ length: Math.min(MAX_CONCURRENT, chaptersToTranslate.length) }, (_, i) => 
-      worker(i + 1)
-    );
+    const tokenConfigsResult = translateMode === 'token' || translateMode === 'both'
+      ? await window.electronAPI.geminiChat.getAll()
+      : null;
+
+    const tokenConfigsForRun = tokenConfigsResult?.success && tokenConfigsResult.data
+      ? getDistinctActiveTokenConfigs(tokenConfigsResult.data as GeminiChatConfigLite[])
+      : [];
+
+    if ((translateMode === 'token' || translateMode === 'both') && tokenConfigsForRun.length === 0) {
+      console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+      setStatus('idle');
+      setBatchProgress(null);
+      return;
+    }
+
+    const apiWorkerCount = translateMode === 'api' ? 5 : translateMode === 'both' ? 5 : 0;
+    const tokenWorkerCount = translateMode === 'token'
+      ? tokenConfigsForRun.length
+      : translateMode === 'both'
+        ? tokenConfigsForRun.length
+        : 0;
+    const totalWorkers = apiWorkerCount + tokenWorkerCount;
+
+    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
+
+    const workers: Promise<void>[] = [];
+    let workerId = 1;
+
+    for (let i = 0; i < apiWorkerCount; i += 1) {
+      workers.push(worker(workerId++, 'api'));
+    }
+
+    for (const config of tokenConfigsForRun) {
+      workers.push(worker(workerId++, 'token', config));
+    }
     
     await Promise.all(workers);
 

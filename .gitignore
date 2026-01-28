@@ -8,3 +8,7 @@ scripts
 context-index.json
 gemini_keys.json
 list_api.txt
+test/test_gemini.py
+test/request_1.txt
+test/request_2.txt
+test/test2.har

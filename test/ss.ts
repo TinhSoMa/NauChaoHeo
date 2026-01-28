@@ -644,21 +644,83 @@ class GeminiChatServiceClass {
     const storedContext = !context ? this.getStoredContext(config.id) : null;
     const effectiveContext = context || storedContext || undefined;
 
-    let contextArray = ["", "", ""];
-    if (effectiveContext) {
-        contextArray = [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId];
-        const contextInfo = {
-            conversationId: effectiveContext.conversationId ? `${String(effectiveContext.conversationId).slice(0, 24)}...` : '',
-            responseId: effectiveContext.responseId ? `${String(effectiveContext.responseId).slice(0, 24)}...` : '',
-            choiceId: effectiveContext.choiceId ? `${String(effectiveContext.choiceId).slice(0, 24)}...` : ''
-        };
-        console.log('[GeminiChatService] Dùng ngữ cảnh (tóm tắt):', contextInfo);
-    }
-
+    // Payload logic from python (Full Payload to ensure session persistence)
+    // Structure matches test/test_gemini.py and test2.har
     const innerPayload = [
-        [message],
+        [message, 0, null, null, null, null, 0],
+        ["vi"],
+        [
+            effectiveContext ? effectiveContext.conversationId : "", 
+            effectiveContext ? effectiveContext.responseId : "", 
+            effectiveContext ? effectiveContext.choiceId : "", 
+            null, null, null, null, null, null, ""
+        ],
+        "!BwSlBFzNAAZeabWMfmlCAOK4lSpy-nY7ADQBEArZ1HXWr3pDagC9VZ5CWddxxlroONpL-a5eGEHXpYjZYEboidltqN627255ouWfutqSAgAAAEtSAAAAAmgBB34AQf7Z0X4QHk8aehxZTrwdWe2_4ynoojTI3Dop9DkAR1EzMlT4nLjH65NoKYTZj-WO50CGSm_ENmZpEvP--1D_FnyJmQOvlsPu3GfxD62pT5siALsF-4-Jm1LJY4I7jLertSMjtvs1_R710Z6lSHhM4PuGaaOUrRMj8-UOBqCgscsTETggz3x_ju7ACGPssxINDSYvXK5XenYexuBblk9vytrqyB1E7Ntp2kHlZanL2GAf_WCWa_Zaev2j2C23Oip1rZNMfLeSnBCAy_P5w2UR5lwYfVuKIXGhG8LWt-00k1K49MV6DiTItqYyH3OC5qOmokpnUyLMrnobu3z5H9FUxZMxNjbGsl0DmDiINJQnrO7vjppHyuMrLYECDdkptAlDsQRYOcJRuazOowdqTlUwz283lg7hNoX_D4QUUG5zt2TAsrXsbFWlacIN5SeNjqlHha9tXvXB77DbcR_CzwZbF8gju5SA8ruxleoUzapriHFEXs5Ipz1c2UvB5ph1_C3PYi4ER-Dl7ykEgBZooOJPEL_4QPq4gd20gvvYiwLVeM1BiwisfZT13sJ1vhbB1XIeakQKA1Ikalf7PoCZ5tjwxn9Zsz1rRJtSSX_wfvb-lrat3XPCyjA_a-JKE-DLhIHChbouYIlTlvMT25nmWE5jemyvCj_KdHRWg0XE3wQt8jD2zmrgl8JNRygbJy9Llmfv_FAAy4TRmddSQGjpNnnTvTioiO4ydPNXFfq_M78_DxeGl56mdVf15JBZ-tqReaDDr4ltrkO09MX_CUY1cZvIqt3_QrgakGGnjc3tVZzRl2gYZ5vJBQa_pHObKly8kEQLMAYnOzB943fHjijMkw1jW1Hg7gYDEIuBPiN8mLIkl73oDPeMJSwsn4PwNm5K6V6blTxQVNylGLGlp5E5mmV92Az-bY-LqLCqTIEs0Ajd-CimLvQPTEXuMsFliaCxXsLbxrdSdrPkYIPSVUQDj7bdCs9CXo2MjPIwjHVPCmI5Cb8WPs6hu1fbYHTxLthzRejxEFdmZ0RakYqKOZFetMpzA8QN0HJ7ZIR9eA8VM4r6CB0YO0FKZcQmAHNjBPHyAqXnNZNgrZDwknPWttn9QiZH51MIBe5Hk3-zzQUvJ5fPlJlkWkd4VPzCroOIBtk6aduceg2-YQt4N701ghkxfFZ-k-blbUeFvZGIgMfbWWeJRRdrRWrrWgdT0FXT_jhJV1XA5bwZcy1X-ykmlE2CAvb1BQMUdY9YE_mJMvowLakNeo0r7Q4FOoVyu-cVhrQl7iHDmHEspUGbpa91q-7KKL0AUYxLahYd8giy5o_45o-rD1y0asaFRBhh3R0j__zg2sa1i1AA2A",
+        "7f64e8c4aa4819e0a1a684fd7e6f5f9b",
         null,
-        contextArray 
+        [1],
+        1,
+        null,
+        null,
+        1,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        [[0]],
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        1,
+        null,
+        null,
+        [4],
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        [1],
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "0B48ECBC-60FA-4EDE-8CAC-A1B4E804FDFD",
+        null,
+        [],
+        null,
+        null,
+        null,
+        null,
+        [1769584568, 497000000],
+        null,
+        2
     ];
 
     const fReq = JSON.stringify([null, JSON.stringify(innerPayload)]);

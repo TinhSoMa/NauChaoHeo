@@ -37,6 +37,7 @@ export function initDatabase(): void {
   
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
 
   // Create prompts table (only table needed - projects use JSON files)
   db.exec(`
@@ -72,6 +73,18 @@ export function initDatabase(): void {
       is_active INTEGER DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Create gemini_chat_context table - luu ngữ cảnh theo từng token (config)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_context (
+      config_id TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      response_id TEXT,
+      choice_id TEXT,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
     );
   `);
 
@@ -146,6 +159,27 @@ export function initDatabase(): void {
     console.log('[Database] No migration needed from gemini_cookie');
   }
 
+  // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
+  try {
+    const contextCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_context').get() as any;
+    if (contextCount.count === 0) {
+      const rows = db.prepare('SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config').all() as any[];
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
+        }
+      }
+      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+    }
+  } catch (e) {
+    console.error('[Database] Backfill gemini_chat_context failed:', e);
+  }
+
   // Create proxies table - lưu proxy rotation config
   db.exec(`
     CREATE TABLE IF NOT EXISTS proxies (
@@ -167,5 +201,5 @@ export function initDatabase(): void {
     );
   `);
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_cookie, proxies)');
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies)');
 }

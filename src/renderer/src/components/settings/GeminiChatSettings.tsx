@@ -48,6 +48,12 @@ interface GeminiChatSettingsProps {
   onBack: () => void;
 }
 
+interface TokenStats {
+  distinctActiveCount: number;
+  activeCount: number;
+  duplicateIds: Set<string>;
+}
+
 // Default constants
 const DEFAULT_UA = "";
 const DEFAULT_LANG = "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4";
@@ -86,12 +92,52 @@ const BROWSER_PRESETS = [
   }
 ];
 
+const extractCookieKey = (cookie: string): string => {
+  const trimmed = cookie.trim();
+  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
+  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || '';
+  const combined = [psid1, psid3].filter(Boolean).join('|');
+  return combined || trimmed;
+};
+
+const buildTokenKey = (cookie: string, atToken: string): string => {
+  return `${extractCookieKey(cookie)}|${atToken.trim()}`;
+};
+
+const getTokenStats = (configs: GeminiChatConfig[]): TokenStats => {
+  const seen = new Map<string, string>();
+  const duplicateIds = new Set<string>();
+  const activeConfigs = configs.filter(c => c.isActive);
+
+  for (const config of activeConfigs) {
+    const key = buildTokenKey(config.cookie || '', config.atToken || '');
+    if (seen.has(key)) {
+      duplicateIds.add(config.id);
+      const firstId = seen.get(key);
+      if (firstId) duplicateIds.add(firstId);
+    } else {
+      seen.set(key, config.id);
+    }
+  }
+
+  return {
+    distinctActiveCount: seen.size,
+    activeCount: activeConfigs.length,
+    duplicateIds
+  };
+};
+
 export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   // Mode: 'list' | 'edit' | 'create'
   const [mode, setMode] = useState<'list' | 'edit' | 'create'>('list');
   const [configs, setConfigs] = useState<GeminiChatConfig[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [tokenStats, setTokenStats] = useState<TokenStats>({
+    distinctActiveCount: 0,
+    activeCount: 0,
+    duplicateIds: new Set()
+  });
 
   // Editing State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -129,6 +175,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
       const result = await window.electronAPI.geminiChat.getAll();
       if (result.success && result.data) {
         setConfigs(result.data);
+        setTokenStats(getTokenStats(result.data));
       } else {
         setErrorMessage(result.error || 'Không thể tải danh sách cấu hình');
       }
@@ -309,6 +356,18 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         payload.fSid = payload.fSid.replace(/\^/g, '').trim();
         payload.atToken = payload.atToken.replace(/\^/g, '').trim();
 
+        const newTokenKey = buildTokenKey(payload.cookie, payload.atToken);
+        const duplicateConfig = configs.find(c => {
+          if (mode === 'edit' && c.id === editingId) return false;
+          const key = buildTokenKey(c.cookie || '', c.atToken || '');
+          return key === newTokenKey;
+        });
+
+        if (duplicateConfig) {
+          alert(`Token bị trùng với cấu hình: ${duplicateConfig.name}. Vui lòng dùng token khác.`);
+          return;
+        }
+
         let result;
         if (mode === 'create') {
             result = await window.electronAPI.geminiChat.create(payload);
@@ -338,6 +397,12 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
           <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại"><ArrowLeft size={20} /></Button>
           <div className="flex-1">
              <div className={styles.detailTitle}>Danh sách Tài khoản (Proxy)</div>
+             <div className="text-xs text-(--color-text-secondary) mt-1">
+               Token active khác nhau: {tokenStats.distinctActiveCount}/{tokenStats.activeCount}
+               {tokenStats.duplicateIds.size > 0 && (
+                 <span className="ml-2 text-red-600">Trùng token: {tokenStats.duplicateIds.size}</span>
+               )}
+             </div>
           </div>
           <Button onClick={handleCreate} variant="primary"><Plus size={16} className="mr-2" /> Thêm mới</Button>
         </div>
@@ -356,6 +421,9 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                     <div className="flex items-center gap-2">
                         <span className="font-semibold text-lg">{config.name}</span>
                         {config.id === 'legacy' ? <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Legacy</span> : null}
+                        {tokenStats.duplicateIds.has(config.id) && (
+                          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Trùng token</span>
+                        )}
                     </div>
                     <div className="text-sm text-[var(--color-text-secondary)] flex gap-4 mt-1">
                         <span className="flex items-center gap-1"><Monitor size={12}/> {config.platform || 'Unknown'}</span>

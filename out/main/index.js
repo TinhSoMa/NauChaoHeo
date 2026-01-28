@@ -2908,6 +2908,7 @@ function initDatabase() {
   console.log("[Database] Initializing at:", dbPath);
   db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS prompts (
       id TEXT PRIMARY KEY,
@@ -2939,6 +2940,16 @@ function initDatabase() {
       is_active INTEGER DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_context (
+      config_id TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      response_id TEXT,
+      choice_id TEXT,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
     );
   `);
   db.exec(`
@@ -3001,6 +3012,25 @@ function initDatabase() {
   } catch (e) {
     console.log("[Database] No migration needed from gemini_cookie");
   }
+  try {
+    const contextCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_context").get();
+    if (contextCount.count === 0) {
+      const rows = db.prepare("SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config").all();
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || "", row.resp_id || "", row.cand_id || "", now);
+        }
+      }
+      console.log("[Database] Backfilled gemini_chat_context from gemini_chat_config");
+    }
+  } catch (e) {
+    console.error("[Database] Backfill gemini_chat_context failed:", e);
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS proxies (
       id TEXT PRIMARY KEY,
@@ -3020,7 +3050,7 @@ function initDatabase() {
       UNIQUE(host, port)
     );
   `);
-  console.log("[Database] Schema initialized (prompts, gemini_chat_config, gemini_cookie, proxies)");
+  console.log("[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies)");
 }
 class PromptService {
   static getAll() {
@@ -3705,6 +3735,40 @@ class GeminiChatServiceClass {
     const allProxies = proxyManager.getAllProxies();
     return allProxies.filter((p) => p.enabled && (p.failedCount || 0) < this.proxyMaxFailedCount);
   }
+  getStoredContext(configId) {
+    if (!configId || configId === "legacy") return null;
+    try {
+      const db2 = getDatabase();
+      const row = db2.prepare("SELECT conversation_id, response_id, choice_id FROM gemini_chat_context WHERE config_id = ?").get(configId);
+      if (!row) return null;
+      return {
+        conversationId: row.conversation_id || "",
+        responseId: row.response_id || "",
+        choiceId: row.choice_id || ""
+      };
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể tải ngữ cảnh từ DB:", error);
+      return null;
+    }
+  }
+  saveStoredContext(configId, context) {
+    if (!configId || configId === "legacy") return;
+    try {
+      const db2 = getDatabase();
+      db2.prepare(`
+                INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            `).run(
+        configId,
+        context.conversationId || "",
+        context.responseId || "",
+        context.choiceId || "",
+        Date.now()
+      );
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể lưu ngữ cảnh vào DB:", error);
+    }
+  }
   // Helper: Generate initial REQ_ID (Random Prefix + Fixed 4-digit Suffix logic)
   // Format matches log: e.g. 4180921 (7 digits)
   // We want range approx 3000000 - 5000000 initially, with random 4 digits at end.
@@ -4026,13 +4090,15 @@ class GeminiChatServiceClass {
         console.warn("[GeminiChatService] Không thể cập nhật req_id trong DB", e);
       }
     }
+    const storedContext = !context ? this.getStoredContext(config.id) : null;
+    const effectiveContext = context || storedContext || void 0;
     let contextArray = ["", "", ""];
-    if (context) {
-      contextArray = [context.conversationId, context.responseId, context.choiceId];
+    if (effectiveContext) {
+      contextArray = [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId];
       const contextInfo = {
-        conversationId: context.conversationId ? `${String(context.conversationId).slice(0, 24)}...` : "",
-        responseId: context.responseId ? `${String(context.responseId).slice(0, 24)}...` : "",
-        choiceId: context.choiceId ? `${String(context.choiceId).slice(0, 24)}...` : ""
+        conversationId: effectiveContext.conversationId ? `${String(effectiveContext.conversationId).slice(0, 24)}...` : "",
+        responseId: effectiveContext.responseId ? `${String(effectiveContext.responseId).slice(0, 24)}...` : "",
+        choiceId: effectiveContext.choiceId ? `${String(effectiveContext.choiceId).slice(0, 24)}...` : ""
       };
       console.log("[GeminiChatService] Dùng ngữ cảnh (tóm tắt):", contextInfo);
     }
@@ -4147,9 +4213,9 @@ class GeminiChatServiceClass {
         const sessionManager = getSessionContextManager();
         const newContext = sessionManager.parseFromFetchResponse(responseText);
         if (foundText) {
-          if (!newContext.conversationId && context) newContext.conversationId = context.conversationId;
-          if (!newContext.responseId && context) newContext.responseId = context.responseId;
-          if (!newContext.choiceId && context) newContext.choiceId = context.choiceId;
+          if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
+          if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
+          if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
           console.log(`[GeminiChatService] Nhận phản hồi thành công (${foundText.length} ký tự)`);
           const contextSummary = {
             conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : "",
@@ -4157,6 +4223,7 @@ class GeminiChatServiceClass {
             choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ""
           };
           console.log("[GeminiChatService] Ngữ cảnh (tóm tắt):", contextSummary);
+          this.saveStoredContext(config.id, newContext);
           return {
             success: true,
             data: {
