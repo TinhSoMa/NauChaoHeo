@@ -31,6 +31,7 @@ const fs$1 = require("fs/promises");
 const child_process = require("child_process");
 const uuid = require("uuid");
 const Database = require("better-sqlite3");
+const impit = require("impit");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -1337,7 +1338,7 @@ async function callGeminiApi(prompt, apiKey, model = GEMINI_MODELS.FLASH_3_0, us
     };
     console.log(`[GeminiService] Gọi Gemini API với model: ${model}${useProxy ? " (via proxy)" : ""}`);
     if (useProxy) {
-      const { makeRequestWithProxy } = await Promise.resolve().then(() => require("./chunks/apiClient-kIhLgAH8.js"));
+      const { makeRequestWithProxy } = await Promise.resolve().then(() => require("./chunks/apiClient-CIn7ArmW.js"));
       const result = await makeRequestWithProxy(url, {
         method: "POST",
         headers: {
@@ -4691,6 +4692,175 @@ class GeminiChatServiceClass {
       return { success: false, error: String(error) };
     }
   }
+  // =======================================================
+  // SEND MESSAGE IMPIT
+  // =======================================================
+  async sendMessageImpit(message, configId, context, useProxyOverride) {
+    let config = null;
+    if (configId) {
+      config = this.getById(configId);
+      if (!config) return { success: false, error: `Config ID ${configId} not found` };
+      if (!config.isActive) return { success: false, error: "Config is inactive" };
+    } else {
+      config = this.getNextActiveConfig();
+      if (!config) return { success: false, error: "No active config found" };
+    }
+    const tokenKey = this.getTokenKey(config);
+    console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
+    return await this.withTokenLock(tokenKey, async () => {
+      try {
+        const { cookie, blLabel, fSid, atToken } = config;
+        if (!cookie || !blLabel || !fSid || !atToken) {
+          return { success: false, error: "Missing config fields", configId: config.id };
+        }
+        let currentReqIdStr = config.reqId || this.generateInitialReqId();
+        const reqId = String(parseInt(currentReqIdStr) + 1e5);
+        if (config.id !== "legacy") {
+          try {
+            getDatabase().prepare("UPDATE gemini_chat_config SET req_id = ? WHERE id = ?").run(reqId, config.id);
+            config.reqId = reqId;
+          } catch (e) {
+          }
+        }
+        const appSettings = AppSettingsService.getAll();
+        const allowStoredContextOnFirstSend = !!appSettings.useStoredContextOnFirstSend;
+        const isFirstSendForToken = !this.firstSendByTokenKey.has(tokenKey);
+        const canUseStoredContext = !isFirstSendForToken || allowStoredContextOnFirstSend;
+        const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
+        const incomingContext = shouldIgnoreIncomingContext ? void 0 : context;
+        const configContext = this.getStoredConfigContext(config.id);
+        const tokenContext = this.getStoredTokenContext(tokenKey, config.id);
+        let storedContext = null;
+        if (!incomingContext && canUseStoredContext) {
+          if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+            storedContext = configContext;
+          } else if (!isFirstSendForToken) {
+            storedContext = tokenContext || configContext;
+          }
+        }
+        const effectiveContext = incomingContext || storedContext || void 0;
+        const contextArray = effectiveContext ? [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId] : ["", "", ""];
+        const createChatOnWeb = !!appSettings.createChatOnWeb;
+        const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
+        const settingProxy = this.getUseProxySetting();
+        const useProxy = typeof useProxyOverride === "boolean" ? useProxyOverride : settingProxy;
+        let proxyUrl = void 0;
+        let usedProxy = null;
+        if (useProxy) {
+          usedProxy = this.getOrAssignProxy(config.id);
+          if (usedProxy) {
+            const scheme = usedProxy.type === "socks5" ? "socks5" : "http";
+            if (usedProxy.username) {
+              proxyUrl = `${scheme}://${usedProxy.username}:${usedProxy.password}@${usedProxy.host}:${usedProxy.port}`;
+            } else {
+              proxyUrl = `${scheme}://${usedProxy.host}:${usedProxy.port}`;
+            }
+          }
+        }
+        const impit$1 = new impit.Impit({
+          browser: "chrome",
+          // Default to chrome for now, could map from config.userAgent
+          proxyUrl,
+          ignoreTlsErrors: true
+        });
+        const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : "vi";
+        const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
+        const params = new URLSearchParams({
+          "bl": blLabel,
+          "_reqid": reqId,
+          "rt": "c",
+          "f.sid": fSid,
+          "hl": hl
+        });
+        const url = `${baseUrl}?${params.toString()}`;
+        const body = new URLSearchParams(
+          createChatOnWeb ? { "f.req": fReq, "at": atToken } : { "f.req": fReq, "at": atToken, "": "" }
+        );
+        const headers = {
+          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "cookie": (cookie || "").replace(/[\r\n]+/g, "")
+        };
+        headers["origin"] = "https://gemini.google.com";
+        headers["referer"] = "https://gemini.google.com/";
+        const contextSummary = {
+          conversationId: contextArray[0] ? `${String(contextArray[0]).slice(0, 24)}...` : "",
+          responseId: contextArray[1] ? `${String(contextArray[1]).slice(0, 24)}...` : "",
+          choiceId: contextArray[2] ? `${String(contextArray[2]).slice(0, 24)}...` : ""
+        };
+        console.log("[GeminiChatService] Sending message via IMPIT");
+        console.log("[GeminiChatService] Request Headers:", headers);
+        console.log("[GeminiChatService] Context Summary:", contextSummary);
+        console.log("[GeminiChatService] Sending Impit request to:", url);
+        const response = await impit$1.fetch(url, {
+          method: "POST",
+          headers,
+          body: body.toString(),
+          timeout: 3e5
+          // 5 minutes (default usually shorter in reqwest)
+        });
+        console.log("[GeminiChatService] Impit response status:", response.status);
+        console.log("[GeminiChatService] Impit response headers:", response.headers);
+        if (response.status !== 200) {
+          if (usedProxy) {
+            const proxyManager = getProxyManager();
+            proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
+            this.releaseProxy(config.id, usedProxy.id);
+          }
+          return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id };
+        }
+        if (usedProxy) {
+          const proxyManager = getProxyManager();
+          proxyManager.markProxySuccess(usedProxy.id);
+        }
+        const responseText = await response.text();
+        let foundText = "";
+        const sessionManager = getSessionContextManager();
+        let newContext = { conversationId: "", responseId: "", choiceId: "" };
+        for (const line of responseText.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(")]}'") || /^\d+$/.test(trimmed)) continue;
+          try {
+            const parsedCtx = sessionManager.parseFromFetchResponse(line);
+            if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
+            if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
+            if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
+            const dataObj = JSON.parse(trimmed);
+            if (!Array.isArray(dataObj)) continue;
+            for (const payloadItem of dataObj) {
+              if (Array.isArray(payloadItem) && payloadItem.length >= 3 && payloadItem[0] === "wrb.fr") {
+                const innerData = JSON.parse(payloadItem[2]);
+                const candidates = innerData[4];
+                if (Array.isArray(candidates) && candidates[0]) {
+                  const txt = candidates[0][1][0];
+                  if (txt && txt.length > foundText.length) foundText = txt;
+                }
+              }
+            }
+          } catch (e) {
+          }
+        }
+        if (foundText) {
+          if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
+          if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
+          if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
+          this.saveStoredTokenContext(tokenKey, newContext, config.id);
+          this.firstSendByTokenKey.add(tokenKey);
+          return {
+            success: true,
+            data: {
+              text: foundText,
+              context: newContext
+            },
+            configId: config.id
+          };
+        }
+        return { success: false, error: "No text found in Impit response", configId: config.id };
+      } catch (error) {
+        console.error("[GeminiChatService] Impit Error:", error);
+        return { success: false, error: String(error), configId: config?.id };
+      }
+    });
+  }
   // ... (existing code)
 }
 const GeminiChatService = new GeminiChatServiceClass();
@@ -4720,7 +4890,13 @@ class StoryService {
         console.log("[StoryService] Extracted promptText length:", promptText.length);
         if (!promptText) console.warn("[StoryService] promptText is empty!");
         const webConfigId = options.webConfigId?.trim() || "";
-        const result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
+        let result;
+        if (options.useImpit) {
+          console.log("[StoryService] Using Impit for translation...");
+          result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy);
+        } else {
+          result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
+        }
         if (result.success && result.data) {
           console.log("[StoryService] Translation completed.");
           return {

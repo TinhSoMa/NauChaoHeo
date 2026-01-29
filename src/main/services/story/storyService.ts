@@ -9,7 +9,7 @@ export class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any, useProxy?: boolean }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, useImpit?: boolean }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string }> {
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
@@ -57,7 +57,14 @@ export class StoryService {
             if (!promptText) console.warn('[StoryService] promptText is empty!');
 
            const webConfigId = options.webConfigId?.trim() || '';
-           const result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
+           
+           let result;
+           if (options.useImpit) {
+               console.log('[StoryService] Using Impit for translation...');
+               result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy);
+           } else {
+               result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
+           }
            
            if (result.success && result.data) {
              console.log('[StoryService] Translation completed.');

@@ -32,6 +32,7 @@ require("fs/promises");
 require("child_process");
 require("uuid");
 require("better-sqlite3");
+require("impit");
 async function makeRequestWithProxy(url, options = {}, maxRetries = 3) {
   const {
     method = "GET",

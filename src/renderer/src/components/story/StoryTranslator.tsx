@@ -66,6 +66,7 @@ export function StoryTranslator() {
   >(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
   const [useProxy, setUseProxy] = useState(true);
+  const [useImpit, setUseImpit] = useState(false);
 
   const loadProxySetting = async () => {
     try {
@@ -507,7 +508,8 @@ export function StoryTranslator() {
         model: model,
         method,
         webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-        useProxy: method === 'WEB' && useProxy
+        useProxy: method === 'WEB' && useProxy,
+        useImpit: method === 'WEB' && useImpit
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
       if (translateResult.success && translateResult.data) {
@@ -653,7 +655,8 @@ export function StoryTranslator() {
             model: model,
             method,
             webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'WEB' && useProxy
+            useProxy: method === 'WEB' && useProxy,
+            useImpit: method === 'WEB' && useImpit
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
@@ -849,12 +852,6 @@ export function StoryTranslator() {
       const titleMap = new Map(
         chapters.map((c) => [c.id, c.title] as [string, string])
       );
-      const translatedTitleMap = new Map(
-        chapters
-          .filter((c) => translatedChapters.has(c.id))
-          .map((c) => [c.id, c.title] as [string, string])
-      );
-
       const orderedTranslatedEntries = chapters.length > 0
         ? chapters
             .filter((c) => translatedChapters.has(c.id))
@@ -863,7 +860,7 @@ export function StoryTranslator() {
 
       for (const [chapterId, content] of orderedTranslatedEntries) {
         const title =
-          translatedTitleMap.get(chapterId) ||
+          translatedTitles.get(chapterId) ||
           titleMap.get(chapterId) ||
           `Chương ${chapterId}`;
         ebookChapters.push({ title, content });
@@ -1225,6 +1222,7 @@ export function StoryTranslator() {
                   </div>
                 </div>
               )}
+
             </div>
             {selectedChapterId && (
               <div className="flex gap-2 items-center">
@@ -1234,6 +1232,18 @@ export function StoryTranslator() {
                      Đã loại trừ
                    </span>
                  )}
+                 <div className="flex items-center gap-2 mr-2">
+                    <input 
+                      type="checkbox" 
+                      id="useImpit" 
+                      checked={useImpit} 
+                      onChange={(e) => setUseImpit(e.target.checked)}
+                      className="rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <label htmlFor="useImpit" className="text-xs text-text-secondary cursor-pointer select-none">
+                      Use Impit
+                    </label>
+                 </div>
                  <Button onClick={handleSavePrompt} variant="secondary" className="text-xs h-8 px-2">
                    Lưu Prompt
                  </Button>

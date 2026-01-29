@@ -10,6 +10,7 @@ import { getSessionContextManager } from './gemini/sessionContextManager';
 import { getProxyManager } from './proxyManager';
 import { AppSettingsService } from './appSettings';
 import { ProxyConfig } from '../../shared/types/proxy';
+import { Impit } from 'impit';
 
 // --- CONFIGURATION ---
 // IMPORTANT: All values are now loaded from database (gemini_chat_config table)
@@ -793,7 +794,7 @@ class GeminiChatServiceClass {
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
 
-        async sendMessage(message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }, useProxyOverride?: boolean): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+  async sendMessage(message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }, useProxyOverride?: boolean): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
         const MAX_RETRIES = 3;
         const MIN_DELAY_MS = 2000;
         const MAX_DELAY_MS = 10000;
@@ -1258,6 +1259,237 @@ class GeminiChatServiceClass {
         console.error("[GeminiChatService] Lỗi fetch:", error);
         return { success: false, error: String(error) };
     }
+  }
+
+  // =======================================================
+  // SEND MESSAGE IMPIT
+  // =======================================================
+  
+  async sendMessageImpit(
+      message: string, 
+      configId: string, 
+      context?: { conversationId: string; responseId: string; choiceId: string }, 
+      useProxyOverride?: boolean
+  ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+      
+        // 1. Resolve Config
+        let config: GeminiChatConfig | null = null;
+        if (configId) {
+            config = this.getById(configId);
+            if (!config) return { success: false, error: `Config ID ${configId} not found` };
+            if (!config.isActive) return { success: false, error: 'Config is inactive' };
+        } else {
+            config = this.getNextActiveConfig();
+            if (!config) return { success: false, error: 'No active config found' };
+        }
+
+        const tokenKey = this.getTokenKey(config);
+        console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
+
+        return await this.withTokenLock(tokenKey, async () => {
+            try {
+                // 2. Prepare Context & Payload (Similar to sendMessage)
+                const { cookie, blLabel, fSid, atToken } = config!;
+                if (!cookie || !blLabel || !fSid || !atToken) {
+                    return { success: false, error: 'Missing config fields', configId: config!.id };
+                }
+
+                // REQ_ID Logic
+                let currentReqIdStr = config!.reqId || this.generateInitialReqId();
+                const reqId = String(parseInt(currentReqIdStr) + 100000);
+                
+                // Update ReqID in DB
+                if (config!.id !== 'legacy') {
+                    try {
+                        getDatabase().prepare('UPDATE gemini_chat_config SET req_id = ? WHERE id = ?').run(reqId, config!.id);
+                        config!.reqId = reqId; 
+                    } catch (e) { }
+                }
+
+                // Context Logic
+                const appSettings = AppSettingsService.getAll();
+                const allowStoredContextOnFirstSend = !!appSettings.useStoredContextOnFirstSend;
+                const isFirstSendForToken = !this.firstSendByTokenKey.has(tokenKey);
+                const canUseStoredContext = !isFirstSendForToken || allowStoredContextOnFirstSend;
+                const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
+                
+                const incomingContext = shouldIgnoreIncomingContext ? undefined : context;
+                const configContext = this.getStoredConfigContext(config!.id);
+                const tokenContext = this.getStoredTokenContext(tokenKey, config!.id);
+                
+                let storedContext: { conversationId: string; responseId: string; choiceId: string } | null = null;
+                if (!incomingContext && canUseStoredContext) {
+                    if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+                        storedContext = configContext;
+                    } else if (!isFirstSendForToken) {
+                        storedContext = tokenContext || configContext;
+                    }
+                }
+                const effectiveContext = incomingContext || storedContext || undefined;
+                
+                const contextArray: [string, string, string] = effectiveContext 
+                    ? [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId] 
+                    : ["", "", ""];
+
+                const createChatOnWeb = !!appSettings.createChatOnWeb;
+                const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
+
+                // 3. Prepare Impit Client
+                const settingProxy = this.getUseProxySetting();
+                const useProxy = typeof useProxyOverride === 'boolean' ? useProxyOverride : settingProxy;
+                
+                let proxyUrl: string | undefined = undefined;
+                let usedProxy: ProxyConfig | null = null;
+
+                if (useProxy) {
+                    usedProxy = this.getOrAssignProxy(config!.id);
+                    if (usedProxy) {
+                        const scheme = usedProxy.type === 'socks5' ? 'socks5' : 'http'; // Impit might support socks? Docs say "proxyUrl"
+                        // Assuming standard proxy URL format.
+                        // Impit docs: proxyUrl: "http://localhost:8080"
+                        if (usedProxy.username) {
+                            proxyUrl = `${scheme}://${usedProxy.username}:${usedProxy.password}@${usedProxy.host}:${usedProxy.port}`;
+                        } else {
+                            proxyUrl = `${scheme}://${usedProxy.host}:${usedProxy.port}`;
+                        }
+                    }
+                }
+
+                const impit = new Impit({
+                    browser: "chrome", // Default to chrome for now, could map from config.userAgent
+                    proxyUrl: proxyUrl,
+                    ignoreTlsErrors: true
+                });
+
+                // 4. Construct URL & Body
+                const hl = config!.acceptLanguage ? config!.acceptLanguage.split(',')[0] : "vi";
+                const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
+                const params = new URLSearchParams({
+                    "bl": blLabel,
+                    "_reqid": reqId,
+                    "rt": "c",
+                    "f.sid": fSid,
+                    "hl": hl
+                });
+                const url = `${baseUrl}?${params.toString()}`;
+
+                const body = new URLSearchParams(
+                    createChatOnWeb
+                        ? { "f.req": fReq, "at": atToken }
+                        : { "f.req": fReq, "at": atToken, "": "" }
+                );
+
+                // Headers
+                // Impit handles User-Agent and Sec-CH-UA internally based on 'browser' option?
+                // But we should probably pass our specific cookie.
+                // Impit sets headers automatically? check usage:
+                // "fetch" method...
+                
+                const headers: Record<string, string> = {
+                    "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    "cookie": (cookie || '').replace(/[\r\n]+/g, ''),
+                };
+                
+                // Add Origin/Referer if needed? Impit might do it.
+                 headers["origin"] = "https://gemini.google.com";
+                 headers["referer"] = "https://gemini.google.com/";
+
+                const contextSummary = {
+                    conversationId: contextArray[0] ? `${String(contextArray[0]).slice(0, 24)}...` : '',
+                    responseId: contextArray[1] ? `${String(contextArray[1]).slice(0, 24)}...` : '',
+                    choiceId: contextArray[2] ? `${String(contextArray[2]).slice(0, 24)}...` : ''
+                };
+                
+                console.log('[GeminiChatService] Sending message via IMPIT');
+                console.log('[GeminiChatService] Request Headers:', headers);
+                console.log('[GeminiChatService] Context Summary:', contextSummary);
+                console.log('[GeminiChatService] Sending Impit request to:', url);
+
+                const response = await impit.fetch(url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: body.toString(),
+                    timeout: 300000 // 5 minutes (default usually shorter in reqwest)
+                });
+
+                console.log('[GeminiChatService] Impit response status:', response.status);
+                // Log response headers
+                console.log('[GeminiChatService] Impit response headers:', response.headers);
+
+                if (response.status !== 200) {
+                     if (usedProxy) {
+                        const proxyManager = getProxyManager();
+                        proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
+                        this.releaseProxy(config!.id, usedProxy.id);
+                    }
+                    return { success: false, error: `Impit HTTP ${response.status}`, configId: config!.id };
+                }
+                
+                if (usedProxy) {
+                    const proxyManager = getProxyManager();
+                    proxyManager.markProxySuccess(usedProxy.id);
+                }
+
+                const responseText = await response.text();
+                
+                // 5. Parse Response (Reuse logic?)
+                // Since _sendMessageInternal's parsing is inside it, duplicate minimal logic here or extract it.
+                // I will duplicate the simple parsing logic for now to avoid refactoring heavy code.
+
+                let foundText = '';
+                const sessionManager = getSessionContextManager();
+                let newContext = { conversationId: '', responseId: '', choiceId: '' };
+
+                for (const line of responseText.split('\n')) {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith(")]}'") || /^\d+$/.test(trimmed)) continue;
+
+                    try {
+                        const parsedCtx = sessionManager.parseFromFetchResponse(line);
+                        if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
+                        if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
+                        if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
+
+                        const dataObj = JSON.parse(trimmed);
+                        if (!Array.isArray(dataObj)) continue;
+                         for (const payloadItem of dataObj) {
+                            if (Array.isArray(payloadItem) && payloadItem.length >= 3 && payloadItem[0] === 'wrb.fr') {
+                                const innerData = JSON.parse(payloadItem[2]);
+                                const candidates = innerData[4];
+                                if (Array.isArray(candidates) && candidates[0]) {
+                                    const txt = candidates[0][1][0];
+                                    if (txt && txt.length > foundText.length) foundText = txt;
+                                }
+                            }
+                        }
+                    } catch (e) { }
+                }
+
+                if (foundText) {
+                    if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
+                    if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
+                    if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
+                    
+                    this.saveStoredTokenContext(tokenKey, newContext, config!.id);
+                    this.firstSendByTokenKey.add(tokenKey);
+
+                    return {
+                        success: true,
+                        data: {
+                            text: foundText,
+                            context: newContext
+                        },
+                        configId: config!.id
+                    };
+                }
+
+                return { success: false, error: 'No text found in Impit response', configId: config!.id };
+
+            } catch (error) {
+                console.error('[GeminiChatService] Impit Error:', error);
+                return { success: false, error: String(error), configId: config?.id };
+            }
+        });
   }
 // ... (existing code)
 
