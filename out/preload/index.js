@@ -143,6 +143,7 @@ const CHANNELS = {
   UPDATE: "geminiChat:update",
   DELETE: "geminiChat:delete",
   SEND_MESSAGE: "geminiChat:sendMessage",
+  CHECK_DUPLICATE_TOKEN: "geminiChat:checkDuplicateToken",
   GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
   SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig"
 };
@@ -154,6 +155,7 @@ const geminiChatApi = {
   update: (id, data) => electron.ipcRenderer.invoke(CHANNELS.UPDATE, id, data),
   delete: (id) => electron.ipcRenderer.invoke(CHANNELS.DELETE, id),
   sendMessage: (message, configId, context) => electron.ipcRenderer.invoke(CHANNELS.SEND_MESSAGE, message, configId, context),
+  checkDuplicateToken: (payload) => electron.ipcRenderer.invoke(CHANNELS.CHECK_DUPLICATE_TOKEN, payload),
   // Cookie config
   getCookieConfig: () => electron.ipcRenderer.invoke(CHANNELS.GET_COOKIE_CONFIG),
   saveCookieConfig: (data) => electron.ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data)
@@ -164,6 +166,7 @@ const PROXY_IPC_CHANNELS = {
   REMOVE: "proxy:remove",
   UPDATE: "proxy:update",
   TEST: "proxy:test",
+  CHECK_ALL: "proxy:checkAll",
   GET_STATS: "proxy:getStats",
   IMPORT: "proxy:import",
   EXPORT: "proxy:export",
@@ -176,6 +179,7 @@ const proxyApi = {
   remove: (id) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.REMOVE, id),
   update: (id, updates) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.UPDATE, id, updates),
   test: (id) => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST, id),
+  checkAll: () => electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.CHECK_ALL),
   getStats: async () => {
     return electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_STATS);
   },

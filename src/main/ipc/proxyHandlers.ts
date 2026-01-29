@@ -118,6 +118,21 @@ export function registerProxyHandlers(): void {
     }
   );
 
+  // Check all proxies against Gemini endpoint and update DB
+  ipcMain.handle(
+    PROXY_IPC_CHANNELS.CHECK_ALL,
+    async (): Promise<{ success: boolean; checked?: number; passed?: number; failed?: number; error?: string }> => {
+      try {
+        console.log('[ProxyHandlers] Check all proxies...');
+        const result = await manager.checkAllProxies('https://generativelanguage.googleapis.com');
+        return { success: true, ...result };
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi check all proxies:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Lấy stats
   ipcMain.handle(
     PROXY_IPC_CHANNELS.GET_STATS,

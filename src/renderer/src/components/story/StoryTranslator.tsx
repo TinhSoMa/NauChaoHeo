@@ -65,6 +65,18 @@ export function StoryTranslator() {
     Map<string, { startTime: number; workerId: number; channel: 'api' | 'token' }>
   >(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
+  const [useProxy, setUseProxy] = useState(true);
+
+  const loadProxySetting = async () => {
+    try {
+      const result = await window.electronAPI.appSettings.getAll();
+      if (result.success && result.data) {
+        setUseProxy(result.data.useProxy);
+      }
+    } catch (error) {
+      console.error('[StoryTranslator] Error loading proxy setting:', error);
+    }
+  };
 
   const extractTranslatedTitle = (text: string, fallbackId: string) => {
     const lines = text
@@ -176,6 +188,33 @@ export function StoryTranslator() {
       setTokenConfigId(fallback.id);
     }
     return fallback;
+  };
+
+  const migrateTokenContextsToTokenKey = (
+    configs: GeminiChatConfigLite[],
+    contexts: Map<string, TokenContext>
+  ): { map: Map<string, TokenContext>; changed: boolean } => {
+    if (configs.length === 0 || contexts.size === 0) {
+      return { map: contexts, changed: false };
+    }
+
+    const idToTokenKey = new Map(configs.map(c => [c.id, buildTokenKey(c)] as [string, string]));
+    let changed = false;
+    const next = new Map(contexts);
+
+    for (const [key, ctx] of contexts.entries()) {
+      const tokenKey = idToTokenKey.get(key);
+      if (!tokenKey || tokenKey === key) continue;
+      if (!next.has(tokenKey)) {
+        next.set(tokenKey, ctx);
+      }
+      if (next.has(key)) {
+        next.delete(key);
+      }
+      changed = true;
+    }
+
+    return { map: changed ? next : contexts, changed };
   };
 
   // Debug logging
@@ -362,6 +401,7 @@ export function StoryTranslator() {
 
   useEffect(() => {
     loadConfigurations();
+    loadProxySetting();
   }, []);
 
   useEffect(() => {
@@ -408,6 +448,14 @@ export function StoryTranslator() {
     selectedChapterId
   ]);
 
+  useEffect(() => {
+    if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;
+    const { map, changed } = migrateTokenContextsToTokenKey(tokenConfigs, tokenContexts);
+    if (changed) {
+      setTokenContexts(map);
+    }
+  }, [tokenConfigs, tokenContexts]);
+
   const handleTranslate = async () => {
     if (!selectedChapterId) return;
     
@@ -451,13 +499,15 @@ export function StoryTranslator() {
         }
       }
 
+      const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+
       // 2. Send to Gemini for Translation
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
         model: model,
         method,
         webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-        useProxy: method === 'WEB'
+        useProxy: method === 'WEB' && useProxy
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
       if (translateResult.success && translateResult.data) {
@@ -486,15 +536,12 @@ export function StoryTranslator() {
           return next;
         });
 
-        if (translateResult.context && translateResult.context.conversationId && translateResult.configId) {
+        if (translateResult.context && translateResult.context.conversationId && tokenKey) {
           setTokenContexts(prev => {
             const next = new Map(prev);
-            next.set(translateResult.configId!, translateResult.context!);
+            next.set(tokenKey, translateResult.context!);
             return next;
           });
-        }
-        if (translateResult.configId) {
-          setTokenConfigId(translateResult.configId);
         }
 
         // REMOVED: Saving to Project DB
@@ -596,6 +643,8 @@ export function StoryTranslator() {
           }
         }
 
+        const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+
         // 2. Send to Gemini for Translation
         const translateResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, 
@@ -604,7 +653,7 @@ export function StoryTranslator() {
             model: model,
             method,
             webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'WEB'
+            useProxy: method === 'WEB' && useProxy
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
 
@@ -634,15 +683,12 @@ export function StoryTranslator() {
             return next;
           });
 
-          if (translateResult.context && translateResult.context.conversationId && translateResult.configId) {
+          if (translateResult.context && translateResult.context.conversationId && tokenKey) {
             setTokenContexts(prev => {
               const next = new Map(prev);
-              next.set(translateResult.configId!, translateResult.context!);
+              next.set(tokenKey, translateResult.context!);
               return next;
             });
-          }
-          if (translateResult.configId) {
-            setTokenConfigId(translateResult.configId);
           }
 
           // REMOVED: Saving to Project DB

@@ -118,7 +118,7 @@ export class SessionContextManager {
         responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
         choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ''
       };
-      console.log('[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):', contextSummary);
+      // console.log('[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):', contextSummary);
     } catch (error) {
       console.error('[SessionContextManager] Failed to parse fetch response:', error);
     }

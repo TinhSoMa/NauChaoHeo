@@ -962,7 +962,6 @@ class SessionContextManager {
         responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
         choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ""
       };
-      console.log("[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):", contextSummary);
     } catch (error) {
       console.error("[SessionContextManager] Failed to parse fetch response:", error);
     }
@@ -1215,8 +1214,10 @@ const DEFAULT_SETTINGS = {
   projectsBasePath: null,
   recentProjectIds: [],
   lastActiveProjectId: null,
-  useProxy: true
+  useProxy: true,
   // Mặc định bật proxy
+  createChatOnWeb: false,
+  useStoredContextOnFirstSend: false
 };
 class AppSettingsServiceClass {
   constructor() {
@@ -2885,6 +2886,19 @@ async function parseTxtFile(filePath) {
   }
   return { success: true, chapters };
 }
+const extractCookieKey = (cookie) => {
+  const trimmed = (cookie || "").trim();
+  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || "";
+  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || "";
+  const combined = [psid1, psid3].filter(Boolean).join("|");
+  return combined || trimmed;
+};
+const buildTokenKey = (cookie, atToken) => {
+  const cookieKey = extractCookieKey(cookie);
+  const atKey = (atToken || "").trim();
+  const combined = `${cookieKey}|${atKey}`;
+  return combined === "|" ? "" : combined;
+};
 let db = null;
 function getDatabase() {
   if (!db) {
@@ -2930,6 +2944,7 @@ function initDatabase() {
       bl_label TEXT,
       f_sid TEXT,
       at_token TEXT,
+      proxy_id TEXT,
       conv_id TEXT,
       resp_id TEXT,
       cand_id TEXT,
@@ -2953,6 +2968,15 @@ function initDatabase() {
     );
   `);
   db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_context_token (
+      token_key TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      response_id TEXT,
+      choice_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  db.exec(`
     CREATE TABLE IF NOT EXISTS gemini_cookie (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       cookie TEXT NOT NULL,
@@ -2969,6 +2993,10 @@ function initDatabase() {
     if (!columnNames.includes("req_id")) {
       db.exec("ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT");
       console.log("[Database] Added missing column: req_id");
+    }
+    if (!columnNames.includes("proxy_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT");
+      console.log("[Database] Added missing column: proxy_id");
     }
     if (!columnNames.includes("user_agent")) {
       db.exec("ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT");
@@ -3030,6 +3058,35 @@ function initDatabase() {
     }
   } catch (e) {
     console.error("[Database] Backfill gemini_chat_context failed:", e);
+  }
+  try {
+    const tokenContextCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_context_token").get();
+    if (tokenContextCount.count === 0) {
+      const rows = db.prepare(`
+        SELECT c.cookie, c.at_token, t.conversation_id, t.response_id, t.choice_id, t.updated_at
+        FROM gemini_chat_context t
+        JOIN gemini_chat_config c ON t.config_id = c.id
+      `).all();
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        const tokenKey = buildTokenKey(row.cookie || "", row.at_token || "");
+        if (!tokenKey) continue;
+        insert.run(
+          tokenKey,
+          row.conversation_id || "",
+          row.response_id || "",
+          row.choice_id || "",
+          row.updated_at || now
+        );
+      }
+      console.log("[Database] Backfilled gemini_chat_context_token from gemini_chat_context");
+    }
+  } catch (e) {
+    console.error("[Database] Backfill gemini_chat_context_token failed:", e);
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS proxies (
@@ -3351,6 +3408,19 @@ class ProxyDatabase {
     stmt.run(Date.now(), id);
   }
   /**
+   * Increment success count without resetting failed count
+   */
+  static incrementSuccessNoReset(id) {
+    const db2 = getDatabase();
+    const stmt = db2.prepare(`
+      UPDATE proxies
+      SET success_count = success_count + 1,
+          last_used_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+  /**
    * Increment failed count
    */
   static incrementFailed(id) {
@@ -3374,11 +3444,11 @@ class ProxyDatabase {
 class ProxyManager {
   constructor() {
     this.currentIndex = 0;
-    this.maxFailedCount = 5;
+    this.maxFailedCount = 2;
     this.settings = {
       maxRetries: 3,
       timeout: 1e4,
-      maxFailedCount: 5,
+      maxFailedCount: 2,
       enableRotation: true,
       fallbackToDirect: true
     };
@@ -3537,6 +3607,64 @@ class ProxyManager {
       return { success: false, error: String(error) };
     }
   }
+  async createProxyAgent(proxy) {
+    const { HttpsProxyAgent } = await import("https-proxy-agent");
+    const { SocksProxyAgent } = await import("socks-proxy-agent");
+    const proxyScheme = proxy.type === "socks5" ? "socks5h" : proxy.type;
+    const proxyUrl = proxy.username ? `${proxyScheme}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}` : `${proxyScheme}://${proxy.host}:${proxy.port}`;
+    if (proxy.type === "socks5") {
+      return new SocksProxyAgent(proxyUrl, { timeout: this.settings.timeout });
+    }
+    return new HttpsProxyAgent(proxyUrl, { timeout: this.settings.timeout });
+  }
+  async checkProxyConnectivity(proxyId, url = "https://generativelanguage.googleapis.com") {
+    const proxy = ProxyDatabase.getById(proxyId);
+    if (!proxy) {
+      return { success: false, error: "Proxy không tồn tại" };
+    }
+    try {
+      const startTime = Date.now();
+      const { default: fetch2 } = await import("node-fetch");
+      const agent = await this.createProxyAgent(proxy);
+      const response = await fetch2(url, {
+        method: "HEAD",
+        agent,
+        timeout: this.settings.timeout
+      });
+      const latency = Date.now() - startTime;
+      const status = response.status;
+      const success = status >= 200 && status < 500 && status !== 407;
+      if (success) {
+        ProxyDatabase.update(proxyId, { enabled: true });
+        ProxyDatabase.incrementSuccessNoReset(proxyId);
+        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} check OK (${status})`);
+      } else {
+        ProxyDatabase.update(proxyId, { enabled: false });
+        ProxyDatabase.incrementFailed(proxyId);
+        console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} check FAIL (${status})`);
+      }
+      return { success, latency, status };
+    } catch (error) {
+      ProxyDatabase.update(proxyId, { enabled: false });
+      ProxyDatabase.incrementFailed(proxyId);
+      console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} check error`, error);
+      return { success: false, error: String(error) };
+    }
+  }
+  async checkAllProxies(url = "https://generativelanguage.googleapis.com") {
+    const proxies = ProxyDatabase.getAll();
+    let passed = 0;
+    let failed = 0;
+    for (const proxy of proxies) {
+      const result = await this.checkProxyConnectivity(proxy.id, url);
+      if (result.success) {
+        passed += 1;
+      } else {
+        failed += 1;
+      }
+    }
+    return { checked: proxies.length, passed, failed };
+  }
   /**
    * Import proxies từ JSON string hoặc array
    */
@@ -3637,8 +3765,87 @@ class GeminiChatServiceClass {
     this.proxyAssignments = /* @__PURE__ */ new Map();
     this.proxyInUse = /* @__PURE__ */ new Set();
     this.proxyRotationIndex = 0;
-    this.proxyMaxFailedCount = 5;
+    this.proxyMaxFailedCount = 2;
+    this.firstSendByTokenKey = /* @__PURE__ */ new Set();
+    this.tokenLocks = /* @__PURE__ */ new Map();
     this.rotationIndex = 0;
+  }
+  async withTokenLock(tokenKey, task) {
+    const previous = this.tokenLocks.get(tokenKey) || Promise.resolve();
+    let release = () => {
+    };
+    const current = new Promise((resolve) => {
+      release = resolve;
+    });
+    this.tokenLocks.set(tokenKey, previous.then(() => current));
+    await previous;
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.tokenLocks.get(tokenKey) === current) {
+        this.tokenLocks.delete(tokenKey);
+      }
+    }
+  }
+  buildTokenKey(_cookie, atToken) {
+    return (atToken || "").trim();
+  }
+  getTokenKey(config) {
+    return this.buildTokenKey(config.cookie || "", config.atToken || "") || config.id;
+  }
+  checkDuplicateToken(cookie, atToken, excludeId) {
+    const tokenKey = this.buildTokenKey(cookie || "", atToken || "");
+    if (!tokenKey) {
+      return { isDuplicate: false };
+    }
+    const configs = this.getAll();
+    for (const config of configs) {
+      if (excludeId && config.id === excludeId) continue;
+      const configKey = this.buildTokenKey(config.cookie || "", config.atToken || "");
+      if (configKey && configKey === tokenKey) {
+        console.log(`[DEBUG] FOUND DUPLICATE: Input '${tokenKey}' == Config '${configKey}' (Name: ${config.name})`);
+        return { isDuplicate: true, duplicate: config };
+      }
+    }
+    return { isDuplicate: false };
+  }
+  getAssignedProxyId(configId) {
+    if (!configId || configId === "legacy") return null;
+    try {
+      const db2 = getDatabase();
+      const row = db2.prepare("SELECT proxy_id FROM gemini_chat_config WHERE id = ?").get(configId);
+      return row?.proxy_id || null;
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể đọc proxy_id từ DB:", error);
+      return null;
+    }
+  }
+  setAssignedProxyId(configId, proxyId) {
+    if (!configId || configId === "legacy") return;
+    try {
+      const db2 = getDatabase();
+      db2.prepare("UPDATE gemini_chat_config SET proxy_id = ?, updated_at = ? WHERE id = ?").run(proxyId || null, Date.now(), configId);
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể lưu proxy_id vào DB:", error);
+    }
+  }
+  getAssignedProxyIds(excludeConfigId) {
+    const assigned = /* @__PURE__ */ new Set();
+    try {
+      const db2 = getDatabase();
+      const rows = db2.prepare(`
+                SELECT id, proxy_id FROM gemini_chat_config
+                WHERE is_active = 1 AND proxy_id IS NOT NULL AND proxy_id != ''
+            `).all();
+      for (const row of rows) {
+        if (excludeConfigId && row.id === excludeConfigId) continue;
+        assigned.add(row.proxy_id);
+      }
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể tải danh sách proxy_id đã gán:", error);
+    }
+    return assigned;
   }
   getUseProxySetting() {
     try {
@@ -3665,11 +3872,16 @@ class GeminiChatServiceClass {
     });
   }
   async fetchWithProxy(url, fetchOptions, timeoutMs, accountKey, useProxyOverride) {
-    const useProxy = typeof useProxyOverride === "boolean" ? useProxyOverride : this.getUseProxySetting();
+    const setting = this.getUseProxySetting();
+    const useProxy = typeof useProxyOverride === "boolean" ? useProxyOverride : setting;
+    console.log(`[GeminiChatService] fetchWithProxy - Override: ${useProxyOverride}, Setting: ${setting}, Final: ${useProxy}`);
     const proxyManager = getProxyManager();
     let currentProxy = null;
     if (useProxy) {
       currentProxy = this.getOrAssignProxy(accountKey);
+      if (!currentProxy) {
+        throw new Error("Không còn proxy khả dụng");
+      }
     }
     const { default: fetch2 } = await import("node-fetch");
     try {
@@ -3678,41 +3890,68 @@ class GeminiChatServiceClass {
       if (response.ok) {
         if (currentProxy) {
           proxyManager.markProxySuccess(currentProxy.id);
+          if (accountKey && accountKey !== "legacy") {
+            this.setAssignedProxyId(accountKey, currentProxy.id);
+          }
         }
         return { response, usedProxy: currentProxy };
       }
       if (currentProxy) {
         proxyManager.markProxyFailed(currentProxy.id, `HTTP ${response.status}`);
+        if (accountKey && accountKey !== "legacy") {
+          this.setAssignedProxyId(accountKey, null);
+        }
         this.releaseProxy(accountKey, currentProxy.id);
-      }
-      if (!currentProxy && useProxy && proxyManager.shouldFallbackToDirect()) {
-        const directResponse = await fetch2(url, fetchOptions);
-        return { response: directResponse, usedProxy: null };
       }
       return { response, usedProxy: currentProxy };
     } catch (error) {
       if (currentProxy) {
         proxyManager.markProxyFailed(currentProxy.id, error?.message || String(error));
+        if (accountKey && accountKey !== "legacy") {
+          this.setAssignedProxyId(accountKey, null);
+        }
         this.releaseProxy(accountKey, currentProxy.id);
-      }
-      if (!currentProxy && useProxy && proxyManager.shouldFallbackToDirect()) {
-        const directResponse = await fetch2(url, fetchOptions);
-        return { response: directResponse, usedProxy: null };
       }
       throw error;
     }
   }
   getOrAssignProxy(accountKey) {
-    getProxyManager();
-    const assignedId = this.proxyAssignments.get(accountKey);
-    if (assignedId) {
-      const assigned = this.getAvailableProxies().find((p) => p.id === assignedId);
+    const assignedIdInMemory = this.proxyAssignments.get(accountKey);
+    if (assignedIdInMemory) {
+      const assigned = this.getAvailableProxies().find((p) => p.id === assignedIdInMemory);
       if (assigned) {
         return assigned;
       }
-      this.releaseProxy(accountKey, assignedId);
+      this.releaseProxy(accountKey, assignedIdInMemory);
     }
-    const available = this.getAvailableProxies().filter((p) => !this.proxyInUse.has(p.id));
+    if (accountKey && accountKey !== "legacy") {
+      const assignedId = this.getAssignedProxyId(accountKey);
+      if (assignedId) {
+        const assignedIds2 = this.getAssignedProxyIds(accountKey);
+        if (assignedIds2.has(assignedId)) {
+          console.warn("[GeminiChatService] Proxy đã gán bị trùng với cấu hình khác, sẽ gán lại");
+          this.setAssignedProxyId(accountKey, null);
+        } else {
+          const assignedProxy = this.getAvailableProxies().find((p) => p.id === assignedId);
+          if (assignedProxy) {
+            if (!this.proxyInUse.has(assignedProxy.id)) {
+              this.proxyAssignments.set(accountKey, assignedProxy.id);
+              this.proxyInUse.add(assignedProxy.id);
+              return assignedProxy;
+            }
+            console.warn(`[GeminiChatService] Proxy đã gán đang được dùng bởi tài khoản khác: ${assignedProxy.host}:${assignedProxy.port}`);
+          } else {
+            this.setAssignedProxyId(accountKey, null);
+          }
+        }
+      }
+    }
+    const assignedIds = this.getAssignedProxyIds(accountKey);
+    let available = this.getAvailableProxies().filter((p) => !this.proxyInUse.has(p.id) && !assignedIds.has(p.id));
+    if (available.length === 0) {
+      console.warn("[GeminiChatService] Không còn proxy trống chưa gán, fallback sang proxy khả dụng khác");
+      available = this.getAvailableProxies().filter((p) => !this.proxyInUse.has(p.id));
+    }
     if (available.length === 0) {
       console.warn(`[GeminiChatService] Không còn proxy trống cho tài khoản ${accountKey}`);
       return null;
@@ -3721,6 +3960,9 @@ class GeminiChatServiceClass {
     this.proxyRotationIndex = (this.proxyRotationIndex + 1) % available.length;
     this.proxyAssignments.set(accountKey, proxy.id);
     this.proxyInUse.add(proxy.id);
+    if (accountKey && accountKey !== "legacy") {
+      this.setAssignedProxyId(accountKey, proxy.id);
+    }
     return proxy;
   }
   releaseProxy(accountKey, proxyId) {
@@ -3735,7 +3977,21 @@ class GeminiChatServiceClass {
     const allProxies = proxyManager.getAllProxies();
     return allProxies.filter((p) => p.enabled && (p.failedCount || 0) < this.proxyMaxFailedCount);
   }
-  getStoredContext(configId) {
+  getStoredTokenContext(tokenKey, configId) {
+    if (!tokenKey) return null;
+    try {
+      const db2 = getDatabase();
+      const row = db2.prepare("SELECT conversation_id, response_id, choice_id FROM gemini_chat_context_token WHERE token_key = ?").get(tokenKey);
+      if (row) {
+        return {
+          conversationId: row.conversation_id || "",
+          responseId: row.response_id || "",
+          choiceId: row.choice_id || ""
+        };
+      }
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể tải ngữ cảnh token từ DB:", error);
+    }
     if (!configId || configId === "legacy") return null;
     try {
       const db2 = getDatabase();
@@ -3747,11 +4003,43 @@ class GeminiChatServiceClass {
         choiceId: row.choice_id || ""
       };
     } catch (error) {
-      console.warn("[GeminiChatService] Không thể tải ngữ cảnh từ DB:", error);
+      console.warn("[GeminiChatService] Không thể tải ngữ cảnh cấu hình từ DB:", error);
       return null;
     }
   }
-  saveStoredContext(configId, context) {
+  getStoredConfigContext(configId) {
+    if (!configId || configId === "legacy") return null;
+    try {
+      const db2 = getDatabase();
+      const row = db2.prepare("SELECT conversation_id, response_id, choice_id FROM gemini_chat_context WHERE config_id = ?").get(configId);
+      if (!row) return null;
+      return {
+        conversationId: row.conversation_id || "",
+        responseId: row.response_id || "",
+        choiceId: row.choice_id || ""
+      };
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể tải ngữ cảnh cấu hình từ DB:", error);
+      return null;
+    }
+  }
+  saveStoredTokenContext(tokenKey, context, configId) {
+    if (!tokenKey) return;
+    try {
+      const db2 = getDatabase();
+      db2.prepare(`
+                INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            `).run(
+        tokenKey,
+        context.conversationId || "",
+        context.responseId || "",
+        context.choiceId || "",
+        Date.now()
+      );
+    } catch (error) {
+      console.warn("[GeminiChatService] Không thể lưu ngữ cảnh token vào DB:", error);
+    }
     if (!configId || configId === "legacy") return;
     try {
       const db2 = getDatabase();
@@ -3766,7 +4054,7 @@ class GeminiChatServiceClass {
         Date.now()
       );
     } catch (error) {
-      console.warn("[GeminiChatService] Không thể lưu ngữ cảnh vào DB:", error);
+      console.warn("[GeminiChatService] Không thể lưu ngữ cảnh cấu hình vào DB:", error);
     }
   }
   // Helper: Generate initial REQ_ID (Random Prefix + Fixed 4-digit Suffix logic)
@@ -3776,6 +4064,89 @@ class GeminiChatServiceClass {
     const prefix = Math.floor(Math.random() * (45 - 30) + 30);
     const suffix = Math.floor(Math.random() * 9e3 + 1e3);
     return String(prefix * 1e5 + suffix);
+  }
+  buildRequestPayload(message, contextArray, createChatOnWeb) {
+    if (!createChatOnWeb) {
+      const innerPayload = [
+        [message],
+        null,
+        contextArray
+      ];
+      return JSON.stringify([null, JSON.stringify(innerPayload)]);
+    }
+    const reqUuid = uuid.v4().toUpperCase();
+    const reqStruct = [
+      [message, 0, null, null, null, null, 0],
+      ["vi"],
+      [contextArray[0], contextArray[1], contextArray[2], null, null, null, null, null, null, ""],
+      "!BwSlBFzNAAZeabWMfmlCAOK4lSpy-nY7ADQBEArZ1HXWr3pDagC9VZ5CWddxxlroONpL-a5eGEHXpYjZYEboidltqN627255ouWfutqSAgAAAEtSAAAAAmgBB34AQf7Z0X4QHk8aehxZTrwdWe2_4ynoojTI3Dop9DkAR1EzMlT4nLjH65NoKYTZj-WO50CGSm_ENmZpEvP--1D_FnyJmQOvlsPu3GfxD62pT5siALsF-4-Jm1LJY4I7jLertSMjtvs1_R710Z6lSHhM4PuGaaOUrRMj8-UOBqCgscsTETggz3x_ju7ACGPssxINDSYvXK5XenYexuBblk9vytrqyB1E7Ntp2kHlZanL2GAf_WCWa_Zaev2j2C23Oip1rZNMfLeSnBCAy_P5w2UR5lwYfVuKIXGhG8LWt-00k1K49MV6DiTItqYyH3OC5qOmokpnUyLMrnobu3z5H9FUxZMxNjbGsl0DmDiINJQnrO7vjppHyuMrLYECDdkptAlDsQRYOcJRuazOowdqTlUwz283lg7hNoX_D4QUUG5zt2TAsrXsbFWlacIN5SeNjqlHha9tXvXB77DbcR_CzwZbF8gju5SA8ruxleoUzapriHFEXs5Ipz1c2UvB5ph1_C3PYi4ER-Dl7ykEgBZooOJPEL_4QPq4gd20gvvYiwLVeM1BiwisfZT13sJ1vhbB1XIeakQKA1Ikalf7PoCZ5tjwxn9Zsz1rRJtSSX_wfvb-lrat3XPCyjA_a-JKE-DLhIHChbouYIlTlvMT25nmWE5jemyvCj_KdHRWg0XE3wQt8jD2zmrgl8JNRygbJy9Llmfv_FAAy4TRmddSQGjpNnnTvTioiO4ydPNXFfq_M78_DxeGl56mdVf15JBZ-tqReaDDr4ltrkO09MX_CUY1cZvIqt3_QrgakGGnjc3tVZzRl2gYZ5vJBQa_pHObKly8kEQLMAYnOzB943fHjijMkw1jW1Hg7gYDEIuBPiN8mLIkl73oDPeMJSwsn4PwNm5K6V6blTxQVNylGLGlp5E5mmV92Az-bY-LqLCqTIEs0Ajd-CimLvQPTEXuMsFliaCxXsLbxrdSdrPkYIPSVUQDj7bdCs9CXo2MjPIwjHVPCmI5Cb8WPs6hu1fbYHTxLthzRejxEFdmZ0RakYqKOZFetMpzA8QN0HJ7ZIR9eA8VM4r6CB0YO0FKZcQmAHNjBPHyAqXnNZNgrZDwknPWttn9QiZH51MIBe5Hk3-zzQUvJ5fPlJlkWkd4VPzCroOIBtk6aduceg2-YQt4N701ghkxfFZ-k-blbUeFvZGIgMfbWWeJRRdrRWrrWgdT0FXT_jhJV1XA5bwZcy1X-ykmlE2CAvb1BQMUdY9YE_mJMvowLakNeo0r7Q4FOoVyu-cVhrQl7iHDmHEspUGbpa91q-7KKL0AUYxLahYd8giy5o_45o-rD1y0asaFRBhh3R0j__zg2sa1i1AA2A",
+      "7f64e8c4aa4819e0a1a684fd7e6f5f9b",
+      null,
+      [1],
+      1,
+      null,
+      null,
+      1,
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      [[0]],
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      1,
+      null,
+      null,
+      [4],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      [1],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      reqUuid,
+      null,
+      [],
+      null,
+      null,
+      null,
+      null,
+      [1769584568, 497e6],
+      null,
+      2
+    ];
+    return JSON.stringify([null, JSON.stringify(reqStruct)]);
   }
   // =======================================================
   // COOKIE CONFIG (Bảng riêng, chỉ 1 dòng)
@@ -3859,11 +4230,11 @@ class GeminiChatServiceClass {
       console.log("[GeminiChatService] Creating config with profile:", data.userAgent ? "Custom" : profile.platform);
       db2.prepare(`
         INSERT INTO gemini_chat_config (
-            id, name, cookie, bl_label, f_sid, at_token, 
+            id, name, cookie, bl_label, f_sid, at_token, proxy_id,
             conv_id, resp_id, cand_id, req_id, 
             user_agent, accept_language, platform,
             is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         `).run(
         id,
         data.name || "default",
@@ -3871,6 +4242,7 @@ class GeminiChatServiceClass {
         data.blLabel || "",
         data.fSid || "",
         data.atToken || "",
+        data.proxyId || null,
         data.convId || "",
         data.respId || "",
         data.candId || "",
@@ -3919,6 +4291,10 @@ class GeminiChatServiceClass {
     if (data.atToken !== void 0) {
       updates.push("at_token = @atToken");
       params.atToken = data.atToken;
+    }
+    if (data.proxyId !== void 0) {
+      updates.push("proxy_id = @proxyId");
+      params.proxyId = data.proxyId;
     }
     if (data.convId !== void 0) {
       updates.push("conv_id = @convId");
@@ -3984,6 +4360,7 @@ class GeminiChatServiceClass {
       blLabel: row.bl_label,
       fSid: row.f_sid,
       atToken: row.at_token,
+      proxyId: row.proxy_id || void 0,
       convId: row.conv_id,
       respId: row.resp_id,
       candId: row.cand_id,
@@ -4003,48 +4380,59 @@ class GeminiChatServiceClass {
     const MAX_RETRIES = 3;
     const MIN_DELAY_MS = 2e3;
     const MAX_DELAY_MS = 1e4;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
-      let config = null;
-      if (configId) {
-        config = this.getById(configId);
-        if (!config) {
-          console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
-          return { success: false, error: `Không tìm thấy cấu hình ID ${configId}` };
-        }
-      } else {
-        config = this.getNextActiveConfig();
-        if (!config) {
-          const cookieConfig = this.getCookieConfig();
-          if (cookieConfig) {
-            config = {
-              id: "legacy",
-              name: "Legacy Cookie",
-              ...cookieConfig,
-              isActive: true,
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            };
-          } else {
-            return { success: false, error: "Không có cấu hình web đang hoạt động." };
-          }
-        }
+    let config = null;
+    if (configId) {
+      config = this.getById(configId);
+      if (!config) {
+        console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
+        return { success: false, error: `Không tìm thấy cấu hình ID ${configId}` };
       }
-      console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id})`);
-      const result = await this._sendMessageInternal(message, config, context, useProxyOverride);
-      if (result.success) {
-        return { ...result, configId: config.id };
+      if (!config.isActive) {
+        console.warn(`[GeminiChatService] Cấu hình ID ${configId} đang tắt, bỏ qua.`);
+        return { success: false, error: "Cấu hình đang tắt, không được sử dụng" };
       }
-      if (attempt < MAX_RETRIES) {
-        const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
-        console.log(`[GeminiChatService] Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-      } else {
-        console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-        return { ...result, configId: config.id };
+    } else {
+      config = this.getNextActiveConfig();
+      if (!config) {
+        const cookieConfig = this.getCookieConfig();
+        if (cookieConfig) {
+          config = {
+            id: "legacy",
+            name: "Legacy Cookie",
+            ...cookieConfig,
+            isActive: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+        } else {
+          return { success: false, error: "Không có cấu hình web đang hoạt động." };
+        }
       }
     }
-    return { success: false, error: "Unexpected error in retry loop" };
+    const tokenKey = this.getTokenKey(config);
+    console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id}, TokenKey: ${tokenKey.slice(0, 16)}...)`);
+    return await this.withTokenLock(tokenKey, async () => {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
+        const result = await this._sendMessageInternal(message, config, context, useProxyOverride);
+        if (result.success) {
+          return { ...result, configId: config.id };
+        }
+        if (result.error && result.error.includes("Không còn proxy khả dụng")) {
+          console.error("[GeminiChatService] Dừng retry do hết proxy khả dụng");
+          return { ...result, configId: config.id };
+        }
+        if (attempt < MAX_RETRIES) {
+          const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+          console.log(`[GeminiChatService] Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        } else {
+          console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
+          return { ...result, configId: config.id };
+        }
+      }
+      return { success: false, error: "Unexpected error in retry loop" };
+    });
   }
   async _sendMessageInternal(message, config, context, useProxyOverride) {
     const { cookie, blLabel, fSid, atToken } = config;
@@ -4073,7 +4461,7 @@ class GeminiChatServiceClass {
     const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : HL_LANG;
     const matchingProfile = BROWSER_PROFILES.find((p) => p.userAgent === config.userAgent) || BROWSER_PROFILES[0];
     const secChUa = matchingProfile.secChUa;
-    const secChUaPlatform = config.platform ? `"${config.platform}"` : matchingProfile.secChUaPlatform;
+    const secChUaPlatform = config.platform ? `"${(config.platform || "").trim().replace(/[\r\n]+/g, "")}"` : matchingProfile.secChUaPlatform;
     const safeCookie = (cookie || "").replace(/[\r\n]+/g, "");
     let currentReqIdStr = config.reqId;
     if (!currentReqIdStr) {
@@ -4090,8 +4478,24 @@ class GeminiChatServiceClass {
         console.warn("[GeminiChatService] Không thể cập nhật req_id trong DB", e);
       }
     }
-    const storedContext = !context ? this.getStoredContext(config.id) : null;
-    const effectiveContext = context || storedContext || void 0;
+    const tokenKey = this.getTokenKey(config);
+    const appSettings = AppSettingsService.getAll();
+    const allowStoredContextOnFirstSend = !!appSettings.useStoredContextOnFirstSend;
+    const isFirstSendForToken = !this.firstSendByTokenKey.has(tokenKey);
+    const canUseStoredContext = !isFirstSendForToken || allowStoredContextOnFirstSend;
+    const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
+    const incomingContext = shouldIgnoreIncomingContext ? void 0 : context;
+    const configContext = this.getStoredConfigContext(config.id);
+    const tokenContext = this.getStoredTokenContext(tokenKey, config.id);
+    let storedContext = null;
+    if (!incomingContext && canUseStoredContext) {
+      if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+        storedContext = configContext;
+      } else if (!isFirstSendForToken) {
+        storedContext = tokenContext || configContext;
+      }
+    }
+    const effectiveContext = incomingContext || storedContext || void 0;
     let contextArray = ["", "", ""];
     if (effectiveContext) {
       contextArray = [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId];
@@ -4101,13 +4505,19 @@ class GeminiChatServiceClass {
         choiceId: effectiveContext.choiceId ? `${String(effectiveContext.choiceId).slice(0, 24)}...` : ""
       };
       console.log("[GeminiChatService] Dùng ngữ cảnh (tóm tắt):", contextInfo);
+    } else if (isFirstSendForToken && !incomingContext) {
+      if (allowStoredContextOnFirstSend) {
+        if (configContext) {
+          console.log("[GeminiChatService] Lần đầu gửi cho token, dùng ngữ cảnh cũ của cấu hình");
+        } else {
+          console.log("[GeminiChatService] Lần đầu gửi cho token, cấu hình chưa có ngữ cảnh -> dùng ngữ cảnh rỗng");
+        }
+      } else {
+        console.log("[GeminiChatService] Lần đầu gửi cho token, dùng ngữ cảnh rỗng");
+      }
     }
-    const innerPayload = [
-      [message],
-      null,
-      contextArray
-    ];
-    const fReq = JSON.stringify([null, JSON.stringify(innerPayload)]);
+    const createChatOnWeb = !!appSettings.createChatOnWeb;
+    const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
     const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
     const params = new URLSearchParams({
       "bl": blLabel,
@@ -4117,39 +4527,49 @@ class GeminiChatServiceClass {
       "hl": hl
     });
     const url = `${baseUrl}?${params.toString()}`;
-    const body = new URLSearchParams({
-      "f.req": fReq,
-      "at": atToken,
-      "": ""
-      // Empty param như trong HAR
-    });
+    const body = new URLSearchParams(
+      createChatOnWeb ? {
+        "f.req": fReq,
+        "at": atToken
+      } : {
+        "f.req": fReq,
+        "at": atToken,
+        "": ""
+        // Empty param như trong HAR
+      }
+    );
     try {
       console.log("[GeminiChatService] Đang gửi request:", url);
-      const headers = {
-        "accept": "*/*",
-        "accept-encoding": "gzip, deflate, br, zstd",
-        "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
-        "cache-control": "no-cache",
+      let headers = {
         "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-        "origin": "https://gemini.google.com",
-        "pragma": "no-cache",
-        "referer": "https://gemini.google.com/",
-        "sec-ch-ua-arch": '"x86"',
-        "sec-ch-ua-bitness": '"64"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": secChUaPlatform,
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin",
-        "user-agent": config.userAgent || matchingProfile.userAgent,
-        "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
-        "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
-        "x-goog-ext-73010989-jspb": "[0]",
-        "x-same-domain": "1",
-        "Cookie": safeCookie
+        "cookie": safeCookie,
+        "user-agent": (config.userAgent || matchingProfile.userAgent || "").trim().replace(/[\r\n]+/g, "")
       };
-      if (secChUa) {
-        headers["sec-ch-ua"] = secChUa;
+      if (!createChatOnWeb) {
+        headers = {
+          ...headers,
+          "accept": "*/*",
+          "accept-encoding": "gzip, deflate, br, zstd",
+          "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
+          "cache-control": "no-cache",
+          "origin": "https://gemini.google.com",
+          "pragma": "no-cache",
+          "referer": "https://gemini.google.com/",
+          "sec-ch-ua-arch": '"x86"',
+          "sec-ch-ua-bitness": '"64"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": secChUaPlatform,
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin",
+          "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
+          "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
+          "x-goog-ext-73010989-jspb": "[0]",
+          "x-same-domain": "1"
+        };
+        if (secChUa) {
+          headers["sec-ch-ua"] = secChUa;
+        }
       }
       const MAX_CONTROL_RETRIES = 2;
       for (let controlAttempt = 1; controlAttempt <= MAX_CONTROL_RETRIES; controlAttempt++) {
@@ -4170,48 +4590,63 @@ class GeminiChatServiceClass {
           console.error("[GeminiChatService] Lỗi Gemini:", response.status, txt.substring(0, 200));
           return { success: false, error: `HTTP ${response.status}` };
         }
-        console.log("[GeminiChatService] >>> Đang đọc nội dung phản hồi...");
-        const responseText = await response.text();
+        console.log("[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for response)...");
         let foundText = "";
         let hasWrbFr = false;
         let hasContentPayload = false;
-        for (const line of responseText.split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          if (trimmed.startsWith(")]}'")) continue;
-          if (/^\d+$/.test(trimmed)) continue;
-          try {
-            const dataObj = JSON.parse(trimmed);
-            if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
-            for (const payloadItem of dataObj) {
-              if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
-              if (payloadItem[0] !== "wrb.fr") continue;
-              hasWrbFr = true;
-              if (typeof payloadItem[2] !== "string") continue;
-              const innerData = JSON.parse(payloadItem[2]);
-              if (!Array.isArray(innerData) || innerData.length < 5) continue;
-              const candidates = innerData[4];
-              if (Array.isArray(candidates) && candidates.length > 0) {
-                const candidate = candidates[0];
-                if (candidate && candidate.length > 1) {
-                  const textSource = candidate[1];
-                  const txt = Array.isArray(textSource) ? textSource[0] : textSource;
-                  if (typeof txt === "string" && txt) {
-                    foundText = txt;
-                    hasContentPayload = true;
+        let buffer = "";
+        let totalBytesRead = 0;
+        const sessionManager = getSessionContextManager();
+        let newContext = { conversationId: "", responseId: "", choiceId: "" };
+        try {
+          for await (const chunk of response.body) {
+            const chunkString = chunk.toString();
+            buffer += chunkString;
+            totalBytesRead += chunkString.length;
+            let newlineIndex;
+            while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, newlineIndex).trim();
+              buffer = buffer.slice(newlineIndex + 1);
+              if (!line) continue;
+              if (line.startsWith(")]}'")) continue;
+              if (/^\d+$/.test(line)) continue;
+              try {
+                const dataObj = JSON.parse(line);
+                if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
+                for (const payloadItem of dataObj) {
+                  if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+                  if (payloadItem[0] !== "wrb.fr") continue;
+                  hasWrbFr = true;
+                  if (typeof payloadItem[2] !== "string") continue;
+                  const innerData = JSON.parse(payloadItem[2]);
+                  if (!Array.isArray(innerData) || innerData.length < 5) continue;
+                  const candidates = innerData[4];
+                  if (Array.isArray(candidates) && candidates.length > 0) {
+                    const candidate = candidates[0];
+                    if (candidate && candidate.length > 1) {
+                      const textSource = candidate[1];
+                      const txt = Array.isArray(textSource) ? textSource[0] : textSource;
+                      if (typeof txt === "string" && txt) {
+                        if (txt.length > foundText.length) {
+                          foundText = txt;
+                          hasContentPayload = true;
+                        }
+                      }
+                    }
                   }
+                  const parsedCtx = sessionManager.parseFromFetchResponse(line);
+                  if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
+                  if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
+                  if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
                 }
+              } catch (e) {
               }
             }
-          } catch {
           }
+          console.log(`[GeminiChatService] >>> Streaming hoàn tất. Tổng cộng: ${totalBytesRead} bytes.`);
+        } catch (streamError) {
+          console.error("[GeminiChatService] Lỗi khi streaming:", streamError);
         }
-        console.log("[GeminiChatService] >>> Độ dài phản hồi:", responseText.length);
-        if (responseText.length < 500) {
-          console.warn("[GeminiChatService] >>> Phản hồi ngắn (có thể lỗi):", responseText);
-        }
-        const sessionManager = getSessionContextManager();
-        const newContext = sessionManager.parseFromFetchResponse(responseText);
         if (foundText) {
           if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
           if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
@@ -4223,7 +4658,8 @@ class GeminiChatServiceClass {
             choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ""
           };
           console.log("[GeminiChatService] Ngữ cảnh (tóm tắt):", contextSummary);
-          this.saveStoredContext(config.id, newContext);
+          this.saveStoredTokenContext(tokenKey, newContext, config.id);
+          this.firstSendByTokenKey.add(tokenKey);
           return {
             success: true,
             data: {
@@ -4472,6 +4908,7 @@ const PROXY_IPC_CHANNELS = {
   REMOVE: "proxy:remove",
   UPDATE: "proxy:update",
   TEST: "proxy:test",
+  CHECK_ALL: "proxy:checkAll",
   GET_STATS: "proxy:getStats",
   IMPORT: "proxy:import",
   EXPORT: "proxy:export",
@@ -4996,6 +5433,7 @@ const CHANNELS = {
   UPDATE: "geminiChat:update",
   DELETE: "geminiChat:delete",
   SEND_MESSAGE: "geminiChat:sendMessage",
+  CHECK_DUPLICATE_TOKEN: "geminiChat:checkDuplicateToken",
   // Cookie Config (bảng riêng)
   GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
   SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig"
@@ -5081,6 +5519,15 @@ function registerGeminiChatHandlers() {
       return result;
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi sendMessage:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload) => {
+    try {
+      const result = GeminiChatService.checkDuplicateToken(payload.cookie, payload.atToken, payload.excludeId);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi checkDuplicateToken:", error);
       return { success: false, error: String(error) };
     }
   });
@@ -5175,6 +5622,19 @@ function registerProxyHandlers() {
           error: String(error),
           testedAt: Date.now()
         };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    PROXY_IPC_CHANNELS.CHECK_ALL,
+    async () => {
+      try {
+        console.log("[ProxyHandlers] Check all proxies...");
+        const result = await manager.checkAllProxies("https://generativelanguage.googleapis.com");
+        return { success: true, ...result };
+      } catch (error) {
+        console.error("[ProxyHandlers] Lỗi check all proxies:", error);
+        return { success: false, error: String(error) };
       }
     }
   );

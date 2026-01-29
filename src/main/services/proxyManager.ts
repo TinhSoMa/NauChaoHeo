@@ -7,7 +7,7 @@ import { ProxyDatabase } from '../database/proxyDatabase';
  */
 export class ProxyManager {
   private currentIndex: number = 0;
-  private maxFailedCount: number = 5; // Tự động disable proxy sau 5 lỗi liên tiếp
+  private maxFailedCount: number = 2; // Tự động disable proxy sau 2 lỗi liên tiếp
   private settings: {
     maxRetries: number;
     timeout: number;
@@ -21,7 +21,7 @@ export class ProxyManager {
     this.settings = {
       maxRetries: 3,
       timeout: 10000,
-      maxFailedCount: 5,
+      maxFailedCount: 2,
       enableRotation: true,
       fallbackToDirect: true,
     };
@@ -213,6 +213,79 @@ export class ProxyManager {
       console.error(`[ProxyManager] ❌ Test proxy thất bại: ${proxy.host}:${proxy.port}`, error);
       return { success: false, error: String(error) };
     }
+  }
+
+  private async createProxyAgent(proxy: ProxyConfig): Promise<any> {
+    const { HttpsProxyAgent } = await import('https-proxy-agent');
+    const { SocksProxyAgent } = await import('socks-proxy-agent');
+
+    const proxyScheme = proxy.type === 'socks5' ? 'socks5h' : proxy.type;
+    const proxyUrl = proxy.username
+      ? `${proxyScheme}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
+      : `${proxyScheme}://${proxy.host}:${proxy.port}`;
+
+    if (proxy.type === 'socks5') {
+      return new SocksProxyAgent(proxyUrl, { timeout: this.settings.timeout });
+    }
+
+    return new HttpsProxyAgent(proxyUrl, { timeout: this.settings.timeout });
+  }
+
+  async checkProxyConnectivity(proxyId: string, url: string = 'https://generativelanguage.googleapis.com'): Promise<{ success: boolean; latency?: number; status?: number; error?: string }> {
+    const proxy = ProxyDatabase.getById(proxyId);
+    if (!proxy) {
+      return { success: false, error: 'Proxy không tồn tại' };
+    }
+
+    try {
+      const startTime = Date.now();
+      const { default: fetch } = await import('node-fetch');
+      const agent = await this.createProxyAgent(proxy);
+
+      const response = await fetch(url, {
+        method: 'HEAD',
+        agent: agent as any,
+        timeout: this.settings.timeout,
+      });
+
+      const latency = Date.now() - startTime;
+      const status = response.status;
+      const success = status >= 200 && status < 500 && status !== 407;
+
+      if (success) {
+        ProxyDatabase.update(proxyId, { enabled: true });
+        ProxyDatabase.incrementSuccessNoReset(proxyId);
+        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} check OK (${status})`);
+      } else {
+        ProxyDatabase.update(proxyId, { enabled: false });
+        ProxyDatabase.incrementFailed(proxyId);
+        console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} check FAIL (${status})`);
+      }
+
+      return { success, latency, status };
+    } catch (error) {
+      ProxyDatabase.update(proxyId, { enabled: false });
+      ProxyDatabase.incrementFailed(proxyId);
+      console.warn(`[ProxyManager] ❌ Proxy ${proxy.host}:${proxy.port} check error`, error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  async checkAllProxies(url: string = 'https://generativelanguage.googleapis.com'): Promise<{ checked: number; passed: number; failed: number }> {
+    const proxies = ProxyDatabase.getAll();
+    let passed = 0;
+    let failed = 0;
+
+    for (const proxy of proxies) {
+      const result = await this.checkProxyConnectivity(proxy.id, url);
+      if (result.success) {
+        passed += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    return { checked: proxies.length, passed, failed };
   }
 
   /**

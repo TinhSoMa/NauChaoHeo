@@ -24,6 +24,7 @@ export interface AppSettings {
   recentProjectIds: string[];
   lastActiveProjectId: string | null;
   useProxy: boolean;
+  createChatOnWeb: boolean;
 }
 
 interface IpcApiResponse<T = unknown> {
@@ -41,6 +42,7 @@ export interface AppSettingsAPI {
   addRecentProject: (projectId: string) => Promise<IpcApiResponse<void>>;
   getRecentProjectIds: () => Promise<IpcApiResponse<string[]>>;
   getLastActiveProjectId: () => Promise<IpcApiResponse<string | null>>;
+  useStoredContextOnFirstSend: boolean;
   removeFromRecent: (projectId: string) => Promise<IpcApiResponse<void>>;
 }
 

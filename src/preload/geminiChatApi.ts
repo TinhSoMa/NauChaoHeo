@@ -12,6 +12,7 @@ export interface GeminiChatConfig {
   blLabel: string;
   fSid: string;
   atToken: string;
+  proxyId?: string;
   convId: string;
   respId: string;
   candId: string;
@@ -26,6 +27,7 @@ export interface CreateGeminiChatConfigDTO {
   blLabel?: string;
   fSid?: string;
   atToken?: string;
+  proxyId?: string;
   convId?: string;
   respId?: string;
   candId?: string;
@@ -60,6 +62,7 @@ const CHANNELS = {
   UPDATE: 'geminiChat:update',
   DELETE: 'geminiChat:delete',
   SEND_MESSAGE: 'geminiChat:sendMessage',
+  CHECK_DUPLICATE_TOKEN: 'geminiChat:checkDuplicateToken',
   GET_COOKIE_CONFIG: 'geminiChat:getCookieConfig',
   SAVE_COOKIE_CONFIG: 'geminiChat:saveCookieConfig',
 };
@@ -73,6 +76,7 @@ export interface GeminiChatAPI {
   update: (id: string, data: UpdateGeminiChatConfigDTO) => Promise<ApiResponse<GeminiChatConfig | null>>;
   delete: (id: string) => Promise<ApiResponse<boolean>>;
   sendMessage: (message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => Promise<ApiResponse<{ text: string; context: { conversationId: string; responseId: string; choiceId: string } }>>;
+  checkDuplicateToken: (payload: { cookie: string; atToken: string; excludeId?: string }) => Promise<ApiResponse<{ isDuplicate: boolean; duplicate?: GeminiChatConfig }>>;
   
   // Cookie config methods
   getCookieConfig: () => Promise<ApiResponse<GeminiCookieConfig | null>>;
@@ -88,6 +92,7 @@ export const geminiChatApi: GeminiChatAPI = {
   update: (id, data) => ipcRenderer.invoke(CHANNELS.UPDATE, id, data),
   delete: (id) => ipcRenderer.invoke(CHANNELS.DELETE, id),
   sendMessage: (message, configId, context) => ipcRenderer.invoke(CHANNELS.SEND_MESSAGE, message, configId, context),
+  checkDuplicateToken: (payload) => ipcRenderer.invoke(CHANNELS.CHECK_DUPLICATE_TOKEN, payload),
   
   // Cookie config
   getCookieConfig: () => ipcRenderer.invoke(CHANNELS.GET_COOKIE_CONFIG),

@@ -279,6 +279,8 @@ interface AppSettings {
   recentProjectIds: string[];
   lastActiveProjectId: string | null;
   useProxy: boolean;
+  createChatOnWeb: boolean;
+  useStoredContextOnFirstSend: boolean;
 }
 
 /**
@@ -306,6 +308,7 @@ interface GeminiChatConfig {
   blLabel: string;
   fSid: string;
   atToken: string;
+  proxyId?: string;
   convId: string;
   respId: string;
   candId: string;
@@ -324,6 +327,7 @@ interface CreateGeminiChatConfigDTO {
   blLabel?: string;
   fSid?: string;
   atToken?: string;
+  proxyId?: string;
   convId?: string;
   respId?: string;
   candId?: string;
@@ -358,6 +362,7 @@ interface GeminiChatAPI {
   update: (id: string, data: UpdateGeminiChatConfigDTO) => Promise<IpcApiResponse<GeminiChatConfig | null>>;
   delete: (id: string) => Promise<IpcApiResponse<boolean>>;
   sendMessage: (message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => Promise<IpcApiResponse<{ text: string; context: { conversationId: string; responseId: string; choiceId: string } }>>;
+  checkDuplicateToken: (payload: { cookie: string; atToken: string; excludeId?: string }) => Promise<IpcApiResponse<{ isDuplicate: boolean; duplicate?: GeminiChatConfig }>>;
   
   // Cookie config methods (bảng gemini_cookie)
   getCookieConfig: () => Promise<IpcApiResponse<GeminiCookieConfig | null>>;
@@ -408,6 +413,7 @@ interface ProxyAPI {
   remove: (id: string) => Promise<{ success: boolean; error?: string }>;
   update: (id: string, updates: Partial<ProxyConfig>) => Promise<{ success: boolean; error?: string }>;
   test: (id: string) => Promise<ProxyTestResult>;
+  checkAll: () => Promise<{ success: boolean; checked?: number; passed?: number; failed?: number; error?: string }>;
   getStats: () => Promise<{ success: boolean; data?: ProxyStats[]; error?: string }>;
   import: (data: string) => Promise<{ success: boolean; added?: number; skipped?: number; error?: string }>;
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;

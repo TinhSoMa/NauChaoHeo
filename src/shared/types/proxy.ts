@@ -43,6 +43,7 @@ export const PROXY_IPC_CHANNELS = {
   REMOVE: 'proxy:remove',
   UPDATE: 'proxy:update',
   TEST: 'proxy:test',
+  CHECK_ALL: 'proxy:checkAll',
   GET_STATS: 'proxy:getStats',
   IMPORT: 'proxy:import',
   EXPORT: 'proxy:export',

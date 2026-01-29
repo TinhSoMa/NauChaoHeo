@@ -14,6 +14,7 @@ const CHANNELS = {
   UPDATE: 'geminiChat:update',
   DELETE: 'geminiChat:delete',
   SEND_MESSAGE: 'geminiChat:sendMessage',
+  CHECK_DUPLICATE_TOKEN: 'geminiChat:checkDuplicateToken',
   
   // Cookie Config (bảng riêng)
   GET_COOKIE_CONFIG: 'geminiChat:getCookieConfig',
@@ -120,6 +121,17 @@ export function registerGeminiChatHandlers(): void {
       return result;
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi sendMessage:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Kiem tra token bi trung trong DB
+  ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload: { cookie: string; atToken: string; excludeId?: string }) => {
+    try {
+      const result = GeminiChatService.checkDuplicateToken(payload.cookie, payload.atToken, payload.excludeId);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('[GeminiChatHandlers] Loi checkDuplicateToken:', error);
       return { success: false, error: String(error) };
     }
   });

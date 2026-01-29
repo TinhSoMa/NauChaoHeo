@@ -8,6 +8,21 @@ import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
+const extractCookieKey = (cookie: string): string => {
+  const trimmed = (cookie || '').trim();
+  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
+  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || '';
+  const combined = [psid1, psid3].filter(Boolean).join('|');
+  return combined || trimmed;
+};
+
+const buildTokenKey = (cookie: string, atToken: string): string => {
+  const cookieKey = extractCookieKey(cookie);
+  const atKey = (atToken || '').trim();
+  const combined = `${cookieKey}|${atKey}`;
+  return combined === '|' ? '' : combined;
+};
+
 let db: Database.Database | null = null;
 
 export function getDatabase(): Database.Database {
@@ -63,6 +78,7 @@ export function initDatabase(): void {
       bl_label TEXT,
       f_sid TEXT,
       at_token TEXT,
+      proxy_id TEXT,
       conv_id TEXT,
       resp_id TEXT,
       cand_id TEXT,
@@ -88,6 +104,17 @@ export function initDatabase(): void {
     );
   `);
 
+  // Create gemini_chat_context_token table - lưu ngữ cảnh theo token thực
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_context_token (
+      token_key TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      response_id TEXT,
+      choice_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
   // Chỉ có 1 dòng duy nhất (id = 1)
   db.exec(`
@@ -110,6 +137,10 @@ export function initDatabase(): void {
     if (!columnNames.includes('req_id')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
         console.log('[Database] Added missing column: req_id');
+    }
+    if (!columnNames.includes('proxy_id')) {
+      db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
+      console.log('[Database] Added missing column: proxy_id');
     }
     if (!columnNames.includes('user_agent')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
@@ -178,6 +209,37 @@ export function initDatabase(): void {
     }
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
+  }
+
+  // Migration: Backfill gemini_chat_context_token from gemini_chat_context if empty
+  try {
+    const tokenContextCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_context_token').get() as any;
+    if (tokenContextCount.count === 0) {
+      const rows = db.prepare(`
+        SELECT c.cookie, c.at_token, t.conversation_id, t.response_id, t.choice_id, t.updated_at
+        FROM gemini_chat_context t
+        JOIN gemini_chat_config c ON t.config_id = c.id
+      `).all() as any[];
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        const tokenKey = buildTokenKey(row.cookie || '', row.at_token || '');
+        if (!tokenKey) continue;
+        insert.run(
+          tokenKey,
+          row.conversation_id || '',
+          row.response_id || '',
+          row.choice_id || '',
+          row.updated_at || now
+        );
+      }
+      console.log('[Database] Backfilled gemini_chat_context_token from gemini_chat_context');
+    }
+  } catch (e) {
+    console.error('[Database] Backfill gemini_chat_context_token failed:', e);
   }
 
   // Create proxies table - lưu proxy rotation config

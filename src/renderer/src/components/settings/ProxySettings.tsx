@@ -15,6 +15,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [stats, setStats] = useState<ProxyStats[]>([]);
   const [loading, setLoading] = useState(false);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
+  const [checkingAll, setCheckingAll] = useState(false);
   const [useProxy, setUseProxy] = useState(true); // Global proxy toggle
   
   // Form state
@@ -240,6 +241,26 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     }
   };
 
+  const handleCheckAll = async () => {
+    if (proxies.length === 0) return;
+    try {
+      setCheckingAll(true);
+      const result = await window.electronAPI.proxy.checkAll();
+      if (result.success) {
+        alert(`✅ Đã kiểm tra ${result.checked} proxy\n\nOK: ${result.passed}\nFAIL: ${result.failed}`);
+        loadProxies();
+        loadStats();
+      } else {
+        alert(`❌ Lỗi kiểm tra proxy: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Lỗi check all proxies:', error);
+      alert('Lỗi kiểm tra proxy!');
+    } finally {
+      setCheckingAll(false);
+    }
+  };
+
   const getProxyStats = (proxyId: string): ProxyStats | undefined => {
     return stats.find(s => s.id === proxyId);
   };
@@ -440,6 +461,10 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
                 <RotateCcw size={16} />
                 Reset All
               </Button>
+              <Button onClick={handleCheckAll} variant="secondary" disabled={proxies.length === 0 || checkingAll}>
+                <TestTube size={16} />
+                {checkingAll ? 'Đang kiểm tra...' : 'Kiểm tra Proxy'}
+              </Button>
               <Button onClick={handleExport} variant="secondary" disabled={proxies.length === 0}>
                 <Download size={16} />
                 Export
@@ -604,8 +629,8 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
           <h4 style={{ fontWeight: '500', color: '#3b82f6', marginBottom: '8px' }}>ℹ️ Lưu ý</h4>
           <ul style={{ fontSize: '14px', color: 'var(--color-text-secondary)', listStyle: 'disc', listStylePosition: 'inside', margin: 0, paddingLeft: '16px' }}>
             <li>Proxy được rotation tự động theo round-robin khi gọi API</li>
-            <li>Proxy bị tắt tự động sau 5 lỗi liên tiếp</li>
-            <li>Nếu tất cả proxy đều thất bại, hệ thống sẽ fallback về direct connection</li>
+            <li>Proxy bị tắt tự động sau 2 lỗi liên tiếp</li>
+            <li>Nếu không còn proxy khả dụng, yêu cầu sẽ dừng lại</li>
             <li>Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định</li>
           </ul>
         </div>

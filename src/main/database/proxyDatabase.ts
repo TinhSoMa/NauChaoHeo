@@ -203,6 +203,20 @@ export class ProxyDatabase {
   }
 
   /**
+   * Increment success count without resetting failed count
+   */
+  static incrementSuccessNoReset(id: string): void {
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      UPDATE proxies
+      SET success_count = success_count + 1,
+          last_used_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+
+  /**
    * Increment failed count
    */
   static incrementFailed(id: string): void {

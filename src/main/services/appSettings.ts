@@ -18,6 +18,8 @@ export interface AppSettings {
   recentProjectIds: string[]; // IDs của các project gần đây, tối đa 10
   lastActiveProjectId: string | null; // Project cuối cùng được chọn
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
+  createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
+  useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -27,6 +29,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   recentProjectIds: [],
   lastActiveProjectId: null,
   useProxy: true, // Mặc định bật proxy
+  createChatOnWeb: false,
+  useStoredContextOnFirstSend: false,
 };
 
 // ============================================

@@ -32,6 +32,7 @@ interface GeminiChatConfig {
   blLabel: string;
   fSid: string;
   atToken: string;
+  proxyId?: string;
   convId: string;
   respId: string;
   candId: string;
@@ -52,6 +53,12 @@ interface TokenStats {
   distinctActiveCount: number;
   activeCount: number;
   duplicateIds: Set<string>;
+}
+
+interface ProxyInfo {
+  id: string;
+  host: string;
+  port: number;
 }
 
 // Default constants
@@ -92,16 +99,9 @@ const BROWSER_PRESETS = [
   }
 ];
 
-const extractCookieKey = (cookie: string): string => {
-  const trimmed = cookie.trim();
-  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
-  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || '';
-  const combined = [psid1, psid3].filter(Boolean).join('|');
-  return combined || trimmed;
-};
-
-const buildTokenKey = (cookie: string, atToken: string): string => {
-  return `${extractCookieKey(cookie)}|${atToken.trim()}`;
+// Token key is now based on atToken to support multiple accounts sharing the same cookie (1PSID)
+const buildTokenKey = (_cookie: string, atToken: string): string => {
+  return (atToken || '').trim();
 };
 
 const getTokenStats = (configs: GeminiChatConfig[]): TokenStats => {
@@ -133,11 +133,14 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   const [configs, setConfigs] = useState<GeminiChatConfig[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [proxies, setProxies] = useState<ProxyInfo[]>([]);
   const [tokenStats, setTokenStats] = useState<TokenStats>({
     distinctActiveCount: 0,
     activeCount: 0,
     duplicateIds: new Set()
   });
+  const [createChatOnWeb, setCreateChatOnWeb] = useState<boolean>(false);
+  const [useStoredContextOnFirstSend, setUseStoredContextOnFirstSend] = useState<boolean>(false);
 
   // Editing State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -167,6 +170,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   const [rawInput, setRawInput] = useState<string>('');
   const [parseStatus, setParseStatus] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<string>('4'); // Default to Custom
+  const editingConfig = editingId ? configs.find(c => c.id === editingId) : null;
 
   // Load configs
   const loadConfigs = useCallback(async () => {
@@ -190,6 +194,74 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   useEffect(() => {
     loadConfigs();
   }, [loadConfigs]);
+
+  useEffect(() => {
+    const loadProxies = async () => {
+      try {
+        const result = await window.electronAPI.proxy.getAll();
+        if (result.success && result.data) {
+          setProxies(result.data);
+        }
+      } catch (error) {
+        console.error('Error loading proxies:', error);
+      }
+    };
+
+    loadProxies();
+  }, []);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const result = await window.electronAPI.appSettings.getAll();
+        if (result.success && result.data) {
+          setCreateChatOnWeb(!!result.data.createChatOnWeb);
+          setUseStoredContextOnFirstSend(!!result.data.useStoredContextOnFirstSend);
+        }
+      } catch (error) {
+        console.error('Error loading app settings:', error);
+      }
+    };
+
+    loadSettings();
+  }, []);
+
+  const handleToggleCreateChatOnWeb = async () => {
+    const nextValue = !createChatOnWeb;
+    try {
+      const result = await window.electronAPI.appSettings.update({ createChatOnWeb: nextValue });
+      if (result.success) {
+        setCreateChatOnWeb(nextValue);
+      } else {
+        alert('Lỗi cập nhật cài đặt tạo hộp thoại chat');
+      }
+    } catch (error) {
+      console.error('Error updating app settings:', error);
+      alert('Lỗi cập nhật cài đặt tạo hộp thoại chat');
+    }
+  };
+
+  const handleToggleStoredContextOnFirstSend = async () => {
+    const nextValue = !useStoredContextOnFirstSend;
+    try {
+      const result = await window.electronAPI.appSettings.update({ useStoredContextOnFirstSend: nextValue });
+      if (result.success) {
+        setUseStoredContextOnFirstSend(nextValue);
+      } else {
+        alert('Lỗi cập nhật cài đặt ngữ cảnh lần đầu');
+      }
+    } catch (error) {
+      console.error('Error updating app settings:', error);
+      alert('Lỗi cập nhật cài đặt ngữ cảnh lần đầu');
+    }
+  };
+
+  const getProxyLabel = useCallback((proxyId?: string) => {
+    if (!proxyId) return 'Tự động';
+    const proxy = proxies.find(p => p.id === proxyId);
+    if (!proxy) return 'Không tìm thấy';
+    return `${proxy.host}:${proxy.port}`;
+  }, [proxies]);
 
   // Handle Edit/Create actions
   const handleCreate = () => {
@@ -356,15 +428,20 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         payload.fSid = payload.fSid.replace(/\^/g, '').trim();
         payload.atToken = payload.atToken.replace(/\^/g, '').trim();
 
-        const newTokenKey = buildTokenKey(payload.cookie, payload.atToken);
-        const duplicateConfig = configs.find(c => {
-          if (mode === 'edit' && c.id === editingId) return false;
-          const key = buildTokenKey(c.cookie || '', c.atToken || '');
-          return key === newTokenKey;
+        const duplicateCheck = await window.electronAPI.geminiChat.checkDuplicateToken({
+          cookie: payload.cookie,
+          atToken: payload.atToken,
+          excludeId: mode === 'edit' ? editingId || undefined : undefined
         });
 
-        if (duplicateConfig) {
-          alert(`Token bị trùng với cấu hình: ${duplicateConfig.name}. Vui lòng dùng token khác.`);
+        if (!duplicateCheck.success) {
+          alert(`Lỗi kiểm tra token trùng: ${duplicateCheck.error || 'Không rõ lỗi'}`);
+          return;
+        }
+
+        if (duplicateCheck.data?.isDuplicate) {
+          const duplicateName = duplicateCheck.data.duplicate?.name || 'tài khoản khác';
+          alert(`Phát hiện trùng lặp!\n\nThông tin "AT Token" bạn nhập đã tồn tại trong cấu hình: "${duplicateName}".\n\nHệ thống hiện tại chỉ dùng AT Token để phân biệt tài khoản. Vui lòng kiểm tra lại.`);
           return;
         }
 
@@ -404,7 +481,23 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                )}
              </div>
           </div>
-          <Button onClick={handleCreate} variant="primary"><Plus size={16} className="mr-2" /> Thêm mới</Button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleToggleStoredContextOnFirstSend}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${useStoredContextOnFirstSend ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+              title="Bật/tắt dùng ngữ cảnh cũ ở lần gửi đầu"
+            >
+              {useStoredContextOnFirstSend ? 'Context cũ: ON' : 'Context cũ: OFF'}
+            </button>
+            <button
+              onClick={handleToggleCreateChatOnWeb}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${createChatOnWeb ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+              title="Bật/tắt tạo hộp thoại chat trên web"
+            >
+              {createChatOnWeb ? 'Chat Web: ON' : 'Chat Web: OFF'}
+            </button>
+            <Button onClick={handleCreate} variant="primary"><Plus size={16} className="mr-2" /> Thêm mới</Button>
+          </div>
         </div>
 
         <div className={styles.detailContent}>
@@ -412,7 +505,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
            
            <div className="grid grid-cols-1 gap-4">
              {configs.map(config => (
-               <div key={config.id} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4 flex items-center gap-4 hover:border-[var(--color-primary)] transition-colors cursor-pointer group" onClick={() => handleEdit(config)}>
+               <div key={config.id} className="bg-(--color-card) border border-(--color-border) rounded-xl p-4 flex items-center gap-4 hover:border-(--color-primary) transition-colors cursor-pointer group" onClick={() => handleEdit(config)}>
                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${config.isActive ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
                     {config.isActive ? <Check size={20} /> : <X size={20} />}
                  </div>
@@ -425,9 +518,10 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                           <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Trùng token</span>
                         )}
                     </div>
-                    <div className="text-sm text-[var(--color-text-secondary)] flex gap-4 mt-1">
-                        <span className="flex items-center gap-1"><Monitor size={12}/> {config.platform || 'Unknown'}</span>
-                        <span className="truncate max-w-[200px] opacity-70">{config.cookie.substring(0, 30)}...</span>
+                    <div className="text-sm text-(--color-text-secondary) flex gap-4 mt-1">
+                      <span className="flex items-center gap-1"><Monitor size={12}/> {config.platform || 'Unknown'}</span>
+                      <span className="opacity-80">Proxy: {getProxyLabel(config.proxyId)}</span>
+                      <span className="truncate max-w-50 opacity-70">{config.cookie.substring(0, 30)}...</span>
                     </div>
                  </div>
 
@@ -436,7 +530,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                         onClick={(e) => handleToggleActive(config, e)}
                         className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${config.isActive ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
                     >
-                        {config.isActive ? 'Active' : 'Inactive'}
+                        {config.isActive ? 'Đang dùng' : 'Đang tắt'}
                     </button>
                     
                     <Button variant="danger" iconOnly onClick={(e) => handleDelete(config.id, e)} className="opacity-0 group-hover:opacity-100 transition-opacity">
@@ -477,15 +571,27 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                 </div>
             </div>
              <div className={`${styles.section} flex items-center p-4 gap-4`}>
-                <span className="font-medium">Trạng thái hoạt động</span>
+                <span className="font-medium">Sử dụng token</span>
                 <button 
                     onClick={() => setFormData({...formData, isActive: !formData.isActive})}
                     className={`relative w-11 h-6 rounded-full transition-colors ${formData.isActive ? 'bg-green-500' : 'bg-gray-300'}`}
                 >
                     <div className={`absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform ${formData.isActive ? 'translate-x-5' : ''}`} />
                 </button>
-                <span className="text-sm text-gray-500">{formData.isActive ? 'Sẽ được sử dụng để xoay vòng' : 'Tạm vô hiệu hóa'}</span>
+                <span className="text-sm text-gray-500">{formData.isActive ? 'Token sẽ được dùng khi gửi' : 'Token sẽ bị bỏ qua'}</span>
             </div>
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Proxy đang dùng</span>
+              <span className={styles.labelDesc}>Hiển thị proxy đang gắn với token</span>
+            </div>
+            <div className="text-sm text-(--color-text-secondary)">
+              {getProxyLabel(mode === 'edit' ? editingConfig?.proxyId : undefined)}
+            </div>
+          </div>
         </div>
 
         {/* Auto Parse */}
@@ -501,7 +607,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                     value={rawInput}
                     onChange={e => setRawInput(e.target.value)}
                     rows={3}
-                    className="w-full p-3 rounded-lg border bg-[var(--bg-secondary)] font-mono text-xs"
+                    className="w-full p-3 rounded-lg border bg-(--bg-secondary) font-mono text-xs"
                     placeholder="Paste curl or raw headers here..."
                 />
                 <div className="flex gap-4 items-center mt-2">
@@ -513,7 +619,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
 
         {/* Core Auth Fields */}
         <div className={styles.section}>
-          <div className="p-4 border-b font-medium bg-[var(--color-surface)]">Thông tin xác thực (Bắt buộc)</div>
+          <div className="p-4 border-b font-medium bg-(--color-surface)">Thông tin xác thực (Bắt buộc)</div>
           
           <div className={styles.row} style={{display:'block'}}>
              <div className="mb-1 font-medium text-sm flex items-center gap-2"><Cookie size={14} /> Cookie</div>
@@ -521,7 +627,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                 value={formData.cookie}
                 onChange={e => setFormData({...formData, cookie: e.target.value})}
                 rows={2}
-                className="w-full p-2 rounded border bg-[var(--bg-secondary)] font-mono text-xs"
+                className="w-full p-2 rounded border bg-(--bg-secondary) font-mono text-xs"
                 placeholder="__Secure-1PSID=...; __Secure-3PSID=..."
              />
           </div>
@@ -553,7 +659,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
 
         {/* Browser Profile */}
         <div className={styles.section}>
-           <div className="p-4 border-b font-medium bg-[var(--color-surface)] flex items-center gap-2">
+           <div className="p-4 border-b font-medium bg-(--color-surface) flex items-center gap-2">
               <Laptop size={16} /> Hồ sơ trình duyệt (Browser Profile)
            </div>
 
@@ -600,7 +706,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                 value={formData.userAgent}
                 onChange={e => setFormData({...formData, userAgent: e.target.value})}
                 rows={2}
-                className="w-full p-2 rounded border bg-[var(--bg-secondary)] font-mono text-xs"
+                className="w-full p-2 rounded border bg-(--bg-secondary) font-mono text-xs"
              />
            </div>
 

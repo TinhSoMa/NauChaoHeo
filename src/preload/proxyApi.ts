@@ -10,6 +10,7 @@ export interface ProxyAPI {
   remove: (id: string) => Promise<{ success: boolean; error?: string }>;
   update: (id: string, updates: Partial<ProxyConfig>) => Promise<{ success: boolean; error?: string }>;
   test: (id: string) => Promise<ProxyTestResult>;
+  checkAll: () => Promise<{ success: boolean; checked?: number; passed?: number; failed?: number; error?: string }>;
   getStats: () => Promise<{ success: boolean; data?: ProxyStats[]; error?: string }>;
   import: (data: string) => Promise<{ success: boolean; added?: number; skipped?: number; error?: string }>;
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
@@ -29,6 +30,8 @@ export const proxyApi: ProxyAPI = {
   update: (id, updates) => ipcRenderer.invoke(PROXY_IPC_CHANNELS.UPDATE, id, updates),
   
   test: (id) => ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST, id),
+
+  checkAll: () => ipcRenderer.invoke(PROXY_IPC_CHANNELS.CHECK_ALL),
   
   getStats: async () => {
     return ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_STATS);
