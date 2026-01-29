@@ -1,5 +1,5 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
-import { getProxyManager } from '../services/proxyManager';
+import { getProxyManager } from '../services/proxy/proxyManager';
 import { PROXY_IPC_CHANNELS, ProxyConfig, ProxyStats, ProxyTestResult } from '../../shared/types/proxy';
 
 /**

@@ -1,5 +1,5 @@
-import { ProxyConfig, ProxyStats } from '../../shared/types/proxy';
-import { ProxyDatabase } from '../database/proxyDatabase';
+import { ProxyConfig, ProxyStats } from '../../../shared/types/proxy';
+import { ProxyDatabase } from '../../database/proxyDatabase';
 
 /**
  * ProxyManager - Quản lý pool proxy với rotation logic

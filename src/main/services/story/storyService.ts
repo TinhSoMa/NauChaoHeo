@@ -1,6 +1,6 @@
 import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
-import { GeminiChatService } from '../geminiChatService';
+import { GeminiChatService } from '../chatGemini/geminiChatService';
 
 /**
  * Story Service - Handles story translation logic

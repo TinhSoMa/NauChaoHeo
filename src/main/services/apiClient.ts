@@ -1,5 +1,5 @@
 import { ProxyConfig } from '../../shared/types/proxy';
-import { getProxyManager } from './proxyManager';
+import { getProxyManager } from './proxy/proxyManager';
 
 /**
  * API Client với proxy support

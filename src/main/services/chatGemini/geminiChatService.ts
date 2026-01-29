@@ -4,12 +4,12 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../database/schema';
-import { getConfigurationService } from './gemini/configurationService';
-import { getSessionContextManager } from './gemini/sessionContextManager';
-import { getProxyManager } from './proxyManager';
-import { AppSettingsService } from './appSettings';
-import { ProxyConfig } from '../../shared/types/proxy';
+import { getDatabase } from '../../database/schema';
+import { getConfigurationService } from '../gemini/configurationService';
+import { getSessionContextManager } from '../gemini/sessionContextManager';
+import { getProxyManager } from '../proxy/proxyManager';
+import { AppSettingsService } from '../appSettings';
+import { ProxyConfig } from '../../../shared/types/proxy';
 import { Impit } from 'impit';
 
 // --- CONFIGURATION ---
