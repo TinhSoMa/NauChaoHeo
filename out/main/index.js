@@ -2887,19 +2887,6 @@ async function parseTxtFile(filePath) {
   }
   return { success: true, chapters };
 }
-const extractCookieKey = (cookie) => {
-  const trimmed = (cookie || "").trim();
-  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || "";
-  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || "";
-  const combined = [psid1, psid3].filter(Boolean).join("|");
-  return combined || trimmed;
-};
-const buildTokenKey = (cookie, atToken) => {
-  const cookieKey = extractCookieKey(cookie);
-  const atKey = (atToken || "").trim();
-  const combined = `${cookieKey}|${atKey}`;
-  return combined === "|" ? "" : combined;
-};
 let db = null;
 function getDatabase() {
   if (!db) {
@@ -2934,46 +2921,6 @@ function initDatabase() {
       content TEXT NOT NULL,
       is_default INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_chat_config (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL DEFAULT 'default',
-      cookie TEXT NOT NULL,
-      bl_label TEXT,
-      f_sid TEXT,
-      at_token TEXT,
-      proxy_id TEXT,
-      conv_id TEXT,
-      resp_id TEXT,
-      cand_id TEXT,
-      req_id TEXT,
-      user_agent TEXT,
-      accept_language TEXT,
-      platform TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_chat_context (
-      config_id TEXT PRIMARY KEY,
-      conversation_id TEXT,
-      response_id TEXT,
-      choice_id TEXT,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_chat_context_token (
-      token_key TEXT PRIMARY KEY,
-      conversation_id TEXT,
-      response_id TEXT,
-      choice_id TEXT,
       updated_at INTEGER NOT NULL
     );
   `);
@@ -3060,34 +3007,202 @@ function initDatabase() {
   } catch (e) {
     console.error("[Database] Backfill gemini_chat_context failed:", e);
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_config (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT 'default',
+      cookie TEXT NOT NULL,
+      bl_label TEXT,
+      f_sid TEXT,
+      at_token TEXT,
+      proxy_id TEXT,
+      conv_id TEXT,
+      resp_id TEXT,
+      cand_id TEXT,
+      req_id TEXT,
+      user_agent TEXT,
+      accept_language TEXT,
+      platform TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
   try {
-    const tokenContextCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_context_token").get();
-    if (tokenContextCount.count === 0) {
-      const rows = db.prepare(`
-        SELECT c.cookie, c.at_token, t.conversation_id, t.response_id, t.choice_id, t.updated_at
-        FROM gemini_chat_context t
-        JOIN gemini_chat_config c ON t.config_id = c.id
-      `).all();
+    const tableInfo = db.pragma("table_info(gemini_chat_config)");
+    const columnNames = tableInfo.map((col) => col.name);
+    if (!columnNames.includes("req_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT");
+      console.log("[Database] Added missing column: req_id");
+    }
+    if (!columnNames.includes("proxy_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT");
+      console.log("[Database] Added missing column: proxy_id");
+    }
+    if (!columnNames.includes("user_agent")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT");
+      console.log("[Database] Added missing column: user_agent");
+    }
+    if (!columnNames.includes("accept_language")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT");
+      console.log("[Database] Added missing column: accept_language");
+    }
+    if (!columnNames.includes("platform")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT");
+      console.log("[Database] Added missing column: platform");
+    }
+  } catch (e) {
+    console.error("[Database] Migration error:", e);
+  }
+  try {
+    const cookieData = db.prepare("SELECT * FROM gemini_cookie WHERE id = 1").get();
+    const configCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_config").get();
+    if (cookieData && configCount.count === 0) {
+      console.log("[Database] Migrating data from gemini_cookie to gemini_chat_config...");
+      const now = Date.now();
+      const { v4: uuidv4 } = require("uuid");
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        "Migrated Config",
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log("[Database] Migration from gemini_cookie completed");
+    }
+  } catch (e) {
+    console.log("[Database] No migration needed from gemini_cookie");
+  }
+  try {
+    const contextCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_context").get();
+    if (contextCount.count === 0) {
+      const rows = db.prepare("SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config").all();
       const insert = db.prepare(`
-        INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
         VALUES (?, ?, ?, ?, ?)
       `);
       const now = Date.now();
       for (const row of rows) {
-        const tokenKey = buildTokenKey(row.cookie || "", row.at_token || "");
-        if (!tokenKey) continue;
-        insert.run(
-          tokenKey,
-          row.conversation_id || "",
-          row.response_id || "",
-          row.choice_id || "",
-          row.updated_at || now
-        );
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || "", row.resp_id || "", row.cand_id || "", now);
+        }
       }
-      console.log("[Database] Backfilled gemini_chat_context_token from gemini_chat_context");
+      console.log("[Database] Backfilled gemini_chat_context from gemini_chat_config");
     }
   } catch (e) {
-    console.error("[Database] Backfill gemini_chat_context_token failed:", e);
+    console.error("[Database] Backfill gemini_chat_context failed:", e);
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_context (
+      config_id TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      response_id TEXT,
+      choice_id TEXT,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  try {
+    const tableInfo = db.pragma("table_info(gemini_chat_config)");
+    const columnNames = tableInfo.map((col) => col.name);
+    if (!columnNames.includes("req_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT");
+      console.log("[Database] Added missing column: req_id");
+    }
+    if (!columnNames.includes("proxy_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT");
+      console.log("[Database] Added missing column: proxy_id");
+    }
+    if (!columnNames.includes("user_agent")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT");
+      console.log("[Database] Added missing column: user_agent");
+    }
+    if (!columnNames.includes("accept_language")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT");
+      console.log("[Database] Added missing column: accept_language");
+    }
+    if (!columnNames.includes("platform")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT");
+      console.log("[Database] Added missing column: platform");
+    }
+  } catch (e) {
+    console.error("[Database] Migration error:", e);
+  }
+  try {
+    const cookieData = db.prepare("SELECT * FROM gemini_cookie WHERE id = 1").get();
+    const configCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_config").get();
+    if (cookieData && configCount.count === 0) {
+      console.log("[Database] Migrating data from gemini_cookie to gemini_chat_config...");
+      const now = Date.now();
+      const { v4: uuidv4 } = require("uuid");
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        "Migrated Config",
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log("[Database] Migration from gemini_cookie completed");
+    }
+  } catch (e) {
+    console.log("[Database] No migration needed from gemini_cookie");
+  }
+  try {
+    const contextCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_context").get();
+    if (contextCount.count === 0) {
+      const rows = db.prepare("SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config").all();
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || "", row.resp_id || "", row.cand_id || "", now);
+        }
+      }
+      console.log("[Database] Backfilled gemini_chat_context from gemini_chat_config");
+    }
+  } catch (e) {
+    console.error("[Database] Backfill gemini_chat_context failed:", e);
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS proxies (
@@ -3108,6 +3223,89 @@ function initDatabase() {
       UNIQUE(host, port)
     );
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  try {
+    const tableInfo = db.pragma("table_info(gemini_chat_config)");
+    const columnNames = tableInfo.map((col) => col.name);
+    if (!columnNames.includes("req_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT");
+      console.log("[Database] Added missing column: req_id");
+    }
+    if (!columnNames.includes("proxy_id")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT");
+      console.log("[Database] Added missing column: proxy_id");
+    }
+    if (!columnNames.includes("user_agent")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT");
+      console.log("[Database] Added missing column: user_agent");
+    }
+    if (!columnNames.includes("accept_language")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT");
+      console.log("[Database] Added missing column: accept_language");
+    }
+    if (!columnNames.includes("platform")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT");
+      console.log("[Database] Added missing column: platform");
+    }
+  } catch (e) {
+    console.error("[Database] Migration error:", e);
+  }
+  try {
+    const cookieData = db.prepare("SELECT * FROM gemini_cookie WHERE id = 1").get();
+    const configCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_config").get();
+    if (cookieData && configCount.count === 0) {
+      console.log("[Database] Migrating data from gemini_cookie to gemini_chat_config...");
+      const now = Date.now();
+      const { v4: uuidv4 } = require("uuid");
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        "Migrated Config",
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log("[Database] Migration from gemini_cookie completed");
+    }
+  } catch (e) {
+    console.log("[Database] No migration needed from gemini_cookie");
+  }
+  try {
+    const contextCount = db.prepare("SELECT COUNT(*) as count FROM gemini_chat_context").get();
+    if (contextCount.count === 0) {
+      const rows = db.prepare("SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config").all();
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || "", row.resp_id || "", row.cand_id || "", now);
+        }
+      }
+      console.log("[Database] Backfilled gemini_chat_context from gemini_chat_config");
+    }
+  } catch (e) {
+    console.error("[Database] Backfill gemini_chat_context failed:", e);
+  }
   console.log("[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies)");
 }
 class PromptService {
@@ -3761,33 +3959,122 @@ const BROWSER_PROFILES = [
 function getRandomBrowserProfile() {
   return BROWSER_PROFILES[Math.floor(Math.random() * BROWSER_PROFILES.length)];
 }
+function generateInitialReqId() {
+  const prefix = Math.floor(Math.random() * (45 - 30) + 30);
+  const suffix = Math.floor(Math.random() * 9e3 + 1e3);
+  return String(prefix * 1e5 + suffix);
+}
+function buildRequestPayload(message, contextArray, createChatOnWeb) {
+  if (!createChatOnWeb) {
+    const innerPayload = [
+      [message],
+      null,
+      contextArray
+    ];
+    return JSON.stringify([null, JSON.stringify(innerPayload)]);
+  }
+  const reqUuid = uuid.v4().toUpperCase();
+  const reqStruct = [
+    [message, 0, null, null, null, null, 0],
+    ["vi"],
+    [contextArray[0], contextArray[1], contextArray[2], null, null, null, null, null, null, ""],
+    "!BwSlBFzNAAZeabWMfmlCAOK4lSpy-nY7ADQBEArZ1HXWr3pDagC9VZ5CWddxxlroONpL-a5eGEHXpYjZYEboidltqN627255ouWfutqSAgAAAEtSAAAAAmgBB34AQf7Z0X4QHk8aehxZTrwdWe2_4ynoojTI3Dop9DkAR1EzMlT4nLjH65NoKYTZj-WO50CGSm_ENmZpEvP--1D_FnyJmQOvlsPu3GfxD62pT5siALsF-4-Jm1LJY4I7jLertSMjtvs1_R710Z6lSHhM4PuGaaOUrRMj8-UOBqCgscsTETggz3x_ju7ACGPssxINDSYvXK5XenYexuBblk9vytrqyB1E7Ntp2kHlZanL2GAf_WCWa_Zaev2j2C23Oip1rZNMfLeSnBCAy_P5w2UR5lwYfVuKIXGhG8LWt-00k1K49MV6DiTItqYyH3OC5qOmokpnUyLMrnobu3z5H9FUxZMxNjbGsl0DmDiINJQnrO7vjppHyuMrLYECDdkptAlDsQRYOcJRuazOowdqTlUwz283lg7hNoX_D4QUUG5zt2TAsrXsbFWlacIN5SeNjqlHha9tXvXB77DbcR_CzwZbF8gju5SA8ruxleoUzapriHFEXs5Ipz1c2UvB5ph1_C3PYi4ER-Dl7ykEgBZooOJPEL_4QPq4gd20gvvYiwLVeM1BiwisfZT13sJ1vhbB1XIeakQKA1Ikalf7PoCZ5tjwxn9Zsz1rRJtSSX_wfvb-lrat3XPCyjA_a-JKE-DLhIHChbouYIlTlvMT25nmWE5jemyvCj_KdHRWg0XE3wQt8jD2zmrgl8JNRygbJy9Llmfv_FAAy4TRmddSQGjpNnnTvTioiO4ydPNXFfq_M78_DxeGl56mdVf15JBZ-tqReaDDr4ltrkO09MX_CUY1cZvIqt3_QrgakGGnjc3tVZzRl2gYZ5vJBQa_pHObKly8kEQLMAYnOzB943fHjijMkw1jW1Hg7gYDEIuBPiN8mLIkl73oDPeMJSwsn4PwNm5K6V6blTxQVNylGLGlp5E5mmV92Az-bY-LqLCqTIEs0Ajd-CimLvQPTEXuMsFliaCxXsLbxrdSdrPkYIPSVUQDj7bdCs9CXo2MjPIwjHVPCmI5Cb8WPs6hu1fbYHTxLthzRejxEFdmZ0RakYqKOZFetMpzA8QN0HJ7ZIR9eA8VM4r6CB0YO0FKZcQmAHNjBPHyAqXnNZNgrZDwknPWttn9QiZH51MIBe5Hk3-zzQUvJ5fPlJlkWkd4VPzCroOIBtk6aduceg2-YQt4N701ghkxfFZ-k-blbUeFvZGIgMfbWWeJRRdrRWrrWgdT0FXT_jhJV1XA5bwZcy1X-ykmlE2CAvb1BQMUdY9YE_mJMvowLakNeo0r7Q4FOoVyu-cVhrQl7iHDmHEspUGbpa91q-7KKL0AUYxLahYd8giy5o_45o-rD1y0asaFRBhh3R0j__zg2sa1i1AA2A",
+    "7f64e8c4aa4819e0a1a684fd7e6f5f9b",
+    null,
+    [1],
+    1,
+    null,
+    null,
+    1,
+    0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    [[0]],
+    0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    1,
+    null,
+    null,
+    [4],
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    [1],
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    reqUuid,
+    null,
+    [],
+    null,
+    null,
+    null,
+    null,
+    [1769584568, 497e6],
+    null,
+    2
+  ];
+  return JSON.stringify([null, JSON.stringify(reqStruct)]);
+}
 class GeminiChatServiceClass {
   constructor() {
     this.proxyAssignments = /* @__PURE__ */ new Map();
     this.proxyInUse = /* @__PURE__ */ new Set();
     this.proxyRotationIndex = 0;
-    this.proxyMaxFailedCount = 2;
-    this.firstSendByTokenKey = /* @__PURE__ */ new Set();
+    this.proxyMaxFailedCount = 3;
     this.tokenLocks = /* @__PURE__ */ new Map();
+    this.firstSendByTokenKey = /* @__PURE__ */ new Set();
     this.rotationIndex = 0;
   }
-  async withTokenLock(tokenKey, task) {
-    const previous = this.tokenLocks.get(tokenKey) || Promise.resolve();
-    let release = () => {
-    };
-    const current = new Promise((resolve) => {
-      release = resolve;
-    });
-    this.tokenLocks.set(tokenKey, previous.then(() => current));
-    await previous;
-    try {
-      return await task();
-    } finally {
-      release();
-      if (this.tokenLocks.get(tokenKey) === current) {
-        this.tokenLocks.delete(tokenKey);
-      }
+  static getInstance() {
+    if (!GeminiChatServiceClass.instance) {
+      GeminiChatServiceClass.instance = new GeminiChatServiceClass();
     }
+    return GeminiChatServiceClass.instance;
+  }
+  async withTokenLock(tokenKey, fn) {
+    const previousLock = this.tokenLocks.get(tokenKey) || Promise.resolve();
+    const currentLock = (async () => {
+      await previousLock.catch(() => {
+      });
+      return fn();
+    })();
+    const nextLock = currentLock.then(() => {
+    }).catch(() => {
+    });
+    this.tokenLocks.set(tokenKey, nextLock);
+    return currentLock;
   }
   buildTokenKey(_cookie, atToken) {
     return (atToken || "").trim();
@@ -3978,36 +4265,6 @@ class GeminiChatServiceClass {
     const allProxies = proxyManager.getAllProxies();
     return allProxies.filter((p) => p.enabled && (p.failedCount || 0) < this.proxyMaxFailedCount);
   }
-  getStoredTokenContext(tokenKey, configId) {
-    if (!tokenKey) return null;
-    try {
-      const db2 = getDatabase();
-      const row = db2.prepare("SELECT conversation_id, response_id, choice_id FROM gemini_chat_context_token WHERE token_key = ?").get(tokenKey);
-      if (row) {
-        return {
-          conversationId: row.conversation_id || "",
-          responseId: row.response_id || "",
-          choiceId: row.choice_id || ""
-        };
-      }
-    } catch (error) {
-      console.warn("[GeminiChatService] Không thể tải ngữ cảnh token từ DB:", error);
-    }
-    if (!configId || configId === "legacy") return null;
-    try {
-      const db2 = getDatabase();
-      const row = db2.prepare("SELECT conversation_id, response_id, choice_id FROM gemini_chat_context WHERE config_id = ?").get(configId);
-      if (!row) return null;
-      return {
-        conversationId: row.conversation_id || "",
-        responseId: row.response_id || "",
-        choiceId: row.choice_id || ""
-      };
-    } catch (error) {
-      console.warn("[GeminiChatService] Không thể tải ngữ cảnh cấu hình từ DB:", error);
-      return null;
-    }
-  }
   getStoredConfigContext(configId) {
     if (!configId || configId === "legacy") return null;
     try {
@@ -4024,23 +4281,7 @@ class GeminiChatServiceClass {
       return null;
     }
   }
-  saveStoredTokenContext(tokenKey, context, configId) {
-    if (!tokenKey) return;
-    try {
-      const db2 = getDatabase();
-      db2.prepare(`
-                INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-            `).run(
-        tokenKey,
-        context.conversationId || "",
-        context.responseId || "",
-        context.choiceId || "",
-        Date.now()
-      );
-    } catch (error) {
-      console.warn("[GeminiChatService] Không thể lưu ngữ cảnh token vào DB:", error);
-    }
+  saveContext(context, configId) {
     if (!configId || configId === "legacy") return;
     try {
       const db2 = getDatabase();
@@ -4057,97 +4298,6 @@ class GeminiChatServiceClass {
     } catch (error) {
       console.warn("[GeminiChatService] Không thể lưu ngữ cảnh cấu hình vào DB:", error);
     }
-  }
-  // Helper: Generate initial REQ_ID (Random Prefix + Fixed 4-digit Suffix logic)
-  // Format matches log: e.g. 4180921 (7 digits)
-  // We want range approx 3000000 - 5000000 initially, with random 4 digits at end.
-  generateInitialReqId() {
-    const prefix = Math.floor(Math.random() * (45 - 30) + 30);
-    const suffix = Math.floor(Math.random() * 9e3 + 1e3);
-    return String(prefix * 1e5 + suffix);
-  }
-  buildRequestPayload(message, contextArray, createChatOnWeb) {
-    if (!createChatOnWeb) {
-      const innerPayload = [
-        [message],
-        null,
-        contextArray
-      ];
-      return JSON.stringify([null, JSON.stringify(innerPayload)]);
-    }
-    const reqUuid = uuid.v4().toUpperCase();
-    const reqStruct = [
-      [message, 0, null, null, null, null, 0],
-      ["vi"],
-      [contextArray[0], contextArray[1], contextArray[2], null, null, null, null, null, null, ""],
-      "!BwSlBFzNAAZeabWMfmlCAOK4lSpy-nY7ADQBEArZ1HXWr3pDagC9VZ5CWddxxlroONpL-a5eGEHXpYjZYEboidltqN627255ouWfutqSAgAAAEtSAAAAAmgBB34AQf7Z0X4QHk8aehxZTrwdWe2_4ynoojTI3Dop9DkAR1EzMlT4nLjH65NoKYTZj-WO50CGSm_ENmZpEvP--1D_FnyJmQOvlsPu3GfxD62pT5siALsF-4-Jm1LJY4I7jLertSMjtvs1_R710Z6lSHhM4PuGaaOUrRMj8-UOBqCgscsTETggz3x_ju7ACGPssxINDSYvXK5XenYexuBblk9vytrqyB1E7Ntp2kHlZanL2GAf_WCWa_Zaev2j2C23Oip1rZNMfLeSnBCAy_P5w2UR5lwYfVuKIXGhG8LWt-00k1K49MV6DiTItqYyH3OC5qOmokpnUyLMrnobu3z5H9FUxZMxNjbGsl0DmDiINJQnrO7vjppHyuMrLYECDdkptAlDsQRYOcJRuazOowdqTlUwz283lg7hNoX_D4QUUG5zt2TAsrXsbFWlacIN5SeNjqlHha9tXvXB77DbcR_CzwZbF8gju5SA8ruxleoUzapriHFEXs5Ipz1c2UvB5ph1_C3PYi4ER-Dl7ykEgBZooOJPEL_4QPq4gd20gvvYiwLVeM1BiwisfZT13sJ1vhbB1XIeakQKA1Ikalf7PoCZ5tjwxn9Zsz1rRJtSSX_wfvb-lrat3XPCyjA_a-JKE-DLhIHChbouYIlTlvMT25nmWE5jemyvCj_KdHRWg0XE3wQt8jD2zmrgl8JNRygbJy9Llmfv_FAAy4TRmddSQGjpNnnTvTioiO4ydPNXFfq_M78_DxeGl56mdVf15JBZ-tqReaDDr4ltrkO09MX_CUY1cZvIqt3_QrgakGGnjc3tVZzRl2gYZ5vJBQa_pHObKly8kEQLMAYnOzB943fHjijMkw1jW1Hg7gYDEIuBPiN8mLIkl73oDPeMJSwsn4PwNm5K6V6blTxQVNylGLGlp5E5mmV92Az-bY-LqLCqTIEs0Ajd-CimLvQPTEXuMsFliaCxXsLbxrdSdrPkYIPSVUQDj7bdCs9CXo2MjPIwjHVPCmI5Cb8WPs6hu1fbYHTxLthzRejxEFdmZ0RakYqKOZFetMpzA8QN0HJ7ZIR9eA8VM4r6CB0YO0FKZcQmAHNjBPHyAqXnNZNgrZDwknPWttn9QiZH51MIBe5Hk3-zzQUvJ5fPlJlkWkd4VPzCroOIBtk6aduceg2-YQt4N701ghkxfFZ-k-blbUeFvZGIgMfbWWeJRRdrRWrrWgdT0FXT_jhJV1XA5bwZcy1X-ykmlE2CAvb1BQMUdY9YE_mJMvowLakNeo0r7Q4FOoVyu-cVhrQl7iHDmHEspUGbpa91q-7KKL0AUYxLahYd8giy5o_45o-rD1y0asaFRBhh3R0j__zg2sa1i1AA2A",
-      "7f64e8c4aa4819e0a1a684fd7e6f5f9b",
-      null,
-      [1],
-      1,
-      null,
-      null,
-      1,
-      0,
-      null,
-      null,
-      null,
-      null,
-      null,
-      [[0]],
-      0,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      1,
-      null,
-      null,
-      [4],
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      [1],
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      0,
-      null,
-      null,
-      null,
-      null,
-      null,
-      reqUuid,
-      null,
-      [],
-      null,
-      null,
-      null,
-      null,
-      [1769584568, 497e6],
-      null,
-      2
-    ];
-    return JSON.stringify([null, JSON.stringify(reqStruct)]);
   }
   // =======================================================
   // COOKIE CONFIG (Bảng riêng, chỉ 1 dòng)
@@ -4247,7 +4397,7 @@ class GeminiChatServiceClass {
         data.convId || "",
         data.respId || "",
         data.candId || "",
-        data.reqId || this.generateInitialReqId(),
+        data.reqId || generateInitialReqId(),
         data.userAgent || profile.userAgent,
         data.acceptLanguage || null,
         data.platform || profile.platform,
@@ -4466,7 +4616,7 @@ class GeminiChatServiceClass {
     const safeCookie = (cookie || "").replace(/[\r\n]+/g, "");
     let currentReqIdStr = config.reqId;
     if (!currentReqIdStr) {
-      currentReqIdStr = this.generateInitialReqId();
+      currentReqIdStr = generateInitialReqId();
     }
     const nextReqIdNum = parseInt(currentReqIdStr) + 1e5;
     const reqId = String(nextReqIdNum);
@@ -4487,13 +4637,10 @@ class GeminiChatServiceClass {
     const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
     const incomingContext = shouldIgnoreIncomingContext ? void 0 : context;
     const configContext = this.getStoredConfigContext(config.id);
-    const tokenContext = this.getStoredTokenContext(tokenKey, config.id);
     let storedContext = null;
     if (!incomingContext && canUseStoredContext) {
-      if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+      if (configContext) {
         storedContext = configContext;
-      } else if (!isFirstSendForToken) {
-        storedContext = tokenContext || configContext;
       }
     }
     const effectiveContext = incomingContext || storedContext || void 0;
@@ -4518,7 +4665,7 @@ class GeminiChatServiceClass {
       }
     }
     const createChatOnWeb = !!appSettings.createChatOnWeb;
-    const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
+    const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
     const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
     const params = new URLSearchParams({
       "bl": blLabel,
@@ -4659,7 +4806,7 @@ class GeminiChatServiceClass {
             choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ""
           };
           console.log("[GeminiChatService] Ngữ cảnh (tóm tắt):", contextSummary);
-          this.saveStoredTokenContext(tokenKey, newContext, config.id);
+          this.saveContext(newContext, config.id);
           this.firstSendByTokenKey.add(tokenKey);
           return {
             success: true,
@@ -4713,7 +4860,7 @@ class GeminiChatServiceClass {
         if (!cookie || !blLabel || !fSid || !atToken) {
           return { success: false, error: "Missing config fields", configId: config.id };
         }
-        let currentReqIdStr = config.reqId || this.generateInitialReqId();
+        let currentReqIdStr = config.reqId || generateInitialReqId();
         const reqId = String(parseInt(currentReqIdStr) + 1e5);
         if (config.id !== "legacy") {
           try {
@@ -4729,19 +4876,16 @@ class GeminiChatServiceClass {
         const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
         const incomingContext = shouldIgnoreIncomingContext ? void 0 : context;
         const configContext = this.getStoredConfigContext(config.id);
-        const tokenContext = this.getStoredTokenContext(tokenKey, config.id);
         let storedContext = null;
         if (!incomingContext && canUseStoredContext) {
-          if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+          if (configContext) {
             storedContext = configContext;
-          } else if (!isFirstSendForToken) {
-            storedContext = tokenContext || configContext;
           }
         }
         const effectiveContext = incomingContext || storedContext || void 0;
         const contextArray = effectiveContext ? [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId] : ["", "", ""];
         const createChatOnWeb = !!appSettings.createChatOnWeb;
-        const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
+        const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
         const settingProxy = this.getUseProxySetting();
         const useProxy = typeof useProxyOverride === "boolean" ? useProxyOverride : settingProxy;
         let proxyUrl = void 0;
@@ -4843,7 +4987,7 @@ class GeminiChatServiceClass {
           if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
           if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
           if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
-          this.saveStoredTokenContext(tokenKey, newContext, config.id);
+          this.saveContext(newContext, config.id);
           this.firstSendByTokenKey.add(tokenKey);
           return {
             success: true,
@@ -4863,7 +5007,7 @@ class GeminiChatServiceClass {
   }
   // ... (existing code)
 }
-const GeminiChatService = new GeminiChatServiceClass();
+const GeminiChatService = GeminiChatServiceClass.getInstance();
 class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API

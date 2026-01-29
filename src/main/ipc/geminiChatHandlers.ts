@@ -3,7 +3,8 @@
  */
 
 import { ipcMain } from 'electron';
-import { GeminiChatService, CreateGeminiChatConfigDTO, UpdateGeminiChatConfigDTO } from '../services/chatGemini/geminiChatService';
+import { GeminiChatService } from '../services/chatGemini/geminiChatService';
+import { CreateGeminiChatConfigDTO, UpdateGeminiChatConfigDTO } from '../../shared/types/geminiChat';
 
 // IPC Channel names
 const CHANNELS = {

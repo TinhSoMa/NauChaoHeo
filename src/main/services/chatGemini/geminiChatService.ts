@@ -11,127 +11,60 @@ import { getProxyManager } from '../proxy/proxyManager';
 import { AppSettingsService } from '../appSettings';
 import { ProxyConfig } from '../../../shared/types/proxy';
 import { Impit } from 'impit';
+import { 
+    GeminiChatConfig, 
+    CreateGeminiChatConfigDTO, 
+    UpdateGeminiChatConfigDTO, 
+    GeminiCookieConfig 
+} from '../../../shared/types/geminiChat';
+import { 
+HL_LANG, 
+    BROWSER_PROFILES,
+    getRandomBrowserProfile,
+    generateInitialReqId,
+    buildRequestPayload
+} from './geminiChatUtils';
 
 // --- CONFIGURATION ---
 // IMPORTANT: All values are now loaded from database (gemini_chat_config table)
 // Use GeminiChatSettings UI to configure these values
 // These fallback constants are DEPRECATED and will cause errors if database is empty
 
-// HL_LANG (Host Language): Ngôn ngữ giao diện
-// HL_LANG (Host Language): Ngôn ngữ giao diện
-const HL_LANG = "vi";
+export class GeminiChatServiceClass {
+    private static instance: GeminiChatServiceClass;
 
-// BROWSER PROFILES
-// User-Agent + Platform + Sec-CH-UA presets to ensure consistency
-const BROWSER_PROFILES = [
-    {
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        platform: "Windows",
-        secChUa: `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
-        secChUaPlatform: `"Windows"`
-    },
-    {
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
-        platform: "Windows",
-        secChUa: `"Not_A Brand";v="8", "Chromium";v="121", "Microsoft Edge";v="121"`,
-        secChUaPlatform: `"Windows"`
-    },
-    {
-        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        platform: "macOS",
-        secChUa: `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
-        secChUaPlatform: `"macOS"`
-    },
-    {
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-        platform: "Windows",
-        secChUa: "", // Firefox often empty or different
-        secChUaPlatform: `"Windows"`
-    }
-];
+    // Proxy Management
+    private proxyAssignments: Map<string, string> = new Map();
+    private proxyInUse: Set<string> = new Set();
+    private proxyRotationIndex: number = 0;
+    private proxyMaxFailedCount: number = 3;
 
-function getRandomBrowserProfile() {
-    return BROWSER_PROFILES[Math.floor(Math.random() * BROWSER_PROFILES.length)];
-}
+    // Concurrency Control
+    private tokenLocks: Map<string, Promise<void>> = new Map();
+    private firstSendByTokenKey: Set<string> = new Set();
 
-
-// Interface cho cau hinh Gemini Chat
-export interface GeminiChatConfig {
-  id: string;
-  name: string;
-  cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
-    proxyId?: string;
-  convId: string;
-  respId: string;
-  candId: string;
-  reqId?: string;
-  userAgent?: string;
-  acceptLanguage?: string;
-  platform?: string;
-  isActive: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// Interface de tao moi cau hinh
-export interface CreateGeminiChatConfigDTO {
-  name?: string;
-  cookie: string;
-  blLabel?: string;
-  fSid?: string;
-  atToken?: string;
-    proxyId?: string;
-  convId?: string;
-  respId?: string;
-  candId?: string;
-  reqId?: string;
-  userAgent?: string;
-  acceptLanguage?: string;
-  platform?: string;
-}
-
-// Interface de cap nhat cau hinh
-export interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfigDTO> {
-  isActive?: boolean;
-}
-
-// Interface cho cookie config (bảng riêng, chỉ 1 dòng) - DEPRECATED
-export interface GeminiCookieConfig {
-  cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
-  reqId?: string;
-  updatedAt: number;
-}
-
-class GeminiChatServiceClass {
-    private proxyAssignments = new Map<string, string>();
-    private proxyInUse = new Set<string>();
-    private proxyRotationIndex = 0;
-    private readonly proxyMaxFailedCount = 2;
-    private firstSendByTokenKey = new Set<string>();
-    private tokenLocks = new Map<string, Promise<void>>();
-
-    private async withTokenLock<T>(tokenKey: string, task: () => Promise<T>): Promise<T> {
-        const previous = this.tokenLocks.get(tokenKey) || Promise.resolve();
-        let release: () => void = () => {};
-        const current = new Promise<void>(resolve => {
-            release = resolve;
-        });
-        this.tokenLocks.set(tokenKey, previous.then(() => current));
-        await previous;
-        try {
-            return await task();
-        } finally {
-            release();
-            if (this.tokenLocks.get(tokenKey) === current) {
-                this.tokenLocks.delete(tokenKey);
-            }
+    public static getInstance(): GeminiChatServiceClass {
+        if (!GeminiChatServiceClass.instance) {
+            GeminiChatServiceClass.instance = new GeminiChatServiceClass();
         }
+        return GeminiChatServiceClass.instance;
+    }
+
+    private async withTokenLock<T>(tokenKey: string, fn: () => Promise<T>): Promise<T> {
+        const previousLock = this.tokenLocks.get(tokenKey) || Promise.resolve();
+        const currentLock = (async () => {
+             // Wait for previous operation to complete (success or fail)
+            await previousLock.catch(() => {});
+            return fn();
+        })();
+
+        // Store the completion promise of the current operation
+        const nextLock = currentLock.then(() => {}).catch(() => {});
+        this.tokenLocks.set(tokenKey, nextLock);
+        
+        // Optional: Cleanup if needed, but Map size shouldn't explode with reasonable config counts.
+        
+        return currentLock;
     }
 
     private buildTokenKey(_cookie: string, atToken: string): string {
@@ -157,7 +90,7 @@ class GeminiChatServiceClass {
             if (excludeId && config.id === excludeId) continue;
             // Use same logic to build key for comparison
             const configKey = this.buildTokenKey(config.cookie || '', config.atToken || '');
-            
+
             // console.log(`[DEBUG] Comparing with '${config.name}': '${configKey}'`);
 
             // Check for match
@@ -374,37 +307,7 @@ class GeminiChatServiceClass {
         return allProxies.filter(p => p.enabled && (p.failedCount || 0) < this.proxyMaxFailedCount);
     }
 
-    private getStoredTokenContext(tokenKey: string, configId?: string): { conversationId: string; responseId: string; choiceId: string } | null {
-        if (!tokenKey) return null;
-        try {
-            const db = getDatabase();
-            const row = db.prepare('SELECT conversation_id, response_id, choice_id FROM gemini_chat_context_token WHERE token_key = ?').get(tokenKey) as any;
-            if (row) {
-                return {
-                    conversationId: row.conversation_id || '',
-                    responseId: row.response_id || '',
-                    choiceId: row.choice_id || ''
-                };
-            }
-        } catch (error) {
-            console.warn('[GeminiChatService] Không thể tải ngữ cảnh token từ DB:', error);
-        }
 
-        if (!configId || configId === 'legacy') return null;
-        try {
-            const db = getDatabase();
-            const row = db.prepare('SELECT conversation_id, response_id, choice_id FROM gemini_chat_context WHERE config_id = ?').get(configId) as any;
-            if (!row) return null;
-            return {
-                conversationId: row.conversation_id || '',
-                responseId: row.response_id || '',
-                choiceId: row.choice_id || ''
-            };
-        } catch (error) {
-            console.warn('[GeminiChatService] Không thể tải ngữ cảnh cấu hình từ DB:', error);
-            return null;
-        }
-    }
 
     private getStoredConfigContext(configId?: string): { conversationId: string; responseId: string; choiceId: string } | null {
         if (!configId || configId === 'legacy') return null;
@@ -423,28 +326,10 @@ class GeminiChatServiceClass {
         }
     }
 
-    private saveStoredTokenContext(
-        tokenKey: string,
+    private saveContext(
         context: { conversationId: string; responseId: string; choiceId: string },
         configId?: string
     ): void {
-        if (!tokenKey) return;
-        try {
-            const db = getDatabase();
-            db.prepare(`
-                INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-            `).run(
-                tokenKey,
-                context.conversationId || '',
-                context.responseId || '',
-                context.choiceId || '',
-                Date.now()
-            );
-        } catch (error) {
-            console.warn('[GeminiChatService] Không thể lưu ngữ cảnh token vào DB:', error);
-        }
-
         if (!configId || configId === 'legacy') return;
         try {
             const db = getDatabase();
@@ -462,108 +347,9 @@ class GeminiChatServiceClass {
             console.warn('[GeminiChatService] Không thể lưu ngữ cảnh cấu hình vào DB:', error);
         }
     }
-  // Helper: Generate initial REQ_ID (Random Prefix + Fixed 4-digit Suffix logic)
-  // Format matches log: e.g. 4180921 (7 digits)
-  // We want range approx 3000000 - 5000000 initially, with random 4 digits at end.
-  private generateInitialReqId(): string {
-       const prefix = Math.floor(Math.random() * (45 - 30) + 30); // 30-45
-       const suffix = Math.floor(Math.random() * 9000 + 1000); // 1000-9999
-       // Formula: prefix * 100000 + suffix. 
-       // Note: This logic places suffix at the end, but the increment of 100,000 adds to the higher digits, preserving the suffix.
-       // Example: 30 * 100000 + 1234 = 3001234. Next: 3101234. Suffix 1234 preserved.
-       return String(prefix * 100000 + suffix);
-  }
 
-    private buildRequestPayload(
-        message: string,
-        contextArray: [string, string, string],
-        createChatOnWeb: boolean
-    ): string {
-        if (!createChatOnWeb) {
-            const innerPayload = [
-                [message],
-                null,
-                contextArray
-            ];
 
-            return JSON.stringify([null, JSON.stringify(innerPayload)]);
-        }
 
-        const reqUuid = uuidv4().toUpperCase();
-        const reqStruct = [
-            [message, 0, null, null, null, null, 0],
-            ["vi"],
-            [contextArray[0], contextArray[1], contextArray[2], null, null, null, null, null, null, ""],
-            "!BwSlBFzNAAZeabWMfmlCAOK4lSpy-nY7ADQBEArZ1HXWr3pDagC9VZ5CWddxxlroONpL-a5eGEHXpYjZYEboidltqN627255ouWfutqSAgAAAEtSAAAAAmgBB34AQf7Z0X4QHk8aehxZTrwdWe2_4ynoojTI3Dop9DkAR1EzMlT4nLjH65NoKYTZj-WO50CGSm_ENmZpEvP--1D_FnyJmQOvlsPu3GfxD62pT5siALsF-4-Jm1LJY4I7jLertSMjtvs1_R710Z6lSHhM4PuGaaOUrRMj8-UOBqCgscsTETggz3x_ju7ACGPssxINDSYvXK5XenYexuBblk9vytrqyB1E7Ntp2kHlZanL2GAf_WCWa_Zaev2j2C23Oip1rZNMfLeSnBCAy_P5w2UR5lwYfVuKIXGhG8LWt-00k1K49MV6DiTItqYyH3OC5qOmokpnUyLMrnobu3z5H9FUxZMxNjbGsl0DmDiINJQnrO7vjppHyuMrLYECDdkptAlDsQRYOcJRuazOowdqTlUwz283lg7hNoX_D4QUUG5zt2TAsrXsbFWlacIN5SeNjqlHha9tXvXB77DbcR_CzwZbF8gju5SA8ruxleoUzapriHFEXs5Ipz1c2UvB5ph1_C3PYi4ER-Dl7ykEgBZooOJPEL_4QPq4gd20gvvYiwLVeM1BiwisfZT13sJ1vhbB1XIeakQKA1Ikalf7PoCZ5tjwxn9Zsz1rRJtSSX_wfvb-lrat3XPCyjA_a-JKE-DLhIHChbouYIlTlvMT25nmWE5jemyvCj_KdHRWg0XE3wQt8jD2zmrgl8JNRygbJy9Llmfv_FAAy4TRmddSQGjpNnnTvTioiO4ydPNXFfq_M78_DxeGl56mdVf15JBZ-tqReaDDr4ltrkO09MX_CUY1cZvIqt3_QrgakGGnjc3tVZzRl2gYZ5vJBQa_pHObKly8kEQLMAYnOzB943fHjijMkw1jW1Hg7gYDEIuBPiN8mLIkl73oDPeMJSwsn4PwNm5K6V6blTxQVNylGLGlp5E5mmV92Az-bY-LqLCqTIEs0Ajd-CimLvQPTEXuMsFliaCxXsLbxrdSdrPkYIPSVUQDj7bdCs9CXo2MjPIwjHVPCmI5Cb8WPs6hu1fbYHTxLthzRejxEFdmZ0RakYqKOZFetMpzA8QN0HJ7ZIR9eA8VM4r6CB0YO0FKZcQmAHNjBPHyAqXnNZNgrZDwknPWttn9QiZH51MIBe5Hk3-zzQUvJ5fPlJlkWkd4VPzCroOIBtk6aduceg2-YQt4N701ghkxfFZ-k-blbUeFvZGIgMfbWWeJRRdrRWrrWgdT0FXT_jhJV1XA5bwZcy1X-ykmlE2CAvb1BQMUdY9YE_mJMvowLakNeo0r7Q4FOoVyu-cVhrQl7iHDmHEspUGbpa91q-7KKL0AUYxLahYd8giy5o_45o-rD1y0asaFRBhh3R0j__zg2sa1i1AA2A",
-            "7f64e8c4aa4819e0a1a684fd7e6f5f9b",
-            null,
-            [1],
-            1,
-            null,
-            null,
-            1,
-            0,
-            null,
-            null,
-            null,
-            null,
-            null,
-            [[0]],
-            0,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            1,
-            null,
-            null,
-            [4],
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            [1],
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            0,
-            null,
-            null,
-            null,
-            null,
-            null,
-            reqUuid,
-            null,
-            [],
-            null,
-            null,
-            null,
-            null,
-            [1769584568, 497000000],
-            null,
-            2
-        ];
-
-        return JSON.stringify([null, JSON.stringify(reqStruct)]);
-    }
 
   // Round-robin rotation index for cycling through active configs
   private rotationIndex = 0;
@@ -686,7 +472,7 @@ class GeminiChatServiceClass {
         data.convId || '',
         data.respId || '',
         data.candId || '',
-        data.reqId || this.generateInitialReqId(),
+        data.reqId || generateInitialReqId(),
         data.userAgent || profile.userAgent,
         data.acceptLanguage || null,
         data.platform || profile.platform,
@@ -914,7 +700,7 @@ class GeminiChatServiceClass {
     
     // If missing, generate new
     if (!currentReqIdStr) {
-        currentReqIdStr = this.generateInitialReqId();
+        currentReqIdStr = generateInitialReqId();
     }
 
     // Increment by 100,000 (Preserves last 4-5 digits)
@@ -934,8 +720,6 @@ class GeminiChatServiceClass {
     }
     // console.log(`[GeminiChatService] Updated REQ_ID: ${currentReqIdStr} -> ${reqId}`);
 
-    // Flash Model setup removed
-
     // Payload logic from python: [ [message], null, ["conversation_id", "response_id", "choice_id"] ]
     const tokenKey = this.getTokenKey(config);
     const appSettings = AppSettingsService.getAll();
@@ -945,13 +729,10 @@ class GeminiChatServiceClass {
     const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
     const incomingContext = shouldIgnoreIncomingContext ? undefined : context;
     const configContext = this.getStoredConfigContext(config.id);
-    const tokenContext = this.getStoredTokenContext(tokenKey, config.id);
     let storedContext: { conversationId: string; responseId: string; choiceId: string } | null = null;
     if (!incomingContext && canUseStoredContext) {
-        if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+        if (configContext) {
             storedContext = configContext;
-        } else if (!isFirstSendForToken) {
-            storedContext = tokenContext || configContext;
         }
     }
     const effectiveContext = incomingContext || storedContext || undefined;
@@ -978,7 +759,7 @@ class GeminiChatServiceClass {
     }
 
     const createChatOnWeb = !!appSettings.createChatOnWeb;
-    const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
+    const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
 
     const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
     
@@ -1140,72 +921,6 @@ class GeminiChatServiceClass {
                          console.error('[GeminiChatService] Lỗi khi streaming:', streamError);
                     }
                     
-                    // --- OLD BLOCK (COMMENTED OUT FOR PERFORMANCE CHECK) ---
-                    /*
-                    const responseText = await response.text();
-                    console.log(`[GeminiChatService] >>> Tải xong. Độ dài: ${responseText.length} bytes. Đang xử lý...`);
-                    
-                    // DEBUG: Dump response to file for inspection
-                    try {
-                        const fs = require('fs');
-                        const path = require('path');
-                        const os = require('os');
-                        const dumpPath = path.join(os.homedir(), 'gemini_response_dump.txt');
-                        fs.writeFileSync(dumpPath, responseText);
-                        console.log(`[GeminiChatService] Đã lưu log phản hồi vào: ${dumpPath}`);
-                    } catch (e) {
-                        console.error('[GeminiChatService] Không thể lưu log phản hồi:', e);
-                    }
-                    // let foundText = '';
-                    // let hasWrbFr = false;
-                    // let hasContentPayload = false;
-
-                    for (const line of responseText.split('\n')) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-                        if (trimmed.startsWith(")]}'")) continue;
-                        if (/^\d+$/.test(trimmed)) continue;
-    
-                        try {
-                            const dataObj = JSON.parse(trimmed);
-                            if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
-    
-                            for (const payloadItem of dataObj) {
-                                if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
-                                if (payloadItem[0] !== 'wrb.fr') continue;
-                                hasWrbFr = true;
-                                if (typeof payloadItem[2] !== 'string') continue;
-    
-                                const innerData = JSON.parse(payloadItem[2]);
-                                if (!Array.isArray(innerData) || innerData.length < 5) continue;
-    
-                                const candidates = innerData[4];
-                                if (Array.isArray(candidates) && candidates.length > 0) {
-                                    const candidate = candidates[0];
-                                    if (candidate && candidate.length > 1) {
-                                        const textSource = candidate[1];
-                                        const txt = Array.isArray(textSource) ? textSource[0] : textSource;
-                                        if (typeof txt === 'string' && txt) {
-                                            foundText = txt;
-                                            hasContentPayload = true;
-                                        }
-                                    }
-                                }
-                            }
-                        } catch {
-                            // ignore parse errors
-                        }
-                    }
-    
-                    console.log('[GeminiChatService] >>> Độ dài phản hồi:', responseText.length);
-    
-                    if (responseText.length < 500) {
-                        console.warn('[GeminiChatService] >>> Phản hồi ngắn (có thể lỗi):', responseText);
-                    }
-    
-                    const sessionManager = getSessionContextManager();
-                    const newContext = sessionManager.parseFromFetchResponse(responseText);
-                    */
                     // -----------------------------------------------------
 
             if (foundText) {
@@ -1221,7 +936,7 @@ class GeminiChatServiceClass {
                 };
                 console.log('[GeminiChatService] Ngữ cảnh (tóm tắt):', contextSummary);
 
-                this.saveStoredTokenContext(tokenKey, newContext, config.id);
+                this.saveContext(newContext, config.id);
                 this.firstSendByTokenKey.add(tokenKey);
 
                 return {
@@ -1295,7 +1010,7 @@ class GeminiChatServiceClass {
                 }
 
                 // REQ_ID Logic
-                let currentReqIdStr = config!.reqId || this.generateInitialReqId();
+                let currentReqIdStr = config!.reqId || generateInitialReqId();
                 const reqId = String(parseInt(currentReqIdStr) + 100000);
                 
                 // Update ReqID in DB
@@ -1315,14 +1030,11 @@ class GeminiChatServiceClass {
                 
                 const incomingContext = shouldIgnoreIncomingContext ? undefined : context;
                 const configContext = this.getStoredConfigContext(config!.id);
-                const tokenContext = this.getStoredTokenContext(tokenKey, config!.id);
                 
                 let storedContext: { conversationId: string; responseId: string; choiceId: string } | null = null;
                 if (!incomingContext && canUseStoredContext) {
-                    if (isFirstSendForToken && allowStoredContextOnFirstSend) {
+                    if (configContext) {
                         storedContext = configContext;
-                    } else if (!isFirstSendForToken) {
-                        storedContext = tokenContext || configContext;
                     }
                 }
                 const effectiveContext = incomingContext || storedContext || undefined;
@@ -1332,7 +1044,7 @@ class GeminiChatServiceClass {
                     : ["", "", ""];
 
                 const createChatOnWeb = !!appSettings.createChatOnWeb;
-                const fReq = this.buildRequestPayload(message, contextArray, createChatOnWeb);
+                const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
 
                 // 3. Prepare Impit Client
                 const settingProxy = this.getUseProxySetting();
@@ -1470,7 +1182,7 @@ class GeminiChatServiceClass {
                     if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
                     if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
                     
-                    this.saveStoredTokenContext(tokenKey, newContext, config!.id);
+                    this.saveContext(newContext, config!.id);
                     this.firstSendByTokenKey.add(tokenKey);
 
                     return {
@@ -1496,4 +1208,6 @@ class GeminiChatServiceClass {
 }
 
 // Singleton instance
-export const GeminiChatService = new GeminiChatServiceClass();
+// Singleton instance
+export const GeminiChatService = GeminiChatServiceClass.getInstance();
+export const getGeminiChatService = () => GeminiChatServiceClass.getInstance();

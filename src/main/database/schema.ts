@@ -69,6 +69,101 @@ export function initDatabase(): void {
     );
   `);
 
+  // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
+  // Chỉ có 1 dòng duy nhất (id = 1)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Migration: Add missing columns if not exists
+  try {
+    const tableInfo = db.pragma('table_info(gemini_chat_config)') as any[];
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('req_id')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
+        console.log('[Database] Added missing column: req_id');
+    }
+    if (!columnNames.includes('proxy_id')) {
+      db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
+      console.log('[Database] Added missing column: proxy_id');
+    }
+    if (!columnNames.includes('user_agent')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
+        console.log('[Database] Added missing column: user_agent');
+    }
+    if (!columnNames.includes('accept_language')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
+        console.log('[Database] Added missing column: accept_language');
+    }
+    if (!columnNames.includes('platform')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
+        console.log('[Database] Added missing column: platform');
+    }
+  } catch (e) {
+      console.error('[Database] Migration error:', e);
+  }
+
+  // Migration: Copy data from gemini_cookie to gemini_chat_config if needed
+  try {
+    const cookieData = db.prepare('SELECT * FROM gemini_cookie WHERE id = 1').get() as any;
+    const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
+    
+    if (cookieData && configCount.count === 0) {
+      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      const now = Date.now();
+      const { v4: uuidv4 } = require('uuid');
+      
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        'Migrated Config',
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log('[Database] Migration from gemini_cookie completed');
+    }
+  } catch (e) {
+    // Ignore if gemini_cookie doesn't exist or migration fails
+    console.log('[Database] No migration needed from gemini_cookie');
+  }
+
+  // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
+  try {
+    const contextCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_context').get() as any;
+    if (contextCount.count === 0) {
+      const rows = db.prepare('SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config').all() as any[];
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
+        }
+      }
+      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+    }
+  } catch (e) {
+    console.error('[Database] Backfill gemini_chat_context failed:', e);
+  }
   // Create gemini_chat_config table - luu cau hinh Gemini Chat (Web)
   db.exec(`
     CREATE TABLE IF NOT EXISTS gemini_chat_config (
@@ -88,29 +183,6 @@ export function initDatabase(): void {
       platform TEXT,
       is_active INTEGER DEFAULT 1,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-
-  // Create gemini_chat_context table - luu ngữ cảnh theo từng token (config)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_chat_context (
-      config_id TEXT PRIMARY KEY,
-      conversation_id TEXT,
-      response_id TEXT,
-      choice_id TEXT,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
-    );
-  `);
-
-  // Create gemini_chat_context_token table - lưu ngữ cảnh theo token thực
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_chat_context_token (
-      token_key TEXT PRIMARY KEY,
-      conversation_id TEXT,
-      response_id TEXT,
-      choice_id TEXT,
       updated_at INTEGER NOT NULL
     );
   `);
@@ -210,37 +282,114 @@ export function initDatabase(): void {
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
   }
+  // Create gemini_chat_context table - luu ngữ cảnh theo từng token (config)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_chat_context (
+      config_id TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      response_id TEXT,
+      choice_id TEXT,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
+    );
+  `);
 
-  // Migration: Backfill gemini_chat_context_token from gemini_chat_context if empty
+  // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
+  // Chỉ có 1 dòng duy nhất (id = 1)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Migration: Add missing columns if not exists
   try {
-    const tokenContextCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_context_token').get() as any;
-    if (tokenContextCount.count === 0) {
-      const rows = db.prepare(`
-        SELECT c.cookie, c.at_token, t.conversation_id, t.response_id, t.choice_id, t.updated_at
-        FROM gemini_chat_context t
-        JOIN gemini_chat_config c ON t.config_id = c.id
-      `).all() as any[];
+    const tableInfo = db.pragma('table_info(gemini_chat_config)') as any[];
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('req_id')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
+        console.log('[Database] Added missing column: req_id');
+    }
+    if (!columnNames.includes('proxy_id')) {
+      db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
+      console.log('[Database] Added missing column: proxy_id');
+    }
+    if (!columnNames.includes('user_agent')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
+        console.log('[Database] Added missing column: user_agent');
+    }
+    if (!columnNames.includes('accept_language')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
+        console.log('[Database] Added missing column: accept_language');
+    }
+    if (!columnNames.includes('platform')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
+        console.log('[Database] Added missing column: platform');
+    }
+  } catch (e) {
+      console.error('[Database] Migration error:', e);
+  }
+
+  // Migration: Copy data from gemini_cookie to gemini_chat_config if needed
+  try {
+    const cookieData = db.prepare('SELECT * FROM gemini_cookie WHERE id = 1').get() as any;
+    const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
+    
+    if (cookieData && configCount.count === 0) {
+      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      const now = Date.now();
+      const { v4: uuidv4 } = require('uuid');
+      
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        'Migrated Config',
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log('[Database] Migration from gemini_cookie completed');
+    }
+  } catch (e) {
+    // Ignore if gemini_cookie doesn't exist or migration fails
+    console.log('[Database] No migration needed from gemini_cookie');
+  }
+
+  // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
+  try {
+    const contextCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_context').get() as any;
+    if (contextCount.count === 0) {
+      const rows = db.prepare('SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config').all() as any[];
       const insert = db.prepare(`
-        INSERT OR REPLACE INTO gemini_chat_context_token (token_key, conversation_id, response_id, choice_id, updated_at)
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
         VALUES (?, ?, ?, ?, ?)
       `);
       const now = Date.now();
       for (const row of rows) {
-        const tokenKey = buildTokenKey(row.cookie || '', row.at_token || '');
-        if (!tokenKey) continue;
-        insert.run(
-          tokenKey,
-          row.conversation_id || '',
-          row.response_id || '',
-          row.choice_id || '',
-          row.updated_at || now
-        );
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
+        }
       }
-      console.log('[Database] Backfilled gemini_chat_context_token from gemini_chat_context');
+      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
     }
   } catch (e) {
-    console.error('[Database] Backfill gemini_chat_context_token failed:', e);
+    console.error('[Database] Backfill gemini_chat_context failed:', e);
   }
+
 
   // Create proxies table - lưu proxy rotation config
   db.exec(`
@@ -263,5 +412,100 @@ export function initDatabase(): void {
     );
   `);
 
+  // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
+  // Chỉ có 1 dòng duy nhất (id = 1)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cookie (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cookie TEXT NOT NULL,
+      bl_label TEXT NOT NULL,
+      f_sid TEXT NOT NULL,
+      at_token TEXT NOT NULL,
+      req_id TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Migration: Add missing columns if not exists
+  try {
+    const tableInfo = db.pragma('table_info(gemini_chat_config)') as any[];
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('req_id')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
+        console.log('[Database] Added missing column: req_id');
+    }
+    if (!columnNames.includes('proxy_id')) {
+      db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
+      console.log('[Database] Added missing column: proxy_id');
+    }
+    if (!columnNames.includes('user_agent')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
+        console.log('[Database] Added missing column: user_agent');
+    }
+    if (!columnNames.includes('accept_language')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
+        console.log('[Database] Added missing column: accept_language');
+    }
+    if (!columnNames.includes('platform')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
+        console.log('[Database] Added missing column: platform');
+    }
+  } catch (e) {
+      console.error('[Database] Migration error:', e);
+  }
+
+  // Migration: Copy data from gemini_cookie to gemini_chat_config if needed
+  try {
+    const cookieData = db.prepare('SELECT * FROM gemini_cookie WHERE id = 1').get() as any;
+    const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
+    
+    if (cookieData && configCount.count === 0) {
+      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      const now = Date.now();
+      const { v4: uuidv4 } = require('uuid');
+      
+      db.prepare(`
+        INSERT INTO gemini_chat_config (
+          id, name, cookie, bl_label, f_sid, at_token, req_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        uuidv4(),
+        'Migrated Config',
+        cookieData.cookie,
+        cookieData.bl_label,
+        cookieData.f_sid,
+        cookieData.at_token,
+        cookieData.req_id,
+        now,
+        now
+      );
+      console.log('[Database] Migration from gemini_cookie completed');
+    }
+  } catch (e) {
+    // Ignore if gemini_cookie doesn't exist or migration fails
+    console.log('[Database] No migration needed from gemini_cookie');
+  }
+
+  // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
+  try {
+    const contextCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_context').get() as any;
+    if (contextCount.count === 0) {
+      const rows = db.prepare('SELECT id, conv_id, resp_id, cand_id FROM gemini_chat_config').all() as any[];
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO gemini_chat_context (config_id, conversation_id, response_id, choice_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const row of rows) {
+        if (row.conv_id || row.resp_id || row.cand_id) {
+          insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
+        }
+      }
+      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+    }
+  } catch (e) {
+    console.error('[Database] Backfill gemini_chat_context failed:', e);
+  }
   console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies)');
 }
