@@ -4738,6 +4738,25 @@ class GeminiChatServiceClass {
           console.error("[GeminiChatService] Lỗi Gemini:", response.status, txt.substring(0, 200));
           return { success: false, error: `HTTP ${response.status}` };
         }
+        try {
+          let setCookieHeader = response.headers.get("set-cookie");
+          if (response.headers.raw && typeof response.headers.raw === "function") {
+            const raw = response.headers.raw();
+            if (raw["set-cookie"]) {
+              setCookieHeader = raw["set-cookie"];
+            }
+          }
+          if (setCookieHeader) {
+            const updatedCookie = this.mergeCookies(config.cookie, setCookieHeader);
+            if (config.id !== "legacy") {
+              getDatabase().prepare("UPDATE gemini_chat_config SET cookie = ? WHERE id = ?").run(updatedCookie, config.id);
+              config.cookie = updatedCookie;
+              console.log(`[GeminiChatService] (Legacy) Đã làm mới thẻ an ninh (Cookie) cho ${config.name}`);
+            }
+          }
+        } catch (cookieErr) {
+          console.warn("[GeminiChatService] Lỗi xử lý cookie response:", cookieErr);
+        }
         console.log("[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for response)...");
         let foundText = "";
         let hasWrbFr = false;
@@ -4840,6 +4859,28 @@ class GeminiChatServiceClass {
     }
   }
   // =======================================================
+  // Hàm hòa trộn Cookie cũ và Set-Cookie mới
+  mergeCookies(oldCookieStr, setCookieHeader) {
+    if (!setCookieHeader) return oldCookieStr;
+    const newCookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+    const cookieMap = /* @__PURE__ */ new Map();
+    if (oldCookieStr) {
+      oldCookieStr.split(";").forEach((c) => {
+        const parts = c.trim().split("=");
+        const key = parts[0];
+        const val = parts.slice(1).join("=");
+        if (key) cookieMap.set(key, val);
+      });
+    }
+    newCookies.forEach((c) => {
+      const parts = c.split(";")[0].split("=");
+      const key = parts[0].trim();
+      const value = parts.slice(1).join("=").trim();
+      cookieMap.set(key, value);
+    });
+    return Array.from(cookieMap.entries()).map(([key, val]) => `${key}=${val}`).join("; ");
+  }
+  // =======================================================
   // SEND MESSAGE IMPIT
   // =======================================================
   async sendMessageImpit(message, configId, context, useProxyOverride) {
@@ -4903,9 +4944,12 @@ class GeminiChatServiceClass {
         }
         const impit$1 = new impit.Impit({
           browser: "chrome",
-          // Default to chrome for now, could map from config.userAgent
           proxyUrl,
-          ignoreTlsErrors: true
+          ignoreTlsErrors: true,
+          timeout: 3e5,
+          http3: true,
+          followRedirects: true,
+          maxRedirects: 10
         });
         const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : "vi";
         const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
@@ -4938,9 +4982,7 @@ class GeminiChatServiceClass {
         const response = await impit$1.fetch(url, {
           method: "POST",
           headers,
-          body: body.toString(),
-          timeout: 3e5
-          // 5 minutes (default usually shorter in reqwest)
+          body: body.toString()
         });
         console.log("[GeminiChatService] Impit response status:", response.status);
         console.log("[GeminiChatService] Impit response headers:", response.headers);
@@ -4955,6 +4997,20 @@ class GeminiChatServiceClass {
         if (usedProxy) {
           const proxyManager = getProxyManager();
           proxyManager.markProxySuccess(usedProxy.id);
+        }
+        let setCookieHeaders = [];
+        if (typeof response.headers.getSetCookie === "function") {
+          setCookieHeaders = response.headers.getSetCookie();
+        } else if ("raw" in response.headers && typeof response.headers.raw === "function") {
+          const raw = response.headers.raw();
+          if (raw["set-cookie"]) {
+            setCookieHeaders = raw["set-cookie"];
+          }
+        } else {
+          const headerVal = response.headers.get("set-cookie");
+          if (headerVal) {
+            setCookieHeaders = [headerVal];
+          }
         }
         const responseText = await response.text();
         let foundText = "";

@@ -846,6 +846,30 @@ export class GeminiChatServiceClass {
                         return { success: false, error: `HTTP ${response.status}` };
                     }
 
+                    // --- Cookie synchronization (Legacy Node-fetch) ---
+                    try {
+                        let setCookieHeader: string | string[] | null = response.headers.get('set-cookie');
+                        // Try to get raw array if available (node-fetch specific)
+                        if (response.headers.raw && typeof response.headers.raw === 'function') {
+                             const raw = response.headers.raw();
+                             if (raw['set-cookie']) {
+                                 setCookieHeader = raw['set-cookie'];
+                             }
+                        }
+
+                        if (setCookieHeader) {
+                            const updatedCookie = this.mergeCookies(config.cookie, setCookieHeader);
+                            if (config.id !== 'legacy') {
+                                getDatabase().prepare('UPDATE gemini_chat_config SET cookie = ? WHERE id = ?')
+                                    .run(updatedCookie, config.id);
+                                config.cookie = updatedCookie; 
+                                console.log(`[GeminiChatService] (Legacy) Đã làm mới thẻ an ninh (Cookie) cho ${config.name}`);
+                            }
+                        }
+                    } catch (cookieErr) {
+                        console.warn('[GeminiChatService] Lỗi xử lý cookie response:', cookieErr);
+                    }
+                    
                     console.log('[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for response)...');
                     
                     // --- STREAMING PROCESSING (NEW) ---
@@ -977,6 +1001,39 @@ export class GeminiChatServiceClass {
   }
 
   // =======================================================
+  // Hàm hòa trộn Cookie cũ và Set-Cookie mới
+  private mergeCookies(oldCookieStr: string, setCookieHeader: string | string[] | null): string {
+      if (!setCookieHeader) return oldCookieStr;
+      
+      // Chuyển set-cookie (mảng hoặc chuỗi) thành Map để dễ quản lý
+      const newCookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+      const cookieMap = new Map<string, string>();
+  
+      // Nạp cookie cũ vào Map
+      if (oldCookieStr) {
+        oldCookieStr.split(';').forEach(c => {
+            const parts = c.trim().split('=');
+            const key = parts[0];
+            const val = parts.slice(1).join('=');
+            if (key) cookieMap.set(key, val);
+        });
+      }
+  
+      // Ghi đè bằng cookie mới từ Google
+      newCookies.forEach(c => {
+          const parts = c.split(';')[0].split('=');
+          const key = parts[0].trim();
+          const value = parts.slice(1).join('=').trim();
+          cookieMap.set(key, value);
+      });
+  
+      // Chuyển ngược lại thành chuỗi để lưu DB
+      return Array.from(cookieMap.entries())
+          .map(([key, val]) => `${key}=${val}`)
+          .join('; ');
+  }
+
+  // =======================================================
   // SEND MESSAGE IMPIT
   // =======================================================
   
@@ -1068,9 +1125,13 @@ export class GeminiChatServiceClass {
                 }
 
                 const impit = new Impit({
-                    browser: "chrome", // Default to chrome for now, could map from config.userAgent
+                    browser: "chrome",
                     proxyUrl: proxyUrl,
-                    ignoreTlsErrors: true
+                    ignoreTlsErrors: true,
+                    timeout: 300000,
+                    http3: true, 
+                    followRedirects: true,
+                    maxRedirects: 10
                 });
 
                 // 4. Construct URL & Body
@@ -1092,19 +1153,15 @@ export class GeminiChatServiceClass {
                 );
 
                 // Headers
-                // Impit handles User-Agent and Sec-CH-UA internally based on 'browser' option?
-                // But we should probably pass our specific cookie.
-                // Impit sets headers automatically? check usage:
-                // "fetch" method...
-                
                 const headers: Record<string, string> = {
                     "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
                     "cookie": (cookie || '').replace(/[\r\n]+/g, ''),
                 };
                 
-                // Add Origin/Referer if needed? Impit might do it.
                  headers["origin"] = "https://gemini.google.com";
                  headers["referer"] = "https://gemini.google.com/";
+                 
+
 
                 const contextSummary = {
                     conversationId: contextArray[0] ? `${String(contextArray[0]).slice(0, 24)}...` : '',
@@ -1120,8 +1177,7 @@ export class GeminiChatServiceClass {
                 const response = await impit.fetch(url, {
                     method: 'POST',
                     headers: headers,
-                    body: body.toString(),
-                    timeout: 300000 // 5 minutes (default usually shorter in reqwest)
+                    body: body.toString()
                 });
 
                 console.log('[GeminiChatService] Impit response status:', response.status);
@@ -1141,6 +1197,54 @@ export class GeminiChatServiceClass {
                     const proxyManager = getProxyManager();
                     proxyManager.markProxySuccess(usedProxy.id);
                 }
+
+                // --- Cookie synchronization logic ---
+                
+                // Get set-cookie header(s) robustly
+                let setCookieHeaders: string[] = [];
+                
+                if (typeof response.headers.getSetCookie === 'function') {
+                    // Modern standard (Node 20+, new Fetch API)
+                    setCookieHeaders = response.headers.getSetCookie();
+                } else if ('raw' in response.headers && typeof (response.headers as any).raw === 'function') {
+                    // Node-fetch specific
+                    const raw = (response.headers as any).raw();
+                    if (raw['set-cookie']) {
+                         setCookieHeaders = raw['set-cookie'];
+                    }
+                } else {
+                    // Fallback to standard .get() - might merge headers with comma
+                    const headerVal = response.headers.get('set-cookie');
+                    if (headerVal) {
+                        // Attempt to split if it looks like combined cookies (risky but better than nothing)
+                        // Simple split by ", " might break dates. 
+                        // But usually with Impit/Node-fetch we have access to raw or getSetCookie.
+                        // If we are here, treat as single string or manually split if we had a smart parser.
+                        // For now, wrap in array.
+                        setCookieHeaders = [headerVal]; 
+                    }
+                }
+
+                /*
+                if (response.status === 200 && setCookieHeaders.length > 0) {
+                    // 1. Merge cookies
+                    const updatedCookie = this.mergeCookies(config!.cookie, setCookieHeaders);
+                    
+                    // 2. Update Database immediately
+                    try {
+                        const db = getDatabase();
+                        db.prepare('UPDATE gemini_chat_config SET cookie = ? WHERE id = ?')
+                            .run(updatedCookie, config!.id);
+                        
+                        // QUAN TRỌNG: Cập nhật lại chính Object đang chạy để lượt sau nó thấy!
+                        config!.cookie = updatedCookie; 
+                        
+                        console.log(`[GeminiChatService] Đã đồng bộ Cookie mới vào bộ nhớ cho ${config!.name}`);
+                    } catch (dbError) {
+                        console.error('[GeminiChatService] Lỗi cập nhật Cookie vào DB:', dbError);
+                    }
+                }
+                */
 
                 const responseText = await response.text();
                 
