@@ -551,10 +551,17 @@ export function StorySummary() {
         method,
         webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
         useProxy: method === 'WEB' && useProxy,
-        useImpit: method === 'WEB' && useImpit
-      }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+        useImpit: method === 'WEB' && useImpit,
+        metadata: { chapterId: selectedChapterId }
+      }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (translateResult.success && translateResult.data) {
+        // Validate metadata to prevent race condition
+        if (translateResult.metadata?.chapterId !== selectedChapterId) {
+          console.error(`[StorySummary] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== selected (${selectedChapterId})`);
+          throw new Error('Metadata validation failed - race condition detected');
+        }
+        
         // Kiểm tra marker kết thúc
         if (!hasSummaryEndMarker(translateResult.data)) {
           console.warn('[StorySummary] ⚠️ Bản tóm tắt không có "Hết tóm tắt", đang retry...');
@@ -566,8 +573,9 @@ export function StorySummary() {
             method,
             webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
             useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit
-          }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+            useImpit: method === 'WEB' && useImpit,
+            metadata: { chapterId: selectedChapterId }
+          }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
           
           if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
             console.log('[StorySummary] ✅ Retry thành công, bản tóm tắt đã có "Hết tóm tắt"');
@@ -719,11 +727,18 @@ export function StorySummary() {
             method,
             webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
             useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit
+            useImpit: method === 'WEB' && useImpit,
+            metadata: { chapterId: chapter.id }
           }
-        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
         if (translateResult.success && translateResult.data) {
+          // Validate metadata to prevent race condition
+          if (translateResult.metadata?.chapterId !== chapter.id) {
+            console.error(`[StorySummary] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== chapter.id (${chapter.id})`);
+            return null;
+          }
+          
           // Kiểm tra marker kết thúc
           if (!hasSummaryEndMarker(translateResult.data)) {
             console.warn(`[StorySummary] ⚠️ Chương ${chapter.title} không có "Hết tóm tắt", đang retry...`);
@@ -737,9 +752,10 @@ export function StorySummary() {
                 method,
                 webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
                 useProxy: method === 'WEB' && useProxy,
-                useImpit: method === 'WEB' && useImpit
+                useImpit: method === 'WEB' && useImpit,
+                metadata: { chapterId: chapter.id }
               }
-            ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+            ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
             
             if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
               console.log(`[StorySummary] ✅ Retry chương ${chapter.title} thành công, đã có "Hết tóm tắt"`);

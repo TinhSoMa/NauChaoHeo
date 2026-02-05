@@ -193,6 +193,22 @@ const proxyApi = {
     return electron.ipcRenderer.invoke(PROXY_IPC_CHANNELS.RESET);
   }
 };
+const PROMPT_IPC_CHANNELS = {
+  GET_ALL: "prompt:getAll",
+  GET_BY_ID: "prompt:getById",
+  CREATE: "prompt:create",
+  UPDATE: "prompt:update",
+  DELETE: "prompt:delete",
+  SET_DEFAULT: "prompt:setDefault"
+};
+const promptApi = {
+  getAll: () => electron.ipcRenderer.invoke(PROMPT_IPC_CHANNELS.GET_ALL),
+  getById: (id) => electron.ipcRenderer.invoke(PROMPT_IPC_CHANNELS.GET_BY_ID, id),
+  create: (data) => electron.ipcRenderer.invoke(PROMPT_IPC_CHANNELS.CREATE, data),
+  update: (id, data) => electron.ipcRenderer.invoke(PROMPT_IPC_CHANNELS.UPDATE, { id, ...data }),
+  delete: (id) => electron.ipcRenderer.invoke(PROMPT_IPC_CHANNELS.DELETE, id),
+  setDefault: (id) => electron.ipcRenderer.invoke(PROMPT_IPC_CHANNELS.SET_DEFAULT, id)
+};
 electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Example API methods - add more as needed
   sendMessage: (channel, data) => {
@@ -217,5 +233,7 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Gemini Chat API (cau hinh Gemini web)
   geminiChat: geminiChatApi,
   // Proxy API (quan ly proxy rotation)
-  proxy: proxyApi
+  proxy: proxyApi,
+  // Prompt API (quan ly prompts)
+  prompt: promptApi
 });

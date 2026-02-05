@@ -5,6 +5,7 @@ import { projectApi, ProjectAPI } from './projectApi'
 import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
 import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
 import { proxyApi, ProxyAPI } from './proxyApi'
+import { promptApi, PromptAPI } from './promptApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -40,6 +41,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Proxy API (quan ly proxy rotation)
   proxy: proxyApi,
+
+  // Prompt API (quan ly prompts)
+  prompt: promptApi,
 })
 
 // Declare types for the exposed API
@@ -56,6 +60,7 @@ declare global {
       appSettings: AppSettingsAPI
       geminiChat: GeminiChatAPI
       proxy: ProxyAPI
+      prompt: PromptAPI
     }
   }
 }

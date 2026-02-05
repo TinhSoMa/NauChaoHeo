@@ -4531,7 +4531,7 @@ class GeminiChatServiceClass {
   // =======================================================
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
-  async sendMessage(message, configId, context, useProxyOverride) {
+  async sendMessage(message, configId, context, useProxyOverride, metadata) {
     const MAX_RETRIES = 3;
     const MIN_DELAY_MS = 2e3;
     const MAX_DELAY_MS = 1e4;
@@ -4571,7 +4571,7 @@ class GeminiChatServiceClass {
         console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
         const result = await this._sendMessageInternal(message, config, context, useProxyOverride);
         if (result.success) {
-          return { ...result, configId: config.id };
+          return { ...result, configId: config.id, metadata };
         }
         if (result.error && result.error.includes("Không còn proxy khả dụng")) {
           console.error("[GeminiChatService] Dừng retry do hết proxy khả dụng");
@@ -4583,10 +4583,10 @@ class GeminiChatServiceClass {
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
           console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-          return { ...result, configId: config.id };
+          return { ...result, configId: config.id, metadata };
         }
       }
-      return { success: false, error: "Unexpected error in retry loop" };
+      return { success: false, error: "Unexpected error in retry loop", metadata };
     });
   }
   async _sendMessageInternal(message, config, context, useProxyOverride) {
@@ -4880,7 +4880,7 @@ class GeminiChatServiceClass {
   // =======================================================
   // SEND MESSAGE IMPIT
   // =======================================================
-  async sendMessageImpit(message, configId, context, useProxyOverride) {
+  async sendMessageImpit(message, configId, context, useProxyOverride, metadata) {
     let config = null;
     if (configId) {
       config = this.getById(configId);
@@ -4896,7 +4896,7 @@ class GeminiChatServiceClass {
       try {
         const { cookie, blLabel, fSid, atToken } = config;
         if (!cookie || !blLabel || !fSid || !atToken) {
-          return { success: false, error: "Missing config fields", configId: config.id };
+          return { success: false, error: "Missing config fields", configId: config.id, metadata };
         }
         let currentReqIdStr = config.reqId || generateInitialReqId();
         const reqId = String(parseInt(currentReqIdStr) + 1e5);
@@ -4989,7 +4989,7 @@ class GeminiChatServiceClass {
             proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
             this.releaseProxy(config.id, usedProxy.id);
           }
-          return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id };
+          return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id, metadata };
         }
         if (usedProxy) {
           const proxyManager = getProxyManager();
@@ -5048,13 +5048,14 @@ class GeminiChatServiceClass {
               text: foundText,
               context: newContext
             },
-            configId: config.id
+            configId: config.id,
+            metadata
           };
         }
-        return { success: false, error: "No text found in Impit response", configId: config.id };
+        return { success: false, error: "No text found in Impit response", configId: config.id, metadata };
       } catch (error) {
         console.error("[GeminiChatService] Impit Error:", error);
-        return { success: false, error: String(error), configId: config?.id };
+        return { success: false, error: String(error), configId: config?.id, metadata };
       }
     });
   }
@@ -5090,9 +5091,9 @@ class StoryService {
         let result;
         if (options.useImpit) {
           console.log("[StoryService] Using Impit for translation...");
-          result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy);
+          result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
         } else {
-          result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
+          result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy, options.metadata);
         }
         if (result.success && result.data) {
           console.log("[StoryService] Translation completed.");
@@ -5101,10 +5102,11 @@ class StoryService {
             data: result.data.text,
             context: result.data.context,
             // Return new context
-            configId: result.configId
+            configId: result.configId,
+            metadata: result.metadata
           };
         } else {
-          return { success: false, error: result.error || "Gemini Web Error", configId: result.configId };
+          return { success: false, error: result.error || "Gemini Web Error", configId: result.configId, metadata: result.metadata };
         }
       } else {
         const modelToUse = options.model || GEMINI_MODELS.FLASH_3_0;
@@ -5113,9 +5115,9 @@ class StoryService {
           modelToUse
         );
         if (result.success) {
-          return { success: true, data: result.data };
+          return { success: true, data: result.data, metadata: options.metadata };
         } else {
-          return { success: false, error: result.error };
+          return { success: false, error: result.error, metadata: options.metadata };
         }
       }
     } catch (error) {

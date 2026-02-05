@@ -580,7 +580,7 @@ export class GeminiChatServiceClass {
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
 
-  async sendMessage(message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }, useProxyOverride?: boolean): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+  async sendMessage(message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }, useProxyOverride?: boolean, metadata?: any): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string; metadata?: any }> {
         const MAX_RETRIES = 3;
         const MIN_DELAY_MS = 2000;
         const MAX_DELAY_MS = 10000;
@@ -631,7 +631,7 @@ export class GeminiChatServiceClass {
                 const result = await this._sendMessageInternal(message, config!, context, useProxyOverride);
 
                 if (result.success) {
-                    return { ...result, configId: config!.id };
+                    return { ...result, configId: config!.id, metadata };
                 }
 
                 if (result.error && result.error.includes('Không còn proxy khả dụng')) {
@@ -646,11 +646,11 @@ export class GeminiChatServiceClass {
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                 } else {
                     console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-                    return { ...result, configId: config!.id }; // Return last error
+                    return { ...result, configId: config!.id, metadata }; // Return last error
                 }
             }
 
-            return { success: false, error: 'Unexpected error in retry loop' };
+            return { success: false, error: 'Unexpected error in retry loop', metadata };
         });
     }
 
@@ -1031,8 +1031,9 @@ export class GeminiChatServiceClass {
       message: string, 
       configId: string, 
       context?: { conversationId: string; responseId: string; choiceId: string }, 
-      useProxyOverride?: boolean
-  ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+      useProxyOverride?: boolean,
+      metadata?: any
+  ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string; metadata?: any }> {
       
         // 1. Resolve Config
         let config: GeminiChatConfig | null = null;
@@ -1053,7 +1054,7 @@ export class GeminiChatServiceClass {
                 // 2. Prepare Context & Payload (Similar to sendMessage)
                 const { cookie, blLabel, fSid, atToken } = config!;
                 if (!cookie || !blLabel || !fSid || !atToken) {
-                    return { success: false, error: 'Missing config fields', configId: config!.id };
+                    return { success: false, error: 'Missing config fields', configId: config!.id, metadata };
                 }
 
                 // REQ_ID Logic
@@ -1180,7 +1181,7 @@ export class GeminiChatServiceClass {
                         proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
                         this.releaseProxy(config!.id, usedProxy.id);
                     }
-                    return { success: false, error: `Impit HTTP ${response.status}`, configId: config!.id };
+                    return { success: false, error: `Impit HTTP ${response.status}`, configId: config!.id, metadata };
                 }
                 
                 if (usedProxy) {
@@ -1285,15 +1286,16 @@ export class GeminiChatServiceClass {
                             text: foundText,
                             context: newContext
                         },
-                        configId: config!.id
+                        configId: config!.id,
+                        metadata
                     };
                 }
 
-                return { success: false, error: 'No text found in Impit response', configId: config!.id };
+                return { success: false, error: 'No text found in Impit response', configId: config!.id, metadata };
 
             } catch (error) {
                 console.error('[GeminiChatService] Impit Error:', error);
-                return { success: false, error: String(error), configId: config?.id };
+                return { success: false, error: String(error), configId: config?.id, metadata };
             }
         });
   }

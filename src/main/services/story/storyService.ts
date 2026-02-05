@@ -10,7 +10,7 @@ export class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, useImpit?: boolean }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, useImpit?: boolean, metadata?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any }> {
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
@@ -62,9 +62,9 @@ export class StoryService {
            let result;
            if (options.useImpit) {
                console.log('[StoryService] Using Impit for translation...');
-               result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy);
+               result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
            } else {
-               result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy);
+               result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy, options.metadata);
            }
            
            if (result.success && result.data) {
@@ -73,10 +73,11 @@ export class StoryService {
                  success: true, 
                  data: result.data.text,
                  context: result.data.context, // Return new context
-                 configId: result.configId
+                 configId: result.configId,
+                 metadata: result.metadata
              };
            } else {
-             return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId };
+             return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId, metadata: result.metadata };
            }
 
       } else {
@@ -90,9 +91,9 @@ export class StoryService {
           );
           
           if (result.success) {
-            return { success: true, data: result.data };
+            return { success: true, data: result.data, metadata: options.metadata };
           } else {
-            return { success: false, error: result.error };
+            return { success: false, error: result.error, metadata: options.metadata };
           }
       }
     } catch (error) {

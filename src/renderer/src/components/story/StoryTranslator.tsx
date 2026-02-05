@@ -563,10 +563,17 @@ export function StoryTranslator() {
         method,
         webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
         useProxy: method === 'WEB' && useProxy,
-        useImpit: method === 'WEB' && useImpit
-      }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+        useImpit: method === 'WEB' && useImpit,
+        metadata: { chapterId: selectedChapterId }
+      }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (translateResult.success && translateResult.data) {
+        // Validate metadata to prevent race condition
+        if (translateResult.metadata?.chapterId !== selectedChapterId) {
+          console.error(`[StoryTranslator] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== selected (${selectedChapterId})`);
+          throw new Error('Metadata validation failed - race condition detected');
+        }
+        
         // Kiểm tra marker kết thúc
         if (!hasEndMarker(translateResult.data)) {
           console.warn('[StoryTranslator] ⚠️ Bản dịch không có "Hết chương", đang retry...');
@@ -578,8 +585,9 @@ export function StoryTranslator() {
             method,
             webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
             useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit
-          }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+            useImpit: method === 'WEB' && useImpit,
+            metadata: { chapterId: selectedChapterId }
+          }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
           
           if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
             console.log('[StoryTranslator] ✅ Retry thành công, bản dịch đã có "Hết chương"');
@@ -733,11 +741,18 @@ export function StoryTranslator() {
             method,
             webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
             useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit
+            useImpit: method === 'WEB' && useImpit,
+            metadata: { chapterId: chapter.id }
           }
-        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
         if (translateResult.success && translateResult.data) {
+          // Validate metadata to prevent race condition
+          if (translateResult.metadata?.chapterId !== chapter.id) {
+            console.error(`[StoryTranslator] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== chapter.id (${chapter.id})`);
+            return null;
+          }
+          
           // Kiểm tra marker kết thúc
           if (!hasEndMarker(translateResult.data)) {
             console.warn(`[StoryTranslator] ⚠️ Chương ${chapter.title} không có "Hết chương", đang retry...`);
@@ -751,9 +766,10 @@ export function StoryTranslator() {
                 method,
                 webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
                 useProxy: method === 'WEB' && useProxy,
-                useImpit: method === 'WEB' && useImpit
+                useImpit: method === 'WEB' && useImpit,
+                metadata: { chapterId: chapter.id }
               }
-            ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
+            ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
             
             if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
               console.log(`[StoryTranslator] ✅ Retry chương ${chapter.title} thành công, đã có "Hết chương"`);

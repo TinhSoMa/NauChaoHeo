@@ -422,6 +422,24 @@ interface ProxyAPI {
   reset: () => Promise<{ success: boolean; error?: string }>;
 }
 
+interface CreatePromptDTO {
+  name: string;
+  description?: string;
+  sourceLang: string;
+  targetLang: string;
+  content: string;
+  isDefault?: boolean;
+}
+
+interface PromptAPI {
+  getAll: () => Promise<any>;
+  getById: (id: string) => Promise<any>;
+  create: (data: CreatePromptDTO) => Promise<any>;
+  update: (id: string, data: Partial<CreatePromptDTO>) => Promise<any>;
+  delete: (id: string) => Promise<any>;
+  setDefault: (id: string) => Promise<any>;
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -450,6 +468,9 @@ declare global {
 
       // Proxy API (quan ly proxy rotation)
       proxy: ProxyAPI;
+
+      // Prompt API (quan ly prompts)
+      prompt: PromptAPI;
     };
   }
 }
