@@ -281,6 +281,8 @@ interface AppSettings {
   useProxy: boolean;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
+  translationPromptId: string | null;
+  summaryPromptId: string | null;
 }
 
 /**

@@ -11,7 +11,8 @@ import {
   Palette, 
   Key,
   MessageCircle,
-  Network
+  Network,
+  FileText
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -25,6 +26,7 @@ import { AppSettings } from './AppSettings';
 import { ApiKeysSettings } from './ApiKeysSettings';
 import { GeminiChatSettings } from './GeminiChatSettings';
 import { ProxySettings } from './ProxySettings';
+import { PromptSettings } from './PromptSettings';
 
 // Menu items configuration
 const menuItems: SettingsMenuItem[] = [
@@ -39,6 +41,12 @@ const menuItems: SettingsMenuItem[] = [
     label: 'Dịch thuật', 
     desc: 'Cấu hình mô hình Gemini và các tham số dịch',
     icon: Languages 
+  },
+  { 
+    id: 'prompts', 
+    label: 'Prompt Templates', 
+    desc: 'Chọn prompt cho dịch truyện và tóm tắt',
+    icon: FileText 
   },
   { 
     id: 'tts', 
@@ -96,6 +104,7 @@ export function Settings() {
       {/* Detail Modes - Each tab has its own component */}
       {activeTab === 'output' && <OutputSettings onBack={handleBack} />}
       {activeTab === 'translation' && <TranslationSettings onBack={handleBack} />}
+      {activeTab === 'prompts' && <PromptSettings onBack={handleBack} />}
       {activeTab === 'tts' && <TtsSettings onBack={handleBack} />}
       {activeTab === 'app' && <AppSettings onBack={handleBack} />}
       {activeTab === 'apikeys' && <ApiKeysSettings onBack={handleBack} />}

@@ -1,6 +1,7 @@
 import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
 import { GeminiChatService } from '../chatGemini/geminiChatService';
+import { AppSettingsService } from '../appSettings';
 
 /**
  * Story Service - Handles story translation logic
@@ -106,18 +107,29 @@ export class StoryService {
    */
   static async prepareTranslationPrompt(chapterContent: string, sourceLang: string, targetLang: string): Promise<{ success: boolean; prompt?: any; error?: string }> {
     try {
-      // 1. Get all prompts
-      const prompts = PromptService.getAll();
+      let matchingPrompt;
       
-      // 2. Find matching prompt (prioritize default one)
-      const matchingPrompt = prompts.find(p => 
-        p.sourceLang === sourceLang && 
-        p.targetLang === targetLang && 
-        p.isDefault
-      ) || prompts.find(p => 
-        p.sourceLang === sourceLang && 
-        p.targetLang === targetLang
-      );
+      // 1. Check if user has configured a specific prompt in settings
+      const appSettings = AppSettingsService.getAll();
+      if (appSettings.translationPromptId) {
+        matchingPrompt = PromptService.getById(appSettings.translationPromptId);
+        if (!matchingPrompt) {
+          console.warn(`[StoryService] Configured translation prompt "${appSettings.translationPromptId}" not found, falling back to auto-detect`);
+        }
+      }
+      
+      // 2. Fallback: Auto-detect prompt based on language
+      if (!matchingPrompt) {
+        const prompts = PromptService.getAll();
+        matchingPrompt = prompts.find(p => 
+          p.sourceLang === sourceLang && 
+          p.targetLang === targetLang && 
+          p.isDefault
+        ) || prompts.find(p => 
+          p.sourceLang === sourceLang && 
+          p.targetLang === targetLang
+        );
+      }
 
       if (!matchingPrompt) {
         return { 
@@ -126,10 +138,67 @@ export class StoryService {
         };
       }
 
+      // 3. Parse and inject content
+      return this.injectContentIntoPrompt(matchingPrompt.content, chapterContent);
+
+    } catch (error) {
+      console.error('Error preparing translation prompt:', error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Prepares the summary prompt by fetching the appropriate summary prompt from the database
+   * and injecting the chapter content.
+   */
+  static async prepareSummaryPrompt(chapterContent: string, sourceLang: string, targetLang: string): Promise<{ success: boolean; prompt?: any; error?: string }> {
+    try {
+      let matchingPrompt;
+      
+      // 1. Check if user has configured a specific prompt in settings
+      const appSettings = AppSettingsService.getAll();
+      if (appSettings.summaryPromptId) {
+        matchingPrompt = PromptService.getById(appSettings.summaryPromptId);
+        if (!matchingPrompt) {
+          console.warn(`[StoryService] Configured summary prompt "${appSettings.summaryPromptId}" not found, falling back to auto-detect`);
+        }
+      }
+      
+      // 2. Fallback: Auto-detect prompt (name contains [SUMMARY] or tóm tắt)
+      if (!matchingPrompt) {
+        const prompts = PromptService.getAll();
+        matchingPrompt = prompts.find(p => 
+          p.sourceLang === sourceLang && 
+          p.targetLang === targetLang && 
+          (p.name.includes('[SUMMARY]') || p.name.toLowerCase().includes('tóm tắt'))
+        );
+      }
+
+      if (!matchingPrompt) {
+        return { 
+          success: false, 
+          error: `Không tìm thấy prompt tóm tắt cho ${sourceLang} -> ${targetLang}. Vui lòng chọn prompt trong Settings.` 
+        };
+      }
+
+      // 3. Parse and inject content
+      return this.injectContentIntoPrompt(matchingPrompt.content, chapterContent);
+
+    } catch (error) {
+      console.error('Error preparing summary prompt:', error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Helper function to inject content into prompt template
+   */
+  private static injectContentIntoPrompt(promptContent: string, chapterContent: string): { success: boolean; prompt?: any; error?: string } {
+    try {
       // 3. Parse the prompt content (which is a JSON string)
       let promptData;
       try {
-        promptData = JSON.parse(matchingPrompt.content);
+        promptData = JSON.parse(promptContent);
       } catch (e) {
         return { success: false, error: 'Invalid prompt content format (not valid JSON)' };
       }
@@ -204,10 +273,11 @@ export class StoryService {
       return { success: false, error: 'Prompt content must be a JSON array or object' };
 
     } catch (error) {
-      console.error('Error preparing translation prompt:', error);
+      console.error('Error injecting content into prompt:', error);
       return { success: false, error: String(error) };
     }
   }
+
   static async createEbook(options: { 
       chapters: { title: string; content: string }[], 
       title: string, 

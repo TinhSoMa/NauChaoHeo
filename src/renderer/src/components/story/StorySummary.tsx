@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
+import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 // import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
-import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { BookOpen, FileText, CheckSquare, Square, StopCircle, Download, Loader, Clock } from 'lucide-react';
+import { FileText, CheckSquare, Square, StopCircle, Loader, Clock, Sparkles, Download } from 'lucide-react';
 import { useProjectContext } from '../../context/ProjectContext';
 
 interface GeminiChatConfigLite {
@@ -29,36 +28,37 @@ const buildTokenKey = (config: GeminiChatConfigLite): string => {
   return `${extractCookieKey(config.cookie || '')}|${(config.atToken || '').trim()}`;
 };
 
-export function StoryTranslator() {
+export function StorySummary() {
   const { projectId, paths } = useProjectContext();
   const hasLoadedRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
-  const [filePath, setFilePath] = useState('');
-  const [sourceLang, setSourceLang] = useState('zh');
-  const [targetLang, setTargetLang] = useState('vi');
+  // Source data từ translator
+  const [sourceLang, setSourceLang] = useState('vi'); // Đã dịch sang tiếng Việt
+  const [targetLang, setTargetLang] = useState('vi'); // Tóm tắt cũng bằng tiếng Việt
   const [model, setModel] = useState('gemini-3-flash-preview');
   const [translateMode, setTranslateMode] = useState<'api' | 'token' | 'both'>('api');
   const [status, setStatus] = useState('idle');
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  // Map lưu trữ bản dịch theo chapterId
-  const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
+  // Map lưu trữ chapters đã dịch (source để tóm tắt)
+  const [sourceChapters, setSourceChapters] = useState<Map<string, string>>(new Map());
+  // Map lưu trữ summaries đã tạo
+  const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
   const [chapterModels, setChapterModels] = useState<Map<string, string>>(new Map());
   const [chapterMethods, setChapterMethods] = useState<Map<string, 'api' | 'token'>>(new Map());
   const [translatedTitles, setTranslatedTitles] = useState<Map<string, string>>(new Map());
+  const [summaryTitles, setSummaryTitles] = useState<Map<string, string>>(new Map());
   const [tokenConfigId, setTokenConfigId] = useState<string | null>(null);
   const [tokenConfigs, setTokenConfigs] = useState<GeminiChatConfigLite[]>([]);
   const [tokenContexts, setTokenContexts] = useState<Map<string, TokenContext>>(new Map());
-  const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
-  // Danh sach cac chuong bi loai tru khoi dich thuat
+  const [viewMode, setViewMode] = useState<'original' | 'summary'>('original');
+  // Danh sach cac chuong bi loai tru khoi tom tat
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
   // Last clicked chapter for Shift+Click selection
   const [lastClickedChapterId, setLastClickedChapterId] = useState<string | null>(null);
-  // Progress cho batch translation
+  // Progress cho batch summarization
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [shouldStop, setShouldStop] = useState(false);
-  // Export ebook status
-  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
   // Reading settings
   const [fontSize, setFontSize] = useState<number>(18);
   const [lineHeight, setLineHeight] = useState<number>(1.8);
@@ -69,7 +69,9 @@ export function StoryTranslator() {
   const [, setTick] = useState(0); // Force re-render for elapsed time
   const [useProxy, setUseProxy] = useState(true);
   const [useImpit, setUseImpit] = useState(false);
-  const [retranslateExisting, setRetranslateExisting] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [retranslateSummary, setRetranslateSummary] = useState(false);
+  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
 
   const loadProxySetting = async () => {
     try {
@@ -78,20 +80,12 @@ export function StoryTranslator() {
         setUseProxy(result.data.useProxy);
       }
     } catch (error) {
-      console.error('[StoryTranslator] Error loading proxy setting:', error);
+      console.error('[StorySummary] Error loading proxy setting:', error);
     }
   };
 
-  const extractTranslatedTitle = (text: string, fallbackId: string) => {
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    return lines[0] || `Chương ${fallbackId}`;
-  };
-
-  // Kiểm tra xem bản dịch có marker kết thúc hay không
-  const hasEndMarker = (text: string): boolean => {
+  // Kiểm tra xem bản tóm tắt có marker kết thúc hay không
+  const hasSummaryEndMarker = (text: string): boolean => {
     const lines = text
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -100,8 +94,8 @@ export function StoryTranslator() {
     if (lines.length === 0) return false;
     
     const lastLine = lines[lines.length - 1];
-    // Check các biến thể của "Hết chương"
-    return /hết\s+chương|end\s+of\s+chapter|---\s*hết\s*---/i.test(lastLine);
+    // Check các biến thể của "Hết tóm tắt"
+    return /hết\s+tóm\s+tắt|end\s+of\s+summary|---\s*hết\s*---/i.test(lastLine);
   };
 
   // Update elapsed time every second
@@ -115,7 +109,8 @@ export function StoryTranslator() {
     return () => clearInterval(interval);
   }, [processingChapters.size]);
 
-  const STORY_STATE_FILE = 'story-translator.json';
+  const STORY_STATE_FILE = 'story-summary.json';
+  const TRANSLATOR_FILE = 'story-translator.json';
 
   const loadConfigurations = async () => {
     try {
@@ -137,7 +132,7 @@ export function StoryTranslator() {
         }
       }
     } catch (e) {
-      console.error('[StoryTranslator] Error loading config:', e);
+      console.error('[StorySummary] Error loading config:', e);
     }
   };
 
@@ -267,95 +262,102 @@ export function StoryTranslator() {
   };
 
   // Debug logging
-  console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
-  console.log('[StoryTranslator] Render - status:', status);
-  console.log('[StoryTranslator] Render - chapters.length:', chapters.length);
-
-  const handleBrowse = async () => {
-    const result = await window.electronAPI.invoke('dialog:openFile', {
-      filters: [{ name: 'Text/Epub', extensions: ['txt', 'epub'] }]
-    }) as { canceled: boolean; filePaths: string[] };
-
-    if (!result.canceled && result.filePaths.length > 0) {
-      const path = result.filePaths[0];
-      setFilePath(path);
-      parseFile(path);
-    }
-  };
-
-  const parseFile = async (
-    path: string,
-    options?: { keepTranslations?: boolean; keepSelection?: boolean }
-  ): Promise<boolean> => {
-      // Parse file truyen
-      setStatus('running');
-      try {
-        const parseResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PARSE, path) as ParseStoryResult;
-        if (parseResult.success && parseResult.chapters) {
-          setChapters(parseResult.chapters);
-          // Mac dinh chon tat ca cac chuong
-          setExcludedChapterIds(new Set());
-          if (parseResult.chapters.length > 0) {
-             if (!options?.keepSelection) {
-               setSelectedChapterId(parseResult.chapters[0].id);
-             }
-             if (!options?.keepTranslations) {
-               setTranslatedChapters(new Map());
-               setViewMode('original');
-             }
-          }
-          return true;
-        } else {
-          console.error('[StoryTranslator] Loi parse file:', parseResult.error);
-          return false;
-        }
-      } catch (error) {
-         console.error('[StoryTranslator] Loi invoke story:parse:', error);
-         return false;
-      } finally {
-        setStatus('idle');
-      }
-  }
+  console.log('[StorySummary] Render - projectId:', projectId);
+  console.log('[StorySummary] Render - paths:', paths);
+  console.log('[StorySummary] Render - summaries.size:', summaries.size);
+  console.log('[StorySummary] Render - status:', status);
+  console.log('[StorySummary] Render - chapters.length:', chapters.length);
+  console.log('[StorySummary] Render - sourceChapters.size:', sourceChapters.size);
 
   const loadStoryState = async () => {
-    if (!projectId) return;
+    if (!projectId) {
+      console.log('[StorySummary] Không có projectId, bỏ qua load');
+      return;
+    }
+
+    console.log('[StorySummary] Bắt đầu load dữ liệu...');
 
     try {
-      const res = await window.electronAPI.project.readFeatureFile({
+      // 1. Load translator data (source chapters - bản dịch dùng để tóm tắt)
+      const translatorRes = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: 'story',
+        fileName: TRANSLATOR_FILE
+      });
+
+      console.log('[StorySummary] Translator file response:', translatorRes?.success);
+
+      if (translatorRes?.success && translatorRes.data) {
+        const translatorData = JSON.parse(translatorRes.data) as {
+          sourceLang?: string;
+          targetLang?: string;
+          translatedEntries?: Array<[string, string]>;
+          translatedTitles?: Array<{ id: string; title: string }>;
+        };
+
+        console.log('[StorySummary] Translator data parsed:', {
+          hasSourceLang: !!translatorData.sourceLang,
+          hasTargetLang: !!translatorData.targetLang,
+          translatedEntriesCount: translatorData.translatedEntries?.length || 0,
+          translatedTitlesCount: translatorData.translatedTitles?.length || 0
+        });
+
+        // Set sourceLang/targetLang from translator (bản dịch là tiếng gì)
+        if (translatorData.sourceLang) setSourceLang(translatorData.targetLang || 'vi');
+        if (translatorData.targetLang) setTargetLang(translatorData.targetLang || 'vi');
+        
+        // Load source chapters (bản dịch)
+        if (translatorData.translatedEntries) {
+          const sourceMap = new Map(translatorData.translatedEntries);
+          setSourceChapters(sourceMap);
+          console.log('[StorySummary] Đã load', sourceMap.size, 'chapters từ translator');
+        } else {
+          console.warn('[StorySummary] Không tìm thấy translatedEntries trong translator file');
+        }
+        
+        // Load titles
+        if (translatorData.translatedTitles) {
+          const titleMap = new Map(translatorData.translatedTitles.map((t) => [t.id, t.title] as [string, string]));
+          const chapterList = translatorData.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: '' }));
+          setTranslatedTitles(titleMap);
+          setChapters(chapterList);
+          console.log('[StorySummary] Đã load', chapterList.length, 'chapter titles');
+        } else {
+          console.warn('[StorySummary] Không tìm thấy translatedTitles trong translator file');
+        }
+      } else {
+        console.warn('[StorySummary] Translator file không tồn tại hoặc chưa có dữ liệu');
+      }
+
+      // 2. Load summary data
+      const summaryRes = await window.electronAPI.project.readFeatureFile({
         projectId,
         feature: 'story',
         fileName: STORY_STATE_FILE
       });
 
-      if (res?.success && res.data) {
-        const saved = JSON.parse(res.data) as {
-          filePath?: string;
-          sourceLang?: string;
-          targetLang?: string;
+      if (summaryRes?.success && summaryRes.data) {
+        const saved = JSON.parse(summaryRes.data) as {
           model?: string;
           translateMode?: 'api' | 'token' | 'both';
-          translatedEntries?: Array<[string, string]>;
+          summaries?: Array<[string, string]>;
           chapterModels?: Array<[string, string]>;
           chapterMethods?: Array<[string, 'api' | 'token']>;
-          translatedTitles?: Array<{ id: string; title: string }>;
+          summaryTitles?: Array<[string, string]>;
           tokenConfigId?: string | null;
           tokenContext?: TokenContext | null;
           tokenContexts?: Array<[string, TokenContext]>;
-          viewMode?: 'original' | 'translated';
+          viewMode?: 'original' | 'summary';
           excludedChapterIds?: string[];
           selectedChapterId?: string | null;
         };
 
-        if (saved.sourceLang) setSourceLang(saved.sourceLang);
-        if (saved.targetLang) setTargetLang(saved.targetLang);
         if (saved.model) setModel(saved.model);
         if (saved.translateMode) setTranslateMode(saved.translateMode);
-        if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
+        if (saved.summaries) setSummaries(new Map(saved.summaries));
         if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
         if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
-        if (saved.translatedTitles) {
-          setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title] as [string, string])));
-        }
+        if (saved.summaryTitles) setSummaryTitles(new Map(saved.summaryTitles));
         if (typeof saved.tokenConfigId !== 'undefined') {
           setTokenConfigId(saved.tokenConfigId || null);
         }
@@ -365,22 +367,12 @@ export function StoryTranslator() {
           setTokenContexts(new Map([[saved.tokenConfigId, saved.tokenContext]]));
         }
 
-        let parsedOk = false;
-        if (saved.filePath) {
-          setFilePath(saved.filePath);
-          parsedOk = await parseFile(saved.filePath, { keepTranslations: true, keepSelection: true });
-        }
-
-        if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
-          setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: '' })));
-        }
-
         if (saved.viewMode) setViewMode(saved.viewMode);
         if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
         if (typeof saved.selectedChapterId !== 'undefined') setSelectedChapterId(saved.selectedChapterId);
       }
     } catch (error) {
-      console.error('[StoryTranslator] Loi khi tai du lieu project:', error);
+      console.error('[StorySummary] Lỗi khi tải dữ liệu project:', error);
     } finally {
       hasLoadedRef.current = true;
     }
@@ -389,45 +381,39 @@ export function StoryTranslator() {
   const saveStoryState = async () => {
     if (!projectId) return;
 
-    // Các thuộc tính được lưu vào project/story/story-translator.json:
-    // - filePath: đường dẫn file input gốc (không lưu text gốc)
-    // - sourceLang/targetLang: cặp ngôn ngữ dịch
+    // Lưu vào story-summary.json:
     // - model: model mặc định đang chọn
-    // - translatedEntries: map chapterId -> nội dung đã dịch
+    // - summaries: map chapterId -> nội dung tóm tắt
     // - chapterModels: map chapterId -> model đã dùng cho chương đó
-    // - translatedTitles: danh sách (id, title) của chương đã dịch để hiển thị khi không parse lại được input
-    // - viewMode: chế độ xem (original/translated)
+    // - viewMode: chế độ xem (original/summary)
     // - excludedChapterIds: các chương bị loại trừ
     // - selectedChapterId: chương đang chọn
-    const orderedTranslatedEntries = chapters
-      .filter((c) => translatedChapters.has(c.id))
-      .map((c) => [c.id, translatedChapters.get(c.id)!] as [string, string]);
+    const orderedSummaries = chapters
+      .filter((c) => summaries.has(c.id))
+      .map((c) => [c.id, summaries.get(c.id)!] as [string, string]);
 
-    const orderedChapterModels = orderedTranslatedEntries.map(([chapterId]) => {
+    const orderedChapterModels = orderedSummaries.map(([chapterId]) => {
       const usedModel = chapterModels.get(chapterId) || model;
       return [chapterId, usedModel] as [string, string];
     });
 
-    const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
+    const orderedChapterMethods = orderedSummaries.map(([chapterId]) => {
       const usedMethod = chapterMethods.get(chapterId) || (translateMode === 'token' ? 'token' : 'api');
       return [chapterId, usedMethod] as [string, 'api' | 'token'];
     });
 
-    const translatedTitles = orderedTranslatedEntries.map(([chapterId, content]) => ({
-      id: chapterId,
-      title: extractTranslatedTitle(content, chapterId)
-    }));
+    const orderedSummaryTitles = orderedSummaries.map(([chapterId]) => {
+      const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || chapters.find(c => c.id === chapterId)?.title || '';
+      return [chapterId, title] as [string, string];
+    });
 
     const payload = {
-      filePath,
-      sourceLang,
-      targetLang,
       model,
       translateMode,
-      translatedEntries: orderedTranslatedEntries,
+      summaries: orderedSummaries,
       chapterModels: orderedChapterModels,
       chapterMethods: orderedChapterMethods,
-      translatedTitles,
+      summaryTitles: orderedSummaryTitles,
       tokenConfigId,
       tokenContexts: Array.from(tokenContexts.entries()),
       viewMode,
@@ -480,16 +466,15 @@ export function StoryTranslator() {
   }, [
     projectId,
     paths,
-    filePath,
     sourceLang,
     targetLang,
     model,
     translateMode,
     chapters,
-    translatedChapters,
+    summaries,
     chapterModels,
     chapterMethods,
-    translatedTitles,
+    summaryTitles,
     tokenConfigId,
     tokenContexts,
     viewMode,
@@ -510,36 +495,39 @@ export function StoryTranslator() {
     
     // Kiem tra chuong hien tai co bi loai tru khong
     if (!isChapterIncluded(selectedChapterId)) {
-      alert('Chuong nay da bi loai tru khoi danh sach dich. Vui long bo chon "Loai tru" hoac chon chuong khac.');
+      alert('Chương này đã bị loại trừ khỏi danh sách tóm tắt. Vui lòng bỏ chọn "Loại trừ" hoặc chọn chương khác.');
       return;
     }
 
-    // Kiểm tra nếu chương đã dịch và checkbox chưa được tick
-    if (translatedChapters.has(selectedChapterId) && !retranslateExisting) {
-      alert('⚠️ Chương này đã được dịch rồi.\n\nNếu muốn dịch lại, vui lòng tick vào "Dịch lại các chương đã dịch" ở phần cấu hình.');
+    // Kiểm tra nếu chương đã tóm tắt và checkbox chưa được tick
+    if (summaries.has(selectedChapterId) && !retranslateSummary) {
+      alert('⚠️ Chương này đã được tóm tắt rồi.\n\nNếu muốn tóm tắt lại, vui lòng tick vào "Tóm tắt lại các chương đã tóm tắt" ở phần cấu hình.');
       return;
     }
-    
-    const chapter = chapters.find(c => c.id === selectedChapterId);
-    if (!chapter) return;
+
+    // Kiem tra nguon du lieu
+    const sourceContent = sourceChapters.get(selectedChapterId);
+    if (!sourceContent) {
+      alert('Không tìm thấy bản dịch cho chương này. Vui lòng dịch truyện trước.');
+      return;
+    }
 
     setStatus('running');
     
     try {
-      console.log('[StoryTranslator] Dang chuan bi prompt...');
-      // 1. Prepare Prompt
-      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-        chapterContent: chapter.content,
+      console.log('[StorySummary] Đang chuẩn bị prompt tóm tắt...');
+      // 1. Prepare Summary Prompt
+      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+        chapterContent: sourceContent,
         sourceLang,
-        targetLang,
-        model
+        targetLang
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) {
-        throw new Error(prepareResult.error || 'Loi chuan bi prompt');
+        throw new Error(prepareResult.error || 'Lỗi chuẩn bị prompt tóm tắt');
       }
 
-      console.log('[StoryTranslator] Da chuan bi prompt, dang gui den Gemini...');
+      console.log('[StorySummary] Đã chuẩn bị prompt, đang gửi đến Gemini...');
       
       const method = translateMode === 'token' ? 'WEB' : 'API';
       const methodKey: 'api' | 'token' = method === 'WEB' ? 'token' : 'api';
@@ -556,7 +544,7 @@ export function StoryTranslator() {
 
       const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
-      // 2. Send to Gemini for Translation
+      // 2. Send to Gemini for Summarization
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
         model: model,
@@ -568,8 +556,8 @@ export function StoryTranslator() {
 
       if (translateResult.success && translateResult.data) {
         // Kiểm tra marker kết thúc
-        if (!hasEndMarker(translateResult.data)) {
-          console.warn('[StoryTranslator] ⚠️ Bản dịch không có "Hết chương", đang retry...');
+        if (!hasSummaryEndMarker(translateResult.data)) {
+          console.warn('[StorySummary] ⚠️ Bản tóm tắt không có "Hết tóm tắt", đang retry...');
           
           // Retry 1 lần
           const retryResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
@@ -581,25 +569,19 @@ export function StoryTranslator() {
             useImpit: method === 'WEB' && useImpit
           }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
           
-          if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
-            console.log('[StoryTranslator] ✅ Retry thành công, bản dịch đã có "Hết chương"');
+          if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
+            console.log('[StorySummary] ✅ Retry thành công, bản tóm tắt đã có "Hết tóm tắt"');
             translateResult.data = retryResult.data;
             if (retryResult.context) translateResult.context = retryResult.context;
           } else {
-            console.warn('[StoryTranslator] ⚠️ Retry vẫn không có "Hết chương", sử dụng bản dịch gốc');
+            console.warn('[StorySummary] ⚠️ Retry vẫn không có "Hết tóm tắt", sử dụng bản gốc');
           }
         }
         
-        // Lưu bản dịch vào Map cache
-        setTranslatedChapters(prev => {
+        // Lưu tóm tắt vào Map cache
+        setSummaries(prev => {
           const next = new Map(prev);
           next.set(selectedChapterId, translateResult.data!);
-          return next;
-        });
-
-        setTranslatedTitles(prev => {
-          const next = new Map(prev);
-          next.set(selectedChapterId, extractTranslatedTitle(translateResult.data!, selectedChapterId));
           return next;
         });
 
@@ -623,36 +605,34 @@ export function StoryTranslator() {
           });
         }
 
-        // REMOVED: Saving to Project DB
-
-        setViewMode('translated');
-        console.log('[StoryTranslator] Dich thanh cong!');
+        setViewMode('summary');
+        console.log('[StorySummary] Tóm tắt thành công!');
       } else {
-        throw new Error(translateResult.error || 'Dich that bai');
+        throw new Error(translateResult.error || 'Tóm tắt thất bại');
       }
 
     } catch (error) {
-      console.error('[StoryTranslator] Loi trong qua trinh dich:', error);
-      alert(`Loi dich thuat: ${error}`);
+      console.error('[StorySummary] Lỗi trong quá trình tóm tắt:', error);
+      alert(`Lỗi tóm tắt: ${error}`);
     } finally {
       setStatus('idle');
     }
   };
 
   const handleStopTranslation = () => {
-    console.log('[StoryTranslator] Dừng dịch thủ công...');
+    console.log('[StorySummary] Dừng tóm tắt thủ công...');
     setShouldStop(true);
   };
 
-  // Dịch tất cả các chương được chọn (continuous queue - gửi liên tục sau khi hoàn thành)
+  // Tóm tắt tất cả các chương được chọn (continuous queue - gửi liên tục sau khi hoàn thành)
   const handleTranslateAll = async () => {
-    // Lấy danh sách các chương cần dịch
+    // Lấy danh sách các chương cần tóm tắt
     const chaptersToTranslate = chapters.filter(
-      c => isChapterIncluded(c.id) && (retranslateExisting || !translatedChapters.has(c.id))
+      c => isChapterIncluded(c.id) && (retranslateSummary || !summaries.has(c.id)) && sourceChapters.has(c.id)
     );
     
     if (chaptersToTranslate.length === 0) {
-      alert('Đã dịch xong tất cả các chương được chọn!');
+      alert('Đã tóm tắt xong tất cả các chương được chọn!');
       return;
     }
 
@@ -676,13 +656,20 @@ export function StoryTranslator() {
     ): Promise<{ id: string; text: string } | null> => {
       // Kiểm tra nếu người dùng đã nhấn Dừng
       if (shouldStop) {
-        console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
+        console.log(`[StorySummary] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
         return null;
       }
       
       setSelectedChapterId(chapter.id);
       
       const channel = channelOverride || getWorkerChannel(workerId);
+
+      // Lấy nội dung đã dịch để tóm tắt
+      const sourceContent = sourceChapters.get(chapter.id);
+      if (!sourceContent) {
+        console.error(`[StorySummary] ⚠️ Không tìm thấy bản dịch cho chương ${chapter.title}`);
+        return null;
+      }
 
       // Mark as processing
       setProcessingChapters(prev => {
@@ -692,18 +679,17 @@ export function StoryTranslator() {
       });
       
       try {
-        console.log(`[StoryTranslator] 📖 Dịch chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
+        console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
         
-        // 1. Prepare Prompt
-        const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-          chapterContent: chapter.content,
+        // 1. Prepare Summary Prompt
+        const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+          chapterContent: sourceContent,
           sourceLang,
-          targetLang,
-          model
+          targetLang
         }) as PreparePromptResult;
         
         if (!prepareResult.success || !prepareResult.prompt) {
-          console.error(`Lỗi chuẩn bị prompt cho chương ${chapter.title}:`, prepareResult.error);
+          console.error(`Lỗi chuẩn bị prompt tóm tắt cho chương ${chapter.title}:`, prepareResult.error);
           return null;
         }
 
@@ -717,14 +703,14 @@ export function StoryTranslator() {
           await loadConfigurations();
           selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
           if (!selectedTokenConfig) {
-            console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+            console.error('[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
             return null;
           }
         }
 
         const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
-        // 2. Send to Gemini for Translation
+        // 2. Send to Gemini for Summarization
         const translateResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, 
           {
@@ -739,8 +725,8 @@ export function StoryTranslator() {
 
         if (translateResult.success && translateResult.data) {
           // Kiểm tra marker kết thúc
-          if (!hasEndMarker(translateResult.data)) {
-            console.warn(`[StoryTranslator] ⚠️ Chương ${chapter.title} không có "Hết chương", đang retry...`);
+          if (!hasSummaryEndMarker(translateResult.data)) {
+            console.warn(`[StorySummary] ⚠️ Chương ${chapter.title} không có "Hết tóm tắt", đang retry...`);
             
             // Retry 1 lần
             const retryResult = await window.electronAPI.invoke(
@@ -755,25 +741,19 @@ export function StoryTranslator() {
               }
             ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string };
             
-            if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
-              console.log(`[StoryTranslator] ✅ Retry chương ${chapter.title} thành công, đã có "Hết chương"`);
+            if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
+              console.log(`[StorySummary] ✅ Retry chương ${chapter.title} thành công, đã có "Hết tóm tắt"`);
               translateResult.data = retryResult.data;
               if (retryResult.context) translateResult.context = retryResult.context;
             } else {
-              console.warn(`[StoryTranslator] ⚠️ Retry chương ${chapter.title} vẫn không có "Hết chương", sử dụng bản gốc`);
+              console.warn(`[StorySummary] ⚠️ Retry chương ${chapter.title} vẫn không có "Hết tóm tắt", sử dụng bản gốc`);
             }
           }
           
-          // Cập nhật UI NGAY khi dịch xong
-          setTranslatedChapters(prev => {
+          // Cập nhật UI NGAY khi tóm tắt xong
+          setSummaries(prev => {
             const next = new Map(prev);
             next.set(chapter.id, translateResult.data!);
-            return next;
-          });
-
-          setTranslatedTitles(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, extractTranslatedTitle(translateResult.data!, chapter.id));
             return next;
           });
 
@@ -789,6 +769,13 @@ export function StoryTranslator() {
             return next;
           });
 
+          setSummaryTitles(prev => {
+            const next = new Map(prev);
+            const chapterTitle = translatedTitles.get(chapter.id) || chapter.title;
+            next.set(chapter.id, chapterTitle);
+            return next;
+          });
+
           if (translateResult.context && translateResult.context.conversationId && tokenKey) {
             setTokenContexts(prev => {
               const next = new Map(prev);
@@ -797,16 +784,14 @@ export function StoryTranslator() {
             });
           }
 
-          // REMOVED: Saving to Project DB
-
-          console.log(`[StoryTranslator] ✅ Dịch xong: ${chapter.title}`);
+          console.log(`[StorySummary] ✅ Tóm tắt xong: ${chapter.title}`);
           return { id: chapter.id, text: translateResult.data! };
         } else {
-          console.error(`[StoryTranslator] ❌ Lỗi dịch chương ${chapter.title}:`, translateResult.error);
+          console.error(`[StorySummary] ❌ Lỗi tóm tắt chương ${chapter.title}:`, translateResult.error);
           return null;
         }
       } catch (error) {
-        console.error(`[StoryTranslator] ❌ Exception khi dịch chương ${chapter.title}:`, error);
+        console.error(`[StorySummary] ❌ Exception khi tóm tắt chương ${chapter.title}:`, error);
         return null;
       } finally {
         // Remove from processing
@@ -820,7 +805,7 @@ export function StoryTranslator() {
 
     // Worker function - xử lý từng chapter liên tục
     const worker = async (workerId: number, channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
-      console.log(`[StoryTranslator] 🚀 Worker ${workerId} started`);
+      console.log(`[StorySummary] 🚀 Worker ${workerId} started`);
       
       while (currentIndex < chaptersToTranslate.length && !shouldStop) {
         const index = currentIndex++;
@@ -830,15 +815,15 @@ export function StoryTranslator() {
         const isVeryFirstChapter = index === 0;
         if (!isVeryFirstChapter) {
           const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StoryTranslator] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi dịch chương ${index + 1}...`);
+          console.log(`[StorySummary] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi tóm tắt chương ${index + 1}...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
-          console.log(`[StoryTranslator] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
+          console.log(`[StorySummary] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
         }
         
         // Kiểm tra lại shouldStop sau khi chờ
         if (shouldStop) {
-          console.log(`[StoryTranslator] ⚠️ Worker ${workerId} stopped`);
+          console.log(`[StorySummary] ⚠️ Worker ${workerId} stopped`);
           break;
         }
         
@@ -848,10 +833,10 @@ export function StoryTranslator() {
         completed++;
         setBatchProgress({ current: completed, total: chaptersToTranslate.length });
         
-        console.log(`[StoryTranslator] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId})`);
+        console.log(`[StorySummary] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId})`);
       }
       
-      console.log(`[StoryTranslator] ✓ Worker ${workerId} finished`);
+      console.log(`[StorySummary] ✓ Worker ${workerId} finished`);
     };
 
     const tokenConfigsResult = translateMode === 'token' || translateMode === 'both'
@@ -863,7 +848,7 @@ export function StoryTranslator() {
       : [];
 
     if ((translateMode === 'token' || translateMode === 'both') && tokenConfigsForRun.length === 0) {
-      console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+      console.error('[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
       setStatus('idle');
       setBatchProgress(null);
       return;
@@ -877,7 +862,7 @@ export function StoryTranslator() {
         : 0;
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
 
-    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
+    console.log(`[StorySummary] 🎯 Bắt đầu tóm tắt ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
 
     const workers: Promise<void>[] = [];
     let workerId = 1;
@@ -894,42 +879,66 @@ export function StoryTranslator() {
 
     setStatus('idle');
     setBatchProgress(null);
-    setViewMode('translated');
+    setViewMode('summary');
     
     if (shouldStop) {
-      console.log(`[StoryTranslator] 🛑 Đã dừng: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters đã dịch`);
+      console.log(`[StorySummary] 🛑 Đã dừng: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters đã tóm tắt`);
     } else {
-      console.log(`[StoryTranslator] 🎉 Hoàn thành: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters`);
+      console.log(`[StorySummary] 🎉 Hoàn thành: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters`);
     }
   };
 
   const handleSavePrompt = async () => {
     if (!selectedChapterId) return;
-    const chapter = chapters.find(c => c.id === selectedChapterId);
-    if (!chapter) return;
+    const sourceContent = sourceChapters.get(selectedChapterId);
+    if (!sourceContent) {
+      alert('⚠️ Không tìm thấy bản dịch cho chương này.');
+      return;
+    }
 
+    setSavingPrompt(true);
     try {
-       const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-        chapterContent: chapter.content,
+      console.log('[StorySummary] Đang chuẩn bị prompt...');
+      const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+        chapterContent: sourceContent,
         sourceLang,
-        targetLang,
-        model
+        targetLang
       }) as PreparePromptResult;
 
       if (result.success && result.prompt) {
-         const promptString = JSON.stringify(result.prompt);
-         await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
+        const promptString = JSON.stringify(result.prompt);
+        
+        // Copy to clipboard
+        try {
+          await navigator.clipboard.writeText(promptString);
+          console.log('[StorySummary] Đã copy prompt vào clipboard');
+        } catch (clipboardErr) {
+          console.warn('[StorySummary] Không thể copy vào clipboard:', clipboardErr);
+        }
+
+        // Save to file (if SAVE_PROMPT channel exists)
+        try {
+          await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
+          alert('✅ Đã lưu prompt thành công!\n📋 Prompt đã được copy vào clipboard.');
+        } catch (saveErr) {
+          // If save fails, at least we copied to clipboard
+          alert('📋 Prompt đã được copy vào clipboard.\n⚠️ Không thể lưu vào file.');
+        }
+      } else {
+        alert('❌ Lỗi: ' + (result.error || 'Không thể tạo prompt'));
       }
     } catch (e) {
-      console.error('[StoryTranslator] Loi luu prompt:', e);
+      console.error('[StorySummary] Lỗi lưu prompt:', e);
+      alert('❌ Lỗi khi xử lý prompt: ' + String(e));
+    } finally {
+      setSavingPrompt(false);
     }
   }
 
-  // Export all translations to EPUB ebook
+  // Export ebook với 3 chế độ: translation only, summary only, combined
   const handleExportEbook = async () => {
-    // REMOVED check project
-    if (translatedChapters.size === 0) {
-      alert('Chưa có chương nào được dịch để export!');
+    if (summaries.size === 0 && sourceChapters.size === 0) {
+      alert('Chưa có nội dung nào để export!');
       return;
     }
 
@@ -938,20 +947,20 @@ export function StoryTranslator() {
       const userChoice = window.confirm(
         '📚 Chọn loại nội dung đóng gói:\n\n' +
         '✅ OK = Bản dịch + Tóm tắt (Kết hợp)\n' +
-        '❌ Cancel = Chỉ bản dịch\n\n' +
-        '(Để chọn "Chỉ tóm tắt", nhấn Cancel rồi chọn lại)'
+        '❌ Cancel = Chỉ tóm tắt\n\n' +
+        '(Để chọn "Chỉ bản dịch", nhấn Cancel rồi chọn lại)'
       );
       
       if (userChoice) {
         resolve('combined');
       } else {
         // Second prompt for translation vs summary
-        const summaryOnly = window.confirm(
+        const translationOnly = window.confirm(
           '📚 Bạn đã chọn không kết hợp.\n\n' +
-          '✅ OK = Chỉ tóm tắt\n' +
-          '❌ Cancel = Chỉ bản dịch'
+          '✅ OK = Chỉ bản dịch\n' +
+          '❌ Cancel = Chỉ tóm tắt'
         );
-        resolve(summaryOnly ? 'summary' : 'translation');
+        resolve(translationOnly ? 'translation' : 'summary');
       }
     });
 
@@ -962,125 +971,87 @@ export function StoryTranslator() {
     setExportStatus('exporting');
 
     try {
-      console.log('[StoryTranslator] Bắt đầu export ebook...', { exportMode });
-      
-      // Load summary data if needed
-      let summaries = new Map<string, string>();
-      let summaryTitles = new Map<string, string>();
-      
-      if (exportMode === 'summary' || exportMode === 'combined') {
-        if (!projectId) {
-          alert('⚠️ Cần mở project để export tóm tắt!');
-          setExportStatus('idle');
-          return;
-        }
-        
-        try {
-          const summaryRes = await window.electronAPI.project.readFeatureFile({
-            projectId,
-            feature: 'story',
-            fileName: 'story-summary.json'
-          });
-          
-          if (summaryRes?.success && summaryRes.data) {
-            const summaryData = JSON.parse(summaryRes.data) as {
-              summaries?: Array<[string, string]>;
-              summaryTitles?: Array<[string, string]>;
-            };
-            
-            if (summaryData.summaries) {
-              summaries = new Map(summaryData.summaries);
-            }
-            if (summaryData.summaryTitles) {
-              summaryTitles = new Map(summaryData.summaryTitles);
-            }
-            
-            console.log(`[StoryTranslator] Đã load ${summaries.size} tóm tắt`);
-          }
-        } catch (err) {
-          console.error('[StoryTranslator] Lỗi load summary data:', err);
-        }
-        
-        if (summaries.size === 0) {
-          alert('⚠️ Chưa có tóm tắt nào! Vui lòng tóm tắt truyện trước.');
-          setExportStatus('idle');
-          return;
-        }
+      console.log('[StorySummary] Bắt đầu export ebook...', { exportMode });
+
+      // Validate data based on mode
+      if ((exportMode === 'translation' || exportMode === 'combined') && sourceChapters.size === 0) {
+        alert('⚠️ Chưa có bản dịch nào! Vui lòng dịch truyện trước.');
+        setExportStatus('idle');
+        return;
       }
       
+      if ((exportMode === 'summary' || exportMode === 'combined') && summaries.size === 0) {
+        alert('⚠️ Chưa có tóm tắt nào! Vui lòng tóm tắt truyện trước.');
+        setExportStatus('idle');
+        return;
+      }
+
       // 1. Ask user for save location
-      const defaultName = exportMode === 'translation' 
-        ? `translation_${sourceLang}-${targetLang}.epub`
+      const defaultName = exportMode === 'translation'
+        ? `translation_${sourceLang}.epub`
         : exportMode === 'summary'
           ? `summary_${targetLang}.epub`
           : `combined_${sourceLang}-${targetLang}.epub`;
-      
+
       const saveDialogResult = await window.electronAPI.invoke('dialog:showSaveDialog', {
-          title: 'Lưu Ebook EPUB',
-          defaultPath: defaultName,
-          filters: [{ name: 'EPUB Ebook', extensions: ['epub'] }]
+        title: 'Lưu Ebook EPUB',
+        defaultPath: defaultName,
+        filters: [{ name: 'EPUB Ebook', extensions: ['epub'] }]
       }) as { canceled: boolean; filePath?: string };
 
       if (saveDialogResult.canceled || !saveDialogResult.filePath) {
-          setExportStatus('idle');
-          return;
+        setExportStatus('idle');
+        return;
       }
 
       // 2. Prepare chapters based on export mode
       const ebookChapters: { title: string; content: string }[] = [];
-      const titleMap = new Map(
-        chapters.map((c) => [c.id, c.title] as [string, string])
+      const orderedChapters = chapters.filter(c => 
+        (exportMode === 'translation' || exportMode === 'combined') ? sourceChapters.has(c.id) :
+        (exportMode === 'summary') ? summaries.has(c.id) : false
       );
-      const orderedTranslatedEntries = chapters.length > 0
-        ? chapters
-            .filter((c) => translatedChapters.has(c.id))
-            .map((c) => [c.id, translatedChapters.get(c.id)!] as [string, string])
-        : Array.from(translatedChapters.entries());
 
       if (exportMode === 'translation') {
         // Chỉ bản dịch
-        for (const [chapterId, content] of orderedTranslatedEntries) {
-          const title =
-            translatedTitles.get(chapterId) ||
-            titleMap.get(chapterId) ||
-            `Chương ${chapterId}`;
-          ebookChapters.push({ title, content });
+        for (const chapter of orderedChapters) {
+          const content = sourceChapters.get(chapter.id);
+          if (content) {
+            const title = translatedTitles.get(chapter.id) || chapter.title;
+            ebookChapters.push({ title, content });
+          }
         }
       } else if (exportMode === 'summary') {
         // Chỉ tóm tắt
-        for (const [chapterId] of orderedTranslatedEntries) {
-          const summaryContent = summaries.get(chapterId);
-          if (summaryContent) {
-            const title = summaryTitles.get(chapterId) ||
-              translatedTitles.get(chapterId) ||
-              titleMap.get(chapterId) ||
-              `Tóm tắt ${chapterId}`;
-            ebookChapters.push({ 
-              title: `[Tóm tắt] ${title}`, 
-              content: summaryContent 
+        for (const chapter of orderedChapters) {
+          const content = summaries.get(chapter.id);
+          if (content) {
+            const title = summaryTitles.get(chapter.id) || translatedTitles.get(chapter.id) || chapter.title;
+            ebookChapters.push({
+              title: `[Tóm tắt] ${title}`,
+              content
             });
           }
         }
       } else {
         // Kết hợp: Chương 1 -> Tóm tắt 1 -> Chương 2 -> Tóm tắt 2...
-        for (const [chapterId, translationContent] of orderedTranslatedEntries) {
-          const chapterTitle =
-            translatedTitles.get(chapterId) ||
-            titleMap.get(chapterId) ||
-            `Chương ${chapterId}`;
-          
+        for (const chapter of orderedChapters) {
+          const translationContent = sourceChapters.get(chapter.id);
+          const summaryContent = summaries.get(chapter.id);
+          const chapterTitle = translatedTitles.get(chapter.id) || chapter.title;
+
           // Add translation
-          ebookChapters.push({ 
-            title: chapterTitle, 
-            content: translationContent 
-          });
-          
-          // Add summary if available
-          const summaryContent = summaries.get(chapterId);
+          if (translationContent) {
+            ebookChapters.push({
+              title: chapterTitle,
+              content: translationContent
+            });
+          }
+
+          // Add summary
           if (summaryContent) {
-            ebookChapters.push({ 
-              title: `📝 Tóm tắt: ${chapterTitle}`, 
-              content: summaryContent 
+            ebookChapters.push({
+              title: `📝 Tóm tắt: ${chapterTitle}`,
+              content: summaryContent
             });
           }
         }
@@ -1092,64 +1063,58 @@ export function StoryTranslator() {
         return;
       }
 
-      console.log(`[StoryTranslator] Đóng gói ${ebookChapters.length} chương...`);
-      const outputDir = saveDialogResult.filePath.substring(0, saveDialogResult.filePath.lastIndexOf('\\')); // simplistic dirname for windows
+      console.log(`[StorySummary] Đóng gói ${ebookChapters.length} mục...`);
+      const outputDir = saveDialogResult.filePath.substring(0, saveDialogResult.filePath.lastIndexOf('\\'));
       const filename = saveDialogResult.filePath.substring(saveDialogResult.filePath.lastIndexOf('\\') + 1).replace('.epub', '');
 
-      // 4. Gọi service tạo ebook
-      // Note: We need to adjust how we pass outputDir/filename because `createEbook` logic in backend might be rigid about `outputDir` + `filename`.
-      // Or we can modify backend `createEbook` to accept exact `outputPath`.
-      // Current: `outputDir`, `filename`. 
-      // Let's rely on `outputDir` being the folder and `filename` being the name.
-      
+      // 3. Gọi service tạo ebook
       const result = await window.electronAPI.invoke(
         STORY_IPC_CHANNELS.CREATE_EBOOK,
         {
           chapters: ebookChapters,
-          title: filename, // Use filename as title for now
+          title: filename,
           author: 'AI Translator',
           filename: filename,
-          outputDir: outputDir 
+          outputDir: outputDir
         }
       ) as { success: boolean; filePath?: string; error?: string };
 
       if (result.success && result.filePath) {
-        console.log('[StoryTranslator] Export thành công:', result.filePath);
-        alert(`✅ Đã export thành công!\n\nFile: ${result.filePath}\n\nSố chương: ${ebookChapters.length}`);
+        console.log('[StorySummary] Export thành công:', result.filePath);
+        const modeText = exportMode === 'translation' ? 'Bản dịch' :
+          exportMode === 'summary' ? 'Tóm tắt' : 'Kết hợp';
+        alert(`✅ Đã export thành công!\n\nLoại: ${modeText}\nFile: ${result.filePath}\n\nSố mục: ${ebookChapters.length}`);
       } else {
         throw new Error(result.error || 'Export thất bại');
       }
 
     } catch (error) {
-      console.error('[StoryTranslator] Lỗi export ebook:', error);
+      console.error('[StorySummary] Lỗi export ebook:', error);
       alert(`❌ Lỗi export ebook: ${error}`);
     } finally {
       setExportStatus('idle');
     }
   }
 
-  const LANG_OPTIONS = [
-    { value: 'auto', label: 'Tự động phát hiện' },
-    { value: 'en', label: 'Tiếng Anh (English)' },
-    { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
-    { value: 'zh', label: 'Tiếng Trung (Chinese)' },
-    { value: 'ja', label: 'Tiếng Nhật (Japanese)' },
-    { value: 'ko', label: 'Tiếng Hàn (Korean)' },
-  ];
-
   return (
     <div className="flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-primary">
-          Dịch Truyện AI
-        </h1>
+        <div className="flex items-center gap-3">
+          <FileText size={28} className="text-teal-500" />
+          <h1 className="text-2xl font-bold bg-linear-to-r from-teal-500 to-emerald-500 bg-clip-text text-transparent">
+            Tóm Tắt Truyện AI
+          </h1>
+        </div>
         {chapters.length > 0 && (
           <div className="flex items-center gap-3">
-            <span className="text-sm px-3 py-1 bg-primary/10 text-primary rounded-full">
-              Đã dịch: {translatedChapters.size}/{chapters.length} chương
+            <span className="text-sm px-3 py-1 bg-blue-500/10 text-blue-500 rounded-full border border-blue-500/20">
+              📚 {sourceChapters.size} chương nguồn
             </span>
-            {translatedChapters.size > 0 && (
-              <Button 
+            <span className="text-sm px-3 py-1 bg-teal-500/10 text-teal-600 rounded-full border border-teal-500/20">
+              ✨ {summaries.size}/{chapters.length} tóm tắt
+            </span>
+            {(summaries.size > 0 || sourceChapters.size > 0) && (
+              <Button
                 onClick={handleExportEbook}
                 variant="primary"
                 disabled={exportStatus === 'exporting'}
@@ -1165,40 +1130,16 @@ export function StoryTranslator() {
       
       {/* Configuration Section */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-card border border-border rounded-xl">
-        <div className="md:col-span-3 flex flex-col gap-1">
-           <label className="text-sm font-medium text-text-secondary">File Truyện</label>
-           <div className="flex gap-2">
-             <Input 
-               placeholder="Chọn file..." 
-               value={filePath}
-               onChange={(e) => setFilePath(e.target.value)}
-               containerClassName="flex-1"
-             />
-             <Button onClick={handleBrowse} variant="secondary" className="shrink-0 h-9 px-3">
-               <FileText size={16} />
-             </Button>
-           </div>
+        <div className="md:col-span-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-text-secondary">Nguồn dữ liệu</label>
+            <div className="h-9 px-3 py-2 rounded-lg border border-border bg-surface/50 text-sm text-text-secondary flex items-center">
+              {sourceChapters.size > 0 ? `${sourceChapters.size} chương từ Translator` : 'Chưa có dữ liệu'}
+            </div>
+          </div>
         </div>
 
-        <div className="md:col-span-2">
-          <Select
-            label="Ngôn ngữ gốc"
-            value={sourceLang}
-            onChange={(e) => setSourceLang(e.target.value)}
-            options={LANG_OPTIONS}
-          />
-        </div>
-
-        <div className="md:col-span-2">
-           <Select
-            label="Ngôn ngữ đích"
-            value={targetLang}
-            onChange={(e) => setTargetLang(e.target.value)}
-            options={LANG_OPTIONS}
-          />
-        </div>
-
-        <div className="md:col-span-2">
+        <div className="md:col-span-3">
           <Select
             label="Model AI"
             value={model}
@@ -1210,36 +1151,36 @@ export function StoryTranslator() {
           />
         </div>
 
-        <div className="md:col-span-1">
+        <div className="md:col-span-2">
           <Select
-            label="Chế độ dịch"
+            label="Phương thức"
             value={translateMode}
             onChange={(e) => setTranslateMode(e.target.value as 'api' | 'token' | 'both')}
             options={[
               { value: 'api', label: 'API' },
               { value: 'token', label: 'Token' },
-              { value: 'both', label: 'Kết hợp (API + Token)' }
+              { value: 'both', label: 'Kết hợp' }
             ]}
           />
         </div>
 
-        <div className="md:col-span-2 flex items-end gap-2">
+        <div className="md:col-span-4 flex items-end gap-2">
           <Button 
             onClick={handleTranslate} 
             variant="secondary" 
-            disabled={!filePath || status === 'running' || !selectedChapterId}
+            disabled={sourceChapters.size === 0 || status === 'running' || !selectedChapterId}
             className="flex-1 h-9 px-3"
-            title="Dịch chương đang chọn"
+            title="Tóm tắt chương đang chọn"
           >
-            <BookOpen size={16} />
-            Dịch 1
+            <Sparkles size={16} />
+            Tóm tắt 1
           </Button>
           {status === 'running' && batchProgress ? (
             <Button 
               onClick={handleStopTranslation}
               variant="secondary"
               className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-              title="Dừng dịch batch hiện tại"
+              title="Dừng tóm tắt batch hiện tại"
             >
               <StopCircle size={16} />
               Dừng ({batchProgress.current}/{batchProgress.total})
@@ -1248,12 +1189,12 @@ export function StoryTranslator() {
             <Button 
               onClick={handleTranslateAll} 
               variant="primary" 
-              disabled={!filePath || status === 'running' || selectedChapterCount === 0}
+              disabled={sourceChapters.size === 0 || status === 'running' || selectedChapterCount === 0}
               className="flex-1 h-9 px-3"
-              title="Dịch tất cả chương được chọn"
+              title="Tóm tắt tất cả chương được chọn"
             >
-              <BookOpen size={16} />
-              Dịch {retranslateExisting ? 'lại ' : ''}{selectedChapterCount}
+              <Sparkles size={16} />
+              Tóm tắt {retranslateSummary ? 'lại ' : ''}{selectedChapterCount}
             </Button>
           )}
         </div>
@@ -1262,18 +1203,49 @@ export function StoryTranslator() {
           <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
             <input
               type="checkbox"
-              checked={retranslateExisting}
-              onChange={(e) => setRetranslateExisting(e.target.checked)}
+              checked={retranslateSummary}
+              onChange={(e) => setRetranslateSummary(e.target.checked)}
               className="w-4 h-4 rounded border-border cursor-pointer"
             />
-            <span>Dịch lại các chương đã dịch</span>
+            <span>Tóm tắt lại các chương đã tóm tắt</span>
           </label>
         </div>
       </div>
 
       {/* Main Split View */}
       <div className="flex-1 flex gap-4 min-h-0">
+        {/* Empty State - Chưa có projectId */}
+        {!projectId && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+            <FileText size={64} className="text-orange-500/30 mb-4" />
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Chưa chọn Project</h2>
+            <p className="text-text-secondary mb-4 max-w-md">
+              Vui lòng mở một project từ Dashboard để sử dụng tính năng tóm tắt truyện.
+            </p>
+          </div>
+        )}
+
+        {/* Empty State - Chưa có dữ liệu */}
+        {projectId && chapters.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+            <FileText size={64} className="text-teal-500/30 mb-4" />
+            <h2 className="text-xl font-semibold text-text-primary mb-2">Chưa có dữ liệu để tóm tắt</h2>
+            <p className="text-text-secondary mb-4 max-w-md">
+              Bạn cần dịch truyện ở tab <span className="font-semibold text-primary">"Dịch Truyện AI"</span> trước.
+              Sau đó quay lại đây để tóm tắt các chương đã dịch.
+            </p>
+            <div className="flex flex-col gap-2 text-sm text-text-secondary bg-surface/50 p-4 rounded-lg border border-border">
+              <p className="font-semibold text-text-primary mb-1">📋 Hướng dẫn:</p>
+              <p>1. Chọn project (nếu chưa có)</p>
+              <p>2. Vào tab "Dịch Truyện AI"</p>
+              <p>3. Upload file truyện và dịch các chương</p>
+              <p>4. Quay lại tab này để tóm tắt</p>
+            </div>
+          </div>
+        )}
+
         {/* Left Panel: Chapter List */}
+        {chapters.length > 0 && (
         <div className="w-1/4 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
           {/* Header voi toggle buttons */}
           <div className="p-3 border-b border-border bg-surface/50">
@@ -1311,7 +1283,7 @@ export function StoryTranslator() {
               const elapsedTime = isProcessing && processingInfo 
                 ? Math.floor((Date.now() - processingInfo.startTime) / 1000)
                 : 0;
-              const hasTranslatedTitle = translatedTitles.has(chapter.id) || translatedChapters.has(chapter.id);
+              const hasSummary = summaries.has(chapter.id);
               
               return (
               <div
@@ -1349,9 +1321,9 @@ export function StoryTranslator() {
                 <button
                   onClick={() => {
                     setSelectedChapterId(chapter.id);
-                    // Tự động chuyển sang view translated nếu đã có bản dịch
-                    if (translatedChapters.has(chapter.id)) {
-                      setViewMode('translated');
+                    // Tự động chuyển sang view summary nếu đã có tóm tắt
+                    if (summaries.has(chapter.id)) {
+                      setViewMode('summary');
                     } else {
                       setViewMode('original');
                     }
@@ -1359,20 +1331,17 @@ export function StoryTranslator() {
                   className="flex-1 text-left truncate flex items-center gap-2"
                 >
                   <span className={`${
-                    !isChapterIncluded(chapter.id)
-                      ? selectedChapterId === chapter.id
-                        ? 'text-white/60 italic'
+                    !isChapterIncluded(chapter.id) 
+                      ? selectedChapterId === chapter.id 
+                        ? 'text-white/60 italic' 
                         : 'text-text-secondary/40 italic'
-                      : hasTranslatedTitle
-                        ? 'text-emerald-500 font-medium'
-                        : selectedChapterId === chapter.id
-                          ? 'text-white'
+                      : hasSummary 
+                        ? 'text-emerald-500 font-medium' 
+                        : selectedChapterId === chapter.id 
+                          ? 'text-white' 
                           : 'text-text-secondary'
                   }`}>
-                    {translatedTitles.get(chapter.id)
-                      || (translatedChapters.has(chapter.id)
-                        ? extractTranslatedTitle(translatedChapters.get(chapter.id) || '', chapter.id)
-                        : chapter.title)}
+                    {translatedTitles.get(chapter.id) || chapter.title}
                   </span>
                   
                   {/* Processing Indicator */}
@@ -1400,8 +1369,10 @@ export function StoryTranslator() {
             )})}
           </div>
         </div>
+        )}
 
         {/* Right Panel: Content */}
+        {chapters.length > 0 && (
         <div className="flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
            <div className="p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex justify-between items-center">
             <div className="flex items-center gap-4">
@@ -1412,14 +1383,14 @@ export function StoryTranslator() {
                     onClick={() => setViewMode('original')}
                     className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'original' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary'}`}
                   >
-                    Gốc
+                    Bản dịch
                   </button>
                   <button 
-                    onClick={() => setViewMode('translated')}
-                    disabled={!selectedChapterId || !translatedChapters.has(selectedChapterId)}
-                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'translated' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
+                    onClick={() => setViewMode('summary')}
+                    disabled={!selectedChapterId || !summaries.has(selectedChapterId)}
+                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
                   >
-                    Bản dịch
+                    Tóm tắt
                   </button>
                 </div>
               )}
@@ -1484,8 +1455,23 @@ export function StoryTranslator() {
                       Use Impit
                     </label>
                  </div>
-                 <Button onClick={handleSavePrompt} variant="secondary" className="text-xs h-8 px-2">
-                   Lưu Prompt
+                 <Button 
+                   onClick={handleSavePrompt} 
+                   variant="secondary" 
+                   disabled={savingPrompt || !selectedChapterId || !sourceChapters.has(selectedChapterId)}
+                   className="text-xs h-8 px-3 gap-1"
+                   title="Tạo và copy prompt tóm tắt vào clipboard"
+                 >
+                   {savingPrompt ? (
+                     <>
+                       <Loader size={12} className="animate-spin" />
+                       Đang xử lý...
+                     </>
+                   ) : (
+                     <>
+                       📋 Lưu Prompt
+                     </>
+                   )}
                  </Button>
                  <span className="text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border">
                    {chapters.find(c => c.id === selectedChapterId)?.title}
@@ -1506,30 +1492,38 @@ export function StoryTranslator() {
             <div className="max-w-4xl mx-auto">
               {selectedChapterId ? (
                 viewMode === 'original' ? (
-                  <div className="whitespace-pre-wrap wrap-break-word">
-                    {chapters.find(c => c.id === selectedChapterId)?.content}
-                  </div>
-                ) : (
-                  translatedChapters.get(selectedChapterId) ? (
+                  sourceChapters.get(selectedChapterId) ? (
                     <div className="whitespace-pre-wrap wrap-break-word">
-                      {translatedChapters.get(selectedChapterId)}
+                      {sourceChapters.get(selectedChapterId)}
                     </div>
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
-                      <BookOpen size={48} className="mb-4" />
-                      <p className="text-base">Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.</p>
+                      <FileText size={48} className="mb-4" />
+                      <p className="text-base">Không tìm thấy bản dịch cho chương này.</p>
+                    </div>
+                  )
+                ) : (
+                  summaries.get(selectedChapterId) ? (
+                    <div className="whitespace-pre-wrap wrap-break-word">
+                      {summaries.get(selectedChapterId)}
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
+                      <Sparkles size={48} className="mb-4 text-teal-500/50" />
+                      <p className="text-base">Chưa có tóm tắt. Nhấn "Tóm tắt 1" hoặc "Tóm tắt All" để bắt đầu.</p>
                     </div>
                   )
                 )
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
-                  <BookOpen size={48} className="mb-4" />
+                  <FileText size={48} className="mb-4 text-teal-500/30" />
                   <p className="text-base">Chọn một chương để xem nội dung</p>
                 </div>
               )}
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

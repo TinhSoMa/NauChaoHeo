@@ -25,6 +25,8 @@ export interface AppSettings {
   lastActiveProjectId: string | null;
   useProxy: boolean;
   createChatOnWeb: boolean;
+  translationPromptId: string | null;
+  summaryPromptId: string | null;
 }
 
 interface IpcApiResponse<T = unknown> {

@@ -37,6 +37,14 @@ export function registerStoryHandlers(): void {
   );
 
   ipcMain.handle(
+    STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT,
+    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang }) => {
+       console.log(`[StoryHandlers] Prepare summary prompt: ${sourceLang} -> ${targetLang}`);
+       return await StoryService.StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang);
+    }
+  );
+
+  ipcMain.handle(
     STORY_IPC_CHANNELS.SAVE_PROMPT,
     async (_event: IpcMainInvokeEvent, content: string) => {
       console.log('[StoryHandlers] Save prompt to file...');

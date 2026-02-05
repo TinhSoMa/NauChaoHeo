@@ -1218,7 +1218,11 @@ const DEFAULT_SETTINGS = {
   useProxy: true,
   // Mặc định bật proxy
   createChatOnWeb: false,
-  useStoredContextOnFirstSend: false
+  useStoredContextOnFirstSend: false,
+  translationPromptId: null,
+  // Tự động tìm prompt dịch
+  summaryPromptId: null
+  // Tự động tìm prompt tóm tắt
 };
 class AppSettingsServiceClass {
   constructor() {
@@ -4757,62 +4761,55 @@ class GeminiChatServiceClass {
         } catch (cookieErr) {
           console.warn("[GeminiChatService] Lỗi xử lý cookie response:", cookieErr);
         }
-        console.log("[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for response)...");
+        console.log("[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for full response)...");
         let foundText = "";
         let hasWrbFr = false;
         let hasContentPayload = false;
-        let buffer = "";
-        let totalBytesRead = 0;
         const sessionManager = getSessionContextManager();
         let newContext = { conversationId: "", responseId: "", choiceId: "" };
         try {
-          for await (const chunk of response.body) {
-            const chunkString = chunk.toString();
-            buffer += chunkString;
-            totalBytesRead += chunkString.length;
-            let newlineIndex;
-            while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
-              const line = buffer.slice(0, newlineIndex).trim();
-              buffer = buffer.slice(newlineIndex + 1);
-              if (!line) continue;
-              if (line.startsWith(")]}'")) continue;
-              if (/^\d+$/.test(line)) continue;
-              try {
-                const dataObj = JSON.parse(line);
-                if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
-                for (const payloadItem of dataObj) {
-                  if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
-                  if (payloadItem[0] !== "wrb.fr") continue;
-                  hasWrbFr = true;
-                  if (typeof payloadItem[2] !== "string") continue;
-                  const innerData = JSON.parse(payloadItem[2]);
-                  if (!Array.isArray(innerData) || innerData.length < 5) continue;
-                  const candidates = innerData[4];
-                  if (Array.isArray(candidates) && candidates.length > 0) {
-                    const candidate = candidates[0];
-                    if (candidate && candidate.length > 1) {
-                      const textSource = candidate[1];
-                      const txt = Array.isArray(textSource) ? textSource[0] : textSource;
-                      if (typeof txt === "string" && txt) {
-                        if (txt.length > foundText.length) {
-                          foundText = txt;
-                          hasContentPayload = true;
-                        }
+          const responseText = await response.text();
+          console.log(`[GeminiChatService] >>> Đã nhận toàn bộ response (${responseText.length} bytes)`);
+          for (const line of responseText.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (trimmed.startsWith(")]}'")) continue;
+            if (/^\d+$/.test(trimmed)) continue;
+            try {
+              const dataObj = JSON.parse(trimmed);
+              if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
+              for (const payloadItem of dataObj) {
+                if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+                if (payloadItem[0] !== "wrb.fr") continue;
+                hasWrbFr = true;
+                if (typeof payloadItem[2] !== "string") continue;
+                const innerData = JSON.parse(payloadItem[2]);
+                if (!Array.isArray(innerData) || innerData.length < 5) continue;
+                const candidates = innerData[4];
+                if (Array.isArray(candidates) && candidates.length > 0) {
+                  const candidate = candidates[0];
+                  if (candidate && candidate.length > 1) {
+                    const textSource = candidate[1];
+                    const txt = Array.isArray(textSource) ? textSource[0] : textSource;
+                    if (typeof txt === "string" && txt) {
+                      if (txt.length > foundText.length) {
+                        foundText = txt;
+                        hasContentPayload = true;
                       }
                     }
                   }
-                  const parsedCtx = sessionManager.parseFromFetchResponse(line);
-                  if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
-                  if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
-                  if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
                 }
-              } catch (e) {
+                const parsedCtx = sessionManager.parseFromFetchResponse(trimmed);
+                if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
+                if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
+                if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
               }
+            } catch (e) {
             }
           }
-          console.log(`[GeminiChatService] >>> Streaming hoàn tất. Tổng cộng: ${totalBytesRead} bytes.`);
-        } catch (streamError) {
-          console.error("[GeminiChatService] Lỗi khi streaming:", streamError);
+          console.log(`[GeminiChatService] >>> Parse hoàn tất. Tìm thấy text: ${foundText.length > 0}`);
+        } catch (responseError) {
+          console.error("[GeminiChatService] Lỗi khi đọc response:", responseError);
         }
         if (foundText) {
           if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
@@ -5132,21 +5129,74 @@ class StoryService {
    */
   static async prepareTranslationPrompt(chapterContent, sourceLang, targetLang) {
     try {
-      const prompts = PromptService.getAll();
-      const matchingPrompt = prompts.find(
-        (p) => p.sourceLang === sourceLang && p.targetLang === targetLang && p.isDefault
-      ) || prompts.find(
-        (p) => p.sourceLang === sourceLang && p.targetLang === targetLang
-      );
+      let matchingPrompt;
+      const appSettings = AppSettingsService.getAll();
+      if (appSettings.translationPromptId) {
+        matchingPrompt = PromptService.getById(appSettings.translationPromptId);
+        if (!matchingPrompt) {
+          console.warn(`[StoryService] Configured translation prompt "${appSettings.translationPromptId}" not found, falling back to auto-detect`);
+        }
+      }
+      if (!matchingPrompt) {
+        const prompts = PromptService.getAll();
+        matchingPrompt = prompts.find(
+          (p) => p.sourceLang === sourceLang && p.targetLang === targetLang && p.isDefault
+        ) || prompts.find(
+          (p) => p.sourceLang === sourceLang && p.targetLang === targetLang
+        );
+      }
       if (!matchingPrompt) {
         return {
           success: false,
           error: `No translation prompt found for ${sourceLang} -> ${targetLang}`
         };
       }
+      return this.injectContentIntoPrompt(matchingPrompt.content, chapterContent);
+    } catch (error) {
+      console.error("Error preparing translation prompt:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+  /**
+   * Prepares the summary prompt by fetching the appropriate summary prompt from the database
+   * and injecting the chapter content.
+   */
+  static async prepareSummaryPrompt(chapterContent, sourceLang, targetLang) {
+    try {
+      let matchingPrompt;
+      const appSettings = AppSettingsService.getAll();
+      if (appSettings.summaryPromptId) {
+        matchingPrompt = PromptService.getById(appSettings.summaryPromptId);
+        if (!matchingPrompt) {
+          console.warn(`[StoryService] Configured summary prompt "${appSettings.summaryPromptId}" not found, falling back to auto-detect`);
+        }
+      }
+      if (!matchingPrompt) {
+        const prompts = PromptService.getAll();
+        matchingPrompt = prompts.find(
+          (p) => p.sourceLang === sourceLang && p.targetLang === targetLang && (p.name.includes("[SUMMARY]") || p.name.toLowerCase().includes("tóm tắt"))
+        );
+      }
+      if (!matchingPrompt) {
+        return {
+          success: false,
+          error: `Không tìm thấy prompt tóm tắt cho ${sourceLang} -> ${targetLang}. Vui lòng chọn prompt trong Settings.`
+        };
+      }
+      return this.injectContentIntoPrompt(matchingPrompt.content, chapterContent);
+    } catch (error) {
+      console.error("Error preparing summary prompt:", error);
+      return { success: false, error: String(error) };
+    }
+  }
+  /**
+   * Helper function to inject content into prompt template
+   */
+  static injectContentIntoPrompt(promptContent, chapterContent) {
+    try {
       let promptData;
       try {
-        promptData = JSON.parse(matchingPrompt.content);
+        promptData = JSON.parse(promptContent);
       } catch (e) {
         return { success: false, error: "Invalid prompt content format (not valid JSON)" };
       }
@@ -5207,7 +5257,7 @@ class StoryService {
       }
       return { success: false, error: "Prompt content must be a JSON array or object" };
     } catch (error) {
-      console.error("Error preparing translation prompt:", error);
+      console.error("Error injecting content into prompt:", error);
       return { success: false, error: String(error) };
     }
   }
@@ -5266,6 +5316,7 @@ class StoryService {
 const STORY_IPC_CHANNELS = {
   PARSE: "story:parse",
   PREPARE_PROMPT: "story:preparePrompt",
+  PREPARE_SUMMARY_PROMPT: "story:prepareSummaryPrompt",
   SAVE_PROMPT: "story:savePrompt",
   TRANSLATE_CHAPTER: "story:translateChapter",
   CREATE_EBOOK: "story:createEbook"
@@ -5328,6 +5379,13 @@ function registerStoryHandlers() {
     async (_event, { chapterContent, sourceLang, targetLang }) => {
       console.log(`[StoryHandlers] Prepare prompt logic: ${sourceLang} -> ${targetLang}`);
       return await StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang);
+    }
+  );
+  electron.ipcMain.handle(
+    STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT,
+    async (_event, { chapterContent, sourceLang, targetLang }) => {
+      console.log(`[StoryHandlers] Prepare summary prompt: ${sourceLang} -> ${targetLang}`);
+      return await StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang);
     }
   );
   electron.ipcMain.handle(

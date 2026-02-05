@@ -870,79 +870,69 @@ export class GeminiChatServiceClass {
                         console.warn('[GeminiChatService] Lỗi xử lý cookie response:', cookieErr);
                     }
                     
-                    console.log('[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for response)...');
+                    console.log('[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for full response)...');
                     
-                    // --- STREAMING PROCESSING (NEW) ---
+                    // --- WAIT FOR COMPLETE RESPONSE (NON-STREAMING) ---
                     let foundText = '';
                     let hasWrbFr = false;
                     let hasContentPayload = false;
-                    
-                    // Variables for streaming
-                    let buffer = '';
-                    let totalBytesRead = 0;
                     const sessionManager = getSessionContextManager();
                     let newContext = { conversationId: '', responseId: '', choiceId: '' };
 
                     try {
-                        // @ts-ignore: node-fetch body as async iterator
-                        for await (const chunk of response.body) {
-                            const chunkString = chunk.toString();
-                            buffer += chunkString;
-                            totalBytesRead += chunkString.length;
-                            
-                            // Log tiến độ (tùy chọn)
-                            // if (totalBytesRead % 500000 === 0) console.log(`[GeminiChatService] Đã nhận ${totalBytesRead} bytes...`);
+                        // Đọc toàn bộ response body một lần
+                        const responseText = await response.text();
+                        console.log(`[GeminiChatService] >>> Đã nhận toàn bộ response (${responseText.length} bytes)`);
 
-                            let newlineIndex;
-                            while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-                                const line = buffer.slice(0, newlineIndex).trim();
-                                buffer = buffer.slice(newlineIndex + 1);
+                        // Parse từng line trong response
+                        for (const line of responseText.split('\n')) {
+                            const trimmed = line.trim();
+                            if (!trimmed) continue;
+                            if (trimmed.startsWith(")]}'")) continue;
+                            if (/^\d+$/.test(trimmed)) continue;
 
-                                if (!line) continue;
-                                if (line.startsWith(")]}'")) continue;
-                                if (/^\d+$/.test(line)) continue;
+                            try {
+                                const dataObj = JSON.parse(trimmed);
+                                if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
 
-                                try {
-                                    const dataObj = JSON.parse(line);
-                                    if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
+                                for (const payloadItem of dataObj) {
+                                    if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
+                                    if (payloadItem[0] !== 'wrb.fr') continue;
+                                    hasWrbFr = true;
+                                    if (typeof payloadItem[2] !== 'string') continue;
 
-                                    for (const payloadItem of dataObj) {
-                                        if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
-                                        if (payloadItem[0] !== 'wrb.fr') continue;
-                                        hasWrbFr = true;
-                                        if (typeof payloadItem[2] !== 'string') continue;
+                                    const innerData = JSON.parse(payloadItem[2]);
+                                    if (!Array.isArray(innerData) || innerData.length < 5) continue;
 
-                                        const innerData = JSON.parse(payloadItem[2]);
-                                        if (!Array.isArray(innerData) || innerData.length < 5) continue;
-
-                                        const candidates = innerData[4];
-                                        if (Array.isArray(candidates) && candidates.length > 0) {
-                                            const candidate = candidates[0];
-                                            if (candidate && candidate.length > 1) {
-                                                const textSource = candidate[1];
-                                                const txt = Array.isArray(textSource) ? textSource[0] : textSource;
-                                                if (typeof txt === 'string' && txt) {
-                                                    // QUAN TRỌNG: Google gửi text tích lũy (snapshot)
-                                                    if (txt.length > foundText.length) {
-                                                        foundText = txt; 
-                                                        hasContentPayload = true;
-                                                    }
+                                    const candidates = innerData[4];
+                                    if (Array.isArray(candidates) && candidates.length > 0) {
+                                        const candidate = candidates[0];
+                                        if (candidate && candidate.length > 1) {
+                                            const textSource = candidate[1];
+                                            const txt = Array.isArray(textSource) ? textSource[0] : textSource;
+                                            if (typeof txt === 'string' && txt) {
+                                                // Lấy text dài nhất (Google gửi text tích lũy)
+                                                if (txt.length > foundText.length) {
+                                                    foundText = txt;
+                                                    hasContentPayload = true;
                                                 }
                                             }
                                         }
-                                        
-                                        // Update context on the fly
-                                        const parsedCtx = sessionManager.parseFromFetchResponse(line);
-                                        if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
-                                        if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
-                                        if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
                                     }
-                                } catch (e) { }
+                                    
+                                    // Parse context từ response
+                                    const parsedCtx = sessionManager.parseFromFetchResponse(trimmed);
+                                    if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
+                                    if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
+                                    if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
+                                }
+                            } catch (e) {
+                                // Ignore parse errors for individual lines
                             }
                         }
-                        console.log(`[GeminiChatService] >>> Streaming hoàn tất. Tổng cộng: ${totalBytesRead} bytes.`);
-                    } catch (streamError) {
-                         console.error('[GeminiChatService] Lỗi khi streaming:', streamError);
+                        console.log(`[GeminiChatService] >>> Parse hoàn tất. Tìm thấy text: ${foundText.length > 0}`);
+                    } catch (responseError) {
+                        console.error('[GeminiChatService] Lỗi khi đọc response:', responseError);
                     }
                     
                     // -----------------------------------------------------

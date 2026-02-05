@@ -20,6 +20,8 @@ export interface AppSettings {
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
   createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
+  translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
+  summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -31,6 +33,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   useProxy: true, // Mặc định bật proxy
   createChatOnWeb: false,
   useStoredContextOnFirstSend: false,
+  translationPromptId: null, // Tự động tìm prompt dịch
+  summaryPromptId: null, // Tự động tìm prompt tóm tắt
 };
 
 // ============================================

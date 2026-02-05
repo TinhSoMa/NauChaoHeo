@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { CaptionTranslator } from '../caption'
-import { StoryTranslator } from '../story'
+import { StoryTranslator, StorySummary } from '../story'
 import { StoryTranslatorWeb } from '../story/StoryTranslatorWeb'
 import { GeminiChat } from '../gemini'
 import { Settings } from '../settings/Settings'
@@ -15,6 +15,7 @@ interface TabEntry {
 const TAB_ENTRIES: TabEntry[] = [
   { id: 'translator', element: <CaptionTranslator /> },
   { id: 'story', element: <StoryTranslator /> },
+  { id: 'storySummary', element: <StorySummary /> },
   { id: 'storyWeb', element: <StoryTranslatorWeb /> },
   { id: 'gemini', element: <GeminiChat /> },
   { id: 'veo3', element: <Veo3Page /> },

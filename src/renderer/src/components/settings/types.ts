@@ -5,7 +5,7 @@
 import { LucideIcon } from 'lucide-react';
 
 // Tab types
-export type SettingsTab = 'overview' | 'output' | 'translation' | 'tts' | 'app' | 'apikeys' | 'geminichat' | 'proxy';
+export type SettingsTab = 'overview' | 'output' | 'translation' | 'tts' | 'app' | 'apikeys' | 'geminichat' | 'proxy' | 'prompts';
 
 // Theme & Language types
 export type ThemeMode = 'light' | 'dark';

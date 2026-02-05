@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -12,10 +12,19 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
+  
+  // Preserve query parameters (especially projectId) when navigating
+  const getNavPath = (path: string) => {
+    const searchParams = new URLSearchParams(location.search);
+    const queryString = searchParams.toString();
+    return queryString ? `${path}?${queryString}` : path;
+  };
 
   const navItems = [
     { icon: Subtitles, label: 'Dich Caption', path: '/translator' },
     { icon: BookOpen, label: 'Dich Truyen AI', path: '/story-translator' },
+    { icon: FileText, label: 'Tom Tat Truyen AI', path: '/story-summary' },
     { icon: MessageCircle, label: 'Dich Truyen (Web)', path: '/story-web' },
     { icon: MessageCircle, label: 'Chat Gemini', path: '/gemini-chat' },
     { icon: Video, label: 'Veo3 AI Prompt', path: '/veo3' },
@@ -52,7 +61,7 @@ export const Sidebar = () => {
         {navItems.map((item) => (
           <NavLink
             key={item.path}
-            to={item.path}
+            to={getNavPath(item.path)}
             className={({ isActive }) => cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
               isActive 
@@ -77,7 +86,7 @@ export const Sidebar = () => {
         {bottomItems.map((item) => (
           <NavLink
             key={item.path}
-            to={item.path}
+            to={getNavPath(item.path)}
             className={({ isActive }) => cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
               isActive 
