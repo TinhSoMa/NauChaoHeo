@@ -13330,14 +13330,7 @@ function useNavigateUnstable() {
   );
   return navigate;
 }
-var OutletContext = reactExports.createContext(null);
-function useOutlet(context) {
-  let outlet = reactExports.useContext(RouteContext).outlet;
-  return reactExports.useMemo(
-    () => outlet && /* @__PURE__ */ reactExports.createElement(OutletContext.Provider, { value: context }, outlet),
-    [outlet, context]
-  );
-}
+reactExports.createContext(null);
 function useResolvedPath(to, { relative } = {}) {
   let { matches } = reactExports.useContext(RouteContext);
   let { pathname: locationPathname } = useLocation();
@@ -13829,9 +13822,6 @@ function Navigate({
     navigate(JSON.parse(jsonPath), { replace: replace2, state, relative });
   }, [navigate, jsonPath, relative, replace2, state]);
   return null;
-}
-function Outlet(props) {
-  return useOutlet(props.context);
 }
 function Route(props) {
   invariant(
@@ -15194,29 +15184,29 @@ const createLucideIcon = (iconName, iconNode) => {
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$L = [
+const __iconNode$O = [
   ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
   ["path", { d: "M19 12H5", key: "x3x0zl" }]
 ];
-const ArrowLeft = createLucideIcon("arrow-left", __iconNode$L);
+const ArrowLeft = createLucideIcon("arrow-left", __iconNode$O);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$K = [
+const __iconNode$N = [
   ["path", { d: "M4.929 4.929 19.07 19.071", key: "196cmz" }],
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }]
 ];
-const Ban = createLucideIcon("ban", __iconNode$K);
+const Ban = createLucideIcon("ban", __iconNode$N);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$J = [
+const __iconNode$M = [
   ["path", { d: "M12 7v14", key: "1akyts" }],
   [
     "path",
@@ -15226,42 +15216,76 @@ const __iconNode$J = [
     }
   ]
 ];
-const BookOpen = createLucideIcon("book-open", __iconNode$J);
+const BookOpen = createLucideIcon("book-open", __iconNode$M);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$I = [
+const __iconNode$L = [
   ["rect", { width: "18", height: "14", x: "3", y: "5", rx: "2", ry: "2", key: "12ruh7" }],
   ["path", { d: "M7 15h4M15 15h2M7 11h2M13 11h4", key: "1ueiar" }]
 ];
-const Captions = createLucideIcon("captions", __iconNode$I);
+const Captions = createLucideIcon("captions", __iconNode$L);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$H = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
-const Check = createLucideIcon("check", __iconNode$H);
+const __iconNode$K = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
+const Check = createLucideIcon("check", __iconNode$K);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$G = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
-const ChevronDown = createLucideIcon("chevron-down", __iconNode$G);
+const __iconNode$J = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
+const ChevronDown = createLucideIcon("chevron-down", __iconNode$J);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$F = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
-const ChevronRight = createLucideIcon("chevron-right", __iconNode$F);
+const __iconNode$I = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
+const ChevronRight = createLucideIcon("chevron-right", __iconNode$I);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$H = [
+  ["path", { d: "m11 17-5-5 5-5", key: "13zhaf" }],
+  ["path", { d: "m18 17-5-5 5-5", key: "h8a8et" }]
+];
+const ChevronsLeft = createLucideIcon("chevrons-left", __iconNode$H);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$G = [
+  ["path", { d: "m6 17 5-5-5-5", key: "xnjwq" }],
+  ["path", { d: "m13 17 5-5-5-5", key: "17xmmf" }]
+];
+const ChevronsRight = createLucideIcon("chevrons-right", __iconNode$G);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$F = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["line", { x1: "12", x2: "12", y1: "8", y2: "12", key: "1pkeuh" }],
+  ["line", { x1: "12", x2: "12.01", y1: "16", y2: "16", key: "4dfq90" }]
+];
+const CircleAlert = createLucideIcon("circle-alert", __iconNode$F);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15269,10 +15293,10 @@ const ChevronRight = createLucideIcon("chevron-right", __iconNode$F);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$E = [
-  ["path", { d: "m11 17-5-5 5-5", key: "13zhaf" }],
-  ["path", { d: "m18 17-5-5 5-5", key: "h8a8et" }]
+  ["path", { d: "M21.801 10A10 10 0 1 1 17 3.335", key: "yps3ct" }],
+  ["path", { d: "m9 11 3 3L22 4", key: "1pflzl" }]
 ];
-const ChevronsLeft = createLucideIcon("chevrons-left", __iconNode$E);
+const CircleCheckBig = createLucideIcon("circle-check-big", __iconNode$E);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15280,10 +15304,10 @@ const ChevronsLeft = createLucideIcon("chevrons-left", __iconNode$E);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$D = [
-  ["path", { d: "m6 17 5-5-5-5", key: "xnjwq" }],
-  ["path", { d: "m13 17 5-5-5-5", key: "17xmmf" }]
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["rect", { x: "9", y: "9", width: "6", height: "6", rx: "1", key: "1ssd4o" }]
 ];
-const ChevronsRight = createLucideIcon("chevrons-right", __iconNode$D);
+const CircleStop = createLucideIcon("circle-stop", __iconNode$D);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15292,10 +15316,10 @@ const ChevronsRight = createLucideIcon("chevrons-right", __iconNode$D);
  */
 const __iconNode$C = [
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["line", { x1: "12", x2: "12", y1: "8", y2: "12", key: "1pkeuh" }],
-  ["line", { x1: "12", x2: "12.01", y1: "16", y2: "16", key: "4dfq90" }]
+  ["path", { d: "m15 9-6 6", key: "1uzhvr" }],
+  ["path", { d: "m9 9 6 6", key: "z0biqf" }]
 ];
-const CircleAlert = createLucideIcon("circle-alert", __iconNode$C);
+const CircleX = createLucideIcon("circle-x", __iconNode$C);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15303,40 +15327,6 @@ const CircleAlert = createLucideIcon("circle-alert", __iconNode$C);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$B = [
-  ["path", { d: "M21.801 10A10 10 0 1 1 17 3.335", key: "yps3ct" }],
-  ["path", { d: "m9 11 3 3L22 4", key: "1pflzl" }]
-];
-const CircleCheckBig = createLucideIcon("circle-check-big", __iconNode$B);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$A = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["rect", { x: "9", y: "9", width: "6", height: "6", rx: "1", key: "1ssd4o" }]
-];
-const CircleStop = createLucideIcon("circle-stop", __iconNode$A);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$z = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["path", { d: "m15 9-6 6", key: "1uzhvr" }],
-  ["path", { d: "m9 9 6 6", key: "z0biqf" }]
-];
-const CircleX = createLucideIcon("circle-x", __iconNode$z);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$y = [
   ["rect", { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1", key: "tgr4d6" }],
   [
     "path",
@@ -15346,25 +15336,25 @@ const __iconNode$y = [
     }
   ]
 ];
-const Clipboard = createLucideIcon("clipboard", __iconNode$y);
+const Clipboard = createLucideIcon("clipboard", __iconNode$B);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$x = [
+const __iconNode$A = [
   ["path", { d: "M12 6v6l4 2", key: "mmk7yg" }],
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }]
 ];
-const Clock = createLucideIcon("clock", __iconNode$x);
+const Clock = createLucideIcon("clock", __iconNode$A);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$w = [
+const __iconNode$z = [
   ["path", { d: "M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5", key: "laymnq" }],
   ["path", { d: "M8.5 8.5v.01", key: "ue8clq" }],
   ["path", { d: "M16 15.5v.01", key: "14dtrp" }],
@@ -15372,7 +15362,47 @@ const __iconNode$w = [
   ["path", { d: "M11 17v.01", key: "1hyl5a" }],
   ["path", { d: "M7 14v.01", key: "uct60s" }]
 ];
-const Cookie = createLucideIcon("cookie", __iconNode$w);
+const Cookie = createLucideIcon("cookie", __iconNode$z);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$y = [
+  ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
+  ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
+];
+const Copy = createLucideIcon("copy", __iconNode$y);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$x = [
+  ["path", { d: "M12 15V3", key: "m9g1x1" }],
+  ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
+  ["path", { d: "m7 10 5 5 5-5", key: "brsn70" }]
+];
+const Download = createLucideIcon("download", __iconNode$x);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$w = [
+  [
+    "path",
+    {
+      d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+      key: "1nclc0"
+    }
+  ],
+  ["circle", { cx: "12", cy: "12", r: "3", key: "1v7zrd" }]
+];
+const Eye = createLucideIcon("eye", __iconNode$w);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15380,29 +15410,6 @@ const Cookie = createLucideIcon("cookie", __iconNode$w);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$v = [
-  ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
-  ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
-];
-const Copy = createLucideIcon("copy", __iconNode$v);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$u = [
-  ["path", { d: "M12 15V3", key: "m9g1x1" }],
-  ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
-  ["path", { d: "m7 10 5 5 5-5", key: "brsn70" }]
-];
-const Download = createLucideIcon("download", __iconNode$u);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$t = [
   [
     "path",
     {
@@ -15415,14 +15422,39 @@ const __iconNode$t = [
   ["path", { d: "M16 13H8", key: "t4e002" }],
   ["path", { d: "M16 17H8", key: "z1uh3a" }]
 ];
-const FileText = createLucideIcon("file-text", __iconNode$t);
+const FileText = createLucideIcon("file-text", __iconNode$v);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$s = [
+const __iconNode$u = [
+  [
+    "path",
+    {
+      d: "M10.3 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.98a2 2 0 0 1 1.69.9l.66 1.2A2 2 0 0 0 12 6h8a2 2 0 0 1 2 2v3.3",
+      key: "128dxu"
+    }
+  ],
+  ["path", { d: "m14.305 19.53.923-.382", key: "3m78fa" }],
+  ["path", { d: "m15.228 16.852-.923-.383", key: "npixar" }],
+  ["path", { d: "m16.852 15.228-.383-.923", key: "5xggr7" }],
+  ["path", { d: "m16.852 20.772-.383.924", key: "dpfhf9" }],
+  ["path", { d: "m19.148 15.228.383-.923", key: "1reyyz" }],
+  ["path", { d: "m19.53 21.696-.382-.924", key: "1goivc" }],
+  ["path", { d: "m20.772 16.852.924-.383", key: "htqkph" }],
+  ["path", { d: "m20.772 19.148.924.383", key: "9w9pjp" }],
+  ["circle", { cx: "18", cy: "18", r: "3", key: "1xkwt0" }]
+];
+const FolderCog = createLucideIcon("folder-cog", __iconNode$u);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$t = [
   [
     "path",
     {
@@ -15431,7 +15463,19 @@ const __iconNode$s = [
     }
   ]
 ];
-const FolderOpen = createLucideIcon("folder-open", __iconNode$s);
+const FolderOpen = createLucideIcon("folder-open", __iconNode$t);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$s = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", key: "13o1zl" }],
+  ["path", { d: "M2 12h20", key: "9i4pu4" }]
+];
+const Globe = createLucideIcon("globe", __iconNode$s);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15439,11 +15483,12 @@ const FolderOpen = createLucideIcon("folder-open", __iconNode$s);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$r = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", key: "13o1zl" }],
-  ["path", { d: "M2 12h20", key: "9i4pu4" }]
+  ["line", { x1: "4", x2: "20", y1: "9", y2: "9", key: "4lhtct" }],
+  ["line", { x1: "4", x2: "20", y1: "15", y2: "15", key: "vyu0kd" }],
+  ["line", { x1: "10", x2: "8", y1: "3", y2: "21", key: "1ggp8o" }],
+  ["line", { x1: "16", x2: "14", y1: "3", y2: "21", key: "weycgp" }]
 ];
-const Globe = createLucideIcon("globe", __iconNode$r);
+const Hash = createLucideIcon("hash", __iconNode$r);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15451,12 +15496,11 @@ const Globe = createLucideIcon("globe", __iconNode$r);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$q = [
-  ["line", { x1: "4", x2: "20", y1: "9", y2: "9", key: "4lhtct" }],
-  ["line", { x1: "4", x2: "20", y1: "15", y2: "15", key: "vyu0kd" }],
-  ["line", { x1: "10", x2: "8", y1: "3", y2: "21", key: "1ggp8o" }],
-  ["line", { x1: "16", x2: "14", y1: "3", y2: "21", key: "weycgp" }]
+  ["path", { d: "m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4", key: "g0fldk" }],
+  ["path", { d: "m21 2-9.6 9.6", key: "1j0ho8" }],
+  ["circle", { cx: "7.5", cy: "15.5", r: "5.5", key: "yqb3hr" }]
 ];
-const Hash = createLucideIcon("hash", __iconNode$q);
+const Key = createLucideIcon("key", __iconNode$q);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15464,18 +15508,6 @@ const Hash = createLucideIcon("hash", __iconNode$q);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$p = [
-  ["path", { d: "m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4", key: "g0fldk" }],
-  ["path", { d: "m21 2-9.6 9.6", key: "1j0ho8" }],
-  ["circle", { cx: "7.5", cy: "15.5", r: "5.5", key: "yqb3hr" }]
-];
-const Key = createLucideIcon("key", __iconNode$p);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$o = [
   ["path", { d: "m5 8 6 6", key: "1wu5hv" }],
   ["path", { d: "m4 14 6-6 2-3", key: "1k1g8d" }],
   ["path", { d: "M2 5h12", key: "or177f" }],
@@ -15483,14 +15515,14 @@ const __iconNode$o = [
   ["path", { d: "m22 22-5-10-5 10", key: "don7ne" }],
   ["path", { d: "M14 18h6", key: "1m8k6r" }]
 ];
-const Languages = createLucideIcon("languages", __iconNode$o);
+const Languages = createLucideIcon("languages", __iconNode$p);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$n = [
+const __iconNode$o = [
   [
     "path",
     {
@@ -15500,22 +15532,22 @@ const __iconNode$n = [
   ],
   ["path", { d: "M20.054 15.987H3.946", key: "14rxg9" }]
 ];
-const Laptop = createLucideIcon("laptop", __iconNode$n);
+const Laptop = createLucideIcon("laptop", __iconNode$o);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$m = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
-const LoaderCircle = createLucideIcon("loader-circle", __iconNode$m);
+const __iconNode$n = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
+const LoaderCircle = createLucideIcon("loader-circle", __iconNode$n);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$l = [
+const __iconNode$m = [
   ["path", { d: "M12 2v4", key: "3427ic" }],
   ["path", { d: "m16.2 7.8 2.9-2.9", key: "r700ao" }],
   ["path", { d: "M18 12h4", key: "wj9ykh" }],
@@ -15525,7 +15557,23 @@ const __iconNode$l = [
   ["path", { d: "M2 12h4", key: "j09sii" }],
   ["path", { d: "m4.9 4.9 2.9 2.9", key: "giyufr" }]
 ];
-const Loader = createLucideIcon("loader", __iconNode$l);
+const Loader = createLucideIcon("loader", __iconNode$m);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$l = [
+  [
+    "path",
+    {
+      d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
+      key: "1sd12s"
+    }
+  ]
+];
+const MessageCircle = createLucideIcon("message-circle", __iconNode$l);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15536,12 +15584,12 @@ const __iconNode$k = [
   [
     "path",
     {
-      d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
-      key: "1sd12s"
+      d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
+      key: "18887p"
     }
   ]
 ];
-const MessageCircle = createLucideIcon("message-circle", __iconNode$k);
+const MessageSquare = createLucideIcon("message-square", __iconNode$k);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15549,15 +15597,11 @@ const MessageCircle = createLucideIcon("message-circle", __iconNode$k);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$j = [
-  [
-    "path",
-    {
-      d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
-      key: "18887p"
-    }
-  ]
+  ["rect", { width: "20", height: "14", x: "2", y: "3", rx: "2", key: "48i651" }],
+  ["line", { x1: "8", x2: "16", y1: "21", y2: "21", key: "1svkeh" }],
+  ["line", { x1: "12", x2: "12", y1: "17", y2: "21", key: "vw1qmm" }]
 ];
-const MessageSquare = createLucideIcon("message-square", __iconNode$j);
+const Monitor = createLucideIcon("monitor", __iconNode$j);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15565,11 +15609,13 @@ const MessageSquare = createLucideIcon("message-square", __iconNode$j);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$i = [
-  ["rect", { width: "20", height: "14", x: "2", y: "3", rx: "2", key: "48i651" }],
-  ["line", { x1: "8", x2: "16", y1: "21", y2: "21", key: "1svkeh" }],
-  ["line", { x1: "12", x2: "12", y1: "17", y2: "21", key: "vw1qmm" }]
+  ["rect", { x: "16", y: "16", width: "6", height: "6", rx: "1", key: "4q2zg0" }],
+  ["rect", { x: "2", y: "16", width: "6", height: "6", rx: "1", key: "8cvhb9" }],
+  ["rect", { x: "9", y: "2", width: "6", height: "6", rx: "1", key: "1egb70" }],
+  ["path", { d: "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3", key: "1jsf9p" }],
+  ["path", { d: "M12 12V8", key: "2874zd" }]
 ];
-const Monitor = createLucideIcon("monitor", __iconNode$i);
+const Network = createLucideIcon("network", __iconNode$i);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15577,20 +15623,6 @@ const Monitor = createLucideIcon("monitor", __iconNode$i);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$h = [
-  ["rect", { x: "16", y: "16", width: "6", height: "6", rx: "1", key: "4q2zg0" }],
-  ["rect", { x: "2", y: "16", width: "6", height: "6", rx: "1", key: "8cvhb9" }],
-  ["rect", { x: "9", y: "2", width: "6", height: "6", rx: "1", key: "1egb70" }],
-  ["path", { d: "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3", key: "1jsf9p" }],
-  ["path", { d: "M12 12V8", key: "2874zd" }]
-];
-const Network = createLucideIcon("network", __iconNode$h);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$g = [
   [
     "path",
     {
@@ -15603,7 +15635,23 @@ const __iconNode$g = [
   ["circle", { cx: "6.5", cy: "12.5", r: ".5", fill: "currentColor", key: "qy21gx" }],
   ["circle", { cx: "8.5", cy: "7.5", r: ".5", fill: "currentColor", key: "fotxhn" }]
 ];
-const Palette = createLucideIcon("palette", __iconNode$g);
+const Palette = createLucideIcon("palette", __iconNode$h);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$g = [
+  [
+    "path",
+    {
+      d: "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+      key: "1a8usu"
+    }
+  ]
+];
+const Pen = createLucideIcon("pen", __iconNode$g);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -18859,15 +18907,21 @@ function cn(...inputs) {
 }
 const Sidebar = () => {
   const [collapsed, setCollapsed] = reactExports.useState(false);
+  const location = useLocation();
+  const getNavPath = (path) => {
+    const searchParams = new URLSearchParams(location.search);
+    const queryString = searchParams.toString();
+    return queryString ? `${path}?${queryString}` : path;
+  };
   const navItems = [
     { icon: Captions, label: "Dich Caption", path: "/translator" },
     { icon: BookOpen, label: "Dich Truyen AI", path: "/story-translator" },
+    { icon: FileText, label: "Tom Tat Truyen AI", path: "/story-summary" },
     { icon: MessageCircle, label: "Dich Truyen (Web)", path: "/story-web" },
     { icon: MessageCircle, label: "Chat Gemini", path: "/gemini-chat" },
     { icon: Video, label: "Veo3 AI Prompt", path: "/veo3" }
   ];
   const bottomItems = [
-    // { icon: FolderClosed, label: 'Projects', path: '/projects' },
     { icon: Settings$1, label: "Settings", path: "/settings" }
   ];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -18892,7 +18946,7 @@ const Sidebar = () => {
         /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "flex-1 p-2 space-y-2 mt-4", children: navItems.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
           NavLink,
           {
-            to: item.path,
+            to: getNavPath(item.path),
             className: ({ isActive }) => cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
               isActive ? "bg-primary text-text-invert shadow-lg shadow-primary/25" : "text-text-secondary hover:bg-surface hover:text-text-primary"
@@ -18908,7 +18962,7 @@ const Sidebar = () => {
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-2 border-t border-border space-y-2", children: bottomItems.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
           NavLink,
           {
-            to: item.path,
+            to: getNavPath(item.path),
             className: ({ isActive }) => cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
               isActive ? "bg-surface text-text-primary" : "text-text-secondary hover:bg-surface hover:text-text-primary"
@@ -18923,15 +18977,6 @@ const Sidebar = () => {
       ]
     }
   );
-};
-const AppLayout = () => {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex h-screen w-screen overflow-hidden bg-background text-text-primary", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Sidebar, {}),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("main", { className: "flex-1 overflow-auto relative", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "absolute top-0 right-0 p-4 z-10" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-8 min-h-full", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Outlet, {}) })
-    ] })
-  ] });
 };
 const container$1 = "_container_1tglc_11";
 const leftColumn = "_leftColumn_1tglc_41";
@@ -19016,7 +19061,7 @@ const Button = React.forwardRef(
 );
 Button.displayName = "Button";
 const inputWrapper = "_inputWrapper_1vw18_1";
-const input = "_input_1vw18_1";
+const input$1 = "_input_1vw18_1";
 const small$1 = "_small_1vw18_63";
 const error$1 = "_error_1vw18_77";
 const label$4 = "_label_1vw18_93";
@@ -19024,7 +19069,7 @@ const helperText$1 = "_helperText_1vw18_105";
 const errorText = "_errorText_1vw18_117";
 const styles$4 = {
   inputWrapper,
-  input,
+  input: input$1,
   small: small$1,
   error: error$1,
   label: label$4,
@@ -19181,6 +19226,50 @@ const Checkbox = ({
     }
   );
 };
+const ProjectContext = reactExports.createContext(void 0);
+function ProjectProvider({ projectId, children }) {
+  const [paths, setPaths] = reactExports.useState(null);
+  const [loading, setLoading] = reactExports.useState(false);
+  const [error2, setError] = reactExports.useState(null);
+  const load = reactExports.useCallback(async () => {
+    if (!projectId) {
+      setPaths(null);
+      setError("Thiếu projectId");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await window.electronAPI.project.getResolvedPaths(projectId);
+      if (res?.success) {
+        setPaths(res.data ?? null);
+      } else {
+        setPaths(null);
+        setError(res?.error || "Không thể tải project paths");
+      }
+    } catch (err) {
+      setPaths(null);
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+  reactExports.useEffect(() => {
+    load();
+  }, [load]);
+  const value = reactExports.useMemo(
+    () => ({ projectId, paths, loading, error: error2, refresh: load }),
+    [projectId, paths, loading, error2, load]
+  );
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectContext.Provider, { value, children });
+}
+function useProjectContext() {
+  const ctx = reactExports.useContext(ProjectContext);
+  if (!ctx) {
+    throw new Error("useProjectContext must be used within ProjectProvider");
+  }
+  return ctx;
+}
 const GEMINI_MODELS$1 = {
   FLASH_3_0: "gemini-3-flash-preview"
 };
@@ -19250,7 +19339,11 @@ function validateSteps(steps) {
   return { valid: true };
 }
 function CaptionTranslator() {
-  const captionFolder = null;
+  const { paths, projectId } = useProjectContext();
+  const captionFolder = paths?.caption ?? null;
+  const hasLoadedRef = reactExports.useRef(false);
+  const saveTimeoutRef = reactExports.useRef(null);
+  const CAPTION_STATE_FILE = "caption-state.json";
   const [inputType, setInputType] = reactExports.useState(DEFAULT_INPUT_TYPE);
   const [filePath, setFilePath] = reactExports.useState("");
   const [entries, setEntries] = reactExports.useState([]);
@@ -19268,6 +19361,96 @@ function CaptionTranslator() {
   const [currentStep, setCurrentStep] = reactExports.useState(null);
   const [status, setStatus] = reactExports.useState("idle");
   const [progress, setProgress] = reactExports.useState({ current: 0, total: 0, message: "Sẵn sàng." });
+  const loadCaptionState = reactExports.useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: "caption",
+        fileName: CAPTION_STATE_FILE
+      });
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data);
+        if (saved.inputType) setInputType(saved.inputType);
+        if (saved.filePath) setFilePath(saved.filePath);
+        if (saved.entries) setEntries(saved.entries);
+        if (saved.geminiModel) setGeminiModel(saved.geminiModel);
+        if (saved.voice) setVoice(saved.voice);
+        if (typeof saved.rate === "number") setRate(saved.rate);
+        if (typeof saved.volume === "number") setVolume(saved.volume);
+        if (typeof saved.srtSpeed === "number") setSrtSpeed(saved.srtSpeed);
+        if (typeof saved.splitByLines === "boolean") setSplitByLines(saved.splitByLines);
+        if (typeof saved.linesPerFile === "number") setLinesPerFile(saved.linesPerFile);
+        if (typeof saved.numberOfParts === "number") setNumberOfParts(saved.numberOfParts);
+        if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
+        if (saved.audioFiles) setAudioFiles(saved.audioFiles);
+        if (saved.audioDir) setAudioDir(saved.audioDir);
+      }
+    } catch (err) {
+      console.error("[CaptionTranslator] Loi khi tai du lieu project:", err);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  }, [projectId]);
+  const saveCaptionState = reactExports.useCallback(async () => {
+    if (!projectId) return;
+    const payload = {
+      inputType,
+      filePath,
+      entries,
+      geminiModel,
+      voice,
+      rate,
+      volume,
+      srtSpeed,
+      splitByLines,
+      linesPerFile,
+      numberOfParts,
+      enabledSteps: Array.from(enabledSteps.values()),
+      audioFiles,
+      audioDir
+    };
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: "caption",
+      fileName: CAPTION_STATE_FILE,
+      content: payload
+    });
+  }, [
+    projectId,
+    inputType,
+    filePath,
+    entries,
+    geminiModel,
+    voice,
+    rate,
+    volume,
+    srtSpeed,
+    splitByLines,
+    linesPerFile,
+    numberOfParts,
+    enabledSteps,
+    audioFiles,
+    audioDir
+  ]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths) return;
+    loadCaptionState();
+  }, [projectId, paths, loadCaptionState]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !hasLoadedRef.current) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveCaptionState();
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [projectId, paths, saveCaptionState]);
   const toggleStep = reactExports.useCallback((step) => {
     setEnabledSteps((prev) => {
       const next = new Set(prev);
@@ -19622,6 +19805,7 @@ function CaptionTranslator() {
 const STORY_IPC_CHANNELS = {
   PARSE: "story:parse",
   PREPARE_PROMPT: "story:preparePrompt",
+  PREPARE_SUMMARY_PROMPT: "story:prepareSummaryPrompt",
   SAVE_PROMPT: "story:savePrompt",
   TRANSLATE_CHAPTER: "story:translateChapter",
   TRANSLATE_CHAPTER_STREAM: "story:translateChapterStream",
@@ -19675,17 +19859,38 @@ const Select = React.forwardRef(
   }
 );
 Select.displayName = "Select";
+const extractCookieKey$1 = (cookie) => {
+  const trimmed = cookie.trim();
+  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || "";
+  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || "";
+  const combined = [psid1, psid3].filter(Boolean).join("|");
+  return combined || trimmed;
+};
+const buildTokenKey$2 = (config) => {
+  return `${extractCookieKey$1(config.cookie || "")}|${(config.atToken || "").trim()}`;
+};
 function StoryTranslator() {
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = reactExports.useRef(false);
+  const saveTimeoutRef = reactExports.useRef(null);
   const [filePath, setFilePath] = reactExports.useState("");
   const [sourceLang, setSourceLang] = reactExports.useState("zh");
   const [targetLang, setTargetLang] = reactExports.useState("vi");
   const [model, setModel] = reactExports.useState("gemini-3-flash-preview");
+  const [translateMode, setTranslateMode] = reactExports.useState("api");
   const [status, setStatus] = reactExports.useState("idle");
   const [selectedChapterId, setSelectedChapterId] = reactExports.useState(null);
   const [chapters, setChapters] = reactExports.useState([]);
   const [translatedChapters, setTranslatedChapters] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [chapterModels, setChapterModels] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [chapterMethods, setChapterMethods] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [translatedTitles, setTranslatedTitles] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [tokenConfigId, setTokenConfigId] = reactExports.useState(null);
+  const [tokenConfigs, setTokenConfigs] = reactExports.useState([]);
+  const [tokenContexts, setTokenContexts] = reactExports.useState(/* @__PURE__ */ new Map());
   const [viewMode, setViewMode] = reactExports.useState("original");
   const [excludedChapterIds, setExcludedChapterIds] = reactExports.useState(/* @__PURE__ */ new Set());
+  const [lastClickedChapterId, setLastClickedChapterId] = reactExports.useState(null);
   const [batchProgress, setBatchProgress] = reactExports.useState(null);
   const [shouldStop, setShouldStop] = reactExports.useState(false);
   const [exportStatus, setExportStatus] = reactExports.useState("idle");
@@ -19693,6 +19898,29 @@ function StoryTranslator() {
   const [lineHeight, setLineHeight] = reactExports.useState(1.8);
   const [processingChapters, setProcessingChapters] = reactExports.useState(/* @__PURE__ */ new Map());
   const [, setTick] = reactExports.useState(0);
+  const [useProxy, setUseProxy] = reactExports.useState(true);
+  const [useImpit, setUseImpit] = reactExports.useState(false);
+  const [retranslateExisting, setRetranslateExisting] = reactExports.useState(false);
+  const loadProxySetting = async () => {
+    try {
+      const result = await window.electronAPI.appSettings.getAll();
+      if (result.success && result.data) {
+        setUseProxy(result.data.useProxy);
+      }
+    } catch (error2) {
+      console.error("[StoryTranslator] Error loading proxy setting:", error2);
+    }
+  };
+  const extractTranslatedTitle = (text, fallbackId) => {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    return lines[0] || `Chương ${fallbackId}`;
+  };
+  const hasEndMarker = (text) => {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) return false;
+    const lastLine = lines[lines.length - 1];
+    return /hết\s+chương|end\s+of\s+chapter|---\s*hết\s*---/i.test(lastLine);
+  };
   reactExports.useEffect(() => {
     if (processingChapters.size === 0) return;
     const interval = setInterval(() => {
@@ -19700,17 +19928,62 @@ function StoryTranslator() {
     }, 1e3);
     return () => clearInterval(interval);
   }, [processingChapters.size]);
-  const isChapterIncluded = (chapterId) => !excludedChapterIds.has(chapterId);
-  const toggleChapterExclusion = (chapterId) => {
-    setExcludedChapterIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(chapterId)) {
-        next.delete(chapterId);
-      } else {
-        next.add(chapterId);
+  const STORY_STATE_FILE = "story-translator.json";
+  const loadConfigurations = async () => {
+    try {
+      const configsResult = await window.electronAPI.geminiChat.getAll();
+      if (configsResult.success && configsResult.data) {
+        const configs = configsResult.data;
+        setTokenConfigs(configs);
+        const activeConfigs = configs.filter((c) => c.isActive);
+        const uniqueActive = activeConfigs.filter((config, index) => {
+          const key = buildTokenKey$2(config);
+          return activeConfigs.findIndex((c) => buildTokenKey$2(c) === key) === index;
+        });
+        const fallbackConfig = uniqueActive[0] || configs[0];
+        const nextId = tokenConfigId || fallbackConfig?.id || null;
+        if (nextId && nextId !== tokenConfigId) {
+          setTokenConfigId(nextId);
+        }
       }
-      return next;
-    });
+    } catch (e) {
+      console.error("[StoryTranslator] Error loading config:", e);
+    }
+  };
+  const isChapterIncluded = (chapterId) => !excludedChapterIds.has(chapterId);
+  const toggleChapterExclusion = (chapterId, shiftKey) => {
+    if (shiftKey && lastClickedChapterId && lastClickedChapterId !== chapterId) {
+      const lastIndex = chapters.findIndex((c) => c.id === lastClickedChapterId);
+      const currentIndex = chapters.findIndex((c) => c.id === chapterId);
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex);
+        const end = Math.max(lastIndex, currentIndex);
+        const rangeChapters = chapters.slice(start, end + 1);
+        const shouldInclude = excludedChapterIds.has(chapterId);
+        setExcludedChapterIds((prev) => {
+          const next = new Set(prev);
+          rangeChapters.forEach((c) => {
+            if (shouldInclude) {
+              next.delete(c.id);
+            } else {
+              next.add(c.id);
+            }
+          });
+          return next;
+        });
+      }
+    } else {
+      setExcludedChapterIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(chapterId)) {
+          next.delete(chapterId);
+        } else {
+          next.add(chapterId);
+        }
+        return next;
+      });
+    }
+    setLastClickedChapterId(chapterId);
   };
   const selectAllChapters = () => {
     setExcludedChapterIds(/* @__PURE__ */ new Set());
@@ -19719,6 +19992,58 @@ function StoryTranslator() {
     setExcludedChapterIds(new Set(chapters.map((c) => c.id)));
   };
   const selectedChapterCount = chapters.length - excludedChapterIds.size;
+  const getWorkerChannel = (workerId) => {
+    if (translateMode === "api") return "api";
+    if (translateMode === "token") return "token";
+    return workerId === 1 ? "token" : "api";
+  };
+  const getDistinctActiveTokenConfigs = (configs) => {
+    const activeConfigs = configs.filter((c) => c.isActive);
+    const seenKeys = /* @__PURE__ */ new Set();
+    const distinct = [];
+    for (const config of activeConfigs) {
+      const key = buildTokenKey$2(config);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      distinct.push(config);
+    }
+    return distinct;
+  };
+  const getTokenConfigById = (id) => {
+    if (!id) return null;
+    return tokenConfigs.find((c) => c.id === id) || null;
+  };
+  const getPreferredTokenConfig = () => {
+    const direct = getTokenConfigById(tokenConfigId);
+    if (direct) return direct;
+    const distinctActive = getDistinctActiveTokenConfigs(tokenConfigs);
+    if (distinctActive.length === 0) return null;
+    const fallback = distinctActive[0];
+    if (fallback && fallback.id !== tokenConfigId) {
+      setTokenConfigId(fallback.id);
+    }
+    return fallback;
+  };
+  const migrateTokenContextsToTokenKey = (configs, contexts) => {
+    if (configs.length === 0 || contexts.size === 0) {
+      return { map: contexts, changed: false };
+    }
+    const idToTokenKey = new Map(configs.map((c) => [c.id, buildTokenKey$2(c)]));
+    let changed = false;
+    const next = new Map(contexts);
+    for (const [key, ctx] of contexts.entries()) {
+      const tokenKey = idToTokenKey.get(key);
+      if (!tokenKey || tokenKey === key) continue;
+      if (!next.has(tokenKey)) {
+        next.set(tokenKey, ctx);
+      }
+      if (next.has(key)) {
+        next.delete(key);
+      }
+      changed = true;
+    }
+    return { map: changed ? next : contexts, changed };
+  };
   console.log("[StoryTranslator] Render - translatedChapters.size:", translatedChapters.size);
   console.log("[StoryTranslator] Render - status:", status);
   console.log("[StoryTranslator] Render - chapters.length:", chapters.length);
@@ -19732,7 +20057,7 @@ function StoryTranslator() {
       parseFile(path);
     }
   };
-  const parseFile = async (path) => {
+  const parseFile = async (path, options) => {
     setStatus("running");
     try {
       const parseResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PARSE, path);
@@ -19740,23 +20065,172 @@ function StoryTranslator() {
         setChapters(parseResult.chapters);
         setExcludedChapterIds(/* @__PURE__ */ new Set());
         if (parseResult.chapters.length > 0) {
-          setSelectedChapterId(parseResult.chapters[0].id);
-          setTranslatedChapters(/* @__PURE__ */ new Map());
-          setViewMode("original");
+          if (!options?.keepSelection) {
+            setSelectedChapterId(parseResult.chapters[0].id);
+          }
+          if (!options?.keepTranslations) {
+            setTranslatedChapters(/* @__PURE__ */ new Map());
+            setViewMode("original");
+          }
         }
+        return true;
       } else {
         console.error("[StoryTranslator] Loi parse file:", parseResult.error);
+        return false;
       }
     } catch (error2) {
       console.error("[StoryTranslator] Loi invoke story:parse:", error2);
+      return false;
     } finally {
       setStatus("idle");
     }
   };
+  const loadStoryState = async () => {
+    if (!projectId) return;
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: "story",
+        fileName: STORY_STATE_FILE
+      });
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data);
+        if (saved.sourceLang) setSourceLang(saved.sourceLang);
+        if (saved.targetLang) setTargetLang(saved.targetLang);
+        if (saved.model) setModel(saved.model);
+        if (saved.translateMode) setTranslateMode(saved.translateMode);
+        if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
+        if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
+        if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
+        if (saved.translatedTitles) {
+          setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title])));
+        }
+        if (typeof saved.tokenConfigId !== "undefined") {
+          setTokenConfigId(saved.tokenConfigId || null);
+        }
+        if (saved.tokenContexts && saved.tokenContexts.length > 0) {
+          setTokenContexts(new Map(saved.tokenContexts));
+        } else if (saved.tokenContext && saved.tokenConfigId) {
+          setTokenContexts(/* @__PURE__ */ new Map([[saved.tokenConfigId, saved.tokenContext]]));
+        }
+        let parsedOk = false;
+        if (saved.filePath) {
+          setFilePath(saved.filePath);
+          parsedOk = await parseFile(saved.filePath, { keepTranslations: true, keepSelection: true });
+        }
+        if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
+          setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: "" })));
+        }
+        if (saved.viewMode) setViewMode(saved.viewMode);
+        if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
+        if (typeof saved.selectedChapterId !== "undefined") setSelectedChapterId(saved.selectedChapterId);
+      }
+    } catch (error2) {
+      console.error("[StoryTranslator] Loi khi tai du lieu project:", error2);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  };
+  const saveStoryState = async () => {
+    if (!projectId) return;
+    const orderedTranslatedEntries = chapters.filter((c) => translatedChapters.has(c.id)).map((c) => [c.id, translatedChapters.get(c.id)]);
+    const orderedChapterModels = orderedTranslatedEntries.map(([chapterId]) => {
+      const usedModel = chapterModels.get(chapterId) || model;
+      return [chapterId, usedModel];
+    });
+    const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
+      const usedMethod = chapterMethods.get(chapterId) || (translateMode === "token" ? "token" : "api");
+      return [chapterId, usedMethod];
+    });
+    const translatedTitles2 = orderedTranslatedEntries.map(([chapterId, content2]) => ({
+      id: chapterId,
+      title: extractTranslatedTitle(content2, chapterId)
+    }));
+    const payload = {
+      filePath,
+      sourceLang,
+      targetLang,
+      model,
+      translateMode,
+      translatedEntries: orderedTranslatedEntries,
+      chapterModels: orderedChapterModels,
+      chapterMethods: orderedChapterMethods,
+      translatedTitles: translatedTitles2,
+      tokenConfigId,
+      tokenContexts: Array.from(tokenContexts.entries()),
+      viewMode,
+      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      selectedChapterId
+    };
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: "story",
+      fileName: STORY_STATE_FILE,
+      content: payload
+    });
+  };
+  reactExports.useEffect(() => {
+    if (!projectId || !paths) return;
+    loadStoryState();
+  }, [projectId, paths]);
+  reactExports.useEffect(() => {
+    loadConfigurations();
+    loadProxySetting();
+  }, []);
+  reactExports.useEffect(() => {
+    if (translateMode === "token" || translateMode === "both") {
+      if (!tokenConfigId) {
+        loadConfigurations();
+      }
+    }
+  }, [translateMode, tokenConfigId]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !hasLoadedRef.current) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveStoryState();
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [
+    projectId,
+    paths,
+    filePath,
+    sourceLang,
+    targetLang,
+    model,
+    translateMode,
+    chapters,
+    translatedChapters,
+    chapterModels,
+    chapterMethods,
+    translatedTitles,
+    tokenConfigId,
+    tokenContexts,
+    viewMode,
+    excludedChapterIds,
+    selectedChapterId
+  ]);
+  reactExports.useEffect(() => {
+    if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;
+    const { map, changed } = migrateTokenContextsToTokenKey(tokenConfigs, tokenContexts);
+    if (changed) {
+      setTokenContexts(map);
+    }
+  }, [tokenConfigs, tokenContexts]);
   const handleTranslate = async () => {
     if (!selectedChapterId) return;
     if (!isChapterIncluded(selectedChapterId)) {
       alert('Chuong nay da bi loai tru khoi danh sach dich. Vui long bo chon "Loai tru" hoac chon chuong khac.');
+      return;
+    }
+    if (translatedChapters.has(selectedChapterId) && !retranslateExisting) {
+      alert('⚠️ Chương này đã được dịch rồi.\n\nNếu muốn dịch lại, vui lòng tick vào "Dịch lại các chương đã dịch" ở phần cấu hình.');
       return;
     }
     const chapter = chapters.find((c) => c.id === selectedChapterId);
@@ -19774,16 +20248,78 @@ function StoryTranslator() {
         throw new Error(prepareResult.error || "Loi chuan bi prompt");
       }
       console.log("[StoryTranslator] Da chuan bi prompt, dang gui den Gemini...");
+      const method = translateMode === "token" ? "WEB" : "API";
+      const methodKey = method === "WEB" ? "token" : "api";
+      let selectedTokenConfig = method === "WEB" ? getPreferredTokenConfig() : null;
+      if (method === "WEB" && !selectedTokenConfig) {
+        await loadConfigurations();
+        selectedTokenConfig = getPreferredTokenConfig();
+        if (!selectedTokenConfig) {
+          alert("Không tìm thấy Cấu hình Web để chạy chế độ Token.");
+          return;
+        }
+      }
+      const tokenKey = method === "WEB" && selectedTokenConfig ? buildTokenKey$2(selectedTokenConfig) : null;
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
-        model
+        model,
+        method,
+        webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+        useProxy: method === "WEB" && useProxy,
+        useImpit: method === "WEB" && useImpit,
+        metadata: { chapterId: selectedChapterId }
       });
       if (translateResult.success && translateResult.data) {
+        if (translateResult.metadata?.chapterId !== selectedChapterId) {
+          console.error(`[StoryTranslator] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== selected (${selectedChapterId})`);
+          throw new Error("Metadata validation failed - race condition detected");
+        }
+        if (!hasEndMarker(translateResult.data)) {
+          console.warn('[StoryTranslator] ⚠️ Bản dịch không có "Hết chương", đang retry...');
+          const retryResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
+            prompt: prepareResult.prompt,
+            model,
+            method,
+            webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+            useProxy: method === "WEB" && useProxy,
+            useImpit: method === "WEB" && useImpit,
+            metadata: { chapterId: selectedChapterId }
+          });
+          if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
+            console.log('[StoryTranslator] ✅ Retry thành công, bản dịch đã có "Hết chương"');
+            translateResult.data = retryResult.data;
+            if (retryResult.context) translateResult.context = retryResult.context;
+          } else {
+            console.warn('[StoryTranslator] ⚠️ Retry vẫn không có "Hết chương", sử dụng bản dịch gốc');
+          }
+        }
         setTranslatedChapters((prev) => {
           const next = new Map(prev);
           next.set(selectedChapterId, translateResult.data);
           return next;
         });
+        setTranslatedTitles((prev) => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, extractTranslatedTitle(translateResult.data, selectedChapterId));
+          return next;
+        });
+        setChapterModels((prev) => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, model);
+          return next;
+        });
+        setChapterMethods((prev) => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, methodKey);
+          return next;
+        });
+        if (translateResult.context && translateResult.context.conversationId && tokenKey) {
+          setTokenContexts((prev) => {
+            const next = new Map(prev);
+            next.set(tokenKey, translateResult.context);
+            return next;
+          });
+        }
         setViewMode("translated");
         console.log("[StoryTranslator] Dich thanh cong!");
       } else {
@@ -19802,7 +20338,7 @@ function StoryTranslator() {
   };
   const handleTranslateAll = async () => {
     const chaptersToTranslate = chapters.filter(
-      (c) => isChapterIncluded(c.id) && !translatedChapters.has(c.id)
+      (c) => isChapterIncluded(c.id) && (retranslateExisting || !translatedChapters.has(c.id))
     );
     if (chaptersToTranslate.length === 0) {
       alert("Đã dịch xong tất cả các chương được chọn!");
@@ -19811,21 +20347,21 @@ function StoryTranslator() {
     setStatus("running");
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     setShouldStop(false);
-    const MAX_CONCURRENT = 5;
     const MIN_DELAY = 5e3;
     const MAX_DELAY = 3e4;
     let completed = 0;
     let currentIndex = 0;
     const results = [];
-    const translateChapter = async (chapter, index, workerId) => {
+    const translateChapter = async (chapter, index, workerId2, channelOverride, tokenConfigOverride) => {
       if (shouldStop) {
         console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
         return null;
       }
       setSelectedChapterId(chapter.id);
+      const channel = channelOverride || getWorkerChannel(workerId2);
       setProcessingChapters((prev) => {
         const next = new Map(prev);
-        next.set(chapter.id, { startTime: Date.now(), workerId });
+        next.set(chapter.id, { startTime: Date.now(), workerId: workerId2, channel });
         return next;
       });
       try {
@@ -19840,19 +20376,83 @@ function StoryTranslator() {
           console.error(`Lỗi chuẩn bị prompt cho chương ${chapter.title}:`, prepareResult.error);
           return null;
         }
+        const method = channel === "token" ? "WEB" : "API";
+        let selectedTokenConfig = method === "WEB" ? tokenConfigOverride || getPreferredTokenConfig() : null;
+        if (method === "WEB" && !selectedTokenConfig) {
+          await loadConfigurations();
+          selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
+          if (!selectedTokenConfig) {
+            console.error("[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.");
+            return null;
+          }
+        }
+        const tokenKey = method === "WEB" && selectedTokenConfig ? buildTokenKey$2(selectedTokenConfig) : null;
         const translateResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
           {
             prompt: prepareResult.prompt,
-            model
+            model,
+            method,
+            webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+            useProxy: method === "WEB" && useProxy,
+            useImpit: method === "WEB" && useImpit,
+            metadata: { chapterId: chapter.id }
           }
         );
         if (translateResult.success && translateResult.data) {
+          if (translateResult.metadata?.chapterId !== chapter.id) {
+            console.error(`[StoryTranslator] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== chapter.id (${chapter.id})`);
+            return null;
+          }
+          if (!hasEndMarker(translateResult.data)) {
+            console.warn(`[StoryTranslator] ⚠️ Chương ${chapter.title} không có "Hết chương", đang retry...`);
+            const retryResult = await window.electronAPI.invoke(
+              STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
+              {
+                prompt: prepareResult.prompt,
+                model,
+                method,
+                webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+                useProxy: method === "WEB" && useProxy,
+                useImpit: method === "WEB" && useImpit,
+                metadata: { chapterId: chapter.id }
+              }
+            );
+            if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
+              console.log(`[StoryTranslator] ✅ Retry chương ${chapter.title} thành công, đã có "Hết chương"`);
+              translateResult.data = retryResult.data;
+              if (retryResult.context) translateResult.context = retryResult.context;
+            } else {
+              console.warn(`[StoryTranslator] ⚠️ Retry chương ${chapter.title} vẫn không có "Hết chương", sử dụng bản gốc`);
+            }
+          }
           setTranslatedChapters((prev) => {
             const next = new Map(prev);
             next.set(chapter.id, translateResult.data);
             return next;
           });
+          setTranslatedTitles((prev) => {
+            const next = new Map(prev);
+            next.set(chapter.id, extractTranslatedTitle(translateResult.data, chapter.id));
+            return next;
+          });
+          setChapterModels((prev) => {
+            const next = new Map(prev);
+            next.set(chapter.id, model);
+            return next;
+          });
+          setChapterMethods((prev) => {
+            const next = new Map(prev);
+            next.set(chapter.id, channel);
+            return next;
+          });
+          if (translateResult.context && translateResult.context.conversationId && tokenKey) {
+            setTokenContexts((prev) => {
+              const next = new Map(prev);
+              next.set(tokenKey, translateResult.context);
+              return next;
+            });
+          }
           console.log(`[StoryTranslator] ✅ Dịch xong: ${chapter.title}`);
           return { id: chapter.id, text: translateResult.data };
         } else {
@@ -19870,36 +20470,51 @@ function StoryTranslator() {
         });
       }
     };
-    const worker = async (workerId) => {
-      console.log(`[StoryTranslator] 🚀 Worker ${workerId} started`);
+    const worker = async (workerId2, channel, tokenConfig) => {
+      console.log(`[StoryTranslator] 🚀 Worker ${workerId2} started`);
       while (currentIndex < chaptersToTranslate.length && !shouldStop) {
         const index = currentIndex++;
         const chapter = chaptersToTranslate[index];
         const isVeryFirstChapter = index === 0;
         if (!isVeryFirstChapter) {
           const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StoryTranslator] ⏳ Worker ${workerId} chờ ${Math.round(delay / 1e3)}s trước khi dịch chương ${index + 1}...`);
+          console.log(`[StoryTranslator] ⏳ Worker ${workerId2} chờ ${Math.round(delay / 1e3)}s trước khi dịch chương ${index + 1}...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           console.log(`[StoryTranslator] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
         }
         if (shouldStop) {
-          console.log(`[StoryTranslator] ⚠️ Worker ${workerId} stopped`);
+          console.log(`[StoryTranslator] ⚠️ Worker ${workerId2} stopped`);
           break;
         }
-        const result = await translateChapter(chapter, index, workerId);
+        const result = await translateChapter(chapter, index, workerId2, channel, tokenConfig);
         results.push(result);
         completed++;
         setBatchProgress({ current: completed, total: chaptersToTranslate.length });
-        console.log(`[StoryTranslator] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId})`);
+        console.log(`[StoryTranslator] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId2})`);
       }
-      console.log(`[StoryTranslator] ✓ Worker ${workerId} finished`);
+      console.log(`[StoryTranslator] ✓ Worker ${workerId2} finished`);
     };
-    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${MAX_CONCURRENT} workers song song`);
-    const workers = Array.from(
-      { length: Math.min(MAX_CONCURRENT, chaptersToTranslate.length) },
-      (_, i) => worker(i + 1)
-    );
+    const tokenConfigsResult = translateMode === "token" || translateMode === "both" ? await window.electronAPI.geminiChat.getAll() : null;
+    const tokenConfigsForRun = tokenConfigsResult?.success && tokenConfigsResult.data ? getDistinctActiveTokenConfigs(tokenConfigsResult.data) : [];
+    if ((translateMode === "token" || translateMode === "both") && tokenConfigsForRun.length === 0) {
+      console.error("[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.");
+      setStatus("idle");
+      setBatchProgress(null);
+      return;
+    }
+    const apiWorkerCount = translateMode === "api" ? 5 : translateMode === "both" ? 5 : 0;
+    const tokenWorkerCount = translateMode === "token" ? tokenConfigsForRun.length : translateMode === "both" ? tokenConfigsForRun.length : 0;
+    const totalWorkers = apiWorkerCount + tokenWorkerCount;
+    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
+    const workers = [];
+    let workerId = 1;
+    for (let i = 0; i < apiWorkerCount; i += 1) {
+      workers.push(worker(workerId++, "api"));
+    }
+    for (const config of tokenConfigsForRun) {
+      workers.push(worker(workerId++, "token", config));
+    }
     await Promise.all(workers);
     setStatus("idle");
     setBatchProgress(null);
@@ -19930,20 +20545,66 @@ function StoryTranslator() {
     }
   };
   const handleExportEbook = async () => {
-    if (chapters.length === 0) {
-      alert("Chưa có nội dung để export!");
-      return;
-    }
     if (translatedChapters.size === 0) {
       alert("Chưa có chương nào được dịch để export!");
       return;
     }
+    const exportMode = await new Promise((resolve) => {
+      const userChoice = window.confirm(
+        '📚 Chọn loại nội dung đóng gói:\n\n✅ OK = Bản dịch + Tóm tắt (Kết hợp)\n❌ Cancel = Chỉ bản dịch\n\n(Để chọn "Chỉ tóm tắt", nhấn Cancel rồi chọn lại)'
+      );
+      if (userChoice) {
+        resolve("combined");
+      } else {
+        const summaryOnly = window.confirm(
+          "📚 Bạn đã chọn không kết hợp.\n\n✅ OK = Chỉ tóm tắt\n❌ Cancel = Chỉ bản dịch"
+        );
+        resolve(summaryOnly ? "summary" : "translation");
+      }
+    });
+    if (!exportMode) {
+      return;
+    }
     setExportStatus("exporting");
     try {
-      console.log("[StoryTranslator] Bắt đầu export ebook...");
+      console.log("[StoryTranslator] Bắt đầu export ebook...", { exportMode });
+      let summaries = /* @__PURE__ */ new Map();
+      let summaryTitles = /* @__PURE__ */ new Map();
+      if (exportMode === "summary" || exportMode === "combined") {
+        if (!projectId) {
+          alert("⚠️ Cần mở project để export tóm tắt!");
+          setExportStatus("idle");
+          return;
+        }
+        try {
+          const summaryRes = await window.electronAPI.project.readFeatureFile({
+            projectId,
+            feature: "story",
+            fileName: "story-summary.json"
+          });
+          if (summaryRes?.success && summaryRes.data) {
+            const summaryData = JSON.parse(summaryRes.data);
+            if (summaryData.summaries) {
+              summaries = new Map(summaryData.summaries);
+            }
+            if (summaryData.summaryTitles) {
+              summaryTitles = new Map(summaryData.summaryTitles);
+            }
+            console.log(`[StoryTranslator] Đã load ${summaries.size} tóm tắt`);
+          }
+        } catch (err) {
+          console.error("[StoryTranslator] Lỗi load summary data:", err);
+        }
+        if (summaries.size === 0) {
+          alert("⚠️ Chưa có tóm tắt nào! Vui lòng tóm tắt truyện trước.");
+          setExportStatus("idle");
+          return;
+        }
+      }
+      const defaultName = exportMode === "translation" ? `translation_${sourceLang}-${targetLang}.epub` : exportMode === "summary" ? `summary_${targetLang}.epub` : `combined_${sourceLang}-${targetLang}.epub`;
       const saveDialogResult = await window.electronAPI.invoke("dialog:showSaveDialog", {
         title: "Lưu Ebook EPUB",
-        defaultPath: `output_${sourceLang}-${targetLang}.epub`,
+        defaultPath: defaultName,
         filters: [{ name: "EPUB Ebook", extensions: ["epub"] }]
       });
       if (saveDialogResult.canceled || !saveDialogResult.filePath) {
@@ -19951,16 +20612,44 @@ function StoryTranslator() {
         return;
       }
       const ebookChapters = [];
-      for (const chapter of chapters) {
-        if (translatedChapters.has(chapter.id)) {
+      const titleMap = new Map(
+        chapters.map((c) => [c.id, c.title])
+      );
+      const orderedTranslatedEntries = chapters.length > 0 ? chapters.filter((c) => translatedChapters.has(c.id)).map((c) => [c.id, translatedChapters.get(c.id)]) : Array.from(translatedChapters.entries());
+      if (exportMode === "translation") {
+        for (const [chapterId, content2] of orderedTranslatedEntries) {
+          const title = translatedTitles.get(chapterId) || titleMap.get(chapterId) || `Chương ${chapterId}`;
+          ebookChapters.push({ title, content: content2 });
+        }
+      } else if (exportMode === "summary") {
+        for (const [chapterId] of orderedTranslatedEntries) {
+          const summaryContent = summaries.get(chapterId);
+          if (summaryContent) {
+            const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || titleMap.get(chapterId) || `Tóm tắt ${chapterId}`;
+            ebookChapters.push({
+              title: `[Tóm tắt] ${title}`,
+              content: summaryContent
+            });
+          }
+        }
+      } else {
+        for (const [chapterId, translationContent] of orderedTranslatedEntries) {
+          const chapterTitle = translatedTitles.get(chapterId) || titleMap.get(chapterId) || `Chương ${chapterId}`;
           ebookChapters.push({
-            title: chapter.title,
-            content: translatedChapters.get(chapter.id)
+            title: chapterTitle,
+            content: translationContent
           });
+          const summaryContent = summaries.get(chapterId);
+          if (summaryContent) {
+            ebookChapters.push({
+              title: `📝 Tóm tắt: ${chapterTitle}`,
+              content: summaryContent
+            });
+          }
         }
       }
       if (ebookChapters.length === 0) {
-        alert("Lỗi: Không tìm thấy nội dung đã dịch khớp với các chương hiện có.");
+        alert("Lỗi: Không tìm thấy nội dung để đóng gói.");
         setExportStatus("idle");
         return;
       }
@@ -20029,8 +20718,8 @@ Số chương: ${ebookChapters.length}`);
         )
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-card border border-border rounded-xl", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "md:col-span-3 flex flex-col gap-2", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-card border border-border rounded-xl", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "md:col-span-3 flex flex-col gap-1", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm font-medium text-text-secondary", children: "File Truyện" }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -20042,7 +20731,7 @@ Số chương: ${ebookChapters.length}`);
               containerClassName: "flex-1"
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleBrowse, variant: "secondary", className: "shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 16 }) })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleBrowse, variant: "secondary", className: "shrink-0 h-9 px-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 16 }) })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -20063,7 +20752,7 @@ Số chương: ${ebookChapters.length}`);
           options: LANG_OPTIONS
         }
       ) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
         Select,
         {
           label: "Model AI",
@@ -20075,6 +20764,19 @@ Số chương: ${ebookChapters.length}`);
           }))
         }
       ) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-1", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        Select,
+        {
+          label: "Chế độ dịch",
+          value: translateMode,
+          onChange: (e) => setTranslateMode(e.target.value),
+          options: [
+            { value: "api", label: "API" },
+            { value: "token", label: "Token" },
+            { value: "both", label: "Kết hợp (API + Token)" }
+          ]
+        }
+      ) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "md:col-span-2 flex items-end gap-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
           Button,
@@ -20082,7 +20784,7 @@ Số chương: ${ebookChapters.length}`);
             onClick: handleTranslate,
             variant: "secondary",
             disabled: !filePath || status === "running" || !selectedChapterId,
-            className: "flex-1",
+            className: "flex-1 h-9 px-3",
             title: "Dịch chương đang chọn",
             children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
@@ -20095,7 +20797,7 @@ Số chương: ${ebookChapters.length}`);
           {
             onClick: handleStopTranslation,
             variant: "secondary",
-            className: "flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30",
+            className: "flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30",
             title: "Dừng dịch batch hiện tại",
             children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(CircleStop, { size: 16 }),
@@ -20112,16 +20814,29 @@ Số chương: ${ebookChapters.length}`);
             onClick: handleTranslateAll,
             variant: "primary",
             disabled: !filePath || status === "running" || selectedChapterCount === 0,
-            className: "flex-1",
+            className: "flex-1 h-9 px-3",
             title: "Dịch tất cả chương được chọn",
             children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
               "Dịch ",
+              retranslateExisting ? "lại " : "",
               selectedChapterCount
             ]
           }
         )
-      ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-12 flex items-center gap-4 text-sm", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "flex items-center gap-2 cursor-pointer hover:text-primary", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: retranslateExisting,
+            onChange: (e) => setRetranslateExisting(e.target.checked),
+            className: "w-4 h-4 rounded border-border cursor-pointer"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Dịch lại các chương đã dịch" })
+      ] }) })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex gap-4 min-h-0", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "w-1/4 bg-card border border-border rounded-xl flex flex-col overflow-hidden", children: [
@@ -20163,6 +20878,7 @@ Số chương: ${ebookChapters.length}`);
           const isProcessing = processingChapters.has(chapter.id);
           const processingInfo = processingChapters.get(chapter.id);
           const elapsedTime = isProcessing && processingInfo ? Math.floor((Date.now() - processingInfo.startTime) / 1e3) : 0;
+          const hasTranslatedTitle = translatedTitles.has(chapter.id) || translatedChapters.has(chapter.id);
           return /* @__PURE__ */ jsxRuntimeExports.jsxs(
             "div",
             {
@@ -20173,7 +20889,7 @@ Số chương: ${ebookChapters.length}`);
                   {
                     onClick: (e) => {
                       e.stopPropagation();
-                      toggleChapterExclusion(chapter.id);
+                      toggleChapterExclusion(chapter.id, e.shiftKey);
                     },
                     className: `shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "bg-white border-white text-primary" : "bg-primary border-primary text-white" : selectedChapterId === chapter.id ? "border-white/50" : "border-border"}`,
                     children: isChapterIncluded(chapter.id) && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-3 h-3", fill: "none", stroke: "currentColor", viewBox: "0 0 24 24", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 3, d: "M5 13l4 4L19 7" }) })
@@ -20190,10 +20906,11 @@ Số chương: ${ebookChapters.length}`);
                         setViewMode("original");
                       }
                     },
-                    className: `flex-1 text-left truncate flex items-center gap-2 ${!isChapterIncluded(chapter.id) ? "opacity-50 line-through" : ""}`,
+                    className: "flex-1 text-left truncate flex items-center gap-2",
                     children: [
-                      chapter.title,
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${!isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "text-white/60 italic" : "text-text-secondary/40 italic" : hasTranslatedTitle ? "text-emerald-500 font-medium" : selectedChapterId === chapter.id ? "text-white" : "text-text-secondary"}`, children: translatedTitles.get(chapter.id) || (translatedChapters.has(chapter.id) ? extractTranslatedTitle(translatedChapters.get(chapter.id) || "", chapter.id) : chapter.title) }),
                       isProcessing && processingInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex items-center gap-1 shrink-0 text-xs ${selectedChapterId === chapter.id ? "text-yellow-300" : "text-yellow-500"}`, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `px-1.5 py-0.5 rounded border ${selectedChapterId === chapter.id ? "border-yellow-300/60 bg-yellow-300/10" : "border-yellow-500/60 bg-yellow-500/10"}`, children: processingInfo.channel === "api" ? "API" : "TOKEN" }),
                         /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
                         /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
                           "W",
@@ -20204,8 +20921,7 @@ Số chương: ${ebookChapters.length}`);
                           elapsedTime,
                           "s"
                         ] })
-                      ] }),
-                      !isProcessing && translatedChapters.has(chapter.id) && /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 14, className: `shrink-0 ${selectedChapterId === chapter.id ? "text-green-300" : "text-green-500"}` })
+                      ] })
                     ]
                   }
                 )
@@ -20249,7 +20965,7 @@ Số chương: ${ebookChapters.length}`);
                     children: "-"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-text-secondary min-w-[2rem] text-center", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-text-secondary min-w-8 text-center", children: [
                   fontSize,
                   "px"
                 ] }),
@@ -20272,7 +20988,7 @@ Số chương: ${ebookChapters.length}`);
                     children: "-"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary min-w-[2rem] text-center", children: lineHeight.toFixed(1) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary min-w-8 text-center", children: lineHeight.toFixed(1) }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx(
                   "button",
                   {
@@ -20286,6 +21002,19 @@ Số chương: ${ebookChapters.length}`);
           ] }),
           selectedChapterId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 items-center", children: [
             !isChapterIncluded(selectedChapterId) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-orange-500 bg-orange-500/10 px-2 py-1 rounded", children: "Đã loại trừ" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mr-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  id: "useImpit",
+                  checked: useImpit,
+                  onChange: (e) => setUseImpit(e.target.checked),
+                  className: "rounded border-gray-300 text-primary focus:ring-primary"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "useImpit", className: "text-xs text-text-secondary cursor-pointer select-none", children: "Use Impit" })
+            ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleSavePrompt, variant: "secondary", className: "text-xs h-8 px-2", children: "Lưu Prompt" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border", children: chapters.find((c) => c.id === selectedChapterId)?.title })
           ] })
@@ -20301,7 +21030,7 @@ Số chương: ${ebookChapters.length}`);
               letterSpacing: "0.01em",
               wordSpacing: "0.05em"
             },
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "max-w-4xl mx-auto", children: selectedChapterId ? viewMode === "original" ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "whitespace-pre-wrap break-words", children: chapters.find((c) => c.id === selectedChapterId)?.content }) : translatedChapters.get(selectedChapterId) ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "whitespace-pre-wrap break-words", children: translatedChapters.get(selectedChapterId) }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "h-full flex flex-col items-center justify-center text-text-secondary opacity-50", children: [
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "max-w-4xl mx-auto", children: selectedChapterId ? viewMode === "original" ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "whitespace-pre-wrap wrap-break-word", children: chapters.find((c) => c.id === selectedChapterId)?.content }) : translatedChapters.get(selectedChapterId) ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "whitespace-pre-wrap wrap-break-word", children: translatedChapters.get(selectedChapterId) }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "h-full flex flex-col items-center justify-center text-text-secondary opacity-50", children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 48, className: "mb-4" }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base", children: 'Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.' })
             ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "h-full flex flex-col items-center justify-center text-text-secondary opacity-50", children: [
@@ -20314,7 +21043,1194 @@ Số chương: ${ebookChapters.length}`);
     ] })
   ] });
 }
+const extractCookieKey = (cookie) => {
+  const trimmed = cookie.trim();
+  const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || "";
+  const psid3 = trimmed.match(/__Secure-3PSID=([^;\s]+)/)?.[1] || "";
+  const combined = [psid1, psid3].filter(Boolean).join("|");
+  return combined || trimmed;
+};
+const buildTokenKey$1 = (config) => {
+  return `${extractCookieKey(config.cookie || "")}|${(config.atToken || "").trim()}`;
+};
+function StorySummary() {
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = reactExports.useRef(false);
+  const saveTimeoutRef = reactExports.useRef(null);
+  const [sourceLang, setSourceLang] = reactExports.useState("vi");
+  const [targetLang, setTargetLang] = reactExports.useState("vi");
+  const [model, setModel] = reactExports.useState("gemini-3-flash-preview");
+  const [translateMode, setTranslateMode] = reactExports.useState("api");
+  const [status, setStatus] = reactExports.useState("idle");
+  const [selectedChapterId, setSelectedChapterId] = reactExports.useState(null);
+  const [chapters, setChapters] = reactExports.useState([]);
+  const [sourceChapters, setSourceChapters] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [summaries, setSummaries] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [chapterModels, setChapterModels] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [chapterMethods, setChapterMethods] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [translatedTitles, setTranslatedTitles] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [summaryTitles, setSummaryTitles] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [tokenConfigId, setTokenConfigId] = reactExports.useState(null);
+  const [tokenConfigs, setTokenConfigs] = reactExports.useState([]);
+  const [tokenContexts, setTokenContexts] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [viewMode, setViewMode] = reactExports.useState("original");
+  const [excludedChapterIds, setExcludedChapterIds] = reactExports.useState(/* @__PURE__ */ new Set());
+  const [lastClickedChapterId, setLastClickedChapterId] = reactExports.useState(null);
+  const [batchProgress, setBatchProgress] = reactExports.useState(null);
+  const [shouldStop, setShouldStop] = reactExports.useState(false);
+  const [fontSize, setFontSize] = reactExports.useState(18);
+  const [lineHeight, setLineHeight] = reactExports.useState(1.8);
+  const [processingChapters, setProcessingChapters] = reactExports.useState(/* @__PURE__ */ new Map());
+  const [, setTick] = reactExports.useState(0);
+  const [useProxy, setUseProxy] = reactExports.useState(true);
+  const [useImpit, setUseImpit] = reactExports.useState(false);
+  const [savingPrompt, setSavingPrompt] = reactExports.useState(false);
+  const [retranslateSummary, setRetranslateSummary] = reactExports.useState(false);
+  const [exportStatus, setExportStatus] = reactExports.useState("idle");
+  const loadProxySetting = async () => {
+    try {
+      const result = await window.electronAPI.appSettings.getAll();
+      if (result.success && result.data) {
+        setUseProxy(result.data.useProxy);
+      }
+    } catch (error2) {
+      console.error("[StorySummary] Error loading proxy setting:", error2);
+    }
+  };
+  const hasSummaryEndMarker = (text) => {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) return false;
+    const lastLine = lines[lines.length - 1];
+    return /hết\s+tóm\s+tắt|end\s+of\s+summary|---\s*hết\s*---/i.test(lastLine);
+  };
+  reactExports.useEffect(() => {
+    if (processingChapters.size === 0) return;
+    const interval = setInterval(() => {
+      setTick((prev) => prev + 1);
+    }, 1e3);
+    return () => clearInterval(interval);
+  }, [processingChapters.size]);
+  const STORY_STATE_FILE = "story-summary.json";
+  const TRANSLATOR_FILE = "story-translator.json";
+  const loadConfigurations = async () => {
+    try {
+      const configsResult = await window.electronAPI.geminiChat.getAll();
+      if (configsResult.success && configsResult.data) {
+        const configs = configsResult.data;
+        setTokenConfigs(configs);
+        const activeConfigs = configs.filter((c) => c.isActive);
+        const uniqueActive = activeConfigs.filter((config, index) => {
+          const key = buildTokenKey$1(config);
+          return activeConfigs.findIndex((c) => buildTokenKey$1(c) === key) === index;
+        });
+        const fallbackConfig = uniqueActive[0] || configs[0];
+        const nextId = tokenConfigId || fallbackConfig?.id || null;
+        if (nextId && nextId !== tokenConfigId) {
+          setTokenConfigId(nextId);
+        }
+      }
+    } catch (e) {
+      console.error("[StorySummary] Error loading config:", e);
+    }
+  };
+  const isChapterIncluded = (chapterId) => !excludedChapterIds.has(chapterId);
+  const toggleChapterExclusion = (chapterId, shiftKey) => {
+    if (shiftKey && lastClickedChapterId && lastClickedChapterId !== chapterId) {
+      const lastIndex = chapters.findIndex((c) => c.id === lastClickedChapterId);
+      const currentIndex = chapters.findIndex((c) => c.id === chapterId);
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex);
+        const end = Math.max(lastIndex, currentIndex);
+        const rangeChapters = chapters.slice(start, end + 1);
+        const shouldInclude = excludedChapterIds.has(chapterId);
+        setExcludedChapterIds((prev) => {
+          const next = new Set(prev);
+          rangeChapters.forEach((c) => {
+            if (shouldInclude) {
+              next.delete(c.id);
+            } else {
+              next.add(c.id);
+            }
+          });
+          return next;
+        });
+      }
+    } else {
+      setExcludedChapterIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(chapterId)) {
+          next.delete(chapterId);
+        } else {
+          next.add(chapterId);
+        }
+        return next;
+      });
+    }
+    setLastClickedChapterId(chapterId);
+  };
+  const selectAllChapters = () => {
+    setExcludedChapterIds(/* @__PURE__ */ new Set());
+  };
+  const deselectAllChapters = () => {
+    setExcludedChapterIds(new Set(chapters.map((c) => c.id)));
+  };
+  const selectedChapterCount = chapters.length - excludedChapterIds.size;
+  const getWorkerChannel = (workerId) => {
+    if (translateMode === "api") return "api";
+    if (translateMode === "token") return "token";
+    return workerId === 1 ? "token" : "api";
+  };
+  const getDistinctActiveTokenConfigs = (configs) => {
+    const activeConfigs = configs.filter((c) => c.isActive);
+    const seenKeys = /* @__PURE__ */ new Set();
+    const distinct = [];
+    for (const config of activeConfigs) {
+      const key = buildTokenKey$1(config);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      distinct.push(config);
+    }
+    return distinct;
+  };
+  const getTokenConfigById = (id) => {
+    if (!id) return null;
+    return tokenConfigs.find((c) => c.id === id) || null;
+  };
+  const getPreferredTokenConfig = () => {
+    const direct = getTokenConfigById(tokenConfigId);
+    if (direct) return direct;
+    const distinctActive = getDistinctActiveTokenConfigs(tokenConfigs);
+    if (distinctActive.length === 0) return null;
+    const fallback = distinctActive[0];
+    if (fallback && fallback.id !== tokenConfigId) {
+      setTokenConfigId(fallback.id);
+    }
+    return fallback;
+  };
+  const migrateTokenContextsToTokenKey = (configs, contexts) => {
+    if (configs.length === 0 || contexts.size === 0) {
+      return { map: contexts, changed: false };
+    }
+    const idToTokenKey = new Map(configs.map((c) => [c.id, buildTokenKey$1(c)]));
+    let changed = false;
+    const next = new Map(contexts);
+    for (const [key, ctx] of contexts.entries()) {
+      const tokenKey = idToTokenKey.get(key);
+      if (!tokenKey || tokenKey === key) continue;
+      if (!next.has(tokenKey)) {
+        next.set(tokenKey, ctx);
+      }
+      if (next.has(key)) {
+        next.delete(key);
+      }
+      changed = true;
+    }
+    return { map: changed ? next : contexts, changed };
+  };
+  console.log("[StorySummary] Render - projectId:", projectId);
+  console.log("[StorySummary] Render - paths:", paths);
+  console.log("[StorySummary] Render - summaries.size:", summaries.size);
+  console.log("[StorySummary] Render - status:", status);
+  console.log("[StorySummary] Render - chapters.length:", chapters.length);
+  console.log("[StorySummary] Render - sourceChapters.size:", sourceChapters.size);
+  const loadStoryState = async () => {
+    if (!projectId) {
+      console.log("[StorySummary] Không có projectId, bỏ qua load");
+      return;
+    }
+    console.log("[StorySummary] Bắt đầu load dữ liệu...");
+    try {
+      const translatorRes = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: "story",
+        fileName: TRANSLATOR_FILE
+      });
+      console.log("[StorySummary] Translator file response:", translatorRes?.success);
+      if (translatorRes?.success && translatorRes.data) {
+        const translatorData = JSON.parse(translatorRes.data);
+        console.log("[StorySummary] Translator data parsed:", {
+          hasSourceLang: !!translatorData.sourceLang,
+          hasTargetLang: !!translatorData.targetLang,
+          translatedEntriesCount: translatorData.translatedEntries?.length || 0,
+          translatedTitlesCount: translatorData.translatedTitles?.length || 0
+        });
+        if (translatorData.sourceLang) setSourceLang(translatorData.targetLang || "vi");
+        if (translatorData.targetLang) setTargetLang(translatorData.targetLang || "vi");
+        if (translatorData.translatedEntries) {
+          const sourceMap = new Map(translatorData.translatedEntries);
+          setSourceChapters(sourceMap);
+          console.log("[StorySummary] Đã load", sourceMap.size, "chapters từ translator");
+        } else {
+          console.warn("[StorySummary] Không tìm thấy translatedEntries trong translator file");
+        }
+        if (translatorData.translatedTitles) {
+          const titleMap = new Map(translatorData.translatedTitles.map((t) => [t.id, t.title]));
+          const chapterList = translatorData.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: "" }));
+          setTranslatedTitles(titleMap);
+          setChapters(chapterList);
+          console.log("[StorySummary] Đã load", chapterList.length, "chapter titles");
+        } else {
+          console.warn("[StorySummary] Không tìm thấy translatedTitles trong translator file");
+        }
+      } else {
+        console.warn("[StorySummary] Translator file không tồn tại hoặc chưa có dữ liệu");
+      }
+      const summaryRes = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: "story",
+        fileName: STORY_STATE_FILE
+      });
+      if (summaryRes?.success && summaryRes.data) {
+        const saved = JSON.parse(summaryRes.data);
+        if (saved.model) setModel(saved.model);
+        if (saved.translateMode) setTranslateMode(saved.translateMode);
+        if (saved.summaries) setSummaries(new Map(saved.summaries));
+        if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
+        if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
+        if (saved.summaryTitles) setSummaryTitles(new Map(saved.summaryTitles));
+        if (typeof saved.tokenConfigId !== "undefined") {
+          setTokenConfigId(saved.tokenConfigId || null);
+        }
+        if (saved.tokenContexts && saved.tokenContexts.length > 0) {
+          setTokenContexts(new Map(saved.tokenContexts));
+        } else if (saved.tokenContext && saved.tokenConfigId) {
+          setTokenContexts(/* @__PURE__ */ new Map([[saved.tokenConfigId, saved.tokenContext]]));
+        }
+        if (saved.viewMode) setViewMode(saved.viewMode);
+        if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
+        if (typeof saved.selectedChapterId !== "undefined") setSelectedChapterId(saved.selectedChapterId);
+      }
+    } catch (error2) {
+      console.error("[StorySummary] Lỗi khi tải dữ liệu project:", error2);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  };
+  const saveStoryState = async () => {
+    if (!projectId) return;
+    const orderedSummaries = chapters.filter((c) => summaries.has(c.id)).map((c) => [c.id, summaries.get(c.id)]);
+    const orderedChapterModels = orderedSummaries.map(([chapterId]) => {
+      const usedModel = chapterModels.get(chapterId) || model;
+      return [chapterId, usedModel];
+    });
+    const orderedChapterMethods = orderedSummaries.map(([chapterId]) => {
+      const usedMethod = chapterMethods.get(chapterId) || (translateMode === "token" ? "token" : "api");
+      return [chapterId, usedMethod];
+    });
+    const orderedSummaryTitles = orderedSummaries.map(([chapterId]) => {
+      const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || chapters.find((c) => c.id === chapterId)?.title || "";
+      return [chapterId, title];
+    });
+    const payload = {
+      model,
+      translateMode,
+      summaries: orderedSummaries,
+      chapterModels: orderedChapterModels,
+      chapterMethods: orderedChapterMethods,
+      summaryTitles: orderedSummaryTitles,
+      tokenConfigId,
+      tokenContexts: Array.from(tokenContexts.entries()),
+      viewMode,
+      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      selectedChapterId
+    };
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: "story",
+      fileName: STORY_STATE_FILE,
+      content: payload
+    });
+  };
+  reactExports.useEffect(() => {
+    if (!projectId || !paths) return;
+    loadStoryState();
+  }, [projectId, paths]);
+  reactExports.useEffect(() => {
+    loadConfigurations();
+    loadProxySetting();
+  }, []);
+  reactExports.useEffect(() => {
+    if (translateMode === "token" || translateMode === "both") {
+      if (!tokenConfigId) {
+        loadConfigurations();
+      }
+    }
+  }, [translateMode, tokenConfigId]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !hasLoadedRef.current) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveStoryState();
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [
+    projectId,
+    paths,
+    sourceLang,
+    targetLang,
+    model,
+    translateMode,
+    chapters,
+    summaries,
+    chapterModels,
+    chapterMethods,
+    summaryTitles,
+    tokenConfigId,
+    tokenContexts,
+    viewMode,
+    excludedChapterIds,
+    selectedChapterId
+  ]);
+  reactExports.useEffect(() => {
+    if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;
+    const { map, changed } = migrateTokenContextsToTokenKey(tokenConfigs, tokenContexts);
+    if (changed) {
+      setTokenContexts(map);
+    }
+  }, [tokenConfigs, tokenContexts]);
+  const handleTranslate = async () => {
+    if (!selectedChapterId) return;
+    if (!isChapterIncluded(selectedChapterId)) {
+      alert('Chương này đã bị loại trừ khỏi danh sách tóm tắt. Vui lòng bỏ chọn "Loại trừ" hoặc chọn chương khác.');
+      return;
+    }
+    if (summaries.has(selectedChapterId) && !retranslateSummary) {
+      alert('⚠️ Chương này đã được tóm tắt rồi.\n\nNếu muốn tóm tắt lại, vui lòng tick vào "Tóm tắt lại các chương đã tóm tắt" ở phần cấu hình.');
+      return;
+    }
+    const sourceContent = sourceChapters.get(selectedChapterId);
+    if (!sourceContent) {
+      alert("Không tìm thấy bản dịch cho chương này. Vui lòng dịch truyện trước.");
+      return;
+    }
+    setStatus("running");
+    try {
+      console.log("[StorySummary] Đang chuẩn bị prompt tóm tắt...");
+      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+        chapterContent: sourceContent,
+        sourceLang,
+        targetLang
+      });
+      if (!prepareResult.success || !prepareResult.prompt) {
+        throw new Error(prepareResult.error || "Lỗi chuẩn bị prompt tóm tắt");
+      }
+      console.log("[StorySummary] Đã chuẩn bị prompt, đang gửi đến Gemini...");
+      const method = translateMode === "token" ? "WEB" : "API";
+      const methodKey = method === "WEB" ? "token" : "api";
+      let selectedTokenConfig = method === "WEB" ? getPreferredTokenConfig() : null;
+      if (method === "WEB" && !selectedTokenConfig) {
+        await loadConfigurations();
+        selectedTokenConfig = getPreferredTokenConfig();
+        if (!selectedTokenConfig) {
+          alert("Không tìm thấy Cấu hình Web để chạy chế độ Token.");
+          return;
+        }
+      }
+      const tokenKey = method === "WEB" && selectedTokenConfig ? buildTokenKey$1(selectedTokenConfig) : null;
+      const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
+        prompt: prepareResult.prompt,
+        model,
+        method,
+        webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+        useProxy: method === "WEB" && useProxy,
+        useImpit: method === "WEB" && useImpit,
+        metadata: { chapterId: selectedChapterId }
+      });
+      if (translateResult.success && translateResult.data) {
+        if (translateResult.metadata?.chapterId !== selectedChapterId) {
+          console.error(`[StorySummary] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== selected (${selectedChapterId})`);
+          throw new Error("Metadata validation failed - race condition detected");
+        }
+        if (!hasSummaryEndMarker(translateResult.data)) {
+          console.warn('[StorySummary] ⚠️ Bản tóm tắt không có "Hết tóm tắt", đang retry...');
+          const retryResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
+            prompt: prepareResult.prompt,
+            model,
+            method,
+            webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+            useProxy: method === "WEB" && useProxy,
+            useImpit: method === "WEB" && useImpit,
+            metadata: { chapterId: selectedChapterId }
+          });
+          if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
+            console.log('[StorySummary] ✅ Retry thành công, bản tóm tắt đã có "Hết tóm tắt"');
+            translateResult.data = retryResult.data;
+            if (retryResult.context) translateResult.context = retryResult.context;
+          } else {
+            console.warn('[StorySummary] ⚠️ Retry vẫn không có "Hết tóm tắt", sử dụng bản gốc');
+          }
+        }
+        setSummaries((prev) => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, translateResult.data);
+          return next;
+        });
+        setChapterModels((prev) => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, model);
+          return next;
+        });
+        setChapterMethods((prev) => {
+          const next = new Map(prev);
+          next.set(selectedChapterId, methodKey);
+          return next;
+        });
+        if (translateResult.context && translateResult.context.conversationId && tokenKey) {
+          setTokenContexts((prev) => {
+            const next = new Map(prev);
+            next.set(tokenKey, translateResult.context);
+            return next;
+          });
+        }
+        setViewMode("summary");
+        console.log("[StorySummary] Tóm tắt thành công!");
+      } else {
+        throw new Error(translateResult.error || "Tóm tắt thất bại");
+      }
+    } catch (error2) {
+      console.error("[StorySummary] Lỗi trong quá trình tóm tắt:", error2);
+      alert(`Lỗi tóm tắt: ${error2}`);
+    } finally {
+      setStatus("idle");
+    }
+  };
+  const handleStopTranslation = () => {
+    console.log("[StorySummary] Dừng tóm tắt thủ công...");
+    setShouldStop(true);
+  };
+  const handleTranslateAll = async () => {
+    const chaptersToTranslate = chapters.filter(
+      (c) => isChapterIncluded(c.id) && (retranslateSummary || !summaries.has(c.id)) && sourceChapters.has(c.id)
+    );
+    if (chaptersToTranslate.length === 0) {
+      alert("Đã tóm tắt xong tất cả các chương được chọn!");
+      return;
+    }
+    setStatus("running");
+    setBatchProgress({ current: 0, total: chaptersToTranslate.length });
+    setShouldStop(false);
+    const MIN_DELAY = 5e3;
+    const MAX_DELAY = 3e4;
+    let completed = 0;
+    let currentIndex = 0;
+    const results = [];
+    const translateChapter = async (chapter, index, workerId2, channelOverride, tokenConfigOverride) => {
+      if (shouldStop) {
+        console.log(`[StorySummary] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
+        return null;
+      }
+      setSelectedChapterId(chapter.id);
+      const channel = channelOverride || getWorkerChannel(workerId2);
+      const sourceContent = sourceChapters.get(chapter.id);
+      if (!sourceContent) {
+        console.error(`[StorySummary] ⚠️ Không tìm thấy bản dịch cho chương ${chapter.title}`);
+        return null;
+      }
+      setProcessingChapters((prev) => {
+        const next = new Map(prev);
+        next.set(chapter.id, { startTime: Date.now(), workerId: workerId2, channel });
+        return next;
+      });
+      try {
+        console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
+        const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+          chapterContent: sourceContent,
+          sourceLang,
+          targetLang
+        });
+        if (!prepareResult.success || !prepareResult.prompt) {
+          console.error(`Lỗi chuẩn bị prompt tóm tắt cho chương ${chapter.title}:`, prepareResult.error);
+          return null;
+        }
+        const method = channel === "token" ? "WEB" : "API";
+        let selectedTokenConfig = method === "WEB" ? tokenConfigOverride || getPreferredTokenConfig() : null;
+        if (method === "WEB" && !selectedTokenConfig) {
+          await loadConfigurations();
+          selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
+          if (!selectedTokenConfig) {
+            console.error("[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.");
+            return null;
+          }
+        }
+        const tokenKey = method === "WEB" && selectedTokenConfig ? buildTokenKey$1(selectedTokenConfig) : null;
+        const translateResult = await window.electronAPI.invoke(
+          STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
+          {
+            prompt: prepareResult.prompt,
+            model,
+            method,
+            webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+            useProxy: method === "WEB" && useProxy,
+            useImpit: method === "WEB" && useImpit,
+            metadata: { chapterId: chapter.id }
+          }
+        );
+        if (translateResult.success && translateResult.data) {
+          if (translateResult.metadata?.chapterId !== chapter.id) {
+            console.error(`[StorySummary] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== chapter.id (${chapter.id})`);
+            return null;
+          }
+          if (!hasSummaryEndMarker(translateResult.data)) {
+            console.warn(`[StorySummary] ⚠️ Chương ${chapter.title} không có "Hết tóm tắt", đang retry...`);
+            const retryResult = await window.electronAPI.invoke(
+              STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
+              {
+                prompt: prepareResult.prompt,
+                model,
+                method,
+                webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+                useProxy: method === "WEB" && useProxy,
+                useImpit: method === "WEB" && useImpit,
+                metadata: { chapterId: chapter.id }
+              }
+            );
+            if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
+              console.log(`[StorySummary] ✅ Retry chương ${chapter.title} thành công, đã có "Hết tóm tắt"`);
+              translateResult.data = retryResult.data;
+              if (retryResult.context) translateResult.context = retryResult.context;
+            } else {
+              console.warn(`[StorySummary] ⚠️ Retry chương ${chapter.title} vẫn không có "Hết tóm tắt", sử dụng bản gốc`);
+            }
+          }
+          setSummaries((prev) => {
+            const next = new Map(prev);
+            next.set(chapter.id, translateResult.data);
+            return next;
+          });
+          setChapterModels((prev) => {
+            const next = new Map(prev);
+            next.set(chapter.id, model);
+            return next;
+          });
+          setChapterMethods((prev) => {
+            const next = new Map(prev);
+            next.set(chapter.id, channel);
+            return next;
+          });
+          setSummaryTitles((prev) => {
+            const next = new Map(prev);
+            const chapterTitle = translatedTitles.get(chapter.id) || chapter.title;
+            next.set(chapter.id, chapterTitle);
+            return next;
+          });
+          if (translateResult.context && translateResult.context.conversationId && tokenKey) {
+            setTokenContexts((prev) => {
+              const next = new Map(prev);
+              next.set(tokenKey, translateResult.context);
+              return next;
+            });
+          }
+          console.log(`[StorySummary] ✅ Tóm tắt xong: ${chapter.title}`);
+          return { id: chapter.id, text: translateResult.data };
+        } else {
+          console.error(`[StorySummary] ❌ Lỗi tóm tắt chương ${chapter.title}:`, translateResult.error);
+          return null;
+        }
+      } catch (error2) {
+        console.error(`[StorySummary] ❌ Exception khi tóm tắt chương ${chapter.title}:`, error2);
+        return null;
+      } finally {
+        setProcessingChapters((prev) => {
+          const next = new Map(prev);
+          next.delete(chapter.id);
+          return next;
+        });
+      }
+    };
+    const worker = async (workerId2, channel, tokenConfig) => {
+      console.log(`[StorySummary] 🚀 Worker ${workerId2} started`);
+      while (currentIndex < chaptersToTranslate.length && !shouldStop) {
+        const index = currentIndex++;
+        const chapter = chaptersToTranslate[index];
+        const isVeryFirstChapter = index === 0;
+        if (!isVeryFirstChapter) {
+          const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
+          console.log(`[StorySummary] ⏳ Worker ${workerId2} chờ ${Math.round(delay / 1e3)}s trước khi tóm tắt chương ${index + 1}...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          console.log(`[StorySummary] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
+        }
+        if (shouldStop) {
+          console.log(`[StorySummary] ⚠️ Worker ${workerId2} stopped`);
+          break;
+        }
+        const result = await translateChapter(chapter, index, workerId2, channel, tokenConfig);
+        results.push(result);
+        completed++;
+        setBatchProgress({ current: completed, total: chaptersToTranslate.length });
+        console.log(`[StorySummary] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId2})`);
+      }
+      console.log(`[StorySummary] ✓ Worker ${workerId2} finished`);
+    };
+    const tokenConfigsResult = translateMode === "token" || translateMode === "both" ? await window.electronAPI.geminiChat.getAll() : null;
+    const tokenConfigsForRun = tokenConfigsResult?.success && tokenConfigsResult.data ? getDistinctActiveTokenConfigs(tokenConfigsResult.data) : [];
+    if ((translateMode === "token" || translateMode === "both") && tokenConfigsForRun.length === 0) {
+      console.error("[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.");
+      setStatus("idle");
+      setBatchProgress(null);
+      return;
+    }
+    const apiWorkerCount = translateMode === "api" ? 5 : translateMode === "both" ? 5 : 0;
+    const tokenWorkerCount = translateMode === "token" ? tokenConfigsForRun.length : translateMode === "both" ? tokenConfigsForRun.length : 0;
+    const totalWorkers = apiWorkerCount + tokenWorkerCount;
+    console.log(`[StorySummary] 🎯 Bắt đầu tóm tắt ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
+    const workers = [];
+    let workerId = 1;
+    for (let i = 0; i < apiWorkerCount; i += 1) {
+      workers.push(worker(workerId++, "api"));
+    }
+    for (const config of tokenConfigsForRun) {
+      workers.push(worker(workerId++, "token", config));
+    }
+    await Promise.all(workers);
+    setStatus("idle");
+    setBatchProgress(null);
+    setViewMode("summary");
+    if (shouldStop) {
+      console.log(`[StorySummary] 🛑 Đã dừng: ${results.filter((r2) => r2).length}/${chaptersToTranslate.length} chapters đã tóm tắt`);
+    } else {
+      console.log(`[StorySummary] 🎉 Hoàn thành: ${results.filter((r2) => r2).length}/${chaptersToTranslate.length} chapters`);
+    }
+  };
+  const handleSavePrompt = async () => {
+    if (!selectedChapterId) return;
+    const sourceContent = sourceChapters.get(selectedChapterId);
+    if (!sourceContent) {
+      alert("⚠️ Không tìm thấy bản dịch cho chương này.");
+      return;
+    }
+    setSavingPrompt(true);
+    try {
+      console.log("[StorySummary] Đang chuẩn bị prompt...");
+      const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+        chapterContent: sourceContent,
+        sourceLang,
+        targetLang
+      });
+      if (result.success && result.prompt) {
+        const promptString = JSON.stringify(result.prompt);
+        try {
+          await navigator.clipboard.writeText(promptString);
+          console.log("[StorySummary] Đã copy prompt vào clipboard");
+        } catch (clipboardErr) {
+          console.warn("[StorySummary] Không thể copy vào clipboard:", clipboardErr);
+        }
+        try {
+          await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
+          alert("✅ Đã lưu prompt thành công!\n📋 Prompt đã được copy vào clipboard.");
+        } catch (saveErr) {
+          alert("📋 Prompt đã được copy vào clipboard.\n⚠️ Không thể lưu vào file.");
+        }
+      } else {
+        alert("❌ Lỗi: " + (result.error || "Không thể tạo prompt"));
+      }
+    } catch (e) {
+      console.error("[StorySummary] Lỗi lưu prompt:", e);
+      alert("❌ Lỗi khi xử lý prompt: " + String(e));
+    } finally {
+      setSavingPrompt(false);
+    }
+  };
+  const handleExportEbook = async () => {
+    if (summaries.size === 0 && sourceChapters.size === 0) {
+      alert("Chưa có nội dung nào để export!");
+      return;
+    }
+    const exportMode = await new Promise((resolve) => {
+      const userChoice = window.confirm(
+        '📚 Chọn loại nội dung đóng gói:\n\n✅ OK = Bản dịch + Tóm tắt (Kết hợp)\n❌ Cancel = Chỉ tóm tắt\n\n(Để chọn "Chỉ bản dịch", nhấn Cancel rồi chọn lại)'
+      );
+      if (userChoice) {
+        resolve("combined");
+      } else {
+        const translationOnly = window.confirm(
+          "📚 Bạn đã chọn không kết hợp.\n\n✅ OK = Chỉ bản dịch\n❌ Cancel = Chỉ tóm tắt"
+        );
+        resolve(translationOnly ? "translation" : "summary");
+      }
+    });
+    if (!exportMode) {
+      return;
+    }
+    setExportStatus("exporting");
+    try {
+      console.log("[StorySummary] Bắt đầu export ebook...", { exportMode });
+      if ((exportMode === "translation" || exportMode === "combined") && sourceChapters.size === 0) {
+        alert("⚠️ Chưa có bản dịch nào! Vui lòng dịch truyện trước.");
+        setExportStatus("idle");
+        return;
+      }
+      if ((exportMode === "summary" || exportMode === "combined") && summaries.size === 0) {
+        alert("⚠️ Chưa có tóm tắt nào! Vui lòng tóm tắt truyện trước.");
+        setExportStatus("idle");
+        return;
+      }
+      const defaultName = exportMode === "translation" ? `translation_${sourceLang}.epub` : exportMode === "summary" ? `summary_${targetLang}.epub` : `combined_${sourceLang}-${targetLang}.epub`;
+      const saveDialogResult = await window.electronAPI.invoke("dialog:showSaveDialog", {
+        title: "Lưu Ebook EPUB",
+        defaultPath: defaultName,
+        filters: [{ name: "EPUB Ebook", extensions: ["epub"] }]
+      });
+      if (saveDialogResult.canceled || !saveDialogResult.filePath) {
+        setExportStatus("idle");
+        return;
+      }
+      const ebookChapters = [];
+      const orderedChapters = chapters.filter(
+        (c) => exportMode === "translation" || exportMode === "combined" ? sourceChapters.has(c.id) : exportMode === "summary" ? summaries.has(c.id) : false
+      );
+      if (exportMode === "translation") {
+        for (const chapter of orderedChapters) {
+          const content2 = sourceChapters.get(chapter.id);
+          if (content2) {
+            const title = translatedTitles.get(chapter.id) || chapter.title;
+            ebookChapters.push({ title, content: content2 });
+          }
+        }
+      } else if (exportMode === "summary") {
+        for (const chapter of orderedChapters) {
+          const content2 = summaries.get(chapter.id);
+          if (content2) {
+            const title = summaryTitles.get(chapter.id) || translatedTitles.get(chapter.id) || chapter.title;
+            ebookChapters.push({
+              title: `[Tóm tắt] ${title}`,
+              content: content2
+            });
+          }
+        }
+      } else {
+        for (const chapter of orderedChapters) {
+          const translationContent = sourceChapters.get(chapter.id);
+          const summaryContent = summaries.get(chapter.id);
+          const chapterTitle = translatedTitles.get(chapter.id) || chapter.title;
+          if (translationContent) {
+            ebookChapters.push({
+              title: chapterTitle,
+              content: translationContent
+            });
+          }
+          if (summaryContent) {
+            ebookChapters.push({
+              title: `📝 Tóm tắt: ${chapterTitle}`,
+              content: summaryContent
+            });
+          }
+        }
+      }
+      if (ebookChapters.length === 0) {
+        alert("Lỗi: Không tìm thấy nội dung để đóng gói.");
+        setExportStatus("idle");
+        return;
+      }
+      console.log(`[StorySummary] Đóng gói ${ebookChapters.length} mục...`);
+      const outputDir = saveDialogResult.filePath.substring(0, saveDialogResult.filePath.lastIndexOf("\\"));
+      const filename = saveDialogResult.filePath.substring(saveDialogResult.filePath.lastIndexOf("\\") + 1).replace(".epub", "");
+      const result = await window.electronAPI.invoke(
+        STORY_IPC_CHANNELS.CREATE_EBOOK,
+        {
+          chapters: ebookChapters,
+          title: filename,
+          author: "AI Translator",
+          filename,
+          outputDir
+        }
+      );
+      if (result.success && result.filePath) {
+        console.log("[StorySummary] Export thành công:", result.filePath);
+        const modeText = exportMode === "translation" ? "Bản dịch" : exportMode === "summary" ? "Tóm tắt" : "Kết hợp";
+        alert(`✅ Đã export thành công!
+
+Loại: ${modeText}
+File: ${result.filePath}
+
+Số mục: ${ebookChapters.length}`);
+      } else {
+        throw new Error(result.error || "Export thất bại");
+      }
+    } catch (error2) {
+      console.error("[StorySummary] Lỗi export ebook:", error2);
+      alert(`❌ Lỗi export ebook: ${error2}`);
+    } finally {
+      setExportStatus("idle");
+    }
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 28, className: "text-teal-500" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-2xl font-bold bg-linear-to-r from-teal-500 to-emerald-500 bg-clip-text text-transparent", children: "Tóm Tắt Truyện AI" })
+      ] }),
+      chapters.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-sm px-3 py-1 bg-blue-500/10 text-blue-500 rounded-full border border-blue-500/20", children: [
+          "📚 ",
+          sourceChapters.size,
+          " chương nguồn"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-sm px-3 py-1 bg-teal-500/10 text-teal-600 rounded-full border border-teal-500/20", children: [
+          "✨ ",
+          summaries.size,
+          "/",
+          chapters.length,
+          " tóm tắt"
+        ] }),
+        (summaries.size > 0 || sourceChapters.size > 0) && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          Button,
+          {
+            onClick: handleExportEbook,
+            variant: "primary",
+            disabled: exportStatus === "exporting",
+            className: "h-8 px-4 text-sm",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { size: 16 }),
+              exportStatus === "exporting" ? "Đang export..." : "Export EPUB"
+            ]
+          }
+        )
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-card border border-border rounded-xl", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-3", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm font-medium text-text-secondary", children: "Nguồn dữ liệu" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-9 px-3 py-2 rounded-lg border border-border bg-surface/50 text-sm text-text-secondary flex items-center", children: sourceChapters.size > 0 ? `${sourceChapters.size} chương từ Translator` : "Chưa có dữ liệu" })
+      ] }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        Select,
+        {
+          label: "Model AI",
+          value: model,
+          onChange: (e) => setModel(e.target.value),
+          options: GEMINI_MODEL_LIST.map((m) => ({
+            value: m.id,
+            label: m.label
+          }))
+        }
+      ) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        Select,
+        {
+          label: "Phương thức",
+          value: translateMode,
+          onChange: (e) => setTranslateMode(e.target.value),
+          options: [
+            { value: "api", label: "API" },
+            { value: "token", label: "Token" },
+            { value: "both", label: "Kết hợp" }
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "md:col-span-4 flex items-end gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          Button,
+          {
+            onClick: handleTranslate,
+            variant: "secondary",
+            disabled: sourceChapters.size === 0 || status === "running" || !selectedChapterId,
+            className: "flex-1 h-9 px-3",
+            title: "Tóm tắt chương đang chọn",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 16 }),
+              "Tóm tắt 1"
+            ]
+          }
+        ),
+        status === "running" && batchProgress ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          Button,
+          {
+            onClick: handleStopTranslation,
+            variant: "secondary",
+            className: "flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30",
+            title: "Dừng tóm tắt batch hiện tại",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(CircleStop, { size: 16 }),
+              "Dừng (",
+              batchProgress.current,
+              "/",
+              batchProgress.total,
+              ")"
+            ]
+          }
+        ) : /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          Button,
+          {
+            onClick: handleTranslateAll,
+            variant: "primary",
+            disabled: sourceChapters.size === 0 || status === "running" || selectedChapterCount === 0,
+            className: "flex-1 h-9 px-3",
+            title: "Tóm tắt tất cả chương được chọn",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 16 }),
+              "Tóm tắt ",
+              retranslateSummary ? "lại " : "",
+              selectedChapterCount
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:col-span-12 flex items-center gap-4 text-sm", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "flex items-center gap-2 cursor-pointer hover:text-primary", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: retranslateSummary,
+            onChange: (e) => setRetranslateSummary(e.target.checked),
+            className: "w-4 h-4 rounded border-border cursor-pointer"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Tóm tắt lại các chương đã tóm tắt" })
+      ] }) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex gap-4 min-h-0", children: [
+      !projectId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col items-center justify-center text-center p-8", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 64, className: "text-orange-500/30 mb-4" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-xl font-semibold text-text-primary mb-2", children: "Chưa chọn Project" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-text-secondary mb-4 max-w-md", children: "Vui lòng mở một project từ Dashboard để sử dụng tính năng tóm tắt truyện." })
+      ] }),
+      projectId && chapters.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 flex flex-col items-center justify-center text-center p-8", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 64, className: "text-teal-500/30 mb-4" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-xl font-semibold text-text-primary mb-2", children: "Chưa có dữ liệu để tóm tắt" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-text-secondary mb-4 max-w-md", children: [
+          "Bạn cần dịch truyện ở tab ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-primary", children: '"Dịch Truyện AI"' }),
+          " trước. Sau đó quay lại đây để tóm tắt các chương đã dịch."
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2 text-sm text-text-secondary bg-surface/50 p-4 rounded-lg border border-border", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "font-semibold text-text-primary mb-1", children: "📋 Hướng dẫn:" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "1. Chọn project (nếu chưa có)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: '2. Vào tab "Dịch Truyện AI"' }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "3. Upload file truyện và dịch các chương" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "4. Quay lại tab này để tóm tắt" })
+        ] })
+      ] }),
+      chapters.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "w-1/4 bg-card border border-border rounded-xl flex flex-col overflow-hidden", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 border-b border-border bg-surface/50", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center mb-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-text-primary", children: "Danh sách chương" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-text-secondary bg-surface px-2 py-1 rounded", children: [
+              selectedChapterCount,
+              "/",
+              chapters.length
+            ] })
+          ] }),
+          chapters.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                onClick: selectAllChapters,
+                className: "flex-1 text-xs px-2 py-1.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-1",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(SquareCheckBig, { size: 12 }),
+                  "Chọn tất cả"
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                onClick: deselectAllChapters,
+                className: "flex-1 text-xs px-2 py-1.5 rounded bg-surface text-text-secondary hover:bg-surface/80 transition-colors flex items-center justify-center gap-1",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Square, { size: 12 }),
+                  "Bỏ chọn"
+                ]
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto p-2 space-y-1", children: chapters.map((chapter) => {
+          const isProcessing = processingChapters.has(chapter.id);
+          const processingInfo = processingChapters.get(chapter.id);
+          const elapsedTime = isProcessing && processingInfo ? Math.floor((Date.now() - processingInfo.startTime) / 1e3) : 0;
+          const hasSummary = summaries.has(chapter.id);
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "div",
+            {
+              className: `flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${selectedChapterId === chapter.id ? "bg-primary text-text-invert" : "text-text-secondary hover:bg-surface hover:text-text-primary"}`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      toggleChapterExclusion(chapter.id, e.shiftKey);
+                    },
+                    className: `shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "bg-white border-white text-primary" : "bg-primary border-primary text-white" : selectedChapterId === chapter.id ? "border-white/50" : "border-border"}`,
+                    children: isChapterIncluded(chapter.id) && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-3 h-3", fill: "none", stroke: "currentColor", viewBox: "0 0 24 24", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 3, d: "M5 13l4 4L19 7" }) })
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    onClick: () => {
+                      setSelectedChapterId(chapter.id);
+                      if (summaries.has(chapter.id)) {
+                        setViewMode("summary");
+                      } else {
+                        setViewMode("original");
+                      }
+                    },
+                    className: "flex-1 text-left truncate flex items-center gap-2",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${!isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "text-white/60 italic" : "text-text-secondary/40 italic" : hasSummary ? "text-emerald-500 font-medium" : selectedChapterId === chapter.id ? "text-white" : "text-text-secondary"}`, children: translatedTitles.get(chapter.id) || chapter.title }),
+                      isProcessing && processingInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex items-center gap-1 shrink-0 text-xs ${selectedChapterId === chapter.id ? "text-yellow-300" : "text-yellow-500"}`, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `px-1.5 py-0.5 rounded border ${selectedChapterId === chapter.id ? "border-yellow-300/60 bg-yellow-300/10" : "border-yellow-500/60 bg-yellow-500/10"}`, children: processingInfo.channel === "api" ? "API" : "TOKEN" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
+                          "W",
+                          processingInfo.workerId
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 10 }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
+                          elapsedTime,
+                          "s"
+                        ] })
+                      ] })
+                    ]
+                  }
+                )
+              ]
+            },
+            chapter.id
+          );
+        }) })
+      ] }),
+      chapters.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex justify-between items-center", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-4", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Nội dung" }),
+            selectedChapterId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1 bg-surface rounded p-1", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => setViewMode("original"),
+                  className: `px-3 py-1 text-xs rounded transition-all ${viewMode === "original" ? "bg-primary text-white shadow" : "text-text-secondary hover:text-text-primary"}`,
+                  children: "Bản dịch"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => setViewMode("summary"),
+                  disabled: !selectedChapterId || !summaries.has(selectedChapterId),
+                  className: `px-3 py-1 text-xs rounded transition-all ${viewMode === "summary" ? "bg-primary text-white shadow" : "text-text-secondary hover:text-text-primary disabled:opacity-50"}`,
+                  children: "Tóm tắt"
+                }
+              )
+            ] }),
+            selectedChapterId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 ml-2 pl-3 border-l border-border", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary", children: "Cỡ chữ:" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => setFontSize((prev) => Math.max(12, prev - 2)),
+                    className: "w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm",
+                    children: "-"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-text-secondary min-w-8 text-center", children: [
+                  fontSize,
+                  "px"
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => setFontSize((prev) => Math.min(32, prev + 2)),
+                    className: "w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm",
+                    children: "+"
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary", children: "Giãn dòng:" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => setLineHeight((prev) => Math.max(1.2, prev - 0.2)),
+                    className: "w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm",
+                    children: "-"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary min-w-8 text-center", children: lineHeight.toFixed(1) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => setLineHeight((prev) => Math.min(3, prev + 0.2)),
+                    className: "w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm",
+                    children: "+"
+                  }
+                )
+              ] })
+            ] })
+          ] }),
+          selectedChapterId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 items-center", children: [
+            !isChapterIncluded(selectedChapterId) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-orange-500 bg-orange-500/10 px-2 py-1 rounded", children: "Đã loại trừ" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mr-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  id: "useImpit",
+                  checked: useImpit,
+                  onChange: (e) => setUseImpit(e.target.checked),
+                  className: "rounded border-gray-300 text-primary focus:ring-primary"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "useImpit", className: "text-xs text-text-secondary cursor-pointer select-none", children: "Use Impit" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              Button,
+              {
+                onClick: handleSavePrompt,
+                variant: "secondary",
+                disabled: savingPrompt || !selectedChapterId || !sourceChapters.has(selectedChapterId),
+                className: "text-xs h-8 px-3 gap-1",
+                title: "Tạo và copy prompt tóm tắt vào clipboard",
+                children: savingPrompt ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
+                  "Đang xử lý..."
+                ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: "📋 Lưu Prompt" })
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border", children: chapters.find((c) => c.id === selectedChapterId)?.title })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            className: "flex-1 overflow-y-auto px-8 py-6 text-text-primary",
+            style: {
+              fontSize: `${fontSize}px`,
+              lineHeight,
+              fontFamily: "'Noto Sans', 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif",
+              letterSpacing: "0.01em",
+              wordSpacing: "0.05em"
+            },
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "max-w-4xl mx-auto", children: selectedChapterId ? viewMode === "original" ? sourceChapters.get(selectedChapterId) ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "whitespace-pre-wrap wrap-break-word", children: sourceChapters.get(selectedChapterId) }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "h-full flex flex-col items-center justify-center text-text-secondary opacity-50", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 48, className: "mb-4" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base", children: "Không tìm thấy bản dịch cho chương này." })
+            ] }) : summaries.get(selectedChapterId) ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "whitespace-pre-wrap wrap-break-word", children: summaries.get(selectedChapterId) }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "h-full flex flex-col items-center justify-center text-text-secondary opacity-50", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 48, className: "mb-4 text-teal-500/50" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base", children: 'Chưa có tóm tắt. Nhấn "Tóm tắt 1" hoặc "Tóm tắt All" để bắt đầu.' })
+            ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "h-full flex flex-col items-center justify-center text-text-secondary opacity-50", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 48, className: "mb-4 text-teal-500/30" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base", children: "Chọn một chương để xem nội dung" })
+            ] }) })
+          }
+        )
+      ] })
+    ] })
+  ] });
+}
 function StoryTranslatorWeb() {
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = reactExports.useRef(false);
+  const saveTimeoutRef = reactExports.useRef(null);
   const [filePath, setFilePath] = reactExports.useState("");
   const [sourceLang, setSourceLang] = reactExports.useState("zh");
   const [targetLang, setTargetLang] = reactExports.useState("vi");
@@ -20326,6 +22242,7 @@ function StoryTranslatorWeb() {
   const [viewMode, setViewMode] = reactExports.useState("original");
   const [excludedChapterIds, setExcludedChapterIds] = reactExports.useState(/* @__PURE__ */ new Set());
   const [batchProgress, setBatchProgress] = reactExports.useState(null);
+  const [useProxy, setUseProxy] = reactExports.useState(true);
   const [webConfigs, setWebConfigs] = reactExports.useState([]);
   const [selectedConfigId, setSelectedConfigId] = reactExports.useState("");
   const [selectedBrowserConfig, setSelectedBrowserConfig] = reactExports.useState(null);
@@ -20335,13 +22252,115 @@ function StoryTranslatorWeb() {
   const [cooldownTime, setCooldownTime] = reactExports.useState(0);
   const [isWaitingResponse, setIsWaitingResponse] = reactExports.useState(false);
   const timerRef = reactExports.useRef(null);
+  const STORY_WEB_STATE_FILE = "story-translator-web.json";
+  const loadStoryWebState = async () => {
+    if (!projectId) return;
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: "story",
+        fileName: STORY_WEB_STATE_FILE
+      });
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data);
+        if (saved.filePath) setFilePath(saved.filePath);
+        if (saved.sourceLang) setSourceLang(saved.sourceLang);
+        if (saved.targetLang) setTargetLang(saved.targetLang);
+        if (typeof saved.selectedChapterId !== "undefined") setSelectedChapterId(saved.selectedChapterId);
+        if (saved.chapters) setChapters(saved.chapters);
+        if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
+        if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
+        if (saved.viewMode) setViewMode(saved.viewMode);
+        if (saved.selectedConfigId) setSelectedConfigId(saved.selectedConfigId);
+        if (typeof saved.sessionContext !== "undefined") setSessionContext(saved.sessionContext);
+      }
+    } catch (error2) {
+      console.error("[StoryTranslatorWeb] Loi khi tai du lieu project:", error2);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  };
+  const saveStoryWebState = async () => {
+    if (!projectId) return;
+    const payload = {
+      filePath,
+      sourceLang,
+      targetLang,
+      selectedChapterId,
+      chapters,
+      translatedEntries: Array.from(translatedChapters.entries()),
+      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      viewMode,
+      selectedConfigId,
+      sessionContext
+    };
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: "story",
+      fileName: STORY_WEB_STATE_FILE,
+      content: payload
+    });
+  };
   const handleStop = () => {
     stopRef.current = true;
     console.log("[StoryTranslator] Stop requested by user.");
   };
+  const loadProxySetting = async () => {
+    try {
+      const result = await window.electronAPI.appSettings.getAll();
+      if (result.success && result.data) {
+        setUseProxy(result.data.useProxy);
+      }
+    } catch (error2) {
+      console.error("[StoryTranslatorWeb] Lỗi load proxy setting:", error2);
+    }
+  };
+  const handleToggleUseProxy = async (enabled) => {
+    try {
+      const result = await window.electronAPI.appSettings.update({ useProxy: enabled });
+      if (result.success) {
+        setUseProxy(enabled);
+        console.log(`[StoryTranslatorWeb] Proxy ${enabled ? "enabled" : "disabled"} globally`);
+      }
+    } catch (error2) {
+      console.error("[StoryTranslatorWeb] Lỗi toggle proxy:", error2);
+    }
+  };
   reactExports.useEffect(() => {
     loadConfigurations();
+    loadProxySetting();
   }, []);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths) return;
+    loadStoryWebState();
+  }, [projectId, paths]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !hasLoadedRef.current) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveStoryWebState();
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [
+    projectId,
+    paths,
+    filePath,
+    sourceLang,
+    targetLang,
+    selectedChapterId,
+    chapters,
+    translatedChapters,
+    excludedChapterIds,
+    viewMode,
+    selectedConfigId,
+    sessionContext
+  ]);
   const loadConfigurations = async () => {
     try {
       const configsResult = await window.electronAPI.geminiChat.getAll();
@@ -20639,6 +22658,23 @@ function StoryTranslatorWeb() {
           /* @__PURE__ */ jsxRuntimeExports.jsx(Monitor, { size: 12 }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: selectedBrowserConfig.platform || "Auto Browser" })
         ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 text-xs px-2 py-1 bg-surface rounded border border-border", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-muted-foreground", children: "Proxy" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: () => handleToggleUseProxy(!useProxy),
+              className: `relative w-10 h-5 rounded-full transition-colors ${useProxy ? "bg-emerald-500" : "bg-gray-300"}`,
+              title: useProxy ? "Tắt proxy" : "Bật proxy",
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  className: `absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${useProxy ? "translate-x-5" : ""}`
+                }
+              )
+            }
+          )
+        ] }),
         !selectedConfigId && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-1 bg-red-100 text-red-700 rounded border border-red-200", children: "Chưa chọn Config" }),
         sessionContext && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs px-2 py-1 bg-green-100 text-green-700 rounded border border-green-200", children: [
           "Đang nhớ ngữ cảnh (",
@@ -20681,6 +22717,7 @@ function StoryTranslatorWeb() {
             onChange: (e) => {
               setSelectedConfigId(e.target.value);
               updateBrowserConfig(e.target.value);
+              setSessionContext(null);
             },
             options: webConfigs
           }
@@ -20781,6 +22818,9 @@ function StoryTranslatorWeb() {
   ] });
 }
 function GeminiChat() {
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = reactExports.useRef(false);
+  const saveTimeoutRef = reactExports.useRef(null);
   const [sessions, setSessions] = reactExports.useState([]);
   const [activeSessionId, setActiveSessionId] = reactExports.useState(null);
   const [isLoadingSessions, setIsLoadingSessions] = reactExports.useState(true);
@@ -20792,9 +22832,59 @@ function GeminiChat() {
   const [copiedId, setCopiedId] = reactExports.useState(null);
   const messagesEndRef = reactExports.useRef(null);
   const textareaRef = reactExports.useRef(null);
+  const getChatFileName = (sessionId) => `chat-${sessionId}.json`;
+  const loadChatMessages = async (sessionId) => {
+    if (!projectId) return;
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: "gemini",
+        fileName: getChatFileName(sessionId)
+      });
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data);
+        setMessages(saved);
+      } else {
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error("[GeminiChat] Loi tai log chat:", err);
+      setMessages([]);
+    } finally {
+      hasLoadedRef.current = true;
+    }
+  };
+  const saveChatMessages = async (sessionId, currentMessages) => {
+    if (!projectId) return;
+    await window.electronAPI.project.writeFeatureFile({
+      projectId,
+      feature: "gemini",
+      fileName: getChatFileName(sessionId),
+      content: currentMessages
+    });
+  };
   reactExports.useEffect(() => {
     loadSessions();
   }, []);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !activeSessionId) return;
+    hasLoadedRef.current = false;
+    loadChatMessages(activeSessionId);
+  }, [projectId, paths, activeSessionId]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !activeSessionId || !hasLoadedRef.current) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveChatMessages(activeSessionId, messages);
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [projectId, paths, activeSessionId, messages]);
   reactExports.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -21078,28 +23168,34 @@ function GeminiChat() {
     ] })
   ] });
 }
-const container = "_container_149t2_9";
-const overviewContainer = "_overviewContainer_149t2_31";
-const pageHeader = "_pageHeader_149t2_49";
-const pageTitle = "_pageTitle_149t2_57";
-const pageDesc = "_pageDesc_149t2_71";
-const grid = "_grid_149t2_81";
-const card = "_card_149t2_93";
-const cardIcon = "_cardIcon_149t2_133";
-const cardTitle = "_cardTitle_149t2_167";
-const cardDesc = "_cardDesc_149t2_179";
-const detailContainer = "_detailContainer_149t2_193";
-const detailHeader = "_detailHeader_149t2_209";
-const detailTitle = "_detailTitle_149t2_233";
-const detailContent = "_detailContent_149t2_245";
-const section = "_section_149t2_271";
-const row = "_row_149t2_289";
-const label = "_label_149t2_317";
-const labelText = "_labelText_149t2_329";
-const labelDesc = "_labelDesc_149t2_341";
-const select = "_select_149t2_359";
-const saveBar = "_saveBar_149t2_465";
-const flexRow = "_flexRow_149t2_485";
+const container = "_container_16799_9";
+const overviewContainer = "_overviewContainer_16799_31";
+const pageHeader = "_pageHeader_16799_49";
+const pageTitle = "_pageTitle_16799_57";
+const pageDesc = "_pageDesc_16799_71";
+const grid = "_grid_16799_81";
+const card = "_card_16799_93";
+const cardIcon = "_cardIcon_16799_133";
+const cardTitle = "_cardTitle_16799_167";
+const cardDesc = "_cardDesc_16799_179";
+const detailContainer = "_detailContainer_16799_193";
+const detailHeader = "_detailHeader_16799_209";
+const detailTitle = "_detailTitle_16799_233";
+const detailContent = "_detailContent_16799_245";
+const section = "_section_16799_271";
+const row = "_row_16799_289";
+const label = "_label_16799_317";
+const labelText = "_labelText_16799_329";
+const labelDesc = "_labelDesc_16799_341";
+const input = "_input_16799_357";
+const textarea = "_textarea_16799_387";
+const select = "_select_16799_421";
+const toggle = "_toggle_16799_463";
+const toggleActive = "_toggleActive_16799_485";
+const toggleKnob = "_toggleKnob_16799_493";
+const toggleKnobActive = "_toggleKnobActive_16799_517";
+const saveBar = "_saveBar_16799_527";
+const flexRow = "_flexRow_16799_547";
 const styles = {
   container,
   overviewContainer,
@@ -21120,7 +23216,13 @@ const styles = {
   label,
   labelText,
   labelDesc,
+  input,
+  textarea,
   select,
+  toggle,
+  toggleActive,
+  toggleKnob,
+  toggleKnobActive,
   saveBar,
   flexRow
 };
@@ -21913,11 +24015,42 @@ const BROWSER_PRESETS = [
     acceptLanguage: DEFAULT_LANG
   }
 ];
+const buildTokenKey = (_cookie, atToken) => {
+  return (atToken || "").trim();
+};
+const getTokenStats = (configs) => {
+  const seen = /* @__PURE__ */ new Map();
+  const duplicateIds = /* @__PURE__ */ new Set();
+  const activeConfigs = configs.filter((c) => c.isActive);
+  for (const config of activeConfigs) {
+    const key = buildTokenKey(config.cookie || "", config.atToken || "");
+    if (seen.has(key)) {
+      duplicateIds.add(config.id);
+      const firstId = seen.get(key);
+      if (firstId) duplicateIds.add(firstId);
+    } else {
+      seen.set(key, config.id);
+    }
+  }
+  return {
+    distinctActiveCount: seen.size,
+    activeCount: activeConfigs.length,
+    duplicateIds
+  };
+};
 function GeminiChatSettings({ onBack }) {
   const [mode, setMode] = reactExports.useState("list");
   const [configs, setConfigs] = reactExports.useState([]);
   const [isLoading, setIsLoading] = reactExports.useState(false);
   const [errorMessage, setErrorMessage] = reactExports.useState("");
+  const [proxies, setProxies] = reactExports.useState([]);
+  const [tokenStats, setTokenStats] = reactExports.useState({
+    distinctActiveCount: 0,
+    activeCount: 0,
+    duplicateIds: /* @__PURE__ */ new Set()
+  });
+  const [createChatOnWeb, setCreateChatOnWeb] = reactExports.useState(false);
+  const [useStoredContextOnFirstSend, setUseStoredContextOnFirstSend] = reactExports.useState(false);
   const [editingId, setEditingId] = reactExports.useState(null);
   const [formData, setFormData] = reactExports.useState({
     name: "",
@@ -21933,12 +24066,14 @@ function GeminiChatSettings({ onBack }) {
   const [rawInput, setRawInput] = reactExports.useState("");
   const [parseStatus, setParseStatus] = reactExports.useState("");
   const [selectedPreset, setSelectedPreset] = reactExports.useState("4");
+  const editingConfig = editingId ? configs.find((c) => c.id === editingId) : null;
   const loadConfigs = reactExports.useCallback(async () => {
     try {
       setIsLoading(true);
       const result = await window.electronAPI.geminiChat.getAll();
       if (result.success && result.data) {
         setConfigs(result.data);
+        setTokenStats(getTokenStats(result.data));
       } else {
         setErrorMessage(result.error || "Không thể tải danh sách cấu hình");
       }
@@ -21952,6 +24087,67 @@ function GeminiChatSettings({ onBack }) {
   reactExports.useEffect(() => {
     loadConfigs();
   }, [loadConfigs]);
+  reactExports.useEffect(() => {
+    const loadProxies = async () => {
+      try {
+        const result = await window.electronAPI.proxy.getAll();
+        if (result.success && result.data) {
+          setProxies(result.data);
+        }
+      } catch (error2) {
+        console.error("Error loading proxies:", error2);
+      }
+    };
+    loadProxies();
+  }, []);
+  reactExports.useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const result = await window.electronAPI.appSettings.getAll();
+        if (result.success && result.data) {
+          setCreateChatOnWeb(!!result.data.createChatOnWeb);
+          setUseStoredContextOnFirstSend(!!result.data.useStoredContextOnFirstSend);
+        }
+      } catch (error2) {
+        console.error("Error loading app settings:", error2);
+      }
+    };
+    loadSettings();
+  }, []);
+  const handleToggleCreateChatOnWeb = async () => {
+    const nextValue = !createChatOnWeb;
+    try {
+      const result = await window.electronAPI.appSettings.update({ createChatOnWeb: nextValue });
+      if (result.success) {
+        setCreateChatOnWeb(nextValue);
+      } else {
+        alert("Lỗi cập nhật cài đặt tạo hộp thoại chat");
+      }
+    } catch (error2) {
+      console.error("Error updating app settings:", error2);
+      alert("Lỗi cập nhật cài đặt tạo hộp thoại chat");
+    }
+  };
+  const handleToggleStoredContextOnFirstSend = async () => {
+    const nextValue = !useStoredContextOnFirstSend;
+    try {
+      const result = await window.electronAPI.appSettings.update({ useStoredContextOnFirstSend: nextValue });
+      if (result.success) {
+        setUseStoredContextOnFirstSend(nextValue);
+      } else {
+        alert("Lỗi cập nhật cài đặt ngữ cảnh lần đầu");
+      }
+    } catch (error2) {
+      console.error("Error updating app settings:", error2);
+      alert("Lỗi cập nhật cài đặt ngữ cảnh lần đầu");
+    }
+  };
+  const getProxyLabel = reactExports.useCallback((proxyId) => {
+    if (!proxyId) return "Tự động";
+    const proxy = proxies.find((p) => p.id === proxyId);
+    if (!proxy) return "Không tìm thấy";
+    return `${proxy.host}:${proxy.port}`;
+  }, [proxies]);
   const handleCreate = () => {
     setMode("create");
     setEditingId(null);
@@ -22093,6 +24289,24 @@ function GeminiChatSettings({ onBack }) {
       payload.blLabel = payload.blLabel.replace(/\^/g, "").trim();
       payload.fSid = payload.fSid.replace(/\^/g, "").trim();
       payload.atToken = payload.atToken.replace(/\^/g, "").trim();
+      const duplicateCheck = await window.electronAPI.geminiChat.checkDuplicateToken({
+        cookie: payload.cookie,
+        atToken: payload.atToken,
+        excludeId: mode === "edit" ? editingId || void 0 : void 0
+      });
+      if (!duplicateCheck.success) {
+        alert(`Lỗi kiểm tra token trùng: ${duplicateCheck.error || "Không rõ lỗi"}`);
+        return;
+      }
+      if (duplicateCheck.data?.isDuplicate) {
+        const duplicateName = duplicateCheck.data.duplicate?.name || "tài khoản khác";
+        alert(`Phát hiện trùng lặp!
+
+Thông tin "AT Token" bạn nhập đã tồn tại trong cấu hình: "${duplicateName}".
+
+Hệ thống hiện tại chỉ dùng AT Token để phân biệt tài khoản. Vui lòng kiểm tra lại.`);
+        return;
+      }
       let result;
       if (mode === "create") {
         result = await window.electronAPI.geminiChat.create(payload);
@@ -22115,29 +24329,66 @@ function GeminiChatSettings({ onBack }) {
     return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailContainer, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailHeader, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "secondary", iconOnly: true, onClick: onBack, title: "Quay lại", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { size: 20 }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.detailTitle, children: "Danh sách Tài khoản (Proxy)" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleCreate, variant: "primary", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16, className: "mr-2" }),
-          " Thêm mới"
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.detailTitle, children: "Danh sách Tài khoản (Proxy)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-xs text-(--color-text-secondary) mt-1", children: [
+            "Token active khác nhau: ",
+            tokenStats.distinctActiveCount,
+            "/",
+            tokenStats.activeCount,
+            tokenStats.duplicateIds.size > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "ml-2 text-red-600", children: [
+              "Trùng token: ",
+              tokenStats.duplicateIds.size
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: handleToggleStoredContextOnFirstSend,
+              className: `text-xs px-3 py-1.5 rounded-full border transition-colors ${useStoredContextOnFirstSend ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"}`,
+              title: "Bật/tắt dùng ngữ cảnh cũ ở lần gửi đầu",
+              children: useStoredContextOnFirstSend ? "Context cũ: ON" : "Context cũ: OFF"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              onClick: handleToggleCreateChatOnWeb,
+              className: `text-xs px-3 py-1.5 rounded-full border transition-colors ${createChatOnWeb ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"}`,
+              title: "Bật/tắt tạo hộp thoại chat trên web",
+              children: createChatOnWeb ? "Chat Web: ON" : "Chat Web: OFF"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleCreate, variant: "primary", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16, className: "mr-2" }),
+            " Thêm mới"
+          ] })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailContent, children: [
         errorMessage && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-4 bg-red-100 text-red-700 rounded-lg", children: errorMessage }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 gap-4", children: [
-          configs.map((config) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4 flex items-center gap-4 hover:border-[var(--color-primary)] transition-colors cursor-pointer group", onClick: () => handleEdit(config), children: [
+          configs.map((config) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-(--color-card) border border-(--color-border) rounded-xl p-4 flex items-center gap-4 hover:border-(--color-primary) transition-colors cursor-pointer group", onClick: () => handleEdit(config), children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `w-10 h-10 rounded-full flex items-center justify-center ${config.isActive ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`, children: config.isActive ? /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 20 }) : /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 20 }) }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1", children: [
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-lg", children: config.name }),
-                config.id === "legacy" ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded", children: "Legacy" }) : null
+                config.id === "legacy" ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded", children: "Legacy" }) : null,
+                tokenStats.duplicateIds.has(config.id) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded", children: "Trùng token" })
               ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-sm text-[var(--color-text-secondary)] flex gap-4 mt-1", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-sm text-(--color-text-secondary) flex gap-4 mt-1", children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-1", children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx(Monitor, { size: 12 }),
                   " ",
                   config.platform || "Unknown"
                 ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "truncate max-w-[200px] opacity-70", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "opacity-80", children: [
+                  "Proxy: ",
+                  getProxyLabel(config.proxyId)
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "truncate max-w-50 opacity-70", children: [
                   config.cookie.substring(0, 30),
                   "..."
                 ] })
@@ -22149,7 +24400,7 @@ function GeminiChatSettings({ onBack }) {
                 {
                   onClick: (e) => handleToggleActive(config, e),
                   className: `text-xs px-3 py-1.5 rounded-full border transition-colors ${config.isActive ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"}`,
-                  children: config.isActive ? "Active" : "Inactive"
+                  children: config.isActive ? "Đang dùng" : "Đang tắt"
                 }
               ),
               /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "danger", iconOnly: true, onClick: (e) => handleDelete(config.id, e), className: "opacity-0 group-hover:opacity-100 transition-opacity", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 16 }) })
@@ -22172,7 +24423,7 @@ function GeminiChatSettings({ onBack }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx(Input, { value: formData.name, onChange: (e) => setFormData({ ...formData, name: e.target.value }), placeholder: "VD: Chrome Windows, Account 1..." })
         ] }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `${styles.section} flex items-center p-4 gap-4`, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium", children: "Trạng thái hoạt động" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium", children: "Sử dụng token" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "button",
             {
@@ -22181,9 +24432,16 @@ function GeminiChatSettings({ onBack }) {
               children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform ${formData.isActive ? "translate-x-5" : ""}` })
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-500", children: formData.isActive ? "Sẽ được sử dụng để xoay vòng" : "Tạm vô hiệu hóa" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-gray-500", children: formData.isActive ? "Token sẽ được dùng khi gửi" : "Token sẽ bị bỏ qua" })
         ] })
       ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.section, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.row, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.label, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles.labelText, children: "Proxy đang dùng" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles.labelDesc, children: "Hiển thị proxy đang gắn với token" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm text-(--color-text-secondary)", children: getProxyLabel(mode === "edit" ? editingConfig?.proxyId : void 0) })
+      ] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.section, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.row, style: { display: "block" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.label, style: { marginBottom: 8 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: styles.labelText, style: { display: "flex", alignItems: "center", gap: 8 }, children: [
@@ -22198,7 +24456,7 @@ function GeminiChatSettings({ onBack }) {
             value: rawInput,
             onChange: (e) => setRawInput(e.target.value),
             rows: 3,
-            className: "w-full p-3 rounded-lg border bg-[var(--bg-secondary)] font-mono text-xs",
+            className: "w-full p-3 rounded-lg border bg-(--bg-secondary) font-mono text-xs",
             placeholder: "Paste curl or raw headers here..."
           }
         ),
@@ -22211,7 +24469,7 @@ function GeminiChatSettings({ onBack }) {
         ] })
       ] }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.section, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-4 border-b font-medium bg-[var(--color-surface)]", children: "Thông tin xác thực (Bắt buộc)" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-4 border-b font-medium bg-(--color-surface)", children: "Thông tin xác thực (Bắt buộc)" }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.row, style: { display: "block" }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-1 font-medium text-sm flex items-center gap-2", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(Cookie, { size: 14 }),
@@ -22223,7 +24481,7 @@ function GeminiChatSettings({ onBack }) {
               value: formData.cookie,
               onChange: (e) => setFormData({ ...formData, cookie: e.target.value }),
               rows: 2,
-              className: "w-full p-2 rounded border bg-[var(--bg-secondary)] font-mono text-xs",
+              className: "w-full p-2 rounded border bg-(--bg-secondary) font-mono text-xs",
               placeholder: "__Secure-1PSID=...; __Secure-3PSID=..."
             }
           )
@@ -22260,7 +24518,7 @@ function GeminiChatSettings({ onBack }) {
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.section, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 border-b font-medium bg-[var(--color-surface)] flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 border-b font-medium bg-(--color-surface) flex items-center gap-2", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Laptop, { size: 16 }),
           " Hồ sơ trình duyệt (Browser Profile)"
         ] }),
@@ -22311,7 +24569,7 @@ function GeminiChatSettings({ onBack }) {
               value: formData.userAgent,
               onChange: (e) => setFormData({ ...formData, userAgent: e.target.value }),
               rows: 2,
-              className: "w-full p-2 rounded border bg-[var(--bg-secondary)] font-mono text-xs"
+              className: "w-full p-2 rounded border bg-(--bg-secondary) font-mono text-xs"
             }
           )
         ] }),
@@ -22330,11 +24588,12 @@ function GeminiChatSettings({ onBack }) {
     ] })
   ] });
 }
-function ProxySettings() {
+function ProxySettings({ onBack }) {
   const [proxies, setProxies] = reactExports.useState([]);
   const [stats, setStats] = reactExports.useState([]);
   const [loading, setLoading] = reactExports.useState(false);
   const [testingIds, setTestingIds] = reactExports.useState(/* @__PURE__ */ new Set());
+  const [checkingAll, setCheckingAll] = reactExports.useState(false);
   const [useProxy, setUseProxy] = reactExports.useState(true);
   const [showAddForm, setShowAddForm] = reactExports.useState(false);
   const [showBulkImport, setShowBulkImport] = reactExports.useState(false);
@@ -22545,6 +24804,28 @@ Lỗi: ${result.error}`);
       alert("Lỗi reset proxies!");
     }
   };
+  const handleCheckAll = async () => {
+    if (proxies.length === 0) return;
+    try {
+      setCheckingAll(true);
+      const result = await window.electronAPI.proxy.checkAll();
+      if (result.success) {
+        alert(`✅ Đã kiểm tra ${result.checked} proxy
+
+OK: ${result.passed}
+FAIL: ${result.failed}`);
+        loadProxies();
+        loadStats();
+      } else {
+        alert(`❌ Lỗi kiểm tra proxy: ${result.error}`);
+      }
+    } catch (error2) {
+      console.error("Lỗi check all proxies:", error2);
+      alert("Lỗi kiểm tra proxy!");
+    } finally {
+      setCheckingAll(false);
+    }
+  };
   const getProxyStats = (proxyId) => {
     return stats.find((s) => s.id === proxyId);
   };
@@ -22591,267 +24872,1013 @@ Lỗi: ${result.error}`);
       alert("Lỗi thêm proxies!");
     }
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-6 p-6", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-start", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-bold text-text-primary", children: "Quản lý Proxy" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-text-secondary mt-1", children: "Cấu hình proxy rotation để tránh rate limit khi gọi API" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-4 bg-surface border border-border rounded-xl px-4 py-3 mr-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm font-semibold text-text-primary", children: "Sử dụng Proxy" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-tertiary", children: useProxy ? "Đang bật" : "Đang tắt" })
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailContainer, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailHeader, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "secondary", iconOnly: true, onClick: onBack, title: "Quay lại", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { size: 20 }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.detailTitle, children: "Quản lý Proxy" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailContent, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.section, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.row, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.label, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles.labelText, children: "Sử dụng Proxy" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles.labelDesc, children: "Bật/tắt sử dụng proxy toàn cục cho ứng dụng" })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
             onClick: () => handleToggleUseProxy(!useProxy),
-            className: `relative w-14 h-7 rounded-full transition-colors ${useProxy ? "bg-green-500" : "bg-gray-600"}`,
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "div",
-              {
-                className: `absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${useProxy ? "translate-x-7" : "translate-x-0"}`
-              }
-            )
+            className: `${styles.toggle} ${useProxy ? styles.toggleActive : ""}`,
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `${styles.toggleKnob} ${useProxy ? styles.toggleKnobActive : ""}` })
           }
         )
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: () => setShowBulkImport(true), variant: "secondary", className: "h-9 px-4", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 16 }),
-          "Bulk Import (Webshare)"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleImport, variant: "secondary", className: "h-9 px-4", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 16 }),
-          "Import JSON"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleResetAll, variant: "secondary", className: "h-9 px-4", disabled: proxies.length === 0, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(RotateCcw, { size: 16 }),
-          "Reset All"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleExport, variant: "secondary", className: "h-9 px-4", disabled: proxies.length === 0, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { size: 16 }),
-          "Export"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: () => setShowAddForm(true), variant: "primary", className: "h-9 px-4", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16 }),
-          "Thêm Proxy"
+      ] }) }),
+      showAddForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.row, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.label, children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles.labelText, children: "Thêm Proxy Mới" }) }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "16px 24px" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.flexRow, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              Input,
+              {
+                label: "Host/IP",
+                placeholder: "123.45.67.89",
+                value: formData.host,
+                onChange: (e) => setFormData({ ...formData, host: e.target.value })
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              Input,
+              {
+                label: "Port",
+                type: "number",
+                placeholder: "8080",
+                value: formData.port.toString(),
+                onChange: (e) => setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.flexRow, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              Input,
+              {
+                label: "Username (tùy chọn)",
+                placeholder: "user123",
+                value: formData.username,
+                onChange: (e) => setFormData({ ...formData, username: e.target.value })
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              Input,
+              {
+                label: "Password (tùy chọn)",
+                type: "password",
+                placeholder: "••••••",
+                value: formData.password,
+                onChange: (e) => setFormData({ ...formData, password: e.target.value })
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.flexRow, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              Select,
+              {
+                label: "Loại Proxy",
+                value: formData.type,
+                onChange: (e) => setFormData({ ...formData, type: e.target.value }),
+                options: [
+                  { value: "http", label: "HTTP" },
+                  { value: "https", label: "HTTPS" },
+                  { value: "socks5", label: "SOCKS5" }
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: styles.flexRow, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "checkbox",
+                  checked: formData.enabled,
+                  onChange: (e) => setFormData({ ...formData, enabled: e.target.checked })
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Kích hoạt ngay" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.flexRow, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleAddProxy, variant: "primary", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16 }),
+              "Thêm"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: () => setShowAddForm(false), variant: "secondary", children: "Hủy" })
+          ] })
         ] })
-      ] })
-    ] }),
-    showAddForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-card border border-border rounded-xl p-6", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-text-primary mb-4", children: "Thêm Proxy Mới" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-2 gap-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Input,
-          {
-            label: "Host/IP",
-            placeholder: "123.45.67.89",
-            value: formData.host,
-            onChange: (e) => setFormData({ ...formData, host: e.target.value })
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Input,
-          {
-            label: "Port",
-            type: "number",
-            placeholder: "8080",
-            value: formData.port.toString(),
-            onChange: (e) => setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Input,
-          {
-            label: "Username (tùy chọn)",
-            placeholder: "user123",
-            value: formData.username,
-            onChange: (e) => setFormData({ ...formData, username: e.target.value })
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Input,
-          {
-            label: "Password (tùy chọn)",
-            type: "password",
-            placeholder: "••••••",
-            value: formData.password,
-            onChange: (e) => setFormData({ ...formData, password: e.target.value })
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          Select,
-          {
-            label: "Loại Proxy",
-            value: formData.type,
-            onChange: (e) => setFormData({ ...formData, type: e.target.value }),
-            options: [
-              { value: "http", label: "HTTP" },
-              { value: "https", label: "HTTPS" },
-              { value: "socks5", label: "SOCKS5" }
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-end gap-2", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "flex items-center gap-2 h-10 px-3 bg-surface rounded border border-border cursor-pointer hover:bg-surface/80 transition-colors", children: [
+      ] }),
+      showBulkImport && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.row, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.label, children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles.labelText, children: "Bulk Import Webshare Proxies" }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleQuickAddWebshare, variant: "secondary", children: "⚡ Quick Add 10 Free Proxies" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "16px 24px" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "8px" }, children: "Paste danh sách proxy từ Webshare (mỗi dòng: ip,port,username,password,country,city)" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "input",
+            "textarea",
             {
-              type: "checkbox",
-              checked: formData.enabled,
-              onChange: (e) => setFormData({ ...formData, enabled: e.target.checked }),
-              className: "w-4 h-4"
+              className: styles.select,
+              style: { width: "100%", height: "120px", resize: "none", marginBottom: "12px" },
+              placeholder: `142.111.48.253,7030,qfdakzos,7fvhf24fe3ud,US,Los Angeles
+23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo`,
+              value: bulkImportText,
+              onChange: (e) => setBulkImportText(e.target.value)
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-text-primary", children: "Kích hoạt ngay" })
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.flexRow, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleBulkImport, variant: "primary", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 16 }),
+              "Import (",
+              bulkImportText.trim().split("\n").filter((l) => l.trim()).length,
+              " proxies)"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: () => {
+              setShowBulkImport(false);
+              setBulkImportText("");
+            }, variant: "secondary", children: "Hủy" })
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.row, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.label, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: styles.labelText, children: [
+            "Danh sách Proxy (",
+            proxies.length,
+            ")"
+          ] }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.flexRow, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: () => setShowBulkImport(true), variant: "secondary", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 16 }),
+              "Bulk Import (Webshare)"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleImport, variant: "secondary", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 16 }),
+              "Import JSON"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleResetAll, variant: "secondary", disabled: proxies.length === 0, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(RotateCcw, { size: 16 }),
+              "Reset All"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleCheckAll, variant: "secondary", disabled: proxies.length === 0 || checkingAll, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(TestTube, { size: 16 }),
+              checkingAll ? "Đang kiểm tra..." : "Kiểm tra Proxy"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleExport, variant: "secondary", disabled: proxies.length === 0, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { size: 16 }),
+              "Export"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: () => setShowAddForm(true), variant: "primary", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16 }),
+              "Thêm Proxy"
+            ] })
+          ] })
+        ] }),
+        loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "40px", textAlign: "center", color: "var(--color-text-secondary)" }, children: "Đang tải..." }) : proxies.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "40px", textAlign: "center", color: "var(--color-text-secondary)" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "Chưa có proxy nào." }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: "14px", marginTop: "8px" }, children: 'Nhấn "Thêm Proxy" để bắt đầu.' })
+        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: { width: "100%", borderCollapse: "collapse" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { style: { backgroundColor: "var(--color-surface)", fontSize: "12px", color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "left" }, children: "Trạng thái" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "left" }, children: "Host:Port" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "left" }, children: "Platform" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "left" }, children: "Location" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "left" }, children: "Loại" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "left" }, children: "Credentials" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "center" }, children: "Success Rate" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "center" }, children: "Thành công" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "center" }, children: "Thất bại" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { padding: "12px 16px", textAlign: "right" }, children: "Thao tác" })
+          ] }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: proxies.map((proxy) => {
+            const proxyStats = getProxyStats(proxy.id);
+            const isTesting = testingIds.has(proxy.id);
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { style: { borderBottom: "1px solid var(--color-border)" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: [
+                proxy.enabled ? proxyStats?.isHealthy ? /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 16, style: { color: "green" } }) : /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 16, style: { color: "orange" } }) : /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 16, style: { color: "gray" } }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "12px", color: proxy.enabled ? proxyStats?.isHealthy ? "green" : "orange" : "gray" }, children: proxy.enabled ? proxyStats?.isHealthy ? "Sẵn sàng" : "Lỗi" : "Tắt" })
+              ] }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("code", { style: { fontSize: "14px", color: "var(--color-text-primary)", fontFamily: "monospace" }, children: [
+                proxy.host,
+                ":",
+                proxy.port
+              ] }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px" }, children: proxy.platform ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "12px", padding: "4px 8px", backgroundColor: "rgba(59, 130, 246, 0.1)", border: "1px solid rgba(59, 130, 246, 0.3)", borderRadius: "6px", color: "#3b82f6" }, children: proxy.platform }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "12px", color: "var(--color-text-tertiary)", fontStyle: "italic" }, children: "-" }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px", fontSize: "12px", color: "var(--color-text-secondary)" }, children: proxy.country || proxy.city ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "2px" }, children: [
+                proxy.country && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontWeight: "500" }, children: proxy.country }),
+                proxy.city && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "var(--color-text-tertiary)" }, children: proxy.city })
+              ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "var(--color-text-tertiary)", fontStyle: "italic" }, children: "-" }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "12px", padding: "4px 8px", backgroundColor: "var(--color-surface)", borderRadius: "6px", color: "var(--color-text-secondary)", textTransform: "uppercase" }, children: proxy.type }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px", fontSize: "14px", color: "var(--color-text-secondary)" }, children: proxy.username ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: "monospace", fontSize: "12px" }, children: [
+                proxy.username,
+                ":***"
+              ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "var(--color-text-tertiary)", fontStyle: "italic" }, children: "Không có" }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px", textAlign: "center" }, children: proxyStats ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: "80px", height: "4px", backgroundColor: "var(--color-surface)", borderRadius: "2px", overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    style: {
+                      height: "100%",
+                      backgroundColor: proxyStats.successRate >= 80 ? "green" : proxyStats.successRate >= 50 ? "orange" : "red",
+                      width: `${proxyStats.successRate}%`
+                    }
+                  }
+                ) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: "12px", color: "var(--color-text-secondary)", width: "40px", textAlign: "right" }, children: [
+                  proxyStats.successRate,
+                  "%"
+                ] })
+              ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: "12px", color: "var(--color-text-tertiary)" }, children: "-" }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px", textAlign: "center", fontSize: "14px", color: "green", fontFamily: "monospace" }, children: proxyStats?.successCount || 0 }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px", textAlign: "center", fontSize: "14px", color: "red", fontFamily: "monospace" }, children: proxyStats?.failedCount || 0 }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "12px 16px", textAlign: "right" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => handleToggleProxy(proxy.id, proxy.enabled),
+                    style: { padding: "8px", borderRadius: "6px", backgroundColor: "transparent", border: "none", cursor: "pointer", color: proxy.enabled ? "green" : "gray" },
+                    title: proxy.enabled ? "Tắt" : "Bật",
+                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(RotateCcw, { size: 16 })
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => handleTestProxy(proxy.id),
+                    disabled: isTesting,
+                    style: { padding: "8px", borderRadius: "6px", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "blue", opacity: isTesting ? 0.5 : 1 },
+                    title: "Test proxy",
+                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(TestTube, { size: 16 })
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => handleRemoveProxy(proxy.id),
+                    style: { padding: "8px", borderRadius: "6px", backgroundColor: "transparent", border: "none", cursor: "pointer", color: "red" },
+                    title: "Xóa",
+                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 16 })
+                  }
+                )
+              ] }) })
+            ] }, proxy.id);
+          }) })
         ] }) })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 mt-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleAddProxy, variant: "primary", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16 }),
-          "Thêm"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: () => setShowAddForm(false), variant: "secondary", children: "Hủy" })
-      ] })
-    ] }),
-    showBulkImport && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-card border border-border rounded-xl p-6", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center mb-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-lg font-semibold text-text-primary", children: "Bulk Import Webshare Proxies" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleQuickAddWebshare, variant: "secondary", className: "text-xs h-8 px-3", children: "⚡ Quick Add 10 Free Proxies" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-text-secondary mb-3", children: [
-        "Paste danh sách proxy từ Webshare (mỗi dòng: ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "text-xs bg-surface px-1 py-0.5 rounded", children: "ip,port,username,password,country,city" }),
-        ")"
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "textarea",
-        {
-          className: "w-full h-40 p-3 bg-surface border border-border rounded text-sm font-mono text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary",
-          placeholder: `142.111.48.253,7030,qfdakzos,7fvhf24fe3ud,US,Los Angeles
-23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo
-198.23.239.134,6540,qfdakzos,7fvhf24fe3ud,US,Buffalo
-...`,
-          value: bulkImportText,
-          onChange: (e) => setBulkImportText(e.target.value)
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 mt-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: handleBulkImport, variant: "primary", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 16 }),
-          "Import (",
-          bulkImportText.trim().split("\n").filter((l) => l.trim()).length,
-          " proxies)"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: () => {
-          setShowBulkImport(false);
-          setBulkImportText("");
-        }, variant: "secondary", children: "Hủy" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-card border border-border rounded-xl overflow-hidden", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-4 border-b border-border bg-surface/50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { className: "font-semibold text-text-primary", children: [
-        "Danh sách Proxy (",
-        proxies.length,
-        ")"
-      ] }) }),
-      loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-8 text-center text-text-secondary", children: "Đang tải..." }) : proxies.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-8 text-center text-text-secondary", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "Chưa có proxy nào." }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm mt-2", children: 'Nhấn "Thêm Proxy" để bắt đầu.' })
-      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { className: "w-full", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { className: "bg-surface/30 text-xs text-text-secondary uppercase tracking-wider", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-left", children: "Trạng thái" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-left", children: "Host:Port" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-left", children: "Platform" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-left", children: "Location" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-left", children: "Loại" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-left", children: "Credentials" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-center", children: "Success Rate" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-center", children: "Thành công" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-center", children: "Thất bại" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-4 py-3 text-right", children: "Thao tác" })
-        ] }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { className: "divide-y divide-border", children: proxies.map((proxy) => {
-          const proxyStats = getProxyStats(proxy.id);
-          const isTesting = testingIds.has(proxy.id);
-          return /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { className: "hover:bg-surface/20 transition-colors", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-              proxy.enabled ? proxyStats?.isHealthy ? /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 16, className: "text-green-500" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 16, className: "text-yellow-500" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 16, className: "text-gray-500" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs ${proxy.enabled ? proxyStats?.isHealthy ? "text-green-500" : "text-yellow-500" : "text-gray-500"}`, children: proxy.enabled ? proxyStats?.isHealthy ? "Sẵn sàng" : "Lỗi" : "Tắt" })
-            ] }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("code", { className: "text-sm text-text-primary font-mono", children: [
-              proxy.host,
-              ":",
-              proxy.port
-            ] }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3", children: proxy.platform ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-1 bg-blue-500/10 border border-blue-500/30 rounded text-blue-500", children: proxy.platform }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-tertiary italic", children: "-" }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3 text-xs text-text-secondary", children: proxy.country || proxy.city ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-0.5", children: [
-              proxy.country && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: proxy.country }),
-              proxy.city && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-text-tertiary", children: proxy.city })
-            ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-text-tertiary italic", children: "-" }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs px-2 py-1 bg-surface rounded text-text-secondary uppercase", children: proxy.type }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3 text-sm text-text-secondary", children: proxy.username ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono text-xs", children: [
-              proxy.username,
-              ":***"
-            ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-text-tertiary italic", children: "Không có" }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3 text-center", children: proxyStats ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-center gap-2", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-20 h-2 bg-surface rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  className: `h-full ${proxyStats.successRate >= 80 ? "bg-green-500" : proxyStats.successRate >= 50 ? "bg-yellow-500" : "bg-red-500"}`,
-                  style: { width: `${proxyStats.successRate}%` }
-                }
-              ) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-text-secondary w-10 text-right", children: [
-                proxyStats.successRate,
-                "%"
-              ] })
-            ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-tertiary", children: "-" }) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3 text-center text-sm text-green-600 font-mono", children: proxyStats?.successCount || 0 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3 text-center text-sm text-red-600 font-mono", children: proxyStats?.failedCount || 0 }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-4 py-3", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-end gap-2", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "button",
-                {
-                  onClick: () => handleToggleProxy(proxy.id, proxy.enabled),
-                  className: `p-2 rounded hover:bg-surface transition-colors ${proxy.enabled ? "text-green-500" : "text-gray-500"}`,
-                  title: proxy.enabled ? "Tắt" : "Bật",
-                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(RotateCcw, { size: 16 })
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "button",
-                {
-                  onClick: () => handleTestProxy(proxy.id),
-                  disabled: isTesting,
-                  className: "p-2 rounded hover:bg-surface transition-colors text-blue-500 disabled:opacity-50",
-                  title: "Test proxy",
-                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(TestTube, { size: 16, className: isTesting ? "animate-pulse" : "" })
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "button",
-                {
-                  onClick: () => handleRemoveProxy(proxy.id),
-                  className: "p-2 rounded hover:bg-surface transition-colors text-red-500",
-                  title: "Xóa",
-                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 16 })
-                }
-              )
-            ] }) })
-          ] }, proxy.id);
-        }) })
-      ] }) })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-blue-500/10 border border-blue-500/30 rounded-xl p-4", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "font-semibold text-blue-500 mb-2", children: "ℹ️ Lưu ý" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "text-sm text-text-secondary space-y-1 list-disc list-inside", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Proxy được rotation tự động theo round-robin khi gọi API" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Proxy bị tắt tự động sau 5 lỗi liên tiếp" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Nếu tất cả proxy đều thất bại, hệ thống sẽ fallback về direct connection" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định" })
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { backgroundColor: "rgba(59, 130, 246, 0.1)", border: "1px solid rgba(59, 130, 246, 0.3)", borderRadius: "12px", padding: "16px" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { style: { fontWeight: "500", color: "#3b82f6", marginBottom: "8px" }, children: "ℹ️ Lưu ý" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { style: { fontSize: "14px", color: "var(--color-text-secondary)", listStyle: "disc", listStylePosition: "inside", margin: 0, paddingLeft: "16px" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Proxy được rotation tự động theo round-robin khi gọi API" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Proxy bị tắt tự động sau 2 lỗi liên tiếp" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Nếu không còn proxy khả dụng, yêu cầu sẽ dừng lại" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định" })
+        ] })
       ] })
     ] })
+  ] });
+}
+function PromptSettings({ onBack }) {
+  const [prompts, setPrompts] = reactExports.useState([]);
+  const [translationPromptId, setTranslationPromptId] = reactExports.useState("");
+  const [summaryPromptId, setSummaryPromptId] = reactExports.useState("");
+  const [loading, setLoading] = reactExports.useState(true);
+  const [previewPromptId, setPreviewPromptId] = reactExports.useState(null);
+  const [previewContent, setPreviewContent] = reactExports.useState(null);
+  const [hasChanges, setHasChanges] = reactExports.useState(false);
+  const [toast, setToast] = reactExports.useState(null);
+  const [activeTab, setActiveTab] = reactExports.useState("config");
+  const [modalMode, setModalMode] = reactExports.useState(null);
+  const [editingPromptId, setEditingPromptId] = reactExports.useState(null);
+  const [formData, setFormData] = reactExports.useState({
+    name: "",
+    description: "",
+    sourceLang: "zh",
+    targetLang: "vi",
+    content: ""
+  });
+  reactExports.useEffect(() => {
+    loadData();
+  }, []);
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const promptsResult = await window.electronAPI.invoke("prompt:getAll");
+      if (Array.isArray(promptsResult)) {
+        setPrompts(promptsResult.map((p) => {
+          let content2 = p.content;
+          try {
+            if (typeof p.content === "string" && p.content.trim().startsWith("{")) {
+              const parsed = JSON.parse(p.content);
+              if (parsed && typeof parsed === "object") {
+                content2 = parsed.content || parsed.systemInstruction || p.content;
+              }
+            }
+          } catch (e) {
+            content2 = p.content;
+          }
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            sourceLang: p.sourceLang,
+            targetLang: p.targetLang,
+            content: content2,
+            isDefault: p.isDefault
+          };
+        }));
+      }
+      const settingsResult = await window.electronAPI.appSettings.getAll();
+      if (settingsResult.success && settingsResult.data) {
+        setTranslationPromptId(settingsResult.data.translationPromptId || "");
+        setSummaryPromptId(settingsResult.data.summaryPromptId || "");
+      }
+      setHasChanges(false);
+    } catch (error2) {
+      console.error("[PromptSettings] Error loading data:", error2);
+      showToast("Lỗi khi tải dữ liệu", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const showToast = (message, type = "info") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3e3);
+  };
+  const openCreateModal = () => {
+    setFormData({
+      name: "",
+      description: "",
+      sourceLang: "zh",
+      targetLang: "vi",
+      content: ""
+    });
+    setEditingPromptId(null);
+    setModalMode("create");
+  };
+  const openEditModal = (prompt) => {
+    setFormData({
+      name: prompt.name,
+      description: prompt.description || "",
+      sourceLang: prompt.sourceLang,
+      targetLang: prompt.targetLang,
+      content: prompt.content || ""
+    });
+    setEditingPromptId(prompt.id);
+    setModalMode("edit");
+  };
+  const closeModal = () => {
+    setModalMode(null);
+    setEditingPromptId(null);
+  };
+  const handleFormChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+  const handleSubmitForm = async () => {
+    if (!formData.name.trim()) {
+      showToast("Vui lòng nhập tên prompt", "error");
+      return;
+    }
+    try {
+      const data = {
+        name: formData.name,
+        description: formData.description,
+        sourceLang: formData.sourceLang,
+        targetLang: formData.targetLang,
+        content: formData.content
+      };
+      if (modalMode === "create") {
+        await window.electronAPI.prompt.create(data);
+        showToast("✅ Đã tạo prompt mới!", "success");
+      } else if (modalMode === "edit" && editingPromptId) {
+        await window.electronAPI.prompt.update(editingPromptId, data);
+        showToast("✅ Đã cập nhật prompt!", "success");
+      }
+      closeModal();
+      loadData();
+    } catch (error2) {
+      console.error("[PromptSettings] Error saving prompt:", error2);
+      showToast("❌ Lỗi khi lưu prompt", "error");
+    }
+  };
+  const handleDeletePrompt = async (promptId, promptName) => {
+    if (!confirm(`Bạn có chắc muốn xóa prompt "${promptName}"?`)) {
+      return;
+    }
+    try {
+      await window.electronAPI.prompt.delete(promptId);
+      showToast("✅ Đã xóa prompt!", "success");
+      loadData();
+    } catch (error2) {
+      console.error("[PromptSettings] Error deleting prompt:", error2);
+      showToast("❌ Lỗi khi xóa prompt", "error");
+    }
+  };
+  const handleTranslationPromptChange = (value) => {
+    setTranslationPromptId(value);
+    setHasChanges(true);
+  };
+  const handleSummaryPromptChange = (value) => {
+    setSummaryPromptId(value);
+    setHasChanges(true);
+  };
+  const handlePreview = async (promptId) => {
+    if (previewPromptId === promptId) {
+      setPreviewPromptId(null);
+      setPreviewContent(null);
+      return;
+    }
+    try {
+      setPreviewPromptId(promptId);
+      const prompt = prompts.find((p) => p.id === promptId);
+      if (prompt) {
+        setPreviewContent(prompt);
+      }
+    } catch (error2) {
+      console.error("[PromptSettings] Error loading preview:", error2);
+      showToast("Lỗi khi tải preview", "error");
+    }
+  };
+  const handleSave = reactExports.useCallback(async () => {
+    try {
+      const result = await window.electronAPI.appSettings.update({
+        translationPromptId: translationPromptId || null,
+        summaryPromptId: summaryPromptId || null
+      });
+      if (result.success) {
+        setHasChanges(false);
+        showToast("✅ Đã lưu cài đặt prompt!", "success");
+      } else {
+        showToast("❌ Lỗi khi lưu: " + (result.error || "Unknown error"), "error");
+      }
+    } catch (error2) {
+      console.error("[PromptSettings] Error saving:", error2);
+      showToast("❌ Lỗi khi lưu cài đặt", "error");
+    }
+  }, [translationPromptId, summaryPromptId]);
+  if (loading) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.detailContainer, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.detailContent, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center", padding: "3rem" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 32, className: styles.spinning, style: { margin: "0 auto 1rem" } }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "Đang tải..." })
+    ] }) }) });
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailContainer, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailHeader, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "secondary", iconOnly: true, onClick: onBack, title: "Quay lại", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { size: 20 }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles.detailTitle, children: "Quản lý Prompts" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginLeft: "auto", display: "flex", gap: "0.75rem" }, children: [
+        activeTab === "manage" && /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { variant: "primary", onClick: openCreateModal, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16 }),
+          "Thêm mới"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "secondary", iconOnly: true, onClick: loadData, title: "Làm mới", children: /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 16 }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      borderBottom: "1px solid var(--color-border)",
+      backgroundColor: "var(--color-card)",
+      padding: "0 2rem",
+      display: "flex",
+      gap: "2rem"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => setActiveTab("config"),
+          style: {
+            padding: "1rem 0",
+            border: "none",
+            background: "none",
+            color: activeTab === "config" ? "var(--color-primary)" : "var(--color-text-secondary)",
+            fontWeight: activeTab === "config" ? 600 : 400,
+            borderBottom: activeTab === "config" ? "2px solid var(--color-primary)" : "2px solid transparent",
+            cursor: "pointer",
+            fontSize: "0.95rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            transition: "all 0.2s"
+          },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Settings$1, { size: 18 }),
+            "Cấu hình sử dụng"
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => setActiveTab("manage"),
+          style: {
+            padding: "1rem 0",
+            border: "none",
+            background: "none",
+            color: activeTab === "manage" ? "var(--color-primary)" : "var(--color-text-secondary)",
+            fontWeight: activeTab === "manage" ? 600 : 400,
+            borderBottom: activeTab === "manage" ? "2px solid var(--color-primary)" : "2px solid transparent",
+            cursor: "pointer",
+            fontSize: "0.95rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            transition: "all 0.2s"
+          },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 18 }),
+            "Danh sách (",
+            prompts.length,
+            ")"
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles.detailContent, children: [
+      activeTab === "config" && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        ConfigTab,
+        {
+          prompts,
+          translationPromptId,
+          summaryPromptId,
+          previewPromptId,
+          previewContent,
+          hasChanges,
+          onTranslationPromptChange: handleTranslationPromptChange,
+          onSummaryPromptChange: handleSummaryPromptChange,
+          onPreview: handlePreview,
+          onSave: handleSave
+        }
+      ),
+      activeTab === "manage" && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        ManageTab,
+        {
+          prompts,
+          onEdit: openEditModal,
+          onDelete: handleDeletePrompt
+        }
+      )
+    ] }),
+    modalMode && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      PromptFormModal,
+      {
+        mode: modalMode,
+        formData,
+        onFormChange: handleFormChange,
+        onSubmit: handleSubmitForm,
+        onClose: closeModal
+      }
+    ),
+    toast && /* @__PURE__ */ jsxRuntimeExports.jsx(Toast, { message: toast.message, type: toast.type })
+  ] });
+}
+function ConfigTab({
+  prompts,
+  translationPromptId,
+  summaryPromptId,
+  previewPromptId,
+  previewContent,
+  hasChanges,
+  onTranslationPromptChange,
+  onSummaryPromptChange,
+  onPreview,
+  onSave
+}) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      backgroundColor: "var(--color-card)",
+      borderRadius: "12px",
+      padding: "1.5rem",
+      border: "1px solid var(--color-border)",
+      marginBottom: "1.5rem"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          width: "40px",
+          height: "40px",
+          borderRadius: "10px",
+          backgroundColor: "var(--color-primary)",
+          color: "white",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 22 }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: { margin: 0, fontSize: "1.05rem", fontWeight: 600 }, children: "Prompt dịch truyện" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "var(--color-text-secondary)" }, children: "Sử dụng khi dịch các chương truyện" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "select",
+        {
+          value: translationPromptId,
+          onChange: (e) => onTranslationPromptChange(e.target.value),
+          className: styles.select,
+          style: { width: "100%", marginBottom: translationPromptId ? "1rem" : 0 },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "🔍 Tự động (theo ngôn ngữ)" }),
+            prompts.map((p) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: p.id, children: [
+              p.name,
+              " • ",
+              p.sourceLang,
+              " → ",
+              p.targetLang
+            ] }, p.id))
+          ]
+        }
+      ),
+      translationPromptId && /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { variant: "secondary", onClick: () => onPreview(translationPromptId), children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Eye, { size: 14 }),
+        previewPromptId === translationPromptId ? "Ẩn" : "Xem",
+        " chi tiết"
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      backgroundColor: "var(--color-card)",
+      borderRadius: "12px",
+      padding: "1.5rem",
+      border: "1px solid var(--color-border)",
+      marginBottom: "1.5rem"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
+          width: "40px",
+          height: "40px",
+          borderRadius: "10px",
+          backgroundColor: "#8b5cf6",
+          color: "white",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 22 }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: { margin: 0, fontSize: "1.05rem", fontWeight: 600 }, children: "Prompt tóm tắt truyện" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "var(--color-text-secondary)" }, children: "Sử dụng khi tạo tóm tắt chương" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "select",
+        {
+          value: summaryPromptId,
+          onChange: (e) => onSummaryPromptChange(e.target.value),
+          className: styles.select,
+          style: { width: "100%", marginBottom: summaryPromptId ? "1rem" : 0 },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "🔍 Tự động (tìm prompt summary)" }),
+            prompts.map((p) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: p.id, children: [
+              p.name,
+              " • ",
+              p.sourceLang,
+              " → ",
+              p.targetLang
+            ] }, p.id))
+          ]
+        }
+      ),
+      summaryPromptId && /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { variant: "secondary", onClick: () => onPreview(summaryPromptId), children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Eye, { size: 14 }),
+        previewPromptId === summaryPromptId ? "Ẩn" : "Xem",
+        " chi tiết"
+      ] })
+    ] }),
+    previewPromptId && previewContent && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      backgroundColor: "var(--color-card)",
+      borderRadius: "12px",
+      border: "1px solid var(--color-border)",
+      overflow: "hidden",
+      marginBottom: "1.5rem"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        padding: "1rem 1.5rem",
+        backgroundColor: "var(--color-surface)",
+        borderBottom: "1px solid var(--color-border)",
+        fontWeight: 600,
+        fontSize: "0.95rem"
+      }, children: [
+        "Chi tiết: ",
+        previewContent.name
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "1.5rem" }, children: previewContent.content ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.75rem", color: "var(--color-primary)" }, children: "Nội dung Prompt" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("pre", { style: {
+          whiteSpace: "pre-wrap",
+          fontSize: "0.85rem",
+          backgroundColor: "var(--color-surface)",
+          padding: "1rem",
+          borderRadius: "8px",
+          maxHeight: "400px",
+          overflow: "auto",
+          margin: 0,
+          border: "1px solid var(--color-border)",
+          lineHeight: "1.6"
+        }, children: previewContent.content })
+      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { textAlign: "center", padding: "2rem", color: "var(--color-text-secondary)" }, children: "Prompt này chưa có nội dung" }) })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      position: "sticky",
+      bottom: 0,
+      backgroundColor: "var(--color-card)",
+      borderTop: "1px solid var(--color-border)",
+      padding: "1.25rem",
+      borderRadius: "12px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: hasChanges && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: "0.875rem", color: "#f59e0b", display: "flex", alignItems: "center", gap: "0.5rem" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(CircleAlert, { size: 16 }),
+        "Có thay đổi chưa lưu"
+      ] }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { onClick: onSave, variant: "primary", disabled: !hasChanges, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Save, { size: 16 }),
+        "Lưu cài đặt"
+      ] })
+    ] })
+  ] });
+}
+function ManageTab({ prompts, onEdit, onDelete }) {
+  if (prompts.length === 0) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+      textAlign: "center",
+      padding: "4rem 2rem",
+      backgroundColor: "var(--color-card)",
+      borderRadius: "12px",
+      border: "1px dashed var(--color-border)"
+    }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 48, style: { opacity: 0.3, marginBottom: "1rem" } }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: "1.05rem", fontWeight: 500, marginBottom: "0.5rem" }, children: "Chưa có prompt nào" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: "0.9rem", color: "var(--color-text-secondary)" }, children: 'Nhấn nút "Thêm mới" để tạo prompt đầu tiên' })
+    ] });
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gap: "1rem" }, children: prompts.map((prompt) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      style: {
+        backgroundColor: "var(--color-card)",
+        borderRadius: "12px",
+        padding: "1.25rem",
+        border: "1px solid var(--color-border)",
+        display: "flex",
+        alignItems: "center",
+        gap: "1.25rem",
+        transition: "all 0.2s",
+        cursor: "pointer"
+      },
+      onMouseEnter: (e) => {
+        e.currentTarget.style.borderColor = "var(--color-primary)";
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.borderColor = "var(--color-border)";
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "none";
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { style: { fontSize: "1rem" }, children: prompt.name }),
+            prompt.isDefault && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: {
+              fontSize: "0.7rem",
+              padding: "0.2rem 0.6rem",
+              backgroundColor: "var(--color-primary)",
+              color: "white",
+              borderRadius: "6px",
+              fontWeight: 600,
+              letterSpacing: "0.5px"
+            }, children: "MẶC ĐỊNH" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "0.85rem", color: "var(--color-text-secondary)" }, children: [
+            prompt.sourceLang,
+            " → ",
+            prompt.targetLang,
+            prompt.description && ` • ${prompt.description}`
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: "0.5rem" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            Button,
+            {
+              variant: "secondary",
+              iconOnly: true,
+              onClick: (e) => {
+                e.stopPropagation();
+                onEdit(prompt);
+              },
+              title: "Chỉnh sửa",
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 16 })
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            Button,
+            {
+              variant: "danger",
+              iconOnly: true,
+              onClick: (e) => {
+                e.stopPropagation();
+                onDelete(prompt.id, prompt.name);
+              },
+              title: "Xóa",
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 16 })
+            }
+          )
+        ] })
+      ]
+    },
+    prompt.id
+  )) });
+}
+function PromptFormModal({ mode, formData, onFormChange, onSubmit, onClose }) {
+  const handleOverlayClick = (e) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+  reactExports.useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      onClick: handleOverlayClick,
+      style: {
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0,0,0,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1e3,
+        padding: "2rem"
+      },
+      children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+        backgroundColor: "var(--color-card)",
+        borderRadius: "16px",
+        width: "100%",
+        maxWidth: "700px",
+        maxHeight: "85vh",
+        overflow: "auto",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
+      }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          padding: "1.5rem 2rem",
+          borderBottom: "1px solid var(--color-border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          position: "sticky",
+          top: 0,
+          backgroundColor: "var(--color-card)",
+          zIndex: 1,
+          borderRadius: "16px 16px 0 0"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { margin: 0, fontSize: "1.25rem", fontWeight: 600 }, children: mode === "create" ? "Tạo Prompt Mới" : "Chỉnh Sửa Prompt" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "secondary", iconOnly: true, onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 20 }) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "2rem" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gap: "1.5rem" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "2fr 3fr", gap: "1rem" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "block", marginBottom: "0.5rem", fontWeight: 500, fontSize: "0.9rem" }, children: [
+                "Tên ",
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#ef4444" }, children: "*" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "text",
+                  value: formData.name,
+                  onChange: (e) => onFormChange("name", e.target.value),
+                  placeholder: "Dịch truyện...",
+                  className: styles.input,
+                  style: { width: "100%" }
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { display: "block", marginBottom: "0.5rem", fontWeight: 500, fontSize: "0.9rem" }, children: "Mô tả" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "text",
+                  value: formData.description,
+                  onChange: (e) => onFormChange("description", e.target.value),
+                  placeholder: "Mô tả ngắn gọn...",
+                  className: styles.input,
+                  style: { width: "100%" }
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { display: "block", marginBottom: "0.5rem", fontWeight: 500, fontSize: "0.9rem" }, children: "Từ ngôn ngữ" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "select",
+                {
+                  value: formData.sourceLang,
+                  onChange: (e) => onFormChange("sourceLang", e.target.value),
+                  className: styles.select,
+                  style: { width: "100%" },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "zh", children: "中文 (zh)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "en", children: "English (en)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "ja", children: "日本語 (ja)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "ko", children: "한국어 (ko)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "vi", children: "Tiếng Việt (vi)" })
+                  ]
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { display: "block", marginBottom: "0.5rem", fontWeight: 500, fontSize: "0.9rem" }, children: "Sang ngôn ngữ" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "select",
+                {
+                  value: formData.targetLang,
+                  onChange: (e) => onFormChange("targetLang", e.target.value),
+                  className: styles.select,
+                  style: { width: "100%" },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "vi", children: "Tiếng Việt (vi)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "en", children: "English (en)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "zh", children: "中文 (zh)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "ja", children: "日本語 (ja)" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "ko", children: "한국어 (ko)" })
+                  ]
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "block", marginBottom: "0.5rem", fontWeight: 500, fontSize: "0.9rem" }, children: [
+              "Nội dung Prompt ",
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#ef4444" }, children: "*" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                value: formData.content,
+                onChange: (e) => onFormChange("content", e.target.value),
+                placeholder: "Nội dung prompt template...",
+                className: styles.textarea,
+                style: { width: "100%", minHeight: "180px", fontFamily: "monospace", fontSize: "0.85rem" }
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: "0.75rem", color: "var(--color-text-secondary)", marginTop: "0.5rem", textAlign: "right" }, children: [
+              formData.content.length,
+              " ký tự"
+            ] })
+          ] })
+        ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+          padding: "1.25rem 2rem",
+          borderTop: "1px solid var(--color-border)",
+          display: "flex",
+          gap: "0.75rem",
+          justifyContent: "flex-end",
+          position: "sticky",
+          bottom: 0,
+          backgroundColor: "var(--color-card)",
+          borderRadius: "0 0 16px 16px"
+        }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { variant: "secondary", onClick: onClose, children: "Hủy" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(Button, { variant: "primary", onClick: onSubmit, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Save, { size: 16 }),
+            mode === "create" ? "Tạo" : "Lưu"
+          ] })
+        ] })
+      ] })
+    }
+  );
+}
+function Toast({ message, type }) {
+  const bgColor = type === "success" ? "#10b981" : type === "error" ? "#ef4444" : "#3b82f6";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
+    position: "fixed",
+    bottom: "2rem",
+    right: "2rem",
+    padding: "1rem 1.5rem",
+    backgroundColor: bgColor,
+    color: "white",
+    borderRadius: "10px",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
+    zIndex: 1001,
+    animation: "slideIn 0.3s ease-out",
+    fontSize: "0.9rem",
+    fontWeight: 500
+  }, children: [
+    type === "success" && /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 18 }),
+    type === "error" && /* @__PURE__ */ jsxRuntimeExports.jsx(CircleAlert, { size: 18 }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: message })
   ] });
 }
 const menuItems = [
@@ -22866,6 +25893,12 @@ const menuItems = [
     label: "Dịch thuật",
     desc: "Cấu hình mô hình Gemini và các tham số dịch",
     icon: Languages
+  },
+  {
+    id: "prompts",
+    label: "Prompt Templates",
+    desc: "Chọn prompt cho dịch truyện và tóm tắt",
+    icon: FileText
   },
   {
     id: "tts",
@@ -22916,28 +25949,285 @@ function Settings() {
     ),
     activeTab === "output" && /* @__PURE__ */ jsxRuntimeExports.jsx(OutputSettings, { onBack: handleBack }),
     activeTab === "translation" && /* @__PURE__ */ jsxRuntimeExports.jsx(TranslationSettings, { onBack: handleBack }),
+    activeTab === "prompts" && /* @__PURE__ */ jsxRuntimeExports.jsx(PromptSettings, { onBack: handleBack }),
     activeTab === "tts" && /* @__PURE__ */ jsxRuntimeExports.jsx(TtsSettings, { onBack: handleBack }),
     activeTab === "app" && /* @__PURE__ */ jsxRuntimeExports.jsx(AppSettings, { onBack: handleBack }),
     activeTab === "apikeys" && /* @__PURE__ */ jsxRuntimeExports.jsx(ApiKeysSettings, { onBack: handleBack }),
     activeTab === "geminichat" && /* @__PURE__ */ jsxRuntimeExports.jsx(GeminiChatSettings, { onBack: handleBack }),
-    activeTab === "proxy" && /* @__PURE__ */ jsxRuntimeExports.jsx(ProxySettings, {})
+    activeTab === "proxy" && /* @__PURE__ */ jsxRuntimeExports.jsx(ProxySettings, { onBack: handleBack })
   ] });
 }
 const Veo3Page = () => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-6", children: [
   /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-3xl font-bold group flex items-center gap-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "bg-clip-text text-transparent bg-linear-to-r from-pink-500 to-violet-500", children: "Veo3 Prompt Builder" }) }),
   /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-8 rounded-2xl bg-linear-to-br from-purple-900/20 to-blue-900/20 border border-white/10", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-lg text-gray-300", children: "Create structured JSON prompts for Veo 3 video generation." }) })
 ] });
+const TabContext = reactExports.createContext(void 0);
+function TabProvider({ children }) {
+  const [activeTabId, setActiveTabId] = reactExports.useState("story");
+  const [openedTabs, setOpenedTabs] = reactExports.useState(["story"]);
+  const setActiveTab = (tabId) => {
+    setActiveTabId(tabId);
+    setOpenedTabs((prev) => prev.includes(tabId) ? prev : [...prev, tabId]);
+  };
+  const value = reactExports.useMemo(
+    () => ({ activeTabId, openedTabs, setActiveTab }),
+    [activeTabId, openedTabs]
+  );
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(TabContext.Provider, { value, children });
+}
+function useTabManager() {
+  const ctx = reactExports.useContext(TabContext);
+  if (!ctx) {
+    throw new Error("useTabManager phải được dùng bên trong TabProvider");
+  }
+  return ctx;
+}
+const TAB_ENTRIES = [
+  { id: "translator", element: /* @__PURE__ */ jsxRuntimeExports.jsx(CaptionTranslator, {}) },
+  { id: "story", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StoryTranslator, {}) },
+  { id: "storySummary", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StorySummary, {}) },
+  { id: "storyWeb", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StoryTranslatorWeb, {}) },
+  { id: "gemini", element: /* @__PURE__ */ jsxRuntimeExports.jsx(GeminiChat, {}) },
+  { id: "veo3", element: /* @__PURE__ */ jsxRuntimeExports.jsx(Veo3Page, {}) },
+  { id: "settings", element: /* @__PURE__ */ jsxRuntimeExports.jsx(Settings, {}) }
+];
+function TabHost() {
+  const { activeTabId, openedTabs } = useTabManager();
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "min-h-full", children: TAB_ENTRIES.map((tab) => {
+    if (!openedTabs.includes(tab.id)) return null;
+    const isActive = tab.id === activeTabId;
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: isActive ? "block" : "hidden", children: tab.element }, tab.id);
+  }) });
+}
+const TAB_BY_PATH = {
+  "/translator": "translator",
+  "/story-translator": "story",
+  "/story-summary": "storySummary",
+  "/story-web": "storyWeb",
+  "/gemini-chat": "gemini",
+  "/veo3": "veo3",
+  "/settings": "settings"
+};
+const AppLayout = () => {
+  const location = useLocation();
+  const { setActiveTab } = useTabManager();
+  const searchParams = new URLSearchParams(location.search);
+  const projectId = searchParams.get("projectId");
+  reactExports.useEffect(() => {
+    const nextTab = TAB_BY_PATH[location.pathname] ?? "story";
+    setActiveTab(nextTab);
+  }, [location.pathname, setActiveTab]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectProvider, { projectId, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex h-screen w-screen overflow-hidden bg-background text-text-primary", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(Sidebar, {}),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("main", { className: "flex-1 overflow-auto relative", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "absolute top-0 right-0 p-4 z-10" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-8 min-h-full", children: /* @__PURE__ */ jsxRuntimeExports.jsx(TabHost, {}) })
+    ] })
+  ] }) });
+};
+function ProjectDashboard() {
+  useThemeEffect();
+  const [projects, setProjects] = reactExports.useState([]);
+  const [loading, setLoading] = reactExports.useState(false);
+  const [error2, setError] = reactExports.useState(null);
+  const [newName, setNewName] = reactExports.useState("");
+  const [creating, setCreating] = reactExports.useState(false);
+  const [projectsPath, setProjectsPath] = reactExports.useState(null);
+  const loadProjects = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [pathRes, projectsRes] = await Promise.all([
+        window.electronAPI.project.getProjectsPath(),
+        window.electronAPI.project.scanProjects()
+      ]);
+      if (pathRes?.success) {
+        setProjectsPath(pathRes.data ?? null);
+      }
+      if (projectsRes?.success && Array.isArray(projectsRes.data)) {
+        setProjects(projectsRes.data);
+      } else {
+        setProjects([]);
+      }
+    } catch (err) {
+      console.error("[Lỗi] Không thể tải danh sách project:", err);
+      setError("Không thể tải danh sách project");
+    } finally {
+      setLoading(false);
+    }
+  };
+  reactExports.useEffect(() => {
+    loadProjects();
+  }, []);
+  const handleOpen = async (projectId) => {
+    try {
+      console.log("[UI] Đang yêu cầu mở project:", projectId);
+      await window.electronAPI.project.openProject(projectId);
+    } catch (err) {
+      console.error("[Lỗi] Không thể mở project:", err);
+    }
+  };
+  const handleCreateAndOpen = async () => {
+    const name = newName.trim();
+    if (!name) {
+      setError("Vui lòng nhập tên project");
+      return;
+    }
+    if (!projectsPath) {
+      setError("Vui lòng cấu hình thư mục Projects trong Settings trước");
+      return;
+    }
+    try {
+      setCreating(true);
+      setError(null);
+      console.log("[UI] Đang tạo và mở project:", name);
+      const res = await window.electronAPI.project.createAndOpen(name);
+      if (res?.success) {
+        setNewName("");
+      } else {
+        setError(res?.error || "Không thể tạo project");
+      }
+    } catch (err) {
+      console.error("[Lỗi] Không thể tạo/mở project:", err);
+      setError("Không thể tạo project. Vui lòng thử lại.");
+    } finally {
+      setCreating(false);
+    }
+  };
+  const goSettings = () => {
+    window.location.hash = "#/settings-standalone";
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-background text-text-primary", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "border-b border-border bg-card", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-5xl mx-auto px-6 py-4 flex items-center justify-between", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-text-invert", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FolderOpen, { size: 20 }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-lg font-bold", children: "Projects" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-text-secondary", children: projectsPath || "Chưa cấu hình thư mục" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: loadProjects,
+            className: "p-2 rounded-lg border border-border hover:bg-surface transition-colors",
+            title: "Làm mới",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 18 })
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: goSettings,
+            className: "p-2 rounded-lg border border-border hover:bg-surface transition-colors",
+            title: "Cài đặt",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(Settings$1, { size: 18 })
+          }
+        )
+      ] })
+    ] }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-5xl mx-auto px-6 py-6 space-y-6", children: [
+      !projectsPath && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-dashed border-border bg-card p-8 text-center space-y-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(FolderCog, { size: 48, className: "mx-auto text-text-muted" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-lg font-semibold text-text-primary mb-1", children: "Chưa cấu hình thư mục Projects" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm text-text-secondary", children: "Vui lòng vào Settings để chọn thư mục lưu trữ projects" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: goSettings,
+            className: "px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-text-invert",
+            children: "Mở Settings"
+          }
+        )
+      ] }),
+      projectsPath && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-border bg-card p-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "flex-1 px-3 py-2 rounded-lg bg-surface border border-border outline-none focus:border-primary text-text-primary placeholder:text-text-muted",
+                placeholder: "Tên project mới...",
+                value: newName,
+                onChange: (e) => setNewName(e.target.value),
+                onKeyDown: (e) => e.key === "Enter" && handleCreateAndOpen()
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                onClick: handleCreateAndOpen,
+                disabled: creating || !newName.trim(),
+                className: "px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-text-invert disabled:opacity-50 flex items-center gap-2",
+                children: [
+                  creating ? /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 16, className: "animate-spin" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { size: 16 }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: creating ? "Đang tạo..." : "Tạo" })
+                ]
+              }
+            )
+          ] }),
+          error2 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-2 text-sm text-red-600 dark:text-red-400", children: error2 })
+        ] }),
+        loading && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-center py-8 text-text-secondary", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 20, className: "animate-spin mr-2" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Đang tải..." })
+        ] }),
+        !loading && projects.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-xl border border-dashed border-border bg-card p-8 text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-text-secondary", children: "Chưa có project nào" }) }),
+        !loading && projects.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3", children: projects.map((p) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            onClick: () => handleOpen(p.id),
+            className: "text-left rounded-xl border border-border bg-card hover:bg-surface p-4 transition-all hover:border-border-hover",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FolderOpen, { size: 18, className: "text-primary" }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "font-semibold text-text-primary truncate", children: p.name }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs text-text-muted truncate", children: p.id })
+              ] })
+            ] })
+          },
+          p.id
+        )) })
+      ] })
+    ] })
+  ] });
+}
+function SettingsStandalone() {
+  useThemeEffect();
+  const goBack = () => {
+    window.location.hash = "#/projects";
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "min-h-screen bg-background text-text-primary", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-5xl mx-auto px-6 py-10 space-y-6", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-2xl font-bold text-text-primary", children: "Cài đặt ứng dụng" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-text-secondary", children: "Điều chỉnh cấu hình chung. Nhấn quay lại để về danh sách project." })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: goBack,
+          className: "px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-surface transition-colors flex items-center gap-2",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { size: 16 }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Quay về Projects" })
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-2xl border border-border bg-card p-5", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Settings, {}) })
+  ] }) });
+}
 function App() {
   useThemeEffect();
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(HashRouter, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(Routes, { children: /* @__PURE__ */ jsxRuntimeExports.jsxs(Route, { element: /* @__PURE__ */ jsxRuntimeExports.jsx(AppLayout, {}), children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(TabProvider, { children: /* @__PURE__ */ jsxRuntimeExports.jsx(HashRouter, { children: /* @__PURE__ */ jsxRuntimeExports.jsxs(Routes, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/projects", element: /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectDashboard, {}) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/settings-standalone", element: /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsStandalone, {}) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/", element: /* @__PURE__ */ jsxRuntimeExports.jsx(Navigate, { to: "/story-translator", replace: true }) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/translator", element: /* @__PURE__ */ jsxRuntimeExports.jsx(CaptionTranslator, {}) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/story-translator", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StoryTranslator, {}) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/story-web", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StoryTranslatorWeb, {}) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/gemini-chat", element: /* @__PURE__ */ jsxRuntimeExports.jsx(GeminiChat, {}) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/veo3", element: /* @__PURE__ */ jsxRuntimeExports.jsx(Veo3Page, {}) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/settings", element: /* @__PURE__ */ jsxRuntimeExports.jsx(Settings, {}) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "*", element: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: "404: Page Not Found" }) })
+    /* @__PURE__ */ jsxRuntimeExports.jsx(Route, { path: "/*", element: /* @__PURE__ */ jsxRuntimeExports.jsx(AppLayout, {}) })
   ] }) }) });
 }
 ReactDOM.createRoot(document.getElementById("root")).render(

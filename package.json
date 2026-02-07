@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "Tool cá nhân siêu cấp vipro của tính cute",
   "main": "./out/main/index.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
     "dev": "chcp 65001 && electron-vite dev",
     "build": "electron-vite build",
@@ -27,7 +24,7 @@
     "veo3",
     "prompt-builder"
   ],
-  "author": "",
+  "author": "TinhSoMa",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/TinhSoMa/NauChaoHeo/issues"
