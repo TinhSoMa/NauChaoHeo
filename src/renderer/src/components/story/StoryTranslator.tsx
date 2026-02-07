@@ -1320,7 +1320,8 @@ export function StoryTranslator() {
           </div>
           
           {/* Chapter list voi checkboxes */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 flex flex-col-reverse overflow-hidden">
+            <div className="flex-1 overflow-y-auto overflow-x-auto p-2 space-y-1">
             {chapters.map((chapter) => {
               const isProcessing = processingChapters.has(chapter.id);
               const processingInfo = processingChapters.get(chapter.id);
@@ -1332,7 +1333,7 @@ export function StoryTranslator() {
               return (
               <div
                 key={chapter.id}
-                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors whitespace-nowrap ${
                   selectedChapterId === chapter.id
                     ? 'bg-primary text-text-invert'
                     : 'text-text-secondary hover:bg-surface hover:text-text-primary'
@@ -1372,9 +1373,9 @@ export function StoryTranslator() {
                       setViewMode('original');
                     }
                   }}
-                  className="flex-1 text-left truncate flex items-center gap-2"
+                  className="min-w-0 flex-1 text-left flex items-center gap-2"
                 >
-                  <span className={`${
+                  <span className={`truncate ${
                     !isChapterIncluded(chapter.id)
                       ? selectedChapterId === chapter.id
                         ? 'text-white/60 italic'
@@ -1390,30 +1391,29 @@ export function StoryTranslator() {
                         ? extractTranslatedTitle(translatedChapters.get(chapter.id) || '', chapter.id)
                         : chapter.title)}
                   </span>
-                  
-                  {/* Processing Indicator */}
-                  {isProcessing && processingInfo && (
-                    <span className={`flex items-center gap-1 shrink-0 text-xs ${
-                      selectedChapterId === chapter.id ? 'text-yellow-300' : 'text-yellow-500'
-                    }`}>
-                      <span className={`px-1.5 py-0.5 rounded border ${
-                        selectedChapterId === chapter.id
-                          ? 'border-yellow-300/60 bg-yellow-300/10'
-                          : 'border-yellow-500/60 bg-yellow-500/10'
-                      }`}>
-                        {processingInfo.channel === 'api' ? 'API' : 'TOKEN'}
-                      </span>
-                      <Loader size={12} className="animate-spin" />
-                      <span className="font-mono">W{processingInfo.workerId}</span>
-                      <Clock size={10} />
-                      <span className="font-mono">{elapsedTime}s</span>
-                    </span>
-                  )}
-                  
-                  {/* Hiển thị tên chương đã dịch thay vì dấu tích */}
                 </button>
+
+                {/* Processing Indicator - outside button to prevent truncation */}
+                {isProcessing && processingInfo && (
+                  <span className={`flex items-center gap-1 shrink-0 text-xs ${
+                    selectedChapterId === chapter.id ? 'text-yellow-300' : 'text-yellow-500'
+                  }`}>
+                    <span className={`px-1.5 py-0.5 rounded border ${
+                      selectedChapterId === chapter.id
+                        ? 'border-yellow-300/60 bg-yellow-300/10'
+                        : 'border-yellow-500/60 bg-yellow-500/10'
+                    }`}>
+                      {processingInfo.channel === 'api' ? 'API' : 'TOKEN'}
+                    </span>
+                    <Loader size={12} className="animate-spin" />
+                    <span className="font-mono">W{processingInfo.workerId}</span>
+                    <Clock size={10} />
+                    <span className="font-mono">{elapsedTime}s</span>
+                  </span>
+                )}
               </div>
             )})}
+            </div>
           </div>
         </div>
 
