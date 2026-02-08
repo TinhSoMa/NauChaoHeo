@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CaptionTranslator } from '../caption'
+import { CaptionTranslator, CaptionVideo } from '../caption'
 import { StoryTranslator, StorySummary } from '../story'
 import { StoryTranslatorWeb } from '../story/StoryTranslatorWeb'
 import { GeminiChat } from '../gemini'
@@ -14,6 +14,7 @@ interface TabEntry {
 
 const TAB_ENTRIES: TabEntry[] = [
   { id: 'translator', element: <CaptionTranslator /> },
+  { id: 'captionVideo', element: <CaptionVideo /> },
   { id: 'story', element: <StoryTranslator /> },
   { id: 'storySummary', element: <StorySummary /> },
   { id: 'storyWeb', element: <StoryTranslatorWeb /> },

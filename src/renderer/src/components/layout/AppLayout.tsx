@@ -7,6 +7,7 @@ import { ProjectProvider } from '../../context/ProjectContext'
 
 const TAB_BY_PATH: Record<string, TabId> = {
   '/translator': 'translator',
+  '/caption-video': 'captionVideo',
   '/story-translator': 'story',
   '/story-summary': 'storySummary',
   '/story-web': 'storyWeb',

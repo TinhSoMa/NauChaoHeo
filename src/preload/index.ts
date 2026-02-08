@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { createGeminiAPI, GeminiAPI } from './geminiApi'
-import { createCaptionAPI, createTTSAPI, CaptionAPI, TTSAPI } from './captionApi'
+import { createCaptionAPI, createTTSAPI, createCaptionVideoAPI, CaptionAPI, TTSAPI, CaptionVideoAPI } from './captionApi'
 import { projectApi, ProjectAPI } from './projectApi'
 import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
 import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Prompt API (quan ly prompts)
   prompt: promptApi,
+
+  // Caption Video API (subtitle strip)
+  captionVideo: createCaptionVideoAPI(),
 })
 
 // Declare types for the exposed API
@@ -61,6 +64,7 @@ declare global {
       geminiChat: GeminiChatAPI
       proxy: ProxyAPI
       prompt: PromptAPI
+      captionVideo: CaptionVideoAPI
     }
   }
 }

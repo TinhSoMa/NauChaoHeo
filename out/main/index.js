@@ -2244,6 +2244,386 @@ async function translateAll(options, progressCallback) {
     errors: errors.length > 0 ? errors : void 0
   };
 }
+function srtTimeToAss(srtTime) {
+  const normalized = srtTime.replace(",", ".");
+  const parts = normalized.split(":");
+  if (parts.length === 3) {
+    const h = parseInt(parts[0], 10);
+    const m = parts[1];
+    const sParts = parts[2].split(".");
+    const s = sParts[0];
+    const ms = sParts[1] || "000";
+    const cs = ms.substring(0, 2);
+    return `${h}:${m}:${s}.${cs}`;
+  }
+  return srtTime;
+}
+function hexToAssColor(hexColor) {
+  const clean = hexColor.replace("#", "");
+  if (clean.length === 6) {
+    const r = clean.substring(0, 2);
+    const g = clean.substring(2, 4);
+    const b = clean.substring(4, 6);
+    return `&H00${b.toUpperCase()}${g.toUpperCase()}${r.toUpperCase()}`;
+  }
+  return "&H00FFFFFF";
+}
+async function getAssDuration(assPath) {
+  try {
+    const content = await fs__namespace$1.readFile(assPath, "utf-8");
+    const lines = content.split("\n");
+    let maxTime = 0;
+    for (const line of lines) {
+      if (line.trim().startsWith("Dialogue:")) {
+        const parts = line.split(",");
+        if (parts.length >= 3) {
+          const endTimeStr = parts[2].trim();
+          const timeParts = endTimeStr.replace(".", ":").split(":");
+          if (timeParts.length >= 3) {
+            const h = parseInt(timeParts[0], 10);
+            const m = parseInt(timeParts[1], 10);
+            const s = parseInt(timeParts[2], 10);
+            const totalSeconds = h * 3600 + m * 60 + s;
+            maxTime = Math.max(maxTime, totalSeconds);
+          }
+        }
+      }
+    }
+    if (maxTime > 0) {
+      return maxTime + 2;
+    }
+    return null;
+  } catch (error) {
+    console.error("[ASSConverter] Lỗi đọc duration:", error);
+    return null;
+  }
+}
+async function convertSrtToAss(options) {
+  const { srtPath, assPath, videoResolution, style, position } = options;
+  console.log(`[ASSConverter] Bắt đầu convert: ${path__namespace.basename(srtPath)}`);
+  try {
+    const srtResult = await parseSrtFile(srtPath);
+    if (!srtResult.success || srtResult.entries.length === 0) {
+      return {
+        success: false,
+        error: srtResult.error || "Không có subtitle entries nào"
+      };
+    }
+    const entries = srtResult.entries;
+    const w = videoResolution?.width || 1920;
+    const h = videoResolution?.height || 1080;
+    const assColor = hexToAssColor(style.fontColor);
+    let content = `[Script Info]
+Title: Converted by NauChaoHeo
+ScriptType: v4.00+
+PlayResX: ${w}
+PlayResY: ${h}
+ScaledBorderAndShadow: no
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${style.fontName},${style.fontSize},${assColor},&H000000FF,&H00000000,&HFF000000,0,0,0,0,100,100,0,0,1,2,${style.shadow},${style.alignment},10,10,${style.marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+    for (const entry of entries) {
+      const startAss = srtTimeToAss(entry.startTime);
+      const endAss = srtTimeToAss(entry.endTime);
+      let text = (entry.translatedText || entry.text).replace(/\n/g, "\\N");
+      if (position) {
+        text = `{\\pos(${position.x},${position.y})}${text}`;
+      }
+      content += `Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${text}
+`;
+    }
+    const dir = path__namespace.dirname(assPath);
+    await fs__namespace$1.mkdir(dir, { recursive: true });
+    await fs__namespace$1.writeFile(assPath, content, "utf-8");
+    console.log(`[ASSConverter] Convert thành công: ${entries.length} entries -> ${path__namespace.basename(assPath)}`);
+    return {
+      success: true,
+      assPath,
+      entriesCount: entries.length
+    };
+  } catch (error) {
+    const errorMsg = `Lỗi convert SRT sang ASS: ${error}`;
+    console.error(`[ASSConverter] ${errorMsg}`);
+    return {
+      success: false,
+      error: errorMsg
+    };
+  }
+}
+function getFFmpegPath() {
+  const isPackaged = electron.app.isPackaged;
+  if (isPackaged) {
+    return path.join(process.resourcesPath, "ffmpeg", "ffmpeg.exe");
+  } else {
+    return path.join(electron.app.getAppPath(), "resources", "ffmpeg", "win32", "ffmpeg.exe");
+  }
+}
+function getFFprobePath() {
+  const isPackaged = electron.app.isPackaged;
+  if (isPackaged) {
+    return path.join(process.resourcesPath, "ffmpeg", "ffprobe.exe");
+  } else {
+    return path.join(electron.app.getAppPath(), "resources", "ffmpeg", "win32", "ffprobe.exe");
+  }
+}
+function isFFmpegAvailable() {
+  const ffmpegPath = getFFmpegPath();
+  const ffprobePath = getFFprobePath();
+  const ffmpegExists = fs.existsSync(ffmpegPath);
+  const ffprobeExists = fs.existsSync(ffprobePath);
+  if (!ffmpegExists) {
+    console.warn(`[FFmpeg] Không tìm thấy ffmpeg tại: ${ffmpegPath}`);
+  }
+  if (!ffprobeExists) {
+    console.warn(`[FFmpeg] Không tìm thấy ffprobe tại: ${ffprobePath}`);
+  }
+  return ffmpegExists && ffprobeExists;
+}
+async function getVideoMetadata(videoPath) {
+  if (!fs.existsSync(videoPath)) {
+    return { success: false, error: `File không tồn tại: ${videoPath}` };
+  }
+  const ffprobePath = getFFprobePath();
+  if (!fs.existsSync(ffprobePath)) {
+    return { success: false, error: `ffprobe không tìm thấy: ${ffprobePath}` };
+  }
+  return new Promise((resolve) => {
+    const args = [
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
+      "-show_format",
+      "-show_streams",
+      videoPath
+    ];
+    const process2 = child_process.spawn(ffprobePath, args);
+    let stdout = "";
+    let stderr = "";
+    process2.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+    process2.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    process2.on("close", (code) => {
+      if (code !== 0) {
+        resolve({ success: false, error: stderr || `ffprobe exit code: ${code}` });
+        return;
+      }
+      try {
+        const info = JSON.parse(stdout);
+        const videoStream = info.streams?.find((s) => s.codec_type === "video");
+        if (!videoStream) {
+          resolve({ success: false, error: "Không tìm thấy video stream" });
+          return;
+        }
+        const fpsStr = videoStream.r_frame_rate || "30/1";
+        const fpsParts = fpsStr.split("/");
+        const fps = fpsParts.length === 2 ? parseInt(fpsParts[0]) / parseInt(fpsParts[1]) : 30;
+        const metadata = {
+          width: videoStream.width || 1920,
+          height: videoStream.height || 1080,
+          duration: parseFloat(info.format?.duration || "0"),
+          frameCount: parseInt(videoStream.nb_frames || "0") || Math.floor(parseFloat(info.format?.duration || "0") * fps),
+          fps: Math.round(fps * 100) / 100
+        };
+        console.log(`[VideoRenderer] Metadata: ${metadata.width}x${metadata.height}, ${metadata.duration}s, ${metadata.fps}fps`);
+        resolve({ success: true, metadata });
+      } catch (error) {
+        resolve({ success: false, error: `Lỗi parse metadata: ${error}` });
+      }
+    });
+    process2.on("error", (error) => {
+      resolve({ success: false, error: `Lỗi ffprobe: ${error.message}` });
+    });
+  });
+}
+async function extractVideoFrame(videoPath, frameNumber) {
+  if (!fs.existsSync(videoPath)) {
+    return { success: false, error: `File không tồn tại: ${videoPath}` };
+  }
+  const ffmpegPath = getFFmpegPath();
+  if (!fs.existsSync(ffmpegPath)) {
+    return { success: false, error: `ffmpeg không tìm thấy: ${ffmpegPath}` };
+  }
+  const metadataResult = await getVideoMetadata(videoPath);
+  if (!metadataResult.success || !metadataResult.metadata) {
+    return { success: false, error: metadataResult.error || "Không lấy được metadata" };
+  }
+  const { duration, width, height, fps } = metadataResult.metadata;
+  let seekTime;
+  if (frameNumber !== void 0) {
+    seekTime = frameNumber / fps;
+  } else {
+    seekTime = duration * (0.1 + Math.random() * 0.8);
+  }
+  return new Promise((resolve) => {
+    const args = [
+      "-ss",
+      seekTime.toFixed(2),
+      "-i",
+      videoPath,
+      "-vframes",
+      "1",
+      "-f",
+      "image2pipe",
+      "-vcodec",
+      "png",
+      "-"
+    ];
+    const process2 = child_process.spawn(ffmpegPath, args);
+    const chunks = [];
+    process2.stdout.on("data", (data) => {
+      chunks.push(data);
+    });
+    process2.on("close", (code) => {
+      if (code !== 0 || chunks.length === 0) {
+        resolve({ success: false, error: "Không thể extract frame" });
+        return;
+      }
+      const frameBuffer = Buffer.concat(chunks);
+      const frameData = frameBuffer.toString("base64");
+      console.log(`[VideoRenderer] Extracted frame at ${seekTime.toFixed(2)}s, size: ${frameBuffer.length} bytes`);
+      resolve({
+        success: true,
+        frameData,
+        width,
+        height
+      });
+    });
+    process2.on("error", (error) => {
+      resolve({ success: false, error: `Lỗi ffmpeg: ${error.message}` });
+    });
+  });
+}
+async function renderAssToVideo(options, progressCallback) {
+  const { assPath, outputPath, width, height, useGpu } = options;
+  console.log(`[VideoRenderer] Bắt đầu render: ${path__namespace.basename(assPath)}`);
+  if (!isFFmpegAvailable()) {
+    return { success: false, error: "FFmpeg không được cài đặt" };
+  }
+  if (!fs.existsSync(assPath)) {
+    return { success: false, error: `File ASS không tồn tại: ${assPath}` };
+  }
+  const duration = await getAssDuration(assPath) || 60;
+  const fps = 30;
+  const totalFrames = Math.floor(duration * fps);
+  console.log(`[VideoRenderer] Duration: ${duration}s, Total frames: ${totalFrames}`);
+  const outputDir = path__namespace.dirname(outputPath);
+  await fs__namespace$1.mkdir(outputDir, { recursive: true });
+  const assFilter = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+  const { app } = await import("electron");
+  const isPackaged = app.isPackaged;
+  const fontsDir = isPackaged ? path__namespace.join(process.resourcesPath, "fonts") : path__namespace.join(app.getAppPath(), "resources", "fonts");
+  const fontsDirEscaped = fontsDir.replace(/\\/g, "/").replace(/:/g, "\\:");
+  const assFilterFull = fs.existsSync(fontsDir) ? `ass='${assFilter}':fontsdir='${fontsDirEscaped}'` : `ass='${assFilter}'`;
+  console.log(`[VideoRenderer] Fonts dir: ${fontsDir} (exists: ${fs.existsSync(fontsDir)})`);
+  let videoCodec;
+  let codecParams;
+  if (useGpu) {
+    videoCodec = "h264_qsv";
+    codecParams = ["-preset", "medium", "-global_quality", "23"];
+  } else {
+    videoCodec = "libx264";
+    codecParams = ["-preset", "medium", "-crf", "23"];
+  }
+  const ffmpegPath = getFFmpegPath();
+  const args = [
+    "-f",
+    "lavfi",
+    "-i",
+    `color=black:s=${width}x${height}:d=${duration}:r=${fps}`,
+    "-vf",
+    assFilterFull,
+    "-c:v",
+    videoCodec,
+    ...codecParams,
+    "-pix_fmt",
+    "yuv420p",
+    "-y",
+    outputPath
+  ];
+  console.log(`[VideoRenderer] Command: ffmpeg ${args.join(" ")}`);
+  return new Promise((resolve) => {
+    const process2 = child_process.spawn(ffmpegPath, args);
+    let stderr = "";
+    process2.stderr.on("data", (data) => {
+      const line = data.toString();
+      stderr += line;
+      const frameMatch = line.match(/frame=\s*(\d+)/);
+      if (frameMatch && progressCallback) {
+        const currentFrame = parseInt(frameMatch[1], 10);
+        const percent = Math.min(100, Math.round(currentFrame / totalFrames * 100));
+        progressCallback({
+          currentFrame,
+          totalFrames,
+          fps,
+          percent,
+          status: "rendering",
+          message: `Đang render: ${percent}%`
+        });
+      }
+    });
+    process2.on("close", (code) => {
+      if (code === 0) {
+        console.log(`[VideoRenderer] Render thành công: ${outputPath}`);
+        if (progressCallback) {
+          progressCallback({
+            currentFrame: totalFrames,
+            totalFrames,
+            fps,
+            percent: 100,
+            status: "completed",
+            message: "Hoàn thành!"
+          });
+        }
+        resolve({
+          success: true,
+          outputPath,
+          duration
+        });
+      } else {
+        console.error(`[VideoRenderer] Render thất bại, code: ${code}`);
+        console.error(`[VideoRenderer] stderr: ${stderr}`);
+        if (useGpu && (stderr.includes("qsv") || stderr.includes("encode") || stderr.includes("Error"))) {
+          console.log("[VideoRenderer] GPU encoding thất bại, thử lại với CPU...");
+          renderAssToVideo(
+            { ...options, useGpu: false },
+            progressCallback
+          ).then(resolve);
+          return;
+        }
+        if (progressCallback) {
+          progressCallback({
+            currentFrame: 0,
+            totalFrames,
+            fps: 0,
+            percent: 0,
+            status: "error",
+            message: `Lỗi render: ${stderr.substring(0, 200)}`
+          });
+        }
+        resolve({
+          success: false,
+          error: stderr || `FFmpeg exit code: ${code}`
+        });
+      }
+    });
+    process2.on("error", (error) => {
+      console.error(`[VideoRenderer] Process error: ${error.message}`);
+      resolve({
+        success: false,
+        error: `Lỗi FFmpeg: ${error.message}`
+      });
+    });
+  });
+}
 function registerCaptionHandlers() {
   console.log("[CaptionHandlers] Đăng ký handlers...");
   electron.ipcMain.handle(
@@ -2339,6 +2719,110 @@ function registerCaptionHandlers() {
         return { success: result.success, data: { partsCount: result.partsCount, files: result.files }, error: result.error };
       } catch (error) {
         console.error("[CaptionHandlers] Lỗi split:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "captionVideo:convertToAss",
+    async (_event, options) => {
+      console.log(`[CaptionHandlers] Convert SRT to ASS: ${options.srtPath}`);
+      try {
+        const result = await convertSrtToAss(options);
+        if (result.success && result.assPath) {
+          return {
+            success: true,
+            data: { assPath: result.assPath, entriesCount: result.entriesCount || 0 }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi convert ASS:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "captionVideo:renderVideo",
+    async (event, options) => {
+      console.log(`[CaptionHandlers] Render video: ${options.assPath} -> ${options.outputPath}`);
+      try {
+        const progressCallback = (progress) => {
+          const window = electron.BrowserWindow.fromWebContents(event.sender);
+          if (window) {
+            window.webContents.send("captionVideo:renderProgress", progress);
+          }
+        };
+        const result = await renderAssToVideo(options, progressCallback);
+        if (result.success && result.outputPath) {
+          return {
+            success: true,
+            data: { outputPath: result.outputPath, duration: result.duration || 0 }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi render video:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "captionVideo:getVideoMetadata",
+    async (_event, videoPath) => {
+      console.log(`[CaptionHandlers] Get video metadata: ${videoPath}`);
+      try {
+        const result = await getVideoMetadata(videoPath);
+        if (result.success && result.metadata) {
+          return { success: true, data: result.metadata };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi get metadata:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "captionVideo:extractFrame",
+    async (_event, videoPath, frameNumber) => {
+      console.log(`[CaptionHandlers] Extract frame: ${videoPath}, frame=${frameNumber || "random"}`);
+      try {
+        const result = await extractVideoFrame(videoPath, frameNumber);
+        if (result.success && result.frameData) {
+          return {
+            success: true,
+            data: {
+              frameData: result.frameData,
+              width: result.width || 0,
+              height: result.height || 0
+            }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi extract frame:", error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+  electron.ipcMain.handle(
+    "caption:saveJson",
+    async (_event, options) => {
+      console.log(`[CaptionHandlers] Lưu JSON: ${options.filePath}`);
+      try {
+        const fs2 = await import("fs/promises");
+        const path2 = await import("path");
+        const dir = path2.dirname(options.filePath);
+        await fs2.mkdir(dir, { recursive: true });
+        await fs2.writeFile(
+          options.filePath,
+          JSON.stringify(options.data, null, 2),
+          "utf-8"
+        );
+        return { success: true, data: options.filePath };
+      } catch (error) {
+        console.error("[CaptionHandlers] Lỗi lưu JSON:", error);
         return { success: false, error: String(error) };
       }
     }

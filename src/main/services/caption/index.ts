@@ -33,3 +33,18 @@ export {
   translateSingleText,
 } from './captionTranslator';
 
+// ASS Converter (SRT -> ASS)
+export {
+  srtTimeToAss,
+  hexToAssColor,
+  convertSrtToAss,
+  getAssDuration,
+  DEFAULT_ASS_STYLE,
+} from './assConverter';
+
+// Video Renderer (ASS -> Video)
+export {
+  getVideoMetadata,
+  extractVideoFrame,
+  renderAssToVideo,
+} from './videoRenderer';

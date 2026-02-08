@@ -62,6 +62,13 @@ const CAPTION_IPC_CHANNELS = {
   AUDIO_ANALYZE: "audio:analyze",
   AUDIO_MERGE: "audio:merge"
 };
+const CAPTION_VIDEO_IPC_CHANNELS = {
+  CONVERT_TO_ASS: "captionVideo:convertToAss",
+  RENDER_VIDEO: "captionVideo:renderVideo",
+  RENDER_PROGRESS: "captionVideo:renderProgress",
+  GET_VIDEO_METADATA: "captionVideo:getVideoMetadata",
+  EXTRACT_FRAME: "captionVideo:extractFrame"
+};
 function createCaptionAPI() {
   return {
     parseSrt: (filePath) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.PARSE_SRT, filePath),
@@ -88,6 +95,19 @@ function createTTSAPI() {
     analyzeAudio: (audioFiles, srtDuration) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_ANALYZE, audioFiles, srtDuration),
     mergeAudio: (audioFiles, outputPath, timeScale = 1) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_MERGE, audioFiles, outputPath, timeScale),
     trimSilence: (audioPaths) => electron.ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths)
+  };
+}
+function createCaptionVideoAPI() {
+  return {
+    convertToAss: (options) => electron.ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.CONVERT_TO_ASS, options),
+    renderVideo: (options) => electron.ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO, options),
+    onRenderProgress: (callback) => {
+      electron.ipcRenderer.on(CAPTION_VIDEO_IPC_CHANNELS.RENDER_PROGRESS, (_event, progress) => {
+        callback(progress);
+      });
+    },
+    getVideoMetadata: (videoPath) => electron.ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.GET_VIDEO_METADATA, videoPath),
+    extractFrame: (videoPath, frameNumber) => electron.ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.EXTRACT_FRAME, videoPath, frameNumber)
   };
 }
 const PROJECT_IPC_CHANNELS = {
@@ -235,5 +255,7 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   // Proxy API (quan ly proxy rotation)
   proxy: proxyApi,
   // Prompt API (quan ly prompts)
-  prompt: promptApi
+  prompt: promptApi,
+  // Caption Video API (subtitle strip)
+  captionVideo: createCaptionVideoAPI()
 });

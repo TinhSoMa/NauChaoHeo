@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText } from 'lucide-react';
+import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Film } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -23,6 +23,7 @@ export const Sidebar = () => {
 
   const navItems = [
     { icon: Subtitles, label: 'Dich Caption', path: '/translator' },
+    { icon: Film, label: 'Caption Video', path: '/caption-video' },
     { icon: BookOpen, label: 'Dich Truyen AI', path: '/story-translator' },
     { icon: FileText, label: 'Tom Tat Truyen AI', path: '/story-summary' },
     { icon: MessageCircle, label: 'Dich Truyen (Web)', path: '/story-web' },

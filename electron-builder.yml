@@ -22,6 +22,13 @@ files:
 asarUnpack:
   - node_modules/better-sqlite3/**/*
 
+# FFmpeg binaries (copy vào resources/ffmpeg khi đóng gói)
+extraResources:
+  - from: resources/ffmpeg/${os}
+    to: ffmpeg
+    filter:
+      - "**/*"
+
 # Cấu hình Windows
 win:
   target:
