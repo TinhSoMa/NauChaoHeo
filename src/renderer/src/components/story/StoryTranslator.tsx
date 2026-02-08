@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 // import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
@@ -6,7 +6,7 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { BookOpen, FileText, CheckSquare, Square, StopCircle, Download, Loader, Clock } from 'lucide-react';
-import { useProjectContext } from '../../context/ProjectContext';
+import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
 
 interface GeminiChatConfigLite {
   id: string;
@@ -30,9 +30,6 @@ const buildTokenKey = (config: GeminiChatConfigLite): string => {
 };
 
 export function StoryTranslator() {
-  const { projectId, paths } = useProjectContext();
-  const hasLoadedRef = useRef(false);
-  const saveTimeoutRef = useRef<number | null>(null);
   const [filePath, setFilePath] = useState('');
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
@@ -317,136 +314,115 @@ export function StoryTranslator() {
       }
   }
 
-  const loadStoryState = async () => {
-    if (!projectId) return;
+  // === useProjectFeatureState: auto load/save project state ===
+  const { projectId } = useProjectFeatureState<{
+    filePath?: string;
+    sourceLang?: string;
+    targetLang?: string;
+    model?: string;
+    translateMode?: 'api' | 'token' | 'both';
+    translatedEntries?: Array<[string, string]>;
+    chapterModels?: Array<[string, string]>;
+    chapterMethods?: Array<[string, 'api' | 'token']>;
+    translatedTitles?: Array<{ id: string; title: string }>;
+    tokenConfigId?: string | null;
+    tokenContext?: TokenContext | null;
+    tokenContexts?: Array<[string, TokenContext]>;
+    viewMode?: 'original' | 'translated';
+    excludedChapterIds?: string[];
+    selectedChapterId?: string | null;
+  }>({
+    feature: 'story',
+    fileName: STORY_STATE_FILE,
+    serialize: () => {
+      const orderedTranslatedEntries = chapters
+        .filter((c) => translatedChapters.has(c.id))
+        .map((c) => [c.id, translatedChapters.get(c.id)!] as [string, string]);
 
-    try {
-      const res = await window.electronAPI.project.readFeatureFile({
-        projectId,
-        feature: 'story',
-        fileName: STORY_STATE_FILE
+      const orderedChapterModels = orderedTranslatedEntries.map(([chapterId]) => {
+        const usedModel = chapterModels.get(chapterId) || model;
+        return [chapterId, usedModel] as [string, string];
       });
 
-      if (res?.success && res.data) {
-        const saved = JSON.parse(res.data) as {
-          filePath?: string;
-          sourceLang?: string;
-          targetLang?: string;
-          model?: string;
-          translateMode?: 'api' | 'token' | 'both';
-          translatedEntries?: Array<[string, string]>;
-          chapterModels?: Array<[string, string]>;
-          chapterMethods?: Array<[string, 'api' | 'token']>;
-          translatedTitles?: Array<{ id: string; title: string }>;
-          tokenConfigId?: string | null;
-          tokenContext?: TokenContext | null;
-          tokenContexts?: Array<[string, TokenContext]>;
-          viewMode?: 'original' | 'translated';
-          excludedChapterIds?: string[];
-          selectedChapterId?: string | null;
-        };
+      const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
+        const usedMethod = chapterMethods.get(chapterId) || (translateMode === 'token' ? 'token' : 'api');
+        return [chapterId, usedMethod] as [string, 'api' | 'token'];
+      });
 
-        if (saved.sourceLang) setSourceLang(saved.sourceLang);
-        if (saved.targetLang) setTargetLang(saved.targetLang);
-        if (saved.model) setModel(saved.model);
-        if (saved.translateMode) setTranslateMode(saved.translateMode);
-        if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
-        if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
-        if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
-        if (saved.translatedTitles) {
-          setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title] as [string, string])));
-        }
-        if (typeof saved.tokenConfigId !== 'undefined') {
-          setTokenConfigId(saved.tokenConfigId || null);
-        }
-        if (saved.tokenContexts && saved.tokenContexts.length > 0) {
-          setTokenContexts(new Map(saved.tokenContexts));
-        } else if (saved.tokenContext && saved.tokenConfigId) {
-          setTokenContexts(new Map([[saved.tokenConfigId, saved.tokenContext]]));
-        }
+      const serializedTitles = orderedTranslatedEntries.map(([chapterId, content]) => ({
+        id: chapterId,
+        title: extractTranslatedTitle(content, chapterId)
+      }));
 
-        let parsedOk = false;
-        if (saved.filePath) {
-          setFilePath(saved.filePath);
-          parsedOk = await parseFile(saved.filePath, { keepTranslations: true, keepSelection: true });
-        }
-
-        if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
-          setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: '' })));
-        }
-
-        if (saved.viewMode) setViewMode(saved.viewMode);
-        if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
-        if (typeof saved.selectedChapterId !== 'undefined') setSelectedChapterId(saved.selectedChapterId);
+      return {
+        filePath,
+        sourceLang,
+        targetLang,
+        model,
+        translateMode,
+        translatedEntries: orderedTranslatedEntries,
+        chapterModels: orderedChapterModels,
+        chapterMethods: orderedChapterMethods,
+        translatedTitles: serializedTitles,
+        tokenConfigId,
+        tokenContexts: Array.from(tokenContexts.entries()),
+        viewMode,
+        excludedChapterIds: Array.from(excludedChapterIds.values()),
+        selectedChapterId
+      };
+    },
+    deserialize: async (saved) => {
+      if (saved.sourceLang) setSourceLang(saved.sourceLang);
+      if (saved.targetLang) setTargetLang(saved.targetLang);
+      if (saved.model) setModel(saved.model);
+      if (saved.translateMode) setTranslateMode(saved.translateMode);
+      if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
+      if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
+      if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
+      if (saved.translatedTitles) {
+        setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title] as [string, string])));
       }
-    } catch (error) {
-      console.error('[StoryTranslator] Loi khi tai du lieu project:', error);
-    } finally {
-      hasLoadedRef.current = true;
-    }
-  };
+      if (typeof saved.tokenConfigId !== 'undefined') {
+        setTokenConfigId(saved.tokenConfigId || null);
+      }
+      if (saved.tokenContexts && saved.tokenContexts.length > 0) {
+        setTokenContexts(new Map(saved.tokenContexts));
+      } else if (saved.tokenContext && saved.tokenConfigId) {
+        setTokenContexts(new Map([[saved.tokenConfigId, saved.tokenContext]]));
+      }
 
-  const saveStoryState = async () => {
-    if (!projectId) return;
+      let parsedOk = false;
+      if (saved.filePath) {
+        setFilePath(saved.filePath);
+        parsedOk = await parseFile(saved.filePath, { keepTranslations: true, keepSelection: true });
+      }
 
-    // Các thuộc tính được lưu vào project/story/story-translator.json:
-    // - filePath: đường dẫn file input gốc (không lưu text gốc)
-    // - sourceLang/targetLang: cặp ngôn ngữ dịch
-    // - model: model mặc định đang chọn
-    // - translatedEntries: map chapterId -> nội dung đã dịch
-    // - chapterModels: map chapterId -> model đã dùng cho chương đó
-    // - translatedTitles: danh sách (id, title) của chương đã dịch để hiển thị khi không parse lại được input
-    // - viewMode: chế độ xem (original/translated)
-    // - excludedChapterIds: các chương bị loại trừ
-    // - selectedChapterId: chương đang chọn
-    const orderedTranslatedEntries = chapters
-      .filter((c) => translatedChapters.has(c.id))
-      .map((c) => [c.id, translatedChapters.get(c.id)!] as [string, string]);
+      if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
+        setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: '' })));
+      }
 
-    const orderedChapterModels = orderedTranslatedEntries.map(([chapterId]) => {
-      const usedModel = chapterModels.get(chapterId) || model;
-      return [chapterId, usedModel] as [string, string];
-    });
-
-    const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
-      const usedMethod = chapterMethods.get(chapterId) || (translateMode === 'token' ? 'token' : 'api');
-      return [chapterId, usedMethod] as [string, 'api' | 'token'];
-    });
-
-    const translatedTitles = orderedTranslatedEntries.map(([chapterId, content]) => ({
-      id: chapterId,
-      title: extractTranslatedTitle(content, chapterId)
-    }));
-
-    const payload = {
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
+      if (typeof saved.selectedChapterId !== 'undefined') setSelectedChapterId(saved.selectedChapterId);
+    },
+    deps: [
       filePath,
       sourceLang,
       targetLang,
       model,
       translateMode,
-      translatedEntries: orderedTranslatedEntries,
-      chapterModels: orderedChapterModels,
-      chapterMethods: orderedChapterMethods,
+      chapters,
+      translatedChapters,
+      chapterModels,
+      chapterMethods,
       translatedTitles,
       tokenConfigId,
-      tokenContexts: Array.from(tokenContexts.entries()),
+      tokenContexts,
       viewMode,
-      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      excludedChapterIds,
       selectedChapterId
-    };
-
-    await window.electronAPI.project.writeFeatureFile({
-      projectId,
-      feature: 'story',
-      fileName: STORY_STATE_FILE,
-      content: payload
-    });
-  };
-
-  useEffect(() => {
-    if (!projectId || !paths) return;
-    loadStoryState();
-  }, [projectId, paths]);
+    ],
+  });
 
   useEffect(() => {
     loadConfigurations();
@@ -460,42 +436,6 @@ export function StoryTranslator() {
       }
     }
   }, [translateMode, tokenConfigId]);
-
-  useEffect(() => {
-    if (!projectId || !paths || !hasLoadedRef.current) return;
-
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveStoryState();
-    }, 500);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [
-    projectId,
-    paths,
-    filePath,
-    sourceLang,
-    targetLang,
-    model,
-    translateMode,
-    chapters,
-    translatedChapters,
-    chapterModels,
-    chapterMethods,
-    translatedTitles,
-    tokenConfigId,
-    tokenContexts,
-    viewMode,
-    excludedChapterIds,
-    selectedChapterId
-  ]);
 
   useEffect(() => {
     if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;

@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 // import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Select } from '../common/Select';
 import { FileText, CheckSquare, Square, StopCircle, Loader, Clock, Sparkles, Download } from 'lucide-react';
-import { useProjectContext } from '../../context/ProjectContext';
+import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
 
 interface GeminiChatConfigLite {
   id: string;
@@ -29,9 +29,6 @@ const buildTokenKey = (config: GeminiChatConfigLite): string => {
 };
 
 export function StorySummary() {
-  const { projectId, paths } = useProjectContext();
-  const hasLoadedRef = useRef(false);
-  const saveTimeoutRef = useRef<number | null>(null);
   // Source data từ translator
   const [sourceLang, setSourceLang] = useState('vi'); // Đã dịch sang tiếng Việt
   const [targetLang, setTargetLang] = useState('vi'); // Tóm tắt cũng bằng tiếng Việt
@@ -262,25 +259,63 @@ export function StorySummary() {
   };
 
   // Debug logging
-  console.log('[StorySummary] Render - projectId:', projectId);
-  console.log('[StorySummary] Render - paths:', paths);
   console.log('[StorySummary] Render - summaries.size:', summaries.size);
   console.log('[StorySummary] Render - status:', status);
   console.log('[StorySummary] Render - chapters.length:', chapters.length);
   console.log('[StorySummary] Render - sourceChapters.size:', sourceChapters.size);
 
-  const loadStoryState = async () => {
-    if (!projectId) {
-      console.log('[StorySummary] Không có projectId, bỏ qua load');
-      return;
-    }
+  // === useProjectFeatureState: auto load/save project state ===
+  // StorySummary dùng customLoad vì cần đọc 2 file: translator (source) + summary (state)
+  const { projectId } = useProjectFeatureState({
+    feature: 'story',
+    fileName: STORY_STATE_FILE,
+    serialize: () => {
+      const orderedSummaries = chapters
+        .filter((c) => summaries.has(c.id))
+        .map((c) => [c.id, summaries.get(c.id)!] as [string, string]);
 
-    console.log('[StorySummary] Bắt đầu load dữ liệu...');
+      const orderedChapterModels = orderedSummaries.map(([chapterId]) => {
+        const usedModel = chapterModels.get(chapterId) || model;
+        return [chapterId, usedModel] as [string, string];
+      });
 
-    try {
+      const orderedChapterMethods = orderedSummaries.map(([chapterId]) => {
+        const usedMethod = chapterMethods.get(chapterId) || (translateMode === 'token' ? 'token' : 'api');
+        return [chapterId, usedMethod] as [string, 'api' | 'token'];
+      });
+
+      const orderedSummaryTitles = orderedSummaries.map(([chapterId]) => {
+        const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || chapters.find(c => c.id === chapterId)?.title || '';
+        return [chapterId, title] as [string, string];
+      });
+
+      return {
+        model,
+        translateMode,
+        summaries: orderedSummaries,
+        chapterModels: orderedChapterModels,
+        chapterMethods: orderedChapterMethods,
+        summaryTitles: orderedSummaryTitles,
+        tokenConfigId,
+        tokenContexts: Array.from(tokenContexts.entries()),
+        viewMode,
+        excludedChapterIds: Array.from(excludedChapterIds.values()),
+        selectedChapterId
+      };
+    },
+    deserialize: () => { /* not used - customLoad handles loading */ },
+    customLoad: async () => {
+      const pid = projectId;
+      if (!pid) {
+        console.log('[StorySummary] Không có projectId, bỏ qua load');
+        return;
+      }
+
+      console.log('[StorySummary] Bắt đầu load dữ liệu...');
+
       // 1. Load translator data (source chapters - bản dịch dùng để tóm tắt)
       const translatorRes = await window.electronAPI.project.readFeatureFile({
-        projectId,
+        projectId: pid,
         feature: 'story',
         fileName: TRANSLATOR_FILE
       });
@@ -302,11 +337,9 @@ export function StorySummary() {
           translatedTitlesCount: translatorData.translatedTitles?.length || 0
         });
 
-        // Set sourceLang/targetLang from translator (bản dịch là tiếng gì)
         if (translatorData.sourceLang) setSourceLang(translatorData.targetLang || 'vi');
         if (translatorData.targetLang) setTargetLang(translatorData.targetLang || 'vi');
-        
-        // Load source chapters (bản dịch)
+
         if (translatorData.translatedEntries) {
           const sourceMap = new Map(translatorData.translatedEntries);
           setSourceChapters(sourceMap);
@@ -314,8 +347,7 @@ export function StorySummary() {
         } else {
           console.warn('[StorySummary] Không tìm thấy translatedEntries trong translator file');
         }
-        
-        // Load titles
+
         if (translatorData.translatedTitles) {
           const titleMap = new Map(translatorData.translatedTitles.map((t) => [t.id, t.title] as [string, string]));
           const chapterList = translatorData.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: '' }));
@@ -331,7 +363,7 @@ export function StorySummary() {
 
       // 2. Load summary data
       const summaryRes = await window.electronAPI.project.readFeatureFile({
-        projectId,
+        projectId: pid,
         feature: 'story',
         fileName: STORY_STATE_FILE
       });
@@ -371,68 +403,24 @@ export function StorySummary() {
         if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
         if (typeof saved.selectedChapterId !== 'undefined') setSelectedChapterId(saved.selectedChapterId);
       }
-    } catch (error) {
-      console.error('[StorySummary] Lỗi khi tải dữ liệu project:', error);
-    } finally {
-      hasLoadedRef.current = true;
-    }
-  };
-
-  const saveStoryState = async () => {
-    if (!projectId) return;
-
-    // Lưu vào story-summary.json:
-    // - model: model mặc định đang chọn
-    // - summaries: map chapterId -> nội dung tóm tắt
-    // - chapterModels: map chapterId -> model đã dùng cho chương đó
-    // - viewMode: chế độ xem (original/summary)
-    // - excludedChapterIds: các chương bị loại trừ
-    // - selectedChapterId: chương đang chọn
-    const orderedSummaries = chapters
-      .filter((c) => summaries.has(c.id))
-      .map((c) => [c.id, summaries.get(c.id)!] as [string, string]);
-
-    const orderedChapterModels = orderedSummaries.map(([chapterId]) => {
-      const usedModel = chapterModels.get(chapterId) || model;
-      return [chapterId, usedModel] as [string, string];
-    });
-
-    const orderedChapterMethods = orderedSummaries.map(([chapterId]) => {
-      const usedMethod = chapterMethods.get(chapterId) || (translateMode === 'token' ? 'token' : 'api');
-      return [chapterId, usedMethod] as [string, 'api' | 'token'];
-    });
-
-    const orderedSummaryTitles = orderedSummaries.map(([chapterId]) => {
-      const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || chapters.find(c => c.id === chapterId)?.title || '';
-      return [chapterId, title] as [string, string];
-    });
-
-    const payload = {
+    },
+    deps: [
+      sourceLang,
+      targetLang,
       model,
       translateMode,
-      summaries: orderedSummaries,
-      chapterModels: orderedChapterModels,
-      chapterMethods: orderedChapterMethods,
-      summaryTitles: orderedSummaryTitles,
+      chapters,
+      summaries,
+      chapterModels,
+      chapterMethods,
+      summaryTitles,
       tokenConfigId,
-      tokenContexts: Array.from(tokenContexts.entries()),
+      tokenContexts,
       viewMode,
-      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      excludedChapterIds,
       selectedChapterId
-    };
-
-    await window.electronAPI.project.writeFeatureFile({
-      projectId,
-      feature: 'story',
-      fileName: STORY_STATE_FILE,
-      content: payload
-    });
-  };
-
-  useEffect(() => {
-    if (!projectId || !paths) return;
-    loadStoryState();
-  }, [projectId, paths]);
+    ],
+  });
 
   useEffect(() => {
     loadConfigurations();
@@ -446,41 +434,6 @@ export function StorySummary() {
       }
     }
   }, [translateMode, tokenConfigId]);
-
-  useEffect(() => {
-    if (!projectId || !paths || !hasLoadedRef.current) return;
-
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveStoryState();
-    }, 500);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [
-    projectId,
-    paths,
-    sourceLang,
-    targetLang,
-    model,
-    translateMode,
-    chapters,
-    summaries,
-    chapterModels,
-    chapterMethods,
-    summaryTitles,
-    tokenConfigId,
-    tokenContexts,
-    viewMode,
-    excludedChapterIds,
-    selectedChapterId
-  ]);
 
   useEffect(() => {
     if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;

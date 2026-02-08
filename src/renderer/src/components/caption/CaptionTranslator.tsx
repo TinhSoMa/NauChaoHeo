@@ -3,13 +3,14 @@
  * Sử dụng CSS Module và 6 bước xử lý
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
 import { useProjectContext } from '../../context/ProjectContext';
+import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
 import {
   GEMINI_MODELS,
   VOICES,
@@ -89,13 +90,9 @@ function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
 // ============================================
 export function CaptionTranslator() {
   // Project output paths
-  const { paths, projectId } = useProjectContext();
+  const { paths } = useProjectContext();
   const captionFolder = paths?.caption ?? null;
-  const hasLoadedRef = useRef(false);
-  const saveTimeoutRef = useRef<number | null>(null);
 
-  const CAPTION_STATE_FILE = 'caption-state.json';
-  
   // State - Config
   const [inputType, setInputType] = useState<'srt' | 'draft'>(DEFAULT_INPUT_TYPE);
   const [filePath, setFilePath] = useState('');
@@ -121,60 +118,26 @@ export function CaptionTranslator() {
   const [status, setStatus] = useState<ProcessStatus>('idle');
   const [progress, setProgress] = useState({ current: 0, total: 0, message: 'Sẵn sàng.' });
 
-  const loadCaptionState = useCallback(async () => {
-    if (!projectId) return;
-
-    try {
-      const res = await window.electronAPI.project.readFeatureFile({
-        projectId,
-        feature: 'caption',
-        fileName: CAPTION_STATE_FILE
-      });
-
-      if (res?.success && res.data) {
-        const saved = JSON.parse(res.data) as {
-          inputType?: 'srt' | 'draft';
-          filePath?: string;
-          entries?: SubtitleEntry[];
-          geminiModel?: string;
-          voice?: string;
-          rate?: number;
-          volume?: number;
-          srtSpeed?: number;
-          splitByLines?: boolean;
-          linesPerFile?: number;
-          numberOfParts?: number;
-          enabledSteps?: Step[];
-          audioFiles?: Array<{ path: string; startMs: number }>;
-          audioDir?: string;
-        };
-
-        if (saved.inputType) setInputType(saved.inputType);
-        if (saved.filePath) setFilePath(saved.filePath);
-        if (saved.entries) setEntries(saved.entries);
-        if (saved.geminiModel) setGeminiModel(saved.geminiModel);
-        if (saved.voice) setVoice(saved.voice);
-        if (typeof saved.rate === 'number') setRate(saved.rate);
-        if (typeof saved.volume === 'number') setVolume(saved.volume);
-        if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
-        if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
-        if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
-        if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
-        if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
-        if (saved.audioFiles) setAudioFiles(saved.audioFiles);
-        if (saved.audioDir) setAudioDir(saved.audioDir);
-      }
-    } catch (err) {
-      console.error('[CaptionTranslator] Loi khi tai du lieu project:', err);
-    } finally {
-      hasLoadedRef.current = true;
-    }
-  }, [projectId]);
-
-  const saveCaptionState = useCallback(async () => {
-    if (!projectId) return;
-
-    const payload = {
+  // ========== AUTO SAVE/LOAD VÀO PROJECT ==========
+  useProjectFeatureState<{
+    inputType?: 'srt' | 'draft';
+    filePath?: string;
+    entries?: SubtitleEntry[];
+    geminiModel?: string;
+    voice?: string;
+    rate?: string;
+    volume?: string;
+    srtSpeed?: number;
+    splitByLines?: boolean;
+    linesPerFile?: number;
+    numberOfParts?: number;
+    enabledSteps?: Step[];
+    audioFiles?: Array<{ path: string; startMs: number }>;
+    audioDir?: string;
+  }>({
+    feature: 'caption',
+    fileName: 'caption-state.json',
+    serialize: () => ({
       inputType,
       filePath,
       entries,
@@ -189,54 +152,29 @@ export function CaptionTranslator() {
       enabledSteps: Array.from(enabledSteps.values()),
       audioFiles,
       audioDir
-    };
-
-    await window.electronAPI.project.writeFeatureFile({
-      projectId,
-      feature: 'caption',
-      fileName: CAPTION_STATE_FILE,
-      content: payload
-    });
-  }, [
-    projectId,
-    inputType,
-    filePath,
-    entries,
-    geminiModel,
-    voice,
-    rate,
-    volume,
-    srtSpeed,
-    splitByLines,
-    linesPerFile,
-    numberOfParts,
-    enabledSteps,
-    audioFiles,
-    audioDir
-  ]);
-
-  useEffect(() => {
-    if (!projectId || !paths) return;
-    loadCaptionState();
-  }, [projectId, paths, loadCaptionState]);
-
-  useEffect(() => {
-    if (!projectId || !paths || !hasLoadedRef.current) return;
-
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveCaptionState();
-    }, 500);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [projectId, paths, saveCaptionState]);
+    }),
+    deserialize: (saved) => {
+      if (saved.inputType) setInputType(saved.inputType);
+      if (saved.filePath) setFilePath(saved.filePath);
+      if (saved.entries) setEntries(saved.entries);
+      if (saved.geminiModel) setGeminiModel(saved.geminiModel);
+      if (saved.voice) setVoice(saved.voice);
+      if (saved.rate) setRate(String(saved.rate));
+      if (saved.volume) setVolume(String(saved.volume));
+      if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
+      if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
+      if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
+      if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
+      if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
+      if (saved.audioFiles) setAudioFiles(saved.audioFiles);
+      if (saved.audioDir) setAudioDir(saved.audioDir);
+    },
+    deps: [
+      inputType, filePath, entries, geminiModel, voice, rate, volume,
+      srtSpeed, splitByLines, linesPerFile, numberOfParts, enabledSteps,
+      audioFiles, audioDir
+    ],
+  });
 
   // Toggle step enable
   const toggleStep = useCallback((step: Step) => {
