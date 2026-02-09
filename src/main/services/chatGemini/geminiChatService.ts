@@ -884,7 +884,7 @@ export class GeminiChatServiceClass {
                 const headers: Record<string, string> = {
                     "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
                     "cookie": (cookie || '').replace(/[\r\n]+/g, ''),
-                    "user-agent": config.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    // "user-agent": (config.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36").replace(/[\r\n]+/g, ''),
                 };
                 
                  headers["origin"] = "https://gemini.google.com";
