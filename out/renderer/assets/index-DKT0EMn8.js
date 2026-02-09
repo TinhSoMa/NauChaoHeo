@@ -15184,29 +15184,29 @@ const createLucideIcon = (iconName, iconNode) => {
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$O = [
+const __iconNode$U = [
   ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
   ["path", { d: "M19 12H5", key: "x3x0zl" }]
 ];
-const ArrowLeft = createLucideIcon("arrow-left", __iconNode$O);
+const ArrowLeft = createLucideIcon("arrow-left", __iconNode$U);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$N = [
+const __iconNode$T = [
   ["path", { d: "M4.929 4.929 19.07 19.071", key: "196cmz" }],
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }]
 ];
-const Ban = createLucideIcon("ban", __iconNode$N);
+const Ban = createLucideIcon("ban", __iconNode$T);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$M = [
+const __iconNode$S = [
   ["path", { d: "M12 7v14", key: "1akyts" }],
   [
     "path",
@@ -15216,7 +15216,64 @@ const __iconNode$M = [
     }
   ]
 ];
-const BookOpen = createLucideIcon("book-open", __iconNode$M);
+const BookOpen = createLucideIcon("book-open", __iconNode$S);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$R = [
+  ["rect", { width: "18", height: "14", x: "3", y: "5", rx: "2", ry: "2", key: "12ruh7" }],
+  ["path", { d: "M7 15h4M15 15h2M7 11h2M13 11h4", key: "1ueiar" }]
+];
+const Captions = createLucideIcon("captions", __iconNode$R);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$Q = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
+const Check = createLucideIcon("check", __iconNode$Q);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$P = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
+const ChevronDown = createLucideIcon("chevron-down", __iconNode$P);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$O = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
+const ChevronRight = createLucideIcon("chevron-right", __iconNode$O);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$N = [
+  ["path", { d: "m11 17-5-5 5-5", key: "13zhaf" }],
+  ["path", { d: "m18 17-5-5 5-5", key: "h8a8et" }]
+];
+const ChevronsLeft = createLucideIcon("chevrons-left", __iconNode$N);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$M = [
+  ["path", { d: "m6 17 5-5-5-5", key: "xnjwq" }],
+  ["path", { d: "m13 17 5-5-5-5", key: "17xmmf" }]
+];
+const ChevronsRight = createLucideIcon("chevrons-right", __iconNode$M);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15224,34 +15281,45 @@ const BookOpen = createLucideIcon("book-open", __iconNode$M);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$L = [
-  ["rect", { width: "18", height: "14", x: "3", y: "5", rx: "2", ry: "2", key: "12ruh7" }],
-  ["path", { d: "M7 15h4M15 15h2M7 11h2M13 11h4", key: "1ueiar" }]
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["line", { x1: "12", x2: "12", y1: "8", y2: "12", key: "1pkeuh" }],
+  ["line", { x1: "12", x2: "12.01", y1: "16", y2: "16", key: "4dfq90" }]
 ];
-const Captions = createLucideIcon("captions", __iconNode$L);
+const CircleAlert = createLucideIcon("circle-alert", __iconNode$L);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$K = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
-const Check = createLucideIcon("check", __iconNode$K);
+const __iconNode$K = [
+  ["path", { d: "M21.801 10A10 10 0 1 1 17 3.335", key: "yps3ct" }],
+  ["path", { d: "m9 11 3 3L22 4", key: "1pflzl" }]
+];
+const CircleCheckBig = createLucideIcon("circle-check-big", __iconNode$K);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$J = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
-const ChevronDown = createLucideIcon("chevron-down", __iconNode$J);
+const __iconNode$J = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["rect", { x: "9", y: "9", width: "6", height: "6", rx: "1", key: "1ssd4o" }]
+];
+const CircleStop = createLucideIcon("circle-stop", __iconNode$J);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$I = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
-const ChevronRight = createLucideIcon("chevron-right", __iconNode$I);
+const __iconNode$I = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["path", { d: "m15 9-6 6", key: "1uzhvr" }],
+  ["path", { d: "m9 9 6 6", key: "z0biqf" }]
+];
+const CircleX = createLucideIcon("circle-x", __iconNode$I);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15259,74 +15327,6 @@ const ChevronRight = createLucideIcon("chevron-right", __iconNode$I);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$H = [
-  ["path", { d: "m11 17-5-5 5-5", key: "13zhaf" }],
-  ["path", { d: "m18 17-5-5 5-5", key: "h8a8et" }]
-];
-const ChevronsLeft = createLucideIcon("chevrons-left", __iconNode$H);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$G = [
-  ["path", { d: "m6 17 5-5-5-5", key: "xnjwq" }],
-  ["path", { d: "m13 17 5-5-5-5", key: "17xmmf" }]
-];
-const ChevronsRight = createLucideIcon("chevrons-right", __iconNode$G);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$F = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["line", { x1: "12", x2: "12", y1: "8", y2: "12", key: "1pkeuh" }],
-  ["line", { x1: "12", x2: "12.01", y1: "16", y2: "16", key: "4dfq90" }]
-];
-const CircleAlert = createLucideIcon("circle-alert", __iconNode$F);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$E = [
-  ["path", { d: "M21.801 10A10 10 0 1 1 17 3.335", key: "yps3ct" }],
-  ["path", { d: "m9 11 3 3L22 4", key: "1pflzl" }]
-];
-const CircleCheckBig = createLucideIcon("circle-check-big", __iconNode$E);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$D = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["rect", { x: "9", y: "9", width: "6", height: "6", rx: "1", key: "1ssd4o" }]
-];
-const CircleStop = createLucideIcon("circle-stop", __iconNode$D);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$C = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["path", { d: "m15 9-6 6", key: "1uzhvr" }],
-  ["path", { d: "m9 9 6 6", key: "z0biqf" }]
-];
-const CircleX = createLucideIcon("circle-x", __iconNode$C);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$B = [
   ["rect", { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1", key: "tgr4d6" }],
   [
     "path",
@@ -15336,25 +15336,25 @@ const __iconNode$B = [
     }
   ]
 ];
-const Clipboard = createLucideIcon("clipboard", __iconNode$B);
+const Clipboard = createLucideIcon("clipboard", __iconNode$H);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$A = [
+const __iconNode$G = [
   ["path", { d: "M12 6v6l4 2", key: "mmk7yg" }],
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }]
 ];
-const Clock = createLucideIcon("clock", __iconNode$A);
+const Clock = createLucideIcon("clock", __iconNode$G);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$z = [
+const __iconNode$F = [
   ["path", { d: "M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5", key: "laymnq" }],
   ["path", { d: "M8.5 8.5v.01", key: "ue8clq" }],
   ["path", { d: "M16 15.5v.01", key: "14dtrp" }],
@@ -15362,37 +15362,37 @@ const __iconNode$z = [
   ["path", { d: "M11 17v.01", key: "1hyl5a" }],
   ["path", { d: "M7 14v.01", key: "uct60s" }]
 ];
-const Cookie = createLucideIcon("cookie", __iconNode$z);
+const Cookie = createLucideIcon("cookie", __iconNode$F);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$y = [
+const __iconNode$E = [
   ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
   ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
 ];
-const Copy = createLucideIcon("copy", __iconNode$y);
+const Copy = createLucideIcon("copy", __iconNode$E);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$x = [
+const __iconNode$D = [
   ["path", { d: "M12 15V3", key: "m9g1x1" }],
   ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
   ["path", { d: "m7 10 5 5 5-5", key: "brsn70" }]
 ];
-const Download = createLucideIcon("download", __iconNode$x);
+const Download = createLucideIcon("download", __iconNode$D);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$w = [
+const __iconNode$C = [
   [
     "path",
     {
@@ -15402,14 +15402,14 @@ const __iconNode$w = [
   ],
   ["circle", { cx: "12", cy: "12", r: "3", key: "1v7zrd" }]
 ];
-const Eye = createLucideIcon("eye", __iconNode$w);
+const Eye = createLucideIcon("eye", __iconNode$C);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$v = [
+const __iconNode$B = [
   [
     "path",
     {
@@ -15422,14 +15422,31 @@ const __iconNode$v = [
   ["path", { d: "M16 13H8", key: "t4e002" }],
   ["path", { d: "M16 17H8", key: "z1uh3a" }]
 ];
-const FileText = createLucideIcon("file-text", __iconNode$v);
+const FileText = createLucideIcon("file-text", __iconNode$B);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$u = [
+const __iconNode$A = [
+  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", key: "afitv7" }],
+  ["path", { d: "M7 3v18", key: "bbkbws" }],
+  ["path", { d: "M3 7.5h4", key: "zfgn84" }],
+  ["path", { d: "M3 12h18", key: "1i2n21" }],
+  ["path", { d: "M3 16.5h4", key: "1230mu" }],
+  ["path", { d: "M17 3v18", key: "in4fa5" }],
+  ["path", { d: "M17 7.5h4", key: "myr1c1" }],
+  ["path", { d: "M17 16.5h4", key: "go4c1d" }]
+];
+const Film = createLucideIcon("film", __iconNode$A);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$z = [
   [
     "path",
     {
@@ -15447,14 +15464,14 @@ const __iconNode$u = [
   ["path", { d: "m20.772 19.148.924.383", key: "9w9pjp" }],
   ["circle", { cx: "18", cy: "18", r: "3", key: "1xkwt0" }]
 ];
-const FolderCog = createLucideIcon("folder-cog", __iconNode$u);
+const FolderCog = createLucideIcon("folder-cog", __iconNode$z);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$t = [
+const __iconNode$y = [
   [
     "path",
     {
@@ -15463,51 +15480,63 @@ const __iconNode$t = [
     }
   ]
 ];
-const FolderOpen = createLucideIcon("folder-open", __iconNode$t);
+const FolderOpen = createLucideIcon("folder-open", __iconNode$y);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$s = [
+const __iconNode$x = [
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
   ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", key: "13o1zl" }],
   ["path", { d: "M2 12h20", key: "9i4pu4" }]
 ];
-const Globe = createLucideIcon("globe", __iconNode$s);
+const Globe = createLucideIcon("globe", __iconNode$x);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$r = [
+const __iconNode$w = [
   ["line", { x1: "4", x2: "20", y1: "9", y2: "9", key: "4lhtct" }],
   ["line", { x1: "4", x2: "20", y1: "15", y2: "15", key: "vyu0kd" }],
   ["line", { x1: "10", x2: "8", y1: "3", y2: "21", key: "1ggp8o" }],
   ["line", { x1: "16", x2: "14", y1: "3", y2: "21", key: "weycgp" }]
 ];
-const Hash = createLucideIcon("hash", __iconNode$r);
+const Hash = createLucideIcon("hash", __iconNode$w);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$q = [
+const __iconNode$v = [
+  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2", key: "1m3agn" }],
+  ["circle", { cx: "9", cy: "9", r: "2", key: "af1f0g" }],
+  ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21", key: "1xmnt7" }]
+];
+const Image$1 = createLucideIcon("image", __iconNode$v);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$u = [
   ["path", { d: "m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4", key: "g0fldk" }],
   ["path", { d: "m21 2-9.6 9.6", key: "1j0ho8" }],
   ["circle", { cx: "7.5", cy: "15.5", r: "5.5", key: "yqb3hr" }]
 ];
-const Key = createLucideIcon("key", __iconNode$q);
+const Key = createLucideIcon("key", __iconNode$u);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$p = [
+const __iconNode$t = [
   ["path", { d: "m5 8 6 6", key: "1wu5hv" }],
   ["path", { d: "m4 14 6-6 2-3", key: "1k1g8d" }],
   ["path", { d: "M2 5h12", key: "or177f" }],
@@ -15515,7 +15544,62 @@ const __iconNode$p = [
   ["path", { d: "m22 22-5-10-5 10", key: "don7ne" }],
   ["path", { d: "M14 18h6", key: "1m8k6r" }]
 ];
-const Languages = createLucideIcon("languages", __iconNode$p);
+const Languages = createLucideIcon("languages", __iconNode$t);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$s = [
+  [
+    "path",
+    {
+      d: "M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z",
+      key: "1pdavp"
+    }
+  ],
+  ["path", { d: "M20.054 15.987H3.946", key: "14rxg9" }]
+];
+const Laptop = createLucideIcon("laptop", __iconNode$s);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$r = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
+const LoaderCircle = createLucideIcon("loader-circle", __iconNode$r);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$q = [
+  ["path", { d: "M12 2v4", key: "3427ic" }],
+  ["path", { d: "m16.2 7.8 2.9-2.9", key: "r700ao" }],
+  ["path", { d: "M18 12h4", key: "wj9ykh" }],
+  ["path", { d: "m16.2 16.2 2.9 2.9", key: "1bxg5t" }],
+  ["path", { d: "M12 18v4", key: "jadmvz" }],
+  ["path", { d: "m4.9 19.1 2.9-2.9", key: "bwix9q" }],
+  ["path", { d: "M2 12h4", key: "j09sii" }],
+  ["path", { d: "m4.9 4.9 2.9 2.9", key: "giyufr" }]
+];
+const Loader = createLucideIcon("loader", __iconNode$q);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$p = [
+  ["path", { d: "M15 3h6v6", key: "1q9fwt" }],
+  ["path", { d: "m21 3-7 7", key: "1l2asr" }],
+  ["path", { d: "m3 21 7-7", key: "tjx5ai" }],
+  ["path", { d: "M9 21H3v-6", key: "wtvkvv" }]
+];
+const Maximize2 = createLucideIcon("maximize-2", __iconNode$p);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15526,21 +15610,28 @@ const __iconNode$o = [
   [
     "path",
     {
-      d: "M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z",
-      key: "1pdavp"
+      d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
+      key: "1sd12s"
     }
-  ],
-  ["path", { d: "M20.054 15.987H3.946", key: "14rxg9" }]
+  ]
 ];
-const Laptop = createLucideIcon("laptop", __iconNode$o);
+const MessageCircle = createLucideIcon("message-circle", __iconNode$o);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$n = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
-const LoaderCircle = createLucideIcon("loader-circle", __iconNode$n);
+const __iconNode$n = [
+  [
+    "path",
+    {
+      d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
+      key: "18887p"
+    }
+  ]
+];
+const MessageSquare = createLucideIcon("message-square", __iconNode$n);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15548,16 +15639,11 @@ const LoaderCircle = createLucideIcon("loader-circle", __iconNode$n);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$m = [
-  ["path", { d: "M12 2v4", key: "3427ic" }],
-  ["path", { d: "m16.2 7.8 2.9-2.9", key: "r700ao" }],
-  ["path", { d: "M18 12h4", key: "wj9ykh" }],
-  ["path", { d: "m16.2 16.2 2.9 2.9", key: "1bxg5t" }],
-  ["path", { d: "M12 18v4", key: "jadmvz" }],
-  ["path", { d: "m4.9 19.1 2.9-2.9", key: "bwix9q" }],
-  ["path", { d: "M2 12h4", key: "j09sii" }],
-  ["path", { d: "m4.9 4.9 2.9 2.9", key: "giyufr" }]
+  ["rect", { width: "20", height: "14", x: "2", y: "3", rx: "2", key: "48i651" }],
+  ["line", { x1: "8", x2: "16", y1: "21", y2: "21", key: "1svkeh" }],
+  ["line", { x1: "12", x2: "12", y1: "17", y2: "21", key: "vw1qmm" }]
 ];
-const Loader = createLucideIcon("loader", __iconNode$m);
+const Monitor = createLucideIcon("monitor", __iconNode$m);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15568,12 +15654,12 @@ const __iconNode$l = [
   [
     "path",
     {
-      d: "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
-      key: "1sd12s"
+      d: "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z",
+      key: "edeuup"
     }
   ]
 ];
-const MessageCircle = createLucideIcon("message-circle", __iconNode$l);
+const MousePointer2 = createLucideIcon("mouse-pointer-2", __iconNode$l);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15581,15 +15667,13 @@ const MessageCircle = createLucideIcon("message-circle", __iconNode$l);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$k = [
-  [
-    "path",
-    {
-      d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
-      key: "18887p"
-    }
-  ]
+  ["rect", { x: "16", y: "16", width: "6", height: "6", rx: "1", key: "4q2zg0" }],
+  ["rect", { x: "2", y: "16", width: "6", height: "6", rx: "1", key: "8cvhb9" }],
+  ["rect", { x: "9", y: "2", width: "6", height: "6", rx: "1", key: "1egb70" }],
+  ["path", { d: "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3", key: "1jsf9p" }],
+  ["path", { d: "M12 12V8", key: "2874zd" }]
 ];
-const MessageSquare = createLucideIcon("message-square", __iconNode$k);
+const Network = createLucideIcon("network", __iconNode$k);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15597,32 +15681,6 @@ const MessageSquare = createLucideIcon("message-square", __iconNode$k);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$j = [
-  ["rect", { width: "20", height: "14", x: "2", y: "3", rx: "2", key: "48i651" }],
-  ["line", { x1: "8", x2: "16", y1: "21", y2: "21", key: "1svkeh" }],
-  ["line", { x1: "12", x2: "12", y1: "17", y2: "21", key: "vw1qmm" }]
-];
-const Monitor = createLucideIcon("monitor", __iconNode$j);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$i = [
-  ["rect", { x: "16", y: "16", width: "6", height: "6", rx: "1", key: "4q2zg0" }],
-  ["rect", { x: "2", y: "16", width: "6", height: "6", rx: "1", key: "8cvhb9" }],
-  ["rect", { x: "9", y: "2", width: "6", height: "6", rx: "1", key: "1egb70" }],
-  ["path", { d: "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3", key: "1jsf9p" }],
-  ["path", { d: "M12 12V8", key: "2874zd" }]
-];
-const Network = createLucideIcon("network", __iconNode$i);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$h = [
   [
     "path",
     {
@@ -15635,14 +15693,14 @@ const __iconNode$h = [
   ["circle", { cx: "6.5", cy: "12.5", r: ".5", fill: "currentColor", key: "qy21gx" }],
   ["circle", { cx: "8.5", cy: "7.5", r: ".5", fill: "currentColor", key: "fotxhn" }]
 ];
-const Palette = createLucideIcon("palette", __iconNode$h);
+const Palette = createLucideIcon("palette", __iconNode$j);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$g = [
+const __iconNode$i = [
   [
     "path",
     {
@@ -15651,7 +15709,34 @@ const __iconNode$g = [
     }
   ]
 ];
-const Pen = createLucideIcon("pen", __iconNode$g);
+const Pen = createLucideIcon("pen", __iconNode$i);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$h = [
+  [
+    "path",
+    {
+      d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z",
+      key: "10ikf1"
+    }
+  ]
+];
+const Play = createLucideIcon("play", __iconNode$h);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$g = [
+  ["path", { d: "M5 12h14", key: "1ays0h" }],
+  ["path", { d: "M12 5v14", key: "s699le" }]
+];
+const Plus = createLucideIcon("plus", __iconNode$g);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15659,10 +15744,12 @@ const Pen = createLucideIcon("pen", __iconNode$g);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$f = [
-  ["path", { d: "M5 12h14", key: "1ays0h" }],
-  ["path", { d: "M12 5v14", key: "s699le" }]
+  ["path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", key: "v9h5vc" }],
+  ["path", { d: "M21 3v5h-5", key: "1q7to0" }],
+  ["path", { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16", key: "3uifl3" }],
+  ["path", { d: "M8 16H3v5", key: "1cv678" }]
 ];
-const Plus = createLucideIcon("plus", __iconNode$f);
+const RefreshCw = createLucideIcon("refresh-cw", __iconNode$f);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15670,12 +15757,10 @@ const Plus = createLucideIcon("plus", __iconNode$f);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$e = [
-  ["path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", key: "v9h5vc" }],
-  ["path", { d: "M21 3v5h-5", key: "1q7to0" }],
-  ["path", { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16", key: "3uifl3" }],
-  ["path", { d: "M8 16H3v5", key: "1cv678" }]
+  ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", key: "1357e3" }],
+  ["path", { d: "M3 3v5h5", key: "1xhq8a" }]
 ];
-const RefreshCw = createLucideIcon("refresh-cw", __iconNode$e);
+const RotateCcw = createLucideIcon("rotate-ccw", __iconNode$e);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15683,17 +15768,6 @@ const RefreshCw = createLucideIcon("refresh-cw", __iconNode$e);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$d = [
-  ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", key: "1357e3" }],
-  ["path", { d: "M3 3v5h5", key: "1xhq8a" }]
-];
-const RotateCcw = createLucideIcon("rotate-ccw", __iconNode$d);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$c = [
   [
     "path",
     {
@@ -15704,7 +15778,24 @@ const __iconNode$c = [
   ["path", { d: "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7", key: "1ydtos" }],
   ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7", key: "t51u73" }]
 ];
-const Save = createLucideIcon("save", __iconNode$c);
+const Save = createLucideIcon("save", __iconNode$d);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$c = [
+  [
+    "path",
+    {
+      d: "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z",
+      key: "1ffxy3"
+    }
+  ],
+  ["path", { d: "m21.854 2.147-10.94 10.939", key: "12cjpa" }]
+];
+const Send = createLucideIcon("send", __iconNode$c);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15715,13 +15806,13 @@ const __iconNode$b = [
   [
     "path",
     {
-      d: "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z",
-      key: "1ffxy3"
+      d: "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
+      key: "1i5ecw"
     }
   ],
-  ["path", { d: "m21.854 2.147-10.94 10.939", key: "12cjpa" }]
+  ["circle", { cx: "12", cy: "12", r: "3", key: "1v7zrd" }]
 ];
-const Send = createLucideIcon("send", __iconNode$b);
+const Settings$1 = createLucideIcon("settings", __iconNode$b);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15732,13 +15823,12 @@ const __iconNode$a = [
   [
     "path",
     {
-      d: "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
-      key: "1i5ecw"
+      d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+      key: "oel41y"
     }
-  ],
-  ["circle", { cx: "12", cy: "12", r: "3", key: "1v7zrd" }]
+  ]
 ];
-const Settings$1 = createLucideIcon("settings", __iconNode$a);
+const Shield = createLucideIcon("shield", __iconNode$a);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15746,22 +15836,6 @@ const Settings$1 = createLucideIcon("settings", __iconNode$a);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$9 = [
-  [
-    "path",
-    {
-      d: "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
-      key: "oel41y"
-    }
-  ]
-];
-const Shield = createLucideIcon("shield", __iconNode$9);
-/**
- * @license lucide-react v0.562.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$8 = [
   [
     "path",
     {
@@ -15773,7 +15847,21 @@ const __iconNode$8 = [
   ["path", { d: "M22 4h-4", key: "gwowj6" }],
   ["circle", { cx: "4", cy: "20", r: "2", key: "6kqj1y" }]
 ];
-const Sparkles = createLucideIcon("sparkles", __iconNode$8);
+const Sparkles = createLucideIcon("sparkles", __iconNode$9);
+/**
+ * @license lucide-react v0.562.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$8 = [
+  [
+    "path",
+    { d: "M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344", key: "2acyp4" }
+  ],
+  ["path", { d: "m9 11 3 3L22 4", key: "1pflzl" }]
+];
+const SquareCheckBig = createLucideIcon("square-check-big", __iconNode$8);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15781,13 +15869,9 @@ const Sparkles = createLucideIcon("sparkles", __iconNode$8);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$7 = [
-  [
-    "path",
-    { d: "M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344", key: "2acyp4" }
-  ],
-  ["path", { d: "m9 11 3 3L22 4", key: "1pflzl" }]
+  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", key: "afitv7" }]
 ];
-const SquareCheckBig = createLucideIcon("square-check-big", __iconNode$7);
+const Square = createLucideIcon("square", __iconNode$7);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15795,9 +15879,11 @@ const SquareCheckBig = createLucideIcon("square-check-big", __iconNode$7);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$6 = [
-  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", key: "afitv7" }]
+  ["path", { d: "M14.5 2v17.5c0 1.4-1.1 2.5-2.5 2.5c-1.4 0-2.5-1.1-2.5-2.5V2", key: "125lnx" }],
+  ["path", { d: "M8.5 2h7", key: "csnxdl" }],
+  ["path", { d: "M14.5 16h-5", key: "1ox875" }]
 ];
-const Square = createLucideIcon("square", __iconNode$6);
+const TestTube = createLucideIcon("test-tube", __iconNode$6);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15805,11 +15891,13 @@ const Square = createLucideIcon("square", __iconNode$6);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$5 = [
-  ["path", { d: "M14.5 2v17.5c0 1.4-1.1 2.5-2.5 2.5c-1.4 0-2.5-1.1-2.5-2.5V2", key: "125lnx" }],
-  ["path", { d: "M8.5 2h7", key: "csnxdl" }],
-  ["path", { d: "M14.5 16h-5", key: "1ox875" }]
+  ["path", { d: "M10 11v6", key: "nco0om" }],
+  ["path", { d: "M14 11v6", key: "outv1u" }],
+  ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", key: "miytrc" }],
+  ["path", { d: "M3 6h18", key: "d0wm0j" }],
+  ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", key: "e791ji" }]
 ];
-const TestTube = createLucideIcon("test-tube", __iconNode$5);
+const Trash2 = createLucideIcon("trash-2", __iconNode$5);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -15817,13 +15905,11 @@ const TestTube = createLucideIcon("test-tube", __iconNode$5);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$4 = [
-  ["path", { d: "M10 11v6", key: "nco0om" }],
-  ["path", { d: "M14 11v6", key: "outv1u" }],
-  ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", key: "miytrc" }],
-  ["path", { d: "M3 6h18", key: "d0wm0j" }],
-  ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", key: "e791ji" }]
+  ["path", { d: "M12 4v16", key: "1654pz" }],
+  ["path", { d: "M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2", key: "e0r10z" }],
+  ["path", { d: "M9 20h6", key: "s66wpe" }]
 ];
-const Trash2 = createLucideIcon("trash-2", __iconNode$4);
+const Type = createLucideIcon("type", __iconNode$4);
 /**
  * @license lucide-react v0.562.0 - ISC
  *
@@ -18915,6 +19001,7 @@ const Sidebar = () => {
   };
   const navItems = [
     { icon: Captions, label: "Dich Caption", path: "/translator" },
+    { icon: Film, label: "Caption Video", path: "/caption-video" },
     { icon: BookOpen, label: "Dich Truyen AI", path: "/story-translator" },
     { icon: FileText, label: "Tom Tat Truyen AI", path: "/story-summary" },
     { icon: MessageCircle, label: "Dich Truyen (Web)", path: "/story-web" },
@@ -18978,17 +19065,17 @@ const Sidebar = () => {
     }
   );
 };
-const container$1 = "_container_1tglc_11";
+const container$2 = "_container_1tglc_11";
 const leftColumn = "_leftColumn_1tglc_41";
 const rightColumn = "_rightColumn_1tglc_53";
-const header = "_header_1tglc_65";
-const section$1 = "_section_1tglc_81";
-const sectionTitle = "_sectionTitle_1tglc_95";
-const select$2 = "_select_1tglc_113";
+const header$1 = "_header_1tglc_65";
+const section$2 = "_section_1tglc_81";
+const sectionTitle$1 = "_sectionTitle_1tglc_95";
+const select$3 = "_select_1tglc_113";
 const selectSmall = "_selectSmall_1tglc_137";
-const label$5 = "_label_1tglc_153";
+const label$6 = "_label_1tglc_153";
 const textMuted = "_textMuted_1tglc_175";
-const progressBar = "_progressBar_1tglc_185";
+const progressBar$1 = "_progressBar_1tglc_185";
 const progressFill = "_progressFill_1tglc_199";
 const flexRow$1 = "_flexRow_1tglc_211";
 const grid2 = "_grid2_1tglc_223";
@@ -18998,18 +19085,18 @@ const buttonsRow = "_buttonsRow_1tglc_273";
 const progressSection = "_progressSection_1tglc_285";
 const progressHeader = "_progressHeader_1tglc_293";
 const fileTypeSelection = "_fileTypeSelection_1tglc_307";
-const styles$6 = {
-  container: container$1,
+const styles$7 = {
+  container: container$2,
   leftColumn,
   rightColumn,
-  header,
-  section: section$1,
-  sectionTitle,
-  select: select$2,
+  header: header$1,
+  section: section$2,
+  sectionTitle: sectionTitle$1,
+  select: select$3,
   selectSmall,
-  label: label$5,
+  label: label$6,
   textMuted,
-  progressBar,
+  progressBar: progressBar$1,
   progressFill,
   flexRow: flexRow$1,
   grid2,
@@ -19025,15 +19112,15 @@ const primary = "_primary_h34c2_47";
 const secondary = "_secondary_h34c2_77";
 const success = "_success_h34c2_109";
 const danger = "_danger_h34c2_133";
-const fullWidth = "_fullWidth_h34c2_157";
+const fullWidth$1 = "_fullWidth_h34c2_157";
 const iconOnly = "_iconOnly_h34c2_167";
-const styles$5 = {
+const styles$6 = {
   button,
   primary,
   secondary,
   success,
   danger,
-  fullWidth,
+  fullWidth: fullWidth$1,
   iconOnly
 };
 const Button = React.forwardRef(
@@ -19045,14 +19132,14 @@ const Button = React.forwardRef(
     children,
     ...props
   }, ref) => {
-    const variantClass = styles$5[variant];
-    const widthClass = fullWidth2 ? styles$5.fullWidth : "";
-    const iconClass = iconOnly2 ? styles$5.iconOnly : "";
+    const variantClass = styles$6[variant];
+    const widthClass = fullWidth2 ? styles$6.fullWidth : "";
+    const iconClass = iconOnly2 ? styles$6.iconOnly : "";
     return /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
         ref,
-        className: `${styles$5.button} ${variantClass} ${widthClass} ${iconClass} ${className}`,
+        className: `${styles$6.button} ${variantClass} ${widthClass} ${iconClass} ${className}`,
         ...props,
         children
       }
@@ -19061,18 +19148,18 @@ const Button = React.forwardRef(
 );
 Button.displayName = "Button";
 const inputWrapper = "_inputWrapper_1vw18_1";
-const input$1 = "_input_1vw18_1";
+const input$2 = "_input_1vw18_1";
 const small$1 = "_small_1vw18_63";
 const error$1 = "_error_1vw18_77";
-const label$4 = "_label_1vw18_93";
+const label$5 = "_label_1vw18_93";
 const helperText$1 = "_helperText_1vw18_105";
 const errorText = "_errorText_1vw18_117";
-const styles$4 = {
+const styles$5 = {
   inputWrapper,
-  input: input$1,
+  input: input$2,
   small: small$1,
   error: error$1,
-  label: label$4,
+  label: label$5,
   helperText: helperText$1,
   errorText
 };
@@ -19086,19 +19173,19 @@ const Input = React.forwardRef(
     className = "",
     ...props
   }, ref) => {
-    const variantClass = variant === "small" ? styles$4.small : "";
-    const errorClass = error2 ? styles$4.error : "";
-    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `${styles$4.inputWrapper} ${containerClassName}`, children: [
-      label2 && /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$4.label, children: label2 }),
+    const variantClass = variant === "small" ? styles$5.small : "";
+    const errorClass = error2 ? styles$5.error : "";
+    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `${styles$5.inputWrapper} ${containerClassName}`, children: [
+      label2 && /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$5.label, children: label2 }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "input",
         {
           ref,
-          className: `${styles$4.input} ${variantClass} ${errorClass} ${className}`,
+          className: `${styles$5.input} ${variantClass} ${errorClass} ${className}`,
           ...props
         }
       ),
-      helperText2 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${styles$4.helperText} ${error2 ? styles$4.errorText : ""}`, children: helperText2 })
+      helperText2 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${styles$5.helperText} ${error2 ? styles$5.errorText : ""}`, children: helperText2 })
     ] });
   }
 );
@@ -19109,17 +19196,17 @@ const radioInput = "_radioInput_b9am0_49";
 const indicator$1 = "_indicator_b9am0_57";
 const dot = "_dot_b9am0_97";
 const content$1 = "_content_b9am0_127";
-const label$3 = "_label_b9am0_139";
+const label$4 = "_label_b9am0_139";
 const description$1 = "_description_b9am0_151";
 const disabled = "_disabled_b9am0_165";
-const styles$3 = {
+const styles$4 = {
   wrapper: wrapper$2,
   wrapperSelected: wrapperSelected$1,
   radioInput,
   indicator: indicator$1,
   dot,
   content: content$1,
-  label: label$3,
+  label: label$4,
   description: description$1,
   disabled
 };
@@ -19137,9 +19224,9 @@ const RadioButton = ({
     "div",
     {
       className: `
-        ${styles$3.wrapper} 
-        ${checked ? styles$3.wrapperSelected : ""} 
-        ${disabled2 ? styles$3.disabled : ""} 
+        ${styles$4.wrapper} 
+        ${checked ? styles$4.wrapperSelected : ""} 
+        ${disabled2 ? styles$4.disabled : ""} 
         ${className}
       `,
       onClick: !disabled2 ? onChange : void 0,
@@ -19152,13 +19239,13 @@ const RadioButton = ({
             checked,
             onChange,
             disabled: disabled2,
-            className: styles$3.radioInput
+            className: styles$4.radioInput
           }
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$3.indicator, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$3.dot }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$3.content, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$3.label, children: label2 }),
-          description2 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$3.description, children: description2 }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$4.indicator, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$4.dot }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$4.content, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$4.label, children: label2 }),
+          description2 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$4.description, children: description2 }),
           children
         ] })
       ]
@@ -19172,10 +19259,10 @@ const checkboxInput = "_checkboxInput_46we0_63";
 const indicator = "_indicator_46we0_71";
 const checkmark = "_checkmark_46we0_115";
 const content = "_content_46we0_139";
-const label$2 = "_label_46we0_151";
+const label$3 = "_label_46we0_151";
 const labelHighlight = "_labelHighlight_46we0_163";
 const description = "_description_46we0_173";
-const styles$2 = {
+const styles$3 = {
   wrapper: wrapper$1,
   wrapperSelected,
   wrapperDisabled,
@@ -19183,7 +19270,7 @@ const styles$2 = {
   indicator,
   checkmark,
   content,
-  label: label$2,
+  label: label$3,
   labelHighlight,
   description
 };
@@ -19200,9 +19287,9 @@ const Checkbox = ({
     "div",
     {
       className: `
-        ${styles$2.wrapper} 
-        ${checked ? styles$2.wrapperSelected : ""} 
-        ${disabled2 ? styles$2.wrapperDisabled : ""} 
+        ${styles$3.wrapper} 
+        ${checked ? styles$3.wrapperSelected : ""} 
+        ${disabled2 ? styles$3.wrapperDisabled : ""} 
         ${className}
       `,
       onClick: () => !disabled2 && onChange(!checked),
@@ -19214,13 +19301,13 @@ const Checkbox = ({
             checked,
             onChange: (e) => onChange(e.target.checked),
             disabled: disabled2,
-            className: styles$2.checkboxInput
+            className: styles$3.checkboxInput
           }
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$2.indicator, children: /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 12, strokeWidth: 3, className: styles$2.checkmark }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.content, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${styles$2.label} ${highlight ? styles$2.labelHighlight : ""}`, children: label2 }),
-          description2 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.description, children: description2 })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$3.indicator, children: /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { size: 12, strokeWidth: 3, className: styles$3.checkmark }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$3.content, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${styles$3.label} ${highlight ? styles$3.labelHighlight : ""}`, children: label2 }),
+          description2 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$3.description, children: description2 })
         ] })
       ]
     }
@@ -19269,6 +19356,82 @@ function useProjectContext() {
     throw new Error("useProjectContext must be used within ProjectProvider");
   }
   return ctx;
+}
+function useProjectFeatureState(options) {
+  const { feature, fileName, deps, debounceMs = 500, onLoaded } = options;
+  const { projectId, paths } = useProjectContext();
+  const hasLoadedRef = reactExports.useRef(false);
+  const saveTimeoutRef = reactExports.useRef(null);
+  const serializeRef = reactExports.useRef(options.serialize);
+  const deserializeRef = reactExports.useRef(options.deserialize);
+  const customLoadRef = reactExports.useRef(options.customLoad);
+  serializeRef.current = options.serialize;
+  deserializeRef.current = options.deserialize;
+  customLoadRef.current = options.customLoad;
+  const projectIdRef = reactExports.useRef(projectId);
+  projectIdRef.current = projectId;
+  const loadState = async () => {
+    if (!projectIdRef.current) return;
+    try {
+      if (customLoadRef.current) {
+        await customLoadRef.current();
+      } else {
+        const res = await window.electronAPI.project.readFeatureFile({
+          projectId: projectIdRef.current,
+          feature,
+          fileName
+        });
+        if (res?.success && res.data) {
+          const saved = JSON.parse(res.data);
+          await deserializeRef.current(saved);
+        }
+      }
+    } catch (err) {
+      console.error(`[useProjectFeatureState] Lỗi load ${feature}/${fileName}:`, err);
+    } finally {
+      hasLoadedRef.current = true;
+      onLoaded?.();
+    }
+  };
+  const saveState = async () => {
+    if (!projectIdRef.current) return;
+    try {
+      const payload = serializeRef.current();
+      await window.electronAPI.project.writeFeatureFile({
+        projectId: projectIdRef.current,
+        feature,
+        fileName,
+        content: payload
+      });
+    } catch (err) {
+      console.error(`[useProjectFeatureState] Lỗi save ${feature}/${fileName}:`, err);
+    }
+  };
+  reactExports.useEffect(() => {
+    if (!projectId || !paths) return;
+    hasLoadedRef.current = false;
+    loadState();
+  }, [projectId, paths]);
+  reactExports.useEffect(() => {
+    if (!projectId || !paths || !hasLoadedRef.current) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveState();
+    }, debounceMs);
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [projectId, paths, ...deps]);
+  return {
+    loaded: hasLoadedRef.current,
+    save: saveState,
+    load: loadState,
+    projectId
+  };
 }
 const GEMINI_MODELS$1 = {
   FLASH_3_0: "gemini-3-flash-preview"
@@ -19339,11 +19502,8 @@ function validateSteps(steps) {
   return { valid: true };
 }
 function CaptionTranslator() {
-  const { paths, projectId } = useProjectContext();
+  const { paths } = useProjectContext();
   const captionFolder = paths?.caption ?? null;
-  const hasLoadedRef = reactExports.useRef(false);
-  const saveTimeoutRef = reactExports.useRef(null);
-  const CAPTION_STATE_FILE = "caption-state.json";
   const [inputType, setInputType] = reactExports.useState(DEFAULT_INPUT_TYPE);
   const [filePath, setFilePath] = reactExports.useState("");
   const [entries, setEntries] = reactExports.useState([]);
@@ -19361,40 +19521,10 @@ function CaptionTranslator() {
   const [currentStep, setCurrentStep] = reactExports.useState(null);
   const [status, setStatus] = reactExports.useState("idle");
   const [progress, setProgress] = reactExports.useState({ current: 0, total: 0, message: "Sẵn sàng." });
-  const loadCaptionState = reactExports.useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const res = await window.electronAPI.project.readFeatureFile({
-        projectId,
-        feature: "caption",
-        fileName: CAPTION_STATE_FILE
-      });
-      if (res?.success && res.data) {
-        const saved = JSON.parse(res.data);
-        if (saved.inputType) setInputType(saved.inputType);
-        if (saved.filePath) setFilePath(saved.filePath);
-        if (saved.entries) setEntries(saved.entries);
-        if (saved.geminiModel) setGeminiModel(saved.geminiModel);
-        if (saved.voice) setVoice(saved.voice);
-        if (typeof saved.rate === "number") setRate(saved.rate);
-        if (typeof saved.volume === "number") setVolume(saved.volume);
-        if (typeof saved.srtSpeed === "number") setSrtSpeed(saved.srtSpeed);
-        if (typeof saved.splitByLines === "boolean") setSplitByLines(saved.splitByLines);
-        if (typeof saved.linesPerFile === "number") setLinesPerFile(saved.linesPerFile);
-        if (typeof saved.numberOfParts === "number") setNumberOfParts(saved.numberOfParts);
-        if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
-        if (saved.audioFiles) setAudioFiles(saved.audioFiles);
-        if (saved.audioDir) setAudioDir(saved.audioDir);
-      }
-    } catch (err) {
-      console.error("[CaptionTranslator] Loi khi tai du lieu project:", err);
-    } finally {
-      hasLoadedRef.current = true;
-    }
-  }, [projectId]);
-  const saveCaptionState = reactExports.useCallback(async () => {
-    if (!projectId) return;
-    const payload = {
+  useProjectFeatureState({
+    feature: "caption",
+    fileName: "caption-state.json",
+    serialize: () => ({
       inputType,
       filePath,
       entries,
@@ -19409,48 +19539,40 @@ function CaptionTranslator() {
       enabledSteps: Array.from(enabledSteps.values()),
       audioFiles,
       audioDir
-    };
-    await window.electronAPI.project.writeFeatureFile({
-      projectId,
-      feature: "caption",
-      fileName: CAPTION_STATE_FILE,
-      content: payload
-    });
-  }, [
-    projectId,
-    inputType,
-    filePath,
-    entries,
-    geminiModel,
-    voice,
-    rate,
-    volume,
-    srtSpeed,
-    splitByLines,
-    linesPerFile,
-    numberOfParts,
-    enabledSteps,
-    audioFiles,
-    audioDir
-  ]);
-  reactExports.useEffect(() => {
-    if (!projectId || !paths) return;
-    loadCaptionState();
-  }, [projectId, paths, loadCaptionState]);
-  reactExports.useEffect(() => {
-    if (!projectId || !paths || !hasLoadedRef.current) return;
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveCaptionState();
-    }, 500);
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [projectId, paths, saveCaptionState]);
+    }),
+    deserialize: (saved) => {
+      if (saved.inputType) setInputType(saved.inputType);
+      if (saved.filePath) setFilePath(saved.filePath);
+      if (saved.entries) setEntries(saved.entries);
+      if (saved.geminiModel) setGeminiModel(saved.geminiModel);
+      if (saved.voice) setVoice(saved.voice);
+      if (saved.rate) setRate(String(saved.rate));
+      if (saved.volume) setVolume(String(saved.volume));
+      if (typeof saved.srtSpeed === "number") setSrtSpeed(saved.srtSpeed);
+      if (typeof saved.splitByLines === "boolean") setSplitByLines(saved.splitByLines);
+      if (typeof saved.linesPerFile === "number") setLinesPerFile(saved.linesPerFile);
+      if (typeof saved.numberOfParts === "number") setNumberOfParts(saved.numberOfParts);
+      if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
+      if (saved.audioFiles) setAudioFiles(saved.audioFiles);
+      if (saved.audioDir) setAudioDir(saved.audioDir);
+    },
+    deps: [
+      inputType,
+      filePath,
+      entries,
+      geminiModel,
+      voice,
+      rate,
+      volume,
+      srtSpeed,
+      splitByLines,
+      linesPerFile,
+      numberOfParts,
+      enabledSteps,
+      audioFiles,
+      audioDir
+    ]
+  });
   const toggleStep = reactExports.useCallback((step) => {
     setEnabledSteps((prev) => {
       const next = new Set(prev);
@@ -19604,12 +19726,12 @@ function CaptionTranslator() {
     if (status === "success") return "var(--color-success)";
     return "var(--color-primary)";
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.container, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: styles$6.header, children: "Dịch Caption Tự Động" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.leftColumn, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.section, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.sectionTitle, children: "1. Chọn file đầu vào" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.fileTypeSelection, children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.container, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: styles$7.header, children: "Dịch Caption Tự Động" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.leftColumn, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.sectionTitle, children: "1. Chọn file đầu vào" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.fileTypeSelection, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             RadioButton,
             {
@@ -19630,7 +19752,7 @@ function CaptionTranslator() {
             }
           )
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.flexRow, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.flexRow, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             Input,
             {
@@ -19641,33 +19763,33 @@ function CaptionTranslator() {
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleBrowseFile, children: "Browse" })
         ] }),
-        entries.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: styles$6.textMuted, style: { marginTop: "8px" }, children: [
+        entries.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: styles$7.textMuted, style: { marginTop: "8px" }, children: [
           "Đã load: ",
           entries.length,
           " dòng"
         ] })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.section, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.sectionTitle, children: "3. Cấu hình Gemini Model" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.sectionTitle, children: "3. Cấu hình Gemini Model" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "select",
           {
             value: geminiModel,
             onChange: (e) => setGeminiModel(e.target.value),
-            className: styles$6.select,
+            className: styles$7.select,
             children: GEMINI_MODELS.map((m) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: m.value, children: m.label }, m.value))
           }
         )
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.section, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.sectionTitle, children: "4. Cấu hình Giọng đọc (TTS)" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.grid2, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.sectionTitle, children: "4. Cấu hình Giọng đọc (TTS)" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.grid2, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$6.label, children: "Giọng đọc" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value: voice, onChange: (e) => setVoice(e.target.value), className: styles$6.select, children: VOICES.map((v) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: v.value, children: v.label }, v.value)) })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$7.label, children: "Giọng đọc" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value: voice, onChange: (e) => setVoice(e.target.value), className: styles$7.select, children: VOICES.map((v) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: v.value, children: v.label }, v.value)) })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$6.label, children: "Tốc độ SRT" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$7.label, children: "Tốc độ SRT" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               Input,
               {
@@ -19681,22 +19803,22 @@ function CaptionTranslator() {
             )
           ] })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.grid2, style: { marginTop: "12px" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.grid2, style: { marginTop: "12px" }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$6.label, children: "Tốc độ đọc" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value: rate, onChange: (e) => setRate(e.target.value), className: styles$6.select, children: RATE_OPTIONS.map((r2) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: r2, children: r2 }, r2)) })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$7.label, children: "Tốc độ đọc" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value: rate, onChange: (e) => setRate(e.target.value), className: styles$7.select, children: RATE_OPTIONS.map((r2) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: r2, children: r2 }, r2)) })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$6.label, children: "Âm lượng" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value: volume, onChange: (e) => setVolume(e.target.value), className: styles$6.select, children: VOLUME_OPTIONS.map((v) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: v, children: v }, v)) })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: styles$7.label, children: "Âm lượng" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("select", { value: volume, onChange: (e) => setVolume(e.target.value), className: styles$7.select, children: VOLUME_OPTIONS.map((v) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: v, children: v }, v)) })
           ] })
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.rightColumn, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.section, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.sectionTitle, children: "2. Cấu hình chia nhỏ Text" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.splitConfig, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.rightColumn, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.section, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.sectionTitle, children: "2. Cấu hình chia nhỏ Text" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.splitConfig, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             RadioButton,
             {
@@ -19709,7 +19831,7 @@ function CaptionTranslator() {
                 {
                   value: linesPerFile,
                   onChange: (e) => setLinesPerFile(Number(e.target.value)),
-                  className: `${styles$6.select} ${styles$6.selectSmall} ${!splitByLines ? styles$6.disabled : ""}`,
+                  className: `${styles$7.select} ${styles$7.selectSmall} ${!splitByLines ? styles$7.disabled : ""}`,
                   disabled: !splitByLines,
                   onClick: (e) => e.stopPropagation(),
                   style: { marginTop: "8px" },
@@ -19736,7 +19858,7 @@ function CaptionTranslator() {
                   variant: "small",
                   disabled: splitByLines,
                   onClick: (e) => e.stopPropagation(),
-                  containerClassName: splitByLines ? styles$6.disabled : "",
+                  containerClassName: splitByLines ? styles$7.disabled : "",
                   style: { marginTop: "8px" }
                 }
               )
@@ -19744,9 +19866,9 @@ function CaptionTranslator() {
           )
         ] })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.section, style: { flex: 1, display: "flex", flexDirection: "column" }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.sectionTitle, children: "5. Điều khiển & Tiến độ" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.stepCheckboxes, children: [1, 2, 3, 4, 5, 6].map((step) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.section, style: { flex: 1, display: "flex", flexDirection: "column" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.sectionTitle, children: "5. Điều khiển & Tiến độ" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.stepCheckboxes, children: [1, 2, 3, 4, 5, 6].map((step) => /* @__PURE__ */ jsxRuntimeExports.jsx(
           Checkbox,
           {
             label: STEP_LABELS[step - 1],
@@ -19756,7 +19878,7 @@ function CaptionTranslator() {
           },
           step
         )) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.buttonsRow, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.buttonsRow, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             Button,
             {
@@ -19778,19 +19900,19 @@ function CaptionTranslator() {
             }
           )
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.progressSection, style: { marginTop: "auto", paddingTop: "16px" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$6.progressHeader, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$6.textMuted, children: progress.message }),
-            progress.total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: styles$6.textMuted, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.progressSection, style: { marginTop: "auto", paddingTop: "16px" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$7.progressHeader, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$7.textMuted, children: progress.message }),
+            progress.total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: styles$7.textMuted, children: [
               progress.current,
               "/",
               progress.total
             ] })
           ] }),
-          progress.total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$6.progressBar, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          progress.total > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$7.progressBar, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
             "div",
             {
-              className: styles$6.progressFill,
+              className: styles$7.progressFill,
               style: {
                 width: `${progress.current / progress.total * 100}%`,
                 backgroundColor: getProgressColor()
@@ -19802,6 +19924,685 @@ function CaptionTranslator() {
     ] })
   ] });
 }
+const container$1 = "_container_1hs3r_5";
+const canvasContainer = "_canvasContainer_1hs3r_79";
+const canvas = "_canvas_1hs3r_79";
+const canvasInfo = "_canvasInfo_1hs3r_121";
+const previewControls = "_previewControls_1hs3r_135";
+const rightPane = "_rightPane_1hs3r_149";
+const header = "_header_1hs3r_177";
+const grid$1 = "_grid_1hs3r_179";
+const actionBar = "_actionBar_1hs3r_181";
+const section$1 = "_section_1hs3r_183";
+const subtitle = "_subtitle_1hs3r_217";
+const fullWidth = "_fullWidth_1hs3r_253";
+const sectionTitle = "_sectionTitle_1hs3r_261";
+const inputGroup = "_inputGroup_1hs3r_299";
+const label$2 = "_label_1hs3r_311";
+const input$1 = "_input_1hs3r_299";
+const select$2 = "_select_1hs3r_323";
+const fileInputWrapper = "_fileInputWrapper_1hs3r_369";
+const btn = "_btn_1hs3r_383";
+const btnPrimary = "_btnPrimary_1hs3r_427";
+const colorPickerWrapper = "_colorPickerWrapper_1hs3r_487";
+const colorInput = "_colorInput_1hs3r_499";
+const presets = "_presets_1hs3r_519";
+const swatch = "_swatch_1hs3r_529";
+const progressContainer = "_progressContainer_1hs3r_581";
+const progressTrack = "_progressTrack_1hs3r_597";
+const progressBar = "_progressBar_1hs3r_613";
+const progressText = "_progressText_1hs3r_625";
+const statusMessage = "_statusMessage_1hs3r_641";
+const successMsg = "_successMsg_1hs3r_659";
+const errorMsg = "_errorMsg_1hs3r_671";
+const styles$2 = {
+  container: container$1,
+  canvasContainer,
+  canvas,
+  canvasInfo,
+  previewControls,
+  rightPane,
+  header,
+  grid: grid$1,
+  actionBar,
+  section: section$1,
+  subtitle,
+  fullWidth,
+  sectionTitle,
+  inputGroup,
+  label: label$2,
+  input: input$1,
+  select: select$2,
+  fileInputWrapper,
+  btn,
+  btnPrimary,
+  colorPickerWrapper,
+  colorInput,
+  presets,
+  swatch,
+  progressContainer,
+  progressTrack,
+  progressBar,
+  progressText,
+  statusMessage,
+  successMsg,
+  errorMsg
+};
+const getCaptionVideoAPI = () => {
+  return window.electronAPI.captionVideo;
+};
+const DEFAULT_STYLE = {
+  fontName: "ZYVNA Fairy",
+  // Default to custom font
+  fontSize: 62,
+  fontColor: "#FFFF00",
+  shadow: 4,
+  marginV: 50,
+  alignment: 2
+};
+const FONT_OPTIONS = ["ZYVNA Fairy", "Be Vietnam Pro", "Arial", "Roboto", "Times New Roman"];
+const COLOR_PRESETS = [
+  { color: "#FFFFFF", label: "Trắng" },
+  { color: "#FFFF00", label: "Vàng" },
+  { color: "#FFEB3B", label: "Vàng Nhạt" },
+  { color: "#FF5722", label: "Cam" },
+  { color: "#00E5FF", label: "Cyan" },
+  { color: "#4CAF50", label: "Xanh Lá" }
+];
+const CaptionVideo = () => {
+  const [videoPath, setVideoPath] = reactExports.useState("");
+  const [srtPath, setSrtPath] = reactExports.useState("");
+  const [assPath, setAssPath] = reactExports.useState("");
+  const [outputPath, setOutputPath] = reactExports.useState("");
+  const [videoMeta, setVideoMeta] = reactExports.useState(null);
+  const [currentFrameBase64, setCurrentFrameBase64] = reactExports.useState(null);
+  const canvasRef = reactExports.useRef(null);
+  const [containerSize, setContainerSize] = reactExports.useState({ width: 0, height: 0 });
+  const [imageOffset, setImageOffset] = reactExports.useState({ x: 0, y: 0 });
+  const [scaleRatio, setScaleRatio] = reactExports.useState(1);
+  const [scaledSize, setScaledSize] = reactExports.useState({ width: 0, height: 0 });
+  const [mode, setMode] = reactExports.useState("region");
+  const [region, setRegion] = reactExports.useState(null);
+  const [isDraggingRegion, setIsDraggingRegion] = reactExports.useState(false);
+  const [dragStart, setDragStart] = reactExports.useState(null);
+  const [style, setStyle] = reactExports.useState(DEFAULT_STYLE);
+  const [useGpu, setUseGpu] = reactExports.useState(true);
+  const [isProcessing, setIsProcessing] = reactExports.useState(false);
+  const [progress, setProgress] = reactExports.useState(null);
+  const [message, setMessage] = reactExports.useState("");
+  const [error2, setError] = reactExports.useState("");
+  reactExports.useEffect(() => {
+  }, []);
+  reactExports.useEffect(() => {
+    const container2 = document.querySelector(`.${styles$2.canvasContainer}`);
+    if (!container2) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height
+        });
+      }
+    });
+    observer.observe(container2);
+    return () => observer.disconnect();
+  }, []);
+  reactExports.useEffect(() => {
+    drawCanvas();
+  }, [currentFrameBase64, containerSize, region, style, mode]);
+  reactExports.useEffect(() => {
+    getCaptionVideoAPI().onRenderProgress((prog) => {
+      setProgress(prog);
+      if (prog.status === "completed") {
+        setIsProcessing(false);
+        setMessage("Hoàn thành!");
+      } else if (prog.status === "error") {
+        setIsProcessing(false);
+        setError(prog.message);
+      }
+    });
+  }, []);
+  const loadVideo = async (path) => {
+    setVideoPath(path);
+    setError("");
+    try {
+      const metaRes = await getCaptionVideoAPI().getVideoMetadata(path);
+      if (metaRes.success && metaRes.data) {
+        setVideoMeta(metaRes.data);
+        setRegion({ x: 0, y: 0, w: metaRes.data.width, h: metaRes.data.height });
+      }
+      await loadRandomFrame(path);
+    } catch (err) {
+      setError(`Lỗi load video: ${err}`);
+    }
+  };
+  const loadRandomFrame = async (path = videoPath) => {
+    if (!path) return;
+    try {
+      const res = await getCaptionVideoAPI().extractFrame(path);
+      if (res.success && res.data) {
+        const frameData = res.data.frameData.startsWith("data:") ? res.data.frameData : `data:image/png;base64,${res.data.frameData}`;
+        setCurrentFrameBase64(frameData);
+      } else {
+        setError(res.error || "Lỗi lấy frame");
+      }
+    } catch (err) {
+      setError(`Lỗi lấy frame: ${err}`);
+    }
+  };
+  const drawCanvas = reactExports.useCallback(() => {
+    const canvas2 = canvasRef.current;
+    if (!canvas2) return;
+    const ctx = canvas2.getContext("2d");
+    if (!ctx) return;
+    if (!currentFrameBase64) {
+      canvas2.width = containerSize.width || 300;
+      canvas2.height = containerSize.height || 169;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas2.width, canvas2.height);
+      ctx.fillStyle = "#666";
+      ctx.font = "14px Inter";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("No Preview", canvas2.width / 2, canvas2.height / 2);
+      return;
+    }
+    const img = new Image();
+    img.src = currentFrameBase64;
+    img.onload = () => {
+      const cw = containerSize.width;
+      const ch = containerSize.height;
+      if (cw === 0 || ch === 0) return;
+      canvas2.width = cw;
+      canvas2.height = ch;
+      const imgRatio = img.width / img.height;
+      const canvasRatio = cw / ch;
+      let drawW, drawH;
+      if (canvasRatio > imgRatio) {
+        drawH = ch;
+        drawW = drawH * imgRatio;
+      } else {
+        drawW = cw;
+        drawH = drawW / imgRatio;
+      }
+      const offX = (cw - drawW) / 2;
+      const offY = (ch - drawH) / 2;
+      setImageOffset({ x: offX, y: offY });
+      setScaledSize({ width: drawW, height: drawH });
+      setScaleRatio(img.width / drawW);
+      ctx.fillStyle = "#111827";
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(img, offX, offY, drawW, drawH);
+      if (region && mode === "region") {
+        const rx = region.x / (img.width / drawW) + offX;
+        const ry = region.y / (img.width / drawW) + offY;
+        const rw = region.w / (img.width / drawW);
+        const rh = region.h / (img.width / drawW);
+        ctx.strokeStyle = "#10b981";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.fillRect(offX, offY, drawW, ry - offY);
+        ctx.fillRect(offX, ry + rh, drawW, offY + drawH - (ry + rh));
+        ctx.fillRect(offX, ry, rx - offX, rh);
+        ctx.fillRect(rx + rw, ry, offX + drawW - (rx + rw), rh);
+      }
+      if (style) {
+        const fontSizeScaled = style.fontSize / (img.width / drawW);
+        ctx.font = `bold ${fontSizeScaled}px "${style.fontName}", sans-serif`;
+        ctx.textAlign = style.alignment === 2 ? "center" : "left";
+        const effectiveY = region ? region.y / scaleRatio + offY + region.h / scaleRatio : offY + drawH;
+        const textX = offX + drawW / 2;
+        const marginVScaled = style.marginV / scaleRatio;
+        const textY = effectiveY - marginVScaled;
+        if (style.shadow > 0) {
+          ctx.shadowColor = "rgba(0,0,0,0.8)";
+          ctx.shadowBlur = 2;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+        }
+        ctx.fillStyle = style.fontColor;
+        ctx.fillText("Caption Demo", textX, textY);
+        ctx.shadowColor = "transparent";
+        if (mode === "caption") {
+          ctx.strokeStyle = "#3b82f6";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(textX - 20, textY);
+          ctx.lineTo(textX + 20, textY);
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(59, 130, 246, 0.5)";
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(textX, textY);
+          ctx.lineTo(textX, effectiveY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    };
+  }, [currentFrameBase64, containerSize, region, style, mode]);
+  const handleMouseDown = (e) => {
+    if (!currentFrameBase64) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (mode === "region") {
+      setIsDraggingRegion(true);
+      setDragStart({ x, y });
+      setRegion({
+        x: (x - imageOffset.x) * scaleRatio,
+        y: (y - imageOffset.y) * scaleRatio,
+        w: 0,
+        h: 0
+      });
+    } else if (mode === "caption") {
+      setIsDraggingRegion(true);
+      setDragStart({ x, y });
+    }
+  };
+  const handleMouseMove = (e) => {
+    if (!isDraggingRegion || !dragStart || !currentFrameBase64) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (mode === "region") {
+      const startX = dragStart.x;
+      const startY = dragStart.y;
+      const curX = Math.max(imageOffset.x, Math.min(x, imageOffset.x + scaledSize.width));
+      const curY = Math.max(imageOffset.y, Math.min(y, imageOffset.y + scaledSize.height));
+      const x1 = Math.min(startX, curX);
+      const y1 = Math.min(startY, curY);
+      const w = Math.abs(curX - startX);
+      const h = Math.abs(curY - startY);
+      setRegion({
+        x: Math.floor((x1 - imageOffset.x) * scaleRatio),
+        y: Math.floor((y1 - imageOffset.y) * scaleRatio),
+        w: Math.floor(w * scaleRatio),
+        h: Math.floor(h * scaleRatio)
+      });
+    } else if (mode === "caption") {
+      const curY = y;
+      const effectiveBottom = region ? imageOffset.y + (region.y + region.h) / scaleRatio : imageOffset.y + scaledSize.height;
+      const distFromBottom = effectiveBottom - curY;
+      setStyle((prev) => ({ ...prev, marginV: Math.max(0, Math.floor(distFromBottom * scaleRatio)) }));
+    }
+  };
+  const handleMouseUp = () => {
+    setIsDraggingRegion(false);
+    setDragStart(null);
+  };
+  const handleBrowseVideo = async () => {
+    try {
+      const res = await window.electronAPI.invoke("dialog:openFile", {
+        filters: [{ name: "Video", extensions: ["mp4", "mkv", "mov", "avi"] }]
+      });
+      if (!res.canceled && res.filePaths.length > 0) {
+        loadVideo(res.filePaths[0]);
+      }
+    } catch (e) {
+      setError(`${e}`);
+    }
+  };
+  const handleBrowseSrt = async () => {
+    try {
+      const res = await window.electronAPI.invoke("dialog:openFile", { filters: [{ name: "SRT", extensions: ["srt"] }] });
+      if (!res.canceled && res.filePaths.length > 0) {
+        setSrtPath(res.filePaths[0]);
+        setAssPath(res.filePaths[0].replace(".srt", ".ass"));
+        setOutputPath(res.filePaths[0].replace(".srt", "_caption.mp4"));
+      }
+    } catch (e) {
+      setError(`${e}`);
+    }
+  };
+  const handleBrowseOutput = async () => {
+    try {
+      const res = await window.electronAPI.invoke("dialog:showSaveDialog", {
+        title: "Chọn nơi lưu video",
+        defaultPath: outputPath || "caption_output.mp4",
+        filters: [{ name: "Video", extensions: ["mp4"] }]
+      });
+      if (!res.canceled && res.filePath) {
+        setOutputPath(res.filePath);
+      }
+    } catch (e) {
+      setError(`${e}`);
+    }
+  };
+  const handleResetRegion = () => {
+    if (videoMeta) {
+      setRegion({ x: 0, y: 0, w: videoMeta.width, h: videoMeta.height });
+    } else {
+      setRegion(null);
+    }
+    setMessage("Đã reset vùng chọn");
+  };
+  const handleSaveCoordinates = async () => {
+    if (!region) {
+      setError("Chưa chọn vùng nào!");
+      return;
+    }
+    try {
+      const res = await window.electronAPI.invoke("dialog:showSaveDialog", {
+        title: "Lưu tọa độ vùng",
+        defaultPath: "region_coordinates.json",
+        filters: [{ name: "JSON", extensions: ["json"] }]
+      });
+      if (!res.canceled && res.filePath) {
+        const data = {
+          region: { x: region.x, y: region.y, width: region.w, height: region.h },
+          video_file: videoPath ? videoPath.split(/[\\/]/).pop() : "N/A",
+          style: { marginV: style.marginV, alignment: style.alignment }
+        };
+        await window.electronAPI.invoke("caption:saveJson", { filePath: res.filePath, data });
+        setMessage(`Đã lưu tọa độ: ${res.filePath}`);
+      }
+    } catch (e) {
+      setError(`${e}`);
+    }
+  };
+  const handleRender = async () => {
+    if (!srtPath || !outputPath) {
+      setError("Vui lòng chọn file SRT và đường dẫn output.");
+      return;
+    }
+    setIsProcessing(true);
+    setError("");
+    try {
+      setMessage("Đang tạo file ASS...");
+      const generatedAssPath = assPath || srtPath.replace(/\.srt$/i, ".ass");
+      const convertRes = await getCaptionVideoAPI().convertToAss({
+        srtPath,
+        assPath: generatedAssPath,
+        videoResolution: videoMeta ? { width: videoMeta.width, height: videoMeta.height } : void 0,
+        style
+      });
+      if (!convertRes.success) {
+        setError(convertRes.error || "Lỗi tạo file ASS");
+        return;
+      }
+      setAssPath(generatedAssPath);
+      setMessage(`Đang render video (${convertRes.data?.entriesCount} dòng)...`);
+      const res = await getCaptionVideoAPI().renderVideo({
+        assPath: generatedAssPath,
+        outputPath,
+        width: region ? region.w : videoMeta?.width || 1920,
+        height: region ? region.h : videoMeta?.height || 1080,
+        useGpu
+      });
+      if (res.success) setMessage(`Render xong! Duration: ${res.data?.duration.toFixed(2)}s`);
+      else setError(res.error || "Error");
+    } catch (e) {
+      setError(`${e}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.container, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("style", { children: `
+        @font-face {
+          font-family: 'ZYVNA Fairy';
+          src: url('file:///d:/NauChaoHeo/resources/fonts/ZYVNA Fairy.ttf') format('truetype');
+        }
+      ` }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.rightPane, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.header, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { children: "Caption Video" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.subtitle, children: "Tạo video subtitle strip (Hardsub)" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.grid, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `${styles$2.section} ${styles$2.fullWidth}`, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.sectionTitle, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Film, { size: 16 }),
+            " File Input"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.grid, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Video File" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.fileInputWrapper, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: styles$2.input, value: videoPath, readOnly: true, placeholder: "Chọn video..." }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `${styles$2.btn} ${styles$2.browseBtn}`, onClick: handleBrowseVideo, children: "📂" })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "SRT File" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.fileInputWrapper, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: styles$2.input, value: srtPath, readOnly: true, placeholder: "Chọn subtitle..." }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `${styles$2.btn} ${styles$2.browseBtn}`, onClick: handleBrowseSrt, children: "📂" })
+              ] })
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `${styles$2.section} ${styles$2.fullWidth}`, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.sectionTitle, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Preview" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: styles$2.btn, onClick: () => loadRandomFrame(), title: "Random Frame", style: { marginLeft: "auto", padding: "4px 8px", fontSize: "0.75rem" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Image$1, { size: 14 }),
+              " Random Frame"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$2.canvasContainer, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "canvas",
+            {
+              ref: canvasRef,
+              className: styles$2.canvas,
+              onMouseDown: handleMouseDown,
+              onMouseMove: handleMouseMove,
+              onMouseUp: handleMouseUp,
+              onMouseLeave: handleMouseUp
+            }
+          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.previewControls, style: { marginTop: 12, justifyContent: "space-between", display: "flex" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.canvasInfo, style: { border: "none", background: "transparent", padding: 0, textAlign: "left" }, children: [
+              videoMeta ? `${videoMeta.width}x${videoMeta.height}` : "No Video",
+              region && ` | Region: (${region.x},${region.y}) ${region.w}x${region.h}`,
+              style.marginV > 0 && ` | MarginV: ${style.marginV}px`
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  className: `${styles$2.btn} ${mode === "region" ? styles$2.btnPrimary : ""}`,
+                  onClick: () => setMode("region"),
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(Maximize2, { size: 14 }),
+                    " Chọn Vùng"
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  className: `${styles$2.btn} ${mode === "caption" ? styles$2.btnPrimary : ""}`,
+                  onClick: () => setMode("caption"),
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(MousePointer2, { size: 14 }),
+                    " Chỉnh Vị trí"
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  className: styles$2.btn,
+                  onClick: handleResetRegion,
+                  title: "Reset vùng chọn về toàn bộ video",
+                  children: "Reset"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  className: styles$2.btn,
+                  onClick: handleSaveCoordinates,
+                  title: "Lưu tọa độ vùng chọn ra file JSON",
+                  disabled: !region,
+                  children: "Lưu Tọa độ"
+                }
+              )
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.section, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.sectionTitle, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Type, { size: 16 }),
+            " Style Config"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Font Family" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "select",
+              {
+                className: styles$2.select,
+                value: style.fontName,
+                onChange: (e) => setStyle({ ...style, fontName: e.target.value }),
+                children: FONT_OPTIONS.map((f) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: f, children: f }, f))
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.grid, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Size" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "number",
+                  className: styles$2.input,
+                  value: style.fontSize,
+                  onChange: (e) => setStyle({ ...style, fontSize: Number(e.target.value) }),
+                  min: 20,
+                  max: 200,
+                  step: 2
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Shadow" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "number",
+                  className: styles$2.input,
+                  value: style.shadow,
+                  onChange: (e) => setStyle({ ...style, shadow: Number(e.target.value) }),
+                  min: 0,
+                  max: 10
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.grid, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Margin V" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "number",
+                  className: styles$2.input,
+                  value: style.marginV,
+                  onChange: (e) => setStyle({ ...style, marginV: Number(e.target.value) }),
+                  min: 0,
+                  max: 500,
+                  title: "Khoảng cách từ đáy video (px)"
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Alignment" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "select",
+                {
+                  className: styles$2.select,
+                  value: style.alignment,
+                  onChange: (e) => setStyle({ ...style, alignment: Number(e.target.value) }),
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: 2, children: "Bottom Center" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: 5, children: "Middle Center" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: 8, children: "Top Center" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: 1, children: "Bottom Left" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: 3, children: "Bottom Right" })
+                  ]
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Color" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.colorPickerWrapper, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  type: "color",
+                  className: styles$2.colorInput,
+                  value: style.fontColor,
+                  onChange: (e) => setStyle({ ...style, fontColor: e.target.value })
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$2.presets, children: COLOR_PRESETS.map((p) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "div",
+                {
+                  className: styles$2.swatch,
+                  style: { backgroundColor: p.color },
+                  onClick: () => setStyle({ ...style, fontColor: p.color }),
+                  title: p.label
+                },
+                p.color
+              )) })
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.section, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.sectionTitle, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Settings$1, { size: 16 }),
+            " Settings"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.inputGroup, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Output Path" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.fileInputWrapper, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: styles$2.input, value: outputPath, onChange: (e) => setOutputPath(e.target.value), placeholder: "Đường dẫn output video..." }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: `${styles$2.btn} ${styles$2.browseBtn}`, onClick: handleBrowseOutput, children: "📂" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$2.inputGroup, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: useGpu, onChange: (e) => setUseGpu(e.target.checked) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: styles$2.label, children: "Enable GPU Acceleration (NVENC)" })
+          ] }) })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.actionBar, children: [
+        message && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `${styles$2.statusMessage} ${error2 ? styles$2.errorMsg : styles$2.successMsg}`, style: { flex: 1, margin: 0 }, children: [
+          error2 ? /* @__PURE__ */ jsxRuntimeExports.jsx(CircleAlert, { size: 14, style: { display: "inline", marginRight: 4 } }) : /* @__PURE__ */ jsxRuntimeExports.jsx(CircleCheckBig, { size: 14, style: { display: "inline", marginRight: 4 } }),
+          error2 || message
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            className: `${styles$2.btn} ${styles$2.btnPrimary}`,
+            onClick: handleRender,
+            disabled: isProcessing || !srtPath,
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Play, { size: 16 }),
+              " Render Video"
+            ]
+          }
+        )
+      ] }),
+      progress && isProcessing && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.progressContainer, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$2.progressTrack, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: styles$2.progressBar, style: { width: `${progress.percent}%` } }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: styles$2.progressText, children: [
+          progress.percent.toFixed(1),
+          "% - ",
+          progress.message
+        ] })
+      ] })
+    ] })
+  ] });
+};
 const STORY_IPC_CHANNELS = {
   PARSE: "story:parse",
   PREPARE_PROMPT: "story:preparePrompt",
@@ -19870,9 +20671,6 @@ const buildTokenKey$2 = (config) => {
   return `${extractCookieKey$1(config.cookie || "")}|${(config.atToken || "").trim()}`;
 };
 function StoryTranslator() {
-  const { projectId, paths } = useProjectContext();
-  const hasLoadedRef = reactExports.useRef(false);
-  const saveTimeoutRef = reactExports.useRef(null);
   const [filePath, setFilePath] = reactExports.useState("");
   const [sourceLang, setSourceLang] = reactExports.useState("zh");
   const [targetLang, setTargetLang] = reactExports.useState("vi");
@@ -20085,94 +20883,89 @@ function StoryTranslator() {
       setStatus("idle");
     }
   };
-  const loadStoryState = async () => {
-    if (!projectId) return;
-    try {
-      const res = await window.electronAPI.project.readFeatureFile({
-        projectId,
-        feature: "story",
-        fileName: STORY_STATE_FILE
+  const { projectId } = useProjectFeatureState({
+    feature: "story",
+    fileName: STORY_STATE_FILE,
+    serialize: () => {
+      const orderedTranslatedEntries = chapters.filter((c) => translatedChapters.has(c.id)).map((c) => [c.id, translatedChapters.get(c.id)]);
+      const orderedChapterModels = orderedTranslatedEntries.map(([chapterId]) => {
+        const usedModel = chapterModels.get(chapterId) || model;
+        return [chapterId, usedModel];
       });
-      if (res?.success && res.data) {
-        const saved = JSON.parse(res.data);
-        if (saved.sourceLang) setSourceLang(saved.sourceLang);
-        if (saved.targetLang) setTargetLang(saved.targetLang);
-        if (saved.model) setModel(saved.model);
-        if (saved.translateMode) setTranslateMode(saved.translateMode);
-        if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
-        if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
-        if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
-        if (saved.translatedTitles) {
-          setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title])));
-        }
-        if (typeof saved.tokenConfigId !== "undefined") {
-          setTokenConfigId(saved.tokenConfigId || null);
-        }
-        if (saved.tokenContexts && saved.tokenContexts.length > 0) {
-          setTokenContexts(new Map(saved.tokenContexts));
-        } else if (saved.tokenContext && saved.tokenConfigId) {
-          setTokenContexts(/* @__PURE__ */ new Map([[saved.tokenConfigId, saved.tokenContext]]));
-        }
-        let parsedOk = false;
-        if (saved.filePath) {
-          setFilePath(saved.filePath);
-          parsedOk = await parseFile(saved.filePath, { keepTranslations: true, keepSelection: true });
-        }
-        if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
-          setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: "" })));
-        }
-        if (saved.viewMode) setViewMode(saved.viewMode);
-        if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
-        if (typeof saved.selectedChapterId !== "undefined") setSelectedChapterId(saved.selectedChapterId);
+      const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
+        const usedMethod = chapterMethods.get(chapterId) || (translateMode === "token" ? "token" : "api");
+        return [chapterId, usedMethod];
+      });
+      const serializedTitles = orderedTranslatedEntries.map(([chapterId, content2]) => ({
+        id: chapterId,
+        title: extractTranslatedTitle(content2, chapterId)
+      }));
+      return {
+        filePath,
+        sourceLang,
+        targetLang,
+        model,
+        translateMode,
+        translatedEntries: orderedTranslatedEntries,
+        chapterModels: orderedChapterModels,
+        chapterMethods: orderedChapterMethods,
+        translatedTitles: serializedTitles,
+        tokenConfigId,
+        tokenContexts: Array.from(tokenContexts.entries()),
+        viewMode,
+        excludedChapterIds: Array.from(excludedChapterIds.values()),
+        selectedChapterId
+      };
+    },
+    deserialize: async (saved) => {
+      if (saved.sourceLang) setSourceLang(saved.sourceLang);
+      if (saved.targetLang) setTargetLang(saved.targetLang);
+      if (saved.model) setModel(saved.model);
+      if (saved.translateMode) setTranslateMode(saved.translateMode);
+      if (saved.translatedEntries) setTranslatedChapters(new Map(saved.translatedEntries));
+      if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
+      if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
+      if (saved.translatedTitles) {
+        setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title])));
       }
-    } catch (error2) {
-      console.error("[StoryTranslator] Loi khi tai du lieu project:", error2);
-    } finally {
-      hasLoadedRef.current = true;
-    }
-  };
-  const saveStoryState = async () => {
-    if (!projectId) return;
-    const orderedTranslatedEntries = chapters.filter((c) => translatedChapters.has(c.id)).map((c) => [c.id, translatedChapters.get(c.id)]);
-    const orderedChapterModels = orderedTranslatedEntries.map(([chapterId]) => {
-      const usedModel = chapterModels.get(chapterId) || model;
-      return [chapterId, usedModel];
-    });
-    const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
-      const usedMethod = chapterMethods.get(chapterId) || (translateMode === "token" ? "token" : "api");
-      return [chapterId, usedMethod];
-    });
-    const translatedTitles2 = orderedTranslatedEntries.map(([chapterId, content2]) => ({
-      id: chapterId,
-      title: extractTranslatedTitle(content2, chapterId)
-    }));
-    const payload = {
+      if (typeof saved.tokenConfigId !== "undefined") {
+        setTokenConfigId(saved.tokenConfigId || null);
+      }
+      if (saved.tokenContexts && saved.tokenContexts.length > 0) {
+        setTokenContexts(new Map(saved.tokenContexts));
+      } else if (saved.tokenContext && saved.tokenConfigId) {
+        setTokenContexts(/* @__PURE__ */ new Map([[saved.tokenConfigId, saved.tokenContext]]));
+      }
+      let parsedOk = false;
+      if (saved.filePath) {
+        setFilePath(saved.filePath);
+        parsedOk = await parseFile(saved.filePath, { keepTranslations: true, keepSelection: true });
+      }
+      if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
+        setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: "" })));
+      }
+      if (saved.viewMode) setViewMode(saved.viewMode);
+      if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
+      if (typeof saved.selectedChapterId !== "undefined") setSelectedChapterId(saved.selectedChapterId);
+    },
+    deps: [
       filePath,
       sourceLang,
       targetLang,
       model,
       translateMode,
-      translatedEntries: orderedTranslatedEntries,
-      chapterModels: orderedChapterModels,
-      chapterMethods: orderedChapterMethods,
-      translatedTitles: translatedTitles2,
+      chapters,
+      translatedChapters,
+      chapterModels,
+      chapterMethods,
+      translatedTitles,
       tokenConfigId,
-      tokenContexts: Array.from(tokenContexts.entries()),
+      tokenContexts,
       viewMode,
-      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      excludedChapterIds,
       selectedChapterId
-    };
-    await window.electronAPI.project.writeFeatureFile({
-      projectId,
-      feature: "story",
-      fileName: STORY_STATE_FILE,
-      content: payload
-    });
-  };
-  reactExports.useEffect(() => {
-    if (!projectId || !paths) return;
-    loadStoryState();
-  }, [projectId, paths]);
+    ]
+  });
   reactExports.useEffect(() => {
     loadConfigurations();
     loadProxySetting();
@@ -20184,38 +20977,6 @@ function StoryTranslator() {
       }
     }
   }, [translateMode, tokenConfigId]);
-  reactExports.useEffect(() => {
-    if (!projectId || !paths || !hasLoadedRef.current) return;
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveStoryState();
-    }, 500);
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [
-    projectId,
-    paths,
-    filePath,
-    sourceLang,
-    targetLang,
-    model,
-    translateMode,
-    chapters,
-    translatedChapters,
-    chapterModels,
-    chapterMethods,
-    translatedTitles,
-    tokenConfigId,
-    tokenContexts,
-    viewMode,
-    excludedChapterIds,
-    selectedChapterId
-  ]);
   reactExports.useEffect(() => {
     if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;
     const { map, changed } = migrateTokenContextsToTokenKey(tokenConfigs, tokenContexts);
@@ -20874,7 +21635,7 @@ Số chương: ${ebookChapters.length}`);
             )
           ] })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto p-2 space-y-1", children: chapters.map((chapter) => {
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 flex flex-col-reverse overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto overflow-x-auto p-2 space-y-1", children: chapters.map((chapter) => {
           const isProcessing = processingChapters.has(chapter.id);
           const processingInfo = processingChapters.get(chapter.id);
           const elapsedTime = isProcessing && processingInfo ? Math.floor((Date.now() - processingInfo.startTime) / 1e3) : 0;
@@ -20882,7 +21643,7 @@ Số chương: ${ebookChapters.length}`);
           return /* @__PURE__ */ jsxRuntimeExports.jsxs(
             "div",
             {
-              className: `flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${selectedChapterId === chapter.id ? "bg-primary text-text-invert" : "text-text-secondary hover:bg-surface hover:text-text-primary"}`,
+              className: `flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors whitespace-nowrap ${selectedChapterId === chapter.id ? "bg-primary text-text-invert" : "text-text-secondary hover:bg-surface hover:text-text-primary"}`,
               children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx(
                   "button",
@@ -20895,7 +21656,7 @@ Số chương: ${ebookChapters.length}`);
                     children: isChapterIncluded(chapter.id) && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-3 h-3", fill: "none", stroke: "currentColor", viewBox: "0 0 24 24", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 3, d: "M5 13l4 4L19 7" }) })
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
                   "button",
                   {
                     onClick: () => {
@@ -20906,30 +21667,28 @@ Số chương: ${ebookChapters.length}`);
                         setViewMode("original");
                       }
                     },
-                    className: "flex-1 text-left truncate flex items-center gap-2",
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${!isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "text-white/60 italic" : "text-text-secondary/40 italic" : hasTranslatedTitle ? "text-emerald-500 font-medium" : selectedChapterId === chapter.id ? "text-white" : "text-text-secondary"}`, children: translatedTitles.get(chapter.id) || (translatedChapters.has(chapter.id) ? extractTranslatedTitle(translatedChapters.get(chapter.id) || "", chapter.id) : chapter.title) }),
-                      isProcessing && processingInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex items-center gap-1 shrink-0 text-xs ${selectedChapterId === chapter.id ? "text-yellow-300" : "text-yellow-500"}`, children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `px-1.5 py-0.5 rounded border ${selectedChapterId === chapter.id ? "border-yellow-300/60 bg-yellow-300/10" : "border-yellow-500/60 bg-yellow-500/10"}`, children: processingInfo.channel === "api" ? "API" : "TOKEN" }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
-                          "W",
-                          processingInfo.workerId
-                        ] }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 10 }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
-                          elapsedTime,
-                          "s"
-                        ] })
-                      ] })
-                    ]
+                    className: "min-w-0 flex-1 text-left flex items-center gap-2",
+                    children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `truncate ${!isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "text-white/60 italic" : "text-text-secondary/40 italic" : hasTranslatedTitle ? "text-emerald-500 font-medium" : selectedChapterId === chapter.id ? "text-white" : "text-text-secondary"}`, children: translatedTitles.get(chapter.id) || (translatedChapters.has(chapter.id) ? extractTranslatedTitle(translatedChapters.get(chapter.id) || "", chapter.id) : chapter.title) })
                   }
-                )
+                ),
+                isProcessing && processingInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex items-center gap-1 shrink-0 text-xs ${selectedChapterId === chapter.id ? "text-yellow-300" : "text-yellow-500"}`, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `px-1.5 py-0.5 rounded border ${selectedChapterId === chapter.id ? "border-yellow-300/60 bg-yellow-300/10" : "border-yellow-500/60 bg-yellow-500/10"}`, children: processingInfo.channel === "api" ? "API" : "TOKEN" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
+                    "W",
+                    processingInfo.workerId
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 10 }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
+                    elapsedTime,
+                    "s"
+                  ] })
+                ] })
               ]
             },
             chapter.id
           );
-        }) })
+        }) }) })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex justify-between items-center", children: [
@@ -21054,9 +21813,6 @@ const buildTokenKey$1 = (config) => {
   return `${extractCookieKey(config.cookie || "")}|${(config.atToken || "").trim()}`;
 };
 function StorySummary() {
-  const { projectId, paths } = useProjectContext();
-  const hasLoadedRef = reactExports.useRef(false);
-  const saveTimeoutRef = reactExports.useRef(null);
   const [sourceLang, setSourceLang] = reactExports.useState("vi");
   const [targetLang, setTargetLang] = reactExports.useState("vi");
   const [model, setModel] = reactExports.useState("gemini-3-flash-preview");
@@ -21227,21 +21983,52 @@ function StorySummary() {
     }
     return { map: changed ? next : contexts, changed };
   };
-  console.log("[StorySummary] Render - projectId:", projectId);
-  console.log("[StorySummary] Render - paths:", paths);
   console.log("[StorySummary] Render - summaries.size:", summaries.size);
   console.log("[StorySummary] Render - status:", status);
   console.log("[StorySummary] Render - chapters.length:", chapters.length);
   console.log("[StorySummary] Render - sourceChapters.size:", sourceChapters.size);
-  const loadStoryState = async () => {
-    if (!projectId) {
-      console.log("[StorySummary] Không có projectId, bỏ qua load");
-      return;
-    }
-    console.log("[StorySummary] Bắt đầu load dữ liệu...");
-    try {
+  const { projectId } = useProjectFeatureState({
+    feature: "story",
+    fileName: STORY_STATE_FILE,
+    serialize: () => {
+      const orderedSummaries = chapters.filter((c) => summaries.has(c.id)).map((c) => [c.id, summaries.get(c.id)]);
+      const orderedChapterModels = orderedSummaries.map(([chapterId]) => {
+        const usedModel = chapterModels.get(chapterId) || model;
+        return [chapterId, usedModel];
+      });
+      const orderedChapterMethods = orderedSummaries.map(([chapterId]) => {
+        const usedMethod = chapterMethods.get(chapterId) || (translateMode === "token" ? "token" : "api");
+        return [chapterId, usedMethod];
+      });
+      const orderedSummaryTitles = orderedSummaries.map(([chapterId]) => {
+        const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || chapters.find((c) => c.id === chapterId)?.title || "";
+        return [chapterId, title];
+      });
+      return {
+        model,
+        translateMode,
+        summaries: orderedSummaries,
+        chapterModels: orderedChapterModels,
+        chapterMethods: orderedChapterMethods,
+        summaryTitles: orderedSummaryTitles,
+        tokenConfigId,
+        tokenContexts: Array.from(tokenContexts.entries()),
+        viewMode,
+        excludedChapterIds: Array.from(excludedChapterIds.values()),
+        selectedChapterId
+      };
+    },
+    deserialize: () => {
+    },
+    customLoad: async () => {
+      const pid = projectId;
+      if (!pid) {
+        console.log("[StorySummary] Không có projectId, bỏ qua load");
+        return;
+      }
+      console.log("[StorySummary] Bắt đầu load dữ liệu...");
       const translatorRes = await window.electronAPI.project.readFeatureFile({
-        projectId,
+        projectId: pid,
         feature: "story",
         fileName: TRANSLATOR_FILE
       });
@@ -21276,7 +22063,7 @@ function StorySummary() {
         console.warn("[StorySummary] Translator file không tồn tại hoặc chưa có dữ liệu");
       }
       const summaryRes = await window.electronAPI.project.readFeatureFile({
-        projectId,
+        projectId: pid,
         feature: "story",
         fileName: STORY_STATE_FILE
       });
@@ -21300,51 +22087,24 @@ function StorySummary() {
         if (saved.excludedChapterIds) setExcludedChapterIds(new Set(saved.excludedChapterIds));
         if (typeof saved.selectedChapterId !== "undefined") setSelectedChapterId(saved.selectedChapterId);
       }
-    } catch (error2) {
-      console.error("[StorySummary] Lỗi khi tải dữ liệu project:", error2);
-    } finally {
-      hasLoadedRef.current = true;
-    }
-  };
-  const saveStoryState = async () => {
-    if (!projectId) return;
-    const orderedSummaries = chapters.filter((c) => summaries.has(c.id)).map((c) => [c.id, summaries.get(c.id)]);
-    const orderedChapterModels = orderedSummaries.map(([chapterId]) => {
-      const usedModel = chapterModels.get(chapterId) || model;
-      return [chapterId, usedModel];
-    });
-    const orderedChapterMethods = orderedSummaries.map(([chapterId]) => {
-      const usedMethod = chapterMethods.get(chapterId) || (translateMode === "token" ? "token" : "api");
-      return [chapterId, usedMethod];
-    });
-    const orderedSummaryTitles = orderedSummaries.map(([chapterId]) => {
-      const title = summaryTitles.get(chapterId) || translatedTitles.get(chapterId) || chapters.find((c) => c.id === chapterId)?.title || "";
-      return [chapterId, title];
-    });
-    const payload = {
+    },
+    deps: [
+      sourceLang,
+      targetLang,
       model,
       translateMode,
-      summaries: orderedSummaries,
-      chapterModels: orderedChapterModels,
-      chapterMethods: orderedChapterMethods,
-      summaryTitles: orderedSummaryTitles,
+      chapters,
+      summaries,
+      chapterModels,
+      chapterMethods,
+      summaryTitles,
       tokenConfigId,
-      tokenContexts: Array.from(tokenContexts.entries()),
+      tokenContexts,
       viewMode,
-      excludedChapterIds: Array.from(excludedChapterIds.values()),
+      excludedChapterIds,
       selectedChapterId
-    };
-    await window.electronAPI.project.writeFeatureFile({
-      projectId,
-      feature: "story",
-      fileName: STORY_STATE_FILE,
-      content: payload
-    });
-  };
-  reactExports.useEffect(() => {
-    if (!projectId || !paths) return;
-    loadStoryState();
-  }, [projectId, paths]);
+    ]
+  });
   reactExports.useEffect(() => {
     loadConfigurations();
     loadProxySetting();
@@ -21356,37 +22116,6 @@ function StorySummary() {
       }
     }
   }, [translateMode, tokenConfigId]);
-  reactExports.useEffect(() => {
-    if (!projectId || !paths || !hasLoadedRef.current) return;
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-    }
-    saveTimeoutRef.current = window.setTimeout(() => {
-      saveStoryState();
-    }, 500);
-    return () => {
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [
-    projectId,
-    paths,
-    sourceLang,
-    targetLang,
-    model,
-    translateMode,
-    chapters,
-    summaries,
-    chapterModels,
-    chapterMethods,
-    summaryTitles,
-    tokenConfigId,
-    tokenContexts,
-    viewMode,
-    excludedChapterIds,
-    selectedChapterId
-  ]);
   reactExports.useEffect(() => {
     if (tokenConfigs.length === 0 || tokenContexts.size === 0) return;
     const { map, changed } = migrateTokenContextsToTokenKey(tokenConfigs, tokenContexts);
@@ -22042,7 +22771,7 @@ Số mục: ${ebookChapters.length}`);
             )
           ] })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto p-2 space-y-1", children: chapters.map((chapter) => {
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 flex flex-col-reverse overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex-1 overflow-y-auto overflow-x-auto p-2 space-y-1", children: chapters.map((chapter) => {
           const isProcessing = processingChapters.has(chapter.id);
           const processingInfo = processingChapters.get(chapter.id);
           const elapsedTime = isProcessing && processingInfo ? Math.floor((Date.now() - processingInfo.startTime) / 1e3) : 0;
@@ -22050,7 +22779,7 @@ Số mục: ${ebookChapters.length}`);
           return /* @__PURE__ */ jsxRuntimeExports.jsxs(
             "div",
             {
-              className: `flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${selectedChapterId === chapter.id ? "bg-primary text-text-invert" : "text-text-secondary hover:bg-surface hover:text-text-primary"}`,
+              className: `flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors whitespace-nowrap ${selectedChapterId === chapter.id ? "bg-primary text-text-invert" : "text-text-secondary hover:bg-surface hover:text-text-primary"}`,
               children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx(
                   "button",
@@ -22063,7 +22792,7 @@ Số mục: ${ebookChapters.length}`);
                     children: isChapterIncluded(chapter.id) && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { className: "w-3 h-3", fill: "none", stroke: "currentColor", viewBox: "0 0 24 24", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 3, d: "M5 13l4 4L19 7" }) })
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
                   "button",
                   {
                     onClick: () => {
@@ -22074,30 +22803,28 @@ Số mục: ${ebookChapters.length}`);
                         setViewMode("original");
                       }
                     },
-                    className: "flex-1 text-left truncate flex items-center gap-2",
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `${!isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "text-white/60 italic" : "text-text-secondary/40 italic" : hasSummary ? "text-emerald-500 font-medium" : selectedChapterId === chapter.id ? "text-white" : "text-text-secondary"}`, children: translatedTitles.get(chapter.id) || chapter.title }),
-                      isProcessing && processingInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex items-center gap-1 shrink-0 text-xs ${selectedChapterId === chapter.id ? "text-yellow-300" : "text-yellow-500"}`, children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `px-1.5 py-0.5 rounded border ${selectedChapterId === chapter.id ? "border-yellow-300/60 bg-yellow-300/10" : "border-yellow-500/60 bg-yellow-500/10"}`, children: processingInfo.channel === "api" ? "API" : "TOKEN" }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
-                          "W",
-                          processingInfo.workerId
-                        ] }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 10 }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
-                          elapsedTime,
-                          "s"
-                        ] })
-                      ] })
-                    ]
+                    className: "min-w-0 flex-1 text-left flex items-center gap-2",
+                    children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `truncate ${!isChapterIncluded(chapter.id) ? selectedChapterId === chapter.id ? "text-white/60 italic" : "text-text-secondary/40 italic" : hasSummary ? "text-emerald-500 font-medium" : selectedChapterId === chapter.id ? "text-white" : "text-text-secondary"}`, children: translatedTitles.get(chapter.id) || chapter.title })
                   }
-                )
+                ),
+                isProcessing && processingInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: `flex items-center gap-1 shrink-0 text-xs ${selectedChapterId === chapter.id ? "text-yellow-300" : "text-yellow-500"}`, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `px-1.5 py-0.5 rounded border ${selectedChapterId === chapter.id ? "border-yellow-300/60 bg-yellow-300/10" : "border-yellow-500/60 bg-yellow-500/10"}`, children: processingInfo.channel === "api" ? "API" : "TOKEN" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Loader, { size: 12, className: "animate-spin" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
+                    "W",
+                    processingInfo.workerId
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Clock, { size: 10 }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono", children: [
+                    elapsedTime,
+                    "s"
+                  ] })
+                ] })
               ]
             },
             chapter.id
           );
-        }) })
+        }) }) })
       ] }),
       chapters.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex justify-between items-center", children: [
@@ -25984,6 +26711,7 @@ function useTabManager() {
 }
 const TAB_ENTRIES = [
   { id: "translator", element: /* @__PURE__ */ jsxRuntimeExports.jsx(CaptionTranslator, {}) },
+  { id: "captionVideo", element: /* @__PURE__ */ jsxRuntimeExports.jsx(CaptionVideo, {}) },
   { id: "story", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StoryTranslator, {}) },
   { id: "storySummary", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StorySummary, {}) },
   { id: "storyWeb", element: /* @__PURE__ */ jsxRuntimeExports.jsx(StoryTranslatorWeb, {}) },
@@ -26001,6 +26729,7 @@ function TabHost() {
 }
 const TAB_BY_PATH = {
   "/translator": "translator",
+  "/caption-video": "captionVideo",
   "/story-translator": "story",
   "/story-summary": "storySummary",
   "/story-web": "storyWeb",

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 // import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
@@ -53,7 +53,8 @@ export function StoryTranslator() {
   const [lastClickedChapterId, setLastClickedChapterId] = useState<string | null>(null);
   // Progress cho batch translation
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
-  const [shouldStop, setShouldStop] = useState(false);
+  const [, setShouldStop] = useState(false);
+  const shouldStopRef = useRef(false);
   // Export ebook status
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
   // Reading settings
@@ -589,6 +590,7 @@ export function StoryTranslator() {
 
   const handleStopTranslation = () => {
     console.log('[StoryTranslator] Dừng dịch thủ công...');
+    shouldStopRef.current = true;
     setShouldStop(true);
   };
 
@@ -606,6 +608,7 @@ export function StoryTranslator() {
 
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
+    shouldStopRef.current = false;
     setShouldStop(false); // Reset stop flag
 
     const MIN_DELAY = 5000; // 5 giây
@@ -623,7 +626,7 @@ export function StoryTranslator() {
       tokenConfigOverride?: GeminiChatConfigLite | null
     ): Promise<{ id: string; text: string } | null> => {
       // Kiểm tra nếu người dùng đã nhấn Dừng
-      if (shouldStop) {
+      if (shouldStopRef.current) {
         console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
         return null;
       }
@@ -775,27 +778,36 @@ export function StoryTranslator() {
     };
 
     // Worker function - xử lý từng chapter liên tục
+    // Logic: Random delay TRƯỚC → worker nào xong delay trước thì lấy chương tiếp theo
+    let isFirstChapterTaken = false;
     const worker = async (workerId: number, channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
       console.log(`[StoryTranslator] 🚀 Worker ${workerId} started`);
       
-      while (currentIndex < chaptersToTranslate.length && !shouldStop) {
-        const index = currentIndex++;
-        const chapter = chaptersToTranslate[index];
-        
-        // CHỈ chapter đầu tiên (Ch1) gửi ngay, TẤT CẢ các chapter khác đều chờ random
-        const isVeryFirstChapter = index === 0;
-        if (!isVeryFirstChapter) {
+      // Vòng đầu: random delay trước khi lấy chương (trừ chương đầu tiên toàn hệ thống)
+      while (!shouldStopRef.current) {
+        // 1. Chờ random TRƯỚC khi lấy chương (trừ chương đầu tiên)
+        if (isFirstChapterTaken) {
           const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StoryTranslator] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi dịch chương ${index + 1}...`);
+          console.log(`[StoryTranslator] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi lấy chương tiếp...`);
           await new Promise(resolve => setTimeout(resolve, delay));
-        } else {
-          console.log(`[StoryTranslator] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
         }
         
         // Kiểm tra lại shouldStop sau khi chờ
-        if (shouldStop) {
+        if (shouldStopRef.current) {
           console.log(`[StoryTranslator] ⚠️ Worker ${workerId} stopped`);
           break;
+        }
+        
+        // 2. SAU KHI chờ xong, mới lấy chương tiếp theo
+        if (currentIndex >= chaptersToTranslate.length) break;
+        const index = currentIndex++;
+        const chapter = chaptersToTranslate[index];
+        
+        if (!isFirstChapterTaken) {
+          isFirstChapterTaken = true;
+          console.log(`[StoryTranslator] 🚀 Worker ${workerId} lấy chương đầu tiên - gửi ngay`);
+        } else {
+          console.log(`[StoryTranslator] 📖 Worker ${workerId} lấy chương ${index + 1} sau khi chờ delay`);
         }
         
         const result = await translateChapter(chapter, index, workerId, channel, tokenConfig);
@@ -852,7 +864,7 @@ export function StoryTranslator() {
     setBatchProgress(null);
     setViewMode('translated');
     
-    if (shouldStop) {
+    if (shouldStopRef.current) {
       console.log(`[StoryTranslator] 🛑 Đã dừng: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters đã dịch`);
     } else {
       console.log(`[StoryTranslator] 🎉 Hoàn thành: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters`);

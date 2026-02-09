@@ -593,11 +593,11 @@ export class GeminiChatServiceClass {
                 config = this.getById(configId);
                 if (!config) {
                         console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
-                         return { success: false, error: `Không tìm thấy cấu hình ID ${configId}` };
+                         return { success: false, error: `Không tìm thấy cấu hình ID ${configId}`, metadata };
                 }
                 if (!config.isActive) {
                     console.warn(`[GeminiChatService] Cấu hình ID ${configId} đang tắt, bỏ qua.`);
-                    return { success: false, error: 'Cấu hình đang tắt, không được sử dụng' };
+                    return { success: false, error: 'Cấu hình đang tắt, không được sử dụng', metadata };
                 }
         } else {
                 // Case 2: Round-robin rotation (getNextActiveConfig)
@@ -616,7 +616,7 @@ export class GeminiChatServiceClass {
                                          updatedAt: Date.now()
                                  } as GeminiChatConfig;
                          } else {
-                                 return { success: false, error: 'Không có cấu hình web đang hoạt động.' };
+                                 return { success: false, error: 'Không có cấu hình web đang hoạt động.', metadata };
                          }
                 }
         }
@@ -636,7 +636,7 @@ export class GeminiChatServiceClass {
 
                 if (result.error && result.error.includes('Không còn proxy khả dụng')) {
                     console.error('[GeminiChatService] Dừng retry do hết proxy khả dụng');
-                    return { ...result, configId: config!.id };
+                    return { ...result, configId: config!.id, metadata };
                 }
 
                 // If failed, check if we should retry
@@ -938,6 +938,11 @@ export class GeminiChatServiceClass {
                     // -----------------------------------------------------
 
             if (foundText) {
+                // Log context changes for debugging re-translation issues
+                const contextWasParsed = !!(newContext.conversationId || newContext.responseId || newContext.choiceId);
+                if (!contextWasParsed && effectiveContext) {
+                    console.warn('[GeminiChatService] ⚠️ Fetch: Không parse được context mới từ response, dùng context cũ');
+                }
                 if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
                 if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
                 if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
@@ -946,7 +951,8 @@ export class GeminiChatServiceClass {
                 const contextSummary = {
                     conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : '',
                     responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
-                    choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ''
+                    choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : '',
+                    parsedFromResponse: contextWasParsed
                 };
                 console.log('[GeminiChatService] Ngữ cảnh (tóm tắt):', contextSummary);
 
@@ -1039,33 +1045,72 @@ export class GeminiChatServiceClass {
         let config: GeminiChatConfig | null = null;
         if (configId) {
             config = this.getById(configId);
-            if (!config) return { success: false, error: `Config ID ${configId} not found` };
-            if (!config.isActive) return { success: false, error: 'Config is inactive' };
+            if (!config) return { success: false, error: `Config ID ${configId} not found`, metadata };
+            if (!config.isActive) return { success: false, error: 'Config is inactive', metadata };
         } else {
             config = this.getNextActiveConfig();
-            if (!config) return { success: false, error: 'No active config found' };
+            if (!config) return { success: false, error: 'No active config found', metadata };
         }
 
         const tokenKey = this.getTokenKey(config);
         console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
 
         return await this.withTokenLock(tokenKey, async () => {
-            try {
-                // 2. Prepare Context & Payload (Similar to sendMessage)
-                const { cookie, blLabel, fSid, atToken } = config!;
-                if (!cookie || !blLabel || !fSid || !atToken) {
-                    return { success: false, error: 'Missing config fields', configId: config!.id, metadata };
+            const MAX_RETRIES = 3;
+            const MIN_DELAY_MS = 2000;
+            const MAX_DELAY_MS = 10000;
+
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
+                const result = await this._sendMessageImpitInternal(message, config!, context, useProxyOverride);
+
+                if (result.success) {
+                    return { ...result, metadata };
                 }
 
+                if (result.error && result.error.includes('Không còn proxy khả dụng')) {
+                    console.error('[GeminiChatService] Impit: Dừng retry do hết proxy khả dụng');
+                    return { ...result, metadata };
+                }
+
+                if (attempt < MAX_RETRIES) {
+                    const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+                    console.log(`[GeminiChatService] Impit: Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                } else {
+                    console.error(`[GeminiChatService] Impit: Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
+                    return { ...result, metadata };
+                }
+            }
+
+            return { success: false, error: 'Unexpected error in Impit retry loop', metadata };
+        });
+  }
+
+  private async _sendMessageImpitInternal(
+      message: string,
+      config: GeminiChatConfig,
+      context?: { conversationId: string; responseId: string; choiceId: string },
+      useProxyOverride?: boolean
+  ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+            try {
+                // 2. Prepare Context & Payload (Similar to sendMessage)
+                const { cookie, blLabel, fSid, atToken } = config;
+                if (!cookie || !blLabel || !fSid || !atToken) {
+                    return { success: false, error: 'Missing config fields', configId: config.id };
+                }
+
+                const tokenKey = this.getTokenKey(config);
+
                 // REQ_ID Logic
-                let currentReqIdStr = config!.reqId || generateInitialReqId();
+                let currentReqIdStr = config.reqId || generateInitialReqId();
                 const reqId = String(parseInt(currentReqIdStr) + 100000);
                 
                 // Update ReqID in DB
-                if (config!.id !== 'legacy') {
+                if (config.id !== 'legacy') {
                     try {
-                        getDatabase().prepare('UPDATE gemini_chat_config SET req_id = ? WHERE id = ?').run(reqId, config!.id);
-                        config!.reqId = reqId; 
+                        getDatabase().prepare('UPDATE gemini_chat_config SET req_id = ? WHERE id = ?').run(reqId, config.id);
+                        config.reqId = reqId; 
                     } catch (e) { }
                 }
 
@@ -1077,7 +1122,7 @@ export class GeminiChatServiceClass {
                 const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
                 
                 const incomingContext = shouldIgnoreIncomingContext ? undefined : context;
-                const configContext = this.getStoredConfigContext(config!.id);
+                const configContext = this.getStoredConfigContext(config.id);
                 
                 let storedContext: { conversationId: string; responseId: string; choiceId: string } | null = null;
                 if (!incomingContext && canUseStoredContext) {
@@ -1102,7 +1147,7 @@ export class GeminiChatServiceClass {
                 let usedProxy: ProxyConfig | null = null;
 
                 if (useProxy) {
-                    usedProxy = this.getOrAssignProxy(config!.id);
+                    usedProxy = this.getOrAssignProxy(config.id);
                     if (usedProxy) {
                         const scheme = usedProxy.type === 'socks5' ? 'socks5' : 'http'; // Impit might support socks? Docs say "proxyUrl"
                         // Assuming standard proxy URL format.
@@ -1126,7 +1171,7 @@ export class GeminiChatServiceClass {
                 });
 
                 // 4. Construct URL & Body
-                const hl = config!.acceptLanguage ? config!.acceptLanguage.split(',')[0] : "vi";
+                const hl = config.acceptLanguage ? config.acceptLanguage.split(',')[0] : "vi";
                 const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
                 const params = new URLSearchParams({
                     "bl": blLabel,
@@ -1161,8 +1206,8 @@ export class GeminiChatServiceClass {
                 };
                 
                 console.log('[GeminiChatService] Sending message via IMPIT');
-                console.log('[GeminiChatService] Request Headers:', headers);
-                console.log('[GeminiChatService] Context Summary:', contextSummary);
+                // console.log('[GeminiChatService] Request Headers:', headers);
+                // console.log('[GeminiChatService] Context Summary:', contextSummary);
                 console.log('[GeminiChatService] Sending Impit request to:', url);
 
                 const response = await impit.fetch(url, {
@@ -1173,15 +1218,15 @@ export class GeminiChatServiceClass {
 
                 console.log('[GeminiChatService] Impit response status:', response.status);
                 // Log response headers
-                console.log('[GeminiChatService] Impit response headers:', response.headers);
+                // console.log('[GeminiChatService] Impit response headers:', response.headers);
 
                 if (response.status !== 200) {
                      if (usedProxy) {
                         const proxyManager = getProxyManager();
                         proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
-                        this.releaseProxy(config!.id, usedProxy.id);
+                        this.releaseProxy(config.id, usedProxy.id);
                     }
-                    return { success: false, error: `Impit HTTP ${response.status}`, configId: config!.id, metadata };
+                    return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id };
                 }
                 
                 if (usedProxy) {
@@ -1219,18 +1264,18 @@ export class GeminiChatServiceClass {
                 /*
                 if (response.status === 200 && setCookieHeaders.length > 0) {
                     // 1. Merge cookies
-                    const updatedCookie = this.mergeCookies(config!.cookie, setCookieHeaders);
+                    const updatedCookie = this.mergeCookies(config.cookie, setCookieHeaders);
                     
                     // 2. Update Database immediately
                     try {
                         const db = getDatabase();
                         db.prepare('UPDATE gemini_chat_config SET cookie = ? WHERE id = ?')
-                            .run(updatedCookie, config!.id);
+                            .run(updatedCookie, config.id);
                         
                         // QUAN TRỌNG: Cập nhật lại chính Object đang chạy để lượt sau nó thấy!
-                        config!.cookie = updatedCookie; 
+                        config.cookie = updatedCookie; 
                         
-                        console.log(`[GeminiChatService] Đã đồng bộ Cookie mới vào bộ nhớ cho ${config!.name}`);
+                        console.log(`[GeminiChatService] Đã đồng bộ Cookie mới vào bộ nhớ cho ${config.name}`);
                     } catch (dbError) {
                         console.error('[GeminiChatService] Lỗi cập nhật Cookie vào DB:', dbError);
                     }
@@ -1263,9 +1308,15 @@ export class GeminiChatServiceClass {
                             if (Array.isArray(payloadItem) && payloadItem.length >= 3 && payloadItem[0] === 'wrb.fr') {
                                 const innerData = JSON.parse(payloadItem[2]);
                                 const candidates = innerData[4];
-                                if (Array.isArray(candidates) && candidates[0]) {
-                                    const txt = candidates[0][1][0];
-                                    if (txt && txt.length > foundText.length) foundText = txt;
+                                if (Array.isArray(candidates) && candidates.length > 0) {
+                                    const candidate = candidates[0];
+                                    if (candidate && candidate.length > 1) {
+                                        const textSource = candidate[1];
+                                        const txt = Array.isArray(textSource) ? textSource[0] : textSource;
+                                        if (typeof txt === 'string' && txt && txt.length > foundText.length) {
+                                            foundText = txt;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1273,11 +1324,25 @@ export class GeminiChatServiceClass {
                 }
 
                 if (foundText) {
+                    // Log context changes for debugging re-translation issues
+                    const contextWasParsed = !!(newContext.conversationId || newContext.responseId || newContext.choiceId);
+                    if (!contextWasParsed && effectiveContext) {
+                        console.warn('[GeminiChatService] ⚠️ Impit: Không parse được context mới từ response, dùng context cũ');
+                    }
                     if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
                     if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
                     if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
+
+                    console.log(`[GeminiChatService] Impit: Nhận phản hồi thành công (${foundText.length} ký tự)`);
+                    const contextSummary = {
+                        conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : '',
+                        responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
+                        choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : '',
+                        parsedFromResponse: contextWasParsed
+                    };
+                    console.log('[GeminiChatService] Impit: Ngữ cảnh (tóm tắt):', contextSummary);
                     
-                    this.saveContext(newContext, config!.id);
+                    this.saveContext(newContext, config.id);
                     this.firstSendByTokenKey.add(tokenKey);
 
                     return {
@@ -1286,18 +1351,16 @@ export class GeminiChatServiceClass {
                             text: foundText,
                             context: newContext
                         },
-                        configId: config!.id,
-                        metadata
+                        configId: config.id
                     };
                 }
 
-                return { success: false, error: 'No text found in Impit response', configId: config!.id, metadata };
+                return { success: false, error: 'No text found in Impit response', configId: config.id };
 
             } catch (error) {
                 console.error('[GeminiChatService] Impit Error:', error);
-                return { success: false, error: String(error), configId: config?.id, metadata };
+                return { success: false, error: String(error), configId: config?.id };
             }
-        });
   }
 // ... (existing code)
 

@@ -69,6 +69,15 @@ export class StoryService {
            
            if (result.success && result.data) {
              console.log('[StoryService] Translation completed.');
+             
+             // Log context update for debugging re-translation issues
+             const ctx = result.data.context;
+             if (ctx && (ctx.conversationId || ctx.responseId)) {
+                 console.log(`[StoryService] Context updated: convId=${ctx.conversationId ? ctx.conversationId.slice(0, 20) + '...' : '(empty)'}, respId length=${ctx.responseId ? ctx.responseId.length : 0}`);
+             } else {
+                 console.warn('[StoryService] ⚠️ Response context is empty - context may not be updated properly');
+             }
+             
              return { 
                  success: true, 
                  data: result.data.text,
@@ -98,7 +107,7 @@ export class StoryService {
       }
     } catch (error) {
       console.error('[StoryService] Error translating chapter:', error);
-      return { success: false, error: String(error) };
+      return { success: false, error: String(error), metadata: options.metadata };
     }
   }
 
