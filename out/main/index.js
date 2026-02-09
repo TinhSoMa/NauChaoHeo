@@ -4416,7 +4416,25 @@ function getProxyManager() {
   }
   return instance;
 }
-const HL_LANG = "vi";
+const IMPIT_BROWSERS = [
+  "chrome",
+  "chrome100",
+  "chrome101",
+  "chrome104",
+  "chrome107",
+  "chrome110",
+  "chrome116",
+  "chrome124",
+  "chrome125",
+  "chrome131",
+  "chrome136",
+  "chrome142",
+  "firefox",
+  "firefox128",
+  "firefox133",
+  "firefox135",
+  "firefox144"
+];
 const BROWSER_PROFILES = [
   {
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -4453,14 +4471,6 @@ function generateInitialReqId() {
   return String(prefix * 1e5 + suffix);
 }
 function buildRequestPayload(message, contextArray, createChatOnWeb) {
-  if (!createChatOnWeb) {
-    const innerPayload = [
-      [message],
-      null,
-      contextArray
-    ];
-    return JSON.stringify([null, JSON.stringify(innerPayload)]);
-  }
   const reqUuid = uuid.v4().toUpperCase();
   const reqStruct = [
     [message, 0, null, null, null, null, 0],
@@ -4529,7 +4539,8 @@ function buildRequestPayload(message, contextArray, createChatOnWeb) {
     null,
     null,
     null,
-    [1769584568, 497e6],
+    [Math.floor(Date.now() / 1e3), Math.floor(Date.now() % 1e3 * 1e6)],
+    // DYNAMIC TIMESTAMP!
     null,
     2
   ];
@@ -4543,6 +4554,8 @@ class GeminiChatServiceClass {
     this.proxyMaxFailedCount = 3;
     this.tokenLocks = /* @__PURE__ */ new Map();
     this.firstSendByTokenKey = /* @__PURE__ */ new Set();
+    this.impitBrowserAssignments = /* @__PURE__ */ new Map();
+    this.impitBrowsersInUse = /* @__PURE__ */ new Set();
     this.rotationIndex = 0;
   }
   static getInstance() {
@@ -4740,6 +4753,68 @@ class GeminiChatServiceClass {
       this.setAssignedProxyId(accountKey, proxy.id);
     }
     return proxy;
+  }
+  // =======================================================
+  // IMPIT BROWSER ASSIGNMENT - Mỗi tài khoản 1 trình duyệt
+  // =======================================================
+  /**
+   * Gán trình duyệt impit cho một tài khoản.
+   * Mỗi tài khoản sẽ được gán 1 trình duyệt duy nhất từ danh sách IMPIT_BROWSERS.
+   * Trả về null nếu hết trình duyệt khả dụng.
+   */
+  assignImpitBrowser(accountKey) {
+    const existing = this.impitBrowserAssignments.get(accountKey);
+    if (existing) {
+      console.log(`[GeminiChatService] Impit browser đã gán cho ${accountKey}: ${existing}`);
+      return existing;
+    }
+    const available = IMPIT_BROWSERS.filter((b) => !this.impitBrowsersInUse.has(b));
+    if (available.length === 0) {
+      console.error("[GeminiChatService] Hết trình duyệt impit khả dụng!");
+      return null;
+    }
+    const browser = available[0];
+    this.impitBrowserAssignments.set(accountKey, browser);
+    this.impitBrowsersInUse.add(browser);
+    console.log(`[GeminiChatService] Gán impit browser '${browser}' cho ${accountKey} (còn ${available.length - 1} trình duyệt)`);
+    return browser;
+  }
+  /**
+   * Giải phóng trình duyệt impit của 1 tài khoản
+   */
+  releaseImpitBrowser(accountKey) {
+    const browser = this.impitBrowserAssignments.get(accountKey);
+    if (browser) {
+      this.impitBrowserAssignments.delete(accountKey);
+      this.impitBrowsersInUse.delete(browser);
+      console.log(`[GeminiChatService] Giải phóng impit browser '${browser}' từ ${accountKey}`);
+    }
+  }
+  /**
+   * Giải phóng tất cả trình duyệt impit
+   */
+  releaseAllImpitBrowsers() {
+    this.impitBrowserAssignments.clear();
+    this.impitBrowsersInUse.clear();
+    console.log("[GeminiChatService] Đã giải phóng tất cả trình duyệt impit");
+  }
+  /**
+   * Lấy trình duyệt impit đã gán cho tài khoản (không gán mới)
+   */
+  getAssignedImpitBrowser(accountKey) {
+    return this.impitBrowserAssignments.get(accountKey) || null;
+  }
+  /**
+   * Lấy số lượng trình duyệt impit tối đa có thể sử dụng
+   */
+  getMaxImpitBrowserCount() {
+    return IMPIT_BROWSERS.length;
+  }
+  /**
+   * Lấy số lượng trình duyệt impit còn khả dụng
+   */
+  getAvailableImpitBrowserCount() {
+    return IMPIT_BROWSERS.length - this.impitBrowsersInUse.size;
   }
   releaseProxy(accountKey, proxyId) {
     const assignedId = this.proxyAssignments.get(accountKey);
@@ -5015,335 +5090,8 @@ class GeminiChatServiceClass {
   // =======================================================
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
-  async sendMessage(message, configId, context, useProxyOverride, metadata) {
-    const MAX_RETRIES = 3;
-    const MIN_DELAY_MS = 2e3;
-    const MAX_DELAY_MS = 1e4;
-    let config = null;
-    if (configId) {
-      config = this.getById(configId);
-      if (!config) {
-        console.error(`[GeminiChatService] Không tìm thấy cấu hình ID ${configId}.`);
-        return { success: false, error: `Không tìm thấy cấu hình ID ${configId}`, metadata };
-      }
-      if (!config.isActive) {
-        console.warn(`[GeminiChatService] Cấu hình ID ${configId} đang tắt, bỏ qua.`);
-        return { success: false, error: "Cấu hình đang tắt, không được sử dụng", metadata };
-      }
-    } else {
-      config = this.getNextActiveConfig();
-      if (!config) {
-        const cookieConfig = this.getCookieConfig();
-        if (cookieConfig) {
-          config = {
-            id: "legacy",
-            name: "Legacy Cookie",
-            ...cookieConfig,
-            isActive: true,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          };
-        } else {
-          return { success: false, error: "Không có cấu hình web đang hoạt động.", metadata };
-        }
-      }
-    }
-    const tokenKey = this.getTokenKey(config);
-    console.log(`[GeminiChatService] Gửi yêu cầu bằng cấu hình: ${config.name} (ID: ${config.id}, TokenKey: ${tokenKey.slice(0, 16)}...)`);
-    return await this.withTokenLock(tokenKey, async () => {
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        console.log(`[GeminiChatService] Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
-        const result = await this._sendMessageInternal(message, config, context, useProxyOverride);
-        if (result.success) {
-          return { ...result, configId: config.id, metadata };
-        }
-        if (result.error && result.error.includes("Không còn proxy khả dụng")) {
-          console.error("[GeminiChatService] Dừng retry do hết proxy khả dụng");
-          return { ...result, configId: config.id, metadata };
-        }
-        if (attempt < MAX_RETRIES) {
-          const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
-          console.log(`[GeminiChatService] Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, retryDelay));
-        } else {
-          console.error(`[GeminiChatService] Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-          return { ...result, configId: config.id, metadata };
-        }
-      }
-      return { success: false, error: "Unexpected error in retry loop", metadata };
-    });
-  }
-  async _sendMessageInternal(message, config, context, useProxyOverride) {
-    const { cookie, blLabel, fSid, atToken } = config;
-    if (!cookie || !blLabel || !fSid || !atToken) {
-      const missing = [];
-      if (!cookie) missing.push("cookie");
-      if (!blLabel) missing.push("blLabel");
-      if (!fSid) missing.push("fSid");
-      if (!atToken) missing.push("atToken");
-      return { success: false, error: `Missing required config fields: ${missing.join(", ")}` };
-    }
-    if (!config.userAgent || !config.platform) {
-      console.warn(`[GeminiChatService] Cấu hình ${config.id} thiếu hồ sơ trình duyệt. Đang gán hồ sơ cố định...`);
-      const profile = getRandomBrowserProfile();
-      config.userAgent = profile.userAgent;
-      config.platform = profile.platform;
-      if (config.id !== "legacy") {
-        try {
-          const db2 = getDatabase();
-          db2.prepare("UPDATE gemini_chat_config SET user_agent = ?, platform = ? WHERE id = ?").run(profile.userAgent, profile.platform, config.id);
-        } catch (e) {
-          console.error("[GeminiChatService] Không thể lưu hồ sơ trình duyệt", e);
-        }
-      }
-    }
-    const hl = config.acceptLanguage ? config.acceptLanguage.split(",")[0] : HL_LANG;
-    const matchingProfile = BROWSER_PROFILES.find((p) => p.userAgent === config.userAgent) || BROWSER_PROFILES[0];
-    const secChUa = matchingProfile.secChUa;
-    const secChUaPlatform = config.platform ? `"${(config.platform || "").trim().replace(/[\r\n]+/g, "")}"` : matchingProfile.secChUaPlatform;
-    const safeCookie = (cookie || "").replace(/[\r\n]+/g, "");
-    let currentReqIdStr = config.reqId;
-    if (!currentReqIdStr) {
-      currentReqIdStr = generateInitialReqId();
-    }
-    const nextReqIdNum = parseInt(currentReqIdStr) + 1e5;
-    const reqId = String(nextReqIdNum);
-    if (config.id !== "legacy") {
-      try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE gemini_chat_config SET req_id = ? WHERE id = ?").run(reqId, config.id);
-        config.reqId = reqId;
-      } catch (e) {
-        console.warn("[GeminiChatService] Không thể cập nhật req_id trong DB", e);
-      }
-    }
-    const tokenKey = this.getTokenKey(config);
-    const appSettings = AppSettingsService.getAll();
-    const allowStoredContextOnFirstSend = !!appSettings.useStoredContextOnFirstSend;
-    const isFirstSendForToken = !this.firstSendByTokenKey.has(tokenKey);
-    const canUseStoredContext = !isFirstSendForToken || allowStoredContextOnFirstSend;
-    const shouldIgnoreIncomingContext = isFirstSendForToken && !allowStoredContextOnFirstSend;
-    const incomingContext = shouldIgnoreIncomingContext ? void 0 : context;
-    const configContext = this.getStoredConfigContext(config.id);
-    let storedContext = null;
-    if (!incomingContext && canUseStoredContext) {
-      if (configContext) {
-        storedContext = configContext;
-      }
-    }
-    const effectiveContext = incomingContext || storedContext || void 0;
-    let contextArray = ["", "", ""];
-    if (effectiveContext) {
-      contextArray = [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId];
-      const contextInfo = {
-        conversationId: effectiveContext.conversationId ? `${String(effectiveContext.conversationId).slice(0, 24)}...` : "",
-        responseId: effectiveContext.responseId ? `${String(effectiveContext.responseId).slice(0, 24)}...` : "",
-        choiceId: effectiveContext.choiceId ? `${String(effectiveContext.choiceId).slice(0, 24)}...` : ""
-      };
-      console.log("[GeminiChatService] Dùng ngữ cảnh (tóm tắt):", contextInfo);
-    } else if (isFirstSendForToken && !incomingContext) {
-      if (allowStoredContextOnFirstSend) {
-        if (configContext) {
-          console.log("[GeminiChatService] Lần đầu gửi cho token, dùng ngữ cảnh cũ của cấu hình");
-        } else {
-          console.log("[GeminiChatService] Lần đầu gửi cho token, cấu hình chưa có ngữ cảnh -> dùng ngữ cảnh rỗng");
-        }
-      } else {
-        console.log("[GeminiChatService] Lần đầu gửi cho token, dùng ngữ cảnh rỗng");
-      }
-    }
-    const createChatOnWeb = !!appSettings.createChatOnWeb;
-    const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
-    const baseUrl = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
-    const params = new URLSearchParams({
-      "bl": blLabel,
-      "_reqid": reqId,
-      "rt": "c",
-      "f.sid": fSid,
-      "hl": hl
-    });
-    const url = `${baseUrl}?${params.toString()}`;
-    const body = new URLSearchParams(
-      createChatOnWeb ? {
-        "f.req": fReq,
-        "at": atToken
-      } : {
-        "f.req": fReq,
-        "at": atToken,
-        "": ""
-        // Empty param như trong HAR
-      }
-    );
-    try {
-      console.log("[GeminiChatService] Đang gửi request:", url);
-      let headers = {
-        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-        "cookie": safeCookie,
-        "user-agent": (config.userAgent || matchingProfile.userAgent || "").trim().replace(/[\r\n]+/g, "")
-      };
-      if (!createChatOnWeb) {
-        headers = {
-          ...headers,
-          "accept": "*/*",
-          "accept-encoding": "gzip, deflate, br, zstd",
-          "accept-language": config.acceptLanguage || "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4",
-          "cache-control": "no-cache",
-          "origin": "https://gemini.google.com",
-          "pragma": "no-cache",
-          "referer": "https://gemini.google.com/",
-          "sec-ch-ua-arch": '"x86"',
-          "sec-ch-ua-bitness": '"64"',
-          "sec-ch-ua-mobile": "?0",
-          "sec-ch-ua-platform": secChUaPlatform,
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-          "x-goog-ext-525001261-jspb": '[1,null,null,null,"fbb127bbb056c959",null,null,0,[4],null,null,1]',
-          "x-goog-ext-525005358-jspb": '["6F392C2C-0CA3-4CF5-B504-2BE013DD0723",1]',
-          "x-goog-ext-73010989-jspb": "[0]",
-          "x-same-domain": "1"
-        };
-        if (secChUa) {
-          headers["sec-ch-ua"] = secChUa;
-        }
-      }
-      const MAX_CONTROL_RETRIES = 2;
-      for (let controlAttempt = 1; controlAttempt <= MAX_CONTROL_RETRIES; controlAttempt++) {
-        const { response, usedProxy } = await this.fetchWithProxy(
-          url,
-          {
-            method: "POST",
-            headers,
-            body: body.toString()
-          },
-          15e3,
-          config.id,
-          useProxyOverride
-        );
-        console.log("[GeminiChatService] >>> Kết thúc fetch, trạng thái:", response.status);
-        if (!response.ok) {
-          const txt = await response.text();
-          console.error("[GeminiChatService] Lỗi Gemini:", response.status, txt.substring(0, 200));
-          return { success: false, error: `HTTP ${response.status}` };
-        }
-        try {
-          let setCookieHeader = response.headers.get("set-cookie");
-          if (response.headers.raw && typeof response.headers.raw === "function") {
-            const raw = response.headers.raw();
-            if (raw["set-cookie"]) {
-              setCookieHeader = raw["set-cookie"];
-            }
-          }
-          if (setCookieHeader) {
-            const updatedCookie = this.mergeCookies(config.cookie, setCookieHeader);
-            if (config.id !== "legacy") {
-              getDatabase().prepare("UPDATE gemini_chat_config SET cookie = ? WHERE id = ?").run(updatedCookie, config.id);
-              config.cookie = updatedCookie;
-              console.log(`[GeminiChatService] (Legacy) Đã làm mới thẻ an ninh (Cookie) cho ${config.name}`);
-            }
-          }
-        } catch (cookieErr) {
-          console.warn("[GeminiChatService] Lỗi xử lý cookie response:", cookieErr);
-        }
-        console.log("[GeminiChatService] >>> Đang tải toàn bộ nội dung phản hồi (Waiting for full response)...");
-        let foundText = "";
-        let hasWrbFr = false;
-        let hasContentPayload = false;
-        const sessionManager = getSessionContextManager();
-        let newContext = { conversationId: "", responseId: "", choiceId: "" };
-        try {
-          const responseText = await response.text();
-          console.log(`[GeminiChatService] >>> Đã nhận toàn bộ response (${responseText.length} bytes)`);
-          for (const line of responseText.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            if (trimmed.startsWith(")]}'")) continue;
-            if (/^\d+$/.test(trimmed)) continue;
-            try {
-              const dataObj = JSON.parse(trimmed);
-              if (!Array.isArray(dataObj) || dataObj.length === 0) continue;
-              for (const payloadItem of dataObj) {
-                if (!Array.isArray(payloadItem) || payloadItem.length < 3) continue;
-                if (payloadItem[0] !== "wrb.fr") continue;
-                hasWrbFr = true;
-                if (typeof payloadItem[2] !== "string") continue;
-                const innerData = JSON.parse(payloadItem[2]);
-                if (!Array.isArray(innerData) || innerData.length < 5) continue;
-                const candidates = innerData[4];
-                if (Array.isArray(candidates) && candidates.length > 0) {
-                  const candidate = candidates[0];
-                  if (candidate && candidate.length > 1) {
-                    const textSource = candidate[1];
-                    const txt = Array.isArray(textSource) ? textSource[0] : textSource;
-                    if (typeof txt === "string" && txt) {
-                      if (txt.length > foundText.length) {
-                        foundText = txt;
-                        hasContentPayload = true;
-                      }
-                    }
-                  }
-                }
-                const parsedCtx = sessionManager.parseFromFetchResponse(trimmed);
-                if (parsedCtx.conversationId) newContext.conversationId = parsedCtx.conversationId;
-                if (parsedCtx.responseId) newContext.responseId = parsedCtx.responseId;
-                if (parsedCtx.choiceId) newContext.choiceId = parsedCtx.choiceId;
-              }
-            } catch (e) {
-            }
-          }
-          console.log(`[GeminiChatService] >>> Parse hoàn tất. Tìm thấy text: ${foundText.length > 0}`);
-        } catch (responseError) {
-          console.error("[GeminiChatService] Lỗi khi đọc response:", responseError);
-        }
-        if (foundText) {
-          const contextWasParsed = !!(newContext.conversationId || newContext.responseId || newContext.choiceId);
-          if (!contextWasParsed && effectiveContext) {
-            console.warn("[GeminiChatService] ⚠️ Fetch: Không parse được context mới từ response, dùng context cũ");
-          }
-          if (!newContext.conversationId && effectiveContext) newContext.conversationId = effectiveContext.conversationId;
-          if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
-          if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
-          console.log(`[GeminiChatService] Nhận phản hồi thành công (${foundText.length} ký tự)`);
-          const contextSummary = {
-            conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : "",
-            responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
-            choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : "",
-            parsedFromResponse: contextWasParsed
-          };
-          console.log("[GeminiChatService] Ngữ cảnh (tóm tắt):", contextSummary);
-          this.saveContext(newContext, config.id);
-          this.firstSendByTokenKey.add(tokenKey);
-          return {
-            success: true,
-            data: {
-              text: foundText,
-              context: newContext
-            }
-          };
-        }
-        if (hasWrbFr && !hasContentPayload && controlAttempt < MAX_CONTROL_RETRIES) {
-          console.warn("[GeminiChatService] Phản hồi điều khiển, đang gửi lại nhanh...");
-          await new Promise((resolve) => setTimeout(resolve, 600));
-          continue;
-        }
-        if (hasWrbFr && !hasContentPayload) {
-          console.warn("[GeminiChatService] Phản hồi điều khiển (chưa có nội dung), sẽ retry ở vòng ngoài...");
-          throw new Error("Phản hồi điều khiển (chưa có nội dung)");
-        }
-        console.error("[GeminiChatService] Không tìm thấy nội dung trong phản hồi!");
-        if (usedProxy) {
-          const proxyManager = getProxyManager();
-          proxyManager.markProxyFailed(usedProxy.id, "Empty response");
-          this.releaseProxy(config.id, usedProxy.id);
-        }
-        throw new Error("Không tìm thấy nội dung trong phản hồi");
-      }
-      return { success: false, error: "Không nhận được phản hồi hợp lệ từ máy chủ" };
-    } catch (error) {
-      console.error("[GeminiChatService] Lỗi fetch:", error);
-      return { success: false, error: String(error) };
-    }
-  }
+  // DEPRECATED WEB method (node-fetch) removed - use API or IMPIT instead
+  // Old sendMessage() and _sendMessageInternal() functions deleted to avoid maintenance burden
   // =======================================================
   // Hàm hòa trộn Cookie cũ và Set-Cookie mới
   mergeCookies(oldCookieStr, setCookieHeader) {
@@ -5373,11 +5121,11 @@ class GeminiChatServiceClass {
     let config = null;
     if (configId) {
       config = this.getById(configId);
-      if (!config) return { success: false, error: `Config ID ${configId} not found`, metadata };
-      if (!config.isActive) return { success: false, error: "Config is inactive", metadata };
+      if (!config) return { success: false, error: `Config ID ${configId} not found`, metadata, retryable: false };
+      if (!config.isActive) return { success: false, error: "Config is inactive", metadata, retryable: false };
     } else {
       config = this.getNextActiveConfig();
-      if (!config) return { success: false, error: "No active config found", metadata };
+      if (!config) return { success: false, error: "No active config found", metadata, retryable: false };
     }
     const tokenKey = this.getTokenKey(config);
     console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
@@ -5393,7 +5141,7 @@ class GeminiChatServiceClass {
         }
         if (result.error && result.error.includes("Không còn proxy khả dụng")) {
           console.error("[GeminiChatService] Impit: Dừng retry do hết proxy khả dụng");
-          return { ...result, metadata };
+          return { ...result, metadata, retryable: true };
         }
         if (attempt < MAX_RETRIES) {
           const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
@@ -5401,10 +5149,10 @@ class GeminiChatServiceClass {
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
           console.error(`[GeminiChatService] Impit: Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-          return { ...result, metadata };
+          return { ...result, metadata, retryable: true };
         }
       }
-      return { success: false, error: "Unexpected error in Impit retry loop", metadata };
+      return { success: false, error: "Unexpected error in Impit retry loop", metadata, retryable: true };
     });
   }
   async _sendMessageImpitInternal(message, config, context, useProxyOverride) {
@@ -5438,16 +5186,17 @@ class GeminiChatServiceClass {
       }
       const effectiveContext = incomingContext || storedContext || void 0;
       const contextArray = effectiveContext ? [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId] : ["", "", ""];
-      const createChatOnWeb = !!appSettings.createChatOnWeb;
+      const createChatOnWeb = true;
+      console.log(`[GeminiChatService] Impit: createChatOnWeb = ${createChatOnWeb} (Updated to match Python REQ structure)`);
       const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
-      const settingProxy = this.getUseProxySetting();
-      const useProxy = typeof useProxyOverride === "boolean" ? useProxyOverride : settingProxy;
+      const useProxy = this.getUseProxySetting();
+      console.log(`[GeminiChatService] Proxy setting from DB: ${useProxy}${typeof useProxyOverride === "boolean" ? `, frontend override: ${useProxyOverride}` : ""}`);
       let proxyUrl = void 0;
       let usedProxy = null;
       if (useProxy) {
         usedProxy = this.getOrAssignProxy(config.id);
         if (usedProxy) {
-          const scheme = usedProxy.type === "socks5" ? "socks5" : "http";
+          const scheme = usedProxy.type === "socks5" ? "socks5" : usedProxy.type === "https" ? "https" : "http";
           if (usedProxy.username) {
             proxyUrl = `${scheme}://${usedProxy.username}:${usedProxy.password}@${usedProxy.host}:${usedProxy.port}`;
           } else {
@@ -5455,12 +5204,25 @@ class GeminiChatServiceClass {
           }
         }
       }
+      const assignedBrowser = this.assignImpitBrowser(config.id);
+      if (!assignedBrowser) {
+        return {
+          success: false,
+          error: `Hết trình duyệt impit khả dụng (tối đa ${IMPIT_BROWSERS.length} tài khoản đồng thời)`,
+          configId: config.id
+        };
+      }
+      console.log(`[GeminiChatService] Impit: Sử dụng trình duyệt '${assignedBrowser}' cho config ${config.name}`);
+      const useHttp3 = !proxyUrl;
+      if (proxyUrl) {
+        console.log(`[GeminiChatService] Impit: Tắt HTTP/3 vì đang dùng proxy (${proxyUrl.split("@").pop()})`);
+      }
       const impit$1 = new impit.Impit({
-        browser: "chrome",
+        browser: assignedBrowser,
         proxyUrl,
         ignoreTlsErrors: true,
         timeout: 3e5,
-        http3: true,
+        http3: useHttp3,
         followRedirects: true,
         maxRedirects: 10
       });
@@ -5477,17 +5239,37 @@ class GeminiChatServiceClass {
       const body = new URLSearchParams(
         createChatOnWeb ? { "f.req": fReq, "at": atToken } : { "f.req": fReq, "at": atToken, "": "" }
       );
+      console.log(`[GeminiChatService] Impit: Request body keys = [${Array.from(body.keys()).join(", ")}]`);
       const headers = {
         "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-        "cookie": (cookie || "").replace(/[\r\n]+/g, "")
+        "cookie": (cookie || "").replace(/[\r\n]+/g, ""),
+        "user-agent": config.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
       };
       headers["origin"] = "https://gemini.google.com";
       headers["referer"] = "https://gemini.google.com/";
+      const cookieLength = headers["cookie"].length;
+      const hasSecurePSID = headers["cookie"].includes("__Secure-1PSID");
+      const hasSecurePSIDTS = headers["cookie"].includes("__Secure-1PSIDTS");
+      console.log(`[GeminiChatService] Impit: Cookie length=${cookieLength}, __Secure-1PSID=${hasSecurePSID}, __Secure-1PSIDTS=${hasSecurePSIDTS}`);
+      if (!hasSecurePSID || !hasSecurePSIDTS) {
+        console.error("[GeminiChatService] ⚠️ CẢNH BÁO: Cookie thiếu __Secure-1PSID hoặc __Secure-1PSIDTS - Có thể gây lỗi 400!");
+      }
+      const atTokenPreview = atToken ? `${atToken.substring(0, 20)}...` : "MISSING";
+      const blLabelPreview = blLabel ? blLabel : "MISSING";
+      const fSidPreview = fSid ? fSid : "MISSING";
+      console.log(`[GeminiChatService] Impit: AT Token=${atTokenPreview}, BL=${blLabelPreview}, F.SID=${fSidPreview}`);
       const contextSummary = {
         conversationId: contextArray[0] ? `${String(contextArray[0]).slice(0, 24)}...` : "",
         responseId: contextArray[1] ? `${String(contextArray[1]).slice(0, 24)}...` : "",
         choiceId: contextArray[2] ? `${String(contextArray[2]).slice(0, 24)}...` : ""
       };
+      const hasContext = !!(contextArray[0] || contextArray[1] || contextArray[2]);
+      if (hasContext) {
+        console.log("[GeminiChatService] Impit: Đang sử dụng context cũ:", contextSummary);
+        console.log("[GeminiChatService] ⚠️ Nếu lỗi 400 liên tục, hãy thử XÓA context (Reset conversation)");
+      } else {
+        console.log("[GeminiChatService] Impit: Bắt đầu conversation MỚI (không có context)");
+      }
       console.log("[GeminiChatService] Sending message via IMPIT");
       console.log("[GeminiChatService] Sending Impit request to:", url);
       const response = await impit$1.fetch(url, {
@@ -5497,10 +5279,17 @@ class GeminiChatServiceClass {
       });
       console.log("[GeminiChatService] Impit response status:", response.status);
       if (response.status !== 200) {
+        try {
+          const responseText2 = await response.text();
+          console.error(`[GeminiChatService] Impit HTTP ${response.status} Error Response:`, responseText2.substring(0, 500));
+        } catch (e) {
+          console.error("[GeminiChatService] Could not read error response body:", e);
+        }
         if (usedProxy) {
           const proxyManager = getProxyManager();
           proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
           this.releaseProxy(config.id, usedProxy.id);
+          this.setAssignedProxyId(config.id, null);
         }
         return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id };
       }
@@ -5594,11 +5383,12 @@ const GeminiChatService = GeminiChatServiceClass.getInstance();
 class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
+   * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
    */
   static async translateChapter(options) {
     try {
       console.log("[StoryService] Starting translation...", options.method || "API", options.model || "default");
-      if (options.method === "WEB") {
+      if (options.method === "IMPIT") {
         let promptText = "";
         const preparedPrompt = options.prompt;
         if (typeof preparedPrompt === "string") {
@@ -5617,13 +5407,8 @@ class StoryService {
         console.log("[StoryService] Extracted promptText length:", promptText.length);
         if (!promptText) console.warn("[StoryService] promptText is empty!");
         const webConfigId = options.webConfigId?.trim() || "";
-        let result;
-        if (options.useImpit) {
-          console.log("[StoryService] Using Impit for translation...");
-          result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
-        } else {
-          result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy, options.metadata);
-        }
+        console.log("[StoryService] Using IMPIT for translation...");
+        const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
         if (result.success && result.data) {
           console.log("[StoryService] Translation completed.");
           const ctx = result.data.context;
@@ -5641,7 +5426,7 @@ class StoryService {
             metadata: result.metadata
           };
         } else {
-          return { success: false, error: result.error || "Gemini Web Error", configId: result.configId, metadata: result.metadata };
+          return { success: false, error: result.error || "Gemini Web Error", configId: result.configId, metadata: result.metadata, retryable: result.retryable };
         }
       } else {
         const modelToUse = options.model || GEMINI_MODELS.FLASH_3_0;
@@ -6403,11 +6188,13 @@ const CHANNELS = {
   CREATE: "geminiChat:create",
   UPDATE: "geminiChat:update",
   DELETE: "geminiChat:delete",
-  SEND_MESSAGE: "geminiChat:sendMessage",
   CHECK_DUPLICATE_TOKEN: "geminiChat:checkDuplicateToken",
   // Cookie Config (bảng riêng)
   GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
-  SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig"
+  SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig",
+  // Impit Browser Management
+  GET_MAX_IMPIT_BROWSERS: "geminiChat:getMaxImpitBrowsers",
+  RELEASE_ALL_IMPIT_BROWSERS: "geminiChat:releaseAllImpitBrowsers"
 };
 function registerGeminiChatHandlers() {
   console.log("[GeminiChatHandlers] Dang ky handlers...");
@@ -6483,22 +6270,29 @@ function registerGeminiChatHandlers() {
       return { success: false, error: String(error) };
     }
   });
-  electron.ipcMain.handle(CHANNELS.SEND_MESSAGE, async (_, message, configId, context) => {
-    try {
-      console.log("[GeminiChatHandlers] sendMessage, configId:", configId, "context:", context);
-      const result = await GeminiChatService.sendMessage(message, configId, context);
-      return result;
-    } catch (error) {
-      console.error("[GeminiChatHandlers] Loi sendMessage:", error);
-      return { success: false, error: String(error) };
-    }
-  });
   electron.ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload) => {
     try {
       const result = GeminiChatService.checkDuplicateToken(payload.cookie, payload.atToken, payload.excludeId);
       return { success: true, data: result };
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi checkDuplicateToken:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.GET_MAX_IMPIT_BROWSERS, async () => {
+    try {
+      return { success: true, data: GeminiChatService.getMaxImpitBrowserCount() };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi getMaxImpitBrowsers:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS, async () => {
+    try {
+      GeminiChatService.releaseAllImpitBrowsers();
+      return { success: true };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi releaseAllImpitBrowsers:", error);
       return { success: false, error: String(error) };
     }
   });

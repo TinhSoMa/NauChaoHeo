@@ -20690,14 +20690,14 @@ function StoryTranslator() {
   const [excludedChapterIds, setExcludedChapterIds] = reactExports.useState(/* @__PURE__ */ new Set());
   const [lastClickedChapterId, setLastClickedChapterId] = reactExports.useState(null);
   const [batchProgress, setBatchProgress] = reactExports.useState(null);
-  const [shouldStop, setShouldStop] = reactExports.useState(false);
+  const [, setShouldStop] = reactExports.useState(false);
+  const shouldStopRef = reactExports.useRef(false);
   const [exportStatus, setExportStatus] = reactExports.useState("idle");
   const [fontSize, setFontSize] = reactExports.useState(18);
   const [lineHeight, setLineHeight] = reactExports.useState(1.8);
   const [processingChapters, setProcessingChapters] = reactExports.useState(/* @__PURE__ */ new Map());
   const [, setTick] = reactExports.useState(0);
   const [useProxy, setUseProxy] = reactExports.useState(true);
-  const [useImpit, setUseImpit] = reactExports.useState(false);
   const [retranslateExisting, setRetranslateExisting] = reactExports.useState(false);
   const loadProxySetting = async () => {
     try {
@@ -21009,10 +21009,10 @@ function StoryTranslator() {
         throw new Error(prepareResult.error || "Loi chuan bi prompt");
       }
       console.log("[StoryTranslator] Da chuan bi prompt, dang gui den Gemini...");
-      const method = translateMode === "token" ? "WEB" : "API";
-      const methodKey = method === "WEB" ? "token" : "api";
-      let selectedTokenConfig = method === "WEB" ? getPreferredTokenConfig() : null;
-      if (method === "WEB" && !selectedTokenConfig) {
+      const method = translateMode === "token" ? "IMPIT" : "API";
+      const methodKey = method === "IMPIT" ? "token" : "api";
+      let selectedTokenConfig = method === "IMPIT" ? getPreferredTokenConfig() : null;
+      if (method === "IMPIT" && !selectedTokenConfig) {
         await loadConfigurations();
         selectedTokenConfig = getPreferredTokenConfig();
         if (!selectedTokenConfig) {
@@ -21020,14 +21020,13 @@ function StoryTranslator() {
           return;
         }
       }
-      const tokenKey = method === "WEB" && selectedTokenConfig ? buildTokenKey$2(selectedTokenConfig) : null;
+      const tokenKey = method === "IMPIT" && selectedTokenConfig ? buildTokenKey$2(selectedTokenConfig) : null;
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
         model,
         method,
-        webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
-        useProxy: method === "WEB" && useProxy,
-        useImpit: method === "WEB" && useImpit,
+        webConfigId: method === "IMPIT" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+        useProxy: method === "IMPIT" && useProxy,
         metadata: { chapterId: selectedChapterId }
       });
       if (translateResult.success && translateResult.data) {
@@ -21041,9 +21040,8 @@ function StoryTranslator() {
             prompt: prepareResult.prompt,
             model,
             method,
-            webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
-            useProxy: method === "WEB" && useProxy,
-            useImpit: method === "WEB" && useImpit,
+            webConfigId: method === "IMPIT" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+            useProxy: method === "IMPIT" && useProxy,
             metadata: { chapterId: selectedChapterId }
           });
           if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
@@ -21095,6 +21093,7 @@ function StoryTranslator() {
   };
   const handleStopTranslation = () => {
     console.log("[StoryTranslator] Dừng dịch thủ công...");
+    shouldStopRef.current = true;
     setShouldStop(true);
   };
   const handleTranslateAll = async () => {
@@ -21107,6 +21106,7 @@ function StoryTranslator() {
     }
     setStatus("running");
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
+    shouldStopRef.current = false;
     setShouldStop(false);
     const MIN_DELAY = 5e3;
     const MAX_DELAY = 3e4;
@@ -21114,7 +21114,7 @@ function StoryTranslator() {
     let currentIndex = 0;
     const results = [];
     const translateChapter = async (chapter, index, workerId2, channelOverride, tokenConfigOverride) => {
-      if (shouldStop) {
+      if (shouldStopRef.current) {
         console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
         return null;
       }
@@ -21137,9 +21137,9 @@ function StoryTranslator() {
           console.error(`Lỗi chuẩn bị prompt cho chương ${chapter.title}:`, prepareResult.error);
           return null;
         }
-        const method = channel === "token" ? "WEB" : "API";
-        let selectedTokenConfig = method === "WEB" ? tokenConfigOverride || getPreferredTokenConfig() : null;
-        if (method === "WEB" && !selectedTokenConfig) {
+        const method = channel === "token" ? "IMPIT" : "API";
+        let selectedTokenConfig = method === "IMPIT" ? tokenConfigOverride || getPreferredTokenConfig() : null;
+        if (method === "IMPIT" && !selectedTokenConfig) {
           await loadConfigurations();
           selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
           if (!selectedTokenConfig) {
@@ -21147,16 +21147,15 @@ function StoryTranslator() {
             return null;
           }
         }
-        const tokenKey = method === "WEB" && selectedTokenConfig ? buildTokenKey$2(selectedTokenConfig) : null;
+        const tokenKey = method === "IMPIT" && selectedTokenConfig ? buildTokenKey$2(selectedTokenConfig) : null;
         const translateResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
           {
             prompt: prepareResult.prompt,
             model,
             method,
-            webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
-            useProxy: method === "WEB" && useProxy,
-            useImpit: method === "WEB" && useImpit,
+            webConfigId: method === "IMPIT" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+            useProxy: method === "IMPIT" && useProxy,
             metadata: { chapterId: chapter.id }
           }
         );
@@ -21173,9 +21172,8 @@ function StoryTranslator() {
                 prompt: prepareResult.prompt,
                 model,
                 method,
-                webConfigId: method === "WEB" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
-                useProxy: method === "WEB" && useProxy,
-                useImpit: method === "WEB" && useImpit,
+                webConfigId: method === "IMPIT" && selectedTokenConfig ? selectedTokenConfig.id : void 0,
+                useProxy: method === "IMPIT" && useProxy,
                 metadata: { chapterId: chapter.id }
               }
             );
@@ -21231,22 +21229,27 @@ function StoryTranslator() {
         });
       }
     };
+    let isFirstChapterTaken = false;
     const worker = async (workerId2, channel, tokenConfig) => {
       console.log(`[StoryTranslator] 🚀 Worker ${workerId2} started`);
-      while (currentIndex < chaptersToTranslate.length && !shouldStop) {
-        const index = currentIndex++;
-        const chapter = chaptersToTranslate[index];
-        const isVeryFirstChapter = index === 0;
-        if (!isVeryFirstChapter) {
+      while (!shouldStopRef.current) {
+        if (isFirstChapterTaken) {
           const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StoryTranslator] ⏳ Worker ${workerId2} chờ ${Math.round(delay / 1e3)}s trước khi dịch chương ${index + 1}...`);
+          console.log(`[StoryTranslator] ⏳ Worker ${workerId2} chờ ${Math.round(delay / 1e3)}s trước khi lấy chương tiếp...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
-        } else {
-          console.log(`[StoryTranslator] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
         }
-        if (shouldStop) {
+        if (shouldStopRef.current) {
           console.log(`[StoryTranslator] ⚠️ Worker ${workerId2} stopped`);
           break;
+        }
+        if (currentIndex >= chaptersToTranslate.length) break;
+        const index = currentIndex++;
+        const chapter = chaptersToTranslate[index];
+        if (!isFirstChapterTaken) {
+          isFirstChapterTaken = true;
+          console.log(`[StoryTranslator] 🚀 Worker ${workerId2} lấy chương đầu tiên - gửi ngay`);
+        } else {
+          console.log(`[StoryTranslator] 📖 Worker ${workerId2} lấy chương ${index + 1} sau khi chờ delay`);
         }
         const result = await translateChapter(chapter, index, workerId2, channel, tokenConfig);
         results.push(result);
@@ -21264,8 +21267,25 @@ function StoryTranslator() {
       setBatchProgress(null);
       return;
     }
+    let maxImpitBrowsers = Infinity;
+    if (translateMode === "token" || translateMode === "both") {
+      try {
+        await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
+        const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
+        if (browserResult.success && browserResult.data) {
+          maxImpitBrowsers = browserResult.data;
+          console.log(`[StoryTranslator] Impit: Tối đa ${maxImpitBrowsers} trình duyệt khả dụng`);
+        }
+      } catch (e) {
+        console.error("[StoryTranslator] Lỗi lấy số trình duyệt impit:", e);
+      }
+    }
     const apiWorkerCount = translateMode === "api" ? 5 : translateMode === "both" ? 5 : 0;
-    const tokenWorkerCount = translateMode === "token" ? tokenConfigsForRun.length : translateMode === "both" ? tokenConfigsForRun.length : 0;
+    let tokenWorkerCount = translateMode === "token" ? tokenConfigsForRun.length : translateMode === "both" ? tokenConfigsForRun.length : 0;
+    if (tokenWorkerCount > maxImpitBrowsers) {
+      console.warn(`[StoryTranslator] Impit: Giới hạn token workers từ ${tokenWorkerCount} xuống ${maxImpitBrowsers} (số trình duyệt tối đa)`);
+      tokenWorkerCount = maxImpitBrowsers;
+    }
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
     console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
     const workers = [];
@@ -21273,14 +21293,23 @@ function StoryTranslator() {
     for (let i = 0; i < apiWorkerCount; i += 1) {
       workers.push(worker(workerId++, "api"));
     }
-    for (const config of tokenConfigsForRun) {
+    const tokenConfigsToUse = tokenConfigsForRun.slice(0, tokenWorkerCount);
+    for (const config of tokenConfigsToUse) {
       workers.push(worker(workerId++, "token", config));
     }
     await Promise.all(workers);
+    if (translateMode === "token" || translateMode === "both") {
+      try {
+        await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
+        console.log("[StoryTranslator] Đã giải phóng tất cả trình duyệt impit");
+      } catch (e) {
+        console.error("[StoryTranslator] Lỗi giải phóng trình duyệt impit:", e);
+      }
+    }
     setStatus("idle");
     setBatchProgress(null);
     setViewMode("translated");
-    if (shouldStop) {
+    if (shouldStopRef.current) {
       console.log(`[StoryTranslator] 🛑 Đã dừng: ${results.filter((r2) => r2).length}/${chaptersToTranslate.length} chapters đã dịch`);
     } else {
       console.log(`[StoryTranslator] 🎉 Hoàn thành: ${results.filter((r2) => r2).length}/${chaptersToTranslate.length} chapters`);
@@ -21761,19 +21790,6 @@ Số chương: ${ebookChapters.length}`);
           ] }),
           selectedChapterId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 items-center", children: [
             !isChapterIncluded(selectedChapterId) && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-orange-500 bg-orange-500/10 px-2 py-1 rounded", children: "Đã loại trừ" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 mr-2", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "input",
-                {
-                  type: "checkbox",
-                  id: "useImpit",
-                  checked: useImpit,
-                  onChange: (e) => setUseImpit(e.target.checked),
-                  className: "rounded border-gray-300 text-primary focus:ring-primary"
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "useImpit", className: "text-xs text-text-secondary cursor-pointer select-none", children: "Use Impit" })
-            ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(Button, { onClick: handleSavePrompt, variant: "secondary", className: "text-xs h-8 px-2", children: "Lưu Prompt" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border", children: chapters.find((c) => c.id === selectedChapterId)?.title })
           ] })
@@ -21833,7 +21849,8 @@ function StorySummary() {
   const [excludedChapterIds, setExcludedChapterIds] = reactExports.useState(/* @__PURE__ */ new Set());
   const [lastClickedChapterId, setLastClickedChapterId] = reactExports.useState(null);
   const [batchProgress, setBatchProgress] = reactExports.useState(null);
-  const [shouldStop, setShouldStop] = reactExports.useState(false);
+  const [, setShouldStop] = reactExports.useState(false);
+  const shouldStopRef = reactExports.useRef(false);
   const [fontSize, setFontSize] = reactExports.useState(18);
   const [lineHeight, setLineHeight] = reactExports.useState(1.8);
   const [processingChapters, setProcessingChapters] = reactExports.useState(/* @__PURE__ */ new Map());
@@ -22231,6 +22248,7 @@ function StorySummary() {
   };
   const handleStopTranslation = () => {
     console.log("[StorySummary] Dừng tóm tắt thủ công...");
+    shouldStopRef.current = true;
     setShouldStop(true);
   };
   const handleTranslateAll = async () => {
@@ -22243,6 +22261,7 @@ function StorySummary() {
     }
     setStatus("running");
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
+    shouldStopRef.current = false;
     setShouldStop(false);
     const MIN_DELAY = 5e3;
     const MAX_DELAY = 3e4;
@@ -22250,7 +22269,7 @@ function StorySummary() {
     let currentIndex = 0;
     const results = [];
     const translateChapter = async (chapter, index, workerId2, channelOverride, tokenConfigOverride) => {
-      if (shouldStop) {
+      if (shouldStopRef.current) {
         console.log(`[StorySummary] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
         return null;
       }
@@ -22372,22 +22391,27 @@ function StorySummary() {
         });
       }
     };
+    let isFirstChapterTaken = false;
     const worker = async (workerId2, channel, tokenConfig) => {
       console.log(`[StorySummary] 🚀 Worker ${workerId2} started`);
-      while (currentIndex < chaptersToTranslate.length && !shouldStop) {
-        const index = currentIndex++;
-        const chapter = chaptersToTranslate[index];
-        const isVeryFirstChapter = index === 0;
-        if (!isVeryFirstChapter) {
+      while (!shouldStopRef.current) {
+        if (isFirstChapterTaken) {
           const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StorySummary] ⏳ Worker ${workerId2} chờ ${Math.round(delay / 1e3)}s trước khi tóm tắt chương ${index + 1}...`);
+          console.log(`[StorySummary] ⏳ Worker ${workerId2} chờ ${Math.round(delay / 1e3)}s trước khi lấy chương tiếp...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
-        } else {
-          console.log(`[StorySummary] 🚀 Chương 1 gửi ngay lập tức (không delay)`);
         }
-        if (shouldStop) {
+        if (shouldStopRef.current) {
           console.log(`[StorySummary] ⚠️ Worker ${workerId2} stopped`);
           break;
+        }
+        if (currentIndex >= chaptersToTranslate.length) break;
+        const index = currentIndex++;
+        const chapter = chaptersToTranslate[index];
+        if (!isFirstChapterTaken) {
+          isFirstChapterTaken = true;
+          console.log(`[StorySummary] 🚀 Worker ${workerId2} lấy chương đầu tiên - gửi ngay`);
+        } else {
+          console.log(`[StorySummary] 📖 Worker ${workerId2} lấy chương ${index + 1} sau khi chờ delay`);
         }
         const result = await translateChapter(chapter, index, workerId2, channel, tokenConfig);
         results.push(result);
@@ -22421,7 +22445,7 @@ function StorySummary() {
     setStatus("idle");
     setBatchProgress(null);
     setViewMode("summary");
-    if (shouldStop) {
+    if (shouldStopRef.current) {
       console.log(`[StorySummary] 🛑 Đã dừng: ${results.filter((r2) => r2).length}/${chaptersToTranslate.length} chapters đã tóm tắt`);
     } else {
       console.log(`[StorySummary] 🎉 Hoàn thành: ${results.filter((r2) => r2).length}/${chaptersToTranslate.length} chapters`);

@@ -20,6 +20,10 @@ const CHANNELS = {
   // Cookie Config (bảng riêng)
   GET_COOKIE_CONFIG: 'geminiChat:getCookieConfig',
   SAVE_COOKIE_CONFIG: 'geminiChat:saveCookieConfig',
+
+  // Impit Browser Management
+  GET_MAX_IMPIT_BROWSERS: 'geminiChat:getMaxImpitBrowsers',
+  RELEASE_ALL_IMPIT_BROWSERS: 'geminiChat:releaseAllImpitBrowsers',
 };
 
 export function registerGeminiChatHandlers(): void {
@@ -114,7 +118,9 @@ export function registerGeminiChatHandlers(): void {
     }
   });
 
-  // Gui tin nhan den Gemini Web API
+  // DEPRECATED: Gui tin nhan den Gemini Web API (phương thức WEB cũ)
+  // Chỉ còn 2 lựa chọn: API và IMPIT
+  /*
   ipcMain.handle(CHANNELS.SEND_MESSAGE, async (_, message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => {
     try {
       console.log('[GeminiChatHandlers] sendMessage, configId:', configId, 'context:', context);
@@ -125,6 +131,7 @@ export function registerGeminiChatHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
+  */
 
   // Kiem tra token bi trung trong DB
   ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload: { cookie: string; atToken: string; excludeId?: string }) => {
@@ -133,6 +140,27 @@ export function registerGeminiChatHandlers(): void {
       return { success: true, data: result };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi checkDuplicateToken:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Lấy số lượng trình duyệt impit tối đa
+  ipcMain.handle(CHANNELS.GET_MAX_IMPIT_BROWSERS, async () => {
+    try {
+      return { success: true, data: GeminiChatService.getMaxImpitBrowserCount() };
+    } catch (error) {
+      console.error('[GeminiChatHandlers] Loi getMaxImpitBrowsers:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Giải phóng tất cả trình duyệt impit
+  ipcMain.handle(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS, async () => {
+    try {
+      GeminiChatService.releaseAllImpitBrowsers();
+      return { success: true };
+    } catch (error) {
+      console.error('[GeminiChatHandlers] Loi releaseAllImpitBrowsers:', error);
       return { success: false, error: String(error) };
     }
   });

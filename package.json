@@ -41,7 +41,7 @@
     "fingerprint-generator": "^2.1.79",
     "header-generator": "^2.1.79",
     "https-proxy-agent": "^7.0.6",
-    "impit": "^0.8.2",
+    "impit": "^0.9.1",
     "inherits": "^2.0.4",
     "isarray": "^2.0.5",
     "lucide-react": "^0.562.0",

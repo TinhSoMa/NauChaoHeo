@@ -66,7 +66,6 @@ export function StoryTranslator() {
   >(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
   const [useProxy, setUseProxy] = useState(true);
-  const [useImpit, setUseImpit] = useState(false);
   const [retranslateExisting, setRetranslateExisting] = useState(false);
 
   const loadProxySetting = async () => {
@@ -482,11 +481,11 @@ export function StoryTranslator() {
 
       console.log('[StoryTranslator] Da chuan bi prompt, dang gui den Gemini...');
       
-      const method = translateMode === 'token' ? 'WEB' : 'API';
-      const methodKey: 'api' | 'token' = method === 'WEB' ? 'token' : 'api';
+      const method = translateMode === 'token' ? 'IMPIT' : 'API';
+      const methodKey: 'api' | 'token' = method === 'IMPIT' ? 'token' : 'api';
 
-      let selectedTokenConfig = method === 'WEB' ? getPreferredTokenConfig() : null;
-      if (method === 'WEB' && !selectedTokenConfig) {
+      let selectedTokenConfig = method === 'IMPIT' ? getPreferredTokenConfig() : null;
+      if (method === 'IMPIT' && !selectedTokenConfig) {
         await loadConfigurations();
         selectedTokenConfig = getPreferredTokenConfig();
         if (!selectedTokenConfig) {
@@ -495,16 +494,15 @@ export function StoryTranslator() {
         }
       }
 
-      const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+      const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
       // 2. Send to Gemini for Translation
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
         model: model,
         method,
-        webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-        useProxy: method === 'WEB' && useProxy,
-        useImpit: method === 'WEB' && useImpit,
+        webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+        useProxy: method === 'IMPIT' && useProxy,
         metadata: { chapterId: selectedChapterId }
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
@@ -524,9 +522,8 @@ export function StoryTranslator() {
             prompt: prepareResult.prompt,
             model: model,
             method,
-            webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit,
+            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+            useProxy: method === 'IMPIT' && useProxy,
             metadata: { chapterId: selectedChapterId }
           }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
           
@@ -624,7 +621,7 @@ export function StoryTranslator() {
       workerId: number,
       channelOverride?: 'api' | 'token',
       tokenConfigOverride?: GeminiChatConfigLite | null
-    ): Promise<{ id: string; text: string } | null> => {
+    ): Promise<{ id: string; text: string } | { retryable: boolean } | null> => {
       // Kiểm tra nếu người dùng đã nhấn Dừng
       if (shouldStopRef.current) {
         console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
@@ -658,13 +655,13 @@ export function StoryTranslator() {
           return null;
         }
 
-        const method = channel === 'token' ? 'WEB' : 'API';
+        const method = channel === 'token' ? 'IMPIT' : 'API';
 
-        let selectedTokenConfig = method === 'WEB'
+        let selectedTokenConfig = method === 'IMPIT'
           ? (tokenConfigOverride || getPreferredTokenConfig())
           : null;
 
-        if (method === 'WEB' && !selectedTokenConfig) {
+        if (method === 'IMPIT' && !selectedTokenConfig) {
           await loadConfigurations();
           selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
           if (!selectedTokenConfig) {
@@ -673,7 +670,7 @@ export function StoryTranslator() {
           }
         }
 
-        const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+        const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
         // 2. Send to Gemini for Translation
         const translateResult = await window.electronAPI.invoke(
@@ -682,12 +679,11 @@ export function StoryTranslator() {
             prompt: prepareResult.prompt,
             model: model,
             method,
-            webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit,
+            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+            useProxy: method === 'IMPIT' && useProxy,
             metadata: { chapterId: chapter.id }
           }
-        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
+        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
 
         if (translateResult.success && translateResult.data) {
           // Validate metadata to prevent race condition
@@ -707,9 +703,8 @@ export function StoryTranslator() {
                 prompt: prepareResult.prompt,
                 model: model,
                 method,
-                webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-                useProxy: method === 'WEB' && useProxy,
-                useImpit: method === 'WEB' && useImpit,
+                webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+                useProxy: method === 'IMPIT' && useProxy,
                 metadata: { chapterId: chapter.id }
               }
             ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
@@ -762,7 +757,8 @@ export function StoryTranslator() {
           return { id: chapter.id, text: translateResult.data! };
         } else {
           console.error(`[StoryTranslator] ❌ Lỗi dịch chương ${chapter.title}:`, translateResult.error);
-          return null;
+          // Trả về retryable flag để worker biết có nên thử lại chương này không
+          return { retryable: translateResult.retryable ?? false };
         }
       } catch (error) {
         console.error(`[StoryTranslator] ❌ Exception khi dịch chương ${chapter.title}:`, error);
@@ -811,7 +807,17 @@ export function StoryTranslator() {
         }
         
         const result = await translateChapter(chapter, index, workerId, channel, tokenConfig);
-        results.push(result);
+        
+        // Kiểm tra nếu result là retryable error
+        if (result && 'retryable' in result && result.retryable) {
+          console.warn(`[StoryTranslator] ⚠️ Worker ${workerId}: Chương ${chapter.title} bị lỗi retryable (proxy/token), sẽ thử lại chương này sau 10s...`);
+          currentIndex--; // Đặt lại index để thử lại chương này
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Chờ 10s trước khi retry
+          continue; // Quay lại vòng lặp, thử lại chương này
+        }
+        
+        // Chỉ push result nếu thành công hoặc lỗi không retryable
+        results.push(result as { id: string; text: string } | null);
         
         completed++;
         setBatchProgress({ current: completed, total: chaptersToTranslate.length });
@@ -837,12 +843,35 @@ export function StoryTranslator() {
       return;
     }
 
+    // Nếu dùng token mode (IMPIT), giới hạn số token worker bằng số trình duyệt impit khả dụng
+    let maxImpitBrowsers = Infinity;
+    if (translateMode === 'token' || translateMode === 'both') {
+      try {
+        // Giải phóng tất cả trình duyệt impit trước khi bắt đầu batch mới
+        await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
+        const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
+        if (browserResult.success && browserResult.data) {
+          maxImpitBrowsers = browserResult.data;
+          console.log(`[StoryTranslator] Impit: Tối đa ${maxImpitBrowsers} trình duyệt khả dụng`);
+        }
+      } catch (e) {
+        console.error('[StoryTranslator] Lỗi lấy số trình duyệt impit:', e);
+      }
+    }
+
     const apiWorkerCount = translateMode === 'api' ? 5 : translateMode === 'both' ? 5 : 0;
-    const tokenWorkerCount = translateMode === 'token'
+    let tokenWorkerCount = translateMode === 'token'
       ? tokenConfigsForRun.length
       : translateMode === 'both'
         ? tokenConfigsForRun.length
         : 0;
+    
+    // Giới hạn token worker khi dùng impit (mỗi tài khoản 1 trình duyệt)
+    if (tokenWorkerCount > maxImpitBrowsers) {
+      console.warn(`[StoryTranslator] Impit: Giới hạn token workers từ ${tokenWorkerCount} xuống ${maxImpitBrowsers} (số trình duyệt tối đa)`);
+      tokenWorkerCount = maxImpitBrowsers;
+    }
+    
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
 
     console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
@@ -854,11 +883,23 @@ export function StoryTranslator() {
       workers.push(worker(workerId++, 'api'));
     }
 
-    for (const config of tokenConfigsForRun) {
+    // Chỉ sử dụng tokenWorkerCount configs (đã giới hạn bởi số trình duyệt impit nếu cần)
+    const tokenConfigsToUse = tokenConfigsForRun.slice(0, tokenWorkerCount);
+    for (const config of tokenConfigsToUse) {
       workers.push(worker(workerId++, 'token', config));
     }
     
     await Promise.all(workers);
+
+    // Giải phóng tất cả trình duyệt impit sau khi hoàn thành batch (luôn luôn giải phóng khi dùng token mode)
+    if (translateMode === 'token' || translateMode === 'both') {
+      try {
+        await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
+        console.log('[StoryTranslator] Đã giải phóng tất cả trình duyệt impit');
+      } catch (e) {
+        console.error('[StoryTranslator] Lỗi giải phóng trình duyệt impit:', e);
+      }
+    }
 
     setStatus('idle');
     setBatchProgress(null);
@@ -1440,18 +1481,6 @@ export function StoryTranslator() {
                      Đã loại trừ
                    </span>
                  )}
-                 <div className="flex items-center gap-2 mr-2">
-                    <input 
-                      type="checkbox" 
-                      id="useImpit" 
-                      checked={useImpit} 
-                      onChange={(e) => setUseImpit(e.target.checked)}
-                      className="rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    <label htmlFor="useImpit" className="text-xs text-text-secondary cursor-pointer select-none">
-                      Use Impit
-                    </label>
-                 </div>
                  <Button onClick={handleSavePrompt} variant="secondary" className="text-xs h-8 px-2">
                    Lưu Prompt
                  </Button>

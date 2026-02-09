@@ -9,12 +9,13 @@ import { AppSettingsService } from '../appSettings';
 export class StoryService {
   /**
    * Translates a chapter using prepared prompt and Gemini API
+   * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'WEB', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, useImpit?: boolean, metadata?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'IMPIT', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, metadata?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
-      if (options.method === 'WEB') {
+      if (options.method === 'IMPIT') {
            // WEB METHOD (Gemini Protocol)
            // Extract text from prompt (assuming preparedPrompt results in structured object/array)
            
@@ -59,13 +60,8 @@ export class StoryService {
 
            const webConfigId = options.webConfigId?.trim() || '';
            
-           let result;
-           if (options.useImpit) {
-               console.log('[StoryService] Using Impit for translation...');
-               result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
-           } else {
-               result = await GeminiChatService.sendMessage(promptText, webConfigId, options.context, options.useProxy, options.metadata);
-           }
+           console.log('[StoryService] Using IMPIT for translation...');
+           const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
            
            if (result.success && result.data) {
              console.log('[StoryService] Translation completed.');
@@ -86,7 +82,7 @@ export class StoryService {
                  metadata: result.metadata
              };
            } else {
-             return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId, metadata: result.metadata };
+             return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId, metadata: result.metadata, retryable: result.retryable };
            }
 
       } else {

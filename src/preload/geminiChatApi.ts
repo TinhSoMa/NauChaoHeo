@@ -65,6 +65,8 @@ const CHANNELS = {
   CHECK_DUPLICATE_TOKEN: 'geminiChat:checkDuplicateToken',
   GET_COOKIE_CONFIG: 'geminiChat:getCookieConfig',
   SAVE_COOKIE_CONFIG: 'geminiChat:saveCookieConfig',
+  GET_MAX_IMPIT_BROWSERS: 'geminiChat:getMaxImpitBrowsers',
+  RELEASE_ALL_IMPIT_BROWSERS: 'geminiChat:releaseAllImpitBrowsers',
 };
 
 // API interface
@@ -81,6 +83,10 @@ export interface GeminiChatAPI {
   // Cookie config methods
   getCookieConfig: () => Promise<ApiResponse<GeminiCookieConfig | null>>;
   saveCookieConfig: (data: { cookie: string; blLabel: string; fSid: string; atToken: string; reqId?: string }) => Promise<ApiResponse<null>>;
+
+  // Impit browser management
+  getMaxImpitBrowsers: () => Promise<ApiResponse<number>>;
+  releaseAllImpitBrowsers: () => Promise<ApiResponse<void>>;
 }
 
 // API implementation
@@ -97,4 +103,8 @@ export const geminiChatApi: GeminiChatAPI = {
   // Cookie config
   getCookieConfig: () => ipcRenderer.invoke(CHANNELS.GET_COOKIE_CONFIG),
   saveCookieConfig: (data) => ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data),
+
+  // Impit browser management
+  getMaxImpitBrowsers: () => ipcRenderer.invoke(CHANNELS.GET_MAX_IMPIT_BROWSERS),
+  releaseAllImpitBrowsers: () => ipcRenderer.invoke(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS),
 };

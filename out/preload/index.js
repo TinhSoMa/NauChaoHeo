@@ -165,7 +165,9 @@ const CHANNELS = {
   SEND_MESSAGE: "geminiChat:sendMessage",
   CHECK_DUPLICATE_TOKEN: "geminiChat:checkDuplicateToken",
   GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
-  SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig"
+  SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig",
+  GET_MAX_IMPIT_BROWSERS: "geminiChat:getMaxImpitBrowsers",
+  RELEASE_ALL_IMPIT_BROWSERS: "geminiChat:releaseAllImpitBrowsers"
 };
 const geminiChatApi = {
   getAll: () => electron.ipcRenderer.invoke(CHANNELS.GET_ALL),
@@ -178,7 +180,10 @@ const geminiChatApi = {
   checkDuplicateToken: (payload) => electron.ipcRenderer.invoke(CHANNELS.CHECK_DUPLICATE_TOKEN, payload),
   // Cookie config
   getCookieConfig: () => electron.ipcRenderer.invoke(CHANNELS.GET_COOKIE_CONFIG),
-  saveCookieConfig: (data) => electron.ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data)
+  saveCookieConfig: (data) => electron.ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data),
+  // Impit browser management
+  getMaxImpitBrowsers: () => electron.ipcRenderer.invoke(CHANNELS.GET_MAX_IMPIT_BROWSERS),
+  releaseAllImpitBrowsers: () => electron.ipcRenderer.invoke(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS)
 };
 const PROXY_IPC_CHANNELS = {
   GET_ALL: "proxy:getAll",

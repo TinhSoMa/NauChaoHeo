@@ -369,6 +369,10 @@ interface GeminiChatAPI {
   // Cookie config methods (bảng gemini_cookie)
   getCookieConfig: () => Promise<IpcApiResponse<GeminiCookieConfig | null>>;
   saveCookieConfig: (data: { cookie: string; blLabel: string; fSid: string; atToken: string; reqId?: string }) => Promise<IpcApiResponse<null>>;
+
+  // Impit browser management
+  getMaxImpitBrowsers: () => Promise<IpcApiResponse<number>>;
+  releaseAllImpitBrowsers: () => Promise<IpcApiResponse<void>>;
 }
 
 /**

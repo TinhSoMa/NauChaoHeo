@@ -3,6 +3,33 @@ import { v4 as uuidv4 } from 'uuid';
 // HL_LANG (Host Language): Ngôn ngữ giao diện
 export const HL_LANG = "vi";
 
+// IMPIT BROWSERS - Danh sách trình duyệt mà impit hỗ trợ
+// Mỗi tài khoản sẽ được gán 1 trình duyệt duy nhất
+export type ImpitBrowser = 
+  'chrome' | 'chrome100' | 'chrome101' | 'chrome104' | 'chrome107' | 'chrome110' |
+  'chrome116' | 'chrome124' | 'chrome125' | 'chrome131' | 'chrome136' | 'chrome142' |
+  'firefox' | 'firefox128' | 'firefox133' | 'firefox135' | 'firefox144';
+
+export const IMPIT_BROWSERS: ImpitBrowser[] = [
+  'chrome',
+  'chrome100',
+  'chrome101',
+  'chrome104',
+  'chrome107',
+  'chrome110',
+  'chrome116',
+  'chrome124',
+  'chrome125',
+  'chrome131',
+  'chrome136',
+  'chrome142',
+  'firefox',
+  'firefox128',
+  'firefox133',
+  'firefox135',
+  'firefox144'
+];
+
 // BROWSER PROFILES
 // User-Agent + Platform + Sec-CH-UA presets to ensure consistency
 export const BROWSER_PROFILES = [
@@ -131,7 +158,7 @@ export function buildRequestPayload(
         null,
         null,
         null,
-        [1769584568, 497000000],
+        [Math.floor(Date.now() / 1000), Math.floor((Date.now() % 1000) * 1000000)], // DYNAMIC TIMESTAMP!
         null,
         2
     ];
