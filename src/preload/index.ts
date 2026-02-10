@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { createGeminiAPI, GeminiAPI } from './geminiApi'
 import { createCaptionAPI, createTTSAPI, createCaptionVideoAPI, CaptionAPI, TTSAPI, CaptionVideoAPI } from './captionApi'
 import { projectApi, ProjectAPI } from './projectApi'
@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send(channel, data)
   },
   onMessage: (channel: string, callback: (...args: unknown[]) => void) => {
-    const subscription = (_event, ...args) => callback(...args)
+    const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(...args)
     ipcRenderer.on(channel, subscription)
     return () => {
       ipcRenderer.removeListener(channel, subscription)

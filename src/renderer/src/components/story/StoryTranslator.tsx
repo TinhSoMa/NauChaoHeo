@@ -48,7 +48,9 @@ export function StoryTranslator() {
   const [tokenConfigId, setTokenConfigId] = useState<string | null>(null);
   const [tokenConfigs, setTokenConfigs] = useState<GeminiChatConfigLite[]>([]);
   const [tokenContexts, setTokenContexts] = useState<Map<string, TokenContext>>(new Map());
-  const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
+  const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
+  const [summaryTitles, setSummaryTitles] = useState<Map<string, string>>(new Map());
+  const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
   // Danh sach cac chuong bi loai tru khoi dich thuat
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
   // Last clicked chapter for Shift+Click selection
@@ -348,9 +350,11 @@ export function StoryTranslator() {
     tokenConfigId?: string | null;
     tokenContext?: TokenContext | null;
     tokenContexts?: Array<[string, TokenContext]>;
-    viewMode?: 'original' | 'translated';
+    viewMode?: 'original' | 'translated' | 'summary';
     excludedChapterIds?: string[];
     selectedChapterId?: string | null;
+    summaries?: Array<[string, string]>;
+    summaryTitles?: Array<[string, string]>;
   }>({
     feature: 'story',
     fileName: STORY_STATE_FILE,
@@ -374,6 +378,10 @@ export function StoryTranslator() {
         title: extractTranslatedTitle(content, chapterId)
       }));
 
+      // Summaries
+      const serializedSummaries = Array.from(summaries.entries());
+      const serializedSummaryTitles = Array.from(summaryTitles.entries());
+
       return {
         filePath,
         sourceLang,
@@ -386,12 +394,14 @@ export function StoryTranslator() {
         translatedTitles: serializedTitles,
         tokenConfigId,
         tokenContexts: Array.from(tokenContexts.entries()),
-        viewMode,
+        viewMode: viewMode as 'original' | 'translated' | 'summary',
         excludedChapterIds: Array.from(excludedChapterIds.values()),
-        selectedChapterId
+        selectedChapterId,
+        summaries: serializedSummaries,
+        summaryTitles: serializedSummaryTitles
       };
     },
-    deserialize: async (saved) => {
+    deserialize: async (saved: any) => {
       if (saved.sourceLang) setSourceLang(saved.sourceLang);
       if (saved.targetLang) setTargetLang(saved.targetLang);
       if (saved.model) setModel(saved.model);
@@ -400,7 +410,7 @@ export function StoryTranslator() {
       if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
       if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
       if (saved.translatedTitles) {
-        setTranslatedTitles(new Map(saved.translatedTitles.map((t) => [t.id, t.title] as [string, string])));
+        setTranslatedTitles(new Map(saved.translatedTitles.map((t: any) => [t.id, t.title] as [string, string])));
       }
       if (typeof saved.tokenConfigId !== 'undefined') {
         setTokenConfigId(saved.tokenConfigId || null);
@@ -410,6 +420,9 @@ export function StoryTranslator() {
       } else if (saved.tokenContext && saved.tokenConfigId) {
         setTokenContexts(new Map([[saved.tokenConfigId, saved.tokenContext]]));
       }
+      
+      if (saved.summaries) setSummaries(new Map(saved.summaries));
+      if (saved.summaryTitles) setSummaryTitles(new Map(saved.summaryTitles));
 
       let parsedOk = false;
       if (saved.filePath) {
@@ -418,7 +431,7 @@ export function StoryTranslator() {
       }
 
       if (!parsedOk && saved.translatedTitles && saved.translatedTitles.length > 0) {
-        setChapters(saved.translatedTitles.map((c) => ({ id: c.id, title: c.title, content: '' })));
+        setChapters(saved.translatedTitles.map((c: any) => ({ id: c.id, title: c.title, content: '' })));
       }
 
       if (saved.viewMode) setViewMode(saved.viewMode);
@@ -1463,6 +1476,13 @@ export function StoryTranslator() {
                   >
                     Bản dịch
                   </button>
+                  <button 
+                    onClick={() => setViewMode('summary')}
+                    disabled={!selectedChapterId || !summaries.has(selectedChapterId)}
+                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
+                  >
+                    Tóm tắt
+                  </button>
                 </div>
               )}
               
@@ -1539,7 +1559,7 @@ export function StoryTranslator() {
                   <div className="whitespace-pre-wrap wrap-break-word">
                     {chapters.find(c => c.id === selectedChapterId)?.content}
                   </div>
-                ) : (
+                ) : viewMode === 'translated' ? (
                   translatedChapters.get(selectedChapterId) ? (
                     <div className="whitespace-pre-wrap wrap-break-word">
                       {translatedChapters.get(selectedChapterId)}
@@ -1548,6 +1568,21 @@ export function StoryTranslator() {
                     <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
                       <BookOpen size={48} className="mb-4" />
                       <p className="text-base">Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.</p>
+                    </div>
+                  )
+                ) : (
+                  // Summary View
+                  summaries.get(selectedChapterId) ? (
+                    <div className="whitespace-pre-wrap wrap-break-word">
+                       {summaryTitles.get(selectedChapterId) && (
+                          <h3 className="text-lg font-bold mb-4 text-primary">{summaryTitles.get(selectedChapterId)}</h3>
+                       )}
+                       {summaries.get(selectedChapterId)}
+                    </div>
+                  ) : (
+                     <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
+                       <FileText size={48} className="mb-4" />
+                       <p className="text-base">Chưa có tóm tắt cho chương này.</p>
                     </div>
                   )
                 )
