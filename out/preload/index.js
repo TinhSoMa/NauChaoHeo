@@ -167,7 +167,9 @@ const CHANNELS = {
   GET_COOKIE_CONFIG: "geminiChat:getCookieConfig",
   SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig",
   GET_MAX_IMPIT_BROWSERS: "geminiChat:getMaxImpitBrowsers",
-  RELEASE_ALL_IMPIT_BROWSERS: "geminiChat:releaseAllImpitBrowsers"
+  RELEASE_ALL_IMPIT_BROWSERS: "geminiChat:releaseAllImpitBrowsers",
+  GET_TOKEN_STATS: "geminiChat:getTokenStats",
+  CLEAR_CONFIG_ERROR: "geminiChat:clearConfigError"
 };
 const geminiChatApi = {
   getAll: () => electron.ipcRenderer.invoke(CHANNELS.GET_ALL),
@@ -183,7 +185,10 @@ const geminiChatApi = {
   saveCookieConfig: (data) => electron.ipcRenderer.invoke(CHANNELS.SAVE_COOKIE_CONFIG, data),
   // Impit browser management
   getMaxImpitBrowsers: () => electron.ipcRenderer.invoke(CHANNELS.GET_MAX_IMPIT_BROWSERS),
-  releaseAllImpitBrowsers: () => electron.ipcRenderer.invoke(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS)
+  releaseAllImpitBrowsers: () => electron.ipcRenderer.invoke(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS),
+  // Token stats
+  getTokenStats: () => electron.ipcRenderer.invoke(CHANNELS.GET_TOKEN_STATS),
+  clearConfigError: (configId) => electron.ipcRenderer.invoke(CHANNELS.CLEAR_CONFIG_ERROR, configId)
 };
 const PROXY_IPC_CHANNELS = {
   GET_ALL: "proxy:getAll",
@@ -240,7 +245,11 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
     electron.ipcRenderer.send(channel, data);
   },
   onMessage: (channel, callback) => {
-    electron.ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+    const subscription = (_event, ...args) => callback(...args);
+    electron.ipcRenderer.on(channel, subscription);
+    return () => {
+      electron.ipcRenderer.removeListener(channel, subscription);
+    };
   },
   invoke: (channel, data) => {
     return electron.ipcRenderer.invoke(channel, data);

@@ -18,7 +18,9 @@ import {
   X,
   Monitor,
   Laptop,
-  Clipboard
+  Clipboard,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -41,6 +43,7 @@ interface GeminiChatConfig {
   acceptLanguage?: string;
   platform?: string;
   isActive: boolean;
+  isError?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -53,6 +56,21 @@ interface TokenStats {
   distinctActiveCount: number;
   activeCount: number;
   duplicateIds: Set<string>;
+}
+
+interface LiveTokenStats {
+  total: number;
+  active: number;
+  ready: number;
+  busy: number;
+  accounts: Array<{
+    id: string;
+    name: string;
+    status: 'ready' | 'busy' | 'cooldown' | 'error';
+    waitTimeMs: number;
+    impitBrowser: string | null;
+    proxyId: string | null;
+  }>;
 }
 
 interface ProxyInfo {
@@ -139,6 +157,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     activeCount: 0,
     duplicateIds: new Set()
   });
+  const [liveStats, setLiveStats] = useState<LiveTokenStats | null>(null);
   const [createChatOnWeb, setCreateChatOnWeb] = useState<boolean>(false);
   const [useStoredContextOnFirstSend, setUseStoredContextOnFirstSend] = useState<boolean>(false);
 
@@ -209,6 +228,26 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
 
     loadProxies();
   }, []);
+
+  // Poll live token stats every 3 seconds in list mode
+  useEffect(() => {
+    if (mode !== 'list') return;
+    
+    const fetchStats = async () => {
+      try {
+        const result = await window.electronAPI.geminiChat.getTokenStats();
+        if (result.success && result.data) {
+          setLiveStats(result.data);
+        }
+      } catch (error) {
+        // silent
+      }
+    };
+    
+    fetchStats(); // initial
+    const interval = setInterval(fetchStats, 3000);
+    return () => clearInterval(interval);
+  }, [mode]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -326,6 +365,44 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     } catch (error) {
       console.error('Error toggling active:', error);
     }
+  };
+
+  const handleToggleError = async (config: GeminiChatConfig, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const currentIsError = config.isError || false;
+      const result = await window.electronAPI.geminiChat.update(config.id, { isError: !currentIsError });
+      
+      if (result.success) {
+        // Refresh both stats and list to update UI
+        loadConfigs();
+        const statsResult = await window.electronAPI.geminiChat.getTokenStats();
+        if (statsResult.success && statsResult.data) {
+          setLiveStats(statsResult.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling error status:', error);
+    }
+  };
+
+  const handleClearError = async (configId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await window.electronAPI.geminiChat.clearConfigError(configId);
+      // Refresh stats immediately
+      const result = await window.electronAPI.geminiChat.getTokenStats();
+      if (result.success && result.data) {
+        setLiveStats(result.data);
+      }
+    } catch (error) {
+      console.error('Error clearing config error:', error);
+    }
+  };
+
+  const getAccountLiveStatus = (configId: string) => {
+    if (!liveStats) return null;
+    return liveStats.accounts.find(a => a.id === configId) || null;
   };
 
 
@@ -479,6 +556,12 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                {tokenStats.duplicateIds.size > 0 && (
                  <span className="ml-2 text-red-600">Trùng token: {tokenStats.duplicateIds.size}</span>
                )}
+               {liveStats && (
+                 <span className="ml-3">
+                   <span style={{ color: '#22c55e' }}>✓ {liveStats.ready}</span>
+                   <span className="mx-1" style={{ color: '#f59e0b' }}>⊛ {liveStats.busy}</span>
+                 </span>
+               )}
              </div>
           </div>
           <div className="flex items-center gap-3">
@@ -506,9 +589,23 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
            <div className="grid grid-cols-1 gap-4">
              {configs.map(config => (
                <div key={config.id} className="bg-(--color-card) border border-(--color-border) rounded-xl p-4 flex items-center gap-4 hover:border-(--color-primary) transition-colors cursor-pointer group" onClick={() => handleEdit(config)}>
-                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${config.isActive ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                    {config.isActive ? <Check size={20} /> : <X size={20} />}
-                 </div>
+                 {(() => {
+                   const live = getAccountLiveStatus(config.id);
+                   const statusColor = !config.isActive ? 'bg-gray-100 text-gray-400'
+                     : live?.status === 'error' ? 'bg-red-100 text-red-600'
+                     : live?.status === 'busy' ? 'bg-yellow-100 text-yellow-600'
+                     : live?.status === 'cooldown' ? 'bg-blue-100 text-blue-600'
+                     : 'bg-green-100 text-green-600';
+                   return (
+                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${statusColor}`}>
+                       {!config.isActive ? <X size={20} />
+                         : live?.status === 'error' ? <AlertTriangle size={20} />
+                         : live?.status === 'busy' ? <RefreshCw size={20} className="animate-spin" />
+                         : live?.status === 'cooldown' ? <RefreshCw size={20} />
+                         : <Check size={20} />}
+                     </div>
+                   );
+                 })()}
                  
                  <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -517,12 +614,46 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                         {tokenStats.duplicateIds.has(config.id) && (
                           <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Trùng token</span>
                         )}
+                        {(() => {
+                          const live = getAccountLiveStatus(config.id);
+                          if (!live || !config.isActive) return null;
+                          if (live.status === 'error') return (
+                            <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded" title="Tài khoản đang gặp lỗi">⚠ Lỗi</span>
+                          );
+                          if (live.status === 'busy') return (
+                            <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Đang gửi...</span>
+                          );
+                          if (live.status === 'cooldown') return (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Chờ {Math.ceil(live.waitTimeMs / 1000)}s</span>
+                          );
+                          return (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Sẵn sàng</span>
+                          );
+                        })()}
                     </div>
                     <div className="text-sm text-(--color-text-secondary) flex gap-4 mt-1">
                       <span className="flex items-center gap-1"><Monitor size={12}/> {config.platform || 'Unknown'}</span>
                       <span className="opacity-80">Proxy: {getProxyLabel(config.proxyId)}</span>
                       <span className="truncate max-w-50 opacity-70">{config.cookie.substring(0, 30)}...</span>
                     </div>
+                    {(() => {
+                      const live = getAccountLiveStatus(config.id);
+                      if (live?.status === 'error') return (
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-red-500 flex items-center gap-1">
+                              <AlertTriangle size={12} /> Gặp lỗi
+                          </span>
+                          <button
+                            onClick={(e) => handleClearError(config.id, e)}
+                            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm whitespace-nowrap"
+                            title="Xóa trạng thái lỗi để hệ thống thử lại"
+                          >
+                            <RefreshCw size={10} /> Đặt lại
+                          </button>
+                        </div>
+                      );
+                      return null;
+                    })()}
                  </div>
 
                  <div className="flex items-center gap-2">
@@ -531,6 +662,14 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                         className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${config.isActive ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
                     >
                         {config.isActive ? 'Đang dùng' : 'Đang tắt'}
+                    </button>
+
+                    <button 
+                        onClick={(e) => handleToggleError(config, e)}
+                        className={`text-xs px-2 py-1.5 rounded-full border transition-colors ${config.isError ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'}`}
+                        title={config.isError ? 'Tắt trạng thái lỗi' : 'Bật trạng thái lỗi'}
+                    >
+                        <AlertTriangle size={16} />
                     </button>
                     
                     <Button variant="danger" iconOnly onClick={(e) => handleDelete(config.id, e)} className="opacity-0 group-hover:opacity-100 transition-opacity">

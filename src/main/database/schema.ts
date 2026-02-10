@@ -182,6 +182,7 @@ export function initDatabase(): void {
       accept_language TEXT,
       platform TEXT,
       is_active INTEGER DEFAULT 1,
+      is_error INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -450,6 +451,10 @@ export function initDatabase(): void {
     if (!columnNames.includes('platform')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
         console.log('[Database] Added missing column: platform');
+    }
+    if (!columnNames.includes('is_error')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN is_error INTEGER DEFAULT 0');
+        console.log('[Database] Added missing column: is_error');
     }
   } catch (e) {
       console.error('[Database] Migration error:', e);

@@ -14,6 +14,7 @@ export interface GeminiChatConfig {
   acceptLanguage?: string;
   platform?: string;
   isActive: boolean;
+  isError?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -36,6 +37,7 @@ export interface CreateGeminiChatConfigDTO {
 
 export interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfigDTO> {
   isActive?: boolean;
+  isError?: boolean;
 }
 
 // DEPRECATED: For backward compatibility with legacy single-row config table

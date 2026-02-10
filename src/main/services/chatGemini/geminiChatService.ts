@@ -127,7 +127,7 @@ export class GeminiChatServiceClass {
         return this.buildTokenKey(config.cookie || '', config.atToken || '') || config.id;
     }
     
-    // ... (checkDuplicateToken omitted, unchanged) ...
+    
 
     /**
      * Smart Account Selection:
@@ -136,7 +136,7 @@ export class GeminiChatServiceClass {
      * - If none are ready, pick the one with the SHORTEST wait time.
      */
     getNextActiveConfig(): GeminiChatConfig | null {
-        const activeConfigs = this.getAll().filter(c => c.isActive);
+        const activeConfigs = this.getAll().filter(c => c.isActive && !c.isError);
         if (activeConfigs.length === 0) {
             console.warn('[GeminiChatService] No active configs available');
             return null;
@@ -196,7 +196,110 @@ export class GeminiChatServiceClass {
         return bestConfig;
     }
 
+    // =======================================================
+    // TOKEN STATS - Thống kê tài khoản realtime
+    // =======================================================
 
+    /** Ghi nhận lỗi cho config (Lưu vào DB) */
+    markConfigError(configId: string, _errorMessage: string): void {
+        try {
+            this.update(configId, { isError: true } as any);
+        } catch (e) {
+            console.error('[GeminiChatService] Failed to mark error:', e);
+        }
+    }
+
+    /** Ghi nhận thành công cho config (Xóa lỗi trong DB) */
+    markConfigSuccess(configId: string): void {
+        try {
+            // Chỉ update nếu đang bị lỗi để tránh write DB liên tục
+            const config = this.getById(configId);
+            if (config && config.isError) {
+                this.update(configId, { isError: false } as any);
+            }
+        } catch (e) {
+            console.error('[GeminiChatService] Failed to mark success:', e);
+        }
+    }
+
+    /** Xóa lỗi thủ công */
+    clearConfigError(configId: string): void {
+        try {
+            this.update(configId, { isError: false } as any);
+        } catch (e) {
+            console.error('[GeminiChatService] Failed to clear error:', e);
+        }
+    }
+
+    /**
+     * Trả về thống kê realtime cho tất cả tài khoản active.
+     */
+    getTokenStats(): {
+        total: number;
+        active: number;
+        ready: number;
+        busy: number;
+        accounts: Array<{
+            id: string;
+            name: string;
+            status: 'ready' | 'busy' | 'cooldown' | 'error';
+            waitTimeMs: number;
+            impitBrowser: string | null;
+            proxyId: string | null;
+        }>;
+    } {
+        const allConfigs = this.getAll();
+        const activeConfigs = allConfigs.filter(c => c.isActive);
+        const now = Date.now();
+
+        let readyCount = 0;
+        let busyCount = 0;
+
+        const accounts = activeConfigs.map(config => {
+            const tokenKey = this.getTokenKey(config);
+            const nextTime = this.nextAvailableTimeByTokenKey.get(tokenKey) || 0;
+            const waitTimeMs = Math.max(0, nextTime - now);
+            
+            // Check if there's an active lock (task still running)
+            const hasActiveLock = this.tokenLocks.has(tokenKey);
+
+            let status: 'ready' | 'busy' | 'cooldown' | 'error';
+            
+            if (config.isError) {
+                status = 'error';
+            } else if (waitTimeMs <= 0 && !hasActiveLock) {
+                status = 'ready';
+                readyCount++;
+            } else if (hasActiveLock && waitTimeMs <= 0) {
+                status = 'busy';
+                busyCount++;
+            } else {
+                status = 'cooldown';
+                busyCount++;
+            }
+
+            const impitBrowser = this.getAssignedImpitBrowser(tokenKey) || 
+                                 this.getAssignedImpitBrowser(config.id) || null;
+            const proxyId = config.proxyId || null;
+
+            return {
+                id: config.id,
+                name: config.name,
+                status,
+                waitTimeMs: Math.ceil(waitTimeMs),
+                impitBrowser: impitBrowser as string | null,
+                proxyId,
+            };
+        });
+
+        return {
+            total: allConfigs.length,
+            active: activeConfigs.length,
+            ready: readyCount,
+            busy: busyCount,
+            accounts,
+        };
+    }
 
     checkDuplicateToken(cookie: string, atToken: string, excludeId?: string): { isDuplicate: boolean; duplicate?: GeminiChatConfig } {
         const tokenKey = this.buildTokenKey(cookie || '', atToken || '');
@@ -631,8 +734,8 @@ export class GeminiChatServiceClass {
             id, name, cookie, bl_label, f_sid, at_token, proxy_id,
             conv_id, resp_id, cand_id, req_id, 
             user_agent, accept_language, platform,
-            is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            is_active, is_error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
         `).run(
         id,
         data.name || 'default',
@@ -697,6 +800,11 @@ export class GeminiChatServiceClass {
       params.isActive = data.isActive ? 1 : 0;
     }
 
+    if ((data as any).isError !== undefined) {
+        updates.push('is_error = @isError');
+        params.isError = (data as any).isError ? 1 : 0;
+    }
+
     if (data.userAgent !== undefined) { updates.push('user_agent = @userAgent'); params.userAgent = data.userAgent; }
     if (data.acceptLanguage !== undefined) { updates.push('accept_language = @acceptLanguage'); params.acceptLanguage = data.acceptLanguage; }
     if (data.platform !== undefined) { updates.push('platform = @platform'); params.platform = data.platform; }
@@ -743,6 +851,7 @@ export class GeminiChatServiceClass {
       acceptLanguage: row.accept_language,
       platform: row.platform,
       isActive: row.is_active === 1,
+      isError: row.is_error === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -805,6 +914,7 @@ export class GeminiChatServiceClass {
             config = this.getById(configId);
             if (!config) return { success: false, error: `Config ID ${configId} not found`, metadata, retryable: false };
             if (!config.isActive) return { success: false, error: 'Config is inactive', metadata, retryable: false };
+            if (config.isError) return { success: false, error: 'Config has isError=true', metadata, retryable: false };
         } else {
             config = this.getNextActiveConfig();
             if (!config) return { success: false, error: 'No active config found', metadata, retryable: false };
@@ -823,6 +933,7 @@ export class GeminiChatServiceClass {
                 const result = await this._sendMessageImpitInternal(message, config!, context, useProxyOverride);
 
                 if (result.success) {
+                    this.markConfigSuccess(config!.id);
                     return { ...result, metadata };
                 }
 
@@ -839,10 +950,12 @@ export class GeminiChatServiceClass {
                 } else {
                     console.error(`[GeminiChatService] Impit: Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
                     // Lỗi HTTP (400, 401, 403...) → retryable ở tầng worker (đổi proxy/token)
+                    this.markConfigError(config!.id, result.error || 'Max retries exceeded');
                     return { ...result, metadata, retryable: true };
                 }
             }
 
+            this.markConfigError(config!.id, 'Unexpected error in Impit retry loop');
             return { success: false, error: 'Unexpected error in Impit retry loop', metadata, retryable: true };
         });
   }
@@ -986,11 +1099,11 @@ export class GeminiChatServiceClass {
                 const cookieLength = headers["cookie"].length;
                 const hasSecurePSID = headers["cookie"].includes('__Secure-1PSID');
                 const hasSecurePSIDTS = headers["cookie"].includes('__Secure-1PSIDTS');
-                console.log(`[GeminiChatService] Impit: Cookie length=${cookieLength}, __Secure-1PSID=${hasSecurePSID}, __Secure-1PSIDTS=${hasSecurePSIDTS}`);
+                // console.log(`[GeminiChatService] Impit: Cookie length=${cookieLength}, __Secure-1PSID=${hasSecurePSID}, __Secure-1PSIDTS=${hasSecurePSIDTS}`);
                 
-                if (!hasSecurePSID || !hasSecurePSIDTS) {
-                    console.error('[GeminiChatService] ⚠️ CẢNH BÁO: Cookie thiếu __Secure-1PSID hoặc __Secure-1PSIDTS - Có thể gây lỗi 400!');
-                }
+                // if (!hasSecurePSID || !hasSecurePSIDTS) {
+                //     console.error('[GeminiChatService] ⚠️ CẢNH BÁO: Cookie thiếu __Secure-1PSID hoặc __Secure-1PSIDTS - Có thể gây lỗi 400!');
+                // }
                 
                 // Debug: Log auth tokens (masked for security)
                 const atTokenPreview = atToken ? `${atToken.substring(0, 20)}...` : 'MISSING';
@@ -1010,7 +1123,7 @@ export class GeminiChatServiceClass {
                 const hasContext = !!(contextArray[0] || contextArray[1] || contextArray[2]);
                 if (hasContext) {
                     console.log('[GeminiChatService] Impit: Đang sử dụng context cũ:', contextSummary);
-                    console.log('[GeminiChatService] ⚠️ Nếu lỗi 400 liên tục, hãy thử XÓA context (Reset conversation)');
+                    // console.log('[GeminiChatService] ⚠️ Nếu lỗi 400 liên tục, hãy thử XÓA context (Reset conversation)');
                 } else {
                     console.log('[GeminiChatService] Impit: Bắt đầu conversation MỚI (không có context)');
                 }
@@ -1160,7 +1273,7 @@ export class GeminiChatServiceClass {
                         choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : '',
                         parsedFromResponse: contextWasParsed
                     };
-                    console.log('[GeminiChatService] Impit: Ngữ cảnh (tóm tắt):', contextSummary);
+                    // console.log('[GeminiChatService] Impit: Ngữ cảnh (tóm tắt):', contextSummary);
                     
                     this.saveContext(newContext, config.id);
                     this.firstSendByTokenKey.add(tokenKey);

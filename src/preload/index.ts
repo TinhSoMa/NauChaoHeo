@@ -15,7 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send(channel, data)
   },
   onMessage: (channel: string, callback: (...args: unknown[]) => void) => {
-    ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+    const subscription = (_event, ...args) => callback(...args)
+    ipcRenderer.on(channel, subscription)
+    return () => {
+      ipcRenderer.removeListener(channel, subscription)
+    }
   },
   invoke: (channel: string, data?: unknown) => {
     return ipcRenderer.invoke(channel, data)

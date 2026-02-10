@@ -3512,6 +3512,7 @@ function initDatabase() {
       accept_language TEXT,
       platform TEXT,
       is_active INTEGER DEFAULT 1,
+      is_error INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -3744,6 +3745,10 @@ function initDatabase() {
     if (!columnNames.includes("platform")) {
       db.exec("ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT");
       console.log("[Database] Added missing column: platform");
+    }
+    if (!columnNames.includes("is_error")) {
+      db.exec("ALTER TABLE gemini_chat_config ADD COLUMN is_error INTEGER DEFAULT 0");
+      console.log("[Database] Added missing column: is_error");
     }
   } catch (e) {
     console.error("[Database] Migration error:", e);
@@ -4608,7 +4613,6 @@ class GeminiChatServiceClass {
   getTokenKey(config) {
     return this.buildTokenKey(config.cookie || "", config.atToken || "") || config.id;
   }
-  // ... (checkDuplicateToken omitted, unchanged) ...
   /**
    * Smart Account Selection:
    * - Prioritize accounts that are READY (Zero wait time).
@@ -4616,7 +4620,7 @@ class GeminiChatServiceClass {
    * - If none are ready, pick the one with the SHORTEST wait time.
    */
   getNextActiveConfig() {
-    const activeConfigs = this.getAll().filter((c) => c.isActive);
+    const activeConfigs = this.getAll().filter((c) => c.isActive && !c.isError);
     if (activeConfigs.length === 0) {
       console.warn("[GeminiChatService] No active configs available");
       return null;
@@ -4657,6 +4661,82 @@ class GeminiChatServiceClass {
       this.lastUsedConfigId = bestConfig.id;
     }
     return bestConfig;
+  }
+  // =======================================================
+  // TOKEN STATS - Thống kê tài khoản realtime
+  // =======================================================
+  /** Ghi nhận lỗi cho config (Lưu vào DB) */
+  markConfigError(configId, _errorMessage) {
+    try {
+      this.update(configId, { isError: true });
+    } catch (e) {
+      console.error("[GeminiChatService] Failed to mark error:", e);
+    }
+  }
+  /** Ghi nhận thành công cho config (Xóa lỗi trong DB) */
+  markConfigSuccess(configId) {
+    try {
+      const config = this.getById(configId);
+      if (config && config.isError) {
+        this.update(configId, { isError: false });
+      }
+    } catch (e) {
+      console.error("[GeminiChatService] Failed to mark success:", e);
+    }
+  }
+  /** Xóa lỗi thủ công */
+  clearConfigError(configId) {
+    try {
+      this.update(configId, { isError: false });
+    } catch (e) {
+      console.error("[GeminiChatService] Failed to clear error:", e);
+    }
+  }
+  /**
+   * Trả về thống kê realtime cho tất cả tài khoản active.
+   */
+  getTokenStats() {
+    const allConfigs = this.getAll();
+    const activeConfigs = allConfigs.filter((c) => c.isActive);
+    const now = Date.now();
+    let readyCount = 0;
+    let busyCount = 0;
+    const accounts = activeConfigs.map((config) => {
+      const tokenKey = this.getTokenKey(config);
+      const nextTime = this.nextAvailableTimeByTokenKey.get(tokenKey) || 0;
+      const waitTimeMs = Math.max(0, nextTime - now);
+      const hasActiveLock = this.tokenLocks.has(tokenKey);
+      let status;
+      if (config.isError) {
+        status = "error";
+      } else if (waitTimeMs <= 0 && !hasActiveLock) {
+        status = "ready";
+        readyCount++;
+      } else if (hasActiveLock && waitTimeMs <= 0) {
+        status = "busy";
+        busyCount++;
+      } else {
+        status = "cooldown";
+        busyCount++;
+      }
+      const impitBrowser = this.getAssignedImpitBrowser(tokenKey) || this.getAssignedImpitBrowser(config.id) || null;
+      const proxyId = config.proxyId || null;
+      return {
+        id: config.id,
+        name: config.name,
+        status,
+        waitTimeMs: Math.ceil(waitTimeMs),
+        impitBrowser,
+        proxyId
+      };
+    });
+    return {
+      total: allConfigs.length,
+      active: activeConfigs.length,
+      ready: readyCount,
+      busy: busyCount,
+      accounts
+    };
   }
   checkDuplicateToken(cookie, atToken, excludeId) {
     const tokenKey = this.buildTokenKey(cookie || "", atToken || "");
@@ -5004,8 +5084,8 @@ class GeminiChatServiceClass {
             id, name, cookie, bl_label, f_sid, at_token, proxy_id,
             conv_id, resp_id, cand_id, req_id, 
             user_agent, accept_language, platform,
-            is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            is_active, is_error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
         `).run(
         id,
         data.name || "default",
@@ -5095,6 +5175,10 @@ class GeminiChatServiceClass {
       updates.push("is_active = @isActive");
       params.isActive = data.isActive ? 1 : 0;
     }
+    if (data.isError !== void 0) {
+      updates.push("is_error = @isError");
+      params.isError = data.isError ? 1 : 0;
+    }
     if (data.userAgent !== void 0) {
       updates.push("user_agent = @userAgent");
       params.userAgent = data.userAgent;
@@ -5140,6 +5224,7 @@ class GeminiChatServiceClass {
       acceptLanguage: row.accept_language,
       platform: row.platform,
       isActive: row.is_active === 1,
+      isError: row.is_error === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
@@ -5180,6 +5265,7 @@ class GeminiChatServiceClass {
       config = this.getById(configId);
       if (!config) return { success: false, error: `Config ID ${configId} not found`, metadata, retryable: false };
       if (!config.isActive) return { success: false, error: "Config is inactive", metadata, retryable: false };
+      if (config.isError) return { success: false, error: "Config has isError=true", metadata, retryable: false };
     } else {
       config = this.getNextActiveConfig();
       if (!config) return { success: false, error: "No active config found", metadata, retryable: false };
@@ -5194,6 +5280,7 @@ class GeminiChatServiceClass {
         console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
         const result = await this._sendMessageImpitInternal(message, config, context, useProxyOverride);
         if (result.success) {
+          this.markConfigSuccess(config.id);
           return { ...result, metadata };
         }
         if (result.error && result.error.includes("Không còn proxy khả dụng")) {
@@ -5206,9 +5293,11 @@ class GeminiChatServiceClass {
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
           console.error(`[GeminiChatService] Impit: Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
+          this.markConfigError(config.id, result.error || "Max retries exceeded");
           return { ...result, metadata, retryable: true };
         }
       }
+      this.markConfigError(config.id, "Unexpected error in Impit retry loop");
       return { success: false, error: "Unexpected error in Impit retry loop", metadata, retryable: true };
     });
   }
@@ -5306,10 +5395,6 @@ class GeminiChatServiceClass {
       const cookieLength = headers["cookie"].length;
       const hasSecurePSID = headers["cookie"].includes("__Secure-1PSID");
       const hasSecurePSIDTS = headers["cookie"].includes("__Secure-1PSIDTS");
-      console.log(`[GeminiChatService] Impit: Cookie length=${cookieLength}, __Secure-1PSID=${hasSecurePSID}, __Secure-1PSIDTS=${hasSecurePSIDTS}`);
-      if (!hasSecurePSID || !hasSecurePSIDTS) {
-        console.error("[GeminiChatService] ⚠️ CẢNH BÁO: Cookie thiếu __Secure-1PSID hoặc __Secure-1PSIDTS - Có thể gây lỗi 400!");
-      }
       const atTokenPreview = atToken ? `${atToken.substring(0, 20)}...` : "MISSING";
       const blLabelPreview = blLabel ? blLabel : "MISSING";
       const fSidPreview = fSid ? fSid : "MISSING";
@@ -5322,7 +5407,6 @@ class GeminiChatServiceClass {
       const hasContext = !!(contextArray[0] || contextArray[1] || contextArray[2]);
       if (hasContext) {
         console.log("[GeminiChatService] Impit: Đang sử dụng context cũ:", contextSummary);
-        console.log("[GeminiChatService] ⚠️ Nếu lỗi 400 liên tục, hãy thử XÓA context (Reset conversation)");
       } else {
         console.log("[GeminiChatService] Impit: Bắt đầu conversation MỚI (không có context)");
       }
@@ -5415,7 +5499,6 @@ class GeminiChatServiceClass {
           choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : "",
           parsedFromResponse: contextWasParsed
         };
-        console.log("[GeminiChatService] Impit: Ngữ cảnh (tóm tắt):", contextSummary2);
         this.saveContext(newContext, config.id);
         this.firstSendByTokenKey.add(tokenKey);
         return {
@@ -5793,6 +5876,10 @@ function registerStoryHandlers() {
       let options = payload;
       if (!payload.prompt && (Array.isArray(payload) || payload.role)) {
         options = { prompt: payload, method: "API" };
+      }
+      if (options && options.metadata) {
+        const { chapterTitle, tokenInfo, chapterId } = options.metadata;
+        console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || "Unknown"})`);
       }
       return await StoryService.translateChapter(options);
     }
@@ -6250,7 +6337,10 @@ const CHANNELS = {
   SAVE_COOKIE_CONFIG: "geminiChat:saveCookieConfig",
   // Impit Browser Management
   GET_MAX_IMPIT_BROWSERS: "geminiChat:getMaxImpitBrowsers",
-  RELEASE_ALL_IMPIT_BROWSERS: "geminiChat:releaseAllImpitBrowsers"
+  RELEASE_ALL_IMPIT_BROWSERS: "geminiChat:releaseAllImpitBrowsers",
+  // Token Stats
+  GET_TOKEN_STATS: "geminiChat:getTokenStats",
+  CLEAR_CONFIG_ERROR: "geminiChat:clearConfigError"
 };
 function registerGeminiChatHandlers() {
   console.log("[GeminiChatHandlers] Dang ky handlers...");
@@ -6299,9 +6389,17 @@ function registerGeminiChatHandlers() {
       return { success: false, error: String(error) };
     }
   });
+  const notifyRenderer = () => {
+    electron.BrowserWindow.getAllWindows().forEach((w) => {
+      if (w.webContents) {
+        w.webContents.send("geminiChat:configChanged");
+      }
+    });
+  };
   electron.ipcMain.handle(CHANNELS.CREATE, async (_, data) => {
     try {
       const config = GeminiChatService.create(data);
+      notifyRenderer();
       return { success: true, data: config };
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi create:", error);
@@ -6311,6 +6409,7 @@ function registerGeminiChatHandlers() {
   electron.ipcMain.handle(CHANNELS.UPDATE, async (_, id, data) => {
     try {
       const config = GeminiChatService.update(id, data);
+      notifyRenderer();
       return { success: true, data: config };
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi update:", error);
@@ -6320,9 +6419,20 @@ function registerGeminiChatHandlers() {
   electron.ipcMain.handle(CHANNELS.DELETE, async (_, id) => {
     try {
       const result = GeminiChatService.delete(id);
+      notifyRenderer();
       return { success: true, data: result };
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi delete:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.CLEAR_CONFIG_ERROR, async (_, configId) => {
+    try {
+      GeminiChatService.clearConfigError(configId);
+      notifyRenderer();
+      return { success: true };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi clearConfigError:", error);
       return { success: false, error: String(error) };
     }
   });
@@ -6349,6 +6459,15 @@ function registerGeminiChatHandlers() {
       return { success: true };
     } catch (error) {
       console.error("[GeminiChatHandlers] Loi releaseAllImpitBrowsers:", error);
+      return { success: false, error: String(error) };
+    }
+  });
+  electron.ipcMain.handle(CHANNELS.GET_TOKEN_STATS, async () => {
+    try {
+      const stats = GeminiChatService.getTokenStats();
+      return { success: true, data: stats };
+    } catch (error) {
+      console.error("[GeminiChatHandlers] Loi getTokenStats:", error);
       return { success: false, error: String(error) };
     }
   });

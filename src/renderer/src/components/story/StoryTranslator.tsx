@@ -13,6 +13,8 @@ interface GeminiChatConfigLite {
   cookie: string;
   atToken: string;
   isActive: boolean;
+  isError?: boolean;
+  email?: string;
 }
 
 type TokenContext = { conversationId: string; responseId: string; choiceId: string };
@@ -55,6 +57,24 @@ export function StoryTranslator() {
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [, setShouldStop] = useState(false);
   const shouldStopRef = useRef(false);
+  
+  // Batch translation state
+  const batchStateRef = useRef<{
+    chapters: Chapter[];
+    currentIndex: number;
+    completed: number;
+    activeWorkerConfigIds: Set<string>;
+    isFirstChapterTaken: boolean;
+  }>({
+    chapters: [],
+    currentIndex: 0,
+    completed: 0,
+    activeWorkerConfigIds: new Set(),
+    isFirstChapterTaken: false
+  });
+  const workerIdRef = useRef(0);
+  const MIN_DELAY = 5000;
+  const MAX_DELAY = 30000;
   // Export ebook status
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
   // Reading settings
@@ -121,7 +141,7 @@ export function StoryTranslator() {
         const configs = configsResult.data as GeminiChatConfigLite[];
         setTokenConfigs(configs);
 
-        const activeConfigs = configs.filter(c => c.isActive);
+        const activeConfigs = configs.filter(c => c.isActive && !c.isError);
         const uniqueActive = activeConfigs.filter((config, index) => {
           const key = buildTokenKey(config);
           return activeConfigs.findIndex(c => buildTokenKey(c) === key) === index;
@@ -205,7 +225,7 @@ export function StoryTranslator() {
   };
 
   const getDistinctActiveTokenConfigs = (configs: GeminiChatConfigLite[]) => {
-    const activeConfigs = configs.filter(c => c.isActive);
+    const activeConfigs = configs.filter(c => c.isActive && !c.isError);
     const seenKeys = new Set<string>();
     const distinct: GeminiChatConfigLite[] = [];
     for (const config of activeConfigs) {
@@ -427,7 +447,56 @@ export function StoryTranslator() {
   useEffect(() => {
     loadConfigurations();
     loadProxySetting();
+
+    const removeListener = window.electronAPI.onMessage('geminiChat:configChanged', () => {
+      console.log('[StoryTranslator] Config changed, reloading...');
+      loadConfigurations();
+      loadProxySetting();
+    });
+
+    return () => {
+      removeListener();
+    };
   }, []);
+
+  // Dynamic Worker Scaling: Watch for new token configs and spawn workers if batch is running
+  useEffect(() => {
+    if (status !== 'running' || (translateMode !== 'token' && translateMode !== 'both')) return;
+
+    const checkAndSpawnWorkers = async () => {
+       // 1. Check max browsers
+       let maxImpitBrowsers = Infinity;
+       try {
+          const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
+          if (browserResult.success && browserResult.data) {
+             maxImpitBrowsers = browserResult.data;
+          }
+       } catch (e) { 
+           console.error('[StoryTranslator] Lỗi lấy giới hạn impit:', e);
+       }
+
+       // 2. Filter out already running configs (AFTER await to avoid race condition)
+       const activeConfigs = getDistinctActiveTokenConfigs(tokenConfigs);
+       const runningConfigIds = batchStateRef.current.activeWorkerConfigIds;
+       const newConfigs = activeConfigs.filter(c => !runningConfigIds.has(c.id));
+
+       if (newConfigs.length === 0) return;
+
+       const currentTokenWorkerCount = runningConfigIds.size;
+       const availableSlots = maxImpitBrowsers - currentTokenWorkerCount;
+       
+       if (availableSlots <= 0) return;
+
+       const configsToStart = newConfigs.slice(0, availableSlots);
+       console.log(`[StoryTranslator] 🆕 Tìm thấy ${newConfigs.length} cấu hình mới. Đang khởi động ${configsToStart.length} workers...`);
+
+       for (const config of configsToStart) {
+          startWorker('token', config);
+       }
+    };
+
+    checkAndSpawnWorkers();
+  }, [tokenConfigs, status, translateMode]);
 
   useEffect(() => {
     if (translateMode === 'token' || translateMode === 'both') {
@@ -591,9 +660,210 @@ export function StoryTranslator() {
     setShouldStop(true);
   };
 
+  // Helper: Process a chapter (Moved out of handleTranslateAll)
+  const processChapter = async (
+    chapter: Chapter,
+    index: number,
+    workerId: number,
+    channel: 'api' | 'token',
+    tokenConfig: GeminiChatConfigLite | null
+  ): Promise<{ id: string; text: string } | { retryable: boolean } | null> => {
+    if (shouldStopRef.current) return null;
+
+    // Mark as processing
+    setProcessingChapters(prev => {
+      const next = new Map(prev);
+      next.set(chapter.id, { startTime: Date.now(), workerId, channel });
+      return next;
+    });
+
+    try {
+      console.log(`[StoryTranslator] 📖 Dịch chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
+
+      // 1. Prepare Prompt
+      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
+        chapterContent: chapter.content,
+        sourceLang,
+        targetLang,
+        model
+      }) as PreparePromptResult;
+
+      if (!prepareResult.success || !prepareResult.prompt) {
+        console.error(`Lỗi chuẩn bị prompt cho chương ${chapter.title}:`, prepareResult.error);
+        return null;
+      }
+
+      const method = channel === 'token' ? 'IMPIT' : 'API';
+      let selectedTokenConfig = method === 'IMPIT'
+        ? (tokenConfig || getPreferredTokenConfig())
+        : null;
+
+      if (method === 'IMPIT' && !selectedTokenConfig) {
+        // Try reload?
+        selectedTokenConfig = tokenConfig || getPreferredTokenConfig();
+        if (!selectedTokenConfig) {
+          console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+          return null;
+        }
+      }
+
+      const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+
+      // 2. Send to Gemini
+      const translateResult = await window.electronAPI.invoke(
+        STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
+        {
+          prompt: prepareResult.prompt,
+          model: model,
+          method,
+          webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+          useProxy: method === 'IMPIT' && useProxy,
+          metadata: { 
+              chapterId: chapter.id,
+              chapterTitle: chapter.title,
+              tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API'
+          }
+        }
+      ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
+
+      if (translateResult.success && translateResult.data) {
+        if (translateResult.metadata?.chapterId !== chapter.id) {
+            console.error(`[StoryTranslator] ⚠️ RACE CONDITION: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
+            return null;
+        }
+
+        // Check end marker
+        if (!hasEndMarker(translateResult.data)) {
+            console.warn(`[StoryTranslator] ⚠️ Chương ${chapter.title} thiếu end marker, retry...`);
+            const retryResult = await window.electronAPI.invoke(
+                STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
+                {
+                    prompt: prepareResult.prompt,
+                    model: model,
+                    method,
+                    webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+                    useProxy: method === 'IMPIT' && useProxy,
+                    metadata: { chapterId: chapter.id }
+                }
+            ) as any;
+            if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
+                translateResult.data = retryResult.data;
+                if (retryResult.context) translateResult.context = retryResult.context;
+            }
+        }
+
+        // Update UI hooks
+        setTranslatedChapters(prev => {
+            const next = new Map(prev);
+            next.set(chapter.id, translateResult.data!);
+            return next;
+        });
+        setTranslatedTitles(prev => {
+            const next = new Map(prev);
+            next.set(chapter.id, extractTranslatedTitle(translateResult.data!, chapter.id));
+            return next;
+        });
+        setChapterModels(prev => new Map(prev).set(chapter.id, model));
+        setChapterMethods(prev => new Map(prev).set(chapter.id, channel));
+
+        if (translateResult.context && tokenKey) {
+            setTokenContexts(prev => new Map(prev).set(tokenKey, translateResult.context!));
+        }
+
+        return { id: chapter.id, text: translateResult.data! };
+      } else {
+        console.error(`[StoryTranslator] ❌ Lỗi dịch chương ${chapter.title}:`, translateResult.error);
+        return { retryable: translateResult.retryable ?? false };
+      }
+    } catch (error) {
+       console.error(`[StoryTranslator] ❌ Exception chương ${chapter.title}:`, error);
+       return null;
+    } finally {
+       setProcessingChapters(prev => {
+           const next = new Map(prev);
+           next.delete(chapter.id);
+           return next;
+       });
+    }
+  };
+
+  const startWorker = async (channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
+    const workerId = ++workerIdRef.current;
+    console.log(`[StoryTranslator] 🚀 Worker ${workerId} started (${channel})`);
+
+    if (channel === 'token' && tokenConfig) {
+        batchStateRef.current.activeWorkerConfigIds.add(tokenConfig.id);
+    }
+
+    try {
+        while (!shouldStopRef.current) {
+            // Delay logic
+            if (batchStateRef.current.isFirstChapterTaken) {
+                const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+
+            if (shouldStopRef.current) break;
+            
+            // Check availability
+            if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) break;
+
+            const index = batchStateRef.current.currentIndex++;
+            const chapter = batchStateRef.current.chapters[index];
+
+            if (!batchStateRef.current.isFirstChapterTaken) {
+                batchStateRef.current.isFirstChapterTaken = true;
+                console.log(`[StoryTranslator] 🚀 Worker ${workerId} lấy chương đầu tiên`);
+            } else {
+                console.log(`[StoryTranslator] 📖 Worker ${workerId} lấy chương ${index + 1}`);
+            }
+
+            let result: { id: string; text: string } | { retryable: boolean } | null = null;
+            let retryCount = 0;
+            const MAX_RETRIES = 3;
+
+            while (retryCount <= MAX_RETRIES) {
+                if (retryCount > 0) {
+                     console.log(`[StoryTranslator] ⚠️ Worker ${workerId} Retrying chapter ${index + 1} (${retryCount}/${MAX_RETRIES})...`);
+                     await new Promise(r => setTimeout(r, 2000 * retryCount));
+                }
+                
+                result = await processChapter(chapter, index, workerId, channel, tokenConfig || null);
+
+                if (result && 'retryable' in result && result.retryable) {
+                    retryCount++;
+                    if (retryCount > MAX_RETRIES) {
+                        console.error(`[StoryTranslator] ❌ Worker ${workerId} Failed chapter ${index + 1} after ${MAX_RETRIES} retries.`);
+                        break;
+                    }
+                    continue; 
+                }
+                break;
+            }
+
+            if (result && !('retryable' in result) && result !== null) {
+                 batchStateRef.current.completed++;
+                 setBatchProgress({ current: batchStateRef.current.completed, total: batchStateRef.current.chapters.length });
+            }
+        }
+    } finally {
+        if (channel === 'token' && tokenConfig) {
+            batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
+        }
+        console.log(`[StoryTranslator] ✓ Worker ${workerId} finished`);
+        
+        // Check completion
+        // if (batchStateRef.current.completed >= batchStateRef.current.chapters.length && !shouldStopRef.current) {
+        //      setStatus('idle');
+        //      setBatchProgress(null);
+        //      alert('Đã dịch xong tất cả các chương!');
+        // }
+    }
+  };
+
   // Dịch tất cả các chương được chọn (continuous queue - gửi liên tục sau khi hoàn thành)
   const handleTranslateAll = async () => {
-    // Lấy danh sách các chương cần dịch
+    // 1. Lấy danh sách các chương cần dịch
     const chaptersToTranslate = chapters.filter(
       c => isChapterIncluded(c.id) && (retranslateExisting || !translatedChapters.has(c.id))
     );
@@ -603,256 +873,44 @@ export function StoryTranslator() {
       return;
     }
 
+    // 2. Prepare Configs (Sync from State)
+    let tokenConfigsForRun: GeminiChatConfigLite[] = [];
+    if (translateMode === 'token' || translateMode === 'both') {
+       tokenConfigsForRun = getDistinctActiveTokenConfigs(tokenConfigs);
+       if (tokenConfigsForRun.length === 0) {
+          console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+          return;
+       }
+    }
+
+    // 3. Initialize Batch State (WITH INTENDED WORKERS to block useEffect race condition)
+    // We pre-populate activeWorkerConfigIds so useEffect sees them as "already running"
+    // immediately when we set status to running.
+    const initialWorkerIds = new Set(tokenConfigsForRun.map(c => c.id));
+    
+    batchStateRef.current = {
+        chapters: chaptersToTranslate,
+        currentIndex: 0,
+        completed: 0,
+        activeWorkerConfigIds: initialWorkerIds,
+        isFirstChapterTaken: false
+    };
+    workerIdRef.current = 0;
+
+    // 4. Set Status (Triggers useEffect state change)
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     shouldStopRef.current = false;
-    setShouldStop(false); // Reset stop flag
+    setShouldStop(false);
 
-    const MIN_DELAY = 5000; // 5 giây
-    const MAX_DELAY = 30000; // 30 giây
-    let completed = 0;
-    let currentIndex = 0;
-    const results: Array<{ id: string; text: string } | null> = [];
-
-    // Helper function để dịch 1 chapter
-    const translateChapter = async (
-      chapter: Chapter,
-      index: number,
-      workerId: number,
-      channelOverride?: 'api' | 'token',
-      tokenConfigOverride?: GeminiChatConfigLite | null
-    ): Promise<{ id: string; text: string } | { retryable: boolean } | null> => {
-      // Kiểm tra nếu người dùng đã nhấn Dừng
-      if (shouldStopRef.current) {
-        console.log(`[StoryTranslator] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
-        return null;
-      }
-      
-      setSelectedChapterId(chapter.id);
-      
-      const channel = channelOverride || getWorkerChannel(workerId);
-
-      // Mark as processing
-      setProcessingChapters(prev => {
-        const next = new Map(prev);
-        next.set(chapter.id, { startTime: Date.now(), workerId, channel });
-        return next;
-      });
-      
-      try {
-        console.log(`[StoryTranslator] 📖 Dịch chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
-        
-        // 1. Prepare Prompt
-        const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-          chapterContent: chapter.content,
-          sourceLang,
-          targetLang,
-          model
-        }) as PreparePromptResult;
-        
-        if (!prepareResult.success || !prepareResult.prompt) {
-          console.error(`Lỗi chuẩn bị prompt cho chương ${chapter.title}:`, prepareResult.error);
-          return null;
-        }
-
-        const method = channel === 'token' ? 'IMPIT' : 'API';
-
-        let selectedTokenConfig = method === 'IMPIT'
-          ? (tokenConfigOverride || getPreferredTokenConfig())
-          : null;
-
-        if (method === 'IMPIT' && !selectedTokenConfig) {
-          await loadConfigurations();
-          selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
-          if (!selectedTokenConfig) {
-            console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
-            return null;
-          }
-        }
-
-        const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
-
-        // 2. Send to Gemini for Translation
-        const translateResult = await window.electronAPI.invoke(
-          STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, 
-          {
-            prompt: prepareResult.prompt,
-            model: model,
-            method,
-            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'IMPIT' && useProxy,
-            metadata: { chapterId: chapter.id }
-          }
-        ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
-
-        if (translateResult.success && translateResult.data) {
-          // Validate metadata to prevent race condition
-          if (translateResult.metadata?.chapterId !== chapter.id) {
-            console.error(`[StoryTranslator] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== chapter.id (${chapter.id})`);
-            return null;
-          }
-          
-          // Kiểm tra marker kết thúc
-          if (!hasEndMarker(translateResult.data)) {
-            console.warn(`[StoryTranslator] ⚠️ Chương ${chapter.title} không có "Hết chương", đang retry...`);
-            
-            // Retry 1 lần
-            const retryResult = await window.electronAPI.invoke(
-              STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
-              {
-                prompt: prepareResult.prompt,
-                model: model,
-                method,
-                webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-                useProxy: method === 'IMPIT' && useProxy,
-                metadata: { chapterId: chapter.id }
-              }
-            ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
-            
-            if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
-              console.log(`[StoryTranslator] ✅ Retry chương ${chapter.title} thành công, đã có "Hết chương"`);
-              translateResult.data = retryResult.data;
-              if (retryResult.context) translateResult.context = retryResult.context;
-            } else {
-              console.warn(`[StoryTranslator] ⚠️ Retry chương ${chapter.title} vẫn không có "Hết chương", sử dụng bản gốc`);
-            }
-          }
-          
-          // Cập nhật UI NGAY khi dịch xong
-          setTranslatedChapters(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, translateResult.data!);
-            return next;
-          });
-
-          setTranslatedTitles(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, extractTranslatedTitle(translateResult.data!, chapter.id));
-            return next;
-          });
-
-          setChapterModels(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, model);
-            return next;
-          });
-
-          setChapterMethods(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, channel);
-            return next;
-          });
-
-          if (translateResult.context && translateResult.context.conversationId && tokenKey) {
-            setTokenContexts(prev => {
-              const next = new Map(prev);
-              next.set(tokenKey, translateResult.context!);
-              return next;
-            });
-          }
-
-          // REMOVED: Saving to Project DB
-
-          console.log(`[StoryTranslator] ✅ Dịch xong: ${chapter.title}`);
-          return { id: chapter.id, text: translateResult.data! };
-        } else {
-          console.error(`[StoryTranslator] ❌ Lỗi dịch chương ${chapter.title}:`, translateResult.error);
-          // Trả về retryable flag để worker biết có nên thử lại chương này không
-          return { retryable: translateResult.retryable ?? false };
-        }
-      } catch (error) {
-        console.error(`[StoryTranslator] ❌ Exception khi dịch chương ${chapter.title}:`, error);
-        return null;
-      } finally {
-        // Remove from processing
-        setProcessingChapters(prev => {
-          const next = new Map(prev);
-          next.delete(chapter.id);
-          return next;
-        });
-      }
-    };
-
-    // Worker function - xử lý từng chapter liên tục
-    // Logic: Random delay TRƯỚC → worker nào xong delay trước thì lấy chương tiếp theo
-    let isFirstChapterTaken = false;
-    const worker = async (workerId: number, channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
-      console.log(`[StoryTranslator] 🚀 Worker ${workerId} started`);
-      
-      // Vòng đầu: random delay trước khi lấy chương (trừ chương đầu tiên toàn hệ thống)
-      while (!shouldStopRef.current) {
-        // 1. Chờ random TRƯỚC khi lấy chương (trừ chương đầu tiên)
-        if (isFirstChapterTaken) {
-          const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StoryTranslator] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi lấy chương tiếp...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-        
-        // Kiểm tra lại shouldStop sau khi chờ
-        if (shouldStopRef.current) {
-          console.log(`[StoryTranslator] ⚠️ Worker ${workerId} stopped`);
-          break;
-        }
-        
-        // 2. SAU KHI chờ xong, mới lấy chương tiếp theo
-        if (currentIndex >= chaptersToTranslate.length) break;
-        const index = currentIndex++;
-        const chapter = chaptersToTranslate[index];
-        
-        if (!isFirstChapterTaken) {
-          isFirstChapterTaken = true;
-          console.log(`[StoryTranslator] 🚀 Worker ${workerId} lấy chương đầu tiên - gửi ngay`);
-        } else {
-          console.log(`[StoryTranslator] 📖 Worker ${workerId} lấy chương ${index + 1} sau khi chờ delay`);
-        }
-        
-        const result = await translateChapter(chapter, index, workerId, channel, tokenConfig);
-        
-        // Kiểm tra nếu result là retryable error
-        if (result && 'retryable' in result && result.retryable) {
-          console.warn(`[StoryTranslator] ⚠️ Worker ${workerId}: Chương ${chapter.title} bị lỗi retryable (proxy/token), sẽ thử lại chương này sau 10s...`);
-          currentIndex--; // Đặt lại index để thử lại chương này
-          await new Promise(resolve => setTimeout(resolve, 10000)); // Chờ 10s trước khi retry
-          continue; // Quay lại vòng lặp, thử lại chương này
-        }
-        
-        // Chỉ push result nếu thành công hoặc lỗi không retryable
-        results.push(result as { id: string; text: string } | null);
-        
-        completed++;
-        setBatchProgress({ current: completed, total: chaptersToTranslate.length });
-        
-        console.log(`[StoryTranslator] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId})`);
-      }
-      
-      console.log(`[StoryTranslator] ✓ Worker ${workerId} finished`);
-    };
-
-    const tokenConfigsResult = translateMode === 'token' || translateMode === 'both'
-      ? await window.electronAPI.geminiChat.getAll()
-      : null;
-
-    const tokenConfigsForRun = tokenConfigsResult?.success && tokenConfigsResult.data
-      ? getDistinctActiveTokenConfigs(tokenConfigsResult.data as GeminiChatConfigLite[])
-      : [];
-
-    if ((translateMode === 'token' || translateMode === 'both') && tokenConfigsForRun.length === 0) {
-      console.error('[StoryTranslator] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
-      setStatus('idle');
-      setBatchProgress(null);
-      return;
-    }
-
-    // Nếu dùng token mode (IMPIT), giới hạn số token worker bằng số trình duyệt impit khả dụng
+    // 5. Async Checks (Max Browsers)
     let maxImpitBrowsers = Infinity;
     if (translateMode === 'token' || translateMode === 'both') {
       try {
-        // Giải phóng tất cả trình duyệt impit trước khi bắt đầu batch mới
         await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
         const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
         if (browserResult.success && browserResult.data) {
           maxImpitBrowsers = browserResult.data;
-          console.log(`[StoryTranslator] Impit: Tối đa ${maxImpitBrowsers} trình duyệt khả dụng`);
         }
       } catch (e) {
         console.error('[StoryTranslator] Lỗi lấy số trình duyệt impit:', e);
@@ -860,55 +918,30 @@ export function StoryTranslator() {
     }
 
     const apiWorkerCount = translateMode === 'api' ? 5 : translateMode === 'both' ? 5 : 0;
-    let tokenWorkerCount = translateMode === 'token'
-      ? tokenConfigsForRun.length
-      : translateMode === 'both'
-        ? tokenConfigsForRun.length
-        : 0;
+    let tokenWorkerCount = tokenConfigsForRun.length;
     
-    // Giới hạn token worker khi dùng impit (mỗi tài khoản 1 trình duyệt)
     if (tokenWorkerCount > maxImpitBrowsers) {
-      console.warn(`[StoryTranslator] Impit: Giới hạn token workers từ ${tokenWorkerCount} xuống ${maxImpitBrowsers} (số trình duyệt tối đa)`);
+      console.warn(`[StoryTranslator] Impit: Giới hạn token workers xuống ${maxImpitBrowsers}`);
       tokenWorkerCount = maxImpitBrowsers;
     }
     
+    // Sync batchStateRef with actual count after pruning
+    const finalConfigsToUse = tokenConfigsForRun.slice(0, tokenWorkerCount);
+    // Remove pruned IDs from the Set
+    const finalIds = new Set(finalConfigsToUse.map(c => c.id));
+    batchStateRef.current.activeWorkerConfigIds = finalIds;
+
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
+    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers`);
 
-    console.log(`[StoryTranslator] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
-
-    const workers: Promise<void>[] = [];
-    let workerId = 1;
-
+    // Start API workers
     for (let i = 0; i < apiWorkerCount; i += 1) {
-      workers.push(worker(workerId++, 'api'));
+      startWorker('api');
     }
 
-    // Chỉ sử dụng tokenWorkerCount configs (đã giới hạn bởi số trình duyệt impit nếu cần)
-    const tokenConfigsToUse = tokenConfigsForRun.slice(0, tokenWorkerCount);
-    for (const config of tokenConfigsToUse) {
-      workers.push(worker(workerId++, 'token', config));
-    }
-    
-    await Promise.all(workers);
-
-    // Giải phóng tất cả trình duyệt impit sau khi hoàn thành batch (luôn luôn giải phóng khi dùng token mode)
-    if (translateMode === 'token' || translateMode === 'both') {
-      try {
-        await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
-        console.log('[StoryTranslator] Đã giải phóng tất cả trình duyệt impit');
-      } catch (e) {
-        console.error('[StoryTranslator] Lỗi giải phóng trình duyệt impit:', e);
-      }
-    }
-
-    setStatus('idle');
-    setBatchProgress(null);
-    setViewMode('translated');
-    
-    if (shouldStopRef.current) {
-      console.log(`[StoryTranslator] 🛑 Đã dừng: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters đã dịch`);
-    } else {
-      console.log(`[StoryTranslator] 🎉 Hoàn thành: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters`);
+    // Start Token workers
+    for (const config of finalConfigsToUse) {
+      startWorker('token', config);
     }
   };
 

@@ -35,6 +35,7 @@ export interface CreateGeminiChatConfigDTO {
 
 export interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfigDTO> {
   isActive?: boolean;
+  isError?: boolean;
 }
 
 // Interface cho cookie config (bảng riêng, chỉ 1 dòng)
@@ -45,6 +46,23 @@ export interface GeminiCookieConfig {
   atToken: string;
   reqId?: string;
   updatedAt: number;
+}
+
+export interface TokenAccountStats {
+  id: string;
+  name: string;
+  status: 'ready' | 'busy' | 'cooldown' | 'error';
+  waitTimeMs: number;
+  impitBrowser: string | null;
+  proxyId: string | null;
+}
+
+export interface TokenStats {
+  total: number;
+  active: number;
+  ready: number;
+  busy: number;
+  accounts: TokenAccountStats[];
 }
 
 export interface ApiResponse<T = any> {
@@ -67,6 +85,8 @@ const CHANNELS = {
   SAVE_COOKIE_CONFIG: 'geminiChat:saveCookieConfig',
   GET_MAX_IMPIT_BROWSERS: 'geminiChat:getMaxImpitBrowsers',
   RELEASE_ALL_IMPIT_BROWSERS: 'geminiChat:releaseAllImpitBrowsers',
+  GET_TOKEN_STATS: 'geminiChat:getTokenStats',
+  CLEAR_CONFIG_ERROR: 'geminiChat:clearConfigError',
 };
 
 // API interface
@@ -87,6 +107,10 @@ export interface GeminiChatAPI {
   // Impit browser management
   getMaxImpitBrowsers: () => Promise<ApiResponse<number>>;
   releaseAllImpitBrowsers: () => Promise<ApiResponse<void>>;
+
+  // Token stats
+  getTokenStats: () => Promise<ApiResponse<TokenStats>>;
+  clearConfigError: (configId: string) => Promise<ApiResponse<void>>;
 }
 
 // API implementation
@@ -107,4 +131,8 @@ export const geminiChatApi: GeminiChatAPI = {
   // Impit browser management
   getMaxImpitBrowsers: () => ipcRenderer.invoke(CHANNELS.GET_MAX_IMPIT_BROWSERS),
   releaseAllImpitBrowsers: () => ipcRenderer.invoke(CHANNELS.RELEASE_ALL_IMPIT_BROWSERS),
+
+  // Token stats
+  getTokenStats: () => ipcRenderer.invoke(CHANNELS.GET_TOKEN_STATS),
+  clearConfigError: (configId: string) => ipcRenderer.invoke(CHANNELS.CLEAR_CONFIG_ERROR, configId),
 };

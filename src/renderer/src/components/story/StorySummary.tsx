@@ -12,6 +12,7 @@ interface GeminiChatConfigLite {
   cookie: string;
   atToken: string;
   isActive: boolean;
+  isError?: boolean;
 }
 
 type TokenContext = { conversationId: string; responseId: string; choiceId: string };
@@ -117,7 +118,7 @@ export function StorySummary() {
         const configs = configsResult.data as GeminiChatConfigLite[];
         setTokenConfigs(configs);
 
-        const activeConfigs = configs.filter(c => c.isActive);
+        const activeConfigs = configs.filter(c => c.isActive && !c.isError);
         const uniqueActive = activeConfigs.filter((config, index) => {
           const key = buildTokenKey(config);
           return activeConfigs.findIndex(c => buildTokenKey(c) === key) === index;
@@ -201,7 +202,7 @@ export function StorySummary() {
   };
 
   const getDistinctActiveTokenConfigs = (configs: GeminiChatConfigLite[]) => {
-    const activeConfigs = configs.filter(c => c.isActive);
+    const activeConfigs = configs.filter(c => c.isActive && !c.isError);
     const seenKeys = new Set<string>();
     const distinct: GeminiChatConfigLite[] = [];
     for (const config of activeConfigs) {
@@ -426,6 +427,16 @@ export function StorySummary() {
   useEffect(() => {
     loadConfigurations();
     loadProxySetting();
+
+    const removeListener = window.electronAPI.onMessage('geminiChat:configChanged', () => {
+      console.log('[StorySummary] Config changed, reloading...');
+      loadConfigurations();
+      loadProxySetting();
+    });
+
+    return () => {
+      removeListener();
+    };
   }, []);
 
   useEffect(() => {
@@ -624,7 +635,7 @@ export function StorySummary() {
         return null;
       }
       
-      setSelectedChapterId(chapter.id);
+      // setSelectedChapterId(chapter.id); // Removed to prevent UI jumping
       
       const channel = channelOverride || getWorkerChannel(workerId);
 

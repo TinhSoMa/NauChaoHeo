@@ -83,6 +83,11 @@ export function registerStoryHandlers(): void {
           options = { prompt: payload, method: 'API' };
       }
       
+      if (options && options.metadata) {
+          const { chapterTitle, tokenInfo, chapterId } = options.metadata;
+          console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || 'Unknown'})`);
+      }
+      
       return await StoryService.StoryService.translateChapter(options);
     }
   );

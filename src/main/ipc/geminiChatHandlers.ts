@@ -2,7 +2,7 @@
  * GeminiChatHandlers - IPC handlers cho Gemini Chat config
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { GeminiChatService } from '../services/chatGemini/geminiChatService';
 import { CreateGeminiChatConfigDTO, UpdateGeminiChatConfigDTO } from '../../shared/types/geminiChat';
 
@@ -24,6 +24,10 @@ const CHANNELS = {
   // Impit Browser Management
   GET_MAX_IMPIT_BROWSERS: 'geminiChat:getMaxImpitBrowsers',
   RELEASE_ALL_IMPIT_BROWSERS: 'geminiChat:releaseAllImpitBrowsers',
+
+  // Token Stats
+  GET_TOKEN_STATS: 'geminiChat:getTokenStats',
+  CLEAR_CONFIG_ERROR: 'geminiChat:clearConfigError',
 };
 
 export function registerGeminiChatHandlers(): void {
@@ -85,10 +89,20 @@ export function registerGeminiChatHandlers(): void {
     }
   });
 
+  // Helper function: Notify all renderer windows about config change
+  const notifyRenderer = () => {
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (w.webContents) {
+        w.webContents.send('geminiChat:configChanged');
+      }
+    });
+  };
+
   // Tao moi cau hinh
   ipcMain.handle(CHANNELS.CREATE, async (_, data: CreateGeminiChatConfigDTO) => {
     try {
       const config = GeminiChatService.create(data);
+      notifyRenderer();
       return { success: true, data: config };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi create:', error);
@@ -100,6 +114,7 @@ export function registerGeminiChatHandlers(): void {
   ipcMain.handle(CHANNELS.UPDATE, async (_, id: string, data: UpdateGeminiChatConfigDTO) => {
     try {
       const config = GeminiChatService.update(id, data);
+      notifyRenderer();
       return { success: true, data: config };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi update:', error);
@@ -111,6 +126,7 @@ export function registerGeminiChatHandlers(): void {
   ipcMain.handle(CHANNELS.DELETE, async (_, id: string) => {
     try {
       const result = GeminiChatService.delete(id);
+      notifyRenderer();
       return { success: true, data: result };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi delete:', error);
@@ -118,20 +134,17 @@ export function registerGeminiChatHandlers(): void {
     }
   });
 
-  // DEPRECATED: Gui tin nhan den Gemini Web API (phương thức WEB cũ)
-  // Chỉ còn 2 lựa chọn: API và IMPIT
-  /*
-  ipcMain.handle(CHANNELS.SEND_MESSAGE, async (_, message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => {
+  // Xóa trạng thái lỗi của 1 config
+  ipcMain.handle(CHANNELS.CLEAR_CONFIG_ERROR, async (_, configId: string) => {
     try {
-      console.log('[GeminiChatHandlers] sendMessage, configId:', configId, 'context:', context);
-      const result = await GeminiChatService.sendMessage(message, configId, context);
-      return result;
+      GeminiChatService.clearConfigError(configId);
+      notifyRenderer();
+      return { success: true };
     } catch (error) {
-      console.error('[GeminiChatHandlers] Loi sendMessage:', error);
+      console.error('[GeminiChatHandlers] Loi clearConfigError:', error);
       return { success: false, error: String(error) };
     }
   });
-  */
 
   // Kiem tra token bi trung trong DB
   ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload: { cookie: string; atToken: string; excludeId?: string }) => {
@@ -161,6 +174,17 @@ export function registerGeminiChatHandlers(): void {
       return { success: true };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi releaseAllImpitBrowsers:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Lấy thống kê tài khoản realtime
+  ipcMain.handle(CHANNELS.GET_TOKEN_STATS, async () => {
+    try {
+      const stats = GeminiChatService.getTokenStats();
+      return { success: true, data: stats };
+    } catch (error) {
+      console.error('[GeminiChatHandlers] Loi getTokenStats:', error);
       return { success: false, error: String(error) };
     }
   });

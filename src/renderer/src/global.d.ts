@@ -319,6 +319,7 @@ interface GeminiChatConfig {
   acceptLanguage?: string;
   platform?: string;
   isActive: boolean;
+  isError?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -341,6 +342,7 @@ interface CreateGeminiChatConfigDTO {
 
 interface UpdateGeminiChatConfigDTO extends Partial<CreateGeminiChatConfigDTO> {
   isActive?: boolean;
+  isError?: boolean;
 }
 
 // Interface cho cookie config (bảng gemini_cookie - chỉ 1 dòng)
@@ -373,6 +375,10 @@ interface GeminiChatAPI {
   // Impit browser management
   getMaxImpitBrowsers: () => Promise<IpcApiResponse<number>>;
   releaseAllImpitBrowsers: () => Promise<IpcApiResponse<void>>;
+
+  // Token stats
+  getTokenStats: () => Promise<IpcApiResponse<TokenStatsResponse>>;
+  clearConfigError: (configId: string) => Promise<IpcApiResponse<void>>;
 }
 
 /**
@@ -449,7 +455,7 @@ declare global {
     electronAPI: {
       // Cac method co ban
       sendMessage: (channel: string, data: unknown) => void;
-      onMessage: (channel: string, callback: (...args: unknown[]) => void) => void;
+      onMessage: (channel: string, callback: (...args: unknown[]) => void) => () => void;
       invoke: (channel: string, data?: unknown) => Promise<unknown>;
       
       // Gemini API
