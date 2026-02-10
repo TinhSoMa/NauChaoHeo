@@ -4554,9 +4554,11 @@ class GeminiChatServiceClass {
     this.proxyMaxFailedCount = 3;
     this.tokenLocks = /* @__PURE__ */ new Map();
     this.firstSendByTokenKey = /* @__PURE__ */ new Set();
+    this.lastCompletionTimeByTokenKey = /* @__PURE__ */ new Map();
     this.impitBrowserAssignments = /* @__PURE__ */ new Map();
     this.impitBrowsersInUse = /* @__PURE__ */ new Set();
-    this.rotationIndex = 0;
+    this.nextAvailableTimeByTokenKey = /* @__PURE__ */ new Map();
+    this.lastUsedConfigId = null;
   }
   static getInstance() {
     if (!GeminiChatServiceClass.instance) {
@@ -4564,24 +4566,97 @@ class GeminiChatServiceClass {
     }
     return GeminiChatServiceClass.instance;
   }
-  async withTokenLock(tokenKey, fn) {
-    const previousLock = this.tokenLocks.get(tokenKey) || Promise.resolve();
-    const currentLock = (async () => {
-      await previousLock.catch(() => {
-      });
-      return fn();
-    })();
-    const nextLock = currentLock.then(() => {
-    }).catch(() => {
+  async withTokenLock(tokenKeyRaw, fn) {
+    const tokenKey = (tokenKeyRaw || "").trim();
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[GeminiChatService][${requestId}] Request queued for token: '${tokenKey.substring(0, 10)}...'`);
+    const previousTask = this.tokenLocks.get(tokenKey) || Promise.resolve();
+    let signalTaskDone;
+    const myTaskPromise = new Promise((resolve) => {
+      signalTaskDone = resolve;
     });
-    this.tokenLocks.set(tokenKey, nextLock);
-    return currentLock;
+    this.tokenLocks.set(tokenKey, myTaskPromise);
+    try {
+      await previousTask;
+    } catch (e) {
+    }
+    const now = Date.now();
+    const nextAllowedTime = this.nextAvailableTimeByTokenKey.get(tokenKey) || 0;
+    const waitTime = Math.ceil(Math.max(0, nextAllowedTime - now));
+    if (waitTime > 0) {
+      console.log(`[GeminiChatService][${requestId}] Cooling down: Waiting ${waitTime}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    }
+    console.log(`[GeminiChatService][${requestId}] Executing task NOW.`);
+    try {
+      const result = await fn();
+      return result;
+    } finally {
+      const MIN_DELAY_MS = 1e4;
+      const MAX_DELAY_MS = 2e4;
+      const randomDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+      const completionTime = Date.now();
+      const nextTime = completionTime + randomDelay;
+      this.nextAvailableTimeByTokenKey.set(tokenKey, nextTime);
+      console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${randomDelay}ms)`);
+      if (typeof signalTaskDone === "function") signalTaskDone();
+    }
   }
   buildTokenKey(_cookie, atToken) {
     return (atToken || "").trim();
   }
   getTokenKey(config) {
     return this.buildTokenKey(config.cookie || "", config.atToken || "") || config.id;
+  }
+  // ... (checkDuplicateToken omitted, unchanged) ...
+  /**
+   * Smart Account Selection:
+   * - Prioritize accounts that are READY (Zero wait time).
+   * - If multiple are ready, rotate among them.
+   * - If none are ready, pick the one with the SHORTEST wait time.
+   */
+  getNextActiveConfig() {
+    const activeConfigs = this.getAll().filter((c) => c.isActive);
+    if (activeConfigs.length === 0) {
+      console.warn("[GeminiChatService] No active configs available");
+      return null;
+    }
+    const now = Date.now();
+    let bestConfig = null;
+    let minWaitTime = Infinity;
+    const readyCandidates = [];
+    for (const config of activeConfigs) {
+      const tokenKey = this.getTokenKey(config);
+      const nextTime = this.nextAvailableTimeByTokenKey.get(tokenKey) || 0;
+      const waitTime = Math.max(0, nextTime - now);
+      if (waitTime <= 0) {
+        readyCandidates.push(config);
+      }
+      if (waitTime < minWaitTime) {
+        minWaitTime = waitTime;
+        bestConfig = config;
+      }
+    }
+    if (readyCandidates.length > 0) {
+      readyCandidates.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      let nextIndex = 0;
+      if (this.lastUsedConfigId) {
+        const lastUsedIndex = readyCandidates.findIndex((c) => c.id === this.lastUsedConfigId);
+        if (lastUsedIndex !== -1) {
+          nextIndex = (lastUsedIndex + 1) % readyCandidates.length;
+        }
+      }
+      bestConfig = readyCandidates[nextIndex];
+      console.log(`[GeminiChatService] Selected READY config: ${bestConfig.name} (Wait: 0ms)`);
+    } else {
+      if (bestConfig) {
+        console.log(`[GeminiChatService] All busy. Selected BEST config: ${bestConfig.name} (Wait: ${minWaitTime}ms)`);
+      }
+    }
+    if (bestConfig) {
+      this.lastUsedConfigId = bestConfig.id;
+    }
+    return bestConfig;
   }
   checkDuplicateToken(cookie, atToken, excludeId) {
     const tokenKey = this.buildTokenKey(cookie || "", atToken || "");
@@ -4883,24 +4958,6 @@ class GeminiChatServiceClass {
     return result.success;
   }
   // =======================================================
-  // ROUND-ROBIN ROTATION (similar to geminiService.ts)
-  // =======================================================
-  /**
-   * Get next active config in round-robin order
-   * Returns null if no active configs available
-   */
-  getNextActiveConfig() {
-    const activeConfigs = this.getAll().filter((c) => c.isActive);
-    if (activeConfigs.length === 0) {
-      console.warn("[GeminiChatService] No active configs available for rotation");
-      return null;
-    }
-    const config = activeConfigs[this.rotationIndex % activeConfigs.length];
-    this.rotationIndex = (this.rotationIndex + 1) % activeConfigs.length;
-    console.log(`[GeminiChatService] Đã chọn cấu hình luân phiên: ${config.name} (${this.rotationIndex}/${activeConfigs.length})`);
-    return config;
-  }
-  // =======================================================
   // OLD CONFIG METHODS (gemini_chat_config table)
   // =======================================================
   // Lay tat ca cau hinh
@@ -5131,8 +5188,8 @@ class GeminiChatServiceClass {
     console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
     return await this.withTokenLock(tokenKey, async () => {
       const MAX_RETRIES = 3;
-      const MIN_DELAY_MS = 2e3;
-      const MAX_DELAY_MS = 1e4;
+      const MIN_DELAY_MS = 5e3;
+      const MAX_DELAY_MS = 3e4;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
         const result = await this._sendMessageImpitInternal(message, config, context, useProxyOverride);
@@ -5243,7 +5300,6 @@ class GeminiChatServiceClass {
       const headers = {
         "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
         "cookie": (cookie || "").replace(/[\r\n]+/g, "")
-        // "user-agent": (config.userAgent || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36").replace(/[\r\n]+/g, ''),
       };
       headers["origin"] = "https://gemini.google.com";
       headers["referer"] = "https://gemini.google.com/";
