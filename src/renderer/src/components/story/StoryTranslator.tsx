@@ -458,69 +458,6 @@ export function StoryTranslator() {
     };
   }, []);
 
-  // Dynamic Worker Scaling: DISABLED to prevent duplicate workers
-  // Each token should only have ONE persistent worker throughout the batch
-  // The worker will continuously process chapters until the queue is empty
-  /*
-  useEffect(() => {
-    if (status !== 'running' || (translateMode !== 'token' && translateMode !== 'both')) return;
-
-    const checkAndSpawnWorkers = async () => {
-       // 1. Check max browsers
-       let maxImpitBrowsers = Infinity;
-       try {
-          const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
-          if (browserResult.success && browserResult.data) {
-             maxImpitBrowsers = browserResult.data;
-          }
-       } catch (e) { 
-           console.error('[StoryTranslator] Lỗi lấy giới hạn impit:', e);
-       }
-
-       // 2. Filter out already running configs (AFTER await to avoid race condition)
-       const activeConfigs = getDistinctActiveTokenConfigs(tokenConfigs);
-       const runningConfigIds = batchStateRef.current.activeWorkerConfigIds;
-       const newConfigs = activeConfigs.filter(c => !runningConfigIds.has(c.id));
-
-       if (newConfigs.length === 0) return;
-
-       const currentTokenWorkerCount = runningConfigIds.size;
-       const availableSlots = maxImpitBrowsers - currentTokenWorkerCount;
-       
-       if (availableSlots <= 0) return;
-
-       const configsToStart = newConfigs.slice(0, availableSlots);
-       console.log(`[StoryTranslator] 🆕 Tìm thấy ${newConfigs.length} cấu hình mới. Đang khởi động ${configsToStart.length} workers...`);
-
-       const MIN_SPAWN_DELAY = 5000;
-       const MAX_SPAWN_DELAY = 20000;
-       let cumulativeDelay = 0;
-
-       for (let i = 0; i < configsToStart.length; i++) {
-         const config = configsToStart[i];
-         
-         if (i === 0) {
-           // First new worker starts immediately
-           startWorker('token', config);
-         } else {
-           // Calculate delay from previous spawn
-           const spawnDelay = Math.floor(Math.random() * (MAX_SPAWN_DELAY - MIN_SPAWN_DELAY + 1)) + MIN_SPAWN_DELAY;
-           cumulativeDelay += spawnDelay;
-           console.log(`[StoryTranslator] ⏳ Worker ${i + 1} will spawn in ${cumulativeDelay}ms from now`);
-           
-           setTimeout(() => {
-             if (status === 'running') {
-               startWorker('token', config);
-             }
-           }, cumulativeDelay);
-         }
-       }
-    };
-
-    checkAndSpawnWorkers();
-  }, [tokenConfigs, status, translateMode]);
-  */
-
   useEffect(() => {
     if (translateMode === 'token' || translateMode === 'both') {
       if (!tokenConfigId) {
