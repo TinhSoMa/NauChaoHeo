@@ -5274,22 +5274,24 @@ class GeminiChatServiceClass {
     console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
     return await this.withTokenLock(tokenKey, async () => {
       const MAX_RETRIES = 3;
-      const MIN_DELAY_MS = 5e3;
-      const MAX_DELAY_MS = 3e4;
+      const MIN_DELAY_MS = 1e4;
+      const MAX_DELAY_MS = 2e4;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
-        const result = await this._sendMessageImpitInternal(message, config, context, useProxyOverride);
+        const result = await this._sendMessageImpitInternal(message, config, context, useProxyOverride, metadata);
         if (result.success) {
           this.markConfigSuccess(config.id);
           return { ...result, metadata };
         }
-        if (result.error && result.error.includes("Không còn proxy khả dụng")) {
+        if (result.retryable) {
+          console.warn(`[GeminiChatService] Impit: Validation Failed or Retryable Error ("${result.error}"). Retrying...`);
+        } else if (result.error && result.error.includes("Không còn proxy khả dụng")) {
           console.error("[GeminiChatService] Impit: Dừng retry do hết proxy khả dụng");
           return { ...result, metadata, retryable: true };
         }
         if (attempt < MAX_RETRIES) {
           const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
-          console.log(`[GeminiChatService] Impit: Yêu cầu thất bại, thử lại sau ${retryDelay}ms...`);
+          console.log(`[GeminiChatService] Impit: Thử lại sau ${retryDelay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
           console.error(`[GeminiChatService] Impit: Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
@@ -5301,7 +5303,7 @@ class GeminiChatServiceClass {
       return { success: false, error: "Unexpected error in Impit retry loop", metadata, retryable: true };
     });
   }
-  async _sendMessageImpitInternal(message, config, context, useProxyOverride) {
+  async _sendMessageImpitInternal(message, config, context, useProxyOverride, metadata) {
     try {
       const { cookie, blLabel, fSid, atToken } = config;
       if (!cookie || !blLabel || !fSid || !atToken) {
@@ -5333,10 +5335,8 @@ class GeminiChatServiceClass {
       const effectiveContext = incomingContext || storedContext || void 0;
       const contextArray = effectiveContext ? [effectiveContext.conversationId, effectiveContext.responseId, effectiveContext.choiceId] : ["", "", ""];
       const createChatOnWeb = true;
-      console.log(`[GeminiChatService] Impit: createChatOnWeb = ${createChatOnWeb} (Updated to match Python REQ structure)`);
       const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
       const useProxy = this.getUseProxySetting();
-      console.log(`[GeminiChatService] Proxy setting from DB: ${useProxy}${typeof useProxyOverride === "boolean" ? `, frontend override: ${useProxyOverride}` : ""}`);
       let proxyUrl = void 0;
       let usedProxy = null;
       if (useProxy) {
@@ -5355,14 +5355,11 @@ class GeminiChatServiceClass {
         return {
           success: false,
           error: `Hết trình duyệt impit khả dụng (tối đa ${IMPIT_BROWSERS.length} tài khoản đồng thời)`,
-          configId: config.id
+          configId: config.id,
+          retryable: true
         };
       }
-      console.log(`[GeminiChatService] Impit: Sử dụng trình duyệt '${assignedBrowser}' cho config ${config.name}`);
       const useHttp3 = !proxyUrl;
-      if (proxyUrl) {
-        console.log(`[GeminiChatService] Impit: Tắt HTTP/3 vì đang dùng proxy (${proxyUrl.split("@").pop()})`);
-      }
       const impit$1 = new impit.Impit({
         browser: assignedBrowser,
         proxyUrl,
@@ -5385,71 +5382,29 @@ class GeminiChatServiceClass {
       const body = new URLSearchParams(
         createChatOnWeb ? { "f.req": fReq, "at": atToken } : { "f.req": fReq, "at": atToken, "": "" }
       );
-      console.log(`[GeminiChatService] Impit: Request body keys = [${Array.from(body.keys()).join(", ")}]`);
       const headers = {
         "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
         "cookie": (cookie || "").replace(/[\r\n]+/g, "")
       };
       headers["origin"] = "https://gemini.google.com";
       headers["referer"] = "https://gemini.google.com/";
-      const cookieLength = headers["cookie"].length;
-      const hasSecurePSID = headers["cookie"].includes("__Secure-1PSID");
-      const hasSecurePSIDTS = headers["cookie"].includes("__Secure-1PSIDTS");
-      const atTokenPreview = atToken ? `${atToken.substring(0, 20)}...` : "MISSING";
-      const blLabelPreview = blLabel ? blLabel : "MISSING";
-      const fSidPreview = fSid ? fSid : "MISSING";
-      console.log(`[GeminiChatService] Impit: AT Token=${atTokenPreview}, BL=${blLabelPreview}, F.SID=${fSidPreview}`);
-      const contextSummary = {
-        conversationId: contextArray[0] ? `${String(contextArray[0]).slice(0, 24)}...` : "",
-        responseId: contextArray[1] ? `${String(contextArray[1]).slice(0, 24)}...` : "",
-        choiceId: contextArray[2] ? `${String(contextArray[2]).slice(0, 24)}...` : ""
-      };
-      const hasContext = !!(contextArray[0] || contextArray[1] || contextArray[2]);
-      if (hasContext) {
-        console.log("[GeminiChatService] Impit: Đang sử dụng context cũ:", contextSummary);
-      } else {
-        console.log("[GeminiChatService] Impit: Bắt đầu conversation MỚI (không có context)");
-      }
-      console.log("[GeminiChatService] Sending message via IMPIT");
-      console.log("[GeminiChatService] Sending Impit request to:", url);
       const response = await impit$1.fetch(url, {
         method: "POST",
         headers,
         body: body.toString()
       });
-      console.log("[GeminiChatService] Impit response status:", response.status);
       if (response.status !== 200) {
-        try {
-          const responseText2 = await response.text();
-          console.error(`[GeminiChatService] Impit HTTP ${response.status} Error Response:`, responseText2.substring(0, 500));
-        } catch (e) {
-          console.error("[GeminiChatService] Could not read error response body:", e);
-        }
         if (usedProxy) {
           const proxyManager = getProxyManager();
           proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
           this.releaseProxy(config.id, usedProxy.id);
           this.setAssignedProxyId(config.id, null);
         }
-        return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id };
+        return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id, retryable: true };
       }
       if (usedProxy) {
         const proxyManager = getProxyManager();
         proxyManager.markProxySuccess(usedProxy.id);
-      }
-      let setCookieHeaders = [];
-      if (typeof response.headers.getSetCookie === "function") {
-        setCookieHeaders = response.headers.getSetCookie();
-      } else if ("raw" in response.headers && typeof response.headers.raw === "function") {
-        const raw = response.headers.raw();
-        if (raw["set-cookie"]) {
-          setCookieHeaders = raw["set-cookie"];
-        }
-      } else {
-        const headerVal = response.headers.get("set-cookie");
-        if (headerVal) {
-          setCookieHeaders = [headerVal];
-        }
       }
       const responseText = await response.text();
       let foundText = "";
@@ -5485,6 +5440,22 @@ class GeminiChatServiceClass {
         }
       }
       if (foundText) {
+        if (metadata && metadata.validationRegex) {
+          try {
+            const regex = new RegExp(metadata.validationRegex, "i");
+            if (!regex.test(foundText)) {
+              console.warn(`[GeminiChatService] Validation Failed: Regex /${metadata.validationRegex}/ not found in response (${foundText.length} chars)`);
+              return {
+                success: false,
+                error: "Cảnh báo: Nội dung trả về không đầy đủ (thiếu marker kết thúc).",
+                configId: config.id,
+                retryable: true
+              };
+            }
+          } catch (e) {
+            console.error("[GeminiChatService] Invalid validation regex:", e);
+          }
+        }
         const contextWasParsed = !!(newContext.conversationId || newContext.responseId || newContext.choiceId);
         if (!contextWasParsed && effectiveContext) {
           console.warn("[GeminiChatService] ⚠️ Impit: Không parse được context mới từ response, dùng context cũ");
@@ -5493,12 +5464,6 @@ class GeminiChatServiceClass {
         if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
         if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
         console.log(`[GeminiChatService] Impit: Nhận phản hồi thành công (${foundText.length} ký tự)`);
-        const contextSummary2 = {
-          conversationId: newContext.conversationId ? `${String(newContext.conversationId).slice(0, 24)}...` : "",
-          responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
-          choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : "",
-          parsedFromResponse: contextWasParsed
-        };
         this.saveContext(newContext, config.id);
         this.firstSendByTokenKey.add(tokenKey);
         return {
@@ -5510,10 +5475,10 @@ class GeminiChatServiceClass {
           configId: config.id
         };
       }
-      return { success: false, error: "No text found in Impit response", configId: config.id };
+      return { success: false, error: "No text found in Impit response", configId: config.id, retryable: true };
     } catch (error) {
       console.error("[GeminiChatService] Impit Error:", error);
-      return { success: false, error: String(error), configId: config?.id };
+      return { success: false, error: String(error), configId: config?.id, retryable: true };
     }
   }
   // ... (existing code)

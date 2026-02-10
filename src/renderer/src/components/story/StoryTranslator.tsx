@@ -75,8 +75,6 @@ export function StoryTranslator() {
     isFirstChapterTaken: false
   });
   const workerIdRef = useRef(0);
-  const MIN_DELAY = 5000;
-  const MAX_DELAY = 30000;
   // Export ebook status
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
   // Reading settings
@@ -109,19 +107,7 @@ export function StoryTranslator() {
     return lines[0] || `Chương ${fallbackId}`;
   };
 
-  // Kiểm tra xem bản dịch có marker kết thúc hay không
-  const hasEndMarker = (text: string): boolean => {
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    
-    if (lines.length === 0) return false;
-    
-    const lastLine = lines[lines.length - 1];
-    // Check các biến thể của "Hết chương"
-    return /hết\s+chương|end\s+of\s+chapter|---\s*hết\s*---/i.test(lastLine);
-  };
+
 
   // Update elapsed time every second
   useEffect(() => {
@@ -472,7 +458,10 @@ export function StoryTranslator() {
     };
   }, []);
 
-  // Dynamic Worker Scaling: Watch for new token configs and spawn workers if batch is running
+  // Dynamic Worker Scaling: DISABLED to prevent duplicate workers
+  // Each token should only have ONE persistent worker throughout the batch
+  // The worker will continuously process chapters until the queue is empty
+  /*
   useEffect(() => {
     if (status !== 'running' || (translateMode !== 'token' && translateMode !== 'both')) return;
 
@@ -503,13 +492,34 @@ export function StoryTranslator() {
        const configsToStart = newConfigs.slice(0, availableSlots);
        console.log(`[StoryTranslator] 🆕 Tìm thấy ${newConfigs.length} cấu hình mới. Đang khởi động ${configsToStart.length} workers...`);
 
-       for (const config of configsToStart) {
-          startWorker('token', config);
+       const MIN_SPAWN_DELAY = 5000;
+       const MAX_SPAWN_DELAY = 20000;
+       let cumulativeDelay = 0;
+
+       for (let i = 0; i < configsToStart.length; i++) {
+         const config = configsToStart[i];
+         
+         if (i === 0) {
+           // First new worker starts immediately
+           startWorker('token', config);
+         } else {
+           // Calculate delay from previous spawn
+           const spawnDelay = Math.floor(Math.random() * (MAX_SPAWN_DELAY - MIN_SPAWN_DELAY + 1)) + MIN_SPAWN_DELAY;
+           cumulativeDelay += spawnDelay;
+           console.log(`[StoryTranslator] ⏳ Worker ${i + 1} will spawn in ${cumulativeDelay}ms from now`);
+           
+           setTimeout(() => {
+             if (status === 'running') {
+               startWorker('token', config);
+             }
+           }, cumulativeDelay);
+         }
        }
     };
 
     checkAndSpawnWorkers();
   }, [tokenConfigs, status, translateMode]);
+  */
 
   useEffect(() => {
     if (translateMode === 'token' || translateMode === 'both') {
@@ -546,6 +556,17 @@ export function StoryTranslator() {
     if (!chapter) return;
 
     setStatus('running');
+    
+    // Add processing status for single chapter
+    setProcessingChapters(prev => {
+      const next = new Map(prev);
+      next.set(chapter.id, { 
+        startTime: Date.now(), 
+        workerId: 0, 
+        channel: translateMode === 'token' ? 'token' : 'api' 
+      });
+      return next;
+    });
     
     try {
       console.log('[StoryTranslator] Dang chuan bi prompt...');
@@ -585,7 +606,10 @@ export function StoryTranslator() {
         method,
         webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
         useProxy: method === 'IMPIT' && useProxy,
-        metadata: { chapterId: selectedChapterId }
+        metadata: { 
+          chapterId: selectedChapterId,
+          validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
+        }
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (translateResult.success && translateResult.data) {
@@ -595,28 +619,7 @@ export function StoryTranslator() {
           throw new Error('Metadata validation failed - race condition detected');
         }
         
-        // Kiểm tra marker kết thúc
-        if (!hasEndMarker(translateResult.data)) {
-          console.warn('[StoryTranslator] ⚠️ Bản dịch không có "Hết chương", đang retry...');
-          
-          // Retry 1 lần
-          const retryResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
-            prompt: prepareResult.prompt,
-            model: model,
-            method,
-            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'IMPIT' && useProxy,
-            metadata: { chapterId: selectedChapterId }
-          }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
-          
-          if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
-            console.log('[StoryTranslator] ✅ Retry thành công, bản dịch đã có "Hết chương"');
-            translateResult.data = retryResult.data;
-            if (retryResult.context) translateResult.context = retryResult.context;
-          } else {
-            console.warn('[StoryTranslator] ⚠️ Retry vẫn không có "Hết chương", sử dụng bản dịch gốc');
-          }
-        }
+        // Client-side retry removed - handled by service with validationRegex
         
         // Lưu bản dịch vào Map cache
         setTranslatedChapters(prev => {
@@ -663,6 +666,11 @@ export function StoryTranslator() {
       console.error('[StoryTranslator] Loi trong qua trinh dich:', error);
       alert(`Loi dich thuat: ${error}`);
     } finally {
+      setProcessingChapters(prev => {
+        const next = new Map(prev);
+        next.delete(chapter.id);
+        return next;
+      });
       setStatus('idle');
     }
   };
@@ -734,7 +742,8 @@ export function StoryTranslator() {
           metadata: { 
               chapterId: chapter.id,
               chapterTitle: chapter.title,
-              tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API'
+              tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
+              validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
           }
         }
       ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
@@ -743,26 +752,6 @@ export function StoryTranslator() {
         if (translateResult.metadata?.chapterId !== chapter.id) {
             console.error(`[StoryTranslator] ⚠️ RACE CONDITION: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
             return null;
-        }
-
-        // Check end marker
-        if (!hasEndMarker(translateResult.data)) {
-            console.warn(`[StoryTranslator] ⚠️ Chương ${chapter.title} thiếu end marker, retry...`);
-            const retryResult = await window.electronAPI.invoke(
-                STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
-                {
-                    prompt: prepareResult.prompt,
-                    model: model,
-                    method,
-                    webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-                    useProxy: method === 'IMPIT' && useProxy,
-                    metadata: { chapterId: chapter.id }
-                }
-            ) as any;
-            if (retryResult.success && retryResult.data && hasEndMarker(retryResult.data)) {
-                translateResult.data = retryResult.data;
-                if (retryResult.context) translateResult.context = retryResult.context;
-            }
         }
 
         // Update UI hooks
@@ -792,6 +781,15 @@ export function StoryTranslator() {
        console.error(`[StoryTranslator] ❌ Exception chương ${chapter.title}:`, error);
        return null;
     } finally {
+       // Only clear processing status if it was set by this specific call? 
+       // Actually batch translation manages this map differently?
+       // Wait, `processChapter` is used by `handleTranslateAll`. 
+       // `handleTranslateAll` sets processingChapters for the whole batch? 
+       // No, `startWorker` calls `processChapter` and manages status.
+       // BUT processChapter here has a finally block that clears it?
+       // Let's check `startWorker` implementation. 
+       // `startWorker` sets processing info. `processChapter` clearing it might be premature if the worker continues?
+       // Ah, `processChapter` is for ONE chapter. So clearing it here is correct for that chapter.
        setProcessingChapters(prev => {
            const next = new Map(prev);
            next.delete(chapter.id);
@@ -810,11 +808,7 @@ export function StoryTranslator() {
 
     try {
         while (!shouldStopRef.current) {
-            // Delay logic
-            if (batchStateRef.current.isFirstChapterTaken) {
-                const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
+            // Delay is now handled by backend (geminiChatService.ts)
 
             if (shouldStopRef.current) break;
             
@@ -952,9 +946,31 @@ export function StoryTranslator() {
       startWorker('api');
     }
 
-    // Start Token workers
-    for (const config of finalConfigsToUse) {
-      startWorker('token', config);
+    // Start Token workers with staggered delays
+    const MIN_SPAWN_DELAY = 5000;  // 5s - random "hên xui"
+    const MAX_SPAWN_DELAY = 20000; // 20s
+    let cumulativeDelay = 0;
+    
+    for (let i = 0; i < finalConfigsToUse.length; i++) {
+      const config = finalConfigsToUse[i];
+      
+      if (i === 0) {
+        // First worker starts immediately
+        console.log(`[StoryTranslator] 🚀 Starting worker 1/${finalConfigsToUse.length} immediately`);
+        startWorker('token', config);
+      } else {
+        // Calculate delay from previous spawn
+        const spawnDelay = Math.floor(Math.random() * (MAX_SPAWN_DELAY - MIN_SPAWN_DELAY + 1)) + MIN_SPAWN_DELAY;
+        cumulativeDelay += spawnDelay;
+        console.log(`[StoryTranslator] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
+        
+        setTimeout(() => {
+          if (!shouldStopRef.current) {
+            console.log(`[StoryTranslator] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`);
+            startWorker('token', config);
+          }
+        }, cumulativeDelay);
+      }
     }
   };
 
