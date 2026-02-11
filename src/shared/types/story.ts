@@ -20,6 +20,11 @@ export interface PreparePromptResult {
 export const STORY_IPC_CHANNELS = {
   PARSE: 'story:parse',
   PREPARE_PROMPT: 'story:preparePrompt',
+  PREPARE_SUMMARY_PROMPT: 'story:prepareSummaryPrompt',
   SAVE_PROMPT: 'story:savePrompt',
-  TRANSLATE_CHAPTER: 'story:translateChapter'
+  TRANSLATE_CHAPTER: 'story:translateChapter',
+  TRANSLATE_CHAPTER_RESULT: 'story:translate-chapter-result',
+  TRANSLATION_PROGRESS: 'story:translation-progress',
+  TRANSLATE_CHAPTER_STREAM_REPLY: 'story:translateChapterStreamReply',
+  CREATE_EBOOK: 'story:createEbook'
 } as const;

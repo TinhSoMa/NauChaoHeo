@@ -46,7 +46,7 @@ export async function generateSingleAudio(
       '--voice', voice,
       '--rate', rate,
       '--volume', volume,
-      '--text', text,
+      '--text', `"${text.replace(/"/g, '\\"')}"`, // Quote text and escape internal quotes
       '--write-media', outputPath,
     ];
     
@@ -159,7 +159,22 @@ export async function generateBatchAudio(
         // File không tồn tại, tiếp tục tạo
       }
       
-      const result = await generateSingleAudio(text, outputPath, voice, rate, volume);
+      let result = await generateSingleAudio(text, outputPath, voice, rate, volume);
+
+      // Auto-retry on failure
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+
+      while (!result.success && retryCount < MAX_RETRIES) {
+        retryCount++;
+        console.log(`[TTS] Lỗi ${filename}, thử lại lần ${retryCount}/${MAX_RETRIES}...`);
+        
+        // Exponential backoff: 2s, 4s, 8s
+        const delay = Math.pow(2, retryCount) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        result = await generateSingleAudio(text, outputPath, voice, rate, volume);
+      }
       
       completed++;
       
@@ -182,6 +197,7 @@ export async function generateBatchAudio(
           success: true,
         } as AudioFile;
       } else {
+        console.error(`[TTS] Lỗi ${filename}: ${result.error}`);
         errors.push(`${filename}: ${result.error}`);
         return {
           index: entry.index,

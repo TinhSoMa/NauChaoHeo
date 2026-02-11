@@ -1,0 +1,107 @@
+# Cấu hình đóng gói ứng dụng NauChaoHeo
+appId: com.tinhsoma.nauchaoheo
+productName: NauChaoHeo
+copyright: Copyright © 2026 TinhSoMa
+
+# Thư mục output
+directories:
+  output: release
+  buildResources: resources
+
+# Files được đóng gói
+files:
+  - out/**/*
+  - node_modules/**/*
+  - package.json
+  - "!**/*.{ts,tsx,map}"
+  - "!src/**/*"
+  - "!electron.vite.config.ts"
+  - "!tsconfig*.json"
+
+# Native dependencies cần rebuild
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+
+# FFmpeg binaries (copy vào resources/ffmpeg khi đóng gói)
+extraResources:
+  - from: resources/ffmpeg/${os}
+    to: ffmpeg
+    filter:
+      - "**/*"
+
+# Cấu hình Windows
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icons/icon.png
+  artifactName: ${productName}-${version}-setup.${ext}
+
+# NSIS installer options
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  # installerIcon: resources/icons/icon.ico  # Bỏ comment khi đã có icon
+  # uninstallerIcon: resources/icons/icon.ico
+
+# Cấu hình macOS
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  # icon: resources/icons/icon.icns  # Bỏ comment khi đã có icon
+  category: public.app-category.productivity
+  hardenedRuntime: false  # Disable để build dễ hơn
+  gatekeeperAssess: false
+  # entitlements: resources/entitlements.mac.plist
+  # entitlementsInherit: resources/entitlements.mac.plist
+
+# DMG options cho macOS
+dmg:
+  title: ${productName} ${version}
+  # icon: resources/icons/icon.icns  # Bỏ comment khi đã có icon
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 180
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+
+# Cấu hình Linux
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  # icon: resources/icons/icon.png  # Bỏ comment khi đã có icon
+  category: Utility
+  synopsis: Tool cá nhân siêu cấp vipro
+  description: Ứng dụng dịch thuật và công cụ AI cho cá nhân
+
+# AppImage options
+appImage:
+  license: LICENSE
+  category: Utility
+
+# Publish configuration (nếu muốn auto-update)
+publish:
+  provider: github
+  owner: TinhSoMa
+  repo: NauChaoHeo
+
+# Compression (nén để giảm kích thước)
+compression: normal
+
+# Nén ASAR nhưng exclude các file cần truy cập trực tiếp
+asar: true

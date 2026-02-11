@@ -6,3 +6,13 @@ project-context
 lessons-learned
 scripts
 context-index.json
+gemini_keys.json
+list_api.txt
+test/test_gemini.py
+test/request_1.txt
+test/request_2.txt
+test/test2.har
+test/test_impit_request.py
+release/
+
+out/*

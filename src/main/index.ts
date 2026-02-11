@@ -1,55 +1,21 @@
-import { app, BrowserWindow, shell } from 'electron'
-import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { app, BrowserWindow } from 'electron'
+import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
 import { initDatabase } from './database/schema'
 import { tryImportDevKeys } from './services/gemini/apiKeys'
-
-function createWindow(): void {
-  // Tạo cửa sổ ứng dụng
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false, // Ẩn cho đến khi sẵn sàng
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false
-    }
-  })
-
-  // Hiển thị và maximize khi đã load xong
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.maximize() // Toàn màn hình trừ taskbar
-    mainWindow.show()
-  })
-
-  // Mở link external trong browser thay vì trong app
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  // === ĐIỂM QUAN TRỌNG ===
-  // Development: Load từ Vite dev server (có HMR)
-  // Production: Load trực tiếp file HTML (KHÔNG CẦN LOCALHOST)
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    // Production: Load file HTML trực tiếp - KHÔNG CẦN SERVER
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-}
+import { AppSettingsService } from './services/appSettings'
+import { createDashboardWindow } from './windowManager'
 
 // Khởi tạo app khi Electron sẵn sàng
 app.whenReady().then(() => {
   // Thiết lập app ID cho Windows
   electronApp.setAppUserModelId('com.veo3promptbuilder')
 
-  // Khởi tạo Database
+  // Khởi tạo Database (chỉ cho prompts table)
   initDatabase()
+
+  // Khởi tạo App Settings
+  AppSettingsService.initialize()
 
   // Đăng ký IPC handlers
   registerAllHandlers()
@@ -62,12 +28,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  createWindow()
+  createDashboardWindow()
 
   // macOS: Tạo lại cửa sổ khi click vào dock icon
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      createDashboardWindow()
     }
   })
 })

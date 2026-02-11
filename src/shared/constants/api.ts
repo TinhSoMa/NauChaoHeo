@@ -4,35 +4,20 @@
  */
 
 // ============================================
-// GEMINI API
+// GEMINI API - Re-export từ file tập trung
 // ============================================
 
-/**
- * Base URL của Gemini API
- */
-export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-
-/**
- * Các model Gemini hỗ trợ
- */
-export const GEMINI_MODELS = {
-  FLASH_2_5: 'gemini-2.5-flash',
-  FLASH_2_0: 'gemini-2.0-flash',
-  FLASH_1_5: 'gemini-1.5-flash',
-  PRO_1_5: 'gemini-1.5-pro',
-} as const;
-
-export type GeminiModel = (typeof GEMINI_MODELS)[keyof typeof GEMINI_MODELS];
-
-/**
- * Tạo URL đầy đủ để gọi Gemini API
- * @param model - Tên model Gemini
- * @param apiKey - API key
- * @returns URL đầy đủ
- */
-export function buildGeminiApiUrl(model: GeminiModel, apiKey: string): string {
-  return `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
-}
+// Import và re-export từ file gemini.ts (nguồn duy nhất)
+export {
+  GEMINI_API_BASE,
+  GEMINI_MODELS,
+  GEMINI_MODEL_LIST,
+  DEFAULT_GEMINI_MODEL,
+  buildGeminiApiUrl,
+  getGeminiModelInfo,
+  type GeminiModel,
+  type GeminiModelInfo,
+} from '../types/gemini';
 
 // ============================================
 // THÊM CÁC API KHÁC Ở ĐÂY

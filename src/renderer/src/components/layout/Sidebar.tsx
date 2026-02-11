@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
-import { BookOpen, Video, Settings, FolderClosed, ChevronsLeft, ChevronsRight, Sun, Moon, Subtitles } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Film } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { useThemeStore } from '../../hooks/useTheme';
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -13,16 +12,26 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
-  const { theme, toggleTheme } = useThemeStore();
+  const location = useLocation();
+  
+  // Preserve query parameters (especially projectId) when navigating
+  const getNavPath = (path: string) => {
+    const searchParams = new URLSearchParams(location.search);
+    const queryString = searchParams.toString();
+    return queryString ? `${path}?${queryString}` : path;
+  };
 
   const navItems = [
-    { icon: Subtitles, label: 'Dịch Caption', path: '/translator' },
-    { icon: BookOpen, label: 'Dịch Truyện AI', path: '/story-translator' },
+    { icon: Subtitles, label: 'Dich Caption', path: '/translator' },
+    { icon: Film, label: 'Caption Video', path: '/caption-video' },
+    { icon: BookOpen, label: 'Dich Truyen AI', path: '/story-translator' },
+    { icon: FileText, label: 'Tom Tat Truyen AI', path: '/story-summary' },
+    { icon: MessageCircle, label: 'Dich Truyen (Web)', path: '/story-web' },
+    { icon: MessageCircle, label: 'Chat Gemini', path: '/gemini-chat' },
     { icon: Video, label: 'Veo3 AI Prompt', path: '/veo3' },
   ];
 
   const bottomItems = [
-    { icon: FolderClosed, label: 'Projects', path: '/projects' },
     { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
@@ -40,13 +49,6 @@ export const Sidebar = () => {
           </h1>
         )}
         <div className="flex items-center gap-1 ml-auto">
-          <button
-            onClick={toggleTheme}
-            className="p-2 hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg transition-colors"
-            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
           <button 
             onClick={() => setCollapsed(!collapsed)}
             className="p-2 hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg transition-colors"
@@ -60,7 +62,7 @@ export const Sidebar = () => {
         {navItems.map((item) => (
           <NavLink
             key={item.path}
-            to={item.path}
+            to={getNavPath(item.path)}
             className={({ isActive }) => cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
               isActive 
@@ -85,7 +87,7 @@ export const Sidebar = () => {
         {bottomItems.map((item) => (
           <NavLink
             key={item.path}
-            to={item.path}
+            to={getNavPath(item.path)}
             className={({ isActive }) => cn(
               "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
               isActive 

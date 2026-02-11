@@ -45,6 +45,31 @@ export function registerCaptionHandlers(): void {
   );
 
   // ============================================
+  // DIALOG SAVE FILE
+  // ============================================
+  ipcMain.handle(
+    'dialog:showSaveDialog',
+    async (
+      _event: IpcMainInvokeEvent,
+      options?: {
+        title?: string;
+        defaultPath?: string;
+        filters?: { name: string; extensions: string[] }[];
+      }
+    ) => {
+      console.log('[CaptionHandlers] Mở dialog lưu file...');
+
+      const result = await dialog.showSaveDialog({
+        title: options?.title,
+        defaultPath: options?.defaultPath,
+        filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+      });
+
+      return result;
+    }
+  );
+
+  // ============================================
   // PARSE SRT
   // ============================================
   ipcMain.handle(
@@ -150,6 +175,186 @@ export function registerCaptionHandlers(): void {
         return { success: result.success, data: { partsCount: result.partsCount, files: result.files }, error: result.error };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi split:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - CONVERT SRT TO ASS
+  // ============================================
+  ipcMain.handle(
+    'captionVideo:convertToAss',
+    async (
+      _event: IpcMainInvokeEvent,
+      options: {
+        srtPath: string;
+        assPath: string;
+        videoResolution?: { width: number; height: number };
+        style: {
+          fontName: string;
+          fontSize: number;
+          fontColor: string;
+          shadow: number;
+          marginV: number;
+          alignment: number;
+        };
+        position?: { x: number; y: number };
+      }
+    ): Promise<IpcResponse<{ assPath: string; entriesCount: number }>> => {
+      console.log(`[CaptionHandlers] Convert SRT to ASS: ${options.srtPath}`);
+
+      try {
+        const result = await CaptionService.convertSrtToAss(options);
+        if (result.success && result.assPath) {
+          return {
+            success: true,
+            data: { assPath: result.assPath, entriesCount: result.entriesCount || 0 }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi convert ASS:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - RENDER VIDEO
+  // ============================================
+  ipcMain.handle(
+    'captionVideo:renderVideo',
+    async (
+      event: IpcMainInvokeEvent,
+      options: {
+        assPath: string;
+        outputPath: string;
+        width: number;
+        height: number;
+        useGpu: boolean;
+      }
+    ): Promise<IpcResponse<{ outputPath: string; duration: number }>> => {
+      console.log(`[CaptionHandlers] Render video: ${options.assPath} -> ${options.outputPath}`);
+
+      try {
+        // Progress callback - gửi về renderer
+        const progressCallback = (progress: unknown) => {
+          const window = BrowserWindow.fromWebContents(event.sender);
+          if (window) {
+            window.webContents.send('captionVideo:renderProgress', progress);
+          }
+        };
+
+        const result = await CaptionService.renderAssToVideo(options, progressCallback);
+        if (result.success && result.outputPath) {
+          return {
+            success: true,
+            data: { outputPath: result.outputPath, duration: result.duration || 0 }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi render video:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - GET VIDEO METADATA
+  // ============================================
+  ipcMain.handle(
+    'captionVideo:getVideoMetadata',
+    async (
+      _event: IpcMainInvokeEvent,
+      videoPath: string
+    ): Promise<IpcResponse<{
+      width: number;
+      height: number;
+      duration: number;
+      frameCount: number;
+      fps: number;
+    }>> => {
+      console.log(`[CaptionHandlers] Get video metadata: ${videoPath}`);
+
+      try {
+        const result = await CaptionService.getVideoMetadata(videoPath);
+        if (result.success && result.metadata) {
+          return { success: true, data: result.metadata };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi get metadata:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - EXTRACT FRAME
+  // ============================================
+  ipcMain.handle(
+    'captionVideo:extractFrame',
+    async (
+      _event: IpcMainInvokeEvent,
+      videoPath: string,
+      frameNumber?: number
+    ): Promise<IpcResponse<{
+      frameData: string;
+      width: number;
+      height: number;
+    }>> => {
+      console.log(`[CaptionHandlers] Extract frame: ${videoPath}, frame=${frameNumber || 'random'}`);
+
+      try {
+        const result = await CaptionService.extractVideoFrame(videoPath, frameNumber);
+        if (result.success && result.frameData) {
+          return {
+            success: true,
+            data: {
+              frameData: result.frameData,
+              width: result.width || 0,
+              height: result.height || 0
+            }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi extract frame:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION - SAVE JSON (Lưu tọa độ vùng chọn)
+  // ============================================
+  ipcMain.handle(
+    'caption:saveJson',
+    async (
+      _event: IpcMainInvokeEvent,
+      options: { filePath: string; data: unknown }
+    ): Promise<IpcResponse<string>> => {
+      console.log(`[CaptionHandlers] Lưu JSON: ${options.filePath}`);
+
+      try {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        // Đảm bảo thư mục tồn tại
+        const dir = path.dirname(options.filePath);
+        await fs.mkdir(dir, { recursive: true });
+        
+        await fs.writeFile(
+          options.filePath,
+          JSON.stringify(options.data, null, 2),
+          'utf-8'
+        );
+        
+        return { success: true, data: options.filePath };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi lưu JSON:', error);
         return { success: false, error: String(error) };
       }
     }

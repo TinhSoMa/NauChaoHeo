@@ -1,7 +1,93 @@
 /**
- * Types cho Gemini API Manager
- * Quản lý API keys, rotation state và thống kê
+ * Types và Config cho Gemini API Manager
+ * Quản lý API keys, rotation state, thống kê và cấu hình models
  */
+
+// ============================================
+// GEMINI MODELS CONFIGURATION (Tập trung tại đây)
+// ============================================
+
+/**
+ * Base URL của Gemini API
+ */
+export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/**
+ * Các model Gemini hỗ trợ
+ */
+export const GEMINI_MODELS = {
+  FLASH_3_0: 'gemini-3-flash-preview',
+  FLASH_2_5: 'gemini-2.5-flash',
+  FLASH_2_0: 'gemini-2.0-flash',
+  FLASH_2_5_LITE: 'gemini-2.5-flash-lite',
+} as const;
+
+export type GeminiModel = (typeof GEMINI_MODELS)[keyof typeof GEMINI_MODELS];
+
+/**
+ * Model mặc định
+ */
+export const DEFAULT_GEMINI_MODEL = GEMINI_MODELS.FLASH_3_0;
+
+/**
+ * Thông tin chi tiết của từng model
+ */
+export interface GeminiModelInfo {
+  id: GeminiModel;
+  name: string;
+  label: string;
+  description: string;
+}
+
+export const GEMINI_MODEL_LIST: GeminiModelInfo[] = [
+  {
+    id: 'gemini-3-flash-preview',
+    name: 'Gemini 3.0 Flash Preview',
+    label: 'Gemini 3.0 Flash Preview (Mới nhất)',
+    description: 'Model mới nhất, nhanh và thông minh nhất',
+  },
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    label: 'Gemini 2.5 Flash (Nhanh)',
+    description: 'Model nhanh, hiệu suất cao',
+  },
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    label: 'Gemini 2.0 Flash (Ổn định)',
+    description: 'Model ổn định, đã được kiểm chứng',
+  },
+  {
+    id: 'gemini-2.5-flash-lite',
+    name: 'Gemini 2.5 Flash Lite',
+    label: 'Gemini 2.5 Flash Lite (Tiết kiệm)',
+    description: 'Model nhẹ, tiết kiệm quota',
+  },
+];
+
+/**
+ * Helper: Lấy thông tin model từ ID
+ */
+export function getGeminiModelInfo(modelId: GeminiModel): GeminiModelInfo {
+  return GEMINI_MODEL_LIST.find(m => m.id === modelId) || {
+    id: modelId,
+    name: modelId,
+    label: modelId,
+    description: 'Không có mô tả',
+  };
+}
+
+/**
+ * Helper: Tạo URL đầy đủ để gọi Gemini API
+ */
+export function buildGeminiApiUrl(model: GeminiModel, apiKey: string): string {
+  return `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+}
+
+// ============================================
+// GEMINI API MANAGER TYPES
+// ============================================
 
 // Trạng thái của một project/API key
 export type ProjectStatus = 'available' | 'rate_limited' | 'exhausted' | 'error' | 'disabled';

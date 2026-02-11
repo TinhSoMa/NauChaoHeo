@@ -128,3 +128,75 @@ export function createTTSAPI(): TTSAPI {
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths),
   };
 }
+
+// ============================================
+// CAPTION VIDEO API (Subtitle Strip)
+// ============================================
+
+import {
+  ASSStyleConfig,
+  VideoMetadata,
+  RenderProgress,
+  CAPTION_VIDEO_IPC_CHANNELS,
+} from '../shared/types/caption';
+
+/**
+ * Caption Video API interface cho Renderer process
+ */
+export interface CaptionVideoAPI {
+  // Convert SRT to ASS
+  convertToAss: (options: {
+    srtPath: string;
+    assPath: string;
+    videoResolution?: { width: number; height: number };
+    style: ASSStyleConfig;
+    position?: { x: number; y: number };
+  }) => Promise<IpcApiResponse<{ assPath: string; entriesCount: number }>>;
+
+  // Render video
+  renderVideo: (options: {
+    assPath: string;
+    outputPath: string;
+    width: number;
+    height: number;
+    useGpu: boolean;
+  }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
+
+  // Listen to render progress
+  onRenderProgress: (callback: (progress: RenderProgress) => void) => void;
+
+  // Get video metadata
+  getVideoMetadata: (videoPath: string) => Promise<IpcApiResponse<VideoMetadata>>;
+
+  // Extract frame from video
+  extractFrame: (videoPath: string, frameNumber?: number) => Promise<IpcApiResponse<{
+    frameData: string;
+    width: number;
+    height: number;
+  }>>;
+}
+
+/**
+ * Tạo Caption Video API object
+ */
+export function createCaptionVideoAPI(): CaptionVideoAPI {
+  return {
+    convertToAss: (options) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.CONVERT_TO_ASS, options),
+
+    renderVideo: (options) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO, options),
+
+    onRenderProgress: (callback: (progress: RenderProgress) => void) => {
+      ipcRenderer.on(CAPTION_VIDEO_IPC_CHANNELS.RENDER_PROGRESS, (_event, progress) => {
+        callback(progress);
+      });
+    },
+
+    getVideoMetadata: (videoPath: string) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.GET_VIDEO_METADATA, videoPath),
+
+    extractFrame: (videoPath: string, frameNumber?: number) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.EXTRACT_FRAME, videoPath, frameNumber),
+  };
+}

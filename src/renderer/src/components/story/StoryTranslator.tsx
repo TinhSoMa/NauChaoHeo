@@ -1,171 +1,316 @@
-import { useState } from 'react';
-import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
+import { useState, useEffect } from 'react';
+import { Chapter, STORY_IPC_CHANNELS } from '@shared/types';
+import { StoryStatus } from './types';
+import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { BookOpen, FileText, CheckSquare, Square } from 'lucide-react';
+import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, Download } from 'lucide-react';
+import { extractTranslatedTitle } from './utils/chapterUtils';
+import { useChapterSelection } from './hooks/useChapterSelection';
+import { useTokenManagement } from './hooks/useTokenManagement';
+import { useStoryTranslatorPersistence } from './hooks/useStoryTranslatorPersistence';
+import { useProxySettings } from './hooks/useProxySettings';
+import { useStoryFileManagement } from './hooks/useStoryFileManagement';
+import { useStoryTranslation } from './hooks/useStoryTranslation';
+import { useStoryBatchTranslation } from './hooks/useStoryBatchTranslation';
+import { useStoryExport } from './hooks/useStoryExport';
+import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 
 export function StoryTranslator() {
   const [filePath, setFilePath] = useState('');
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
-  const [status, setStatus] = useState('idle');
+  const [model, setModel] = useState('gemini-3-flash-preview');
+  const [translateMode, setTranslateMode] = useState<'api' | 'token' | 'both'>('api');
+  const [status, setStatus] = useState<StoryStatus>('idle');
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [translatedContent, setTranslatedContent] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
-  // Danh sach cac chuong bi loai tru khoi dich thuat
-  const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
+  // Map lưu trữ bản dịch theo chapterId
+  const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
+  const [chapterModels, setChapterModels] = useState<Map<string, string>>(new Map());
+  const [chapterMethods, setChapterMethods] = useState<Map<string, 'api' | 'token'>>(new Map());
+  const [translatedTitles, setTranslatedTitles] = useState<Map<string, string>>(new Map());
+  const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
+  const [summaryTitles, setSummaryTitles] = useState<Map<string, string>>(new Map());
+  const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
+  
+  // Token management (using custom hook)
+  const {
+    tokenConfigs,
+    tokenConfigId,
+    setTokenConfigId,
+    tokenContexts,
+    setTokenContexts,
+    loadConfigurations,
+    getDistinctActiveTokenConfigs,
+    getPreferredTokenConfig
+  } = useTokenManagement();
+  
+  // Chapter selection (using custom hook)
+  const {
+    excludedChapterIds,
+    setExcludedChapterIds,
+    isChapterIncluded,
+    toggleChapterExclusion,
+    selectAllChapters,
+    deselectAllChapters,
+    selectedChapterCount
+  } = useChapterSelection(chapters);
 
-  // Kiem tra chuong co duoc chon de dich khong
-  const isChapterIncluded = (chapterId: string) => !excludedChapterIds.has(chapterId);
+  // Reading settings
+  const [fontSize, setFontSize] = useState<number>(18);
+  const [lineHeight, setLineHeight] = useState<number>(1.8);
+  const [retranslateExisting, setRetranslateExisting] = useState(false);
 
-  // Toggle trang thai loai tru cua mot chuong
-  const toggleChapterExclusion = (chapterId: string) => {
-    setExcludedChapterIds(prev => {
-      const next = new Set(prev);
-      if (next.has(chapterId)) {
-        next.delete(chapterId);
-      } else {
-        next.add(chapterId);
-      }
-      return next;
-    });
-  };
+  // Proxy settings hook
+  const { useProxy } = useProxySettings();
 
-  // Chon tat ca cac chuong de dich
-  const selectAllChapters = () => {
-    setExcludedChapterIds(new Set());
-  };
+  // File management hook
+  const fileManagement = useStoryFileManagement({
+    sourceLang,
+    targetLang,
+    model,
+    setFilePath,
+    setChapters,
+    setExcludedChapterIds,
+    setSelectedChapterId,
+    setTranslatedChapters,
+    setViewMode,
+    setStatus
+  });
 
-  // Bo chon tat ca cac chuong
-  const deselectAllChapters = () => {
-    setExcludedChapterIds(new Set(chapters.map(c => c.id)));
-  };
+  // Batch translation hook (provides processingChapters state)
+  // Batch translation hook
+  const {
+    processingChapters,
+    setProcessingChapters,
+    batchProgress: batchTranslationProgress,
+    isTranslating: isBatchTranslating,
+    handleTranslateAll: handleBatchTranslate,
+    handleStopTranslation: handleStopBatchTranslation
+  } = useStoryBatchTranslation({
+    chapters,
+    sourceLang,
+    targetLang,
+    model,
+    translateMode,
+    retranslateExisting,
+    useProxy,
+    isChapterIncluded,
+    translatedChapters,
+    tokenConfigs,
+    getDistinctActiveTokenConfigs,
+    getPreferredTokenConfig,
+    setStatus,
+    setTranslatedChapters,
+    setTranslatedTitles,
+    setChapterModels,
+    setChapterMethods,
+    setTokenContexts
+  });
 
-  // Dem so chuong duoc chon
-  const selectedChapterCount = chapters.length - excludedChapterIds.size;
+  // Single translation hook (using processingChapters from batch hook)
+  const translation = useStoryTranslation({
+    chapters,
+    sourceLang,
+    targetLang,
+    model,
+    translateMode,
+    retranslateExisting,
+    useProxy,
+    isChapterIncluded,
+    getPreferredTokenConfig,
+    loadConfigurations,
+    setStatus,
+    setProcessingChapters, // Share state with batch translation
+    setTranslatedChapters,
+    setTranslatedTitles,
+    setChapterModels,
+    setChapterMethods,
+    setTokenContexts,
+    setViewMode,
+    translatedChapters
+  });
 
-  const handleBrowse = async () => {
-    const result = await window.electronAPI.invoke('dialog:openFile', {
-      filters: [{ name: 'Text/Epub', extensions: ['txt', 'epub'] }]
-    }) as { canceled: boolean; filePaths: string[] };
+  // Project state persistence
+  const { projectId } = useStoryTranslatorPersistence(
+    {
+      filePath,
+      sourceLang,
+      targetLang,
+      model,
+      translateMode,
+      chapters,
+      translatedChapters,
+      chapterModels,
+      chapterMethods,
+      translatedTitles,
+      tokenConfigId,
+      tokenContexts,
+      viewMode,
+      excludedChapterIds,
+      selectedChapterId,
+      summaries,
+      summaryTitles
+    },
+    {
+      setFilePath,
+      setSourceLang,
+      setTargetLang,
+      setModel,
+      setTranslateMode,
+      setTranslatedChapters,
+      setChapterModels,
+      setChapterMethods,
+      setTranslatedTitles,
+      setTokenConfigId,
+      setTokenContexts,
+      setViewMode,
+      setExcludedChapterIds,
+      setSelectedChapterId,
+      setSummaries,
+      setSummaryTitles,
+      setChapters
+    },
+    fileManagement.parseFile
+  );
 
-    if (!result.canceled && result.filePaths.length > 0) {
-      const path = result.filePaths[0];
-      setFilePath(path);
-      
-      // Parse file truyen
-      setStatus('running');
-      try {
-        const parseResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PARSE, path) as ParseStoryResult;
-        if (parseResult.success && parseResult.chapters) {
-          setChapters(parseResult.chapters);
-          // Mac dinh chon tat ca cac chuong
-          setExcludedChapterIds(new Set());
-          if (parseResult.chapters.length > 0) {
-             setSelectedChapterId(parseResult.chapters[0].id);
-             setTranslatedContent('');
-             setViewMode('original');
-          }
-        } else {
-          console.error('[StoryTranslator] Loi parse file:', parseResult.error);
-        }
-      } catch (error) {
-         console.error('[StoryTranslator] Loi invoke story:parse:', error);
-      } finally {
-        setStatus('idle');
+  // Export ebook hook
+  const { exportStatus, handleExportEbook } = useStoryExport({
+    translatedChapters,
+    translatedTitles,
+    chapters,
+    sourceLang,
+    targetLang,
+    projectId
+  });
+
+  // Summary generation hook
+  const { 
+    isGenerating: isGeneratingSummary, 
+    handleGenerateSummary, 
+    handleGenerateAllSummaries, 
+    stopGeneration: stopSummaryGeneration, 
+    batchSummaryProgress 
+  } = useStorySummaryGeneration({
+    chapters,
+    translatedChapters,
+    translatedTitles,
+    sourceLang,
+    targetLang,
+    model,
+    translateMode,
+    summaries,
+    summaryTitles,
+    chapterModels,
+    chapterMethods,
+    tokenContexts,
+    setSummaries,
+    setSummaryTitles,
+    setChapterModels,
+    setChapterMethods,
+    setTokenContexts,
+    setStatus,
+    setViewMode,
+    useProxy,
+    loadConfigurations,
+    getPreferredTokenConfig,
+    setProcessingChapters,
+    isChapterIncluded,
+    tokenConfigs,
+    getDistinctActiveTokenConfigs
+  });
+  
+  // Debug logging
+  console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
+  console.log('[StoryTranslator] Render - status:', status);
+  console.log('[StoryTranslator] Render - chapters.length:', chapters.length);
+  console.log('[StoryTranslator] Render - isBatchTranslating:', isBatchTranslating);
+  console.log('[StoryTranslator] Render - batchTranslationProgress:', batchTranslationProgress);
+
+  useEffect(() => {
+    if (translateMode === 'token' || translateMode === 'both') {
+      if (!tokenConfigId) {
+        loadConfigurations();
       }
     }
-  };
+  }, [translateMode, tokenConfigId]);
+
+  // Listen for progress/retry events
+  useEffect(() => {
+    // Note: onMessage returns a cleanup function in implementation, but type def says void.
+    // We cast to any to avoid TS error if types are not updated.
+    const removeListener = (window.electronAPI as any).onMessage(STORY_IPC_CHANNELS.TRANSLATION_PROGRESS, (data: any) => {
+      const { chapterId, attempt, maxRetries } = data;
+      setProcessingChapters(prev => {
+        const info = prev.get(chapterId);
+        if (info) {
+          const next = new Map(prev);
+          next.set(chapterId, { ...info, retryCount: attempt, maxRetries });
+          return next;
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      if (typeof removeListener === 'function') {
+        removeListener();
+      }
+    };
+  }, [setProcessingChapters]);
 
   const handleTranslate = async () => {
-    if (!selectedChapterId) return;
-    
-    // Kiem tra chuong hien tai co bi loai tru khong
-    if (!isChapterIncluded(selectedChapterId)) {
-      alert('Chuong nay da bi loai tru khoi danh sach dich. Vui long bo chon "Loai tru" hoac chon chuong khac.');
-      return;
-    }
-    
-    const chapter = chapters.find(c => c.id === selectedChapterId);
-    if (!chapter) return;
-
-    setStatus('running');
-    setTranslatedContent('');
-    
-    try {
-      console.log('[StoryTranslator] Dang chuan bi prompt...');
-      // 1. Prepare Prompt
-      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-        chapterContent: chapter.content,
-        sourceLang,
-        targetLang
-      }) as PreparePromptResult;
-      
-      if (!prepareResult.success || !prepareResult.prompt) {
-        throw new Error(prepareResult.error || 'Loi chuan bi prompt');
-      }
-
-      console.log('[StoryTranslator] Da chuan bi prompt, dang gui den Gemini...');
-      
-      // 2. Send to Gemini for Translation
-      const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, prepareResult.prompt) as { success: boolean; data?: string; error?: string };
-
-      if (translateResult.success && translateResult.data) {
-        setTranslatedContent(translateResult.data);
-        setViewMode('translated');
-        console.log('[StoryTranslator] Dich thanh cong!');
-      } else {
-        throw new Error(translateResult.error || 'Dich that bai');
-      }
-
-    } catch (error) {
-      console.error('[StoryTranslator] Loi trong qua trinh dich:', error);
-      alert(`Loi dich thuat: ${error}`);
-    } finally {
-      setStatus('idle');
-    }
+    await translation.handleTranslate(selectedChapterId);
   };
 
   const handleSavePrompt = async () => {
-    if (!selectedChapterId) return;
-    const chapter = chapters.find(c => c.id === selectedChapterId);
-    if (!chapter) return;
+    await fileManagement.handleSavePrompt(selectedChapterId, chapters);
+  };
 
-    try {
-       const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-        chapterContent: chapter.content,
-        sourceLang,
-        targetLang
-      }) as PreparePromptResult;
+  const handleBrowse = async () => {
+    await fileManagement.handleBrowse();
+  };
 
-      if (result.success && result.prompt) {
-         const promptString = JSON.stringify(result.prompt);
-         await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
-      }
-    } catch (e) {
-      console.error('[StoryTranslator] Loi luu prompt:', e);
-    }
-  }
-
-
-  const LANG_OPTIONS = [
-    { value: 'auto', label: 'Tự động phát hiện' },
-    { value: 'en', label: 'Tiếng Anh (English)' },
-    { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
-    { value: 'zh', label: 'Tiếng Trung (Chinese)' },
-    { value: 'ja', label: 'Tiếng Nhật (Japanese)' },
-    { value: 'ko', label: 'Tiếng Hàn (Korean)' },
-  ];
+  // const LANG_OPTIONS = [
+  //   { value: 'auto', label: 'Tự động phát hiện' },
+  //   { value: 'en', label: 'Tiếng Anh (English)' },
+  //   { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
+  //   { value: 'zh', label: 'Tiếng Trung (Chinese)' },
+  //   { value: 'ja', label: 'Tiếng Nhật (Japanese)' },
+  //   { value: 'ko', label: 'Tiếng Hàn (Korean)' },
+  // ];
 
   return (
     <div className="flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full">
-      <h1 className="text-2xl font-bold text-primary">Dịch Truyện AI</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-primary">
+          Dịch Truyện AI
+        </h1>
+        {chapters.length > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm px-3 py-1 bg-primary/10 text-primary rounded-full">
+              Đã dịch: {translatedChapters.size}/{chapters.length} chương
+            </span>
+            {translatedChapters.size > 0 && (
+              <Button 
+                onClick={handleExportEbook}
+                variant="primary"
+                disabled={exportStatus === 'exporting'}
+                className="h-8 px-4 text-sm"
+              >
+                <Download size={16} />
+                {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
       
       {/* Configuration Section */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-card border border-border rounded-xl">
-        <div className="md:col-span-4 flex flex-col gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-card border border-border rounded-xl">
+        <div className="md:col-span-3 flex flex-col gap-1">
            <label className="text-sm font-medium text-text-secondary">File Truyện</label>
            <div className="flex gap-2">
              <Input 
@@ -174,13 +319,13 @@ export function StoryTranslator() {
                onChange={(e) => setFilePath(e.target.value)}
                containerClassName="flex-1"
              />
-             <Button onClick={handleBrowse} variant="secondary" className="shrink-0">
+             <Button onClick={handleBrowse} variant="secondary" className="shrink-0 h-9 px-3">
                <FileText size={16} />
              </Button>
            </div>
         </div>
 
-        <div className="md:col-span-3">
+        {/* <div className="md:col-span-2">
           <Select
             label="Ngôn ngữ gốc"
             value={sourceLang}
@@ -189,25 +334,118 @@ export function StoryTranslator() {
           />
         </div>
 
-        <div className="md:col-span-3">
+        <div className="md:col-span-2">
            <Select
             label="Ngôn ngữ đích"
             value={targetLang}
             onChange={(e) => setTargetLang(e.target.value)}
             options={LANG_OPTIONS}
           />
+        </div> */}
+
+        <div className="md:col-span-2">
+          <Select
+            label="Model AI"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            options={GEMINI_MODEL_LIST.map(m => ({
+              value: m.id,
+              label: m.label
+            }))}
+          />
+        </div>
+
+        <div className="md:col-span-1">
+          <Select
+            label="Chế độ dịch"
+            value={translateMode}
+            onChange={(e) => setTranslateMode(e.target.value as 'api' | 'token' | 'both')}
+            options={[
+              { value: 'api', label: 'API' },
+              { value: 'token', label: 'Token' },
+              { value: 'both', label: 'Kết hợp (API + Token)' }
+            ]}
+          />
         </div>
 
         <div className="md:col-span-2 flex items-end gap-2">
           <Button 
             onClick={handleTranslate} 
-            variant="primary" 
-            disabled={!filePath || status === 'running'}
-            className="w-full"
+            variant="secondary" 
+            disabled={!filePath || status === 'running' || !selectedChapterId}
+            className="flex-1 h-9 px-3"
+            title="Dịch chương đang chọn"
           >
-            <BookOpen size={18} />
-            {status === 'running' ? 'Đang dịch...' : 'Dịch Ngay'}
+            <BookOpen size={16} />
+            Dịch 1
           </Button>
+          <Button 
+            onClick={() => handleGenerateSummary(selectedChapterId)} 
+            variant="secondary" 
+            disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
+            className="flex-1 h-9 px-3"
+            title="Tóm tắt chương đang chọn"
+          >
+            <FileText size={16} />
+            {isGeneratingSummary ? 'Đang tóm tắt...' : 'Tóm tắt 1'}
+          </Button>
+          {isGeneratingSummary && batchSummaryProgress ? (
+            <Button 
+              onClick={stopSummaryGeneration}
+              variant="secondary"
+              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng tóm tắt batch hiện tại"
+            >
+              <StopCircle size={16} />
+              Dừng ({batchSummaryProgress?.current}/{batchSummaryProgress?.total})
+            </Button>
+          ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
+            <Button 
+              onClick={handleStopBatchTranslation}
+              variant="secondary"
+              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng dịch batch hiện tại"
+            >
+              <StopCircle size={16} />
+              Dừng ({batchTranslationProgress?.current}/{batchTranslationProgress?.total})
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="primary"
+                onClick={isBatchTranslating ? handleStopBatchTranslation : handleBatchTranslate}
+                className="flex items-center gap-2"
+                disabled={isGeneratingSummary || (status !== 'idle' && !isBatchTranslating)}
+              >
+                {isBatchTranslating ? <StopCircle size={16} /> : <FileText size={16} />}
+                {isBatchTranslating ? 'Dừng dịch' : 'Dịch'}
+              </Button>
+
+              <Button
+                  variant="secondary"
+                  onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
+                  className="flex items-center gap-2 h-9 px-6"
+                  disabled={isBatchTranslating || (status !== 'idle' && !isGeneratingSummary)}
+                  title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
+              >
+                  {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
+                  {isGeneratingSummary ? 'Dừng tóm tắt' : 'Tóm tắt'}
+              </Button>
+            </>
+          )}
+        </div>
+
+
+        <div className="md:col-span-12 flex items-center gap-4 text-sm">
+          <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+            <input
+              type="checkbox"
+              checked={retranslateExisting}
+              onChange={(e) => setRetranslateExisting(e.target.checked)}
+              className="w-4 h-4 rounded border-border cursor-pointer"
+            />
+            <span>Dịch lại các chương đã dịch</span>
+          </label>
         </div>
       </div>
 
@@ -244,11 +482,20 @@ export function StoryTranslator() {
           </div>
           
           {/* Chapter list voi checkboxes */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {chapters.map((chapter) => (
+          <div className="flex-1 flex flex-col-reverse overflow-hidden">
+            <div className="flex-1 overflow-y-auto overflow-x-auto p-2 space-y-1">
+            {chapters.map((chapter) => {
+              const isProcessing = processingChapters.has(chapter.id);
+              const processingInfo = processingChapters.get(chapter.id);
+              const elapsedTime = isProcessing && processingInfo 
+                ? Math.floor((Date.now() - processingInfo.startTime) / 1000)
+                : 0;
+              const hasTranslatedTitle = translatedTitles.has(chapter.id) || translatedChapters.has(chapter.id);
+              
+              return (
               <div
                 key={chapter.id}
-                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors whitespace-nowrap ${
                   selectedChapterId === chapter.id
                     ? 'bg-primary text-text-invert'
                     : 'text-text-secondary hover:bg-surface hover:text-text-primary'
@@ -258,7 +505,7 @@ export function StoryTranslator() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleChapterExclusion(chapter.id);
+                    toggleChapterExclusion(chapter.id, e.shiftKey);
                   }}
                   className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
                     isChapterIncluded(chapter.id)
@@ -281,17 +528,81 @@ export function StoryTranslator() {
                 <button
                   onClick={() => {
                     setSelectedChapterId(chapter.id);
-                    setTranslatedContent('');
-                    setViewMode('original');
+                    // Tự động chuyển sang view translated nếu đã có bản dịch
+                    if (translatedChapters.has(chapter.id)) {
+                      setViewMode('translated');
+                    } else {
+                      setViewMode('original');
+                    }
                   }}
-                  className={`flex-1 text-left truncate ${
-                    !isChapterIncluded(chapter.id) ? 'opacity-50 line-through' : ''
-                  }`}
+                  className="min-w-0 flex-1 text-left flex items-center gap-2"
                 >
-                  {chapter.title}
+                  <span className={`truncate ${
+                    !isChapterIncluded(chapter.id)
+                      ? selectedChapterId === chapter.id
+                        ? 'text-white/60 italic'
+                        : 'text-text-secondary/40 italic'
+                      : hasTranslatedTitle
+                        ? 'text-emerald-500 font-medium'
+                        : selectedChapterId === chapter.id
+                          ? 'text-white'
+                          : 'text-text-secondary'
+                  }`}>
+                    {translatedTitles.get(chapter.id)
+                      || (translatedChapters.has(chapter.id)
+                        ? extractTranslatedTitle(translatedChapters.get(chapter.id) || '', chapter.id)
+                        : chapter.title)}
+                  </span>
+                  
+                  {/* Status Indicators */}
+                  {(translatedChapters.has(chapter.id) || summaries.has(chapter.id)) && (
+                    <div className="flex gap-1 shrink-0 ml-auto">
+                      {translatedChapters.has(chapter.id) && (
+                        <span 
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-500 border border-green-500/30"
+                          title="Đã dịch"
+                        >
+                          D
+                        </span>
+                      )}
+                      {summaries.has(chapter.id) && (
+                        <span 
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-500 border border-teal-500/30"
+                          title="Đã tóm tắt"
+                        >
+                          T
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </button>
+
+                {/* Processing Indicator - outside button to prevent truncation */}
+                {isProcessing && processingInfo && (
+                  <span className={`flex items-center gap-1 shrink-0 text-xs ${
+                    selectedChapterId === chapter.id ? 'text-yellow-300' : 'text-yellow-500'
+                  }`}>
+                    <span className={`px-1.5 py-0.5 rounded border ${
+                      selectedChapterId === chapter.id
+                        ? 'border-yellow-300/60 bg-yellow-300/10'
+                        : 'border-yellow-500/60 bg-yellow-500/10'
+                    }`}>
+                      {processingInfo.channel === 'api' ? 'API' : 'TOKEN'}
+                    </span>
+                    <Loader size={12} className="animate-spin" />
+                    <span className="font-mono">W{processingInfo.workerId}</span>
+                    <Clock size={10} />
+                    <span className="font-mono">{elapsedTime}s</span>
+                    {processingInfo.retryCount && processingInfo.retryCount > 0 && (
+                        <span className="text-[10px] ml-1 opacity-80 whitespace-nowrap">
+                            ({processingInfo.retryCount}/{processingInfo.maxRetries || 3})
+                        </span>
+                    )}
+                  </span>
+                )}
               </div>
-            ))}
+            )})}
+            </div>
           </div>
         </div>
 
@@ -310,13 +621,60 @@ export function StoryTranslator() {
                   </button>
                   <button 
                     onClick={() => setViewMode('translated')}
-                    disabled={!translatedContent}
+                    disabled={!selectedChapterId || !translatedChapters.has(selectedChapterId)}
                     className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'translated' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
                   >
                     Bản dịch
                   </button>
+                  <button 
+                    onClick={() => setViewMode('summary')}
+                    disabled={!selectedChapterId || !summaries.has(selectedChapterId)}
+                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
+                  >
+                    Tóm tắt
+                  </button>
                 </div>
               )}
+              
+              {/* Reading Controls */}
+              {selectedChapterId && (
+                <div className="flex items-center gap-3 ml-2 pl-3 border-l border-border">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-secondary">Cỡ chữ:</span>
+                    <button 
+                      onClick={() => setFontSize(prev => Math.max(12, prev - 2))}
+                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
+                    >
+                      -
+                    </button>
+                    <span className="text-xs text-text-secondary min-w-8 text-center">{fontSize}px</span>
+                    <button 
+                      onClick={() => setFontSize(prev => Math.min(32, prev + 2))}
+                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
+                    >
+                      +
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-secondary">Giãn dòng:</span>
+                    <button 
+                      onClick={() => setLineHeight(prev => Math.max(1.2, prev - 0.2))}
+                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
+                    >
+                      -
+                    </button>
+                    <span className="text-xs text-text-secondary min-w-8 text-center">{lineHeight.toFixed(1)}</span>
+                    <button 
+                      onClick={() => setLineHeight(prev => Math.min(3, prev + 0.2))}
+                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
             {selectedChapterId && (
               <div className="flex gap-2 items-center">
@@ -335,19 +693,56 @@ export function StoryTranslator() {
               </div>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto p-6 text-text-primary leading-relaxed whitespace-pre-wrap font-serif text-lg">
-            {selectedChapterId ? (
-              viewMode === 'original' ? (
-                chapters.find(c => c.id === selectedChapterId)?.content
+          <div 
+            className="flex-1 overflow-y-auto px-8 py-6 text-text-primary"
+            style={{
+              fontSize: `${fontSize}px`,
+              lineHeight: lineHeight,
+              fontFamily: "'Noto Sans', 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif",
+              letterSpacing: '0.01em',
+              wordSpacing: '0.05em'
+            }}
+          >
+            <div className="max-w-4xl mx-auto">
+              {selectedChapterId ? (
+                viewMode === 'original' ? (
+                  <div className="whitespace-pre-wrap wrap-break-word">
+                    {chapters.find(c => c.id === selectedChapterId)?.content}
+                  </div>
+                ) : viewMode === 'translated' ? (
+                  translatedChapters.get(selectedChapterId) ? (
+                    <div className="whitespace-pre-wrap wrap-break-word">
+                      {translatedChapters.get(selectedChapterId) || ''}
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
+                      <BookOpen size={48} className="mb-4" />
+                      <p className="text-base">Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.</p>
+                    </div>
+                  )
+                ) : (
+                  // Summary View
+                  summaries.get(selectedChapterId) ? (
+                    <div className="whitespace-pre-wrap wrap-break-word">
+                       {summaryTitles.get(selectedChapterId) && (
+                          <h3 className="text-lg font-bold mb-4 text-primary">{summaryTitles.get(selectedChapterId) || ''}</h3>
+                       )}
+                       {summaries.get(selectedChapterId) || ''}
+                    </div>
+                  ) : (
+                     <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
+                       <FileText size={48} className="mb-4" />
+                       <p className="text-base">Chưa có tóm tắt cho chương này.</p>
+                    </div>
+                  )
+                )
               ) : (
-                translatedContent || <span className="text-text-secondary italic">Chưa có bản dịch. Nhấn "Dịch Ngay" để bắt đầu.</span>
-              )
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
-                <BookOpen size={48} className="mb-4" />
-                <p>Chọn một chương để xem nội dung</p>
-              </div>
-            )}
+                <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
+                  <BookOpen size={48} className="mb-4" />
+                  <p className="text-base">Chọn một chương để xem nội dung</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

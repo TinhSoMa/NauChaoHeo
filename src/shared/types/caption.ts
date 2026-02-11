@@ -261,3 +261,94 @@ export const VIETNAMESE_VOICES: VoiceInfo[] = [
 export const DEFAULT_VOICE = 'vi-VN-HoaiMyNeural';
 export const DEFAULT_RATE = '+0%';
 export const DEFAULT_VOLUME = '+0%';
+
+// ============================================
+// CAPTION VIDEO (Subtitle Strip)
+// ============================================
+
+/**
+ * Cấu hình style cho file ASS
+ */
+export interface ASSStyleConfig {
+  fontName: string;       // "ZYVNA Fairy", "Be Vietnam Pro"
+  fontSize: number;       // 48
+  fontColor: string;      // "#FFFFFF" (HEX format)
+  shadow: number;         // 0-3 (0 = no shadow)
+  marginV: number;        // Khoảng cách từ đáy video
+  alignment: number;      // 2 = bottom-center, 5 = middle-center
+}
+
+/**
+ * Thông tin metadata của video
+ */
+export interface VideoMetadata {
+  width: number;
+  height: number;
+  duration: number;       // Seconds
+  frameCount: number;
+  fps: number;
+}
+
+/**
+ * Options để convert SRT sang ASS
+ */
+export interface ConvertToAssOptions {
+  srtPath: string;
+  assPath: string;
+  videoResolution?: { width: number; height: number };
+  style: ASSStyleConfig;
+  position?: { x: number; y: number };  // Tọa độ \pos(x,y) cho ASS
+}
+
+/**
+ * Options để render video từ ASS
+ */
+export interface RenderVideoOptions {
+  assPath: string;
+  outputPath: string;
+  width: number;          // Default: 1920
+  height: number;         // Default: 200 (strip mode)
+  useGpu: boolean;        // Sử dụng hardware encoding (QSV/NVENC)
+}
+
+/**
+ * Progress callback khi render video
+ */
+export interface RenderProgress {
+  currentFrame: number;
+  totalFrames: number;
+  fps: number;
+  percent: number;
+  status: 'rendering' | 'completed' | 'error';
+  message: string;
+}
+
+/**
+ * Kết quả render video
+ */
+export interface RenderResult {
+  success: boolean;
+  outputPath?: string;
+  duration?: number;
+  error?: string;
+}
+
+/**
+ * Kết quả extract frame từ video
+ */
+export interface ExtractFrameResult {
+  success: boolean;
+  frameData?: string;     // Base64 encoded PNG
+  width?: number;
+  height?: number;
+  error?: string;
+}
+
+// Thêm vào CAPTION_IPC_CHANNELS
+export const CAPTION_VIDEO_IPC_CHANNELS = {
+  CONVERT_TO_ASS: 'captionVideo:convertToAss',
+  RENDER_VIDEO: 'captionVideo:renderVideo',
+  RENDER_PROGRESS: 'captionVideo:renderProgress',
+  GET_VIDEO_METADATA: 'captionVideo:getVideoMetadata',
+  EXTRACT_FRAME: 'captionVideo:extractFrame',
+} as const;

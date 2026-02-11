@@ -4,15 +4,18 @@
  */
 
 import { getApiManager } from './apiManager';
-import { GeminiResponse, KeyInfo } from '../../../shared/types/gemini';
-import {
+import { AppSettingsService } from '../appSettings';
+import { 
+  GeminiResponse, 
+  KeyInfo,
   GEMINI_API_BASE,
   GEMINI_MODELS,
+  getGeminiModelInfo,
   type GeminiModel,
-} from '../../../shared/constants/api';
+} from '../../../shared/types/gemini';
 
 // Re-export để các module khác có thể import từ đây
-export { GEMINI_MODELS };
+export { GEMINI_MODELS, getGeminiModelInfo };
 export type { GeminiModel };
 
 /**
@@ -21,7 +24,8 @@ export type { GeminiModel };
 export async function callGeminiApi(
   prompt: string | object,
   apiKey: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0,
+  useProxy: boolean = true // Mặc định sử dụng proxy
 ): Promise<GeminiResponse> {
   try {
     const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
@@ -37,49 +41,86 @@ export async function callGeminiApi(
       ],
     };
 
-    console.log(`[GeminiService] Gọi Gemini API với model: ${model}`);
+    console.log(`[GeminiService] Gọi Gemini API với model: ${model}${useProxy ? ' (via proxy)' : ''}`);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    // Sử dụng proxy client nếu enabled
+    if (useProxy) {
+      const { makeRequestWithProxy } = await import('../apiClient');
+      
+      const result = await makeRequestWithProxy(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: payload,
+        timeout: 30000, // 30s cho translation
+        useProxy: true,
+      });
 
-    // Xử lý lỗi HTTP
-    if (response.status === 429) {
-      return { success: false, error: 'RATE_LIMIT' };
-    }
-
-    if (response.status === 404) {
-      return { success: false, error: `Model ${model} không tồn tại` };
-    }
-
-    if (!response.ok) {
-      try {
-        const errorDetail = await response.json();
-        const errorMsg = errorDetail?.error?.message || 'Lỗi không xác định';
-        console.error(`[GeminiService] API Error ${response.status}: ${errorMsg}`);
-        return { success: false, error: `API Error: ${errorMsg}` };
-      } catch {
-        console.error(`[GeminiService] API Error ${response.status}: ${response.statusText}`);
-        return { success: false, error: `HTTP ${response.status}` };
+      if (!result.success) {
+        if (result.error?.includes('429')) {
+          return { success: false, error: 'RATE_LIMIT' };
+        }
+        return { success: false, error: result.error };
       }
-    }
 
-    const result = await response.json();
-
-    // Trích xuất text từ response
-    if (result.candidates && result.candidates.length > 0) {
-      const candidate = result.candidates[0];
-      if (candidate.content && candidate.content.parts) {
-        const text = candidate.content.parts[0]?.text || '';
-        return { success: true, data: text.trim() };
+      // Parse response
+      const responseData = result.data;
+      
+      // Trích xuất text từ response
+      if (responseData.candidates && responseData.candidates.length > 0) {
+        const candidate = responseData.candidates[0];
+        if (candidate.content && candidate.content.parts) {
+          const text = candidate.content.parts[0]?.text || '';
+          return { success: true, data: text.trim() };
+        }
       }
-    }
 
-    return { success: false, error: 'Response không có nội dung' };
+      return { success: false, error: 'Response không có nội dung' };
+    } else {
+      // Fallback về fetch trực tiếp (không dùng proxy)
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // Xử lý lỗi HTTP
+      if (response.status === 429) {
+        return { success: false, error: 'RATE_LIMIT' };
+      }
+
+      if (response.status === 404) {
+        return { success: false, error: `Model ${model} không tồn tại` };
+      }
+
+      if (!response.ok) {
+        try {
+          const errorDetail = await response.json();
+          const errorMsg = errorDetail?.error?.message || 'Lỗi không xác định';
+          console.error(`[GeminiService] API Error ${response.status}: ${errorMsg}`);
+          return { success: false, error: `API Error: ${errorMsg}` };
+        } catch {
+          console.error(`[GeminiService] API Error ${response.status}: ${response.statusText}`);
+          return { success: false, error: `HTTP ${response.status}` };
+        }
+      }
+
+      const result = await response.json();
+
+      // Trích xuất text từ response
+      if (result.candidates && result.candidates.length > 0) {
+        const candidate = result.candidates[0];
+        if (candidate.content && candidate.content.parts) {
+          const text = candidate.content.parts[0]?.text || '';
+          return { success: true, data: text.trim() };
+        }
+      }
+
+      return { success: false, error: 'Response không có nội dung' };
+    }
   } catch (error) {
     console.error('[GeminiService] Lỗi gọi API:', error);
     return { success: false, error: String(error) };
@@ -92,7 +133,7 @@ export async function callGeminiApi(
  */
 export async function callGeminiWithRotation(
   prompt: string | object,
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5,
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0,
   maxRetries: number = 10
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
   const manager = getApiManager();
@@ -101,6 +142,18 @@ export async function callGeminiWithRotation(
   if (stats.totalProjects === 0) {
     return { success: false, error: 'Không có API key nào trong hệ thống' };
   }
+
+  // Load proxy setting from AppSettings
+  const useProxySetting = false; // Modified: Force disable proxy for API calls
+  /*
+  try {
+    const settings = AppSettingsService.getAll();
+    useProxySetting = settings.useProxy;
+    console.log(`[GeminiService] Proxy setting: ${useProxySetting ? 'enabled' : 'disabled'}`);
+  } catch (error) {
+    console.warn('[GeminiService] Could not load proxy setting, using default (enabled)');
+  }
+  */
 
   let lastError = '';
   let rateLimitedCount = 0;
@@ -126,7 +179,7 @@ export async function callGeminiWithRotation(
     triedKeys.add(apiKey);
     console.log(`[GeminiService] Thử API key #${triedKeys.size} (${keyInfo.name})`);
 
-    const response = await callGeminiApi(prompt, apiKey, model);
+    const response = await callGeminiApi(prompt, apiKey, model, useProxySetting);
 
     if (response.success) {
       manager.recordSuccess(apiKey);
@@ -172,7 +225,7 @@ export async function callGeminiWithRotation(
 export async function translateText(
   text: string,
   targetLanguage: string = 'Vietnamese',
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
 ): Promise<GeminiResponse> {
   const prompt = {
     task: 'translation',
@@ -197,33 +250,15 @@ export async function translateText(
 export async function chat(
   message: string,
   apiKey: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_2_5
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
 ): Promise<GeminiResponse> {
   return callGeminiApi(message, apiKey, model);
 }
 
 /**
- * Lấy thông tin model
+ * Lấy thông tin model - Alias cho getGeminiModelInfo
  */
 export function getModelInfo(model: GeminiModel): { name: string; description: string } {
-  const modelInfo: Record<GeminiModel, { name: string; description: string }> = {
-    'gemini-2.5-flash': {
-      name: 'Gemini 2.5 Flash',
-      description: 'Model mới nhất, nhanh và thông minh',
-    },
-    'gemini-2.0-flash': {
-      name: 'Gemini 2.0 Flash',
-      description: 'Model nhanh, hiệu suất cao',
-    },
-    'gemini-1.5-flash': {
-      name: 'Gemini 1.5 Flash',
-      description: 'Model ổn định, tiết kiệm quota',
-    },
-    'gemini-1.5-pro': {
-      name: 'Gemini 1.5 Pro',
-      description: 'Model mạnh nhất, phù hợp task phức tạp',
-    },
-  };
-
-  return modelInfo[model] || { name: model, description: 'Không có mô tả' };
+  const info = getGeminiModelInfo(model);
+  return { name: info.name, description: info.description };
 }

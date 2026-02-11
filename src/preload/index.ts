@@ -1,6 +1,11 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { createGeminiAPI, GeminiAPI } from './geminiApi'
-import { createCaptionAPI, createTTSAPI, CaptionAPI, TTSAPI } from './captionApi'
+import { createCaptionAPI, createTTSAPI, createCaptionVideoAPI, CaptionAPI, TTSAPI, CaptionVideoAPI } from './captionApi'
+import { projectApi, ProjectAPI } from './projectApi'
+import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
+import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
+import { proxyApi, ProxyAPI } from './proxyApi'
+import { promptApi, PromptAPI } from './promptApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -10,7 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send(channel, data)
   },
   onMessage: (channel: string, callback: (...args: unknown[]) => void) => {
-    ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+    const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(...args)
+    ipcRenderer.on(channel, subscription)
+    return () => {
+      ipcRenderer.removeListener(channel, subscription)
+    }
   },
   invoke: (channel: string, data?: unknown) => {
     return ipcRenderer.invoke(channel, data)
@@ -24,6 +33,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // TTS API (text-to-speech)
   tts: createTTSAPI(),
+
+  // Project API (quan ly du an dich)
+  project: projectApi,
+
+  // App Settings API (cai dat ung dung)
+  appSettings: appSettingsApi,
+
+  // Gemini Chat API (cau hinh Gemini web)
+  geminiChat: geminiChatApi,
+
+  // Proxy API (quan ly proxy rotation)
+  proxy: proxyApi,
+
+  // Prompt API (quan ly prompts)
+  prompt: promptApi,
+
+  // Caption Video API (subtitle strip)
+  captionVideo: createCaptionVideoAPI(),
 })
 
 // Declare types for the exposed API
@@ -36,7 +63,12 @@ declare global {
       gemini: GeminiAPI
       caption: CaptionAPI
       tts: TTSAPI
+      project: ProjectAPI
+      appSettings: AppSettingsAPI
+      geminiChat: GeminiChatAPI
+      proxy: ProxyAPI
+      prompt: PromptAPI
+      captionVideo: CaptionVideoAPI
     }
   }
 }
-
