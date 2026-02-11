@@ -11,7 +11,7 @@ export class StoryService {
    * Translates a chapter using prepared prompt and Gemini API
    * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'IMPIT', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, metadata?: any }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
+  static async translateChapter(options: { prompt: any, method?: 'API' | 'IMPIT', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, metadata?: any, onRetry?: (attempt: number, maxRetries: number) => void }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
@@ -61,7 +61,7 @@ export class StoryService {
            const webConfigId = options.webConfigId?.trim() || '';
            
            console.log('[StoryService] Using IMPIT for translation...');
-           const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
+           const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata, options.onRetry);
            
            if (result.success && result.data) {
              console.log('[StoryService] Translation completed.');

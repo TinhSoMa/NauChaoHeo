@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Chapter } from '@shared/types';
+import { Chapter, STORY_IPC_CHANNELS } from '@shared/types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -14,6 +14,7 @@ import { useStoryFileManagement } from './hooks/useStoryFileManagement';
 import { useStoryTranslation } from './hooks/useStoryTranslation';
 import { useStoryBatchTranslation } from './hooks/useStoryBatchTranslation';
 import { useStoryExport } from './hooks/useStoryExport';
+import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 
 export function StoryTranslator() {
   const [filePath, setFilePath] = useState('');
@@ -182,6 +183,33 @@ export function StoryTranslator() {
     projectId
   });
 
+  // Summary generation hook
+  const { isGenerating: isGeneratingSummary, handleGenerateSummary } = useStorySummaryGeneration({
+    chapters,
+    translatedChapters,
+    translatedTitles,
+    sourceLang,
+    targetLang,
+    model,
+    translateMode,
+    summaries,
+    summaryTitles,
+    chapterModels,
+    chapterMethods,
+    tokenContexts,
+    setSummaries,
+    setSummaryTitles,
+    setChapterModels,
+    setChapterMethods,
+    setTokenContexts,
+    setStatus,
+    setViewMode,
+    useProxy,
+    loadConfigurations,
+    getPreferredTokenConfig,
+    setProcessingChapters
+  });
+
   // Debug logging
   console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
   console.log('[StoryTranslator] Render - status:', status);
@@ -194,6 +222,30 @@ export function StoryTranslator() {
       }
     }
   }, [translateMode, tokenConfigId]);
+
+  // Listen for progress/retry events
+  useEffect(() => {
+    // Note: onMessage returns a cleanup function in implementation, but type def says void.
+    // We cast to any to avoid TS error if types are not updated.
+    const removeListener = (window.electronAPI as any).onMessage(STORY_IPC_CHANNELS.TRANSLATION_PROGRESS, (data: any) => {
+      const { chapterId, attempt, maxRetries } = data;
+      setProcessingChapters(prev => {
+        const info = prev.get(chapterId);
+        if (info) {
+          const next = new Map(prev);
+          next.set(chapterId, { ...info, retryCount: attempt, maxRetries });
+          return next;
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      if (typeof removeListener === 'function') {
+        removeListener();
+      }
+    };
+  }, [setProcessingChapters]);
 
   const handleTranslate = async () => {
     await translation.handleTranslate(selectedChapterId);
@@ -215,14 +267,14 @@ export function StoryTranslator() {
     await fileManagement.handleBrowse();
   };
 
-  const LANG_OPTIONS = [
-    { value: 'auto', label: 'Tự động phát hiện' },
-    { value: 'en', label: 'Tiếng Anh (English)' },
-    { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
-    { value: 'zh', label: 'Tiếng Trung (Chinese)' },
-    { value: 'ja', label: 'Tiếng Nhật (Japanese)' },
-    { value: 'ko', label: 'Tiếng Hàn (Korean)' },
-  ];
+  // const LANG_OPTIONS = [
+  //   { value: 'auto', label: 'Tự động phát hiện' },
+  //   { value: 'en', label: 'Tiếng Anh (English)' },
+  //   { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
+  //   { value: 'zh', label: 'Tiếng Trung (Chinese)' },
+  //   { value: 'ja', label: 'Tiếng Nhật (Japanese)' },
+  //   { value: 'ko', label: 'Tiếng Hàn (Korean)' },
+  // ];
 
   return (
     <div className="flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full">
@@ -267,7 +319,7 @@ export function StoryTranslator() {
            </div>
         </div>
 
-        <div className="md:col-span-2">
+        {/* <div className="md:col-span-2">
           <Select
             label="Ngôn ngữ gốc"
             value={sourceLang}
@@ -283,7 +335,7 @@ export function StoryTranslator() {
             onChange={(e) => setTargetLang(e.target.value)}
             options={LANG_OPTIONS}
           />
-        </div>
+        </div> */}
 
         <div className="md:col-span-2">
           <Select
@@ -320,6 +372,16 @@ export function StoryTranslator() {
           >
             <BookOpen size={16} />
             Dịch 1
+          </Button>
+          <Button 
+            onClick={() => handleGenerateSummary(selectedChapterId)} 
+            variant="secondary" 
+            disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
+            className="flex-1 h-9 px-3"
+            title="Tóm tắt chương đang chọn"
+          >
+            <FileText size={16} />
+            {isGeneratingSummary ? 'Đang tóm tắt...' : 'Tóm tắt 1'}
           </Button>
           {status === 'running' && batchProgress ? (
             <Button 
@@ -462,6 +524,28 @@ export function StoryTranslator() {
                         ? extractTranslatedTitle(translatedChapters.get(chapter.id) || '', chapter.id)
                         : chapter.title)}
                   </span>
+                  
+                  {/* Status Indicators */}
+                  {(translatedChapters.has(chapter.id) || summaries.has(chapter.id)) && (
+                    <div className="flex gap-1 shrink-0 ml-auto">
+                      {translatedChapters.has(chapter.id) && (
+                        <span 
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-500 border border-green-500/30"
+                          title="Đã dịch"
+                        >
+                          D
+                        </span>
+                      )}
+                      {summaries.has(chapter.id) && (
+                        <span 
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-500 border border-teal-500/30"
+                          title="Đã tóm tắt"
+                        >
+                          T
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </button>
 
                 {/* Processing Indicator - outside button to prevent truncation */}
@@ -480,6 +564,11 @@ export function StoryTranslator() {
                     <span className="font-mono">W{processingInfo.workerId}</span>
                     <Clock size={10} />
                     <span className="font-mono">{elapsedTime}s</span>
+                    {processingInfo.retryCount && processingInfo.retryCount > 0 && (
+                        <span className="text-[10px] ml-1 opacity-80 whitespace-nowrap">
+                            ({processingInfo.retryCount}/{processingInfo.maxRetries || 3})
+                        </span>
+                    )}
                   </span>
                 )}
               </div>

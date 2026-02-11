@@ -58,15 +58,16 @@ export function useTokenManagement() {
     return tokenConfigs.find(c => c.id === id) || null;
   }, [tokenConfigs]);
 
-  // Get preferred token config (fallback to first active if current is unavailable)
+  // Get preferred token config (fallback to first active if current is unavailable or inactive)
   const getPreferredTokenConfig = useCallback((): GeminiChatConfigLite | null => {
     const direct = getTokenConfigById(tokenConfigId);
-    if (direct) return direct;
+    if (direct && direct.isActive && !direct.isError) return direct;
 
     const distinctActive = getDistinctActiveTokenConfigs(tokenConfigs);
     if (distinctActive.length === 0) return null;
 
     const fallback = distinctActive[0];
+    // Always update tokenConfigId to a valid one if the current one is invalid
     if (fallback && fallback.id !== tokenConfigId) {
       setTokenConfigId(fallback.id);
     }

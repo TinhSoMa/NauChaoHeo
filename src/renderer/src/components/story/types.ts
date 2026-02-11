@@ -12,3 +12,11 @@ export type TokenContext = {
   responseId: string; 
   choiceId: string;
 };
+
+export interface ProcessingChapterInfo {
+  startTime: number;
+  workerId: number;
+  channel: 'api' | 'token';
+  retryCount?: number;
+  maxRetries?: number;
+}

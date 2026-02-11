@@ -88,6 +88,16 @@ export function registerStoryHandlers(): void {
           console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || 'Unknown'})`);
       }
       
+      options.onRetry = (attempt: number, maxRetries: number) => {
+        if (options.metadata?.chapterId) {
+            _event.sender.send(STORY_IPC_CHANNELS.TRANSLATION_PROGRESS, {
+                chapterId: options.metadata.chapterId,
+                attempt,
+                maxRetries
+            });
+        }
+      };
+      
       return await StoryService.StoryService.translateChapter(options);
     }
   );

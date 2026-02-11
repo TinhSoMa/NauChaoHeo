@@ -91,8 +91,7 @@ export function useStoryTranslatorPersistence(
         title: extractTranslatedTitle(content, chapterId)
       }));
 
-      const serializedSummaries = Array.from(values.summaries.entries());
-      const serializedSummaryTitles = Array.from(values.summaryTitles.entries());
+
 
       return {
         filePath: values.filePath,
@@ -108,9 +107,7 @@ export function useStoryTranslatorPersistence(
         tokenContexts: Array.from(values.tokenContexts.entries()),
         viewMode: values.viewMode as 'original' | 'translated' | 'summary',
         excludedChapterIds: Array.from(values.excludedChapterIds.values()),
-        selectedChapterId: values.selectedChapterId,
-        summaries: serializedSummaries,
-        summaryTitles: serializedSummaryTitles
+        selectedChapterId: values.selectedChapterId
       };
     },
     deserialize: async (saved: any) => {
@@ -133,8 +130,7 @@ export function useStoryTranslatorPersistence(
         setters.setTokenContexts(new Map([[saved.tokenConfigId, saved.tokenContext]]));
       }
       
-      if (saved.summaries) setters.setSummaries(new Map(saved.summaries));
-      if (saved.summaryTitles) setters.setSummaryTitles(new Map(saved.summaryTitles));
+      // Don't load summaries here - we load them from story-summary.json below
 
       let parsedOk = false;
       if (saved.filePath) {
@@ -165,10 +161,34 @@ export function useStoryTranslatorPersistence(
       values.tokenContexts,
       values.viewMode,
       values.excludedChapterIds,
-      values.selectedChapterId,
+      values.selectedChapterId
+    ],
+  });
+
+  // Persistence for story-summary.json (Summaries)
+  useProjectFeatureState<{
+    summaries?: Array<[string, string]>;
+    summaryTitles?: Array<[string, string]>;
+  }>({
+    feature: 'story',
+    fileName: 'story-summary.json',
+    serialize: () => {
+      const serializedSummaries = Array.from(values.summaries.entries());
+      const serializedSummaryTitles = Array.from(values.summaryTitles.entries());
+
+      return {
+        summaries: serializedSummaries,
+        summaryTitles: serializedSummaryTitles
+      };
+    },
+    deserialize: async (saved: any) => {
+      if (saved.summaries) setters.setSummaries(new Map(saved.summaries));
+      if (saved.summaryTitles) setters.setSummaryTitles(new Map(saved.summaryTitles));
+    },
+    deps: [
       values.summaries,
       values.summaryTitles
-    ],
+    ]
   });
 
   return { projectId };

@@ -5259,7 +5259,7 @@ class GeminiChatServiceClass {
   // =======================================================
   // SEND MESSAGE IMPIT
   // =======================================================
-  async sendMessageImpit(message, configId, context, useProxyOverride, metadata) {
+  async sendMessageImpit(message, configId, context, useProxyOverride, metadata, onRetry) {
     let config = null;
     if (configId) {
       config = this.getById(configId);
@@ -5278,6 +5278,7 @@ class GeminiChatServiceClass {
       const MAX_DELAY_MS = 2e4;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
+        if (onRetry) onRetry(attempt, MAX_RETRIES);
         const result = await this._sendMessageImpitInternal(message, config, context, useProxyOverride, metadata);
         if (result.success) {
           this.markConfigSuccess(config.id);
@@ -5444,7 +5445,8 @@ class GeminiChatServiceClass {
           try {
             const regex = new RegExp(metadata.validationRegex, "i");
             if (!regex.test(foundText)) {
-              console.warn(`[GeminiChatService] Validation Failed: Regex /${metadata.validationRegex}/ not found in response (${foundText.length} chars)`);
+              console.warn(`[GeminiChatService] Validation Failed: Regex /${metadata.validationRegex}/ not found in response (${foundText.length} chars). Full Response: 
+"${foundText}"`);
               return {
                 success: false,
                 error: "Cảnh báo: Nội dung trả về không đầy đủ (thiếu marker kết thúc).",
@@ -5512,7 +5514,7 @@ class StoryService {
         if (!promptText) console.warn("[StoryService] promptText is empty!");
         const webConfigId = options.webConfigId?.trim() || "";
         console.log("[StoryService] Using IMPIT for translation...");
-        const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata);
+        const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata, options.onRetry);
         if (result.success && result.data) {
           console.log("[StoryService] Translation completed.");
           const ctx = result.data.context;
@@ -5745,6 +5747,7 @@ const STORY_IPC_CHANNELS = {
   PREPARE_SUMMARY_PROMPT: "story:prepareSummaryPrompt",
   SAVE_PROMPT: "story:savePrompt",
   TRANSLATE_CHAPTER: "story:translateChapter",
+  TRANSLATION_PROGRESS: "story:translation-progress",
   CREATE_EBOOK: "story:createEbook"
 };
 const PROMPT_IPC_CHANNELS = {
@@ -5846,6 +5849,15 @@ function registerStoryHandlers() {
         const { chapterTitle, tokenInfo, chapterId } = options.metadata;
         console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || "Unknown"})`);
       }
+      options.onRetry = (attempt, maxRetries) => {
+        if (options.metadata?.chapterId) {
+          _event.sender.send(STORY_IPC_CHANNELS.TRANSLATION_PROGRESS, {
+            chapterId: options.metadata.chapterId,
+            attempt,
+            maxRetries
+          });
+        }
+      };
       return await StoryService.translateChapter(options);
     }
   );

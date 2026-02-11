@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, Dispatch, SetStateAction } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
-import type { GeminiChatConfigLite } from '../types';
+import type { GeminiChatConfigLite, ProcessingChapterInfo } from '../types';
 
 interface UseStoryBatchTranslationParams {
   chapters: Chapter[];
@@ -62,7 +62,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   // Progress tracking
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [processingChapters, setProcessingChapters] = useState<
-    Map<string, { startTime: number; workerId: number; channel: 'api' | 'token' }>
+    Map<string, ProcessingChapterInfo>
   >(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
   
@@ -103,12 +103,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     isBatchRunningRef.current = false;
   };
 
-  // Helper: Get worker channel based on mode and workerId
-  const getWorkerChannel = (workerId: number): 'api' | 'token' => {
-    if (translateMode === 'api') return 'api';
-    if (translateMode === 'token') return 'token';
-    return workerId === 1 ? 'token' : 'api';
-  };
+
 
   // Helper: Process a single chapter
   const processChapter = async (

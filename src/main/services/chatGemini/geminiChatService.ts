@@ -905,7 +905,8 @@ export class GeminiChatServiceClass {
       configId: string, 
       context?: { conversationId: string; responseId: string; choiceId: string }, 
       useProxyOverride?: boolean,
-      metadata?: any
+      metadata?: any,
+      onRetry?: (attempt: number, maxRetries: number) => void
   ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string; metadata?: any; retryable?: boolean }> {
       
         // 1. Resolve Config
@@ -930,6 +931,7 @@ export class GeminiChatServiceClass {
 
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                 console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
+                if (onRetry) onRetry(attempt, MAX_RETRIES); // Notify callback
                 const result = await this._sendMessageImpitInternal(message, config!, context, useProxyOverride, metadata);
 
                 if (result.success) {
@@ -1147,7 +1149,7 @@ export class GeminiChatServiceClass {
                         try {
                             const regex = new RegExp(metadata.validationRegex, 'i');
                             if (!regex.test(foundText)) {
-                                console.warn(`[GeminiChatService] Validation Failed: Regex /${metadata.validationRegex}/ not found in response (${foundText.length} chars)`);
+                                console.warn(`[GeminiChatService] Validation Failed: Regex /${metadata.validationRegex}/ not found in response (${foundText.length} chars). Full Response: \n"${foundText}"`);
                                 return { 
                                     success: false, 
                                     error: 'Cảnh báo: Nội dung trả về không đầy đủ (thiếu marker kết thúc).', 
