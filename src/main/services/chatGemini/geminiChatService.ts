@@ -115,6 +115,13 @@ export class GeminiChatServiceClass {
             
             // Signal that this task is done
             if (typeof signalTaskDone === 'function') signalTaskDone();
+
+            // CLEANUP: If this task was the last one in the queue, clear the lock from the map
+            // This ensures getTokenStats() doesn't report it as 'busy' forever
+            const currentLock = this.tokenLocks.get(tokenKey);
+            if (currentLock === myTaskPromise) {
+                this.tokenLocks.delete(tokenKey);
+            }
         }
     }
 

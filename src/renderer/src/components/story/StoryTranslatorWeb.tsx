@@ -396,8 +396,9 @@ export function StoryTranslatorWeb() {
       return; 
     }
     
+    
     const chaptersToTranslate = chapters.filter(c => isChapterIncluded(c.id) && !translatedChapters.has(c.id));
-    if (chaptersToTranslate.length === 0) { alert('Đã dịch xong!'); return; }
+    if (chaptersToTranslate.length === 0) { alert('Đã dịch xong các chương được chọn!'); return; }
 
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });

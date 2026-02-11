@@ -4608,6 +4608,10 @@ class GeminiChatServiceClass {
       this.nextAvailableTimeByTokenKey.set(tokenKey, nextTime);
       console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${randomDelay}ms)`);
       if (typeof signalTaskDone === "function") signalTaskDone();
+      const currentLock = this.tokenLocks.get(tokenKey);
+      if (currentLock === myTaskPromise) {
+        this.tokenLocks.delete(tokenKey);
+      }
     }
   }
   buildTokenKey(_cookie, atToken) {

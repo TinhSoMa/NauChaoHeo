@@ -216,7 +216,10 @@ export function StoryTranslator() {
     useProxy,
     loadConfigurations,
     getPreferredTokenConfig,
-    setProcessingChapters
+    setProcessingChapters,
+    isChapterIncluded,
+    tokenConfigs,
+    getDistinctActiveTokenConfigs
   });
   
   // Debug logging
