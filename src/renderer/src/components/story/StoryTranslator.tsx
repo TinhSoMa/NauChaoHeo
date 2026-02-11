@@ -4,7 +4,7 @@ import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { BookOpen, FileText, CheckSquare, Square, StopCircle, Download, Loader, Clock } from 'lucide-react';
+import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, Download } from 'lucide-react';
 import { extractTranslatedTitle } from './utils/chapterUtils';
 import { useChapterSelection } from './hooks/useChapterSelection';
 import { useTokenManagement } from './hooks/useTokenManagement';
@@ -80,12 +80,14 @@ export function StoryTranslator() {
   });
 
   // Batch translation hook (provides processingChapters state)
+  // Batch translation hook
   const {
-    batchProgress,
     processingChapters,
     setProcessingChapters,
-    handleTranslateAll: batchHandleTranslateAll,
-    handleStopTranslation: batchHandleStopTranslation
+    batchProgress: batchTranslationProgress,
+    isTranslating: isBatchTranslating,
+    handleTranslateAll: handleBatchTranslate,
+    handleStopTranslation: handleStopBatchTranslation
   } = useStoryBatchTranslation({
     chapters,
     sourceLang,
@@ -184,7 +186,13 @@ export function StoryTranslator() {
   });
 
   // Summary generation hook
-  const { isGenerating: isGeneratingSummary, handleGenerateSummary } = useStorySummaryGeneration({
+  const { 
+    isGenerating: isGeneratingSummary, 
+    handleGenerateSummary, 
+    handleGenerateAllSummaries, 
+    stopGeneration: stopSummaryGeneration, 
+    batchSummaryProgress 
+  } = useStorySummaryGeneration({
     chapters,
     translatedChapters,
     translatedTitles,
@@ -209,11 +217,13 @@ export function StoryTranslator() {
     getPreferredTokenConfig,
     setProcessingChapters
   });
-
+  
   // Debug logging
   console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
   console.log('[StoryTranslator] Render - status:', status);
   console.log('[StoryTranslator] Render - chapters.length:', chapters.length);
+  console.log('[StoryTranslator] Render - isBatchTranslating:', isBatchTranslating);
+  console.log('[StoryTranslator] Render - batchTranslationProgress:', batchTranslationProgress);
 
   useEffect(() => {
     if (translateMode === 'token' || translateMode === 'both') {
@@ -249,14 +259,6 @@ export function StoryTranslator() {
 
   const handleTranslate = async () => {
     await translation.handleTranslate(selectedChapterId);
-  };
-
-  const handleTranslateAll = async () => {
-    await batchHandleTranslateAll();
-  };
-
-  const handleStopTranslation = () => {
-    batchHandleStopTranslation();
   };
 
   const handleSavePrompt = async () => {
@@ -383,27 +385,49 @@ export function StoryTranslator() {
             <FileText size={16} />
             {isGeneratingSummary ? 'Đang tóm tắt...' : 'Tóm tắt 1'}
           </Button>
-          {status === 'running' && batchProgress ? (
+          {isGeneratingSummary && batchSummaryProgress ? (
             <Button 
-              onClick={handleStopTranslation}
+              onClick={stopSummaryGeneration}
+              variant="secondary"
+              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng tóm tắt batch hiện tại"
+            >
+              <StopCircle size={16} />
+              Dừng ({batchSummaryProgress?.current}/{batchSummaryProgress?.total})
+            </Button>
+          ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
+            <Button 
+              onClick={handleStopBatchTranslation}
               variant="secondary"
               className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
               title="Dừng dịch batch hiện tại"
             >
               <StopCircle size={16} />
-              Dừng ({batchProgress?.current}/{batchProgress?.total})
+              Dừng ({batchTranslationProgress?.current}/{batchTranslationProgress?.total})
             </Button>
           ) : (
-            <Button 
-              onClick={handleTranslateAll} 
-              variant="primary" 
-              disabled={!filePath || status === 'running' || selectedChapterCount === 0}
-              className="flex-1 h-9 px-3"
-              title="Dịch tất cả chương được chọn"
-            >
-              <BookOpen size={16} />
-              Dịch {retranslateExisting ? 'lại ' : ''}{selectedChapterCount}
-            </Button>
+            <>
+              <Button
+                variant="primary"
+                onClick={isBatchTranslating ? handleStopBatchTranslation : handleBatchTranslate}
+                className="flex items-center gap-2"
+                disabled={isGeneratingSummary || (status !== 'idle' && !isBatchTranslating)}
+              >
+                {isBatchTranslating ? <StopCircle size={16} /> : <FileText size={16} />}
+                {isBatchTranslating ? 'Dừng dịch' : 'Dịch tất cả'}
+              </Button>
+
+              <Button
+                  variant="secondary"
+                  onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
+                  className="flex items-center gap-2"
+                  disabled={isBatchTranslating || (status !== 'idle' && !isGeneratingSummary)}
+                  title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
+              >
+                  {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
+                  {isGeneratingSummary ? 'Dừng tóm tắt' : 'Tóm tắt tất cả'}
+              </Button>
+            </>
           )}
         </div>
 

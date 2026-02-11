@@ -4551,6 +4551,9 @@ function buildRequestPayload(message, contextArray, createChatOnWeb) {
   ];
   return JSON.stringify([null, JSON.stringify(reqStruct)]);
 }
+const getRandomInt = (min, max) => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
 class GeminiChatServiceClass {
   constructor() {
     this.proxyAssignments = /* @__PURE__ */ new Map();
@@ -4599,7 +4602,7 @@ class GeminiChatServiceClass {
     } finally {
       const MIN_DELAY_MS = 1e4;
       const MAX_DELAY_MS = 2e4;
-      const randomDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+      const randomDelay = getRandomInt(MIN_DELAY_MS, MAX_DELAY_MS);
       const completionTime = Date.now();
       const nextTime = completionTime + randomDelay;
       this.nextAvailableTimeByTokenKey.set(tokenKey, nextTime);
@@ -5291,7 +5294,7 @@ class GeminiChatServiceClass {
           return { ...result, metadata, retryable: true };
         }
         if (attempt < MAX_RETRIES) {
-          const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+          const retryDelay = getRandomInt(MIN_DELAY_MS, MAX_DELAY_MS);
           console.log(`[GeminiChatService] Impit: Thử lại sau ${retryDelay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         } else {
@@ -5407,7 +5410,27 @@ class GeminiChatServiceClass {
         const proxyManager = getProxyManager();
         proxyManager.markProxySuccess(usedProxy.id);
       }
-      const responseText = await response.text();
+      let responseText = "";
+      try {
+        if (response.body && typeof response.body[Symbol.asyncIterator] === "function") {
+          const chunks = [];
+          for await (const chunk of response.body) {
+            chunks.push(chunk);
+          }
+          if (chunks.length > 0) {
+            if (typeof chunks[0] === "string") {
+              responseText = chunks.join("");
+            } else {
+              responseText = Buffer.concat(chunks).toString("utf-8");
+            }
+          }
+        } else {
+          responseText = await response.text();
+        }
+      } catch (readError) {
+        console.error("[GeminiChatService] Error reading response stream:", readError);
+        return { success: false, error: "Error reading response stream: " + String(readError), configId: config.id, retryable: true };
+      }
       let foundText = "";
       const sessionManager = getSessionContextManager();
       let newContext = { conversationId: "", responseId: "", choiceId: "" };

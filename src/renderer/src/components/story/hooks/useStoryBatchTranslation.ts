@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, Dispatch, SetStateAction } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
+import { getRandomInt } from '@shared/utils/delayUtils';
 import type { GeminiChatConfigLite, ProcessingChapterInfo } from '../types';
 
 interface UseStoryBatchTranslationParams {
@@ -399,7 +400,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         console.log(`[useStoryBatchTranslation] 🚀 Starting worker 1/${finalConfigsToUse.length} immediately`);
         startWorker('token', config);
       } else {
-        const spawnDelay = Math.floor(Math.random() * (MAX_SPAWN_DELAY - MIN_SPAWN_DELAY + 1)) + MIN_SPAWN_DELAY;
+        const spawnDelay = getRandomInt(MIN_SPAWN_DELAY, MAX_SPAWN_DELAY);
         cumulativeDelay += spawnDelay;
         console.log(`[useStoryBatchTranslation] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
         

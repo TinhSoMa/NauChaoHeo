@@ -26,6 +26,7 @@ HL_LANG,
     IMPIT_BROWSERS,
     ImpitBrowser
 } from './geminiChatUtils';
+import { getRandomInt } from '../../../shared/utils/delayUtils';
 
 // --- CONFIGURATION ---
 // IMPORTANT: All values are now loaded from database (gemini_chat_config table)
@@ -104,7 +105,7 @@ export class GeminiChatServiceClass {
             // 3. Scheduling Next: Random delay AFTER completion
             const MIN_DELAY_MS = 10000;
             const MAX_DELAY_MS = 20000;
-            const randomDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+            const randomDelay = getRandomInt(MIN_DELAY_MS, MAX_DELAY_MS);
             
             const completionTime = Date.now();
             const nextTime = completionTime + randomDelay;
@@ -948,7 +949,7 @@ export class GeminiChatServiceClass {
                 }
 
                 if (attempt < MAX_RETRIES) {
-                    const retryDelay = Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
+                    const retryDelay = getRandomInt(MIN_DELAY_MS, MAX_DELAY_MS);
                     console.log(`[GeminiChatService] Impit: Thử lại sau ${retryDelay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                 } else {
@@ -1106,7 +1107,29 @@ export class GeminiChatServiceClass {
                     proxyManager.markProxySuccess(usedProxy.id);
                 }
 
-                const responseText = await response.text();
+                // Manually read stream to ensure full content is received
+                let responseText = '';
+                try {
+                    if (response.body && typeof (response.body as any)[Symbol.asyncIterator] === 'function') {
+                        const chunks: any[] = [];
+                        for await (const chunk of response.body as any) {
+                            chunks.push(chunk);
+                        }
+                        if (chunks.length > 0) {
+                             if (typeof chunks[0] === 'string') {
+                                responseText = chunks.join('');
+                             } else {
+                                responseText = Buffer.concat(chunks).toString('utf-8');
+                             }
+                        }
+                    } else {
+                        // Fallback for non-stream bodies
+                        responseText = await response.text();
+                    }
+                } catch (readError) {
+                     console.error('[GeminiChatService] Error reading response stream:', readError);
+                     return { success: false, error: 'Error reading response stream: ' + String(readError), configId: config.id, retryable: true };
+                }
                 
                 let foundText = '';
                 const sessionManager = getSessionContextManager();

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 import { GeminiChatConfigLite, TokenContext, ProcessingChapterInfo } from '../types';
+import { randomDelay } from '@shared/utils/delayUtils';
 
 interface UseStorySummaryGenerationProps {
   chapters: Chapter[];
@@ -197,9 +198,134 @@ export function useStorySummaryGeneration({
     }
   };
 
+  const [batchSummaryProgress, setBatchSummaryProgress] = useState<{ current: number; total: number } | null>(null);
+  const shouldStopRef = useRef(false);
+
+  const stopGeneration = () => {
+    shouldStopRef.current = true;
+    setIsGenerating(false);
+    setStatus('idle');
+  };
+
+  const handleGenerateAllSummaries = async () => {
+    // Filter chapters that have translation but no summary
+    const chaptersToSummarize = chapters.filter(c => 
+      translatedChapters.has(c.id) && !summaries.has(c.id)
+    );
+
+    if (chaptersToSummarize.length === 0) {
+      alert('Không có chương nào cần tóm tắt (đã tóm tắt hết hoặc chưa có bản dịch).');
+      return;
+    }
+
+    setIsGenerating(true);
+    setStatus('running');
+    setBatchSummaryProgress({ current: 0, total: chaptersToSummarize.length });
+    shouldStopRef.current = false;
+
+    const MIN_DELAY = 5000;
+    const MAX_DELAY = 30000;
+    
+    // Worker logic adapted from StorySummary.tsx
+    let currentIndex = 0;
+    let completed = 0;
+
+    const processNextChapter = async (workerId: number) => {
+      while (currentIndex < chaptersToSummarize.length && !shouldStopRef.current) {
+        const index = currentIndex++;
+        const chapter = chaptersToSummarize[index];
+
+        // Random delay before processing (except maybe first one)
+        if (index > 0) {
+           await randomDelay(MIN_DELAY, MAX_DELAY);
+        }
+
+        if (shouldStopRef.current) break;
+
+        // Process chapter
+        try {
+             // 1. Prepare
+             const sourceContent = translatedChapters.get(chapter.id);
+             if (!sourceContent) continue;
+
+             const method = translateMode === 'token' ? 'IMPIT' : 'API';
+             const methodKey: 'api' | 'token' = method === 'IMPIT' ? 'token' : 'api';
+
+             setProcessingChapters(prev => {
+                const next = new Map(prev);
+                next.set(chapter.id, { startTime: Date.now(), workerId, channel: methodKey });
+                return next;
+             });
+
+             const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+                chapterContent: sourceContent,
+                sourceLang,
+                targetLang
+             }) as PreparePromptResult;
+
+             if (prepareResult.success && prepareResult.prompt) {
+                 let selectedTokenConfig = method === 'IMPIT' ? getPreferredTokenConfig() : null;
+                 if (method === 'IMPIT' && !selectedTokenConfig) {
+                    await loadConfigurations();
+                    selectedTokenConfig = getPreferredTokenConfig();
+                 }
+
+                 const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+
+                 const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
+                    prompt: prepareResult.prompt,
+                    model: model,
+                    method,
+                    webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+                    useProxy: method === 'IMPIT' && useProxy,
+                    metadata: { 
+                        chapterId: chapter.id,
+                        validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
+                    }
+                 }) as any;
+
+                 if (translateResult.success && translateResult.data) {
+                     setSummaries(new Map(summaries).set(chapter.id, translateResult.data!));
+                     setChapterModels(new Map(chapterModels).set(chapter.id, model));
+                     setChapterMethods(new Map(chapterMethods).set(chapter.id, methodKey));
+                     
+                     if (translateResult.context && translateResult.context.conversationId && tokenKey) {
+                        setTokenContexts(new Map(tokenContexts).set(tokenKey, translateResult.context!));
+                     }
+                 }
+             }
+
+        } catch (e) {
+            console.error(`Error summarizing chapter ${chapter.title}`, e);
+        } finally {
+            setProcessingChapters(prev => {
+                const next = new Map(prev);
+                next.delete(chapter.id);
+                return next;
+            });
+            completed++;
+            setBatchSummaryProgress({ current: completed, total: chaptersToSummarize.length });
+        }
+      }
+    };
+
+    // Start workers (2 concurrent)
+    await Promise.all([processNextChapter(1), processNextChapter(2)]);
+    
+    setIsGenerating(false);
+    setStatus('idle');
+    setBatchSummaryProgress(null);
+  };
+
   return {
     isGenerating,
-    handleGenerateSummary
+    handleGenerateSummary,
+    handleGenerateAllSummaries,
+    stopGeneration,
+    batchSummaryProgress
   };
 }
+
+// ... existing code ...
+
 
