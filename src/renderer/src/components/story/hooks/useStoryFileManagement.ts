@@ -1,5 +1,6 @@
 import { Dispatch, SetStateAction } from 'react';
 import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
+import { StoryStatus } from '../types';
 
 interface UseStoryFileManagementParams {
   sourceLang: string;
@@ -11,7 +12,7 @@ interface UseStoryFileManagementParams {
   setSelectedChapterId: Dispatch<SetStateAction<string | null>>;
   setTranslatedChapters: Dispatch<SetStateAction<Map<string, string>>>;
   setViewMode: Dispatch<SetStateAction<'original' | 'translated' | 'summary'>>;
-  setStatus: Dispatch<SetStateAction<string>>;
+  setStatus: Dispatch<SetStateAction<StoryStatus>>;
 }
 
 export interface ParseFileOptions {

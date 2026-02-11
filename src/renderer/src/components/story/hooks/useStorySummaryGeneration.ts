@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
-import { GeminiChatConfigLite, TokenContext, ProcessingChapterInfo } from '../types';
+import { GeminiChatConfigLite, TokenContext, ProcessingChapterInfo, StoryStatus } from '../types';
 import { randomDelay } from '@shared/utils/delayUtils';
 
 interface UseStorySummaryGenerationProps {
@@ -22,7 +22,7 @@ interface UseStorySummaryGenerationProps {
   setChapterMethods: (methods: Map<string, 'api' | 'token'>) => void;
   setTokenContexts: (contexts: Map<string, TokenContext>) => void;
   setProcessingChapters: (update: (prev: Map<string, ProcessingChapterInfo>) => Map<string, ProcessingChapterInfo>) => void;
-  setStatus: (status: string) => void;
+  setStatus: (status: StoryStatus) => void;
   setViewMode: (mode: 'original' | 'translated' | 'summary') => void;
   useProxy: boolean;
   loadConfigurations: () => Promise<void>;

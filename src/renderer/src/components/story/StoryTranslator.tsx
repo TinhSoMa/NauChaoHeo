@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Chapter, STORY_IPC_CHANNELS } from '@shared/types';
+import { StoryStatus } from './types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -22,7 +23,7 @@ export function StoryTranslator() {
   const [targetLang, setTargetLang] = useState('vi');
   const [model, setModel] = useState('gemini-3-flash-preview');
   const [translateMode, setTranslateMode] = useState<'api' | 'token' | 'both'>('api');
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState<StoryStatus>('idle');
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   // Map lưu trữ bản dịch theo chapterId
@@ -414,22 +415,23 @@ export function StoryTranslator() {
                 disabled={isGeneratingSummary || (status !== 'idle' && !isBatchTranslating)}
               >
                 {isBatchTranslating ? <StopCircle size={16} /> : <FileText size={16} />}
-                {isBatchTranslating ? 'Dừng dịch' : 'Dịch tất cả'}
+                {isBatchTranslating ? 'Dừng dịch' : 'Dịch'}
               </Button>
 
               <Button
                   variant="secondary"
                   onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 h-9 px-6"
                   disabled={isBatchTranslating || (status !== 'idle' && !isGeneratingSummary)}
                   title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
               >
                   {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
-                  {isGeneratingSummary ? 'Dừng tóm tắt' : 'Tóm tắt tất cả'}
+                  {isGeneratingSummary ? 'Dừng tóm tắt' : 'Tóm tắt'}
               </Button>
             </>
           )}
         </div>
+
 
         <div className="md:col-span-12 flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2 cursor-pointer hover:text-primary">

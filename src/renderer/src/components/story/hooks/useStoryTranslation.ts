@@ -2,7 +2,7 @@ import { Dispatch, SetStateAction } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
-import type { GeminiChatConfigLite } from '../types';
+import type { GeminiChatConfigLite, StoryStatus } from '../types';
 
 interface UseStoryTranslationParams {
   chapters: Chapter[];
@@ -15,7 +15,7 @@ interface UseStoryTranslationParams {
   isChapterIncluded: (id: string) => boolean;
   getPreferredTokenConfig: () => GeminiChatConfigLite | null;
   loadConfigurations: () => Promise<void>;
-  setStatus: Dispatch<SetStateAction<string>>;
+  setStatus: Dispatch<SetStateAction<StoryStatus>>;
   setProcessingChapters: Dispatch<SetStateAction<Map<string, { startTime: number; workerId: number; channel: 'api' | 'token' }>>>;
   setTranslatedChapters: Dispatch<SetStateAction<Map<string, string>>>;
   setTranslatedTitles: Dispatch<SetStateAction<Map<string, string>>>;

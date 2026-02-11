@@ -3,7 +3,7 @@ import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types'
 import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
 import { getRandomInt } from '@shared/utils/delayUtils';
-import type { GeminiChatConfigLite, ProcessingChapterInfo } from '../types';
+import type { GeminiChatConfigLite, ProcessingChapterInfo, StoryStatus } from '../types';
 
 interface UseStoryBatchTranslationParams {
   chapters: Chapter[];
@@ -18,7 +18,7 @@ interface UseStoryBatchTranslationParams {
   tokenConfigs: GeminiChatConfigLite[];
   getDistinctActiveTokenConfigs: (configs: GeminiChatConfigLite[]) => GeminiChatConfigLite[];
   getPreferredTokenConfig: () => GeminiChatConfigLite | null;
-  setStatus: Dispatch<SetStateAction<string>>;
+  setStatus: Dispatch<SetStateAction<StoryStatus>>;
   setTranslatedChapters: Dispatch<SetStateAction<Map<string, string>>>;
   setTranslatedTitles: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterModels: Dispatch<SetStateAction<Map<string, string>>>;

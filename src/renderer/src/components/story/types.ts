@@ -20,3 +20,5 @@ export interface ProcessingChapterInfo {
   retryCount?: number;
   maxRetries?: number;
 }
+
+export type StoryStatus = 'idle' | 'running' | 'paused' | 'error' | 'stopped';
