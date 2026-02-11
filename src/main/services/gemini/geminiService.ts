@@ -144,7 +144,8 @@ export async function callGeminiWithRotation(
   }
 
   // Load proxy setting from AppSettings
-  let useProxySetting = true; // Default
+  const useProxySetting = false; // Modified: Force disable proxy for API calls
+  /*
   try {
     const settings = AppSettingsService.getAll();
     useProxySetting = settings.useProxy;
@@ -152,6 +153,7 @@ export async function callGeminiWithRotation(
   } catch (error) {
     console.warn('[GeminiService] Could not load proxy setting, using default (enabled)');
   }
+  */
 
   let lastError = '';
   let rateLimitedCount = 0;

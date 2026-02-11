@@ -1,16 +1,9 @@
-/**
- * CaptionTranslator - Giao diện dịch caption tự động
- * Sử dụng CSS Module và 6 bước xử lý
- */
-
-import { useState, useCallback } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
 import { useProjectContext } from '../../context/ProjectContext';
-import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
 import {
   GEMINI_MODELS,
   VOICES,
@@ -18,380 +11,40 @@ import {
   VOLUME_OPTIONS,
   STEP_LABELS,
   LINES_PER_FILE_OPTIONS,
-  DEFAULT_GEMINI_MODEL,
-  DEFAULT_VOICE,
-  DEFAULT_RATE,
-  DEFAULT_VOLUME,
-  DEFAULT_SRT_SPEED,
-  DEFAULT_SPLIT_BY_LINES,
-  DEFAULT_LINES_PER_FILE,
-  DEFAULT_NUMBER_OF_PARTS,
-  DEFAULT_INPUT_TYPE,
 } from '../../config/captionConfig';
+import { Step } from './CaptionTypes';
+import { useCaptionSettings } from './hooks/useCaptionSettings';
+import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
+import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 
-// ============================================
-// TYPES
-// ============================================
-interface SubtitleEntry {
-  index: number;
-  startTime: string;
-  endTime: string;
-  startMs: number;
-  endMs: number;
-  durationMs: number;
-  text: string;
-  translatedText?: string;
-}
-
-interface TranslationProgress {
-  current: number;
-  total: number;
-  message: string;
-}
-
-interface TTSProgress {
-  current: number;
-  total: number;
-  message: string;
-}
-
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
-type ProcessStatus = 'idle' | 'running' | 'success' | 'error';
-
-// Hàm validate các bước (phải liên tiếp từ 1 nếu chọn nhiều bước)
-function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
-  if (steps.length === 0) {
-    return { valid: false, error: 'Hãy chọn ít nhất 1 bước!' };
-  }
-  
-  if (steps.length > 1) {
-    const sorted = [...steps].sort((a, b) => a - b);
-    
-    // Rule 1: Phải bắt đầu từ bước 1
-    if (sorted[0] !== 1) {
-      return { valid: false, error: 'Khi chọn nhiều bước, phải bắt đầu từ Bước 1!' };
-    }
-    
-    // Rule 2: Các bước phải liên tiếp
-    const isConsecutive = sorted.every((s, i) => 
-      i === 0 || s === sorted[i - 1] + 1
-    );
-    
-    if (!isConsecutive) {
-      return { valid: false, error: 'Các bước phải liên tiếp (1→2→3→4→5→6)!' };
-    }
-  }
-  
-  return { valid: true };
-}
-
-// ============================================
-// COMPONENT
-// ============================================
 export function CaptionTranslator() {
   // Project output paths
   const { paths } = useProjectContext();
   const captionFolder = paths?.caption ?? null;
 
-  // State - Config
-  const [inputType, setInputType] = useState<'srt' | 'draft'>(DEFAULT_INPUT_TYPE);
-  const [filePath, setFilePath] = useState('');
-  const [entries, setEntries] = useState<SubtitleEntry[]>([]);
-  const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
-  const [voice, setVoice] = useState(DEFAULT_VOICE);
-  const [rate, setRate] = useState(DEFAULT_RATE);
-  const [volume, setVolume] = useState(DEFAULT_VOLUME);
-  const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
-  
-  // State - Split Config
-  const [splitByLines, setSplitByLines] = useState(DEFAULT_SPLIT_BY_LINES);
-  const [linesPerFile, setLinesPerFile] = useState(DEFAULT_LINES_PER_FILE);
-  const [numberOfParts, setNumberOfParts] = useState(DEFAULT_NUMBER_OF_PARTS);
-  
-  // State - Audio files (để dùng cho Trim và Merge)
-  const [audioFiles, setAudioFiles] = useState<Array<{ path: string; startMs: number }>>([]);
-  const [audioDir, setAudioDir] = useState('');
-  
-  // State - Steps (1: Input, 2: Split, 3: Dịch, 4: TTS, 5: Trim, 6: Merge)
-  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6]));
-  const [currentStep, setCurrentStep] = useState<Step | null>(null);
-  const [status, setStatus] = useState<ProcessStatus>('idle');
-  const [progress, setProgress] = useState({ current: 0, total: 0, message: 'Sẵn sàng.' });
+  // 1. Settings Hook
+  const settings = useCaptionSettings();
 
-  // ========== AUTO SAVE/LOAD VÀO PROJECT ==========
-  useProjectFeatureState<{
-    inputType?: 'srt' | 'draft';
-    filePath?: string;
-    entries?: SubtitleEntry[];
-    geminiModel?: string;
-    voice?: string;
-    rate?: string;
-    volume?: string;
-    srtSpeed?: number;
-    splitByLines?: boolean;
-    linesPerFile?: number;
-    numberOfParts?: number;
-    enabledSteps?: Step[];
-    audioFiles?: Array<{ path: string; startMs: number }>;
-    audioDir?: string;
-  }>({
-    feature: 'caption',
-    fileName: 'caption-state.json',
-    serialize: () => ({
-      inputType,
-      filePath,
-      entries,
-      geminiModel,
-      voice,
-      rate,
-      volume,
-      srtSpeed,
-      splitByLines,
-      linesPerFile,
-      numberOfParts,
-      enabledSteps: Array.from(enabledSteps.values()),
-      audioFiles,
-      audioDir
-    }),
-    deserialize: (saved) => {
-      if (saved.inputType) setInputType(saved.inputType);
-      if (saved.filePath) setFilePath(saved.filePath);
-      if (saved.entries) setEntries(saved.entries);
-      if (saved.geminiModel) setGeminiModel(saved.geminiModel);
-      if (saved.voice) setVoice(saved.voice);
-      if (saved.rate) setRate(String(saved.rate));
-      if (saved.volume) setVolume(String(saved.volume));
-      if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
-      if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
-      if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
-      if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
-      if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
-      if (saved.audioFiles) setAudioFiles(saved.audioFiles);
-      if (saved.audioDir) setAudioDir(saved.audioDir);
-    },
-    deps: [
-      inputType, filePath, entries, geminiModel, voice, rate, volume,
-      srtSpeed, splitByLines, linesPerFile, numberOfParts, enabledSteps,
-      audioFiles, audioDir
-    ],
+  // 2. File Management Hook
+  const fileManager = useCaptionFileManagement({
+    inputType: settings.inputType,
   });
 
-  // Toggle step enable
-  const toggleStep = useCallback((step: Step) => {
-    setEnabledSteps(prev => {
-      const next = new Set(prev);
-      if (next.has(step)) {
-        next.delete(step);
-      } else {
-        next.add(step);
-      }
-      return next;
-    });
-  }, []);
-
-  // Browse file (SRT hoặc Draft JSON)
-  const handleBrowseFile = useCallback(async () => {
-    try {
-      const filters = inputType === 'srt' 
-        ? [{ name: 'SRT Files', extensions: ['srt'] }]
-        : [{ name: 'JSON Files', extensions: ['json'] }];
-
-      const result = await window.electronAPI.invoke('dialog:openFile', { filters }) as { 
-        canceled: boolean; 
-        filePaths: string[] 
-      };
-
-      if (result?.canceled || !result?.filePaths?.length) return;
-
-      const selectedPath = result.filePaths[0];
-      setFilePath(selectedPath);
-
-      // Parse tùy theo loại file
-      const parseResult = inputType === 'srt'
-        ? await window.electronAPI.caption.parseSrt(selectedPath)
-        : await window.electronAPI.caption.parseDraft(selectedPath);
-
-      if (parseResult.success && parseResult.data) {
-        setEntries(parseResult.data.entries);
-        setProgress({ 
-          current: 0, 
-          total: parseResult.data.totalEntries, 
-          message: `Đã load ${parseResult.data.totalEntries} dòng từ ${inputType === 'srt' ? 'SRT' : 'Draft JSON'}` 
-        });
-      } else {
-        setProgress({ current: 0, total: 0, message: `Lỗi: ${parseResult.error}` });
-      }
-    } catch (err) {
-      setProgress({ current: 0, total: 0, message: `Lỗi: ${err}` });
-    }
-  }, [inputType]);
-
-  // Run selected steps
-  const handleStart = useCallback(async () => {
-    const steps = Array.from(enabledSteps).sort() as Step[];
-    
-    // Validate các bước
-    const validation = validateSteps(steps);
-    if (!validation.valid) {
-      setProgress({ ...progress, message: validation.error || 'Lỗi validation!' });
-      return;
-    }
-
-    setStatus('running');
-
-    // Listen for progress
-    window.electronAPI.caption.onTranslateProgress((p: TranslationProgress) => {
-      setProgress({ current: p.current, total: p.total, message: p.message });
-    });
-    window.electronAPI.tts.onProgress((p: TTSProgress) => {
-      setProgress({ current: p.current, total: p.total, message: p.message });
-    });
-
-    // Biến lưu trữ audio files và output dir giữa các bước
-    let currentAudioFiles: Array<{ path: string; startMs: number }> = [];
-    let currentOutputDir = '';
-
-    try {
-      for (const step of steps) {
-        setCurrentStep(step);
-        
-        // ========== STEP 1: INPUT ==========
-        if (step === 1) {
-          if (entries.length === 0 && filePath) {
-            const parseResult = inputType === 'srt'
-              ? await window.electronAPI.caption.parseSrt(filePath)
-              : await window.electronAPI.caption.parseDraft(filePath);
-            if (parseResult.success && parseResult.data) {
-              setEntries(parseResult.data.entries);
-            }
-          }
-          setProgress({ current: 1, total: 1, message: 'Bước 1: Đã load file input' });
-        }
-        
-        // ========== STEP 2: SPLIT ==========
-        if (step === 2) {
-          setProgress({ current: 0, total: 1, message: 'Bước 2: Đang chia nhỏ text...' });
-          
-          // Sử dụng project folder hoặc fallback sang thư mục gốc của file
-          const textOutputDir = captionFolder 
-            ? `${captionFolder}/text` 
-            : filePath.replace(/[^/\\]+$/, 'auto/text');
-          
-          const splitValue = splitByLines ? linesPerFile : numberOfParts;
-          const result = await window.electronAPI.caption.split({
-            entries,
-            splitByLines,
-            value: splitValue,
-            outputDir: textOutputDir,
-          });
-
-          if (result.success && result.data) {
-            setProgress({ current: 1, total: 1, message: `Bước 2: Đã tạo ${result.data.partsCount} phần` });
-          } else {
-            throw new Error(result.error || 'Lỗi chia file');
-          }
-        }
-        
-        // ========== STEP 3: DỊCH ==========
-        if (step === 3) {
-          setProgress({ current: 0, total: entries.length, message: 'Bước 3: Đang dịch...' });
-          
-          const result = await window.electronAPI.caption.translate({
-            entries,
-            targetLanguage: 'Vietnamese',
-            model: geminiModel,
-            linesPerBatch: 50,
-          });
-
-          if (result.success && result.data) {
-            setEntries(result.data.entries);
-            // Sử dụng project folder hoặc fallback
-            const srtOutputPath = captionFolder 
-              ? `${captionFolder}/srt/${Date.now()}_translated.srt`
-              : filePath.replace(/\.(srt|json)$/i, '_translated.srt');
-            await window.electronAPI.caption.exportSrt(result.data.entries, srtOutputPath);
-            setProgress({ current: result.data.translatedLines, total: result.data.totalLines, message: `Bước 3: Đã dịch ${result.data.translatedLines} dòng` });
-          } else {
-            throw new Error(result.error);
-          }
-        }
-        
-        // ========== STEP 4: TTS ==========
-        if (step === 4) {
-          // Sử dụng project folder hoặc fallback
-          currentOutputDir = captionFolder 
-            ? `${captionFolder}/audio` 
-            : filePath.replace(/[^/\\]+$/, 'audio_output');
-          setAudioDir(currentOutputDir);
-          setProgress({ current: 0, total: entries.length, message: 'Bước 4: Đang tạo audio...' });
-          
-          const result = await window.electronAPI.tts.generate(entries, {
-            voice,
-            rate,
-            volume,
-            outputDir: currentOutputDir,
-            outputFormat: 'wav',
-          });
-
-          if (result.success && result.data) {
-            currentAudioFiles = result.data.audioFiles;
-            setAudioFiles(result.data.audioFiles);
-            setProgress({ current: result.data.totalGenerated, total: entries.length, message: `Bước 4: Đã tạo ${result.data.totalGenerated} audio` });
-          } else {
-            throw new Error(result.error || 'Lỗi tạo audio');
-          }
-        }
-        
-        // ========== STEP 5: TRIM SILENCE ==========
-        if (step === 5) {
-          const filesToTrim = currentAudioFiles.length > 0 ? currentAudioFiles : audioFiles;
-          setProgress({ current: 0, total: filesToTrim.length, message: 'Bước 5: Đang cắt khoảng lặng...' });
-          
-          const result = await window.electronAPI.tts.trimSilence(filesToTrim.map(f => f.path));
-
-          if (result.success && result.data) {
-            setProgress({ current: result.data.trimmedCount, total: filesToTrim.length, message: `Bước 5: Đã trim ${result.data.trimmedCount} files` });
-          } else {
-            throw new Error(result.error || 'Lỗi trim silence');
-          }
-        }
-        
-        // ========== STEP 6: MERGE AUDIO ==========
-        if (step === 6) {
-          const filesToMerge = currentAudioFiles.length > 0 ? currentAudioFiles : audioFiles;
-          const outputDir = currentOutputDir || audioDir;
-          const mergedPath = `${outputDir}/merged_audio.wav`;
-          setProgress({ current: 0, total: 1, message: 'Bước 6: Đang ghép audio...' });
-          
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const result = await window.electronAPI.tts.mergeAudio(filesToMerge as any, mergedPath, srtSpeed);
-
-          if (result.success) {
-            setProgress({ current: 1, total: 1, message: `Bước 6: Đã ghép audio thành công` });
-          } else {
-            throw new Error(result.error || 'Lỗi ghép audio');
-          }
-        }
-      }
-
-      setStatus('success');
-      setProgress(p => ({ ...p, message: `Hoàn thành các bước: ${steps.join(', ')}!` }));
-    } catch (err) {
-      setStatus('error');
-      setProgress(p => ({ ...p, message: `Lỗi: ${err}` }));
-    }
-
-    setCurrentStep(null);
-  }, [enabledSteps, entries, filePath, inputType, geminiModel, voice, rate, volume, srtSpeed, splitByLines, linesPerFile, numberOfParts, audioFiles, audioDir, progress]);
-
-  const handleStop = useCallback(() => {
-    setStatus('idle');
-    setProgress(p => ({ ...p, message: 'Đã dừng.' }));
-  }, []);
+  // 3. Processing Hook
+  const processing = useCaptionProcessing({
+    entries: fileManager.entries,
+    setEntries: fileManager.setEntries,
+    filePath: fileManager.filePath,
+    inputType: settings.inputType,
+    captionFolder,
+    settings,
+    enabledSteps: settings.enabledSteps,
+    setEnabledSteps: settings.setEnabledSteps,
+  });
 
   const getProgressColor = () => {
-    if (status === 'error') return 'var(--color-error)';
-    if (status === 'success') return 'var(--color-success)';
+    if (processing.status === 'error') return 'var(--color-error)';
+    if (processing.status === 'success') return 'var(--color-success)';
     return 'var(--color-primary)';
   };
 
@@ -409,31 +62,31 @@ export function CaptionTranslator() {
             <div className={styles.fileTypeSelection}>
             <RadioButton
               label="File SRT"
-              checked={inputType === 'srt'}
-              onChange={() => setInputType('srt')}
+              checked={settings.inputType === 'srt'}
+              onChange={() => settings.setInputType('srt')}
               name="inputType"
             />
             <RadioButton
               label="Draft JSON (CapCut)"
               description="Dịch trực tiếp từ CapCut"
-              checked={inputType === 'draft'}
-              onChange={() => setInputType('draft')}
+              checked={settings.inputType === 'draft'}
+              onChange={() => settings.setInputType('draft')}
               name="inputType"
             />
           </div>
 
           <div className={styles.flexRow}>
             <Input
-              value={filePath}
-              onChange={(e) => setFilePath(e.target.value)}
-              placeholder={inputType === 'srt' ? 'Đường dẫn file .srt' : 'Đường dẫn file draft_content.json'}
+              value={fileManager.filePath}
+              onChange={(e) => fileManager.setFilePath(e.target.value)}
+              placeholder={settings.inputType === 'srt' ? 'Đường dẫn file .srt' : 'Đường dẫn file draft_content.json'}
             />
-            <Button onClick={handleBrowseFile}>
+            <Button onClick={fileManager.handleBrowseFile}>
               Browse
             </Button>
           </div>
-          {entries.length > 0 && (
-            <p className={styles.textMuted} style={{ marginTop: '8px' }}>Đã load: {entries.length} dòng</p>
+          {fileManager.entries.length > 0 && (
+            <p className={styles.textMuted} style={{ marginTop: '8px' }}>Đã load: {fileManager.entries.length} dòng</p>
           )}
         </div>
 
@@ -441,8 +94,8 @@ export function CaptionTranslator() {
         <div className={styles.section}>
           <div className={styles.sectionTitle}>3. Cấu hình Gemini Model</div>
           <select
-            value={geminiModel}
-            onChange={(e) => setGeminiModel(e.target.value)}
+            value={settings.geminiModel}
+            onChange={(e) => settings.setGeminiModel(e.target.value)}
             className={styles.select}
           >
             {GEMINI_MODELS.map(m => (
@@ -457,7 +110,7 @@ export function CaptionTranslator() {
           <div className={styles.grid2}>
             <div>
               <label className={styles.label}>Giọng đọc</label>
-              <select value={voice} onChange={(e) => setVoice(e.target.value)} className={styles.select}>
+              <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
                 {VOICES.map(v => (
                   <option key={v.value} value={v.value}>{v.label}</option>
                 ))}
@@ -467,8 +120,8 @@ export function CaptionTranslator() {
               <label className={styles.label}>Tốc độ SRT</label>
             <Input
               type="number"
-              value={srtSpeed}
-              onChange={(e) => setSrtSpeed(Number(e.target.value))}
+              value={settings.srtSpeed}
+              onChange={(e) => settings.setSrtSpeed(Number(e.target.value))}
               min={1}
               max={2}
               step={0.1}
@@ -478,7 +131,7 @@ export function CaptionTranslator() {
           <div className={styles.grid2} style={{ marginTop: '12px' }}>
             <div>
               <label className={styles.label}>Tốc độ đọc</label>
-              <select value={rate} onChange={(e) => setRate(e.target.value)} className={styles.select}>
+              <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
                 {RATE_OPTIONS.map(r => (
                   <option key={r} value={r}>{r}</option>
                 ))}
@@ -486,7 +139,7 @@ export function CaptionTranslator() {
             </div>
             <div>
               <label className={styles.label}>Âm lượng</label>
-              <select value={volume} onChange={(e) => setVolume(e.target.value)} className={styles.select}>
+              <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
                 {VOLUME_OPTIONS.map(v => (
                   <option key={v} value={v}>{v}</option>
                 ))}
@@ -505,15 +158,15 @@ export function CaptionTranslator() {
 
             <RadioButton
               label="Dòng/file"
-              checked={splitByLines}
-              onChange={() => setSplitByLines(true)}
+              checked={settings.splitByLines}
+              onChange={() => settings.setSplitByLines(true)}
               name="splitConfig"
             >
               <select 
-                value={linesPerFile} 
-                onChange={(e) => setLinesPerFile(Number(e.target.value))}
-                className={`${styles.select} ${styles.selectSmall} ${!splitByLines ? styles.disabled : ''}`}
-                disabled={!splitByLines}
+                value={settings.linesPerFile} 
+                onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
+                className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
+                disabled={!settings.splitByLines}
                 onClick={(e) => e.stopPropagation()}
                 style={{ marginTop: '8px' }}
               >
@@ -525,20 +178,20 @@ export function CaptionTranslator() {
 
             <RadioButton
               label="Số phần"
-              checked={!splitByLines}
-              onChange={() => setSplitByLines(false)}
+              checked={!settings.splitByLines}
+              onChange={() => settings.setSplitByLines(false)}
               name="splitConfig"
             >
               <Input
                 type="number"
-                value={numberOfParts}
-                onChange={(e) => setNumberOfParts(Number(e.target.value))}
+                value={settings.numberOfParts}
+                onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
                 min={2}
                 max={20}
                 variant="small"
-                disabled={splitByLines}
+                disabled={settings.splitByLines}
                 onClick={(e) => e.stopPropagation()}
-                containerClassName={splitByLines ? styles.disabled : ''}
+                containerClassName={settings.splitByLines ? styles.disabled : ''}
                 style={{ marginTop: '8px' }}
               />
             </RadioButton>
@@ -555,9 +208,9 @@ export function CaptionTranslator() {
               <Checkbox
                 key={step}
                 label={STEP_LABELS[step - 1]}
-                checked={enabledSteps.has(step)}
-                onChange={() => toggleStep(step)}
-                highlight={currentStep === step}
+                checked={processing.enabledSteps.has(step)}
+                onChange={() => processing.toggleStep(step)}
+                highlight={processing.currentStep === step}
               />
             ))}
           </div>
@@ -565,16 +218,16 @@ export function CaptionTranslator() {
           {/* Buttons */}
           <div className={styles.buttonsRow}>
             <Button
-              onClick={handleStart}
-              disabled={status === 'running'}
+              onClick={processing.handleStart}
+              disabled={processing.status === 'running'}
               variant="success"
               fullWidth
             >
               ▶ START
             </Button>
             <Button
-              onClick={handleStop}
-              disabled={status !== 'running'}
+              onClick={processing.handleStop}
+              disabled={processing.status !== 'running'}
               variant="danger"
               fullWidth
             >
@@ -585,15 +238,15 @@ export function CaptionTranslator() {
           {/* Progress */}
           <div className={styles.progressSection} style={{ marginTop: 'auto', paddingTop: '16px' }}>
             <div className={styles.progressHeader}>
-              <span className={styles.textMuted}>{progress.message}</span>
-              {progress.total > 0 && <span className={styles.textMuted}>{progress.current}/{progress.total}</span>}
+              <span className={styles.textMuted}>{processing.progress.message}</span>
+              {processing.progress.total > 0 && <span className={styles.textMuted}>{processing.progress.current}/{processing.progress.total}</span>}
             </div>
-            {progress.total > 0 && (
+            {processing.progress.total > 0 && (
               <div className={styles.progressBar}>
                 <div
                   className={styles.progressFill}
                   style={{
-                    width: `${(progress.current / progress.total) * 100}%`,
+                    width: `${(processing.progress.current / processing.progress.total) * 100}%`,
                     backgroundColor: getProgressColor(),
                   }}
                 />

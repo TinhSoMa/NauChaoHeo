@@ -118,14 +118,24 @@ async function mergeSmallBatch(
     
     const proc = spawn('ffmpeg', args, {
       windowsHide: true,
-      shell: true,
+      shell: false,
     });
     
+    let stderr = '';
+    
+    proc.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
     proc.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`[AudioMerger] FFmpeg error: ${stderr}`);
+      }
       resolve(code === 0);
     });
     
-    proc.on('error', () => {
+    proc.on('error', (err) => {
+      console.error(`[AudioMerger] Spawn error: ${err}`);
       resolve(false);
     });
   });
