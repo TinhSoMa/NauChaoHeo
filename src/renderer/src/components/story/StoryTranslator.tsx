@@ -269,6 +269,11 @@ export function StoryTranslator() {
     await fileManagement.handleSavePrompt(selectedChapterId, chapters);
   };
 
+  const handleSaveSummaryPrompt = async () => {
+    const translatedContent = selectedChapterId ? translatedChapters.get(selectedChapterId) : undefined;
+    await fileManagement.handleSaveSummaryPrompt(selectedChapterId, chapters, translatedContent);
+  };
+
   const handleBrowse = async () => {
     await fileManagement.handleBrowse();
   };
@@ -685,7 +690,10 @@ export function StoryTranslator() {
                    </span>
                  )}
                  <Button onClick={handleSavePrompt} variant="secondary" className="text-xs h-8 px-2">
-                   Lưu Prompt
+                   Lưu Prompt Dịch
+                 </Button>
+                 <Button onClick={handleSaveSummaryPrompt} variant="secondary" className="text-xs h-8 px-2">
+                   Lưu Prompt Tóm Tắt
                  </Button>
                  <span className="text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border">
                    {chapters.find(c => c.id === selectedChapterId)?.title}

@@ -104,9 +104,32 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
     }
   };
 
+  const handleSaveSummaryPrompt = async (selectedChapterId: string | null, chapters: Chapter[], translatedContent?: string) => {
+    if (!selectedChapterId) return;
+    const chapter = chapters.find(c => c.id === selectedChapterId);
+    if (!chapter) return;
+
+    try {
+      const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+        chapterContent: translatedContent || chapter.content,
+        sourceLang,
+        targetLang,
+        model
+      }) as PreparePromptResult;
+
+      if (result.success && result.prompt) {
+        const promptString = JSON.stringify(result.prompt);
+        await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
+      }
+    } catch (e) {
+      console.error('[useStoryFileManagement] Loi luu summary prompt:', e);
+    }
+  };
+
   return {
     handleBrowse,
     parseFile,
-    handleSavePrompt
+    handleSavePrompt,
+    handleSaveSummaryPrompt
   };
 }

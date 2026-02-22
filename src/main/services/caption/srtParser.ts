@@ -69,8 +69,8 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
         const startMs = srtTimeToMs(startTime);
         const endMs = srtTimeToMs(endTime);
         
-        // Dòng 3+: Text (có thể nhiều dòng)
-        const text = lines.slice(2).join(' ').trim();
+        // Dòng 3+: Text (có thể nhiều dòng - giữ nguyên line breaks)
+        const text = lines.slice(2).join('\n').trim();
         
         if (text) {
           entries.push({
@@ -88,6 +88,9 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
         continue;
       }
     }
+    
+    // Sort entries theo startMs để đảm bảo thứ tự đúng
+    entries.sort((a, b) => a.startMs - b.startMs);
     
     console.log(`[SrtParser] Parse thành công: ${entries.length} entries`);
     

@@ -39,8 +39,9 @@ interface CaptionVideoAPI {
     assPath: string;
     outputPath: string;
     width: number;
-    height: number;
+    height?: number;
     useGpu: boolean;
+    style?: ASSStyleConfig;
   }) => Promise<{ success: boolean; data?: { outputPath: string; duration: number }; error?: string }>;
 }
 
@@ -466,14 +467,15 @@ export const CaptionVideo: React.FC = () => {
           }
           setAssPath(generatedAssPath);
 
-          // Bước 2: Render video từ ASS
-          setMessage(`Đang render video (${convertRes.data?.entriesCount} dòng)...`);
+          // Bước 2: Render video từ ASS (caption strip)
+          setMessage(`Đang render caption strip (${convertRes.data?.entriesCount} dòng)...`);
           const res = await getCaptionVideoAPI().renderVideo({
               assPath: generatedAssPath,
               outputPath,
               width: region ? region.w : (videoMeta?.width || 1920),
-              height: region ? region.h : (videoMeta?.height || 1080),
-              useGpu
+              // Không truyền height - để backend tự tính từ style
+              useGpu,
+              style
           });
           if (res.success) setMessage(`Render xong! Duration: ${res.data?.duration.toFixed(2)}s`);
           else setError(res.error || 'Error');

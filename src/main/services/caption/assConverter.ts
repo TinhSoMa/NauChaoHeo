@@ -27,8 +27,9 @@ export function srtTimeToAss(srtTime: string): string {
     const sParts = parts[2].split('.');
     const s = sParts[0];
     const ms = sParts[1] || '000';
-    // ASS dùng centiseconds (2 chữ số), SRT dùng milliseconds (3 chữ số)
-    const cs = ms.substring(0, 2);
+    // ASS dùng centiseconds (2 chữ số), làm tròn từ milliseconds (3 chữ số)
+    const msNum = parseInt(ms.padEnd(3, '0'), 10);
+    const cs = Math.round(msNum / 10).toString().padStart(2, '0');
     return `${h}:${m}:${s}.${cs}`;
   }
   

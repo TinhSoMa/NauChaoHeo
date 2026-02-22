@@ -307,8 +307,9 @@ export interface RenderVideoOptions {
   assPath: string;
   outputPath: string;
   width: number;          // Default: 1920
-  height: number;         // Default: 200 (strip mode)
+  height?: number;        // Optional - nếu không có sẽ tự tính từ style
   useGpu: boolean;        // Sử dụng hardware encoding (QSV/NVENC)
+  style?: ASSStyleConfig; // Dùng để tính chiều cao tự động
 }
 
 /**

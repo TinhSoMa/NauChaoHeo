@@ -16,3 +16,5 @@ test/test_impit_request.py
 release/
 
 out/*
+log/*
+test/crop_video_funtion.py
