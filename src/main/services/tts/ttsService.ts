@@ -47,7 +47,7 @@ export async function generateSingleAudio(
       '--rate', rate,
       '--volume', volume,
       '--text', `"${text.replace(/"/g, '\\"')}"`, // Quote text and escape internal quotes
-      '--write-media', outputPath,
+      '--write-media', `"${outputPath}"`, // Need to quote the output path for edge-tts in shell
     ];
     
     console.log(`[TTS] Tạo audio: ${path.basename(outputPath)}`);
@@ -260,7 +260,7 @@ export async function getAudioDuration(audioPath: string): Promise<number> {
       audioPath,
     ], {
       windowsHide: true,
-      shell: true,
+      shell: false,
     });
     
     let stdout = '';

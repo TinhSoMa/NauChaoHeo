@@ -226,6 +226,8 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_PROGRESS: 'tts:progress',
   TTS_GET_VOICES: 'tts:getVoices',
   TTS_TRIM_SILENCE: 'tts:trimSilence',
+  TTS_TRIM_SILENCE_END: 'tts:trimSilenceEnd',
+  TTS_FIT_AUDIO: 'tts:fitAudio',
   
   // Audio Merge
   AUDIO_ANALYZE: 'audio:analyze',
@@ -267,15 +269,15 @@ export const DEFAULT_VOLUME = '+0%';
 // ============================================
 
 /**
- * Cấu hình style cho file ASS
+ * Cấu hình style cho ASS
  */
 export interface ASSStyleConfig {
-  fontName: string;       // "ZYVNA Fairy", "Be Vietnam Pro"
-  fontSize: number;       // 48
-  fontColor: string;      // "#FFFFFF" (HEX format)
-  shadow: number;         // 0-3 (0 = no shadow)
-  marginV: number;        // Khoảng cách từ đáy video
-  alignment: number;      // 2 = bottom-center, 5 = middle-center
+  fontName: string;
+  fontSize: number;
+  fontColor: string; // HEX: #FFFFFF
+  shadow: number;
+  marginV: number;
+  alignment: number; // 2: bottom center, 5: middle center, 8: top center
 }
 
 /**
@@ -284,32 +286,35 @@ export interface ASSStyleConfig {
 export interface VideoMetadata {
   width: number;
   height: number;
+  actualHeight?: number; // Real height from source for >500p filtering (overrides hardcoded 100px render strip)
   duration: number;       // Seconds
   frameCount: number;
   fps: number;
+  hasAudio?: boolean;     // Có audio stream hay không
 }
 
 /**
- * Options để convert SRT sang ASS
- */
-export interface ConvertToAssOptions {
-  srtPath: string;
-  assPath: string;
-  videoResolution?: { width: number; height: number };
-  style: ASSStyleConfig;
-  position?: { x: number; y: number };  // Tọa độ \pos(x,y) cho ASS
-}
-
-/**
- * Options để render video từ ASS
+ * Options để render video từ SRT
  */
 export interface RenderVideoOptions {
-  assPath: string;
+  srtPath: string;
   outputPath: string;
   width: number;          // Default: 1920
   height?: number;        // Optional - nếu không có sẽ tự tính từ style
-  useGpu: boolean;        // Sử dụng hardware encoding (QSV/NVENC)
-  style?: ASSStyleConfig; // Dùng để tính chiều cao tự động
+  videoPath?: string;     // Đường dẫn video gốc để hardsub (nếu không có sẽ tạo nền đen)
+  targetDuration?: number; // Độ dài cố định (tuỳ chọn) cho nền đen
+  useGpu?: boolean;
+  style?: ASSStyleConfig;
+  renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
+  blackoutTop?: number;   // Vùng tô đen: tỉ lệ 0-1 từ trên xuống, VD 0.85 = che 15% dưới video
+  audioSpeed?: number;    // Tốc độ phát audio (sẽ tự động tính videoSpeed để khớp)
+  audioPath?: string;     // Đường dẫn file audio (TTS) để mix vào video
+  videoVolume?: number;   // Âm lượng video gốc (%)
+  audioVolume?: number;   // Âm lượng file audio TTS (%)
+  logoPath?: string;      // Đường dẫn file logo để watermark
+  logoPosition?: { x: number; y: number }; // Toạ độ (tâm) chèn logo
+  logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
 }
 
 /**
@@ -347,9 +352,10 @@ export interface ExtractFrameResult {
 
 // Thêm vào CAPTION_IPC_CHANNELS
 export const CAPTION_VIDEO_IPC_CHANNELS = {
-  CONVERT_TO_ASS: 'captionVideo:convertToAss',
   RENDER_VIDEO: 'captionVideo:renderVideo',
   RENDER_PROGRESS: 'captionVideo:renderProgress',
   GET_VIDEO_METADATA: 'captionVideo:getVideoMetadata',
   EXTRACT_FRAME: 'captionVideo:extractFrame',
+  FIND_BEST_VIDEO: 'captionVideo:findBestVideo',
+  GET_AVAILABLE_FONTS: 'captionVideo:getAvailableFonts',
 } as const;

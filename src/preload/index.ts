@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(channel, data)
   },
 
+  dialog: {
+    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options)
+  },
+
   // Gemini API
   gemini: createGeminiAPI(),
 
@@ -60,6 +64,9 @@ declare global {
       sendMessage: (channel: string, data: unknown) => void
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void
       invoke: (channel: string, data?: unknown) => Promise<unknown>
+      dialog: {
+        showOpenDialog: (options: any) => Promise<string[] | undefined>
+      }
       gemini: GeminiAPI
       caption: CaptionAPI
       tts: TTSAPI

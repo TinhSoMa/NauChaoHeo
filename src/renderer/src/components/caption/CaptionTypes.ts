@@ -22,5 +22,5 @@ export interface TTSProgress {
   message: string;
 }
 
-export type Step = 1 | 2 | 3 | 4 | 5 | 6;
+export type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type ProcessStatus = 'idle' | 'running' | 'success' | 'error';

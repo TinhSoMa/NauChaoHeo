@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
+import folderIconUrl from '../../../../../resources/icons/folder.svg';
+import videoIconUrl from '../../../../../resources/icons/video.svg';
 import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
@@ -16,6 +19,8 @@ import { Step } from './CaptionTypes';
 import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
+import { SubtitlePreview } from './SubtitlePreview';
+import { Settings } from 'lucide-react';
 
 export function CaptionTranslator() {
   // Project output paths
@@ -30,18 +35,134 @@ export function CaptionTranslator() {
     inputType: settings.inputType,
   });
 
-  // 3. Processing Hook
+  // 3. Subtitle Position State (for hardsub drag-drop)
+  const [subtitlePosition, setSubtitlePosition] = useState<{ x: number; y: number } | null>(null);
+
+  // 4. Processing Hook
   const processing = useCaptionProcessing({
     entries: fileManager.entries,
     setEntries: fileManager.setEntries,
     filePath: fileManager.filePath,
     inputType: settings.inputType,
     captionFolder,
-    settings,
+    settings: { ...settings, subtitlePosition },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
   });
 
+  const audioFiles = processing.audioFiles;
+
+  // 5. Available Fonts State
+  const [availableFonts, setAvailableFonts] = useState<string[]>(['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto']);
+
+  const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
+
+  const processOutputDir = settings.inputType === 'srt' 
+    ? (fileManager.filePath ? fileManager.filePath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
+    : (fileManager.filePath ? `${fileManager.filePath.split('; ')[0]}/caption_output` : '');
+
+  // 6. Tính toán thời lượng Audio & Video cho Step 7
+  useEffect(() => {
+    console.log("Process Output Directory:", processOutputDir);
+    console.log("Processing Status:", processing.status);
+
+    let mounted = true;
+    const fetchDiskDuration = async () => {
+      if (!processOutputDir) {
+        if (mounted) setDiskAudioDuration(null);
+        return;
+      }
+      try {
+        const audioPath = `${processOutputDir}/merged_audio.wav`;
+        console.log("Fetching metadata for audio path:", audioPath);
+        const res = await (window.electronAPI as any).captionVideo.getVideoMetadata(audioPath);
+        console.log("Metadata response:", res);
+        if (mounted && res?.success && res.data?.duration) {
+          setDiskAudioDuration(res.data.duration);
+        } else if (mounted) {
+          setDiskAudioDuration(null);
+        }
+      } catch (err) {
+        console.error("Error fetching disk duration:", err);
+        if (mounted) setDiskAudioDuration(null);
+      }
+    };
+
+    fetchDiskDuration();
+    if (processing.status === 'success') {
+      fetchDiskDuration();
+    }
+  }, [processOutputDir, processing.status]);
+
+  const srtDurationMs = fileManager.entries.length > 0 
+    ? Math.max(...fileManager.entries.map(e => e.endMs || 0)) 
+    : 0;
+
+  // Nếu file audio thực tế không tồn tại, tính toán độ dài kết hợp TTS thực tế dự phòng
+  let fallbackBaseAudioDurationMs = srtDurationMs;
+  if (!settings.autoFitAudio && audioFiles && audioFiles.length > 0) {
+    let maxEndTime = 0;
+    for (const f of audioFiles) {
+      // @ts-ignore
+      const ttsEndMs = f.startMs + (typeof f.durationMs === 'number' ? f.durationMs : 0);
+      if (ttsEndMs > maxEndTime) maxEndTime = ttsEndMs;
+    }
+    fallbackBaseAudioDurationMs = Math.max(srtDurationMs, maxEndTime);
+  }
+
+  // Lấy độ dài file audio thật trên đĩa, nếu chưa có thì dùng ước tính. 
+  // File audio trên đĩa là kết quả của bước merge.
+  const baseAudioDuration = diskAudioDuration !== null && diskAudioDuration > 0
+    ? diskAudioDuration
+    : (fallbackBaseAudioDurationMs / 1000);
+
+  const firstPath = fileManager.filePath?.split('; ')[0];
+  const videoInfo = firstPath ? fileManager.folderVideos[firstPath] : null;
+  const originalVideoDuration = videoInfo?.duration || 0;
+
+  const audioExpectedDuration = settings.renderAudioSpeed > 0 
+    ? baseAudioDuration / settings.renderAudioSpeed 
+    : baseAudioDuration;
+
+  let autoVideoSpeed = 1.0;
+  if (originalVideoDuration > 0 && audioExpectedDuration > 0) {
+    autoVideoSpeed = originalVideoDuration / audioExpectedDuration;
+  }
+
+  const formatDuration = (seconds: number) => {
+    if (seconds <= 0) return '--';
+    const m = Math.floor(seconds / 60);
+    const s = (seconds % 60).toFixed(1);
+    return m > 0 ? `${m}p${s}s` : `${s}s`;
+  };
+
+  useEffect(() => {
+    console.log(`[CaptionTranslator] 🕒 THỜI GIAN GỐC & TÍNH TOÁN (AUTO-FIT):
+- File audio trên đĩa (diskAudioDuration): ${diskAudioDuration ? diskAudioDuration.toFixed(2) + 's' : 'null'}
+- Thời gian gốc dự phòng (fallbackBaseAudioDurationMs): ${(fallbackBaseAudioDurationMs / 1000).toFixed(2)}s
+- Duration Audio gốc (baseAudioDuration): ${baseAudioDuration.toFixed(2)}s
+- Tốc độ Audio thiết lập (settings.renderAudioSpeed): ${settings.renderAudioSpeed}x
+- 👉 Duration Audio mới (Render video length): ${audioExpectedDuration.toFixed(2)}s
+- Duration Video gốc (originalVideoDuration): ${originalVideoDuration.toFixed(2)}s
+- 👉 Tốc độ Video tự động chỉnh (autoVideoSpeed): ${autoVideoSpeed.toFixed(3)}x
+    `);
+  }, [diskAudioDuration, fallbackBaseAudioDurationMs, baseAudioDuration, settings.renderAudioSpeed, audioExpectedDuration, originalVideoDuration, autoVideoSpeed]);
+
+  useEffect(() => {
+    // Lấy danh sách font thực tế từ resources/fonts
+    const fetchFonts = async () => {
+      try {
+        const res = await (window.electronAPI as any).captionVideo.getAvailableFonts();
+        if (res?.success && res.data?.length > 0) {
+          setAvailableFonts(res.data);
+        }
+      } catch (err) {
+        console.error("Lỗi lấy font", err);
+      }
+    };
+    fetchFonts();
+  }, []);
+  
   const getProgressColor = () => {
     if (processing.status === 'error') return 'var(--color-error)';
     if (processing.status === 'success') return 'var(--color-success)';
@@ -50,8 +171,6 @@ export function CaptionTranslator() {
 
   return (
     <div className={styles.container}>
-      {/* Header */}
-      <h1 className={styles.header}>Dịch Caption Tự Động</h1>
 
       {/* Cột trái: Input, Model, TTS */}
       <div className={styles.leftColumn}>
@@ -75,12 +194,46 @@ export function CaptionTranslator() {
             />
           </div>
 
-          <div className={styles.flexRow}>
-            <Input
-              value={fileManager.filePath}
-              onChange={(e) => fileManager.setFilePath(e.target.value)}
-              placeholder={settings.inputType === 'srt' ? 'Đường dẫn file .srt' : 'Đường dẫn file draft_content.json'}
-            />
+          <div className={styles.flexRow} style={settings.inputType === 'draft' ? { alignItems: 'stretch' } : {}}>
+            {settings.inputType === 'srt' ? (
+              <Input
+                value={fileManager.filePath}
+                onChange={(e) => fileManager.setFilePath(e.target.value)}
+                placeholder="Đường dẫn file .srt"
+              />
+            ) : (
+              <div 
+                className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
+                onClick={!fileManager.filePath ? fileManager.handleBrowseFile : undefined}
+              >
+                {!fileManager.filePath ? (
+                  <span className={styles.placeholderText}>Chưa chọn thư mục dự án nào...</span>
+                ) : (
+                  <div className={styles.folderGrid}>
+                    {fileManager.filePath.split('; ').map((path, idx) => {
+                      // Extract folder name from path
+                      const folderName = path.split(/[/\\]/).pop() || path;
+                      const videoInfo = fileManager.folderVideos[path];
+                      
+                      return (
+                        <div key={idx} className={styles.folderBox} title={path}>
+                          <div className={styles.folderBoxHeader}>
+                            <img src={folderIconUrl} alt="folder" className={styles.folderIcon} style={{ width: '16px', height: '16px', marginRight: '6px' }} />
+                            <span className={styles.folderName}>{folderName}</span>
+                          </div>
+                          {videoInfo && (
+                            <div className={styles.folderBoxSubText}>
+                              <img src={videoIconUrl} alt="video" style={{ width: '14px', height: '14px', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
+                              {videoInfo.name}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             <Button onClick={fileManager.handleBrowseFile}>
               Browse
             </Button>
@@ -88,6 +241,53 @@ export function CaptionTranslator() {
           {fileManager.entries.length > 0 && (
             <p className={styles.textMuted} style={{ marginTop: '8px' }}>Đã load: {fileManager.entries.length} dòng</p>
           )}
+        </div>
+
+        {/* Section 2: Split Config */}
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>2. Cấu hình chia nhỏ Text</div>
+          <div className={styles.splitConfig}>
+
+            <RadioButton
+              label="Dòng/file"
+              checked={settings.splitByLines}
+              onChange={() => settings.setSplitByLines(true)}
+              name="splitConfig"
+            >
+              <select 
+                value={settings.linesPerFile} 
+                onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
+                className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
+                disabled={!settings.splitByLines}
+                onClick={(e) => e.stopPropagation()}
+                style={{ marginTop: '8px' }}
+              >
+                {LINES_PER_FILE_OPTIONS.map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </RadioButton>
+
+            <RadioButton
+              label="Số phần"
+              checked={!settings.splitByLines}
+              onChange={() => settings.setSplitByLines(false)}
+              name="splitConfig"
+            >
+              <Input
+                type="number"
+                value={settings.numberOfParts}
+                onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
+                min={2}
+                max={20}
+                variant="small"
+                disabled={settings.splitByLines}
+                onClick={(e) => e.stopPropagation()}
+                containerClassName={settings.splitByLines ? styles.disabled : ''}
+                style={{ marginTop: '8px' }}
+              />
+            </RadioButton>
+          </div>
         </div>
 
         {/* Section 3: Gemini Model */}
@@ -146,65 +346,235 @@ export function CaptionTranslator() {
               </select>
             </div>
           </div>
+          
+
+
+          <div style={{ marginTop: '12px' }}>
+            <Checkbox
+              label="Tự động điều chỉnh tốc độ audio (fit vào thời lượng SRT)"
+              checked={settings.autoFitAudio}
+              onChange={() => settings.setAutoFitAudio(!settings.autoFitAudio)}
+            />
+          </div>
         </div>
       </div>
 
       {/* Cột phải: Split, Controls */}
       <div className={styles.rightColumn}>
-        {/* Section 2: Split Config */}
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>2. Cấu hình chia nhỏ Text</div>
-          <div className={styles.splitConfig}>
+        {/* Section 6: Video Options (Only shows when Step 7 is checked) */}
+        {processing.enabledSteps.has(7) && (
+          <div className={styles.section} style={{ marginTop: '20px' }}>
+            <div className={styles.sectionTitle}><Settings size={16} style={{display: 'inline-block', verticalAlign: 'middle', marginRight: 8}}/>6. Cấu hình Subtitle Video (Step 7)</div>
 
-            <RadioButton
-              label="Dòng/file"
-              checked={settings.splitByLines}
-              onChange={() => settings.setSplitByLines(true)}
-              name="splitConfig"
-            >
-              <select 
-                value={settings.linesPerFile} 
-                onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
-                className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
-                disabled={!settings.splitByLines}
-                onClick={(e) => e.stopPropagation()}
-                style={{ marginTop: '8px' }}
-              >
-                {LINES_PER_FILE_OPTIONS.map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </RadioButton>
+            {/* Loại Video Output */}
+            <div className={styles.grid2} style={{marginBottom: 16}}>
+               <div style={{gridColumn: '1 / -1'}}>
+                 <span className={styles.label}>Loại Video Output</span>
+                 <div style={{display: 'flex', gap: '20px', marginTop: 8}}>
+                    <RadioButton
+                      label="Sửa đè (Hardsub) lên Video Gốc"
+                      checked={settings.renderMode === 'hardsub'}
+                      onChange={() => settings.setRenderMode('hardsub')}
+                      name="renderMode"
+                    />
+                    <RadioButton
+                      label="Tạo Video Nền Đen rời (Import CapCut)"
+                      checked={settings.renderMode === 'black_bg'}
+                      onChange={() => settings.setRenderMode('black_bg')}
+                      name="renderMode"
+                    />
+                 </div>
+               </div>
+            </div>
 
-            <RadioButton
-              label="Số phần"
-              checked={!settings.splitByLines}
-              onChange={() => settings.setSplitByLines(false)}
-              name="splitConfig"
-            >
-              <Input
-                type="number"
-                value={settings.numberOfParts}
-                onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
-                min={2}
-                max={20}
-                variant="small"
-                disabled={settings.splitByLines}
-                onClick={(e) => e.stopPropagation()}
-                containerClassName={settings.splitByLines ? styles.disabled : ''}
-                style={{ marginTop: '8px' }}
+            {/* Render Styles*/}
+            <div className={styles.grid2} style={{marginBottom: 12}}>
+               <div className={styles.inputGroup}>
+                 <span className={styles.label}>Font Chữ</span>
+                 <select
+                    className={styles.select}
+                    value={settings.style?.fontName || 'ZYVNA Fairy'}
+                    onChange={e => settings.setStyle(s => ({...s, fontName: e.target.value}))}
+                 >
+                    {availableFonts.map(font => (
+                      <option key={font} value={font}>{font}</option>
+                    ))}
+                 </select>
+               </div>
+               <div className={styles.inputGroup}>
+                 <span className={styles.label}>
+                   Font Size (px)
+                   {settings.renderMode === 'black_bg' && (
+                     <span style={{fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginTop: 2}}>
+                       Tự tính = 90% chiều cao strip
+                     </span>
+                   )}
+                 </span>
+                 <Input
+                    type="number"
+                    value={settings.style?.fontSize}
+                    onChange={e => settings.setStyle(s => ({...s, fontSize: Number(e.target.value)}))}
+                    min={20} max={200}
+                    disabled={settings.renderMode === 'black_bg'}
+                 />
+               </div>
+            </div>
+
+
+
+            <div className={styles.grid2} style={{marginBottom: 12}}>
+               <div className={styles.inputGroup} style={{ gridColumn: '1 / span 2' }}>
+                 <span className={styles.label}>Tốc độ Video tự thích ứng (Auto-Fit)</span>
+                 <div style={{ padding: '12px', background: 'rgba(0,0,0,0.1)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                   
+                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                     <span style={{ fontSize: '13px', width: '120px' }}>Tăng tốc Audio:</span>
+                     <Input
+                        type="number"
+                        value={settings.renderAudioSpeed}
+                        onChange={e => settings.setRenderAudioSpeed(Number(e.target.value))}
+                        min={0.5} max={5} step={0.1}
+                        style={{ width: '80px' }}
+                     />
+                     <span style={{ fontSize: '12px', fontWeight: 'bold' }}>x</span>
+                   </div>
+
+                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', fontSize: '12px' }}>
+                     <div>
+                       <div style={{ color: 'var(--text-secondary)' }}>🎤 Thời lượng Audio mới:</div>
+                       <div style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{formatDuration(audioExpectedDuration)}</div>
+                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>(Gốc: {formatDuration(baseAudioDuration)})</div>
+                     </div>
+                     <div>
+                       <div style={{ color: 'var(--text-secondary)' }}>🎬 Tốc độ Video cần thiết:</div>
+                       <div style={{ fontWeight: 'bold', color: autoVideoSpeed > 1 ? 'var(--color-warning)' : 'var(--color-success)' }}>
+                         {autoVideoSpeed.toFixed(2)}x
+                       </div>
+                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>(Để khớp vỏn vẹn {formatDuration(audioExpectedDuration)})</div>
+                     </div>
+                   </div>
+
+                 </div>
+               </div>
+            </div>
+
+            <div className={styles.grid2} style={{marginBottom: 12}}>
+               <div className={styles.inputGroup}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <span className={styles.label}>Âm lượng Video gốc (%)</span>
+                   <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{settings.videoVolume}%</span>
+                 </div>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                   <input
+                      type="range"
+                      value={settings.videoVolume}
+                      onChange={e => settings.setVideoVolume(Number(e.target.value))}
+                      min={0} max={200} step={10}
+                      style={{ flex: 1, cursor: 'pointer' }}
+                   />
+                 </div>
+                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                   Gắn liền với hình ảnh
+                 </div>
+               </div>
+               <div className={styles.inputGroup}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <span className={styles.label}>Âm lượng Audio TTS (%)</span>
+                   <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{settings.audioVolume}%</span>
+                 </div>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                   <input
+                      type="range"
+                      value={settings.audioVolume}
+                      onChange={e => settings.setAudioVolume(Number(e.target.value))}
+                      min={0} max={200} step={10}
+                      style={{ flex: 1, cursor: 'pointer' }}
+                   />
+                 </div>
+                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                   Âm thanh giọng đọc
+                 </div>
+               </div>
+            </div>
+
+             <div className={styles.grid2} style={{marginBottom: 12}}>
+
+               
+               <div className={styles.inputGroup}>
+                 <span className={styles.label}>Màu Chữ</span>
+                 <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 6, position: 'relative'}}>
+                   <div style={{
+                     width: 36, height: 36,
+                     borderRadius: 8,
+                     background: settings.style?.fontColor || '#FFFF00',
+                     border: '2px solid rgba(255,255,255,0.2)',
+                     boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                     flexShrink: 0,
+                   }} />
+                   <span style={{fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: 13}}>
+                     {(settings.style?.fontColor || '#FFFF00').toUpperCase()}
+                   </span>
+                   <input
+                     type="color"
+                     value={settings.style?.fontColor || '#FFFF00'}
+                     onChange={e => settings.setStyle(s => ({...s, fontColor: e.target.value}))}
+                     style={{position: 'absolute', opacity: 0, width: '100%', height: '100%', cursor: 'pointer', top: 0, left: 0}}
+                   />
+                 </label>
+               </div>
+               <div className={styles.inputGroup}>
+                 <span className={styles.label}>Force GPU (NVENC)</span>
+                 <div style={{marginTop: 8}}>
+                    <Checkbox
+                       label="Sử dụng phần cứng GPU"
+                       checked={settings.useGpu}
+                       onChange={() => settings.setUseGpu(!settings.useGpu)}
+                    />
+                 </div>
+               </div>
+            </div>
+            {/* Subtitle Preview (hardsub only) */}
+            {settings.renderMode === 'hardsub' && settings.inputType === 'draft' && (
+              <SubtitlePreview
+                videoPath={fileManager.firstVideoPath}
+                style={settings.style}
+                entries={fileManager.entries}
+                blackoutTop={settings.blackoutTop}
+                renderResolution={settings.renderResolution}
+                logoPath={settings.logoPath}
+                logoPosition={settings.logoPosition}
+                logoScale={settings.logoScale}
+                onPositionChange={setSubtitlePosition}
+                onBlackoutChange={settings.setBlackoutTop}
+                onRenderResolutionChange={settings.setRenderResolution}
+                onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
+                onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+                onSelectLogo={async () => {
+                  const result = await (window.electronAPI as any).invoke('dialog:openFile', {
+                    filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+                    properties: ['openFile'],
+                  });
+                  if (!result?.canceled && result?.filePaths?.[0]) {
+                    settings.setLogoPath(result.filePaths[0]);
+                    settings.setLogoPosition(undefined);
+                  }
+                }}
+                onRemoveLogo={() => {
+                  settings.setLogoPath(undefined);
+                  settings.setLogoPosition(undefined);
+                }}
               />
-            </RadioButton>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Section 5: Controls */}
-        <div className={styles.section} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div className={styles.sectionTitle}>5. Điều khiển & Tiến độ</div>
+        <div className={styles.section} style={{ flex: 1, display: 'flex', flexDirection: 'column', marginTop: '20px' }}>
+          <div className={styles.sectionTitle}>7. Điều khiển & Tiến độ</div>
           
           {/* Step Checkboxes */}
           <div className={styles.stepCheckboxes}>
-            {([1, 2, 3, 4, 5, 6] as Step[]).map(step => (
+            {([1, 2, 3, 4, 5, 6, 7] as Step[]).map(step => (
               <Checkbox
                 key={step}
                 label={STEP_LABELS[step - 1]}

@@ -72,6 +72,10 @@ export interface TTSAPI {
 
   // Trim Silence
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+
+  // Fit Audio to Duration
+  fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) => Promise<IpcApiResponse<TrimSilenceResult>>;
 }
 
 /**
@@ -126,6 +130,12 @@ export function createTTSAPI(): TTSAPI {
 
     trimSilence: (audioPaths: string[]) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths),
+
+    trimSilenceEnd: (audioPaths: string[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END, audioPaths),
+
+    fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_FIT_AUDIO, audioItems),
   };
 }
 
@@ -134,7 +144,6 @@ export function createTTSAPI(): TTSAPI {
 // ============================================
 
 import {
-  ASSStyleConfig,
   VideoMetadata,
   RenderProgress,
   CAPTION_VIDEO_IPC_CHANNELS,
@@ -144,22 +153,16 @@ import {
  * Caption Video API interface cho Renderer process
  */
 export interface CaptionVideoAPI {
-  // Convert SRT to ASS
-  convertToAss: (options: {
-    srtPath: string;
-    assPath: string;
-    videoResolution?: { width: number; height: number };
-    style: ASSStyleConfig;
-    position?: { x: number; y: number };
-  }) => Promise<IpcApiResponse<{ assPath: string; entriesCount: number }>>;
-
   // Render video
   renderVideo: (options: {
-    assPath: string;
+    srtPath: string;
     outputPath: string;
     width: number;
     height: number;
-    useGpu: boolean;
+    videoPath?: string;
+    targetDuration?: number;
+    useGpu?: boolean;
+    style?: any;
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
 
   // Listen to render progress
@@ -174,6 +177,21 @@ export interface CaptionVideoAPI {
     width: number;
     height: number;
   }>>;
+
+  // Auto-detect best video in folders
+  findBestVideoInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<{
+    videoPath?: string;
+    metadata?: VideoMetadata;
+  }>>;
+
+  // Get available fonts in resources/fonts
+  getAvailableFonts: () => Promise<IpcApiResponse<string[]>>;
+
+  // Get base64 font data for injection in preview
+  getFontData: (fontName: string) => Promise<IpcApiResponse<string>>;
+
+  // Read local image as base64 for preview
+  readLocalImage: (imagePath: string) => Promise<IpcApiResponse<string>>;
 }
 
 /**
@@ -181,9 +199,6 @@ export interface CaptionVideoAPI {
  */
 export function createCaptionVideoAPI(): CaptionVideoAPI {
   return {
-    convertToAss: (options) =>
-      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.CONVERT_TO_ASS, options),
-
     renderVideo: (options) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO, options),
 
@@ -198,5 +213,17 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
 
     extractFrame: (videoPath: string, frameNumber?: number) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.EXTRACT_FRAME, videoPath, frameNumber),
+
+    findBestVideoInFolders: (folderPaths: string[]) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO, folderPaths),
+
+    getAvailableFonts: () =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.GET_AVAILABLE_FONTS),
+
+    getFontData: (fontName: string) =>
+      ipcRenderer.invoke('captionVideo:getFontData', fontName),
+
+    readLocalImage: (imagePath: string) =>
+      ipcRenderer.invoke('captionVideo:readLocalImage', imagePath),
   };
 }

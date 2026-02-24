@@ -1,0 +1,133 @@
+.previewSection {
+  margin-top: 12px;
+}
+
+/* Mode toggle bar */
+.modeBar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.modeBtn {
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+}
+
+.modeBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
+.modeBtnActive {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.modeBtnActive:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.canvasContainer {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #111827;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  cursor: crosshair;
+}
+
+.canvasContainer.dragging {
+  cursor: grabbing;
+}
+
+.canvasContainer.blackoutMode {
+  cursor: ns-resize;
+  border-color: rgba(255, 60, 60, 0.4);
+}
+
+.canvasContainer.blackoutMode.dragging {
+  cursor: ns-resize;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.infoBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+.positionInfo {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--color-surface);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+.resetBtn {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.resetBtn:hover {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.dangerBtn:hover {
+  background: var(--color-error, #ef4444);
+  border-color: var(--color-error, #ef4444);
+}
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}

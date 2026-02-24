@@ -105,7 +105,7 @@ export function registerTTSHandlers(): void {
       outputPath: string,
       timeScale: number = 1.0
     ): Promise<IpcResponse<MergeResult>> => {
-      console.log(`[TTSHandlers] Merge audio: ${audioFiles.length} files -> ${outputPath}`);
+      console.log(`[TTSHandlers] Merge audio: ${audioFiles.length} files -> ${outputPath}, scale: ${timeScale}`);
 
       try {
         const result = await TTSService.mergeAudioFiles(audioFiles, outputPath, timeScale);
@@ -153,6 +153,90 @@ export function registerTTSHandlers(): void {
         return { success: result.success, data: result, error: result.errors?.join(', ') };
       } catch (error) {
         console.error('[TTSHandlers] Lỗi trim silence:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // TRIM SILENCE END
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END,
+    async (
+      _event: IpcMainInvokeEvent,
+      audioPaths: string[]
+    ): Promise<IpcResponse<TrimSilenceResult>> => {
+      console.log(`[TTSHandlers] Trim silence end: ${audioPaths.length} files`);
+
+      try {
+        let trimmedCount = 0;
+        let failedCount = 0;
+        const errors: string[] = [];
+
+        for (const audioPath of audioPaths) {
+          const success = await TTSService.trimSilenceEnd(audioPath);
+          if (success) {
+            trimmedCount++;
+          } else {
+            failedCount++;
+            errors.push(`Không thể trim end: ${audioPath}`);
+          }
+        }
+
+        const result: TrimSilenceResult = {
+          success: failedCount === 0,
+          trimmedCount,
+          failedCount,
+          errors: errors.length > 0 ? errors : undefined,
+        };
+
+        return { success: result.success, data: result, error: result.errors?.join(', ') };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi trim silence end:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // FIT AUDIO TO DURATION
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_FIT_AUDIO,
+    async (
+      _event: IpcMainInvokeEvent,
+      audioItems: Array<{ path: string; durationMs: number }>
+    ): Promise<IpcResponse<{
+      scaledCount: number;
+      skippedCount: number;
+      pathMapping: Array<{ originalPath: string; outputPath: string }>;
+    }>> => {
+      console.log(`[TTSHandlers] Fit audio: ${audioItems.length} files`);
+
+      try {
+        let scaledCount = 0;
+        let skippedCount = 0;
+        const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+
+        for (const item of audioItems) {
+          const result = await TTSService.fitAudioToDuration(item.path, item.durationMs);
+          pathMapping.push({ originalPath: item.path, outputPath: result.outputPath });
+          if (result.scaled) {
+            scaledCount++;
+          } else {
+            skippedCount++;
+          }
+        }
+
+        console.log(`[TTSHandlers] Fit audio done: ${scaledCount} scaled, ${skippedCount} skipped`);
+
+        return {
+          success: true,
+          data: { scaledCount, skippedCount, pathMapping },
+        };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi fit audio:', error);
         return { success: false, error: String(error) };
       }
     }

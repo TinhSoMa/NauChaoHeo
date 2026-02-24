@@ -68,7 +68,7 @@ export const DEFAULT_TARGET_LANGUAGE = 'Vietnamese';
 // STEP LABELS
 // ============================================
 
-export const STEP_LABELS = ['Input', 'Split', 'Dịch', 'TTS', 'Trim', 'Merge'];
+export const STEP_LABELS = ['Input', 'Split', 'Dịch', 'TTS', 'Trim', 'Merge', 'Render Video'];
 
-export const DEFAULT_INPUT_TYPE: 'srt' | 'draft' = 'draft';
-
+export type InputType = 'srt' | 'draft';
+export const DEFAULT_INPUT_TYPE: InputType = 'draft';

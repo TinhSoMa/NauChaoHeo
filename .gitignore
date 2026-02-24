@@ -18,3 +18,12 @@ release/
 out/*
 log/*
 test/crop_video_funtion.py
+test_output.mp4
+diff.txt
+test_ffmpeg_srt.js
+test_ffmpeg.js
+test_ffmpeg2.js
+test_sub.ass
+test/final_video_1771832980376.mp4
+test/merged_audio.wav
+test_output/001_Kẻ_hành_hương_thành_tâm_và_châ_test.wav

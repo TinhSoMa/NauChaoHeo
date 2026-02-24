@@ -42,9 +42,10 @@ export {
   DEFAULT_ASS_STYLE,
 } from './assConverter';
 
-// Video Renderer (ASS -> Video)
+// Video Renderer (SRT -> Video)
 export {
   getVideoMetadata,
   extractVideoFrame,
-  renderAssToVideo,
+  renderVideo,
+  findBestVideoInFolders,
 } from './videoRenderer';

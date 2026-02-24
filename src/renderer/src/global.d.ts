@@ -283,6 +283,10 @@ interface AppSettings {
   useStoredContextOnFirstSend: boolean;
   translationPromptId: string | null;
   summaryPromptId: string | null;
+  // Caption logo (global)
+  captionLogoPath: string | null;
+  captionLogoPosition: { x: number; y: number } | null;
+  captionLogoScale: number;
 }
 
 /**
@@ -458,6 +462,10 @@ declare global {
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => () => void;
       invoke: (channel: string, data?: unknown) => Promise<unknown>;
       
+      dialog: {
+        showOpenDialog: (options: any) => Promise<string[] | undefined>;
+      };
+
       // Gemini API
       gemini: GeminiAPI;
 
@@ -481,6 +489,9 @@ declare global {
 
       // Prompt API (quan ly prompts)
       prompt: PromptAPI;
+
+      // Caption Video API (subtitle strip)
+      captionVideo: any; 
     };
   }
 }

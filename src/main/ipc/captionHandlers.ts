@@ -9,6 +9,8 @@ import {
   TranslationOptions,
   TranslationResult,
   SubtitleEntry,
+  VideoMetadata,
+  CAPTION_VIDEO_IPC_CHANNELS
 } from '../../shared/types/caption';
 import * as CaptionService from '../services/caption';
 
@@ -32,11 +34,11 @@ export function registerCaptionHandlers(): void {
   // ============================================
   ipcMain.handle(
     'dialog:openFile',
-    async (_event: IpcMainInvokeEvent, options?: { filters?: { name: string; extensions: string[] }[] }) => {
+    async (_event: IpcMainInvokeEvent, options?: { filters?: { name: string; extensions: string[] }[]; properties?: any[] }) => {
       console.log('[CaptionHandlers] Mở dialog chọn file...');
       
       const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
+        properties: options?.properties || ['openFile'],
         filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }],
       });
       
@@ -180,45 +182,7 @@ export function registerCaptionHandlers(): void {
     }
   );
 
-  // ============================================
-  // CAPTION VIDEO - CONVERT SRT TO ASS
-  // ============================================
-  ipcMain.handle(
-    'captionVideo:convertToAss',
-    async (
-      _event: IpcMainInvokeEvent,
-      options: {
-        srtPath: string;
-        assPath: string;
-        videoResolution?: { width: number; height: number };
-        style: {
-          fontName: string;
-          fontSize: number;
-          fontColor: string;
-          shadow: number;
-          marginV: number;
-          alignment: number;
-        };
-        position?: { x: number; y: number };
-      }
-    ): Promise<IpcResponse<{ assPath: string; entriesCount: number }>> => {
-      console.log(`[CaptionHandlers] Convert SRT to ASS: ${options.srtPath}`);
 
-      try {
-        const result = await CaptionService.convertSrtToAss(options);
-        if (result.success && result.assPath) {
-          return {
-            success: true,
-            data: { assPath: result.assPath, entriesCount: result.entriesCount || 0 }
-          };
-        }
-        return { success: false, error: result.error };
-      } catch (error) {
-        console.error('[CaptionHandlers] Lỗi convert ASS:', error);
-        return { success: false, error: String(error) };
-      }
-    }
-  );
 
   // ============================================
   // CAPTION VIDEO - RENDER VIDEO
@@ -228,14 +192,17 @@ export function registerCaptionHandlers(): void {
     async (
       event: IpcMainInvokeEvent,
       options: {
-        assPath: string;
+        srtPath: string;
         outputPath: string;
         width: number;
         height: number;
-        useGpu: boolean;
+        videoPath?: string;
+        targetDuration?: number;
+        useGpu?: boolean;
+        style?: any;
       }
     ): Promise<IpcResponse<{ outputPath: string; duration: number }>> => {
-      console.log(`[CaptionHandlers] Render video: ${options.assPath} -> ${options.outputPath}`);
+      console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);
 
       try {
         // Progress callback - gửi về renderer
@@ -246,7 +213,7 @@ export function registerCaptionHandlers(): void {
           }
         };
 
-        const result = await CaptionService.renderAssToVideo(options, progressCallback);
+        const result = await CaptionService.renderVideo(options, progressCallback);
         if (result.success && result.outputPath) {
           return {
             success: true,
@@ -292,6 +259,66 @@ export function registerCaptionHandlers(): void {
   );
 
   // ============================================
+  // CAPTION VIDEO - FONTS (GET AVAILABLE FONTS AND DATA)
+  // ============================================
+  ipcMain.handle(
+    'captionVideo:getAvailableFonts',
+    async (): Promise<IpcResponse<string[]>> => {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        const fontsDir = process.env.NODE_ENV === 'development'
+          ? path.join(__dirname, '../../resources/fonts')
+          : path.join(process.resourcesPath, 'fonts');
+        
+        if (!fs.existsSync(fontsDir)) {
+          return { success: true, data: ['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto'] }; // fallback
+        }
+
+        const files = await fs.promises.readdir(fontsDir);
+        const fonts = files
+          .filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'))
+          .map(f => f.substring(0, f.lastIndexOf('.'))); // remove extension
+        
+        // Add defaults if missing
+        if (!fonts.includes('Be Vietnam Pro')) fonts.push('Be Vietnam Pro');
+        if (!fonts.includes('Roboto')) fonts.push('Roboto');
+
+        return { success: true, data: fonts };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi đọc thư mục fonts:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'captionVideo:getFontData',
+    async (_event: IpcMainInvokeEvent, fontName: string): Promise<IpcResponse<string>> => {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        const fontsDir = process.env.NODE_ENV === 'development'
+          ? path.join(__dirname, '../../resources/fonts')
+          : path.join(process.resourcesPath, 'fonts');
+          
+        const fontPath = path.join(fontsDir, `${fontName}.ttf`);
+        if (fs.existsSync(fontPath)) {
+          const buffer = await fs.promises.readFile(fontPath);
+          const base64 = buffer.toString('base64');
+          return { success: true, data: `data:font/truetype;charset=utf-8;base64,${base64}` };
+        }
+        return { success: false, error: 'Font not found' };
+      } catch (error) {
+        console.error(`[CaptionHandlers] Lỗi đọc font ${fontName}:`, error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
   // CAPTION VIDEO - EXTRACT FRAME
   // ============================================
   ipcMain.handle(
@@ -322,6 +349,33 @@ export function registerCaptionHandlers(): void {
         return { success: false, error: result.error };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi extract frame:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - FIND BEST VIDEO
+  // ============================================
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO,
+    async (
+      _event: IpcMainInvokeEvent,
+      folderPaths: string[]
+    ): Promise<IpcResponse<{ videoPath?: string; metadata?: VideoMetadata }>> => {
+      console.log(`[CaptionHandlers] Find best video in ${folderPaths.length} folders`);
+
+      try {
+        const result = await CaptionService.findBestVideoInFolders(folderPaths);
+        if (result.success && result.videoPath) {
+          return {
+            success: true,
+            data: { videoPath: result.videoPath, metadata: result.metadata }
+          };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi find best video:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -360,5 +414,38 @@ export function registerCaptionHandlers(): void {
     }
   );
 
+  // ============================================
+  // CAPTION VIDEO - READ LOCAL IMAGE
+  // ============================================
+  ipcMain.handle(
+    'captionVideo:readLocalImage',
+    async (_event: IpcMainInvokeEvent, imagePath: string): Promise<IpcResponse<string>> => {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        if (!fs.existsSync(imagePath)) {
+          return { success: false, error: 'File ảnh không tồn tại' };
+        }
+        
+        const ext = path.extname(imagePath).toLowerCase();
+        let mimeType = 'image/png';
+        if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+        else if (ext === '.webp') mimeType = 'image/webp';
+        else if (ext === '.gif') mimeType = 'image/gif';
+        
+        const buffer = await fs.promises.readFile(imagePath);
+        const base64 = buffer.toString('base64');
+        return { success: true, data: `data:${mimeType};base64,${base64}` };
+      } catch (error) {
+        console.error(`[CaptionHandlers] Lỗi đọc ảnh ${imagePath}:`, error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+
+
   console.log('[CaptionHandlers] Đã đăng ký handlers thành công');
 }
+
+
