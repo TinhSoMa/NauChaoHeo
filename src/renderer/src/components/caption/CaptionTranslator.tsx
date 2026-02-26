@@ -57,28 +57,49 @@ export function CaptionTranslator() {
 
   const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
 
-  const processOutputDir = settings.inputType === 'srt' 
-    ? (fileManager.filePath ? fileManager.filePath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
-    : (fileManager.filePath ? `${fileManager.filePath.split('; ')[0]}/caption_output` : '');
+  // Section 6 (Cấu hình) luôn dùng folder đầu tiên làm tham chiếu cấu hình.
+  // Folder đang xử lý (processing.currentFolder) chỉ dùng cho progress badge ở Section 7.
+  const firstFolderPath = fileManager.filePath?.split('; ')[0] ?? '';
+  const isMultiFolder = (fileManager.filePath?.split('; ').length ?? 0) > 1;
+
+  // Khi đang xử lý multi-folder, dùng path của folder đang xử lý để hiển thị thông số video chính xác.
+  // Khi idle, hiển thị folder đầu tiên trong danh sách.
+  const displayPath = processing.currentFolder?.path ?? firstFolderPath;
+  const videoInfo = displayPath ? fileManager.folderVideos[displayPath] : null;
+  const originalVideoDuration = videoInfo?.duration || 0;
+
+  // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
+  const displayOutputDir = settings.inputType === 'srt'
+    ? (displayPath ? displayPath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
+    : (displayPath ? `${displayPath}/caption_output` : '');
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
+  // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
   useEffect(() => {
-    console.log("Process Output Directory:", processOutputDir);
-    console.log("Processing Status:", processing.status);
+    setDiskAudioDuration(null);
+  }, [firstFolderPath]);
 
+  useEffect(() => {
     let mounted = true;
     const fetchDiskDuration = async () => {
-      if (!processOutputDir) {
+      if (!displayOutputDir) {
         if (mounted) setDiskAudioDuration(null);
         return;
       }
       try {
-        const audioPath = `${processOutputDir}/merged_audio.wav`;
+        const audioPath = `${displayOutputDir}/merged_audio.wav`;
         console.log("Fetching metadata for audio path:", audioPath);
         const res = await (window.electronAPI as any).captionVideo.getVideoMetadata(audioPath);
         console.log("Metadata response:", res);
         if (mounted && res?.success && res.data?.duration) {
-          setDiskAudioDuration(res.data.duration);
+          const audioDuration: number = res.data.duration;
+          // Sanity check: nếu audio > 2× video duration → stale file từ run cũ, bỏ qua
+          if (originalVideoDuration > 0 && audioDuration > originalVideoDuration * 2) {
+            console.warn(`diskAudioDuration ${audioDuration}s > 2× video ${originalVideoDuration}s — stale file, ignoring`);
+            if (mounted) setDiskAudioDuration(null);
+          } else {
+            if (mounted) setDiskAudioDuration(audioDuration);
+          }
         } else if (mounted) {
           setDiskAudioDuration(null);
         }
@@ -92,15 +113,23 @@ export function CaptionTranslator() {
     if (processing.status === 'success') {
       fetchDiskDuration();
     }
-  }, [processOutputDir, processing.status]);
+    return () => { mounted = false; };
+  }, [displayOutputDir, originalVideoDuration, processing.status]);
 
   const srtDurationMs = fileManager.entries.length > 0 
     ? Math.max(...fileManager.entries.map(e => e.endMs || 0)) 
     : 0;
 
-  // Nếu file audio thực tế không tồn tại, tính toán độ dài kết hợp TTS thực tế dự phòng
+  // Multi-folder: entries không được load (guarded by !isMulti) nên srtDurationMs = 0.
+  // Fallback: dùng videoInfo.duration của folder hiện tại làm ước tính duration audio
+  // (TTS fill theo SRT timing ≈ video duration). Cập nhật real-time khi currentFolder đổi.
   let fallbackBaseAudioDurationMs = srtDurationMs;
-  if (!settings.autoFitAudio && audioFiles && audioFiles.length > 0) {
+  if (isMultiFolder && fallbackBaseAudioDurationMs === 0 && originalVideoDuration > 0) {
+    fallbackBaseAudioDurationMs = originalVideoDuration * 1000;
+  }
+
+  // Single-folder: có thể dùng audioFiles nếu đã chạy TTS
+  if (!isMultiFolder && !settings.autoFitAudio && audioFiles && audioFiles.length > 0) {
     let maxEndTime = 0;
     for (const f of audioFiles) {
       // @ts-ignore
@@ -110,15 +139,13 @@ export function CaptionTranslator() {
     fallbackBaseAudioDurationMs = Math.max(srtDurationMs, maxEndTime);
   }
 
-  // Lấy độ dài file audio thật trên đĩa, nếu chưa có thì dùng ước tính. 
-  // File audio trên đĩa là kết quả của bước merge.
-  const baseAudioDuration = diskAudioDuration !== null && diskAudioDuration > 0
+  // Dùng diskAudioDuration (file thực trên đĩa) nếu có, cả single và multi-folder
+  const baseAudioDuration = (diskAudioDuration !== null && diskAudioDuration > 0)
     ? diskAudioDuration
     : (fallbackBaseAudioDurationMs / 1000);
 
-  const firstPath = fileManager.filePath?.split('; ')[0];
-  const videoInfo = firstPath ? fileManager.folderVideos[firstPath] : null;
-  const originalVideoDuration = videoInfo?.duration || 0;
+  // isEstimated: true khi không có audio file thực và dùng video duration fallback
+  const isEstimated = diskAudioDuration === null && srtDurationMs === 0 && originalVideoDuration > 0;
 
   const audioExpectedDuration = settings.renderAudioSpeed > 0 
     ? baseAudioDuration / settings.renderAudioSpeed 
@@ -439,6 +466,12 @@ export function CaptionTranslator() {
                      <span style={{ fontSize: '12px', fontWeight: 'bold' }}>x</span>
                    </div>
 
+                   {isMultiFolder && (
+                     <div style={{ fontSize: '11px', color: 'var(--color-accent, #4a9eff)', marginBottom: '2px' }}>
+                       📁 {videoInfo?.name ?? displayPath.split(/[/\\]/).pop()}
+                       {isEstimated && <span style={{ color: 'var(--color-text-muted)', marginLeft: 6 }}>(~ước tính từ video)</span>}
+                     </div>
+                   )}
                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', fontSize: '12px' }}>
                      <div>
                        <div style={{ color: 'var(--text-secondary)' }}>🎤 Thời lượng Audio mới:</div>
@@ -450,7 +483,11 @@ export function CaptionTranslator() {
                        <div style={{ fontWeight: 'bold', color: autoVideoSpeed > 1 ? 'var(--color-warning)' : 'var(--color-success)' }}>
                          {autoVideoSpeed.toFixed(2)}x
                        </div>
-                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>(Để khớp vỏn vẹn {formatDuration(audioExpectedDuration)})</div>
+                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                         {isMultiFolder
+                           ? `Video gốc: ${formatDuration(originalVideoDuration)}`
+                           : `(Để khớp vỏn vẹn ${formatDuration(audioExpectedDuration)})`}
+                       </div>
                      </div>
                    </div>
 
@@ -607,10 +644,42 @@ export function CaptionTranslator() {
 
           {/* Progress */}
           <div className={styles.progressSection} style={{ marginTop: 'auto', paddingTop: '16px' }}>
+            {processing.currentFolder && processing.currentFolder.total > 1 && (
+              <div className={styles.progressHeader} style={{ marginBottom: '4px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
+                  📁 Project {processing.currentFolder.index}/{processing.currentFolder.total}: {processing.currentFolder.name}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                  {processing.currentFolder.index}/{processing.currentFolder.total}
+                </span>
+              </div>
+            )}
+            {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <span>🎬 {videoInfo?.name ?? 'Video'}</span>
+                <span>⏱ {formatDuration(originalVideoDuration)}</span>
+                <span>🔊 Audio: {formatDuration(audioExpectedDuration)}</span>
+                <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
+                  🚀 Speed: {autoVideoSpeed.toFixed(2)}x
+                </span>
+              </div>
+            )}
             <div className={styles.progressHeader}>
               <span className={styles.textMuted}>{processing.progress.message}</span>
               {processing.progress.total > 0 && <span className={styles.textMuted}>{processing.progress.current}/{processing.progress.total}</span>}
             </div>
+            {processing.currentFolder && processing.currentFolder.total > 1 && (
+              <div className={styles.progressBar} style={{ marginBottom: '4px' }}>
+                <div
+                  className={styles.progressFill}
+                  style={{
+                    width: `${((processing.currentFolder.index - 1) / processing.currentFolder.total) * 100}%`,
+                    backgroundColor: 'var(--color-accent, #4a9eff)',
+                    opacity: 0.5,
+                  }}
+                />
+              </div>
+            )}
             {processing.progress.total > 0 && (
               <div className={styles.progressBar}>
                 <div

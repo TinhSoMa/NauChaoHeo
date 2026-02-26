@@ -305,6 +305,7 @@ export interface RenderVideoOptions {
   targetDuration?: number; // Độ dài cố định (tuỳ chọn) cho nền đen
   useGpu?: boolean;
   style?: ASSStyleConfig;
+  renderMode?: 'hardsub' | 'black_bg';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
   blackoutTop?: number;   // Vùng tô đen: tỉ lệ 0-1 từ trên xuống, VD 0.85 = che 15% dưới video

@@ -3,20 +3,19 @@
  * Port từ caption_funtion.py
  */
 
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import { 
-  RenderVideoOptions, 
   RenderProgress, 
   RenderResult,
   VideoMetadata,
   ExtractFrameResult,
   ASSStyleConfig
-} from '../../../shared/types/caption';
-import { getFFmpegPath, getFFprobePath, isFFmpegAvailable } from '../../utils/ffmpegPath';
-import { getAssDuration } from './assConverter';
+} from './src/shared/types/caption';
+import { getFFmpegPath, getFFprobePath, isFFmpegAvailable } from './src/main/utils/ffmpegPath';
+import { getAssDuration } from './src/main/services/caption/assConverter';
 
 /**
  * Lấy metadata của video bằng ffprobe
@@ -88,7 +87,7 @@ export async function getVideoMetadata(videoPath: string): Promise<{
           fps: Math.round(fps * 100) / 100,
         };
         
-        console.log(`[VideoRenderer] Metadata: ${metadata.width}x${metadata.height}, ${metadata.duration}s, ${metadata.fps}fps`);
+        // console.log(`[VideoRenderer] Metadata: ${metadata.width}x${metadata.height}, ${metadata.duration}s, ${metadata.fps}fps`);
         resolve({ success: true, metadata });
         
       } catch (error) {
@@ -195,10 +194,22 @@ function calculateCaptionHeight(style: ASSStyleConfig): number {
 }
 
 /**
+ * Options riêng cho renderAssToVideo (dùng assPath thay vì srtPath)
+ */
+interface RenderAssOptions {
+  assPath: string;
+  outputPath: string;
+  width: number;
+  height?: number;
+  useGpu?: boolean;
+  style?: ASSStyleConfig;
+}
+
+/**
  * Render file ASS thành video với nền đen
  */
 export async function renderAssToVideo(
-  options: RenderVideoOptions,
+  options: RenderAssOptions,
   progressCallback?: (progress: RenderProgress) => void
 ): Promise<RenderResult> {
   const { assPath, outputPath, width, height: userHeight, useGpu, style } = options;
@@ -284,7 +295,7 @@ export async function renderAssToVideo(
     outputPath
   ];
   
-  console.log(`[VideoRenderer] Command: ffmpeg ${args.join(' ')}`);
+  // console.log(`[VideoRenderer] Command: ffmpeg ${args.join(' ')}`);
   
   return new Promise((resolve) => {
     const process = spawn(ffmpegPath, args);

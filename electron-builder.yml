@@ -24,7 +24,7 @@ asarUnpack:
 
 # FFmpeg binaries (copy vào resources/ffmpeg khi đóng gói)
 extraResources:
-  - from: resources/ffmpeg/${os}
+  - from: resources/ffmpeg/win32
     to: ffmpeg
     filter:
       - "**/*"

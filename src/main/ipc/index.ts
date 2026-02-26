@@ -11,6 +11,7 @@ import { registerProjectHandlers } from './projectHandlers';
 import { registerAppSettingsHandlers } from './appSettingsHandlers';
 import { registerGeminiChatHandlers } from './geminiChatHandlers';
 import { registerProxyHandlers } from './proxyHandlers'; // Thêm import cho proxy handlers
+import { registerCutVideoHandlers } from './cutVideoHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -45,6 +46,9 @@ export function registerAllHandlers(): void {
   // Đăng ký Proxy handlers (quản lý proxy rotation)
   registerProxyHandlers();
 
+  // Đăng ký Cut Video handlers
+  registerCutVideoHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -58,4 +62,5 @@ export { registerProjectHandlers } from './projectHandlers';
 export { registerAppSettingsHandlers } from './appSettingsHandlers';
 export { registerGeminiChatHandlers } from './geminiChatHandlers';
 export { registerProxyHandlers } from './proxyHandlers';
+export { registerCutVideoHandlers } from './cutVideoHandlers';
 

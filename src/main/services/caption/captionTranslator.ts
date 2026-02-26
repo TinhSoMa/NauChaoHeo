@@ -89,12 +89,13 @@ export async function translateAll(
 
   let translatedCount = 0;
   let failedCount = 0;
+  let completedBatches = 0;
 
-  // Dịch từng batch
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i];
+  const MAX_CONCURRENT = 5;
 
-    // Report progress
+  // Dịch song song tối đa MAX_CONCURRENT batch cùng lúc
+  const processBatch = async (batch: TextBatch, i: number): Promise<void> => {
+    // Report progress khi bắt đầu batch
     if (progressCallback) {
       progressCallback({
         current: batch.startIndex,
@@ -102,7 +103,7 @@ export async function translateAll(
         batchIndex: i,
         totalBatches: batches.length,
         status: 'translating',
-        message: `Đang dịch batch ${i + 1}/${batches.length}...`,
+        message: `Đang dịch batch ${i + 1}/${batches.length} (${MAX_CONCURRENT} song song)...`,
       });
     }
 
@@ -114,13 +115,12 @@ export async function translateAll(
     while (!batchResult.success && retryCount < maxRetries) {
       retryCount++;
       console.log(`[CaptionTranslator] Retry ${retryCount}/${maxRetries} cho batch ${i + 1}`);
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Đợi 2s trước khi retry
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       batchResult = await translateBatch(batch, model as GeminiModel, targetLanguage);
     }
 
-    // Xử lý kết quả
+    // Xử lý kết quả (ghi vào mảng chung — mỗi batch dùng vị trí riêng, không conflict)
     if (batchResult.success) {
-      // Copy translated texts vào đúng vị trí
       for (let j = 0; j < batchResult.translatedTexts.length; j++) {
         const globalIndex = batch.startIndex + j;
         allTranslatedTexts[globalIndex] = batchResult.translatedTexts[j];
@@ -131,15 +131,34 @@ export async function translateAll(
         }
       }
     } else {
-      // Batch thất bại
       errors.push(`Batch ${i + 1}: ${batchResult.error}`);
       failedCount += batch.texts.length;
     }
 
-    // Delay giữa các batch để tránh rate limit
-    if (i < batches.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    completedBatches++;
+    if (progressCallback) {
+      progressCallback({
+        current: completedBatches * (linesPerBatch || 50),
+        total: entries.length,
+        batchIndex: completedBatches,
+        totalBatches: batches.length,
+        status: 'translating',
+        message: `Hoàn thành ${completedBatches}/${batches.length} batch...`,
+      });
     }
+  };
+
+  // Chạy theo từng nhóm MAX_CONCURRENT batch
+  for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
+    const chunk = batches.slice(i, i + MAX_CONCURRENT);
+    // Stagger start: mỗi batch trong chunk delay 300ms để tránh burst cùng lúc
+    await Promise.all(
+      chunk.map((batch, offset) =>
+        new Promise<void>((resolve) =>
+          setTimeout(() => processBatch(batch, i + offset).then(resolve), offset * 300)
+        )
+      )
+    );
   }
 
   // Merge kết quả vào entries

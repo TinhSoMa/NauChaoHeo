@@ -200,6 +200,17 @@ export function registerCaptionHandlers(): void {
         targetDuration?: number;
         useGpu?: boolean;
         style?: any;
+        renderMode?: 'hardsub' | 'black_bg';
+        renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+        position?: { x: number; y: number };
+        blackoutTop?: number;
+        audioSpeed?: number;
+        audioPath?: string;
+        videoVolume?: number;
+        audioVolume?: number;
+        logoPath?: string;
+        logoPosition?: { x: number; y: number };
+        logoScale?: number;
       }
     ): Promise<IpcResponse<{ outputPath: string; duration: number }>> => {
       console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);
@@ -243,7 +254,7 @@ export function registerCaptionHandlers(): void {
       frameCount: number;
       fps: number;
     }>> => {
-      console.log(`[CaptionHandlers] Get video metadata: ${videoPath}`);
+      // console.log(`[CaptionHandlers] Get video metadata: ${videoPath}`);
 
       try {
         const result = await CaptionService.getVideoMetadata(videoPath);

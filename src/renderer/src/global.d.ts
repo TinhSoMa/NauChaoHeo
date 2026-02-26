@@ -142,6 +142,42 @@ interface SplitResult {
   error?: string;
 }
 
+// ============================================
+// CUT VIDEO TYPES
+// ============================================
+
+interface ScanFolderResult {
+  success: boolean;
+  data?: {
+    folderPath: string;
+    mediaFiles: string[];
+    count: number;
+  };
+  error?: string;
+}
+
+interface CutVideoAPI {
+  scanFolder: (folderPath: string) => Promise<ScanFolderResult>;
+  startAudioExtraction: (options: {
+    folders: string[];
+    format: 'mp3' | 'aac' | 'wav' | 'flac';
+    keepStructure: boolean;
+    overwrite: boolean;
+  }) => Promise<{ success: boolean; error?: string }>;
+  stopExtraction: () => Promise<{ success: boolean }>;
+  onExtractionProgress: (callback: (data: { totalPercent: number; currentFile: string; currentPercent: number }) => void) => () => void;
+  onExtractionLog: (callback: (data: { file: string; folder: string; status: string; time: string }) => void) => () => void;
+
+  getVideoInfo: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  startVideoSplit: (options: {
+    inputPath: string;
+    clips: { name: string; startStr: string; durationStr: string }[];
+  }) => Promise<{ success: boolean; error?: string }>;
+  stopVideoSplit: () => Promise<{ success: boolean }>;
+  onSplitProgress: (callback: (data: { totalPercent: number; currentClipName: string; currentPercent: number }) => void) => () => void;
+  onSplitLog: (callback: (data: { clipName: string; status: string; time: string }) => void) => () => void;
+}
+
 /**
  * Caption API interface
  */
@@ -492,6 +528,9 @@ declare global {
 
       // Caption Video API (subtitle strip)
       captionVideo: any; 
+
+      // Cut Video API
+      cutVideo: CutVideoAPI;
     };
   }
 }

@@ -50,7 +50,7 @@ export async function generateSingleAudio(
       '--write-media', `"${outputPath}"`, // Need to quote the output path for edge-tts in shell
     ];
     
-    console.log(`[TTS] Tạo audio: ${path.basename(outputPath)}`);
+    // console.log(`[TTS] Tạo audio: ${path.basename(outputPath)}`);
     
     // Spawn edge-tts process
     const proc = spawn('edge-tts', args, {

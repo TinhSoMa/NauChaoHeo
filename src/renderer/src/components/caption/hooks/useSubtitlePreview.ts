@@ -56,9 +56,19 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
   
   // Local logo position for dragging
   const [localLogoPosition, setLocalLogoPosition] = useState<{ x: number; y: number } | null>(logoPosition ?? null);
-  
+  const localLogoPositionRef = useRef<{ x: number; y: number } | null>(logoPosition ?? null);
+  const setLocalLogoPositionSynced = (pos: { x: number; y: number } | null) => {
+    localLogoPositionRef.current = pos;
+    setLocalLogoPosition(pos);
+  };
+
   // Local logo scale (wheel to zoom)
   const [localLogoScale, setLocalLogoScale] = useState<number>(logoScale ?? 1.0);
+  const localLogoScaleRef = useRef<number>(logoScale ?? 1.0);
+  const setLocalLogoScaleSynced = (s: number) => {
+    localLogoScaleRef.current = s;
+    setLocalLogoScale(s);
+  };
 
   // Sync from prop when it changes externally
   useEffect(() => {
@@ -66,10 +76,12 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
   }, [blackoutTop]);
   
   useEffect(() => {
+    localLogoPositionRef.current = logoPosition ?? null;
     setLocalLogoPosition(logoPosition ?? null);
   }, [logoPosition]);
 
   useEffect(() => {
+    localLogoScaleRef.current = logoScale ?? 1.0;
     setLocalLogoScale(logoScale ?? 1.0);
   }, [logoScale]);
 
@@ -401,12 +413,12 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
              logoImageRef.current = logImg;
              
              // Gán vị trí mặc định nếu chưa có (góc trên bên trái)
-             if (!localLogoPosition) {
+             if (!localLogoPositionRef.current) {
                const defaultPos = {
                  x: Math.floor((logImg.width / 2) + 50),
                  y: Math.floor((logImg.height / 2) + 50)
                };
-               setLocalLogoPosition(defaultPos);
+               setLocalLogoPositionSynced(defaultPos);
                setTimeout(() => onLogoPositionChange?.(defaultPos), 0);
              }
              
@@ -502,25 +514,24 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     } else if (mode === 'logo') {
       const b = logoBoundsRef.current;
       if (b && isNearCorner(cx, cy)) {
-        // Bắt đầu kéo góc để resize
+        // Bắt đầu kéo góc để resize — dùng ref để đọc scale hiện tại chính xác
         const dist = Math.sqrt((cx - b.cx) ** 2 + (cy - b.cy) ** 2);
-        cornerDragRef.current = { initialDist: Math.max(dist, 1), initialScale: localLogoScale };
+        cornerDragRef.current = { initialDist: Math.max(dist, 1), initialScale: localLogoScaleRef.current };
       } else {
-        // Di chuyển logo
+        // Di chuyển logo — chỉ cập nhật local, commit khi mouseUp
         cornerDragRef.current = null;
         const newPos = {
           x: Math.max(0, Math.min(state.videoSize.width, Math.floor((cx - imageOffset.x) * scaleRatio))),
           y: Math.max(0, Math.min(state.videoSize.height, Math.floor((cy - imageOffset.y) * scaleRatio))),
         };
-        setLocalLogoPosition(newPos);
-        onLogoPositionChange?.(newPos);
+        setLocalLogoPositionSynced(newPos);
       }
     } else {
       // Blackout mode: set the top Y of blackout band
       const frac = canvasYToFraction(cy);
       setLocalBlackoutTop(frac);
     }
-  }, [state.frameData, state.videoSize, mode, imageOffset, scaleRatio, localLogoScale, isNearCorner, onPositionChange, onLogoPositionChange, canvasYToFraction]);
+  }, [state.frameData, state.videoSize, mode, imageOffset, scaleRatio, isNearCorner, onPositionChange, canvasYToFraction]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -550,14 +561,14 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
         if (!b) return;
         const dist = Math.sqrt((cx - b.cx) ** 2 + (cy - b.cy) ** 2);
         const newScale = Math.max(0.05, Math.min(10, cornerDragRef.current.initialScale * (dist / cornerDragRef.current.initialDist)));
-        setLocalLogoScale(newScale);
+        setLocalLogoScaleSynced(newScale);
       } else {
         // Di chuyển logo
         const newPos = {
           x: Math.max(0, Math.min(state.videoSize.width, Math.floor((cx - imageOffset.x) * scaleRatio))),
           y: Math.max(0, Math.min(state.videoSize.height, Math.floor((cy - imageOffset.y) * scaleRatio))),
         };
-        setLocalLogoPosition(newPos);
+        setLocalLogoPositionSynced(newPos);
       }
     } else {
       const frac = canvasYToFraction(cy);
@@ -573,17 +584,22 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       }
     } else if (mode === 'logo') {
       if (cornerDragRef.current) {
-        // Commit scale sau khi kéo góc
-        onLogoScaleChange?.(localLogoScale);
+        // Commit scale — dùng ref để tránh stale closure
+        const finalScale = localLogoScaleRef.current;
+        onLogoScaleChange?.(finalScale);
         cornerDragRef.current = null;
       } else {
-        onLogoPositionChange?.(localLogoPosition);
+        // Commit position — dùng ref để tránh stale closure, guard against null
+        const finalPos = localLogoPositionRef.current;
+        if (finalPos) {
+          onLogoPositionChange?.(finalPos);
+        }
       }
     } else {
       // Commit blackout value
       onBlackoutChange?.(localBlackoutTop);
     }
-  }, [mode, state.frameData, state.subtitlePosition, localLogoScale, localLogoPosition, onPositionChange, onLogoPositionChange, onLogoScaleChange, localBlackoutTop, onBlackoutChange]);
+  }, [mode, state.frameData, state.subtitlePosition, onPositionChange, onLogoPositionChange, onLogoScaleChange, localBlackoutTop, onBlackoutChange]);
 
   const resetToCenter = useCallback(() => {
     setState(prev => {
