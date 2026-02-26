@@ -12,7 +12,7 @@ import {
   DEFAULT_NUMBER_OF_PARTS,
   InputType,
 } from '../../../config/captionConfig';
-import { Step } from '../CaptionTypes';
+import { Step, ProcessingMode } from '../CaptionTypes';
 import { ASSStyleConfig } from '@shared/types/caption';
 
 export const DEFAULT_STYLE: ASSStyleConfig = {
@@ -85,6 +85,9 @@ export function useCaptionSettings() {
   }, []);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
+
+  // State - Multi-folder processing mode (global preference, not per-project)
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
 
   // ========== AUTO SAVE/LOAD VÀO PROJECT ==========
   useProjectFeatureState<{
@@ -190,6 +193,7 @@ export function useCaptionSettings() {
     audioVolume, setAudioVolume,
     logoPath, setLogoPath,
     logoPosition, setLogoPosition,
-    logoScale, setLogoScale
+    logoScale, setLogoScale,
+    processingMode, setProcessingMode,
   };
 }

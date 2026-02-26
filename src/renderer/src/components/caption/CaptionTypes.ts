@@ -24,3 +24,4 @@ export interface TTSProgress {
 
 export type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type ProcessStatus = 'idle' | 'running' | 'success' | 'error';
+export type ProcessingMode = 'folder-first' | 'step-first';

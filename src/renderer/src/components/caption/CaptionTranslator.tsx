@@ -697,6 +697,44 @@ export function CaptionTranslator() {
             ))}
           </div>
 
+          {/* Processing Mode Toggle — chỉ hiển thị khi multi-folder */}
+          {isMultiFolder && (
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <button
+                style={{
+                  flex: 1, padding: '5px 8px', fontSize: '12px', fontWeight: 600,
+                  borderRadius: '6px', border: '1px solid',
+                  cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
+                  opacity: processing.status === 'running' ? 0.5 : 1,
+                  background: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
+                  color: settings.processingMode !== 'step-first' ? '#fff' : 'var(--color-text-muted)',
+                  borderColor: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
+                }}
+                disabled={processing.status === 'running'}
+                onClick={() => settings.setProcessingMode('folder-first')}
+                title="Hoàn thành tất cả bước của folder 1 rồi mới sang folder 2"
+              >
+                📁 Folder-first
+              </button>
+              <button
+                style={{
+                  flex: 1, padding: '5px 8px', fontSize: '12px', fontWeight: 600,
+                  borderRadius: '6px', border: '1px solid',
+                  cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
+                  opacity: processing.status === 'running' ? 0.5 : 1,
+                  background: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
+                  color: settings.processingMode === 'step-first' ? '#fff' : 'var(--color-text-muted)',
+                  borderColor: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
+                }}
+                disabled={processing.status === 'running'}
+                onClick={() => settings.setProcessingMode('step-first')}
+                title="Bước 1 tất cả folder → Bước 2 tất cả folder → ..."
+              >
+                ⚡ Step-first
+              </button>
+            </div>
+          )}
+
           {/* Buttons */}
           <div className={styles.buttonsRow}>
             <Button
