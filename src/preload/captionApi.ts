@@ -161,7 +161,7 @@ export interface CaptionVideoAPI {
     height: number;
     videoPath?: string;
     targetDuration?: number;
-    useGpu?: boolean;
+    hardwareAcceleration?: 'none' | 'qsv';
     style?: any;
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
 

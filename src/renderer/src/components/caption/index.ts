@@ -3,4 +3,4 @@
  */
 
 export { CaptionTranslator } from './CaptionTranslator';
-export { CaptionVideo } from './CaptionVideo';
+

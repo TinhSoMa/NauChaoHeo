@@ -28,7 +28,7 @@ interface UseCaptionProcessingProps {
     srtSpeed: number;
     audioDir: string;
     setAudioDir: (dir: string) => void;
-    useGpu: boolean;
+    hardwareAcceleration: 'none' | 'qsv';
     style?: any;
     renderMode: 'hardsub' | 'black_bg';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -426,7 +426,7 @@ export function useCaptionProcessing({
               height: stripHeight,
               videoPath: finalVideoInputPath,
               targetDuration: settings.renderMode === 'hardsub' ? targetDuration : undefined,
-              useGpu: settings.useGpu,
+              hardwareAcceleration: settings.hardwareAcceleration,
               style: settings.style,
               renderMode: settings.renderMode,
               renderResolution: settings.renderResolution,

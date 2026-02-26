@@ -45,7 +45,7 @@ export function useCaptionSettings() {
   const [autoFitAudio, setAutoFitAudio] = useState(false);
 
   // State - Video Output
-  const [useGpu, setUseGpu] = useState(true);
+  const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv'>('qsv');
   const [style, setStyle] = useState<ASSStyleConfig>(DEFAULT_STYLE);
   const [renderMode, setRenderMode] = useState<'hardsub' | 'black_bg'>('hardsub');
   const [renderResolution, setRenderResolution] = useState<'original' | '1080p' | '720p' | '540p' | '360p'>('original');
@@ -100,7 +100,7 @@ export function useCaptionSettings() {
     enabledSteps?: Step[];
     audioDir?: string;
     autoFitAudio?: boolean;
-    useGpu?: boolean;
+    hardwareAcceleration?: 'none' | 'qsv';
     style?: ASSStyleConfig;
     renderMode?: 'hardsub' | 'black_bg';
     renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -125,7 +125,7 @@ export function useCaptionSettings() {
       enabledSteps: Array.from(enabledSteps.values()),
       audioDir,
       autoFitAudio,
-      useGpu,
+      hardwareAcceleration,
       style,
       renderMode,
       renderResolution,
@@ -149,7 +149,7 @@ export function useCaptionSettings() {
       if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
       if (saved.audioDir) setAudioDir(saved.audioDir);
       if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
-      if (saved.useGpu !== undefined) setUseGpu(saved.useGpu);
+      if (saved.hardwareAcceleration) setHardwareAcceleration(saved.hardwareAcceleration);
       if (saved.style) setStyle(saved.style);
       if (saved.renderMode) setRenderMode(saved.renderMode);
       if (saved.renderResolution) setRenderResolution(saved.renderResolution);
@@ -162,7 +162,7 @@ export function useCaptionSettings() {
     },
     deps: [
       srtSpeed, splitByLines, linesPerFile, numberOfParts, enabledSteps, audioDir, autoFitAudio,
-      useGpu, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume
+      hardwareAcceleration, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume
     ],
   });
 
@@ -179,7 +179,7 @@ export function useCaptionSettings() {
     enabledSteps, setEnabledSteps,
     audioDir, setAudioDir,
     autoFitAudio, setAutoFitAudio,
-    useGpu, setUseGpu,
+    hardwareAcceleration, setHardwareAcceleration,
     style, setStyle,
     renderMode, setRenderMode,
     renderResolution, setRenderResolution,

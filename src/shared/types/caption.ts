@@ -303,7 +303,7 @@ export interface RenderVideoOptions {
   height?: number;        // Optional - nếu không có sẽ tự tính từ style
   videoPath?: string;     // Đường dẫn video gốc để hardsub (nếu không có sẽ tạo nền đen)
   targetDuration?: number; // Độ dài cố định (tuỳ chọn) cho nền đen
-  useGpu?: boolean;
+  hardwareAcceleration?: 'none' | 'qsv';
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';

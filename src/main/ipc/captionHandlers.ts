@@ -198,7 +198,7 @@ export function registerCaptionHandlers(): void {
         height: number;
         videoPath?: string;
         targetDuration?: number;
-        useGpu?: boolean;
+        hardwareAcceleration?: 'none' | 'qsv';
         style?: any;
         renderMode?: 'hardsub' | 'black_bg';
         renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';

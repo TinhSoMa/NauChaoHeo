@@ -560,13 +560,16 @@ export function CaptionTranslator() {
                  </label>
                </div>
                <div className={styles.inputGroup}>
-                 <span className={styles.label}>Force GPU (NVENC)</span>
+                 <span className={styles.label}>Hardware Acceleration</span>
                  <div style={{marginTop: 8}}>
-                    <Checkbox
-                       label="Sử dụng phần cứng GPU"
-                       checked={settings.useGpu}
-                       onChange={() => settings.setUseGpu(!settings.useGpu)}
-                    />
+                    <select
+                      className={styles.select}
+                      value={settings.hardwareAcceleration}
+                      onChange={(e) => settings.setHardwareAcceleration(e.target.value as any)}
+                    >
+                      <option value="none">CPU (libx264)</option>
+                      <option value="qsv">Intel QuickSync (QSV)</option>
+                    </select>
                  </div>
                </div>
             </div>

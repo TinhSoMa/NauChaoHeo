@@ -5,6 +5,7 @@ import { initDatabase } from './database/schema'
 import { tryImportDevKeys } from './services/gemini/apiKeys'
 import { AppSettingsService } from './services/appSettings'
 import { createDashboardWindow } from './windowManager'
+import { cleanTempFiles } from './services/caption/garbageCollector'
 
 // Khởi tạo app khi Electron sẵn sàng
 app.whenReady().then(() => {
@@ -43,4 +44,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+// Dọn dẹp rác (ví dụ: các file .ass tạm thời) trước khi ứng dụng đóng
+app.on('before-quit', () => {
+  cleanTempFiles()
 })
