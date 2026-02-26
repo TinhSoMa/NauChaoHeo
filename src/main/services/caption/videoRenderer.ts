@@ -176,6 +176,127 @@ export async function extractVideoFrame(
   });
 }
 
+function buildAtempoFilter(speed: number): string {
+  let s = speed;
+  const filters: string[] = [];
+  while (s < 0.5) { filters.push('atempo=0.5'); s /= 0.5; }
+  while (s > 100.0) { filters.push('atempo=100.0'); s /= 100.0; }
+  if (Math.abs(s - 1.0) > 0.0001) filters.push(`atempo=${s.toFixed(4)}`);
+  return filters.join(',');
+}
+
+function getAudioCodecArgs(audioPath: string): string[] {
+  if (audioPath.toLowerCase().endsWith('.wav')) {
+    return ['-c:a', 'pcm_s16le'];
+  }
+  return ['-c:a', 'libmp3lame', '-b:a', '192k'];
+}
+
+async function buildSpeedAdjustedAudioFile(
+  audioPath: string | undefined,
+  audioSpeed: number
+): Promise<{ success: boolean; audioPath?: string; generated: boolean; error?: string }> {
+  if (!audioPath || !existsSync(audioPath)) {
+    return { success: true, audioPath, generated: false };
+  }
+
+  if (!audioSpeed || Math.abs(audioSpeed - 1.0) < 0.0001) {
+    return { success: true, audioPath, generated: false };
+  }
+
+  const atempo = buildAtempoFilter(audioSpeed);
+  if (!atempo) {
+    return { success: true, audioPath, generated: false };
+  }
+
+  const ffmpegPath = getFFmpegPath();
+  if (!existsSync(ffmpegPath)) {
+    return { success: false, generated: false, error: `ffmpeg không tìm thấy: ${ffmpegPath}` };
+  }
+
+  const ext = path.extname(audioPath) || '.wav';
+  const speedLabel = audioSpeed.toFixed(2).replace('.', '_');
+  const adjustedAudioPath = path.join(path.dirname(audioPath), `audio_${speedLabel}${ext}`);
+
+  return new Promise((resolve) => {
+    const args = [
+      '-y',
+      '-i', audioPath,
+      '-af', atempo,
+      ...getAudioCodecArgs(adjustedAudioPath),
+      adjustedAudioPath,
+    ];
+
+    const proc = spawn(ffmpegPath, args, {
+      windowsHide: true,
+      shell: false,
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log(`[VideoRenderer] Đã tạo audio speed-adjusted: ${adjustedAudioPath} (speed=${audioSpeed})`);
+        resolve({ success: true, audioPath: adjustedAudioPath, generated: true });
+      } else {
+        resolve({
+          success: false,
+          generated: false,
+          error: stderr || `FFmpeg exit code: ${code}`,
+        });
+      }
+    });
+
+    proc.on('error', (error) => {
+      resolve({ success: false, generated: false, error: `Lỗi ffmpeg speed-adjust: ${error.message}` });
+    });
+  });
+}
+
+async function readMediaDurationSec(mediaPath?: string): Promise<number | null> {
+  if (!mediaPath || !existsSync(mediaPath)) {
+    return null;
+  }
+  const meta = await getVideoMetadata(mediaPath);
+  if (!meta.success || !meta.metadata) {
+    return null;
+  }
+  return meta.metadata.duration > 0 ? meta.metadata.duration : null;
+}
+
+async function readSrtDurationSec(srtPath?: string): Promise<number | null> {
+  if (!srtPath || !existsSync(srtPath)) {
+    return null;
+  }
+  try {
+    const parsed = await parseSrtFile(srtPath);
+    if (!parsed.success || !parsed.entries.length) {
+      return null;
+    }
+    const lastEndMs = Math.max(...parsed.entries.map((entry) => entry.endMs || 0));
+    return lastEndMs > 0 ? lastEndMs / 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function roundValue(value: number | null | undefined): number | null {
+  if (value == null || Number.isNaN(value)) {
+    return null;
+  }
+  return Math.round(value * 1000) / 1000;
+}
+
+async function writeHardsubTimingJson(outputVideoPath: string, payload: unknown): Promise<string> {
+  const ext = path.extname(outputVideoPath);
+  const base = outputVideoPath.slice(0, outputVideoPath.length - ext.length);
+  const jsonPath = `${base}_timing.json`;
+  await fs.writeFile(jsonPath, JSON.stringify(payload, null, 2), 'utf-8');
+  return jsonPath;
+}
 
 
 /**
@@ -240,7 +361,21 @@ export async function renderHardsubVideo(
   const outputDir = path.dirname(outputPath);
   await fs.mkdir(outputDir, { recursive: true });
 
-  const prep = await prepareSubtitleAndDuration(options);
+  const audioSpeedInput = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
+  const adjustedAudio = await buildSpeedAdjustedAudioFile(options.audioPath, audioSpeedInput);
+  if (!adjustedAudio.success) {
+    return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted' };
+  }
+
+  const renderOptions: RenderVideoOptions = {
+    ...options,
+    audioPath: adjustedAudio.audioPath,
+    // Audio đã được tăng tốc/giảm tốc thành file riêng -> không áp atempo lần nữa ở bước render.
+    audioSpeed: 1.0,
+    step7AudioSpeedInput: audioSpeedInput,
+  };
+
+  const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
 
   const filterParts: string[] = [];
@@ -267,39 +402,65 @@ export async function renderHardsubVideo(
     codecParams = ['-preset', 'fast', '-global_quality', '25'];
   }
   
-  const finalDurationStr = prep.newAudioDuration.toFixed(3);
+  // Hardsub: giữ full chiều dài video gốc sau khi stretch bởi setpts.
+  // Nếu videoSpeedMultiplier != 1.0, video bị kéo dài → outputDuration phải bằng
+  // originalVideoDuration / videoSpeedMultiplier để không cắt mất phần cuối video.
+  // TTS audio kết thúc tại newAudioDuration (< outputDuration), phần còn lại chỉ có tiếng video gốc.
+  const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
+    ? prep.originalVideoDuration / prep.videoSpeedMultiplier
+    : prep.originalVideoDuration;
+  const outputDuration = stretchedVideoDuration > 0 ? stretchedVideoDuration : prep.newAudioDuration;
+  const finalDurationStr = outputDuration.toFixed(3);
+  console.log(
+    `[VideoRenderer] Hardsub duration | videoTotal=${prep.originalVideoDuration.toFixed(3)}s, ` +
+    `videoSpeedMultiplier=${prep.videoSpeedMultiplier.toFixed(4)}, stretchedVideo=${stretchedVideoDuration.toFixed(3)}s, ` +
+    `audioForSync=${prep.newAudioDuration.toFixed(3)}s, outputDuration=${outputDuration.toFixed(3)}s`
+  );
   
-  const inputArgs = [...hwaccelArgs, '-stream_loop', '-1', '-i', options.videoPath];
+  const inputArgs = [...hwaccelArgs, '-i', renderOptions.videoPath!];
   let hasTtsAudio = false;
-  if (options.audioPath && existsSync(options.audioPath)) {
-    inputArgs.push('-i', options.audioPath);
+  if (renderOptions.audioPath && existsSync(renderOptions.audioPath)) {
+    inputArgs.push('-i', renderOptions.audioPath);
     hasTtsAudio = true;
   }
+  const audioStartInVideoSec = hasTtsAudio ? 0 : null;
+  const subtitleDurationScaledSec = prep.subRenderDuration > 0 ? prep.subRenderDuration : prep.duration;
+  const audioEndInVideoSec = hasTtsAudio ? Math.min(subtitleDurationScaledSec, outputDuration) : null;
+  const trimApplied = false;
+
+  const step4SrtScale = prep.step4ScaleUsed && prep.step4ScaleUsed > 0
+    ? prep.step4ScaleUsed
+    : (options.step4SrtScale && options.step4SrtScale > 0 ? options.step4SrtScale : 1.0);
+  const step7AudioSpeed = prep.step7SpeedUsed && prep.step7SpeedUsed > 0 ? prep.step7SpeedUsed : audioSpeedInput;
+  const audioEffectiveSpeed = prep.audioEffectiveSpeed;
+  let subtitleDurationOriginalSec = prep.videoSubBaseDuration > 0 ? prep.videoSubBaseDuration : 0;
+  const videoMarkerSec = prep.videoMarkerSec > 0 ? prep.videoMarkerSec : 0;
+
+  const translatedSrtPath = path.join(path.dirname(options.srtPath), 'translated.srt');
+  const translatedSrtDurationSec = subtitleDurationOriginalSec <= 0 ? await readSrtDurationSec(translatedSrtPath) : null;
+  if (subtitleDurationOriginalSec <= 0 && translatedSrtDurationSec && translatedSrtDurationSec > 0) {
+    subtitleDurationOriginalSec = translatedSrtDurationSec;
+  }
+
+  const audioOriginalDurationSec = await readMediaDurationSec(options.audioPath);
+  const audioAfterSpeedDurationSec = await readMediaDurationSec(renderOptions.audioPath);
+  const videoSubDurationAfterScaleSec = subtitleDurationOriginalSec * step4SrtScale;
   
   let hasLogo = false;
   let logoInputIndex = -1;
-  if (options.logoPath && existsSync(options.logoPath)) {
-    inputArgs.push('-i', options.logoPath);
+  if (renderOptions.logoPath && existsSync(renderOptions.logoPath)) {
+    inputArgs.push('-i', renderOptions.logoPath);
     hasLogo = true;
     logoInputIndex = inputArgs.filter(arg => arg === '-i').length - 1;
   }
 
   const filterComplexParts: string[] = [];
   
-  const volVid = (options.videoVolume !== undefined) ? options.videoVolume / 100 : 1.0;
-  const volAud = (options.audioVolume !== undefined) ? options.audioVolume / 100 : 1.0;
+  const volVid = (renderOptions.videoVolume !== undefined) ? renderOptions.videoVolume / 100 : 1.0;
+  const volAud = (renderOptions.audioVolume !== undefined) ? renderOptions.audioVolume / 100 : 1.0;
 
-  const getAtempoFilter = (speed: number): string => {
-    let s = speed;
-    const filters = [];
-    while (s < 0.5) { filters.push('atempo=0.5'); s /= 0.5; }
-    while (s > 100.0) { filters.push('atempo=100.0'); s /= 100.0; }
-    if (s !== 1.0) filters.push(`atempo=${s}`);
-    return filters.join(',');
-  };
-
-  const vidAtempo = (prep.videoSpeedMultiplier !== 1.0) ? `,${getAtempoFilter(prep.videoSpeedMultiplier)}` : '';
-  const audAtempo = (prep.audioSpeed !== 1.0) ? `,${getAtempoFilter(prep.audioSpeed)}` : '';
+  const vidAtempo = (prep.videoSpeedMultiplier !== 1.0) ? `,${buildAtempoFilter(prep.videoSpeedMultiplier)}` : '';
+  const audAtempo = (prep.audioSpeed !== 1.0) ? `,${buildAtempoFilter(prep.audioSpeed)}` : '';
 
   if (prep.hasVideoAudio && hasTtsAudio) {
     // Ép kiểu về stereo và dùng apad để trôi tới hết thời lượng, amerge nối thành 4 kênh, pan gom về 2 kênh
@@ -316,16 +477,16 @@ export async function renderHardsubVideo(
   filterComplexParts.push(`[0:v]${videoFilter}[v_base]`);
 
   if (hasLogo && logoInputIndex > 0) {
-    const userLogoScale = options.logoScale ?? 1.0;
+    const userLogoScale = renderOptions.logoScale ?? 1.0;
     const totalLogoScale = prep.scaleFactor * userLogoScale;
     const logoScaleFilter = totalLogoScale !== 1 ? `scale=iw*${totalLogoScale}:ih*${totalLogoScale}` : 'copy';
     
     let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
     let logoYAxis = `50*${prep.scaleFactor}`;
     
-    if (options.logoPosition) {
-      logoXAxis = `${Math.round(options.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
-      logoYAxis = `${Math.round(options.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+    if (renderOptions.logoPosition) {
+      logoXAxis = `${Math.round(renderOptions.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
+      logoYAxis = `${Math.round(renderOptions.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
     }
     
     filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
@@ -359,8 +520,106 @@ export async function renderHardsubVideo(
     outputPath
   ];
 
-  const totalFrames = Math.floor(prep.newAudioDuration * fps);
-  return runFFmpegProcess(args, totalFrames, fps, outputPath, prep.tempAssPath, prep.duration, progressCallback);
+  const hardsubTimingDebug = {
+    generatedAt: new Date().toISOString(),
+    paths: {
+      inputVideo: renderOptions.videoPath ?? null,
+      inputAudioOriginal: options.audioPath ?? null,
+      inputAudioAfterStep7Scale: renderOptions.audioPath ?? null,
+      inputSrtForRender: options.srtPath,
+      translatedSrt_1_0x: existsSync(translatedSrtPath) ? translatedSrtPath : null,
+      outputVideo: outputPath,
+    },
+    beforeSlowdownOriginal: {
+      videoOriginalDurationSec: roundValue(prep.originalVideoDuration),
+      videoWithSubtitleDurationSec_1_0x: roundValue(subtitleDurationOriginalSec),
+      audioOriginalDurationSec: roundValue(audioOriginalDurationSec),
+      audioAfterStep7ScaleDurationSec: roundValue(audioAfterSpeedDurationSec),
+    },
+    afterScale: {
+      calcMode: 'audio_speed_adjusted_video_marker',
+      audioSpeedModel: options.audioSpeedModel || 'step4_minus_step7_delta',
+      step4SrtScale,
+      step7AudioSpeedInput: step7AudioSpeed,
+      audioEffectiveSpeed: roundValue(audioEffectiveSpeed),
+      subtitleDurationScaledSec: roundValue(subtitleDurationScaledSec),
+      videoWithSubtitleDurationAfterStep4ScaleSec: roundValue(videoSubDurationAfterScaleSec),
+      videoMarkerSec: roundValue(videoMarkerSec),
+      videoSpeedNeeded: roundValue(prep.videoSpeedMultiplier),
+    },
+    mergeWindowInVideo: hasTtsAudio
+      ? {
+          startSec: roundValue(audioStartInVideoSec),
+          endSec: roundValue(audioEndInVideoSec),
+          startLabel: `${(audioStartInVideoSec ?? 0).toFixed(3)}s`,
+          endLabel: `${(audioEndInVideoSec ?? 0).toFixed(3)}s`,
+        }
+      : null,
+    render: {
+      outputRenderDurationSec: roundValue(outputDuration),
+      stretchedVideoDurationSec: roundValue(stretchedVideoDuration),
+      videoSpeedMultiplier: roundValue(prep.videoSpeedMultiplier),
+      trimApplied,
+      hasVideoAudio: prep.hasVideoAudio,
+      hasTtsAudio,
+      speedCalcSource: prep.speedCalcSource,
+    },
+  };
+
+  let timingJsonPath: string | null = null;
+  try {
+    timingJsonPath = await writeHardsubTimingJson(outputPath, hardsubTimingDebug);
+  } catch (error) {
+    console.warn('[VideoRenderer][Hardsub] Không thể ghi timing JSON:', error);
+  }
+
+  console.log('[VideoRenderer][Hardsub] Render config', {
+    inputVideo: renderOptions.videoPath,
+    inputAudio: renderOptions.audioPath ?? null,
+    outputVideo: outputPath,
+    timingJsonPath,
+    hasVideoAudio: prep.hasVideoAudio,
+    hasTtsAudio,
+    audioMergeWindowInVideo: hasTtsAudio
+      ? {
+          startSec: audioStartInVideoSec,
+          endSec: audioEndInVideoSec,
+          startLabel: `${(audioStartInVideoSec ?? 0).toFixed(3)}s`,
+          endLabel: `${(audioEndInVideoSec ?? 0).toFixed(3)}s`,
+        }
+      : null,
+    duration: {
+      videoTotalSec: prep.originalVideoDuration,
+      ttsEffectiveSec: prep.newAudioDuration,
+      outputRenderSec: outputDuration,
+    },
+    speed: {
+      calcMode: 'audio_speed_adjusted_video_marker',
+      audioSpeedModel: options.audioSpeedModel || 'step4_minus_step7_delta',
+      videoSpeedMultiplier: prep.videoSpeedMultiplier,
+      audioSpeedInput: step7AudioSpeed,
+      step4SrtScale,
+      audioEffectiveSpeed,
+      audioPreAdjustedFile: adjustedAudio.generated,
+      speedCalcSource: prep.speedCalcSource,
+    },
+    sourceDuration: {
+      videoOriginalSec: prep.originalVideoDuration,
+      subtitle_1_0x_sec: subtitleDurationOriginalSec,
+      subtitleScaledSec: subtitleDurationScaledSec,
+      audioOriginalSec: audioOriginalDurationSec,
+      audioAfterStep7ScaleSec: audioAfterSpeedDurationSec,
+      videoMarkerSec,
+    },
+    subtitleWindow: {
+      subtitleEndSec: prep.duration,
+      trimApplied,
+    },
+    note: 'Không trim audio/video. Mốc video tính từ audioScaledDuration * videoSpeedMultiplier.',
+  });
+
+  const totalFrames = Math.floor(outputDuration * fps);
+  return runFFmpegProcess(args, totalFrames, fps, outputPath, prep.tempAssPath, outputDuration, progressCallback);
 }
 
 /**
@@ -374,7 +633,20 @@ export async function renderBlackBackgroundVideo(
   const outputDir = path.dirname(outputPath);
   await fs.mkdir(outputDir, { recursive: true });
 
-  const prep = await prepareSubtitleAndDuration(options);
+  const audioSpeedInput = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
+  const adjustedAudio = await buildSpeedAdjustedAudioFile(options.audioPath, audioSpeedInput);
+  if (!adjustedAudio.success) {
+    return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted' };
+  }
+
+  const renderOptions: RenderVideoOptions = {
+    ...options,
+    audioPath: adjustedAudio.audioPath,
+    audioSpeed: 1.0,
+    step7AudioSpeedInput: audioSpeedInput,
+  };
+
+  const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
 
   let videoCodec = 'libx264';
@@ -394,24 +666,15 @@ export async function renderBlackBackgroundVideo(
   ];
   
   let hasTtsAudio = false;
-  if (options.audioPath && existsSync(options.audioPath)) {
-    inputArgs.push('-i', options.audioPath);
+  if (renderOptions.audioPath && existsSync(renderOptions.audioPath)) {
+    inputArgs.push('-i', renderOptions.audioPath);
     hasTtsAudio = true;
   }
 
   const filterComplexParts: string[] = [];
-  const volAud = (options.audioVolume !== undefined) ? options.audioVolume / 100 : 1.0;
+  const volAud = (renderOptions.audioVolume !== undefined) ? renderOptions.audioVolume / 100 : 1.0;
 
-  const getAtempoFilter = (speed: number): string => {
-    let s = speed;
-    const filters = [];
-    while (s < 0.5) { filters.push('atempo=0.5'); s /= 0.5; }
-    while (s > 100.0) { filters.push('atempo=100.0'); s /= 100.0; }
-    if (s !== 1.0) filters.push(`atempo=${s}`);
-    return filters.join(',');
-  };
-
-  const audAtempo = (prep.audioSpeed !== 1.0) ? `,${getAtempoFilter(prep.audioSpeed)}` : '';
+  const audAtempo = (prep.audioSpeed !== 1.0) ? `,${buildAtempoFilter(prep.audioSpeed)}` : '';
 
   if (hasTtsAudio && (volAud !== 1.0 || audAtempo)) {
     filterComplexParts.push(`[1:a]volume=${volAud}${audAtempo}[a_out]`);

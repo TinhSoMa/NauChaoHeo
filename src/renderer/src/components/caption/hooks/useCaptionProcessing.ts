@@ -2,6 +2,72 @@ import { useState, useCallback } from 'react';
 import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress } from '../CaptionTypes';
 import { useProjectFeatureState } from '../../../hooks/useProjectFeatureState';
 
+type ProcessingAudioFile = {
+  index: number;
+  path: string;
+  startMs: number;
+  durationMs: number;
+  success: boolean;
+  error?: string;
+};
+
+type PartialProcessingAudioFile = Partial<ProcessingAudioFile> & {
+  path?: string;
+  startMs?: number;
+};
+
+function normalizeAudioFiles(files: PartialProcessingAudioFile[] = []): ProcessingAudioFile[] {
+  const normalized: ProcessingAudioFile[] = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (!file || typeof file.path !== 'string' || !file.path.trim()) continue;
+    if (typeof file.startMs !== 'number' || Number.isNaN(file.startMs)) continue;
+
+    normalized.push({
+      index: typeof file.index === 'number' ? file.index : i + 1,
+      path: file.path,
+      startMs: file.startMs,
+      durationMs: typeof file.durationMs === 'number' ? file.durationMs : 0,
+      success: file.success !== false,
+      error: typeof file.error === 'string' ? file.error : undefined,
+    });
+  }
+
+  return normalized;
+}
+
+function msToSrtTime(ms: number): string {
+  const safeMs = Math.max(0, Math.round(ms));
+  const hours = Math.floor(safeMs / 3600000);
+  const minutes = Math.floor((safeMs % 3600000) / 60000);
+  const seconds = Math.floor((safeMs % 60000) / 1000);
+  const millis = safeMs % 1000;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')},${millis.toString().padStart(3, '0')}`;
+}
+
+function normalizeSpeedLabel(speed: number): string {
+  const fixed = speed.toFixed(2);
+  return fixed.replace(/\.?0+$/, '');
+}
+
+function buildScaledSubtitleEntries(entries: SubtitleEntry[], scale: number): SubtitleEntry[] {
+  const safeScale = scale > 0 ? scale : 1.0;
+  return entries.map((entry, idx) => {
+    const scaledStartMs = Math.max(0, Math.round(entry.startMs * safeScale));
+    const scaledEndMs = Math.max(scaledStartMs + 1, Math.round(entry.endMs * safeScale));
+    return {
+      ...entry,
+      index: idx + 1,
+      startMs: scaledStartMs,
+      endMs: scaledEndMs,
+      durationMs: scaledEndMs - scaledStartMs,
+      startTime: msToSrtTime(scaledStartMs),
+      endTime: msToSrtTime(scaledEndMs),
+    };
+  });
+}
+
 // Helper function to validate steps
 function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
   if (steps.length === 0) {
@@ -62,11 +128,11 @@ export function useCaptionProcessing({
   const [currentFolder, setCurrentFolder] = useState<{ index: number; total: number; name: string; path: string } | null>(null);
   
   // State for intermediate data
-  const [audioFiles, setAudioFiles] = useState<Array<{ path: string; startMs: number }>>([]);
+  const [audioFiles, setAudioFiles] = useState<ProcessingAudioFile[]>([]);
 
   // ========== AUTO SAVE/LOAD VÀO PROJECT ==========
   useProjectFeatureState<{
-    audioFiles?: Array<{ path: string; startMs: number }>;
+    audioFiles?: PartialProcessingAudioFile[];
   }>({
     feature: 'caption',
     fileName: 'caption-processing.json',
@@ -74,7 +140,9 @@ export function useCaptionProcessing({
       audioFiles,
     }),
     deserialize: (saved) => {
-      if (saved.audioFiles) setAudioFiles(saved.audioFiles);
+      if (saved.audioFiles) {
+        setAudioFiles(normalizeAudioFiles(saved.audioFiles));
+      }
     },
     deps: [audioFiles],
   });
@@ -149,7 +217,7 @@ export function useCaptionProcessing({
 
         // Reset state for this folder
         let currentEntries: SubtitleEntry[] = [];
-        let currentAudioFiles: Array<{ path: string; startMs: number }> = isMulti ? [] : audioFiles;
+        let currentAudioFiles: ProcessingAudioFile[] = isMulti ? [] : audioFiles;
 
         // For single folder, seed current entries from state
         if (!isMulti) currentEntries = entries;
@@ -286,7 +354,7 @@ export function useCaptionProcessing({
             });
 
             if (result.success && result.data) {
-              currentAudioFiles = result.data.audioFiles;
+              currentAudioFiles = normalizeAudioFiles(result.data.audioFiles as PartialProcessingAudioFile[]);
               if (!isMulti) setAudioFiles(currentAudioFiles);
               setProgress({ current: result.data.totalGenerated, total: currentEntries.length, message: msg(`Bước 4: Đã tạo ${result.data.totalGenerated} audio`) });
             } else {
@@ -316,8 +384,33 @@ export function useCaptionProcessing({
 
           // ========== STEP 6: MERGE AUDIO ==========
           if (step === 6) {
-            let filesToMerge = [...currentAudioFiles];
-            if (filesToMerge.length === 0) continue;
+            let filesToMerge = normalizeAudioFiles(currentAudioFiles);
+            const audioDir = `${processOutputDir}/audio`;
+
+            if (filesToMerge.length === 0) {
+              setProgress({ current: 0, total: 1, message: msg('Bước 6: Đang nạp lại danh sách audio từ thư mục...') });
+
+              // Fallback cho trường hợp chạy lại từ Step 6 hoặc multi-folder:
+              // gọi lại TTS generate để lấy metadata; file đã tồn tại sẽ được skip.
+              // @ts-ignore
+              const hydrateResult = await window.electronAPI.tts.generate(currentEntries, {
+                voice: settings.voice,
+                rate: settings.rate,
+                volume: settings.volume,
+                outputDir: audioDir,
+                outputFormat: 'wav',
+              });
+
+              if (hydrateResult.success && hydrateResult.data?.audioFiles) {
+                currentAudioFiles = normalizeAudioFiles(hydrateResult.data.audioFiles as PartialProcessingAudioFile[]);
+                filesToMerge = normalizeAudioFiles(currentAudioFiles);
+                if (!isMulti) setAudioFiles(currentAudioFiles);
+              }
+            }
+
+            if (filesToMerge.length === 0) {
+              throw new Error(`[${folderName}] Không có audio hợp lệ để ghép trong ${audioDir}. Hãy chạy lại Bước 4.`);
+            }
 
             // Auto Fit Audio trước khi merge
             if (settings.autoFitAudio) {
@@ -325,8 +418,12 @@ export function useCaptionProcessing({
 
               const fitItems = filesToMerge
                 .map(f => {
-                  const entry = currentEntries.find(e => e.startMs === f.startMs);
-                  return { path: f.path, durationMs: entry?.durationMs || 0 };
+                  const entryByIndex = currentEntries.find(e => e.index === f.index);
+                  const entryByStart = currentEntries.find(e => e.startMs === f.startMs);
+                  const allowedDurationMs = f.durationMs > 0
+                    ? f.durationMs
+                    : (entryByIndex?.durationMs || entryByStart?.durationMs || 0);
+                  return { path: f.path, durationMs: allowedDurationMs };
                 })
                 .filter(item => item.durationMs > 0);
 
@@ -341,7 +438,7 @@ export function useCaptionProcessing({
                   for (const mapping of pathMapping) {
                     const idx = filesToMerge.findIndex(f => f.path === mapping.originalPath);
                     if (idx !== -1 && mapping.outputPath !== mapping.originalPath) {
-                      filesToMerge[idx] = { ...filesToMerge[idx], path: mapping.outputPath };
+                      filesToMerge[idx] = { ...filesToMerge[idx], path: mapping.outputPath, success: true };
                     }
                   }
                 } else {
@@ -410,11 +507,46 @@ export function useCaptionProcessing({
               }
             }
 
+            const srtScale = settings.srtSpeed > 0 ? settings.srtSpeed : 1.0;
+            const scaleLabel = normalizeSpeedLabel(srtScale);
+            const scaledSrtPath = `${processOutputDir}/srt/subtitle_${scaleLabel}x.srt`;
+
+            if (currentEntries.length > 0) {
+              const scaledEntries = buildScaledSubtitleEntries(currentEntries, srtScale);
+              // @ts-ignore
+              const scaledSrtResult = await window.electronAPI.caption.exportSrt(scaledEntries, scaledSrtPath);
+              if (scaledSrtResult?.success) {
+                srtFileForVideo = scaledSrtPath;
+                console.log(`[CaptionProcessing] Dùng SRT scaled cho render: ${scaledSrtPath} (scale=${srtScale})`);
+              }
+            }
+
             if (!srtFileForVideo) {
               srtFileForVideo = inputType === 'srt' ? currentPath : `${processOutputDir}/srt/translated.srt`;
             }
 
             const finalVideoPath = `${processOutputDir}/final_video_${Date.now()}.mp4`;
+            const timingContextPath = `${processOutputDir}/render_timing_context.json`;
+            const step7AudioSpeed = settings.renderAudioSpeed && settings.renderAudioSpeed > 0
+              ? settings.renderAudioSpeed
+              : 1.0;
+
+            try {
+              // @ts-ignore
+              await window.electronAPI.invoke('caption:saveJson', {
+                filePath: timingContextPath,
+                data: {
+                  generatedAt: new Date().toISOString(),
+                  step4SrtScale: srtScale,
+                  step7AudioSpeed,
+                  audioSpeedModel: 'step4_minus_step7_delta',
+                  srtPath: srtFileForVideo,
+                  audioPath: `${processOutputDir}/merged_audio.wav`,
+                },
+              });
+            } catch (error) {
+              console.warn(`[CaptionProcessing] Không thể lưu timing context JSON: ${timingContextPath}`, error);
+            }
 
             setProgress({ current: 20, total: 100, message: msg('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
 
@@ -436,6 +568,12 @@ export function useCaptionProcessing({
                 : undefined,
               audioPath: `${processOutputDir}/merged_audio.wav`,
               audioSpeed: settings.renderAudioSpeed,
+              step7AudioSpeedInput: step7AudioSpeed,
+              srtTimeScale: 1.0,
+              step4SrtScale: srtScale,
+              timingContextPath,
+              audioSpeedModel: 'step4_minus_step7_delta',
+              ttsRate: settings.rate,
               videoVolume: settings.videoVolume,
               audioVolume: settings.audioVolume,
               logoPath: settings.logoPath,

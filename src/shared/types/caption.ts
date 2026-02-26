@@ -310,6 +310,12 @@ export interface RenderVideoOptions {
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
   blackoutTop?: number;   // Vùng tô đen: tỉ lệ 0-1 từ trên xuống, VD 0.85 = che 15% dưới video
   audioSpeed?: number;    // Tốc độ phát audio (sẽ tự động tính videoSpeed để khớp)
+  step7AudioSpeedInput?: number; // Tốc độ audio người dùng nhập ở Step 7 (giữ riêng để trace khi audioPath đã pre-adjust)
+  srtTimeScale?: number;  // Scale timeline SRT đã dùng khi merge audio (vd: settings.srtSpeed)
+  step4SrtScale?: number; // Scale timeline thực tế từ bước 4/6 (vd: 1.3x), dùng để trace timing
+  timingContextPath?: string; // Đường dẫn JSON context để fallback speed/scale khi thiếu runtime data
+  audioSpeedModel?: 'step4_minus_step7_delta'; // Công thức tốc độ audio thực
+  ttsRate?: string;       // Tốc độ đọc TTS dùng lúc tạo audio (vd: "+20%"), để debug/sync trace
   audioPath?: string;     // Đường dẫn file audio (TTS) để mix vào video
   videoVolume?: number;   // Âm lượng video gốc (%)
   audioVolume?: number;   // Âm lượng file audio TTS (%)

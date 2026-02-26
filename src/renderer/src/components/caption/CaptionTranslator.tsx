@@ -56,6 +56,7 @@ export function CaptionTranslator() {
   const [availableFonts, setAvailableFonts] = useState<string[]>(['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto']);
 
   const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
+  const [diskSubtitleDuration, setDiskSubtitleDuration] = useState<number | null>(null);
 
   // Section 6 (Cấu hình) luôn dùng folder đầu tiên làm tham chiếu cấu hình.
   // Folder đang xử lý (processing.currentFolder) chỉ dùng cho progress badge ở Section 7.
@@ -77,6 +78,7 @@ export function CaptionTranslator() {
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
   useEffect(() => {
     setDiskAudioDuration(null);
+    setDiskSubtitleDuration(null);
   }, [firstFolderPath]);
 
   useEffect(() => {
@@ -119,6 +121,58 @@ export function CaptionTranslator() {
   const srtDurationMs = fileManager.entries.length > 0 
     ? Math.max(...fileManager.entries.map(e => e.endMs || 0)) 
     : 0;
+  const srtTimeScale = settings.srtSpeed > 0 ? settings.srtSpeed : 1.0;
+
+  const normalizeSpeedLabel = (speed: number) => {
+    const fixed = speed.toFixed(2);
+    return fixed.replace(/\.?0+$/, '');
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchDiskSubtitleDuration = async () => {
+      if (!displayOutputDir) {
+        if (mounted) setDiskSubtitleDuration(null);
+        return;
+      }
+
+      const getDurationFromSrt = async (srtPath: string, scale: number) => {
+        try {
+          const res = await (window.electronAPI as any).caption.parseSrt(srtPath);
+          if (!res?.success || !res?.data?.entries?.length) return null;
+          const endMs = Math.max(...res.data.entries.map((e: any) => e.endMs || 0));
+          if (!endMs || endMs <= 0) return null;
+          return (endMs / 1000) * scale;
+        } catch {
+          return null;
+        }
+      };
+
+      const scaleLabel = normalizeSpeedLabel(srtTimeScale);
+      const scaledSrtPath = `${displayOutputDir}/srt/subtitle_${scaleLabel}x.srt`;
+      const translatedSrtPath = `${displayOutputDir}/srt/translated.srt`;
+
+      let durationSec = await getDurationFromSrt(scaledSrtPath, 1.0);
+      if (durationSec == null) {
+        durationSec = await getDurationFromSrt(translatedSrtPath, srtTimeScale);
+      }
+
+      if (mounted) {
+        setDiskSubtitleDuration(durationSec);
+      }
+    };
+
+    fetchDiskSubtitleDuration();
+    if (processing.status === 'success') {
+      fetchDiskSubtitleDuration();
+    }
+    return () => { mounted = false; };
+  }, [displayOutputDir, srtTimeScale, processing.status]);
+
+  const scaledSrtDurationSec = srtDurationMs > 0 ? (srtDurationMs / 1000) * srtTimeScale : 0;
+  const subtitleSyncDurationSec = scaledSrtDurationSec > 0
+    ? scaledSrtDurationSec
+    : (diskSubtitleDuration || 0);
 
   // Multi-folder: entries không được load (guarded by !isMulti) nên srtDurationMs = 0.
   // Fallback: dùng videoInfo.duration của folder hiện tại làm ước tính duration audio
@@ -151,10 +205,17 @@ export function CaptionTranslator() {
     ? baseAudioDuration / settings.renderAudioSpeed 
     : baseAudioDuration;
 
+  const step4Scale = srtTimeScale > 0 ? srtTimeScale : 1.0;
+  const step7Speed = settings.renderAudioSpeed > 0 ? settings.renderAudioSpeed : 1.0;
+  const audioEffectiveSpeed = step4Scale - (step7Speed - 1);
+  const subRenderDuration = subtitleSyncDurationSec;
+  const videoSubBaseDuration = step4Scale > 0 ? (subRenderDuration / step4Scale) : subRenderDuration;
+
   let autoVideoSpeed = 1.0;
-  if (originalVideoDuration > 0 && audioExpectedDuration > 0) {
-    autoVideoSpeed = originalVideoDuration / audioExpectedDuration;
+  if (videoSubBaseDuration > 0 && audioExpectedDuration > 0) {
+    autoVideoSpeed = videoSubBaseDuration / audioExpectedDuration;
   }
+  const videoMarkerSec = audioExpectedDuration * autoVideoSpeed;
 
   const formatDuration = (seconds: number) => {
     if (seconds <= 0) return '--';
@@ -167,13 +228,21 @@ export function CaptionTranslator() {
     console.log(`[CaptionTranslator] 🕒 THỜI GIAN GỐC & TÍNH TOÁN (AUTO-FIT):
 - File audio trên đĩa (diskAudioDuration): ${diskAudioDuration ? diskAudioDuration.toFixed(2) + 's' : 'null'}
 - Thời gian gốc dự phòng (fallbackBaseAudioDurationMs): ${(fallbackBaseAudioDurationMs / 1000).toFixed(2)}s
+- Mốc subtitle cuối (scaled theo srtSpeed): ${scaledSrtDurationSec.toFixed(2)}s
+- Mốc subtitle từ file SRT trên đĩa: ${diskSubtitleDuration ? diskSubtitleDuration.toFixed(2) + 's' : 'null'}
+- Step4 scale: ${step4Scale.toFixed(3)}x
+- Step7 speed: ${step7Speed.toFixed(3)}x
+- Audio hiệu dụng (step4 - delta step7): ${audioEffectiveSpeed.toFixed(3)}x
+- Sub render duration: ${subRenderDuration.toFixed(2)}s
+- Video sub base duration: ${videoSubBaseDuration.toFixed(2)}s
 - Duration Audio gốc (baseAudioDuration): ${baseAudioDuration.toFixed(2)}s
 - Tốc độ Audio thiết lập (settings.renderAudioSpeed): ${settings.renderAudioSpeed}x
 - 👉 Duration Audio mới (Render video length): ${audioExpectedDuration.toFixed(2)}s
-- Duration Video gốc (originalVideoDuration): ${originalVideoDuration.toFixed(2)}s
+- Duration Video dùng để sync (videoSubBaseDuration): ${videoSubBaseDuration.toFixed(2)}s
 - 👉 Tốc độ Video tự động chỉnh (autoVideoSpeed): ${autoVideoSpeed.toFixed(3)}x
+- 🎯 Mốc video chuẩn (gốc): ${videoMarkerSec.toFixed(2)}s
     `);
-  }, [diskAudioDuration, fallbackBaseAudioDurationMs, baseAudioDuration, settings.renderAudioSpeed, audioExpectedDuration, originalVideoDuration, autoVideoSpeed]);
+  }, [diskAudioDuration, diskSubtitleDuration, fallbackBaseAudioDurationMs, scaledSrtDurationSec, baseAudioDuration, settings.renderAudioSpeed, audioExpectedDuration, step4Scale, step7Speed, audioEffectiveSpeed, subRenderDuration, videoSubBaseDuration, autoVideoSpeed, videoMarkerSec]);
 
   useEffect(() => {
     // Lấy danh sách font thực tế từ resources/fonts
@@ -484,8 +553,11 @@ export function CaptionTranslator() {
                          {autoVideoSpeed.toFixed(2)}x
                        </div>
                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                         Mốc video chuẩn (gốc): {formatDuration(videoMarkerSec)}
+                       </div>
+                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
                          {isMultiFolder
-                           ? `Video gốc: ${formatDuration(originalVideoDuration)}`
+                           ? `Mốc sync: ${formatDuration(videoSubBaseDuration)}`
                            : `(Để khớp vỏn vẹn ${formatDuration(audioExpectedDuration)})`}
                        </div>
                      </div>
@@ -661,7 +733,9 @@ export function CaptionTranslator() {
               <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <span>🎬 {videoInfo?.name ?? 'Video'}</span>
                 <span>⏱ {formatDuration(originalVideoDuration)}</span>
+                <span>🧭 Sync: {formatDuration(videoSubBaseDuration)}</span>
                 <span>🔊 Audio: {formatDuration(audioExpectedDuration)}</span>
+                <span>🎯 Marker: {formatDuration(videoMarkerSec)}</span>
                 <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
                   🚀 Speed: {autoVideoSpeed.toFixed(2)}x
                 </span>

@@ -1,7 +1,8 @@
 import os from 'os';
 import path from 'path';
 import { app } from 'electron';
-import fs, { existsSync } from 'fs';
+import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import { parseSrtFile } from './srtParser';
 import { RenderVideoOptions } from '../../../shared/types/caption';
 import { hexToAssColor } from './assConverter';
@@ -22,21 +23,76 @@ export interface SubtitlePrepResult {
   videoSpeedMultiplier: number;
   scaleFactor: number;
   audioSpeed: number;
+  step4ScaleUsed: number;
+  step7SpeedUsed: number;
+  audioEffectiveSpeed: number;
+  subRenderDuration: number;
+  videoSubBaseDuration: number;
+  videoMarkerSec: number;
+  speedCalcSource: 'runtime' | 'timing_context' | 'fallback_default';
+}
+
+interface RenderTimingContext {
+  step4SrtScale?: number;
+  step7AudioSpeed?: number;
+  audioSpeedModel?: 'step4_minus_step7_delta';
+}
+
+async function readRenderTimingContext(contextPath?: string): Promise<RenderTimingContext | null> {
+  if (!contextPath || !existsSync(contextPath)) {
+    return null;
+  }
+  try {
+    const raw = await fs.readFile(contextPath, 'utf-8');
+    const parsed = JSON.parse(raw) as RenderTimingContext;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Tính duration và export file ASS tạm để sử dụng trong bộ lọc FFmpeg
  */
 export async function prepareSubtitleAndDuration(options: RenderVideoOptions): Promise<SubtitlePrepResult> {
-  const { srtPath, width, height: userHeight, videoPath } = options;
+  const { srtPath, width, height: userHeight, videoPath, outputPath } = options;
   const audioSpeed = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
-  let rawDuration = options.targetDuration || 60;
+  const srtTimeScale = options.srtTimeScale && options.srtTimeScale > 0 ? options.srtTimeScale : 1.0;
+  const isHardsub = options.renderMode === 'hardsub' && !!videoPath;
+  const defaultTimingContextPath = outputPath
+    ? path.join(path.dirname(outputPath), 'render_timing_context.json')
+    : undefined;
+  const timingContextPath = options.timingContextPath || defaultTimingContextPath;
+  const timingContext = await readRenderTimingContext(timingContextPath);
+
+  const runtimeStep4Scale = options.step4SrtScale && options.step4SrtScale > 0 ? options.step4SrtScale : null;
+  const runtimeStep7Speed = options.step7AudioSpeedInput && options.step7AudioSpeedInput > 0
+    ? options.step7AudioSpeedInput
+    : (options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : null);
+  const contextStep4Scale = timingContext?.step4SrtScale && timingContext.step4SrtScale > 0 ? timingContext.step4SrtScale : null;
+  const contextStep7Speed = timingContext?.step7AudioSpeed && timingContext.step7AudioSpeed > 0 ? timingContext.step7AudioSpeed : null;
+
+  const step4Scale = runtimeStep4Scale ?? contextStep4Scale ?? 1.0;
+  const step7Speed = runtimeStep7Speed ?? contextStep7Speed ?? 1.0;
+  const speedCalcSource: 'runtime' | 'timing_context' | 'fallback_default' =
+    runtimeStep4Scale != null || runtimeStep7Speed != null
+      ? 'runtime'
+      : (contextStep4Scale != null || contextStep7Speed != null ? 'timing_context' : 'fallback_default');
+
+  const audioSpeedModel = options.audioSpeedModel || timingContext?.audioSpeedModel || 'step4_minus_step7_delta';
+  const audioEffectiveSpeed = audioSpeedModel === 'step4_minus_step7_delta'
+    ? (step4Scale - (step7Speed - 1))
+    : step4Scale;
+
+  let rawDuration = (!isHardsub && options.targetDuration) ? options.targetDuration : 60;
   let srtEndTimeSec = 0;
+  let totalAudioDurationSec = 0;
 
   try {
     const srtCheck = await parseSrtFile(srtPath);
     if (srtCheck.success && srtCheck.entries.length > 0) {
-      srtEndTimeSec = Math.ceil(srtCheck.entries[srtCheck.entries.length - 1].endMs / 1000) + 2;
+      const lastEndMs = Math.max(...srtCheck.entries.map(e => e.endMs || 0));
+      srtEndTimeSec = lastEndMs > 0 ? (lastEndMs / 1000) * srtTimeScale : 0;
     }
   } catch (e) {
     console.warn("[VideoRenderer] Lỗi đọc srtEndTimeSec", e);
@@ -46,24 +102,31 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   if (options.audioPath && existsSync(options.audioPath)) {
     const audioMeta = await getVideoMetadata(options.audioPath);
     if (audioMeta.success && audioMeta.metadata) {
-      const audioDuration = audioMeta.metadata.duration;
-      if (srtEndTimeSec > 0 && audioDuration > srtEndTimeSec * 2) {
-        rawDuration = srtEndTimeSec;
-      } else {
-        rawDuration = audioDuration;
-        isDurationFromAudio = true;
-      }
+      totalAudioDurationSec = audioMeta.metadata.duration;
+      rawDuration = totalAudioDurationSec;
+      isDurationFromAudio = true;
     }
   }
 
-  if (!isDurationFromAudio && !options.targetDuration) {
+  if (!isDurationFromAudio && (isHardsub || !options.targetDuration)) {
     if (srtEndTimeSec > 0) {
       rawDuration = srtEndTimeSec;
     }
   }
 
-  const duration = rawDuration;
-  const newAudioDuration = duration / audioSpeed;
+  // Mốc sub theo SRT render hiện tại (thường là subtitle_1.3x.srt).
+  const subRenderDuration = srtEndTimeSec > 0 ? srtEndTimeSec : 0;
+  // Quy đổi về mốc video gốc theo cấu hình step4.
+  const videoSubBaseDuration = step4Scale > 0 ? subRenderDuration / step4Scale : subRenderDuration;
+
+  // Audio render thực tế (đã scale ở step7 qua file audio_*.wav/mp3).
+  const audioBaseDuration = totalAudioDurationSec > 0 ? totalAudioDurationSec : subRenderDuration;
+  const duration = subRenderDuration > 0 ? subRenderDuration : rawDuration;
+  const newAudioDuration = audioBaseDuration / audioSpeed;
+  const videoSpeedNeeded = (videoSubBaseDuration > 0 && newAudioDuration > 0)
+    ? (videoSubBaseDuration / newAudioDuration)
+    : 1.0;
+  const videoMarkerSec = newAudioDuration * videoSpeedNeeded;
 
   let finalWidth = width;
   let finalHeight = userHeight || 150;
@@ -89,12 +152,21 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
         renderHeight = probeResult.metadata.actualHeight || probeResult.metadata.height;
         hasVideoAudio = !!probeResult.metadata.hasAudio;
         originalVideoDuration = probeResult.metadata.duration;
-        if (originalVideoDuration > 0 && newAudioDuration > 0) {
-          videoSpeedMultiplier = originalVideoDuration / newAudioDuration;
+        if (videoSubBaseDuration > 0 && newAudioDuration > 0) {
+          videoSpeedMultiplier = videoSpeedNeeded;
         }
       }
     } catch (e) {}
   }
+
+  console.log(
+    `[VideoRenderer] Duration sync | source=${speedCalcSource}, step4Scale=${step4Scale.toFixed(4)}, step7Speed=${step7Speed.toFixed(4)}, ` +
+    `audioEffectiveSpeed=${audioEffectiveSpeed.toFixed(4)}, subRenderDuration=${subRenderDuration.toFixed(3)}s, ` +
+    `videoSubBaseDuration=${videoSubBaseDuration.toFixed(3)}s, audioScaledDuration=${newAudioDuration.toFixed(3)}s, ` +
+    `videoSpeedNeeded=${videoSpeedNeeded.toFixed(4)}, videoMarkerSec=${videoMarkerSec.toFixed(3)}s, ` +
+    `srtTimeScale=${srtTimeScale}, ttsRate=${options.ttsRate || 'n/a'}, audioModel=${audioSpeedModel}, ` +
+    `videoTotal=${originalVideoDuration.toFixed(3)}s, durationUsed=${duration.toFixed(3)}s`
+  );
 
   let MAX_OUTPUT_HEIGHT = 1080;
   if (options.renderResolution === '720p') MAX_OUTPUT_HEIGHT = 720;
@@ -170,8 +242,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   };
 
   for (const entry of srtData.entries) {
-    const startAss = msToAssTime(entry.startMs / videoSpeedMultiplier);
-    const endAss = msToAssTime(entry.endMs / videoSpeedMultiplier);
+    const scaledStartMs = entry.startMs * srtTimeScale;
+    const scaledEndMs = entry.endMs * srtTimeScale;
+    // Timeline output = TTS audio timeline sau khi speed adjust (step7).
+    // Clip TTS ở thời điểm gốc T → sau step4 scale nằm tại T*srtTimeScale trong merged audio
+    // → sau step7 speed adjust nằm tại T*srtTimeScale/step7Speed trong output.
+    // Subtitle phải hiện đúng lúc đó → chia step7Speed.
+    const startAss = msToAssTime(scaledStartMs / step7Speed);
+    const endAss = msToAssTime(scaledEndMs / step7Speed);
     let text = (entry.translatedText || entry.text).replace(/\n/g, '\\N');
     if (options.position) {
       const posX = Math.round(options.position.x * scaleFactor);
@@ -181,12 +259,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     assContent += `Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${text}\n`;
   }
 
-  await fs.promises.writeFile(tempAssPath, assContent, 'utf-8');
+  await fs.writeFile(tempAssPath, assContent, 'utf-8');
   registerTempFile(tempAssPath);
 
   return {
     tempAssPath, duration, newAudioDuration, renderWidth, renderHeight, finalWidth, finalHeight,
-    needsScale, hasVideoAudio, originalVideoDuration, videoSpeedMultiplier, scaleFactor, audioSpeed
+    needsScale, hasVideoAudio, originalVideoDuration, videoSpeedMultiplier, scaleFactor, audioSpeed,
+    step4ScaleUsed: step4Scale,
+    step7SpeedUsed: step7Speed,
+    audioEffectiveSpeed,
+    subRenderDuration,
+    videoSubBaseDuration,
+    videoMarkerSec,
+    speedCalcSource,
   };
 }
 

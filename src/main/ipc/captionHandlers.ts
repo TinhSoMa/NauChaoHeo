@@ -205,6 +205,12 @@ export function registerCaptionHandlers(): void {
         position?: { x: number; y: number };
         blackoutTop?: number;
         audioSpeed?: number;
+        step7AudioSpeedInput?: number;
+        srtTimeScale?: number;
+        step4SrtScale?: number;
+        timingContextPath?: string;
+        audioSpeedModel?: 'step4_minus_step7_delta';
+        ttsRate?: string;
         audioPath?: string;
         videoVolume?: number;
         audioVolume?: number;

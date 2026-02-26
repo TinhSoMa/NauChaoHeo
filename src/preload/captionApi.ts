@@ -162,6 +162,23 @@ export interface CaptionVideoAPI {
     videoPath?: string;
     targetDuration?: number;
     hardwareAcceleration?: 'none' | 'qsv';
+    srtTimeScale?: number;
+    step4SrtScale?: number;
+    timingContextPath?: string;
+    audioSpeedModel?: 'step4_minus_step7_delta';
+    ttsRate?: string;
+    renderMode?: 'hardsub' | 'black_bg';
+    renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+    position?: { x: number; y: number };
+    blackoutTop?: number;
+    audioSpeed?: number;
+    step7AudioSpeedInput?: number;
+    audioPath?: string;
+    videoVolume?: number;
+    audioVolume?: number;
+    logoPath?: string;
+    logoPosition?: { x: number; y: number };
+    logoScale?: number;
     style?: any;
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
 
