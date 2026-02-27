@@ -8,7 +8,6 @@ import * as path from 'path';
 import { 
   ASSStyleConfig, 
   ConvertToAssOptions,
-  SubtitleEntry 
 } from '../../../shared/types/caption';
 import { parseSrtFile } from './srtParser';
 

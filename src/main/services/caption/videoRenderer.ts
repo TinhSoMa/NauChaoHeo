@@ -426,18 +426,25 @@ export async function renderHardsubVideo(
     inputArgs.push('-i', renderOptions.audioPath);
     hasTtsAudio = true;
   }
-  const audioStartInVideoSec = hasTtsAudio ? 0 : null;
   const subtitleDurationScaledSec = prep.subRenderDuration > 0 ? prep.subRenderDuration : prep.duration;
-  const audioEndInVideoSec = hasTtsAudio ? Math.min(subtitleDurationScaledSec, outputDuration) : null;
   const trimApplied = false;
 
   const step4SrtScale = prep.step4ScaleUsed && prep.step4ScaleUsed > 0
     ? prep.step4ScaleUsed
     : (options.step4SrtScale && options.step4SrtScale > 0 ? options.step4SrtScale : 1.0);
+  const srtTimeScaleConfigured = prep.configuredSrtTimeScale > 0 ? prep.configuredSrtTimeScale : 1.0;
+  const srtTimeScaleApplied = prep.appliedSrtTimeScale > 0 ? prep.appliedSrtTimeScale : 1.0;
   const step7AudioSpeed = prep.step7SpeedUsed && prep.step7SpeedUsed > 0 ? prep.step7SpeedUsed : audioSpeedInput;
   const audioEffectiveSpeed = prep.audioEffectiveSpeed;
   let subtitleDurationOriginalSec = prep.videoSubBaseDuration > 0 ? prep.videoSubBaseDuration : 0;
   const videoMarkerSec = prep.videoMarkerSec > 0 ? prep.videoMarkerSec : 0;
+  const audioStartInOutputSec = hasTtsAudio ? 0 : null;
+  const audioEndInOutputSec = hasTtsAudio ? Math.min(prep.newAudioDuration, outputDuration) : null;
+  const resolvedVideoMarkerSec = videoMarkerSec > 0
+    ? videoMarkerSec
+    : ((audioEndInOutputSec ?? 0) * (prep.videoSpeedMultiplier > 0 ? prep.videoSpeedMultiplier : 1.0));
+  const audioStartInVideoSec = hasTtsAudio ? 0 : null;
+  const audioEndInVideoSec = hasTtsAudio ? resolvedVideoMarkerSec : null;
 
   const translatedSrtPath = path.join(path.dirname(options.srtPath), 'translated.srt');
   const translatedSrtDurationSec = subtitleDurationOriginalSec <= 0 ? await readSrtDurationSec(translatedSrtPath) : null;
@@ -543,6 +550,9 @@ export async function renderHardsubVideo(
       calcMode: 'audio_speed_adjusted_video_marker',
       audioSpeedModel: options.audioSpeedModel || 'step4_minus_step7_delta',
       step4SrtScale,
+      srtTimeScaleConfigured,
+      srtTimeScaleApplied,
+      srtAlreadyScaled: prep.srtAlreadyScaled,
       step7AudioSpeedInput: step7AudioSpeed,
       audioEffectiveSpeed: roundValue(audioEffectiveSpeed),
       subtitleDurationScaledSec: roundValue(subtitleDurationScaledSec),
@@ -556,6 +566,14 @@ export async function renderHardsubVideo(
           endSec: roundValue(audioEndInVideoSec),
           startLabel: `${(audioStartInVideoSec ?? 0).toFixed(3)}s`,
           endLabel: `${(audioEndInVideoSec ?? 0).toFixed(3)}s`,
+        }
+      : null,
+    mergeWindowInOutputTimeline: hasTtsAudio
+      ? {
+          startSec: roundValue(audioStartInOutputSec),
+          endSec: roundValue(audioEndInOutputSec),
+          startLabel: `${(audioStartInOutputSec ?? 0).toFixed(3)}s`,
+          endLabel: `${(audioEndInOutputSec ?? 0).toFixed(3)}s`,
         }
       : null,
     render: {
@@ -591,6 +609,14 @@ export async function renderHardsubVideo(
           endLabel: `${(audioEndInVideoSec ?? 0).toFixed(3)}s`,
         }
       : null,
+    audioMergeWindowInOutputTimeline: hasTtsAudio
+      ? {
+          startSec: audioStartInOutputSec,
+          endSec: audioEndInOutputSec,
+          startLabel: `${(audioStartInOutputSec ?? 0).toFixed(3)}s`,
+          endLabel: `${(audioEndInOutputSec ?? 0).toFixed(3)}s`,
+        }
+      : null,
     duration: {
       videoTotalSec: prep.originalVideoDuration,
       ttsEffectiveSec: prep.newAudioDuration,
@@ -602,6 +628,9 @@ export async function renderHardsubVideo(
       videoSpeedMultiplier: prep.videoSpeedMultiplier,
       audioSpeedInput: step7AudioSpeed,
       step4SrtScale,
+      srtTimeScaleConfigured,
+      srtTimeScaleApplied,
+      srtAlreadyScaled: prep.srtAlreadyScaled,
       audioEffectiveSpeed,
       audioPreAdjustedFile: adjustedAudio.generated,
       speedCalcSource: prep.speedCalcSource,
@@ -618,7 +647,7 @@ export async function renderHardsubVideo(
       subtitleEndSec: prep.duration,
       trimApplied,
     },
-    note: 'Không trim audio/video. Mốc video tính từ audioScaledDuration * videoSpeedMultiplier.',
+    note: 'Không trim audio/video. mergeWindowInVideo là timeline video gốc; mergeWindowInOutputTimeline là timeline sau setpts.',
   });
 
   const totalFrames = Math.floor(outputDuration * fps);

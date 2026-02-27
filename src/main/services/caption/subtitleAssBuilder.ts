@@ -30,6 +30,9 @@ export interface SubtitlePrepResult {
   videoSubBaseDuration: number;
   videoMarkerSec: number;
   speedCalcSource: 'runtime' | 'timing_context' | 'fallback_default';
+  configuredSrtTimeScale: number;
+  appliedSrtTimeScale: number;
+  srtAlreadyScaled: boolean;
 }
 
 interface RenderTimingContext {
@@ -51,13 +54,24 @@ async function readRenderTimingContext(contextPath?: string): Promise<RenderTimi
   }
 }
 
+function parseScaleFromSrtFileName(srtPath: string): number | null {
+  const baseName = path.basename(srtPath).toLowerCase();
+  const match = baseName.match(/(?:subtitle|translated)_([0-9]+(?:[._][0-9]+)?)x\.srt$/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  const normalized = match[1].replace(/_/g, '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 /**
  * Tính duration và export file ASS tạm để sử dụng trong bộ lọc FFmpeg
  */
 export async function prepareSubtitleAndDuration(options: RenderVideoOptions): Promise<SubtitlePrepResult> {
   const { srtPath, width, height: userHeight, videoPath, outputPath } = options;
   const audioSpeed = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
-  const srtTimeScale = options.srtTimeScale && options.srtTimeScale > 0 ? options.srtTimeScale : 1.0;
+  const configuredSrtTimeScale = options.srtTimeScale && options.srtTimeScale > 0 ? options.srtTimeScale : 1.0;
   const isHardsub = options.renderMode === 'hardsub' && !!videoPath;
   const defaultTimingContextPath = outputPath
     ? path.join(path.dirname(outputPath), 'render_timing_context.json')
@@ -83,6 +97,13 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   const audioEffectiveSpeed = audioSpeedModel === 'step4_minus_step7_delta'
     ? (step4Scale - (step7Speed - 1))
     : step4Scale;
+  const fileNameScaleHint = parseScaleFromSrtFileName(srtPath);
+  const srtAlreadyScaled = !!(
+    fileNameScaleHint &&
+    fileNameScaleHint > 1 &&
+    Math.abs(fileNameScaleHint - step4Scale) < 0.02
+  );
+  const appliedSrtTimeScale = srtAlreadyScaled ? 1.0 : configuredSrtTimeScale;
 
   let rawDuration = (!isHardsub && options.targetDuration) ? options.targetDuration : 60;
   let srtEndTimeSec = 0;
@@ -92,7 +113,7 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
     const srtCheck = await parseSrtFile(srtPath);
     if (srtCheck.success && srtCheck.entries.length > 0) {
       const lastEndMs = Math.max(...srtCheck.entries.map(e => e.endMs || 0));
-      srtEndTimeSec = lastEndMs > 0 ? (lastEndMs / 1000) * srtTimeScale : 0;
+      srtEndTimeSec = lastEndMs > 0 ? (lastEndMs / 1000) * appliedSrtTimeScale : 0;
     }
   } catch (e) {
     console.warn("[VideoRenderer] Lỗi đọc srtEndTimeSec", e);
@@ -142,7 +163,7 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   let needsScale = false;
   let hasVideoAudio = false;
   let originalVideoDuration = 0;
-  let videoSpeedMultiplier = 1.0;
+  let videoSpeedMultiplier = videoSpeedNeeded > 0 ? videoSpeedNeeded : 1.0;
 
   if (videoPath && existsSync(videoPath)) {
     try {
@@ -152,13 +173,6 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
         renderHeight = probeResult.metadata.actualHeight || probeResult.metadata.height;
         hasVideoAudio = !!probeResult.metadata.hasAudio;
         originalVideoDuration = probeResult.metadata.duration;
-        // videoSpeedMultiplier = video cần chạy chậm/nhanh để khớp với audio TTS
-        // Công thức đúng: originalVideoDuration / newAudioDuration
-        //   (video có bao nhiêu giây thì phải phủ đúng bấy nhiêu giây audio)
-        // KHÔNG dùng videoSubBaseDuration (= thời lượng subtitle ở 1x, không phải video)
-        if (originalVideoDuration > 0 && newAudioDuration > 0) {
-          videoSpeedMultiplier = originalVideoDuration / newAudioDuration;
-        }
       }
     } catch (e) {}
   }
@@ -168,7 +182,8 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
     `audioEffectiveSpeed=${audioEffectiveSpeed.toFixed(4)}, subRenderDuration=${subRenderDuration.toFixed(3)}s, ` +
     `videoSubBaseDuration=${videoSubBaseDuration.toFixed(3)}s, audioScaledDuration=${newAudioDuration.toFixed(3)}s, ` +
     `videoSpeedNeeded=${videoSpeedNeeded.toFixed(4)}, videoMarkerSec=${videoMarkerSec.toFixed(3)}s, ` +
-    `srtTimeScale=${srtTimeScale}, ttsRate=${options.ttsRate || 'n/a'}, audioModel=${audioSpeedModel}, ` +
+    `srtScaleConfigured=${configuredSrtTimeScale}, srtScaleApplied=${appliedSrtTimeScale}, srtAlreadyScaled=${srtAlreadyScaled}, ` +
+    `ttsRate=${options.ttsRate || 'n/a'}, audioModel=${audioSpeedModel}, ` +
     `videoTotal=${originalVideoDuration.toFixed(3)}s, durationUsed=${duration.toFixed(3)}s`
   );
 
@@ -246,11 +261,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   };
 
   for (const entry of srtData.entries) {
-    const scaledStartMs = entry.startMs * srtTimeScale;
-    const scaledEndMs = entry.endMs * srtTimeScale;
+    const scaledStartMs = entry.startMs * appliedSrtTimeScale;
+    const scaledEndMs = entry.endMs * appliedSrtTimeScale;
     // Timeline output = TTS audio timeline sau khi speed adjust (step7).
-    // Clip TTS ở thời điểm gốc T → sau step4 scale nằm tại T*srtTimeScale trong merged audio
-    // → sau step7 speed adjust nằm tại T*srtTimeScale/step7Speed trong output.
+    // Clip TTS ở thời điểm gốc T → sau step4 scale nằm tại T*appliedSrtTimeScale trong merged audio
+    // → sau step7 speed adjust nằm tại T*appliedSrtTimeScale/step7Speed trong output.
     // Subtitle phải hiện đúng lúc đó → chia step7Speed.
     const startAss = msToAssTime(scaledStartMs / step7Speed);
     const endAss = msToAssTime(scaledEndMs / step7Speed);
@@ -276,6 +291,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     videoSubBaseDuration,
     videoMarkerSec,
     speedCalcSource,
+    configuredSrtTimeScale,
+    appliedSrtTimeScale,
+    srtAlreadyScaled,
   };
 }
 

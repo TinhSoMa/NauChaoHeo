@@ -282,6 +282,17 @@ export interface ASSStyleConfig {
 }
 
 /**
+ * Options để convert SRT sang ASS
+ */
+export interface ConvertToAssOptions {
+  srtPath: string;
+  assPath: string;
+  videoResolution?: { width: number; height: number };
+  style: ASSStyleConfig;
+  position?: { x: number; y: number };
+}
+
+/**
  * Thông tin metadata của video
  */
 export interface VideoMetadata {
