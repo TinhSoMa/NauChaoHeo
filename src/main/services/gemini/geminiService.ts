@@ -220,6 +220,39 @@ export async function callGeminiWithRotation(
 }
 
 /**
+ * Gọi Gemini với key đã được chỉ định trước (dành cho caption parallel batches)
+ * Nếu key bị lỗi / rate limit → tự động fallback sang callGeminiWithRotation
+ */
+export async function callGeminiWithAssignedKey(
+  prompt: string | object,
+  assignedKey: { apiKey: string; keyInfo: KeyInfo },
+  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
+): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
+  const manager = getApiManager();
+
+  console.log(`[GeminiService] [assigned] Dùng key: ${assignedKey.keyInfo.name}`);
+  const response = await callGeminiApi(prompt, assignedKey.apiKey, model, false);
+
+  if (response.success) {
+    manager.recordSuccess(assignedKey.apiKey);
+    return { ...response, keyInfo: assignedKey.keyInfo };
+  }
+
+  // Key được chỉ định bị lỗi — ghi nhận và fallback sang rotation
+  if (response.error === 'RATE_LIMIT') {
+    console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation`);
+    manager.recordRateLimitError(assignedKey.apiKey);
+  } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+    manager.recordQuotaExhausted(assignedKey.apiKey);
+  } else {
+    manager.recordError(assignedKey.apiKey, response.error || 'Unknown');
+  }
+
+  console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name}`);
+  return callGeminiWithRotation(prompt, model);
+}
+
+/**
  * Dịch văn bản sử dụng Gemini API
  */
 export async function translateText(

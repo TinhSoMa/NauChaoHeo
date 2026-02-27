@@ -103,7 +103,13 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
     
   } catch (error) {
     const errorMsg = `Lỗi đọc file SRT: ${error}`;
-    console.error(`[SrtParser] ${errorMsg}`);
+    // ENOENT = file chưa tồn tại (bình thường khi chưa chạy các bước trước) — dùng debug thay vì error
+    const isNotFound = String(error).includes('ENOENT');
+    if (isNotFound) {
+      console.debug(`[SrtParser] File chưa tồn tại (bỏ qua): ${filePath}`);
+    } else {
+      console.error(`[SrtParser] ${errorMsg}`);
+    }
     
     return {
       success: false,

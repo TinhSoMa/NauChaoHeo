@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Save, BookOpen, Sparkles, Eye, RefreshCw, Check, AlertCircle, Plus, Edit2, X, Trash2, Settings } from 'lucide-react';
+import { ArrowLeft, Save, BookOpen, Sparkles, Eye, RefreshCw, Check, AlertCircle, Plus, Edit2, X, Trash2, Settings, Subtitles } from 'lucide-react';
 import { Button } from '../common/Button';
 import styles from './Settings.module.css';
 
@@ -37,6 +37,7 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [translationPromptId, setTranslationPromptId] = useState<string>('');
   const [summaryPromptId, setSummaryPromptId] = useState<string>('');
+  const [captionPromptId, setCaptionPromptId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [previewPromptId, setPreviewPromptId] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<Prompt | null>(null);
@@ -98,6 +99,7 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
       if (settingsResult.success && settingsResult.data) {
         setTranslationPromptId(settingsResult.data.translationPromptId || '');
         setSummaryPromptId(settingsResult.data.summaryPromptId || '');
+        setCaptionPromptId(settingsResult.data.captionPromptId || '');
       }
       setHasChanges(false);
     } catch (error) {
@@ -202,6 +204,11 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
     setHasChanges(true);
   };
 
+  const handleCaptionPromptChange = (value: string) => {
+    setCaptionPromptId(value);
+    setHasChanges(true);
+  };
+
   const handlePreview = async (promptId: string) => {
     if (previewPromptId === promptId) {
       setPreviewPromptId(null);
@@ -225,7 +232,8 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
     try {
       const result = await window.electronAPI.appSettings.update({
         translationPromptId: translationPromptId || null,
-        summaryPromptId: summaryPromptId || null
+        summaryPromptId: summaryPromptId || null,
+        captionPromptId: captionPromptId || null
       });
 
       if (result.success) {
@@ -238,7 +246,7 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
       console.error('[PromptSettings] Error saving:', error);
       showToast('❌ Lỗi khi lưu cài đặt', 'error');
     }
-  }, [translationPromptId, summaryPromptId]);
+  }, [translationPromptId, summaryPromptId, captionPromptId]);
 
   if (loading) {
     return (
@@ -330,11 +338,13 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
             prompts={prompts}
             translationPromptId={translationPromptId}
             summaryPromptId={summaryPromptId}
+            captionPromptId={captionPromptId}
             previewPromptId={previewPromptId}
             previewContent={previewContent}
             hasChanges={hasChanges}
             onTranslationPromptChange={handleTranslationPromptChange}
             onSummaryPromptChange={handleSummaryPromptChange}
+            onCaptionPromptChange={handleCaptionPromptChange}
             onPreview={handlePreview}
             onSave={handleSave}
           />
@@ -371,11 +381,13 @@ function ConfigTab({
   prompts, 
   translationPromptId, 
   summaryPromptId,
+  captionPromptId,
   previewPromptId,
   previewContent,
   hasChanges,
   onTranslationPromptChange,
   onSummaryPromptChange,
+  onCaptionPromptChange,
   onPreview,
   onSave
 }: any) {
@@ -481,6 +493,59 @@ function ConfigTab({
           <Button variant="secondary" onClick={() => onPreview(summaryPromptId)}>
             <Eye size={14} />
             {previewPromptId === summaryPromptId ? 'Ẩn' : 'Xem'} chi tiết
+          </Button>
+        )}
+      </div>
+
+      {/* Caption Prompt */}
+      <div style={{ 
+        backgroundColor: 'var(--color-card)',
+        borderRadius: '12px',
+        padding: '1.5rem',
+        border: '1px solid var(--color-border)',
+        marginBottom: '1.5rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          <div style={{ 
+            width: '40px',
+            height: '40px',
+            borderRadius: '10px',
+            backgroundColor: '#10b981',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Subtitles size={22} />
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>
+              Prompt dịch Caption (Step 3)
+            </h3>
+            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+              Sử dụng khi dịch subtitle trong tab Caption
+            </p>
+          </div>
+        </div>
+
+        <select
+          value={captionPromptId}
+          onChange={(e) => onCaptionPromptChange(e.target.value)}
+          className={styles.select}
+          style={{ width: '100%', marginBottom: captionPromptId ? '1rem' : 0 }}
+        >
+          <option value="">🔍 Mặc định (prompt nội bộ)</option>
+          {prompts.map((p: Prompt) => (
+            <option key={p.id} value={p.id}>
+              {p.name} • {p.sourceLang} → {p.targetLang}
+            </option>
+          ))}
+        </select>
+
+        {captionPromptId && (
+          <Button variant="secondary" onClick={() => onPreview(captionPromptId)}>
+            <Eye size={14} />
+            {previewPromptId === captionPromptId ? 'Ẩn' : 'Xem'} chi tiết
           </Button>
         )}
       </div>

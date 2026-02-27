@@ -402,14 +402,17 @@ export async function renderHardsubVideo(
     codecParams = ['-preset', 'fast', '-global_quality', '25'];
   }
   
-  // Hardsub: giữ full chiều dài video gốc sau khi stretch bởi setpts.
-  // Nếu videoSpeedMultiplier != 1.0, video bị kéo dài → outputDuration phải bằng
-  // originalVideoDuration / videoSpeedMultiplier để không cắt mất phần cuối video.
-  // TTS audio kết thúc tại newAudioDuration (< outputDuration), phần còn lại chỉ có tiếng video gốc.
+  // Hardsub: tính thời lượng output đúng cho cả 2 trường hợp:
+  //   - videoSpeedMultiplier < 1 (video chậm đi):  stretchedVideo > newAudio  → dùng stretchedVideo
+  //   - videoSpeedMultiplier > 1 (video tăng tốc): stretchedVideo < newAudio  → dùng newAudio
+  // Luôn lấy max để không cắt bất kỳ nguồn nào sớm hơn cần thiết.
   const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
     ? prep.originalVideoDuration / prep.videoSpeedMultiplier
     : prep.originalVideoDuration;
-  const outputDuration = stretchedVideoDuration > 0 ? stretchedVideoDuration : prep.newAudioDuration;
+  const outputDuration = Math.max(
+    stretchedVideoDuration > 0 ? stretchedVideoDuration : 0,
+    prep.newAudioDuration > 0 ? prep.newAudioDuration : 0
+  ) || prep.newAudioDuration;
   const finalDurationStr = outputDuration.toFixed(3);
   console.log(
     `[VideoRenderer] Hardsub duration | videoTotal=${prep.originalVideoDuration.toFixed(3)}s, ` +

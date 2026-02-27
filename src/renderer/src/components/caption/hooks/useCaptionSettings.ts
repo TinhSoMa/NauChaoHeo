@@ -86,6 +86,9 @@ export function useCaptionSettings() {
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
 
+  // State - Translate Method
+  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit'>('api');
+
   // State - Multi-folder processing mode (global preference, not per-project)
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
 
@@ -112,12 +115,14 @@ export function useCaptionSettings() {
     renderAudioSpeed?: number;
     videoVolume?: number;
     audioVolume?: number;
+    translateMethod?: 'api' | 'impit';
   }>({
     feature: 'caption',
     fileName: 'caption-settings.json', // Changed filename slightly to avoid conflict if any
     serialize: () => ({
       inputType,
       geminiModel,
+      translateMethod,
       voice,
       rate,
       volume,
@@ -142,6 +147,7 @@ export function useCaptionSettings() {
     deserialize: (saved) => {
       if (saved.inputType) setInputType(saved.inputType);
       if (saved.geminiModel) setGeminiModel(saved.geminiModel);
+      if (saved.translateMethod) setTranslateMethod(saved.translateMethod as 'api' | 'impit');
       if (saved.voice) setVoice(saved.voice);
       if (saved.rate) setRate(String(saved.rate));
       if (saved.volume) setVolume(String(saved.volume));
@@ -165,13 +171,15 @@ export function useCaptionSettings() {
     },
     deps: [
       srtSpeed, splitByLines, linesPerFile, numberOfParts, enabledSteps, audioDir, autoFitAudio,
-      hardwareAcceleration, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume
+      hardwareAcceleration, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume,
+      translateMethod
     ],
   });
 
   return {
     inputType, setInputType,
     geminiModel, setGeminiModel,
+    translateMethod, setTranslateMethod,
     voice, setVoice,
     rate, setRate,
     volume, setVolume,

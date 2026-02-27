@@ -16,6 +16,7 @@ export { getProgressTracker, ProgressTracker, type ChapterMetrics, type Translat
 export {
   callGeminiApi,
   callGeminiWithRotation,
+  callGeminiWithAssignedKey,
   translateText,
   chat,
   getModelInfo,

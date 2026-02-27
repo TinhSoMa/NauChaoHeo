@@ -108,6 +108,7 @@ interface TranslationOptions {
   model: string;
   linesPerBatch: number;
   promptTemplate?: string;
+  translateMethod?: 'api' | 'impit';
 }
 
 interface TranslationResult {
@@ -319,6 +320,7 @@ interface AppSettings {
   useStoredContextOnFirstSend: boolean;
   translationPromptId: string | null;
   summaryPromptId: string | null;
+  captionPromptId: string | null;
   // Caption logo (global)
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;

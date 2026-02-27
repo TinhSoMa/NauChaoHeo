@@ -152,8 +152,12 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
         renderHeight = probeResult.metadata.actualHeight || probeResult.metadata.height;
         hasVideoAudio = !!probeResult.metadata.hasAudio;
         originalVideoDuration = probeResult.metadata.duration;
-        if (videoSubBaseDuration > 0 && newAudioDuration > 0) {
-          videoSpeedMultiplier = videoSpeedNeeded;
+        // videoSpeedMultiplier = video cần chạy chậm/nhanh để khớp với audio TTS
+        // Công thức đúng: originalVideoDuration / newAudioDuration
+        //   (video có bao nhiêu giây thì phải phủ đúng bấy nhiêu giây audio)
+        // KHÔNG dùng videoSubBaseDuration (= thời lượng subtitle ở 1x, không phải video)
+        if (originalVideoDuration > 0 && newAudioDuration > 0) {
+          videoSpeedMultiplier = originalVideoDuration / newAudioDuration;
         }
       }
     } catch (e) {}

@@ -13,6 +13,8 @@ import {
   CAPTION_VIDEO_IPC_CHANNELS
 } from '../../shared/types/caption';
 import * as CaptionService from '../services/caption';
+import { AppSettingsService } from '../services/appSettings';
+import { PromptService } from '../services/promptService';
 
 /**
  * Response chuẩn cho IPC
@@ -119,6 +121,18 @@ export function registerCaptionHandlers(): void {
       console.log(`[CaptionHandlers] Translate: ${options.entries.length} entries`);
 
       try {
+        // Inject prompt from DB if captionPromptId is set and no client override
+        if (!options.promptTemplate) {
+          const appSettings = AppSettingsService.getAll();
+          if (appSettings.captionPromptId) {
+            const prompt = PromptService.getById(appSettings.captionPromptId);
+            if (prompt?.content) {
+              options.promptTemplate = prompt.content;
+              console.log(`[CaptionHandlers] Sử dụng caption prompt: ${prompt.name}`);
+            }
+          }
+        }
+
         // Progress callback - gửi về renderer
         const progressCallback = (progress: unknown) => {
           const window = BrowserWindow.fromWebContents(event.sender);
@@ -460,7 +474,24 @@ export function registerCaptionHandlers(): void {
     }
   );
 
-
+  // ============================================
+  // WRITE TEXT FILE (dùng cho preview prompt download)
+  // ============================================
+  ipcMain.handle(
+    'fs:writeFile',
+    async (_event: IpcMainInvokeEvent, args: { filePath: string; content: string }): Promise<IpcResponse<void>> => {
+      try {
+        const { filePath, content } = args;
+        const fsPromises = await import('fs/promises');
+        await fsPromises.writeFile(filePath, content, 'utf-8');
+        console.log(`[CaptionHandlers] fs:writeFile → ${filePath}`);
+        return { success: true };
+      } catch (error) {
+        console.error('[CaptionHandlers] fs:writeFile error:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
 
   console.log('[CaptionHandlers] Đã đăng ký handlers thành công');
 }

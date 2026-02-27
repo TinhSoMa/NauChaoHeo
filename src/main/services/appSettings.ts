@@ -22,6 +22,7 @@ export interface AppSettings {
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
   summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
+  captionPromptId: string | null; // Prompt ID cho chức năng dịch caption (Step 3)
   // Caption logo (global — dùng lại khi edit nhiều video)
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   useStoredContextOnFirstSend: false,
   translationPromptId: null, // Tự động tìm prompt dịch
   summaryPromptId: null, // Tự động tìm prompt tóm tắt
+  captionPromptId: null, // Tự động dùng prompt mặc định
   captionLogoPath: null,
   captionLogoPosition: null,
   captionLogoScale: 1.0,

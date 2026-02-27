@@ -20,7 +20,7 @@ import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 import { SubtitlePreview } from './SubtitlePreview';
-import { Settings } from 'lucide-react';
+import { Settings, Download } from 'lucide-react';
 
 export function CaptionTranslator() {
   // Project output paths
@@ -51,6 +51,74 @@ export function CaptionTranslator() {
   });
 
   const audioFiles = processing.audioFiles;
+
+  // --- Download prompt preview ---
+  const handleDownloadPromptPreview = async () => {
+    const entries = fileManager.entries;
+    const linesPerBatch = 50;
+    const batchTexts = entries.slice(0, linesPerBatch).map(e => e.text);
+    const count = batchTexts.length;
+
+    // Lấy custom prompt từ DB nếu có
+    let customTemplate: string | undefined;
+    let promptName = 'default';
+    try {
+      const settingsRes = await window.electronAPI.appSettings.getAll();
+      const captionPromptId = settingsRes?.data?.captionPromptId;
+      if (captionPromptId) {
+        const promptRes: any = await window.electronAPI.invoke('prompt:getById', captionPromptId);
+        if (promptRes?.content) {
+          customTemplate = promptRes.content;
+          promptName = promptRes.name || captionPromptId;
+        }
+      }
+    } catch (e) {
+      console.warn('[PromptPreview] Không tải được settings/prompt:', e);
+    }
+
+    let prompt: string;
+    let responseFormat: 'pipe' | 'numbered';
+
+    if (customTemplate) {
+      const arrayText = JSON.stringify(batchTexts);
+      const rawText = batchTexts.join('\n');
+      prompt = customTemplate
+        .replace(/"\{\{TEXT\}\}"/g, arrayText)   // "{{TEXT}}" → JSON array
+        .replace(/\{\{TEXT\}\}/g, rawText)          // {{TEXT}} → plain fallback
+        .replace(/\{\{COUNT\}\}/g, String(count))
+        .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
+      const isPipe = /response_format["']?\s*:\s*["']?\|/.test(customTemplate)
+        || /"separator"\s*:\s*"\|"/.test(customTemplate)
+        || /Format output.*\|/.test(customTemplate);
+      responseFormat = isPipe ? 'pipe' : 'numbered';
+    } else {
+      // Default numbered format
+      const numberedLines = batchTexts.map((t, i) => `[${i + 1}] ${t}`).join('\n');
+      prompt = `Dịch các dòng subtitle sau sang tiếng Vietnamese.\nQuy tắc:\n1. Dịch tự nhiên, phù hợp ngữ cảnh\n2. Giữ nguyên số thứ tự [1], [2], ...\n3. Không thêm giải thích\n4. Mỗi dòng dịch tương ứng với dòng gốc\n\nNội dung cần dịch:\n${numberedLines}\n\nKết quả (chỉ trả về các dòng đã dịch, giữ nguyên format [số]):`;
+      responseFormat = 'numbered';
+    }
+
+    const header = [
+      `; === CAPTION PROMPT PREVIEW ===`,
+      `; Prompt: ${customTemplate ? promptName : '(default built-in)'}`,
+      `; Response format: ${responseFormat}`,
+      `; Batch size: ${count} / ${entries.length} dòng (chỉ batch đầu tiên)`,
+      `; ================================`,
+      '',
+    ].join('\n');
+
+    const content = header + prompt;
+
+    const saveRes = await (window.electronAPI as any).invoke('dialog:showSaveDialog', {
+      title: 'Lưu preview prompt',
+      defaultPath: 'caption_prompt_preview.txt',
+      filters: [{ name: 'Text', extensions: ['txt'] }],
+    });
+    if (!saveRes?.filePath) return;
+
+    // Ghi file qua IPC
+    await (window.electronAPI as any).invoke('fs:writeFile', { filePath: saveRes.filePath, content });
+  };
 
   // 5. Available Fonts State
   const [availableFonts, setAvailableFonts] = useState<string[]>(['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto']);
@@ -388,11 +456,39 @@ export function CaptionTranslator() {
 
         {/* Section 3: Gemini Model */}
         <div className={styles.section}>
-          <div className={styles.sectionTitle}>3. Cấu hình Gemini Model</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <div className={styles.sectionTitle} style={{ margin: 0 }}>3. Cấu hình Dịch (Step 3)</div>
+            <Button
+              variant="secondary"
+              onClick={handleDownloadPromptPreview}
+              disabled={fileManager.entries.length === 0}
+              title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải preview prompt (batch 1)'}
+              style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              <Download size={13} />
+              Preview Prompt
+            </Button>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '10px' }}>
+            <RadioButton
+              label="API (Gemini Key)"
+              checked={settings.translateMethod === 'api'}
+              onChange={() => settings.setTranslateMethod('api')}
+              name="translateMethod"
+            />
+            <RadioButton
+              label="Impit (Cookie Browser)"
+              checked={settings.translateMethod === 'impit'}
+              onChange={() => settings.setTranslateMethod('impit')}
+              name="translateMethod"
+            />
+          </div>
           <select
             value={settings.geminiModel}
             onChange={(e) => settings.setGeminiModel(e.target.value)}
             className={styles.select}
+            disabled={settings.translateMethod === 'impit'}
+            style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
           >
             {GEMINI_MODELS.map(m => (
               <option key={m.value} value={m.value}>{m.label}</option>

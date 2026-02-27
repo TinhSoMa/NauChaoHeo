@@ -108,6 +108,7 @@ interface UseCaptionProcessingProps {
     logoPosition?: { x: number; y: number } | null;
     logoScale?: number;
     processingMode?: ProcessingMode;
+    translateMethod?: 'api' | 'impit';
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
@@ -330,6 +331,7 @@ export function useCaptionProcessing({
           targetLanguage: 'Vietnamese',
           model: settings.geminiModel,
           linesPerBatch: 50,
+          translateMethod: settings.translateMethod,
         });
         if (result.success && result.data) {
           currentEntries = result.data.entries;

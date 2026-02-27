@@ -45,6 +45,7 @@ export interface TranslationOptions {
   model: string;                 // "gemini-2.5-flash"
   linesPerBatch: number;         // Số dòng mỗi batch (default: 50)
   promptTemplate?: string;       // Custom prompt template
+  translateMethod?: 'api' | 'impit'; // Phương thức dịch (default: 'api')
 }
 
 /**
