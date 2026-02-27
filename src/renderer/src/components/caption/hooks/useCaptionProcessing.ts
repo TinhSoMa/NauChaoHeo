@@ -109,6 +109,8 @@ interface UseCaptionProcessingProps {
     logoScale?: number;
     processingMode?: ProcessingMode;
     translateMethod?: 'api' | 'impit';
+    thumbnailFrameTimeSec?: number | null;
+    thumbnailText?: string;
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
@@ -563,6 +565,9 @@ export function useCaptionProcessing({
           logoPath: settings.logoPath,
           logoPosition: settings.logoPosition,
           logoScale: settings.logoScale,
+          thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
+          thumbnailTimeSec: settings.thumbnailFrameTimeSec ?? undefined,
+          thumbnailText: settings.thumbnailText,
         });
 
         if (renderRes.success) {

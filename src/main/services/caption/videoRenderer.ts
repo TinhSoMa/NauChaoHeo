@@ -739,6 +739,253 @@ export async function renderBlackBackgroundVideo(
 
 
 /**
+ * [THUMBNAIL] Tạo clip freeze-frame 0.2s từ một frame trong video
+ * Dùng 2 bước: extract PNG → tạo clip từ ảnh tĩnh
+ */
+async function createThumbnailClip(opts: {
+  videoPath: string;
+  timeSec: number;
+  durationSec: number;
+  thumbnailText?: string;
+  width: number;
+  height: number;
+  fps?: number;
+  includeAudio?: boolean;
+}): Promise<{ success: boolean; clipPath?: string; error?: string }> {
+  const ffmpegPath = getFFmpegPath();
+  if (!existsSync(ffmpegPath)) return { success: false, error: 'FFmpeg không tìm thấy' };
+
+  const tempDir = os.tmpdir();
+  const ts = Date.now();
+  const framePng = path.join(tempDir, `thumb_frame_${ts}.png`);
+  const clipPath = path.join(tempDir, `thumb_clip_${ts}.mp4`);
+  const textFilePath = path.join(tempDir, `thumb_text_${ts}.txt`);
+
+  // Đảm bảo width/height là số chẵn (libx264 yêu cầu)
+  const safeW = opts.width % 2 === 0 ? opts.width : opts.width - 1;
+  const safeH = opts.height % 2 === 0 ? opts.height : opts.height - 1;
+  const safeFps = Number.isFinite(opts.fps) && (opts.fps || 0) > 0 ? Math.round(opts.fps || 24) : 24;
+  const includeAudio = opts.includeAudio !== false;
+
+  const escapeFilterPath = (p: string) => p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+  const resolveThumbnailFontPath = (): string | null => {
+    const candidates = [
+      path.join(process.resourcesPath, 'fonts', 'BrightwallPersonal.ttf'),
+      path.join(app.getAppPath(), 'resources', 'fonts', 'BrightwallPersonal.ttf'),
+      path.join(process.cwd(), 'resources', 'fonts', 'BrightwallPersonal.ttf'),
+      path.resolve('resources', 'fonts', 'BrightwallPersonal.ttf'),
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  // Step 1: extract 1 frame từ videoPath tại timeSec
+  const extractArgs = [
+    '-y',
+    '-ss', String(opts.timeSec),
+    '-i', opts.videoPath,
+    '-vframes', '1',
+    '-q:v', '2',
+    framePng,
+  ];
+  let extractStderr = '';
+  const extractOk = await new Promise<boolean>((resolve) => {
+    const proc = spawn(ffmpegPath, extractArgs);
+    proc.stderr?.on('data', (d) => { extractStderr += d.toString(); });
+    proc.on('close', (code) => {
+      const ok = code === 0 && existsSync(framePng);
+      if (!ok) console.error('[Thumbnail] extract frame failed (code', code, '):\n', extractStderr.slice(-800));
+      resolve(ok);
+    });
+    proc.on('error', (err) => { console.error('[Thumbnail] spawn extract error:', err); resolve(false); });
+  });
+  if (!extractOk) return { success: false, error: `Không extract được frame thumbnail\n${extractStderr.slice(-400)}` };
+
+  // Step 2: tạo clip từ ảnh tĩnh (-t ĐẶT TRƯỚC -i để giới hạn input loop duration)
+  const thumbnailFontSizeMax = 145;
+  const thumbnailFontSize = thumbnailFontSizeMax;
+  const borderWidth = 4;
+  const thumbnailFontPath = resolveThumbnailFontPath();
+  let textFilter = '';
+  const baseVideoFilter = `scale=${safeW}:${safeH}`;
+  if (opts.thumbnailText?.trim()) {
+    const thumbnailText = opts.thumbnailText.trim();
+    await fs.writeFile(textFilePath, thumbnailText, 'utf-8');
+    if (!thumbnailFontPath) {
+      console.warn('[Thumbnail] Không tìm thấy BrightwallPersonal.ttf, fallback dùng font mặc định của hệ thống.');
+    }
+    const fontParam = thumbnailFontPath
+      ? `fontfile='${escapeFilterPath(thumbnailFontPath)}':`
+      : '';
+    textFilter =
+      `,drawtext=textfile='${escapeFilterPath(textFilePath)}':reload=0:` +
+      `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${borderWidth}:bordercolor=black:` +
+      `text_shaping=1:fix_bounds=1:x=(w-text_w)/2:y=(h-text_h)/2`;
+  }
+  const finalVideoFilter = `${baseVideoFilter}${textFilter}`;
+  console.log(
+    `[Thumbnail] create clip params | timeSec=${opts.timeSec}, durationSec=${opts.durationSec}, ` +
+    `size=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, text="${opts.thumbnailText || ''}", ` +
+    `font=${thumbnailFontPath || 'system-default'}, fontSize=${thumbnailFontSize}, fontColor=yellow, border=${borderWidth}`
+  );
+
+  const clipArgs = includeAudio
+    ? [
+        '-y',
+        '-loop', '1',
+        '-r', String(safeFps),
+        '-t', String(opts.durationSec), // giới hạn ngay input image (trước -i)
+        '-i', framePng,
+        '-f', 'lavfi',
+        '-t', String(opts.durationSec), // giới hạn anullsrc
+        '-i', `anullsrc=channel_layout=stereo:sample_rate=44100`,
+        '-vf', finalVideoFilter,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '18',
+        '-pix_fmt', 'yuv420p',
+        '-r', String(safeFps),
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-shortest',
+        '-map', '0:v',
+        '-map', '1:a',
+        clipPath,
+      ]
+    : [
+        '-y',
+        '-loop', '1',
+        '-r', String(safeFps),
+        '-t', String(opts.durationSec),
+        '-i', framePng,
+        '-vf', finalVideoFilter,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '18',
+        '-pix_fmt', 'yuv420p',
+        '-r', String(safeFps),
+        '-an',
+        clipPath,
+      ];
+  let clipStderr = '';
+  const clipOk = await new Promise<boolean>((resolve) => {
+    const proc = spawn(ffmpegPath, clipArgs);
+    proc.stderr?.on('data', (d) => { clipStderr += d.toString(); });
+    proc.on('close', (code) => {
+      const ok = code === 0 && existsSync(clipPath);
+      if (!ok) console.error('[Thumbnail] create clip failed (code', code, '):\n', clipStderr.slice(-1200));
+      resolve(ok);
+    });
+    proc.on('error', (err) => { console.error('[Thumbnail] spawn clip error:', err); resolve(false); });
+  });
+
+  // Xóa file tạm
+  try { await fs.unlink(framePng); } catch {}
+  try { await fs.unlink(textFilePath); } catch {}
+
+  if (!clipOk) return { success: false, error: `Không tạo được thumbnail clip\n${clipStderr.slice(-400)}` };
+  console.log(`[Thumbnail] clip tạo thành công: ${clipPath}`);
+  return { success: true, clipPath };
+}
+
+/**
+ * [THUMBNAIL] Ghép thumbnail clip vào đầu video chính bằng FFmpeg concat
+ */
+async function prependThumbnailClip(
+  thumbnailClipPath: string,
+  mainOutputPath: string,
+  hasAudio: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const ffmpegPath = getFFmpegPath();
+  if (!existsSync(ffmpegPath)) return { success: false, error: 'FFmpeg không tìm thấy' };
+  if (!existsSync(mainOutputPath)) return { success: false, error: `Không tìm thấy file render chính: ${mainOutputPath}` };
+
+  const dir = path.dirname(mainOutputPath);
+  const ext = path.extname(mainOutputPath);
+  const ts = Date.now();
+  const tempConcatPath = path.join(dir, `_concat_thumb_temp_${ts}${ext}`);
+  const backupMainPath = path.join(dir, `_main_backup_${ts}${ext}`);
+  const concatListPath = path.join(dir, `_concat_list_${ts}.txt`);
+
+  const toConcatPath = (p: string) => p.replace(/\\/g, '/').replace(/'/g, "'\\''");
+  const concatListContent = `file '${toConcatPath(thumbnailClipPath)}'\nfile '${toConcatPath(mainOutputPath)}'\n`;
+  try {
+    await fs.writeFile(concatListPath, concatListContent, 'utf-8');
+  } catch (writeErr) {
+    return { success: false, error: `Không thể tạo file concat list: ${writeErr}` };
+  }
+
+  const args = [
+    '-y',
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', concatListPath,
+    '-c', 'copy',
+    '-movflags', '+faststart',
+    tempConcatPath,
+  ];
+
+  let concatStderr = '';
+  const pushStderr = (chunk: string): void => {
+    concatStderr += chunk;
+    if (concatStderr.length > 12000) {
+      concatStderr = concatStderr.slice(-12000);
+    }
+  };
+
+  return new Promise((resolve) => {
+    console.log(
+      `[Thumbnail] Bắt đầu concat demuxer (tách luồng, không render lại toàn bộ video), hasAudio=${hasAudio}...`
+    );
+    const proc = spawn(ffmpegPath, args);
+    proc.stderr?.on('data', (d) => { pushStderr(d.toString()); });
+    proc.on('close', async (code) => {
+      try { await fs.unlink(thumbnailClipPath); } catch {}
+      try { await fs.unlink(concatListPath); } catch {}
+      if (code === 0 && existsSync(tempConcatPath)) {
+        try {
+          await fs.rename(mainOutputPath, backupMainPath);
+          try {
+            await fs.rename(tempConcatPath, mainOutputPath);
+            try { await fs.unlink(backupMainPath); } catch {}
+            resolve({ success: true });
+            return;
+          } catch (swapErr) {
+            console.error('[Thumbnail] Swap file sau concat thất bại:', swapErr);
+            try {
+              if (existsSync(mainOutputPath)) await fs.unlink(mainOutputPath);
+            } catch {}
+            try { await fs.rename(backupMainPath, mainOutputPath); } catch {}
+            try { await fs.unlink(tempConcatPath); } catch {}
+            resolve({ success: false, error: `Không thể thay thế file output sau concat: ${swapErr}` });
+            return;
+          }
+        } catch (backupErr) {
+          console.error('[Thumbnail] Tạo backup file output thất bại:', backupErr);
+          try { await fs.unlink(tempConcatPath); } catch {}
+          resolve({ success: false, error: `Không thể backup file output trước khi thay thế: ${backupErr}` });
+          return;
+        }
+      } else {
+        try { await fs.unlink(tempConcatPath); } catch {}
+        console.error('[Thumbnail] concat failed (code', code, '):\n', concatStderr.slice(-1200));
+        resolve({ success: false, error: `Ghép thumbnail thất bại (exit ${code})\n${concatStderr.slice(-400)}` });
+      }
+    });
+    proc.on('error', async (err) => {
+      try { await fs.unlink(thumbnailClipPath); } catch {}
+      try { await fs.unlink(concatListPath); } catch {}
+      try { await fs.unlink(tempConcatPath); } catch {}
+      resolve({ success: false, error: err.message });
+    });
+  });
+}
+
+/**
  * Route tự động theo options.renderMode
  */
 export async function renderVideo(
@@ -752,11 +999,77 @@ export async function renderVideo(
   if (!existsSync(options.srtPath)) {
     return { success: false, error: `File SRT không tồn tại: ${options.srtPath}` };
   }
+
+  let result: RenderResult;
   if (options.renderMode === 'hardsub' && options.videoPath) {
-    return renderHardsubVideo(options, progressCallback);
+    result = await renderHardsubVideo(options, progressCallback);
   } else {
-    return renderBlackBackgroundVideo(options, progressCallback);
+    result = await renderBlackBackgroundVideo(options, progressCallback);
   }
+
+  // Post-processing: prepend thumbnail 0.2s nếu được bật
+  console.log(`[VideoRenderer] Thumbnail check: enabled=${options.thumbnailEnabled}, videoPath=${!!options.videoPath}, timeSec=${options.thumbnailTimeSec}`);
+  if (result.success && options.thumbnailEnabled) {
+    if (!options.videoPath || options.thumbnailTimeSec === undefined) {
+      return {
+        success: false,
+        error: 'Thiếu cấu hình thumbnail: cần videoPath và thumbnailTimeSec khi bật thumbnailEnabled.'
+      };
+    }
+
+    const outputMeta = await getVideoMetadata(options.outputPath);
+    if (!outputMeta.success || !outputMeta.metadata) {
+      return {
+        success: false,
+        error: `Không đọc được metadata output để tạo thumbnail: ${outputMeta.error || 'unknown error'}`
+      };
+    }
+    console.log('[VideoRenderer] Thumbnail output metadata', {
+      width: outputMeta.metadata.width,
+      height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
+      fps: outputMeta.metadata.fps,
+      hasAudio: !!outputMeta.metadata.hasAudio,
+      duration: outputMeta.metadata.duration,
+    });
+
+    console.log(`[VideoRenderer] 🖼 Tạo thumbnail tại ${options.thumbnailTimeSec}s, text="${options.thumbnailText || ''}"...`);
+    const thumbWidth = outputMeta.metadata.width;
+    const thumbHeight = outputMeta.metadata.actualHeight || outputMeta.metadata.height;
+    const thumbResult = await createThumbnailClip({
+      videoPath: options.videoPath,
+      timeSec: options.thumbnailTimeSec,
+      durationSec: 0.2,
+      thumbnailText: options.thumbnailText,
+      width: thumbWidth,
+      height: thumbHeight,
+      fps: outputMeta.metadata.fps,
+      includeAudio: !!outputMeta.metadata.hasAudio,
+    });
+
+    if (thumbResult.success && thumbResult.clipPath) {
+      console.log('[VideoRenderer] Ghép thumbnail vào đầu video...');
+      const prependResult = await prependThumbnailClip(
+        thumbResult.clipPath,
+        options.outputPath,
+        !!outputMeta.metadata.hasAudio
+      );
+      if (!prependResult.success) {
+        return {
+          success: false,
+          error: `Ghép thumbnail thất bại: ${prependResult.error || 'unknown error'}`
+        };
+      } else {
+        console.log('[VideoRenderer] ✅ Thumbnail đã ghép thành công');
+      }
+    } else {
+      return {
+        success: false,
+        error: `Tạo thumbnail thất bại: ${thumbResult.error || 'unknown error'}`
+      };
+    }
+  }
+
+  return result;
 }
 
 /**

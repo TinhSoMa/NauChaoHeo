@@ -334,6 +334,10 @@ export interface RenderVideoOptions {
   logoPath?: string;      // Đường dẫn file logo để watermark
   logoPosition?: { x: number; y: number }; // Toạ độ (tâm) chèn logo
   logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
+  // --- Thumbnail prepend ---
+  thumbnailEnabled?: boolean; // Có prepend thumbnail 0.2s vào đầu video không
+  thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
+  thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
 }
 
 /**

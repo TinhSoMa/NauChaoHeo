@@ -160,3 +160,39 @@
   accent-color: var(--color-primary);
   cursor: pointer;
 }
+
+/* Thumbnail text input */
+.thumbnailTextRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.thumbnailTextLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  min-width: 62px;
+  text-align: right;
+}
+
+.thumbnailTextInput {
+  flex: 1;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.thumbnailTextInput::placeholder {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.thumbnailTextInput:focus {
+  border-color: var(--color-primary);
+}

@@ -231,6 +231,9 @@ export function registerCaptionHandlers(): void {
         logoPath?: string;
         logoPosition?: { x: number; y: number };
         logoScale?: number;
+        thumbnailEnabled?: boolean;
+        thumbnailTimeSec?: number;
+        thumbnailText?: string;
       }
     ): Promise<IpcResponse<{ outputPath: string; duration: number }>> => {
       console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);

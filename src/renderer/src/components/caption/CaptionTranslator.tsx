@@ -38,6 +38,10 @@ export function CaptionTranslator() {
   // 3. Subtitle Position State (for hardsub drag-drop)
   const [subtitlePosition, setSubtitlePosition] = useState<{ x: number; y: number } | null>(null);
 
+  // 3b. Thumbnail State
+  const [thumbnailFrameTimeSec, setThumbnailFrameTimeSec] = useState<number | null>(null);
+  const [thumbnailText, setThumbnailText] = useState('');
+
   // 4. Processing Hook
   const processing = useCaptionProcessing({
     entries: fileManager.entries,
@@ -45,7 +49,7 @@ export function CaptionTranslator() {
     filePath: fileManager.filePath,
     inputType: settings.inputType,
     captionFolder,
-    settings: { ...settings, subtitlePosition },
+    settings: { ...settings, subtitlePosition, thumbnailFrameTimeSec, thumbnailText },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
   });
@@ -757,6 +761,9 @@ export function CaptionTranslator() {
                 onRenderResolutionChange={settings.setRenderResolution}
                 onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
                 onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+                thumbnailText={thumbnailText}
+                onThumbnailTextChange={setThumbnailText}
+                onFrameTimeChange={(t) => setThumbnailFrameTimeSec(t)}
                 onSelectLogo={async () => {
                   const result = await (window.electronAPI as any).invoke('dialog:openFile', {
                     filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],

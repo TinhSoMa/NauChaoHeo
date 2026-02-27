@@ -22,9 +22,10 @@ export interface UseSubtitlePreviewOptions {
   onBlackoutChange?: (top: number | null) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  thumbnailText?: string; // preview overlay ở trung tâm frame khi nhập thumbnail text
 }
 
-export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onLogoPositionChange, onLogoScaleChange }: UseSubtitlePreviewOptions) {
+export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onLogoPositionChange, onLogoScaleChange, thumbnailText }: UseSubtitlePreviewOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -411,7 +412,39 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       ctx.stroke();
       ctx.setLineDash([]);
     }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode]);
+
+    // ===== Thumbnail text overlay (preview only) =====
+    if (thumbnailText?.trim()) {
+      const thumbFontSize = Math.max(14, drawH * 0.07);
+      ctx.save();
+      ctx.font = `bold ${thumbFontSize}px "${style.fontName}", Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const centerX = offX + drawW / 2;
+      const centerY = offY + drawH / 2;
+      const measured = ctx.measureText(thumbnailText.trim());
+      const pad = thumbFontSize * 0.5;
+      const boxW = measured.width + pad * 2;
+      const boxH = thumbFontSize + pad;
+      // Semi-transparent black box
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(centerX - boxW / 2, centerY - boxH / 2, boxW, boxH);
+      // White text with black outline
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = Math.max(1, thumbFontSize * 0.06);
+      ctx.lineJoin = 'round';
+      ctx.strokeText(thumbnailText.trim(), centerX, centerY);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(thumbnailText.trim(), centerX, centerY);
+      // Thin yellow border on box to distinguish from video content
+      ctx.strokeStyle = 'rgba(250,200,0,0.7)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(centerX - boxW / 2, centerY - boxH / 2, boxW, boxH);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText]);
 
   // Load video frame image
   useEffect(() => {

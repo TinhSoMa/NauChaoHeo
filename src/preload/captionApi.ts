@@ -180,6 +180,9 @@ export interface CaptionVideoAPI {
     logoPosition?: { x: number; y: number };
     logoScale?: number;
     style?: any;
+    thumbnailEnabled?: boolean;
+    thumbnailTimeSec?: number;
+    thumbnailText?: string;
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
 
   // Listen to render progress

@@ -27,9 +27,13 @@ interface SubtitlePreviewProps {
   onLogoScaleChange?: (scale: number) => void;
   onSelectLogo?: () => void;
   onRemoveLogo?: () => void;
+  // Thumbnail
+  thumbnailText?: string;
+  onThumbnailTextChange?: (text: string) => void;
+  onFrameTimeChange?: (timeSec: number | null) => void;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, onThumbnailTextChange, onFrameTimeChange }: SubtitlePreviewProps) {
   const preview = useSubtitlePreview({
     style,
     entries,
@@ -41,12 +45,17 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
     onBlackoutChange,
     onLogoPositionChange,
     onLogoScaleChange,
+    thumbnailText,
   });
 
-  // Load preview when video path changes
+  // Load preview when video path changes — khi video load xong, kích hoạt thumbnail ở frame 0
   useEffect(() => {
     if (videoPath) {
-      preview.loadPreview(videoPath);
+      preview.loadPreview(videoPath).then(() => {
+        onFrameTimeChange?.(0);
+      });
+    } else {
+      onFrameTimeChange?.(null);
     }
   }, [videoPath]);
 
@@ -192,22 +201,43 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
       </div>
 
       {preview.frameData && (
-        <div className={styles.scrubberRow}>
-          <span className={styles.scrubberLabel}>{preview.frameTimeSec.toFixed(1)}s</span>
-          <input
-            type="range"
-            className={styles.scrubber}
-            min={0}
-            max={Math.min(5, preview.videoDuration || 5)}
-            step={0.1}
-            value={preview.frameTimeSec}
-            onChange={e => preview.setFrameTimeSec(parseFloat(e.target.value))}
-            onMouseUp={e => preview.loadFrameAt(parseFloat((e.target as HTMLInputElement).value))}
-            onTouchEnd={e => preview.loadFrameAt(parseFloat((e.target as HTMLInputElement).value))}
-            title="Chọn frame xem trước trong 5s đầu video"
-          />
-          <span className={styles.scrubberHint}>5s đầu</span>
-        </div>
+        <>
+          <div className={styles.scrubberRow}>
+            <span className={styles.scrubberLabel}>{preview.frameTimeSec.toFixed(1)}s</span>
+            <input
+              type="range"
+              className={styles.scrubber}
+              min={0}
+              max={Math.min(5, preview.videoDuration || 5)}
+              step={0.1}
+              value={preview.frameTimeSec}
+              onChange={e => preview.setFrameTimeSec(parseFloat(e.target.value))}
+              onMouseUp={e => {
+                const t = parseFloat((e.target as HTMLInputElement).value);
+                preview.loadFrameAt(t);
+                onFrameTimeChange?.(t);
+              }}
+              onTouchEnd={e => {
+                const t = parseFloat((e.target as HTMLInputElement).value);
+                preview.loadFrameAt(t);
+                onFrameTimeChange?.(t);
+              }}
+              title="Chọn frame xem trước trong 5s đầu video — frame được chọn sẽ dùng làm thumbnail"
+            />
+            <span className={styles.scrubberHint}>5s đầu</span>
+          </div>
+          <div className={styles.thumbnailTextRow}>
+            <span className={styles.thumbnailTextLabel}>Thumbnail:</span>
+            <input
+              type="text"
+              className={styles.thumbnailTextInput}
+              placeholder="Tiêu đề video... (bỏ trống = không có chữ)"
+              value={thumbnailText || ''}
+              onChange={e => onThumbnailTextChange?.(e.target.value)}
+              title="Văn bản hiển thị ở trung tâm thumbnail 0.2s đầu video"
+            />
+          </div>
+        </>
       )}
 
       {!videoPath && (
