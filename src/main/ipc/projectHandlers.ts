@@ -219,7 +219,12 @@ export function registerProjectHandlers(): void {
         }
 
         const dataToWrite = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
-        fs.writeFileSync(filePath, dataToWrite, 'utf-8')
+        const tmpPath = `${filePath}.tmp-${Date.now()}`
+        fs.writeFileSync(tmpPath, dataToWrite, 'utf-8')
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath)
+        }
+        fs.renameSync(tmpPath, filePath)
         return { success: true }
       } catch (error) {
         return { success: false, error: String(error) }

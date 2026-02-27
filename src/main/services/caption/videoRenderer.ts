@@ -26,7 +26,6 @@ import { buildHardsubAudioMix } from './hardsub/audioMixBuilder';
 import { runFFmpegProcess } from './hardsub/ffmpegRunner';
 import {
   buildHardsubTimingPayload,
-  writeHardsubTimingJson,
 } from './hardsub/timingDebugWriter';
 import { applyThumbnailPostProcess } from './hardsub/thumbnailPipeline';
 
@@ -225,18 +224,10 @@ export async function renderHardsubVideo(
     videoMarkerSec,
   });
 
-  let timingJsonPath: string | null = null;
-  try {
-    timingJsonPath = await writeHardsubTimingJson(outputPath, hardsubTimingDebug);
-  } catch (error) {
-    console.warn('[VideoRenderer][Hardsub] Không thể ghi timing JSON:', error);
-  }
-
   console.log('[VideoRenderer][Hardsub] Render config', {
     inputVideo: renderOptions.videoPath,
     inputAudio: renderOptions.audioPath ?? null,
     outputVideo: outputPath,
-    timingJsonPath,
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
     audioMergeWindowInVideo: hasTtsAudio
@@ -287,9 +278,10 @@ export async function renderHardsubVideo(
     },
     note: 'Không trim audio/video. mergeWindowInVideo là timeline video gốc; mergeWindowInOutputTimeline là timeline sau setpts.',
   });
+  console.log('[VideoRenderer][Hardsub][TimingPayload]', hardsubTimingDebug);
 
   const totalFrames = Math.floor(outputDuration * fps);
-  return runFFmpegProcess({
+  const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
     fps,
@@ -298,6 +290,10 @@ export async function renderHardsubVideo(
     duration: outputDuration,
     progressCallback,
   });
+  if (renderResult.success) {
+    renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
+  }
+  return renderResult;
 }
 
 /**

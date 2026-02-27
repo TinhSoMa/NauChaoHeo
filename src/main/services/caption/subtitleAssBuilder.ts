@@ -75,7 +75,7 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   const configuredSrtTimeScale = options.srtTimeScale && options.srtTimeScale > 0 ? options.srtTimeScale : 1.0;
   const isHardsub = options.renderMode === 'hardsub' && !!videoPath;
   const defaultTimingContextPath = outputPath
-    ? path.join(path.dirname(outputPath), 'render_timing_context.json')
+    ? path.join(path.dirname(outputPath), 'caption_session.json')
     : undefined;
   const timingContextPath = options.timingContextPath || defaultTimingContextPath;
   const timingContext = await readRenderTimingContext(timingContextPath);

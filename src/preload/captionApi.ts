@@ -5,6 +5,7 @@
 import { ipcRenderer } from 'electron';
 import {
   CAPTION_IPC_CHANNELS,
+  CAPTION_SESSION_IPC_CHANNELS,
   ParseSrtResult,
   TranslationOptions,
   TranslationResult,
@@ -19,6 +20,7 @@ import {
   AudioFile,
   SplitOptions,
   SplitResult,
+  CaptionSessionV1,
 } from '../shared/types/caption';
 
 // Response type từ IPC
@@ -43,6 +45,14 @@ export interface CaptionAPI {
 
   // Split text files
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
+
+  // Unified session (single JSON per folder)
+  readSession: (sessionPath: string) => Promise<IpcApiResponse<CaptionSessionV1 | null>>;
+  writeSessionAtomic: (sessionPath: string, data: CaptionSessionV1) => Promise<IpcApiResponse<string>>;
+  patchSession: (
+    sessionPath: string,
+    patch: Partial<CaptionSessionV1>
+  ) => Promise<IpcApiResponse<CaptionSessionV1>>;
 }
 
 /**
@@ -103,6 +113,15 @@ export function createCaptionAPI(): CaptionAPI {
 
     split: (options: SplitOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options),
+
+    readSession: (sessionPath: string) =>
+      ipcRenderer.invoke(CAPTION_SESSION_IPC_CHANNELS.READ, { sessionPath }),
+
+    writeSessionAtomic: (sessionPath: string, data: CaptionSessionV1) =>
+      ipcRenderer.invoke(CAPTION_SESSION_IPC_CHANNELS.WRITE_ATOMIC, { sessionPath, data }),
+
+    patchSession: (sessionPath: string, patch: Partial<CaptionSessionV1>) =>
+      ipcRenderer.invoke(CAPTION_SESSION_IPC_CHANNELS.PATCH, { sessionPath, patch }),
   };
 }
 
@@ -184,7 +203,7 @@ export interface CaptionVideoAPI {
     thumbnailTimeSec?: number;
     thumbnailText?: string;
     thumbnailFontName?: string;
-  }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
+  }) => Promise<IpcApiResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>>;
 
   // Listen to render progress
   onRenderProgress: (callback: (progress: RenderProgress) => void) => void;

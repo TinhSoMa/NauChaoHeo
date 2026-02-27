@@ -1,6 +1,19 @@
 import { useState, useCallback, useRef } from 'react';
 import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode } from '../CaptionTypes';
-import { useProjectFeatureState } from '../../../hooks/useProjectFeatureState';
+import { CaptionSessionV1 } from '@shared/types/caption';
+import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
+import {
+  compactEntries,
+  getSessionPathForInputPath,
+  makeStepError,
+  makeStepRunning,
+  makeStepSuccess,
+  markFollowingStepsStale,
+  readCaptionSession,
+  syncSessionWithProjectSettings,
+  toStepKey,
+  updateCaptionSession,
+} from './captionSessionStore';
 
 type ProcessingAudioFile = {
   index: number;
@@ -78,6 +91,7 @@ function validateSteps(steps: Step[]): { valid: boolean; error?: string } {
 }
 
 interface UseCaptionProcessingProps {
+  projectId?: string | null;
   entries: SubtitleEntry[];
   setEntries: (entries: SubtitleEntry[]) => void;
   filePath: string;
@@ -101,6 +115,7 @@ interface UseCaptionProcessingProps {
     subtitlePosition?: { x: number; y: number } | null;
     blackoutTop?: number | null;
     autoFitAudio: boolean;
+    audioSpeed?: number;
     renderAudioSpeed?: number;
     videoVolume?: number;
     audioVolume?: number;
@@ -113,12 +128,34 @@ interface UseCaptionProcessingProps {
     thumbnailText?: string;
     thumbnailFontName?: string;
     thumbnailTextsByOrder?: string[];
+    settingsRevision?: number;
+    settingsUpdatedAt?: string;
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
 }
 
+function entriesToSrtText(entries: SubtitleEntry[]): string {
+  if (!entries.length) {
+    return '';
+  }
+  const blocks = entries.map((entry, idx) => {
+    const startTime = entry.startTime || msToSrtTime(entry.startMs);
+    const endTime = entry.endTime || msToSrtTime(entry.endMs);
+    const text = (entry.translatedText ?? entry.text ?? '').replace(/\r\n/g, '\n').trimEnd();
+    return `${idx + 1}\n${startTime} --> ${endTime}\n${text}`;
+  });
+  return `${blocks.join('\n\n')}\n`;
+}
+
+function resolveProcessOutputDir(inputType: string, currentPath: string): string {
+  return inputType === 'draft'
+    ? `${currentPath}/caption_output`
+    : currentPath.replace(/[^/\\]+$/, 'caption_output');
+}
+
 export function useCaptionProcessing({
+  projectId,
   entries,
   setEntries,
   filePath,
@@ -138,23 +175,6 @@ export function useCaptionProcessing({
 
   // Ref cho abort flag — cho phép handleStop() dừng vòng lặp đang chạy
   const abortRef = useRef(false);
-
-  // ========== AUTO SAVE/LOAD VÀO PROJECT ==========
-  useProjectFeatureState<{
-    audioFiles?: PartialProcessingAudioFile[];
-  }>({
-    feature: 'caption',
-    fileName: 'caption-processing.json',
-    serialize: () => ({
-      audioFiles,
-    }),
-    deserialize: (saved) => {
-      if (saved.audioFiles) {
-        setAudioFiles(normalizeAudioFiles(saved.audioFiles));
-      }
-    },
-    deps: [audioFiles],
-  });
 
   const toggleStep = useCallback((step: Step) => {
     setEnabledSteps(prev => {
@@ -178,7 +198,16 @@ export function useCaptionProcessing({
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
-    const processingMode = settings.processingMode ?? 'folder-first';
+    const runLockedSettings = {
+      ...settings,
+      style: settings.style ? { ...settings.style } : settings.style,
+      subtitlePosition: settings.subtitlePosition ? { ...settings.subtitlePosition } : settings.subtitlePosition,
+      logoPosition: settings.logoPosition ? { ...settings.logoPosition } : settings.logoPosition,
+      thumbnailTextsByOrder: settings.thumbnailTextsByOrder ? [...settings.thumbnailTextsByOrder] : [],
+      thumbnailText: settings.thumbnailText || '',
+    };
+    const cfg = runLockedSettings;
+    const processingMode = cfg.processingMode ?? 'folder-first';
 
     // Validate steps
     const validation = validateSteps(steps);
@@ -204,11 +233,18 @@ export function useCaptionProcessing({
       setProgress({ current: Math.floor(p.percent || 0), total: 100, message: p.message || 'Đang render video...' });
     });
 
-    const inputPaths = inputType === 'draft' && filePath ? filePath.split('; ') : [filePath];
+    const inputPaths = filePath
+      ? (inputType === 'draft' ? filePath.split('; ') : [filePath])
+      : [];
     const totalFolders = inputPaths.length;
+    if (totalFolders === 0) {
+      setStatus('error');
+      setProgress({ current: 0, total: 0, message: 'Chưa có input để xử lý.' });
+      return;
+    }
     const isMulti = totalFolders > 1;
     const step7Enabled = steps.includes(7);
-    const thumbnailEnabled = settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined;
+    const thumbnailEnabled = cfg.thumbnailFrameTimeSec !== null && cfg.thumbnailFrameTimeSec !== undefined;
 
     // Xóa audioFiles cũ khi chạy multi-folder để tránh dùng nhầm dữ liệu cũ
     if (isMulti) {
@@ -216,7 +252,7 @@ export function useCaptionProcessing({
     }
 
     if (isMulti && step7Enabled && thumbnailEnabled) {
-      const thumbnailTextsByOrder = settings.thumbnailTextsByOrder || [];
+      const thumbnailTextsByOrder = cfg.thumbnailTextsByOrder || [];
       const missingFolders: string[] = [];
 
       for (let i = 0; i < inputPaths.length; i++) {
@@ -258,15 +294,121 @@ export function useCaptionProcessing({
         entries: (!isMulti && p === inputPaths[0]) ? [...entries] : [],
         audioFiles: (!isMulti && p === inputPaths[0]) ? [...audioFiles] : [],
         srtFileForVideo: '',
-        outputDir: inputType === 'draft'
-          ? `${p}/caption_output`
-          : p.replace(/[^/\\]+$/, 'caption_output'),
+        outputDir: resolveProcessOutputDir(inputType, p),
         name: p.split(/[/\\]/).pop() || 'Unknown',
       });
     }
 
     // failedFolders: các folder đã có lỗi (step-first: bỏ qua bước tiếp theo của folder đó)
     const failedFolders = new Set<string>();
+
+    const buildSettingsSnapshot = (folderIdx: number): Record<string, unknown> => ({
+      step2Split: {
+        splitByLines: cfg.splitByLines,
+        linesPerFile: cfg.linesPerFile,
+        numberOfParts: cfg.numberOfParts,
+      },
+      step3Translate: {
+        geminiModel: cfg.geminiModel,
+        translateMethod: cfg.translateMethod || 'api',
+      },
+      step4Tts: {
+        voice: cfg.voice,
+        rate: cfg.rate,
+        volume: cfg.volume,
+        srtSpeed: cfg.srtSpeed,
+        autoFitAudio: cfg.autoFitAudio,
+      },
+      step7Render: {
+        renderMode: cfg.renderMode,
+        renderResolution: cfg.renderResolution,
+        hardwareAcceleration: cfg.hardwareAcceleration,
+        renderAudioSpeed: cfg.renderAudioSpeed,
+        videoVolume: cfg.videoVolume,
+        audioVolume: cfg.audioVolume,
+        style: cfg.style,
+        thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
+        thumbnailText: isMulti
+          ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
+          : (cfg.thumbnailText || '').trim(),
+        thumbnailFontName: cfg.thumbnailFontName,
+        logoPath: cfg.logoPath,
+        logoPosition: cfg.logoPosition,
+        logoScale: cfg.logoScale,
+      },
+      settingsRevision: cfg.settingsRevision,
+      settingsUpdatedAt: cfg.settingsUpdatedAt,
+      enabledSteps: steps,
+      processingMode,
+    });
+
+    const projectSettingsForRun = {
+      inputType: inputType as 'srt' | 'draft',
+      geminiModel: cfg.geminiModel,
+      translateMethod: cfg.translateMethod,
+      voice: cfg.voice,
+      rate: cfg.rate,
+      volume: cfg.volume,
+      srtSpeed: cfg.srtSpeed,
+      splitByLines: cfg.splitByLines,
+      linesPerFile: cfg.linesPerFile,
+      numberOfParts: cfg.numberOfParts,
+      enabledSteps: steps,
+      audioDir: cfg.audioDir,
+      autoFitAudio: cfg.autoFitAudio,
+      hardwareAcceleration: cfg.hardwareAcceleration,
+      style: cfg.style,
+      renderMode: cfg.renderMode,
+      renderResolution: cfg.renderResolution,
+      blackoutTop: cfg.blackoutTop,
+      audioSpeed: cfg.audioSpeed,
+      renderAudioSpeed: cfg.renderAudioSpeed,
+      videoVolume: cfg.videoVolume,
+      audioVolume: cfg.audioVolume,
+      thumbnailFontName: cfg.thumbnailFontName,
+      processingMode: cfg.processingMode,
+    };
+
+    const updateSessionForStep = async (
+      currentPath: string,
+      step: Step,
+      folderIdx: number,
+      updater: (session: CaptionSessionV1) => CaptionSessionV1
+    ) => {
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+      const folderPath = inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '');
+      await updateCaptionSession(
+        sessionPath,
+        (session) => updater({
+          ...session,
+          updatedAt: nowIso(),
+          projectContext: {
+            ...session.projectContext,
+            projectId: projectId || null,
+            inputType: inputType as 'srt' | 'draft',
+            sourcePath: currentPath,
+            folderPath,
+          },
+          runtime: {
+            ...session.runtime,
+            enabledSteps: steps,
+            processingMode,
+            currentStep: step,
+            progress,
+          },
+          settings: {
+            ...session.settings,
+            ...buildSettingsSnapshot(folderIdx),
+          },
+        }),
+        {
+          projectId,
+          inputType: inputType as 'srt' | 'draft',
+          sourcePath: currentPath,
+          folderPath,
+        }
+      );
+    };
 
     // =========================================================
     // Helper: xử lý 1 step cho 1 folder
@@ -275,6 +417,7 @@ export function useCaptionProcessing({
       const ctx = folderCtxMap.get(currentPath)!;
       const { name: folderName, outputDir: processOutputDir } = ctx;
       let { entries: currentEntries, audioFiles: currentAudioFiles, srtFileForVideo } = ctx;
+      const stepKey = toStepKey(step);
 
       const msgCtx = (base: string) => {
         if (!isMulti) return base;
@@ -284,11 +427,43 @@ export function useCaptionProcessing({
         return `[${folderIdx + 1}/${totalFolders}] ${folderName}: ${base}`;
       };
 
-      setProgress({ current: 0, total: 100, message: msgCtx(`Bước ${step}: Bắt đầu...`) });
+      try {
+        setProgress({ current: 0, total: 100, message: msgCtx(`Bước ${step}: Bắt đầu...`) });
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+          const withStale = markFollowingStepsStale(session, step);
+          return {
+            ...withStale,
+            steps: {
+              ...withStale.steps,
+              [stepKey]: makeStepRunning(withStale.steps[stepKey], buildSettingsSnapshot(folderIdx)),
+            },
+          };
+        });
 
       // Tự động nạp dữ liệu (nếu người dùng skip Bước 1)
       if (currentEntries.length === 0 && step !== 1) {
         setProgress({ current: 0, total: 100, message: msgCtx('Đang tải dữ liệu cũ...') });
+        const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+        try {
+          const session = await readCaptionSession(sessionPath, {
+            projectId,
+            inputType: inputType as 'srt' | 'draft',
+            sourcePath: currentPath,
+            folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
+          });
+          if (session.data.translatedEntries && session.data.translatedEntries.length > 0) {
+            currentEntries = session.data.translatedEntries as SubtitleEntry[];
+          } else if (session.data.extractedEntries && session.data.extractedEntries.length > 0) {
+            currentEntries = session.data.extractedEntries as SubtitleEntry[];
+          }
+          if (currentAudioFiles.length === 0 && session.data.ttsAudioFiles && session.data.ttsAudioFiles.length > 0) {
+            currentAudioFiles = normalizeAudioFiles(session.data.ttsAudioFiles as PartialProcessingAudioFile[]);
+            if (!isMulti) setAudioFiles(currentAudioFiles);
+          }
+        } catch (error) {
+          console.warn(`[CaptionProcessing] Không thể hydrate từ session: ${sessionPath}`, error);
+        }
+
         const translatedSrtPath = `${processOutputDir}/srt/translated.srt`;
         try {
           // @ts-ignore
@@ -335,22 +510,46 @@ export function useCaptionProcessing({
           }
         }
         setProgress({ current: 1, total: 1, message: msgCtx('Bước 1: Đã load file input') });
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+          ...session,
+          data: {
+            ...session.data,
+            extractedEntries: compactEntries(currentEntries),
+          },
+          steps: {
+            ...session.steps,
+            [stepKey]: makeStepSuccess(session.steps[stepKey], {
+              totalEntries: currentEntries.length,
+            }),
+          },
+        }));
       }
 
       // ========== STEP 2: SPLIT ==========
       if (step === 2) {
         setProgress({ current: 0, total: 1, message: msgCtx('Bước 2: Đang chia nhỏ text...') });
         const textOutputDir = `${processOutputDir}/text`;
-        const splitValue = settings.splitByLines ? settings.linesPerFile : settings.numberOfParts;
+        const splitValue = cfg.splitByLines ? cfg.linesPerFile : cfg.numberOfParts;
         // @ts-ignore
         const result = await window.electronAPI.caption.split({
           entries: currentEntries,
-          splitByLines: settings.splitByLines,
+          splitByLines: cfg.splitByLines,
           value: splitValue,
           outputDir: textOutputDir,
         });
         if (result.success && result.data) {
-          setProgress({ current: 1, total: 1, message: msgCtx(`Bước 2: Đã tạo ${result.data.partsCount} phần`) });
+          const splitData = result.data;
+          setProgress({ current: 1, total: 1, message: msgCtx(`Bước 2: Đã tạo ${splitData.partsCount} phần`) });
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                partsCount: splitData.partsCount,
+                files: splitData.files,
+              }),
+            },
+          }));
         } else {
           throw new Error(`[${folderName}] Lỗi chia file: ${result.error}`);
         }
@@ -363,17 +562,39 @@ export function useCaptionProcessing({
         const result = await window.electronAPI.caption.translate({
           entries: currentEntries,
           targetLanguage: 'Vietnamese',
-          model: settings.geminiModel,
+          model: cfg.geminiModel,
           linesPerBatch: 50,
-          translateMethod: settings.translateMethod,
+          translateMethod: cfg.translateMethod,
         });
         if (result.success && result.data) {
-          currentEntries = result.data.entries;
+          const translateData = result.data;
+          currentEntries = translateData.entries;
           if (!isMulti) setEntries(currentEntries);
           srtFileForVideo = `${processOutputDir}/srt/translated.srt`;
+          const translatedSrtContent = entriesToSrtText(currentEntries);
           // @ts-ignore
           await window.electronAPI.caption.exportSrt(currentEntries, srtFileForVideo);
-          setProgress({ current: result.data.translatedLines, total: result.data.totalLines, message: msgCtx(`Bước 3: Đã dịch ${result.data.translatedLines} dòng`) });
+          setProgress({ current: translateData.translatedLines, total: translateData.totalLines, message: msgCtx(`Bước 3: Đã dịch ${translateData.translatedLines} dòng`) });
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            data: {
+              ...session.data,
+              translatedEntries: compactEntries(currentEntries),
+              translatedSrtContent,
+            },
+            artifacts: {
+              ...session.artifacts,
+              translatedSrtPath: srtFileForVideo,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                totalLines: translateData.totalLines,
+                translatedLines: translateData.translatedLines,
+                failedLines: translateData.failedLines,
+              }),
+            },
+          }));
         } else {
           throw new Error(`[${folderName}] Lỗi dịch: ${result.error}`);
         }
@@ -382,20 +603,39 @@ export function useCaptionProcessing({
       // ========== STEP 4: TTS ==========
       if (step === 4) {
         const audioDir = `${processOutputDir}/audio`;
-        if (!isMulti) settings.setAudioDir(audioDir);
+        if (!isMulti) cfg.setAudioDir(audioDir);
         setProgress({ current: 0, total: currentEntries.length, message: msgCtx('Bước 4: Đang tạo audio...') });
         // @ts-ignore
         const result = await window.electronAPI.tts.generate(currentEntries, {
-          voice: settings.voice,
-          rate: settings.rate,
-          volume: settings.volume,
+          voice: cfg.voice,
+          rate: cfg.rate,
+          volume: cfg.volume,
           outputDir: audioDir,
           outputFormat: 'wav',
         });
         if (result.success && result.data) {
-          currentAudioFiles = normalizeAudioFiles(result.data.audioFiles as PartialProcessingAudioFile[]);
+          const ttsData = result.data;
+          currentAudioFiles = normalizeAudioFiles(ttsData.audioFiles as PartialProcessingAudioFile[]);
           if (!isMulti) setAudioFiles(currentAudioFiles);
-          setProgress({ current: result.data.totalGenerated, total: currentEntries.length, message: msgCtx(`Bước 4: Đã tạo ${result.data.totalGenerated} audio`) });
+          setProgress({ current: ttsData.totalGenerated, total: currentEntries.length, message: msgCtx(`Bước 4: Đã tạo ${ttsData.totalGenerated} audio`) });
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            data: {
+              ...session.data,
+              ttsAudioFiles: currentAudioFiles,
+            },
+            artifacts: {
+              ...session.artifacts,
+              audioDir,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                totalGenerated: ttsData.totalGenerated,
+                totalFailed: ttsData.totalFailed,
+              }),
+            },
+          }));
         } else {
           throw new Error(`[${folderName}] Lỗi tạo audio: ${result.error}`);
         }
@@ -412,9 +652,37 @@ export function useCaptionProcessing({
           const resultEnd = await window.electronAPI.tts.trimSilenceEnd(filesToTrim.map(f => f.path));
           if (result.success && result.data && resultEnd.success && resultEnd.data) {
             setProgress({ current: resultEnd.data.trimmedCount, total: filesToTrim.length, message: msgCtx(`Bước 5: Đã trim ${resultEnd.data.trimmedCount} files`) });
+            await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+              ...session,
+              data: {
+                ...session.data,
+                trimResults: {
+                  trimmedMiddle: result.data,
+                  trimmedEnd: resultEnd.data,
+                },
+              },
+              steps: {
+                ...session.steps,
+                [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                  totalFiles: filesToTrim.length,
+                  trimmedCount: resultEnd.data.trimmedCount,
+                }),
+              },
+            }));
           } else {
             throw new Error(`[${folderName}] Lỗi trim silence: ${result.error || resultEnd.error}`);
           }
+        } else {
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                totalFiles: 0,
+                skipped: true,
+              }),
+            },
+          }));
         }
       }
 
@@ -427,9 +695,9 @@ export function useCaptionProcessing({
           setProgress({ current: 0, total: 1, message: msgCtx('Bước 6: Đang nạp lại danh sách audio từ thư mục...') });
           // @ts-ignore
           const hydrateResult = await window.electronAPI.tts.generate(currentEntries, {
-            voice: settings.voice,
-            rate: settings.rate,
-            volume: settings.volume,
+            voice: cfg.voice,
+            rate: cfg.rate,
+            volume: cfg.volume,
             outputDir: audioDir,
             outputFormat: 'wav',
           });
@@ -444,7 +712,7 @@ export function useCaptionProcessing({
           throw new Error(`[${folderName}] Không có audio hợp lệ để ghép trong ${audioDir}. Hãy chạy lại Bước 4.`);
         }
 
-        if (settings.autoFitAudio) {
+        if (cfg.autoFitAudio) {
           setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang scale audio vừa thời lượng...') });
           const fitItems = filesToMerge
             .map(f => {
@@ -478,9 +746,31 @@ export function useCaptionProcessing({
         const mergedPath = `${processOutputDir}/merged_audio.wav`;
         setProgress({ current: 0, total: 1, message: msgCtx('Bước 6: Đang ghép audio...') });
         // @ts-ignore
-        const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, settings.srtSpeed);
+        const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, cfg.srtSpeed);
         if (result.success) {
           setProgress({ current: 1, total: 1, message: msgCtx('Bước 6: Đã ghép audio thành công') });
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            data: {
+              ...session.data,
+              mergeResult: result.data || { success: true, outputPath: mergedPath },
+            },
+            artifacts: {
+              ...session.artifacts,
+              mergedAudioPath: mergedPath,
+            },
+            timing: {
+              ...session.timing,
+              step4SrtScale: cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                mergedPath,
+                filesCount: filesToMerge.length,
+              }),
+            },
+          }));
         } else {
           throw new Error(`[${folderName}] Lỗi ghép audio: ${result.error}`);
         }
@@ -488,6 +778,29 @@ export function useCaptionProcessing({
 
       // ========== STEP 7: RENDER VIDEO ==========
       if (step === 7) {
+        const sessionPathForStep7 = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+        const sessionFallback = {
+          projectId,
+          inputType: inputType as 'srt' | 'draft',
+          sourcePath: currentPath,
+          folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
+        };
+        const sessionBeforeRender = await readCaptionSession(sessionPathForStep7, sessionFallback);
+        const targetRevision = cfg.settingsRevision && cfg.settingsRevision > 0 ? cfg.settingsRevision : 0;
+        const currentRevision = sessionBeforeRender.effectiveSettingsRevision || 0;
+        if (targetRevision > 0 && currentRevision < targetRevision) {
+          await syncSessionWithProjectSettings(
+            sessionPathForStep7,
+            {
+              projectSettings: projectSettingsForRun,
+              revision: targetRevision,
+              updatedAt: cfg.settingsUpdatedAt || nowIso(),
+              source: 'project_default',
+            },
+            sessionFallback
+          );
+        }
+
         setProgress({ current: 0, total: 100, message: msgCtx('Bước 7: Đang tìm video gốc tốt nhất...') });
         let finalVideoInputPath: string | undefined = undefined;
         const folderPathsToSearch = inputType === 'draft' ? [currentPath] : [currentPath.replace(/[^/\\]+$/, '')];
@@ -499,7 +812,7 @@ export function useCaptionProcessing({
 
         if (findBestRes.success && findBestRes.data?.videoPath) {
           const foundVideo = findBestRes.data.videoPath;
-          if (settings.renderMode === 'hardsub') {
+          if (cfg.renderMode === 'hardsub') {
             finalVideoInputPath = foundVideo;
             setProgress({ current: 5, total: 100, message: msgCtx(`Bước 7: Đã tìm thấy video ${foundVideo.split(/[/\\]/).pop()}`) });
           } else {
@@ -511,7 +824,7 @@ export function useCaptionProcessing({
             if (meta && meta.success && meta.data) {
               stripWidth = meta.data.width;
               targetDuration = meta.data.duration;
-              if (settings.renderMode === 'black_bg') {
+              if (cfg.renderMode === 'black_bg') {
                 const realHeight = meta.data.actualHeight || 1080;
                 stripHeight = Math.floor(realHeight / 10);
               } else {
@@ -522,12 +835,12 @@ export function useCaptionProcessing({
             console.warn('Không lấy được metadata video, dùng mặc định', e);
           }
         } else {
-          if (settings.renderMode === 'black_bg') {
+          if (cfg.renderMode === 'black_bg') {
             setProgress({ current: 5, total: 100, message: msgCtx('Bước 7: Render nền đen (Chế độ màn hình)') });
           }
         }
 
-        const srtScale = settings.srtSpeed > 0 ? settings.srtSpeed : 1.0;
+        const srtScale = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
         const scaleLabel = normalizeSpeedLabel(srtScale);
         const scaledSrtPath = `${processOutputDir}/srt/subtitle_${scaleLabel}x.srt`;
 
@@ -546,32 +859,30 @@ export function useCaptionProcessing({
         }
 
         const finalVideoPath = `${processOutputDir}/final_video_${Date.now()}.mp4`;
-        const timingContextPath = `${processOutputDir}/render_timing_context.json`;
-        const step7AudioSpeed = settings.renderAudioSpeed && settings.renderAudioSpeed > 0
-          ? settings.renderAudioSpeed : 1.0;
-
-        try {
-          // @ts-ignore
-          await window.electronAPI.invoke('caption:saveJson', {
-            filePath: timingContextPath,
-            data: {
-              generatedAt: new Date().toISOString(),
-              step4SrtScale: srtScale,
-              step7AudioSpeed,
-              audioSpeedModel: 'step4_minus_step7_delta',
-              srtPath: srtFileForVideo,
-              audioPath: `${processOutputDir}/merged_audio.wav`,
-            },
-          });
-        } catch (error) {
-          console.warn(`[CaptionProcessing] Không thể lưu timing context JSON: ${timingContextPath}`, error);
-        }
+        const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
+        const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
+          ? cfg.renderAudioSpeed : 1.0;
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+          ...session,
+          artifacts: {
+            ...session.artifacts,
+            translatedSrtPath: inputType === 'srt' ? currentPath : session.artifacts.translatedSrtPath,
+            scaledSrtPath: srtFileForVideo,
+            mergedAudioPath: `${processOutputDir}/merged_audio.wav`,
+          },
+          timing: {
+            ...session.timing,
+            step4SrtScale: srtScale,
+            step7AudioSpeed,
+            audioSpeedModel: 'step4_minus_step7_delta',
+          },
+        }));
 
         setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
 
         const thumbnailTextForRender = isMulti
-          ? (settings.thumbnailTextsByOrder?.[folderIdx] || '').trim()
-          : (settings.thumbnailText || '').trim();
+          ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
+          : (cfg.thumbnailText || '').trim();
         console.log(
           `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, text="${thumbnailTextForRender}"`
         );
@@ -583,44 +894,111 @@ export function useCaptionProcessing({
           width: stripWidth,
           height: stripHeight,
           videoPath: finalVideoInputPath,
-          targetDuration: settings.renderMode === 'hardsub' ? targetDuration : undefined,
-          hardwareAcceleration: settings.hardwareAcceleration,
-          style: settings.style,
-          renderMode: settings.renderMode,
-          renderResolution: settings.renderResolution,
-          position: settings.subtitlePosition || undefined,
-          blackoutTop: (settings.blackoutTop != null && settings.blackoutTop < 1)
-            ? settings.blackoutTop : undefined,
+          targetDuration: cfg.renderMode === 'hardsub' ? targetDuration : undefined,
+          hardwareAcceleration: cfg.hardwareAcceleration,
+          style: cfg.style,
+          renderMode: cfg.renderMode,
+          renderResolution: cfg.renderResolution,
+          position: cfg.subtitlePosition || undefined,
+          blackoutTop: (cfg.blackoutTop != null && cfg.blackoutTop < 1)
+            ? cfg.blackoutTop : undefined,
           audioPath: `${processOutputDir}/merged_audio.wav`,
-          audioSpeed: settings.renderAudioSpeed,
+          audioSpeed: cfg.renderAudioSpeed,
           step7AudioSpeedInput: step7AudioSpeed,
           srtTimeScale: srtScale,
           step4SrtScale: srtScale,
           timingContextPath,
           audioSpeedModel: 'step4_minus_step7_delta',
-          ttsRate: settings.rate,
-          videoVolume: settings.videoVolume,
-          audioVolume: settings.audioVolume,
-          logoPath: settings.logoPath,
-          logoPosition: settings.logoPosition,
-          logoScale: settings.logoScale,
+          ttsRate: cfg.rate,
+          videoVolume: cfg.videoVolume,
+          audioVolume: cfg.audioVolume,
+          logoPath: cfg.logoPath,
+          logoPosition: cfg.logoPosition,
+          logoScale: cfg.logoScale,
           thumbnailEnabled,
-          thumbnailTimeSec: settings.thumbnailFrameTimeSec ?? undefined,
+          thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
-          thumbnailFontName: settings.thumbnailFontName,
+          thumbnailFontName: cfg.thumbnailFontName,
         });
 
         if (renderRes.success) {
+          const renderedPath = renderRes.data?.outputPath || finalVideoPath;
+          const timingPayload = renderRes.data?.timingPayload && typeof renderRes.data.timingPayload === 'object'
+            ? renderRes.data.timingPayload as Record<string, unknown>
+            : undefined;
+          let timingFromRender: Record<string, unknown> = {};
+          if (timingPayload) {
+            const parsed = timingPayload as Record<string, any>;
+            const afterScale = (parsed.afterScale && typeof parsed.afterScale === 'object')
+              ? parsed.afterScale as Record<string, unknown>
+              : {};
+            timingFromRender = {
+              step4SrtScale: typeof afterScale.step4SrtScale === 'number' ? afterScale.step4SrtScale : undefined,
+              step7AudioSpeed: typeof afterScale.step7AudioSpeedInput === 'number' ? afterScale.step7AudioSpeedInput : undefined,
+              audioEffectiveSpeed: typeof afterScale.audioEffectiveSpeed === 'number' ? afterScale.audioEffectiveSpeed : undefined,
+              videoSubBaseDuration: typeof afterScale.videoWithSubtitleDurationAfterStep4ScaleSec === 'number'
+                ? afterScale.videoWithSubtitleDurationAfterStep4ScaleSec
+                : undefined,
+              videoSpeedMultiplier: typeof afterScale.videoSpeedNeeded === 'number' ? afterScale.videoSpeedNeeded : undefined,
+              videoMarkerSec: typeof afterScale.videoMarkerSec === 'number' ? afterScale.videoMarkerSec : undefined,
+            };
+            console.log(`[CaptionProcessing][Step7] Đã nhận timing payload từ backend cho ${folderName}.`);
+          } else {
+            console.warn(`[CaptionProcessing][Step7] Backend không trả timing payload cho ${folderName}.`);
+          }
           setProgress({ current: 100, total: 100, message: msgCtx(`Bước 7: Đã render video thành công! (${renderRes.data?.duration?.toFixed(1)}s)`) });
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            data: {
+              ...session.data,
+              renderResult: {
+                success: true,
+                outputPath: renderedPath,
+                duration: renderRes.data?.duration || 0,
+                renderAt: nowIso(),
+              },
+              renderTimingPayload: timingPayload,
+            },
+            artifacts: {
+              ...session.artifacts,
+              finalVideoPath: renderedPath,
+            },
+            timing: {
+              ...session.timing,
+              ...timingFromRender,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                duration: renderRes.data?.duration || 0,
+                outputPath: renderedPath,
+              }),
+            },
+          }));
+          console.log(`[CaptionProcessing][Step7] Đã lưu timing payload vào caption_session.json cho ${folderName}.`);
         } else {
           throw new Error(`[${folderName}] Lỗi render video: ${renderRes.error}`);
         }
       }
 
-      // Ghi lại state đã thay đổi vào ctx map
-      ctx.entries = currentEntries;
-      ctx.audioFiles = currentAudioFiles;
-      ctx.srtFileForVideo = srtFileForVideo;
+        // Ghi lại state đã thay đổi vào ctx map
+        ctx.entries = currentEntries;
+        ctx.audioFiles = currentAudioFiles;
+        ctx.srtFileForVideo = srtFileForVideo;
+      } catch (error) {
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+          ...session,
+          steps: {
+            ...session.steps,
+            [stepKey]: makeStepError(session.steps[stepKey], String(error)),
+          },
+          runtime: {
+            ...session.runtime,
+            lastMessage: String(error),
+          },
+        }));
+        throw error;
+      }
     };
     // =========================================================
     // END helper processStep
@@ -712,7 +1090,7 @@ export function useCaptionProcessing({
     setCurrentStep(null);
     setCurrentFolder(null);
   }, [
-    enabledSteps, entries, filePath, inputType, captionFolder,
+    projectId, enabledSteps, entries, filePath, inputType, captionFolder,
     settings, audioFiles,
   ]);
 

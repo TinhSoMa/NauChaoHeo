@@ -17,7 +17,15 @@ function validateTimingContext(raw: unknown): RenderTimingContext | null {
   if (!raw || typeof raw !== 'object') {
     return null;
   }
-  const obj = raw as Record<string, unknown>;
+  const rawObj = raw as Record<string, unknown>;
+  const timingObj = (
+    rawObj.timing &&
+    typeof rawObj.timing === 'object' &&
+    !Array.isArray(rawObj.timing)
+  )
+    ? (rawObj.timing as Record<string, unknown>)
+    : rawObj;
+  const obj = timingObj;
   const result: RenderTimingContext = {};
 
   if (isPositiveNumber(obj.step4SrtScale)) {
@@ -45,4 +53,3 @@ export async function readRenderTimingContext(contextPath?: string): Promise<Ren
     return null;
   }
 }
-

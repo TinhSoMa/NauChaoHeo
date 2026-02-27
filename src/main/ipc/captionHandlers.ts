@@ -5,6 +5,7 @@
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron';
 import {
   CAPTION_IPC_CHANNELS,
+  CAPTION_SESSION_IPC_CHANNELS,
   ParseSrtResult,
   TranslationOptions,
   TranslationResult,
@@ -138,6 +139,29 @@ function resolveCaptionFontsDir(
     }
   }
   return null;
+}
+
+function deepMergeRecord(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = { ...target };
+  for (const [key, sourceValue] of Object.entries(source)) {
+    const targetValue = output[key];
+    if (
+      sourceValue &&
+      typeof sourceValue === 'object' &&
+      !Array.isArray(sourceValue) &&
+      targetValue &&
+      typeof targetValue === 'object' &&
+      !Array.isArray(targetValue)
+    ) {
+      output[key] = deepMergeRecord(
+        targetValue as Record<string, unknown>,
+        sourceValue as Record<string, unknown>
+      );
+      continue;
+    }
+    output[key] = sourceValue;
+  }
+  return output;
 }
 
 /**
@@ -351,7 +375,7 @@ export function registerCaptionHandlers(): void {
         thumbnailText?: string;
         thumbnailFontName?: string;
       }
-    ): Promise<IpcResponse<{ outputPath: string; duration: number }>> => {
+    ): Promise<IpcResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>> => {
       console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);
 
       try {
@@ -367,7 +391,11 @@ export function registerCaptionHandlers(): void {
         if (result.success && result.outputPath) {
           return {
             success: true,
-            data: { outputPath: result.outputPath, duration: result.duration || 0 }
+            data: {
+              outputPath: result.outputPath,
+              duration: result.duration || 0,
+              timingPayload: result.timingPayload,
+            }
           };
         }
         return { success: false, error: result.error };
@@ -556,6 +584,113 @@ export function registerCaptionHandlers(): void {
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi find best video:', error);
         return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION SESSION - SINGLE JSON PER FOLDER
+  // ============================================
+  ipcMain.handle(
+    CAPTION_SESSION_IPC_CHANNELS.READ,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { sessionPath: string }
+    ): Promise<IpcResponse<unknown | null>> => {
+      try {
+        const fs = await import('fs/promises');
+        const sessionPath = payload?.sessionPath;
+        if (!sessionPath || typeof sessionPath !== 'string') {
+          return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
+        }
+        try {
+          const raw = await fs.readFile(sessionPath, 'utf-8');
+          return { success: true, data: JSON.parse(raw) };
+        } catch (error) {
+          const err = String(error);
+          if (err.includes('ENOENT')) {
+            return { success: true, data: null };
+          }
+          return { success: false, error: `SESSION_READ_FAILED: ${err}` };
+        }
+      } catch (error) {
+        return { success: false, error: `SESSION_READ_FAILED: ${String(error)}` };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_SESSION_IPC_CHANNELS.WRITE_ATOMIC,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { sessionPath: string; data: unknown }
+    ): Promise<IpcResponse<string>> => {
+      try {
+        const fs = await import('fs/promises');
+        const fsSync = await import('fs');
+        const path = await import('path');
+        const sessionPath = payload?.sessionPath;
+        if (!sessionPath || typeof sessionPath !== 'string') {
+          return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
+        }
+        const dir = path.dirname(sessionPath);
+        await fs.mkdir(dir, { recursive: true });
+        const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
+        await fs.writeFile(tmpPath, JSON.stringify(payload?.data ?? {}, null, 2), 'utf-8');
+        if (fsSync.existsSync(sessionPath)) {
+          await fs.unlink(sessionPath);
+        }
+        await fs.rename(tmpPath, sessionPath);
+        return { success: true, data: sessionPath };
+      } catch (error) {
+        return { success: false, error: `SESSION_WRITE_FAILED: ${String(error)}` };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_SESSION_IPC_CHANNELS.PATCH,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { sessionPath: string; patch: Record<string, unknown> }
+    ): Promise<IpcResponse<unknown>> => {
+      try {
+        const fs = await import('fs/promises');
+        const fsSync = await import('fs');
+        const path = await import('path');
+        const sessionPath = payload?.sessionPath;
+        const patch = payload?.patch;
+        if (!sessionPath || typeof sessionPath !== 'string') {
+          return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
+        }
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+          return { success: false, error: 'SESSION_INVALID_INPUT: Patch không hợp lệ' };
+        }
+
+        let current: Record<string, unknown> = {};
+        if (fsSync.existsSync(sessionPath)) {
+          try {
+            const raw = await fs.readFile(sessionPath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              current = parsed as Record<string, unknown>;
+            }
+          } catch {
+            current = {};
+          }
+        }
+        const merged = deepMergeRecord(current, patch);
+        const dir = path.dirname(sessionPath);
+        await fs.mkdir(dir, { recursive: true });
+        const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
+        await fs.writeFile(tmpPath, JSON.stringify(merged, null, 2), 'utf-8');
+        if (fsSync.existsSync(sessionPath)) {
+          await fs.unlink(sessionPath);
+        }
+        await fs.rename(tmpPath, sessionPath);
+        return { success: true, data: merged };
+      } catch (error) {
+        return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)}` };
       }
     }
   );

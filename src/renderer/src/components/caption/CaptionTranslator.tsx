@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import folderIconUrl from '../../../../../resources/icons/folder.svg';
@@ -20,14 +20,23 @@ import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 import { useHardsubSettings } from './hooks/useHardsubSettings';
+import {
+  getInputPaths,
+  getSessionPathForInputPath,
+  readCaptionSession,
+  scheduleSessionSettingsRetry,
+  syncSessionWithProjectSettings,
+  updateCaptionSession,
+} from './hooks/captionSessionStore';
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { Download } from 'lucide-react';
+import { CaptionProjectSettingsValues } from '@shared/types/caption';
 
 export function CaptionTranslator() {
   // Project output paths
-  const { paths } = useProjectContext();
+  const { paths, projectId } = useProjectContext();
   const captionFolder = paths?.caption ?? null;
 
   // 1. Settings Hook
@@ -44,8 +53,237 @@ export function CaptionTranslator() {
     folderVideos: fileManager.folderVideos,
   });
 
+  const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
+    inputType: settings.inputType,
+    geminiModel: settings.geminiModel,
+    translateMethod: settings.translateMethod,
+    voice: settings.voice,
+    rate: settings.rate,
+    volume: settings.volume,
+    srtSpeed: settings.srtSpeed,
+    splitByLines: settings.splitByLines,
+    linesPerFile: settings.linesPerFile,
+    numberOfParts: settings.numberOfParts,
+    enabledSteps: Array.from(settings.enabledSteps.values()),
+    audioDir: settings.audioDir,
+    autoFitAudio: settings.autoFitAudio,
+    hardwareAcceleration: settings.hardwareAcceleration,
+    style: settings.style,
+    renderMode: settings.renderMode,
+    renderResolution: settings.renderResolution,
+    blackoutTop: settings.blackoutTop,
+    audioSpeed: settings.audioSpeed,
+    renderAudioSpeed: settings.renderAudioSpeed,
+    videoVolume: settings.videoVolume,
+    audioVolume: settings.audioVolume,
+    thumbnailFontName: settings.thumbnailFontName,
+    processingMode: settings.processingMode,
+  }), [
+    settings.inputType,
+    settings.geminiModel,
+    settings.translateMethod,
+    settings.voice,
+    settings.rate,
+    settings.volume,
+    settings.srtSpeed,
+    settings.splitByLines,
+    settings.linesPerFile,
+    settings.numberOfParts,
+    settings.enabledSteps,
+    settings.audioDir,
+    settings.autoFitAudio,
+    settings.hardwareAcceleration,
+    settings.style,
+    settings.renderMode,
+    settings.renderResolution,
+    settings.blackoutTop,
+    settings.audioSpeed,
+    settings.renderAudioSpeed,
+    settings.videoVolume,
+    settings.audioVolume,
+    settings.thumbnailFontName,
+    settings.processingMode,
+  ]);
+
+  // Chỉ hydrate field theo folder từ session: thumbnail text/list.
+  useEffect(() => {
+    const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
+    if (!inputPaths.length) {
+      return;
+    }
+    let cancelled = false;
+    const hydrateFolderFields = async () => {
+      if (inputPaths.length > 1) {
+        const texts: string[] = [];
+        for (const inputPath of inputPaths) {
+          const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+          const session = await readCaptionSession(sessionPath, {
+            projectId,
+            inputType: settings.inputType,
+            sourcePath: inputPath,
+            folderPath: inputPath,
+          });
+          const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
+          texts.push(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
+        }
+        if (!cancelled) {
+          hardsubSettings.setThumbnailTextsByOrder(texts);
+        }
+        return;
+      }
+
+      const firstPath = inputPaths[0];
+      const sessionPath = getSessionPathForInputPath(settings.inputType, firstPath);
+      const session = await readCaptionSession(sessionPath, {
+        projectId,
+        inputType: settings.inputType,
+        sourcePath: firstPath,
+        folderPath: settings.inputType === 'draft' ? firstPath : firstPath.replace(/[^/\\]+$/, ''),
+      });
+      const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
+      if (!cancelled) {
+        hardsubSettings.setThumbnailText(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
+      }
+    };
+
+    hydrateFolderFields().catch((error) => {
+      console.warn('[CaptionTranslator] Không thể hydrate field theo folder từ session', error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fileManager.filePath, projectId, settings.inputType]);
+
+  // Đồng bộ mirror settings revision từ project-default vào từng session folder.
+  useEffect(() => {
+    const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
+    if (!inputPaths.length) return;
+
+    const syncAll = async () => {
+      for (const inputPath of inputPaths) {
+        const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+        const fallback = {
+          projectId,
+          inputType: settings.inputType,
+          sourcePath: inputPath,
+          folderPath: settings.inputType === 'draft' ? inputPath : inputPath.replace(/[^/\\]+$/, ''),
+        };
+        try {
+          await syncSessionWithProjectSettings(
+            sessionPath,
+            {
+              projectSettings: projectSettingsSnapshot,
+              revision: settings.settingsRevision,
+              updatedAt: settings.settingsUpdatedAt,
+              source: 'project_default',
+            },
+            fallback
+          );
+        } catch (error) {
+          await updateCaptionSession(
+            sessionPath,
+            (session) => ({
+              ...session,
+              syncState: 'pending',
+            }),
+            fallback
+          );
+          scheduleSessionSettingsRetry(sessionPath, async () => {
+            await syncSessionWithProjectSettings(
+              sessionPath,
+              {
+                projectSettings: projectSettingsSnapshot,
+                revision: settings.settingsRevision,
+                updatedAt: settings.settingsUpdatedAt,
+                source: 'project_default',
+              },
+              fallback
+            );
+          });
+        }
+      }
+    };
+
+    syncAll().catch((error) => {
+      console.warn('[CaptionTranslator] Không thể sync revision settings vào session', error);
+    });
+  }, [
+    fileManager.filePath,
+    projectId,
+    settings.inputType,
+    settings.settingsRevision,
+    settings.settingsUpdatedAt,
+  ]);
+
+  // Persist thumbnail text theo folder (không ghi vào project default).
+  useEffect(() => {
+    const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
+    if (!inputPaths.length) return;
+    const persistThumbnailText = async () => {
+      if (inputPaths.length > 1) {
+        for (let i = 0; i < inputPaths.length; i++) {
+          const inputPath = inputPaths[i];
+          const text = (hardsubSettings.thumbnailTextsByOrder[i] || '').trim();
+          const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+          await updateCaptionSession(
+            sessionPath,
+            (session) => ({
+              ...session,
+              settings: {
+                ...session.settings,
+                step7Render: {
+                  ...(session.settings.step7Render || {}),
+                  thumbnailText: text,
+                },
+              },
+            }),
+            {
+              projectId,
+              inputType: settings.inputType,
+              sourcePath: inputPath,
+              folderPath: inputPath,
+            }
+          );
+        }
+        return;
+      }
+
+      const inputPath = inputPaths[0];
+      const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+      await updateCaptionSession(
+        sessionPath,
+        (session) => ({
+          ...session,
+          settings: {
+            ...session.settings,
+            step7Render: {
+              ...(session.settings.step7Render || {}),
+              thumbnailText: hardsubSettings.thumbnailText,
+            },
+          },
+        }),
+        {
+          projectId,
+          inputType: settings.inputType,
+          sourcePath: inputPath,
+          folderPath: settings.inputType === 'draft' ? inputPath : inputPath.replace(/[^/\\]+$/, ''),
+        }
+      );
+    };
+    persistThumbnailText().catch((error) => {
+      console.warn('[CaptionTranslator] Không thể lưu thumbnail text theo folder', error);
+    });
+  }, [
+    fileManager.filePath,
+    projectId,
+    settings.inputType,
+    hardsubSettings.thumbnailText,
+    hardsubSettings.thumbnailTextsByOrder,
+  ]);
+
   // 4. Processing Hook
   const processing = useCaptionProcessing({
+    projectId,
     entries: fileManager.entries,
     setEntries: fileManager.setEntries,
     filePath: fileManager.filePath,

@@ -360,6 +360,7 @@ export interface RenderResult {
   success: boolean;
   outputPath?: string;
   duration?: number;
+  timingPayload?: Record<string, unknown>;
   error?: string;
 }
 
@@ -374,6 +375,134 @@ export interface ExtractFrameResult {
   error?: string;
 }
 
+// ============================================
+// CAPTION SESSION (Single JSON Per Folder)
+// ============================================
+
+export type CaptionStepStatus = 'idle' | 'running' | 'success' | 'error' | 'stale';
+
+export interface CaptionStepState {
+  status: CaptionStepStatus;
+  startedAt?: string;
+  endedAt?: string;
+  error?: string;
+  metrics?: Record<string, unknown>;
+  settingsSnapshot?: Record<string, unknown>;
+}
+
+export interface CaptionSessionSettings {
+  step2Split?: Record<string, unknown>;
+  step3Translate?: Record<string, unknown>;
+  step4Tts?: Record<string, unknown>;
+  step5Trim?: Record<string, unknown>;
+  step6Merge?: Record<string, unknown>;
+  step7Render?: Record<string, unknown>;
+}
+
+export interface CaptionSessionData {
+  extractedEntries?: SubtitleEntry[];
+  translatedEntries?: SubtitleEntry[];
+  translatedSrtContent?: string;
+  ttsAudioFiles?: AudioFile[];
+  trimResults?: Record<string, unknown>;
+  mergeResult?: Record<string, unknown>;
+  renderResult?: Record<string, unknown>;
+  renderTimingPayload?: Record<string, unknown>;
+}
+
+export interface CaptionSessionArtifacts {
+  translatedSrtPath?: string;
+  scaledSrtPath?: string;
+  audioDir?: string;
+  mergedAudioPath?: string;
+  finalVideoPath?: string;
+  // Deprecated: timing debug đã được lưu trực tiếp vào caption_session.json (data.renderTimingPayload).
+  timingJsonPath?: string;
+}
+
+export interface CaptionSessionTiming {
+  step4SrtScale?: number;
+  step7AudioSpeed?: number;
+  audioSpeedModel?: 'step4_minus_step7_delta';
+  audioEffectiveSpeed?: number;
+  subRenderDuration?: number;
+  videoSubBaseDuration?: number;
+  videoSpeedMultiplier?: number;
+  videoMarkerSec?: number;
+}
+
+export interface CaptionSessionRuntime {
+  enabledSteps?: number[];
+  processingMode?: 'folder-first' | 'step-first';
+  currentStep?: number | null;
+  lastMessage?: string;
+  progress?: {
+    current: number;
+    total: number;
+    message: string;
+  };
+}
+
+export type CaptionSettingsSyncState = 'synced' | 'pending' | 'error';
+
+export interface CaptionProjectSettingsValues {
+  inputType?: 'srt' | 'draft';
+  geminiModel?: string;
+  translateMethod?: 'api' | 'impit';
+  voice?: string;
+  rate?: string;
+  volume?: string;
+  srtSpeed?: number;
+  splitByLines?: boolean;
+  linesPerFile?: number;
+  numberOfParts?: number;
+  enabledSteps?: number[];
+  audioDir?: string;
+  autoFitAudio?: boolean;
+  hardwareAcceleration?: 'none' | 'qsv';
+  style?: ASSStyleConfig;
+  renderMode?: 'hardsub' | 'black_bg';
+  renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  blackoutTop?: number | null;
+  audioSpeed?: number;
+  renderAudioSpeed?: number;
+  videoVolume?: number;
+  audioVolume?: number;
+  thumbnailFontName?: string;
+  processingMode?: 'folder-first' | 'step-first';
+}
+
+export interface CaptionProjectSettings {
+  schemaVersion: 1;
+  settingsRevision: number;
+  source: 'ui' | 'system';
+  updatedAt: string;
+  settings: CaptionProjectSettingsValues;
+}
+
+export interface CaptionSessionV1 {
+  schemaVersion: 1;
+  createdAt: string;
+  updatedAt: string;
+  projectContext: {
+    projectId?: string | null;
+    inputType?: 'srt' | 'draft';
+    sourcePath?: string;
+    folderPath?: string;
+    videoPathDetected?: string;
+  };
+  settings: CaptionSessionSettings;
+  steps: Record<'step1' | 'step2' | 'step3' | 'step4' | 'step5' | 'step6' | 'step7', CaptionStepState>;
+  data: CaptionSessionData;
+  artifacts: CaptionSessionArtifacts;
+  timing: CaptionSessionTiming;
+  effectiveSettingsRevision?: number;
+  effectiveSettingsUpdatedAt?: string;
+  effectiveSettingsSource?: 'project_default' | 'session_runtime';
+  syncState?: CaptionSettingsSyncState;
+  runtime: CaptionSessionRuntime;
+}
+
 // Thêm vào CAPTION_IPC_CHANNELS
 export const CAPTION_VIDEO_IPC_CHANNELS = {
   RENDER_VIDEO: 'captionVideo:renderVideo',
@@ -382,4 +511,10 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   EXTRACT_FRAME: 'captionVideo:extractFrame',
   FIND_BEST_VIDEO: 'captionVideo:findBestVideo',
   GET_AVAILABLE_FONTS: 'captionVideo:getAvailableFonts',
+} as const;
+
+export const CAPTION_SESSION_IPC_CHANNELS = {
+  READ: 'captionSession:read',
+  WRITE_ATOMIC: 'captionSession:writeAtomic',
+  PATCH: 'captionSession:patch',
 } as const;

@@ -83,6 +83,7 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     thumbnailText,
     setThumbnailText,
     thumbnailTextsByOrder,
+    setThumbnailTextsByOrder,
     thumbnailAutoStartValue,
     setThumbnailAutoStartValue,
     selectedDraftPaths,
@@ -95,4 +96,3 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     handleAutoFillThumbnailByEpisode,
   };
 }
-

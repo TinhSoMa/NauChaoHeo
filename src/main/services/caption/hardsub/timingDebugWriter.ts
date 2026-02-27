@@ -1,4 +1,3 @@
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import { existsSync } from 'fs';
 import { RenderVideoOptions } from '../../../../shared/types/caption';
@@ -18,14 +17,6 @@ export function summarizeThumbnailTextForLog(text?: string): { length: number; p
     length: normalized.length,
     preview,
   };
-}
-
-export async function writeHardsubTimingJson(outputVideoPath: string, payload: unknown): Promise<string> {
-  const ext = path.extname(outputVideoPath);
-  const base = outputVideoPath.slice(0, outputVideoPath.length - ext.length);
-  const jsonPath = `${base}_timing.json`;
-  await fs.writeFile(jsonPath, JSON.stringify(payload, null, 2), 'utf-8');
-  return jsonPath;
 }
 
 export function buildHardsubTimingPayload(input: {
@@ -142,4 +133,3 @@ export function buildHardsubTimingPayload(input: {
     },
   };
 }
-

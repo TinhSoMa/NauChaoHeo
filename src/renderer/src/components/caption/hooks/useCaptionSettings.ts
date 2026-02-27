@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useProjectFeatureState } from '../../../hooks/useProjectFeatureState';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   DEFAULT_INPUT_TYPE,
   DEFAULT_GEMINI_MODEL,
@@ -13,7 +12,11 @@ import {
   InputType,
 } from '../../../config/captionConfig';
 import { Step, ProcessingMode } from '../CaptionTypes';
-import { ASSStyleConfig } from '@shared/types/caption';
+import { ASSStyleConfig, CaptionProjectSettings } from '@shared/types/caption';
+import { useProjectContext } from '../../../context/ProjectContext';
+import { nowIso } from '@shared/utils/captionSession';
+
+const PROJECT_SETTINGS_FILE = 'caption-settings.json';
 
 export const DEFAULT_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
@@ -25,33 +28,29 @@ export const DEFAULT_STYLE: ASSStyleConfig = {
 };
 
 export function useCaptionSettings() {
-   // State - Config
+  const { projectId, paths } = useProjectContext();
+
   const [inputType, setInputType] = useState<InputType>(DEFAULT_INPUT_TYPE);
   const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
   const [voice, setVoice] = useState(DEFAULT_VOICE);
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
   const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
-  
-  // State - Split Config
+
   const [splitByLines, setSplitByLines] = useState(DEFAULT_SPLIT_BY_LINES);
   const [linesPerFile, setLinesPerFile] = useState(DEFAULT_LINES_PER_FILE);
   const [numberOfParts, setNumberOfParts] = useState(DEFAULT_NUMBER_OF_PARTS);
-  
-  // State - Audio Dir (persist this too)
-  const [audioDir, setAudioDir] = useState('');
 
-  // State - Auto Fit Audio (tự động scale audio vừa thời lượng)
+  const [audioDir, setAudioDir] = useState('');
   const [autoFitAudio, setAutoFitAudio] = useState(false);
 
-  // State - Video Output
   const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv'>('qsv');
   const [style, setStyle] = useState<ASSStyleConfig>(DEFAULT_STYLE);
   const [renderMode, setRenderMode] = useState<'hardsub' | 'black_bg'>('hardsub');
   const [renderResolution, setRenderResolution] = useState<'original' | '1080p' | '720p' | '540p' | '360p'>('original');
-  const [blackoutTop, setBlackoutTop] = useState<number | null>(0.9); // Mặc định che 10% dưới video
-  const [audioSpeed, setAudioSpeed] = useState<number>(1.0); // Merge Audio Speed
-  const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0); // Render Audio Speed
+  const [blackoutTop, setBlackoutTop] = useState<number | null>(0.9);
+  const [audioSpeed, setAudioSpeed] = useState<number>(1.0);
+  const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0);
   const [videoVolume, setVideoVolume] = useState<number>(100);
   const [audioVolume, setAudioVolume] = useState<number>(100);
   const [thumbnailFontName, setThumbnailFontName] = useState<string>('BrightwallPersonal');
@@ -60,7 +59,22 @@ export function useCaptionSettings() {
   const [logoPosition, setLogoPositionState] = useState<{ x: number; y: number } | undefined>(undefined);
   const [logoScale, setLogoScaleState] = useState<number>(1.0);
 
-  // ========== LOAD LOGO TỪ GLOBAL APP SETTINGS (một lần khi mount) ==========
+  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
+  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit'>('api');
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
+
+  const [settingsRevision, setSettingsRevision] = useState<number>(0);
+  const [settingsUpdatedAt, setSettingsUpdatedAt] = useState<string>(nowIso());
+
+  const loadedRef = useRef(false);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const revisionRef = useRef(0);
+
+  useEffect(() => {
+    saveQueueRef.current = Promise.resolve();
+    revisionRef.current = 0;
+  }, [projectId]);
+
   useEffect(() => {
     (window.electronAPI as any).appSettings.getAll().then((res: any) => {
       if (res?.success && res.data) {
@@ -71,7 +85,6 @@ export function useCaptionSettings() {
     });
   }, []);
 
-  // Setters: cập nhật state VÀ lưu vào global appSettings ngay lập tức
   const setLogoPath = useCallback((v: string | undefined) => {
     setLogoPathState(v);
     (window.electronAPI as any).appSettings.update({ captionLogoPath: v ?? null });
@@ -85,43 +98,8 @@ export function useCaptionSettings() {
     (window.electronAPI as any).appSettings.update({ captionLogoScale: v });
   }, []);
 
-  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
-
-  // State - Translate Method
-  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit'>('api');
-
-  // State - Multi-folder processing mode (global preference, not per-project)
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
-
-  // ========== AUTO SAVE/LOAD VÀO PROJECT ==========
-  useProjectFeatureState<{
-    inputType?: InputType;
-    geminiModel?: string;
-    voice?: string;
-    rate?: string;
-    volume?: string;
-    srtSpeed?: number;
-    splitByLines?: boolean;
-    linesPerFile?: number;
-    numberOfParts?: number;
-    enabledSteps?: Step[];
-    audioDir?: string;
-    autoFitAudio?: boolean;
-    hardwareAcceleration?: 'none' | 'qsv';
-    style?: ASSStyleConfig;
-    renderMode?: 'hardsub' | 'black_bg';
-    renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
-    blackoutTop?: number | null;
-    audioSpeed?: number;
-    renderAudioSpeed?: number;
-    videoVolume?: number;
-    audioVolume?: number;
-    thumbnailFontName?: string;
-    translateMethod?: 'api' | 'impit';
-  }>({
-    feature: 'caption',
-    fileName: 'caption-settings.json', // Changed filename slightly to avoid conflict if any
-    serialize: () => ({
+  const settingsValues = useMemo(
+    () => ({
       inputType,
       geminiModel,
       translateMethod,
@@ -145,42 +123,167 @@ export function useCaptionSettings() {
       videoVolume,
       audioVolume,
       thumbnailFontName,
-      // logo fields are global — saved via appSettings, not per-project
+      processingMode,
     }),
-    deserialize: (saved) => {
-      if (saved.inputType) setInputType(saved.inputType);
-      if (saved.geminiModel) setGeminiModel(saved.geminiModel);
-      if (saved.translateMethod) setTranslateMethod(saved.translateMethod as 'api' | 'impit');
-      if (saved.voice) setVoice(saved.voice);
-      if (saved.rate) setRate(String(saved.rate));
-      if (saved.volume) setVolume(String(saved.volume));
-      if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
-      if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
-      if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
-      if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
-      if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps));
-      if (saved.audioDir) setAudioDir(saved.audioDir);
-      if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
-      if (saved.hardwareAcceleration) setHardwareAcceleration(saved.hardwareAcceleration);
-      if (saved.style) setStyle(saved.style);
-      if (saved.renderMode) setRenderMode(saved.renderMode);
-      if (saved.renderResolution) setRenderResolution(saved.renderResolution);
-      if (saved.blackoutTop !== undefined) setBlackoutTop(saved.blackoutTop);
-      if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
-      if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
-      if (typeof saved.videoVolume === 'number') setVideoVolume(saved.videoVolume);
-      if (typeof saved.audioVolume === 'number') setAudioVolume(saved.audioVolume);
-      if (typeof saved.thumbnailFontName === 'string' && saved.thumbnailFontName.trim().length > 0) {
-        setThumbnailFontName(saved.thumbnailFontName);
+    [
+      inputType,
+      geminiModel,
+      translateMethod,
+      voice,
+      rate,
+      volume,
+      srtSpeed,
+      splitByLines,
+      linesPerFile,
+      numberOfParts,
+      enabledSteps,
+      audioDir,
+      autoFitAudio,
+      hardwareAcceleration,
+      style,
+      renderMode,
+      renderResolution,
+      blackoutTop,
+      audioSpeed,
+      renderAudioSpeed,
+      videoVolume,
+      audioVolume,
+      thumbnailFontName,
+      processingMode,
+    ]
+  );
+
+  const applyLoadedSettings = useCallback((saved: any) => {
+    if (saved.inputType) setInputType(saved.inputType);
+    if (saved.geminiModel) setGeminiModel(saved.geminiModel);
+    if (saved.translateMethod) setTranslateMethod(saved.translateMethod as 'api' | 'impit');
+    if (saved.voice) setVoice(saved.voice);
+    if (saved.rate) setRate(String(saved.rate));
+    if (saved.volume) setVolume(String(saved.volume));
+    if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
+    if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
+    if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
+    if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
+    if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps as Step[]));
+    if (saved.audioDir) setAudioDir(saved.audioDir);
+    if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
+    if (saved.hardwareAcceleration) setHardwareAcceleration(saved.hardwareAcceleration);
+    if (saved.style) setStyle(saved.style);
+    if (saved.renderMode) setRenderMode(saved.renderMode);
+    if (saved.renderResolution) setRenderResolution(saved.renderResolution);
+    if (saved.blackoutTop !== undefined) setBlackoutTop(saved.blackoutTop);
+    if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
+    if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
+    if (typeof saved.videoVolume === 'number') setVideoVolume(saved.videoVolume);
+    if (typeof saved.audioVolume === 'number') setAudioVolume(saved.audioVolume);
+    if (typeof saved.thumbnailFontName === 'string' && saved.thumbnailFontName.trim().length > 0) {
+      setThumbnailFontName(saved.thumbnailFontName);
+    }
+    if (saved.processingMode === 'folder-first' || saved.processingMode === 'step-first') {
+      setProcessingMode(saved.processingMode);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!projectId || !paths) {
+      loadedRef.current = false;
+      return;
+    }
+    loadedRef.current = false;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const res = await window.electronAPI.project.readFeatureFile({
+          projectId,
+          feature: 'caption',
+          fileName: PROJECT_SETTINGS_FILE,
+        });
+        if (!res?.success || !res.data) {
+          revisionRef.current = 0;
+          if (!cancelled) {
+            setSettingsRevision(0);
+            setSettingsUpdatedAt(nowIso());
+          }
+          return;
+        }
+
+        const parsed = JSON.parse(res.data);
+        if (parsed?.schemaVersion === 1 && parsed?.settings && typeof parsed.settings === 'object') {
+          applyLoadedSettings(parsed.settings);
+          revisionRef.current = typeof parsed.settingsRevision === 'number' ? parsed.settingsRevision : 0;
+          if (!cancelled) {
+            setSettingsRevision(revisionRef.current);
+            setSettingsUpdatedAt(typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso());
+          }
+          return;
+        }
+
+        // Legacy fallback: file cũ chỉ chứa object settings.
+        applyLoadedSettings(parsed || {});
+        revisionRef.current = 1;
+        if (!cancelled) {
+          setSettingsRevision(1);
+          setSettingsUpdatedAt(nowIso());
+        }
+      } catch (error) {
+        console.error('[CaptionSettings] Lỗi load caption-settings.json:', error);
+      } finally {
+        if (!cancelled) {
+          loadedRef.current = true;
+        }
       }
-      // logo fields are global — loaded from appSettings, not per-project
-    },
-    deps: [
-      srtSpeed, splitByLines, linesPerFile, numberOfParts, enabledSteps, audioDir, autoFitAudio,
-      hardwareAcceleration, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume, thumbnailFontName,
-      translateMethod
-    ],
-  });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, paths, applyLoadedSettings]);
+
+  const saveSettings = useCallback(async (source: 'ui' | 'system' = 'ui') => {
+    if (!projectId) return;
+    const nextRevision = revisionRef.current + 1;
+    const updatedAt = nowIso();
+    const payload: CaptionProjectSettings = {
+      schemaVersion: 1,
+      settingsRevision: nextRevision,
+      source,
+      updatedAt,
+      settings: settingsValues,
+    };
+
+    const queued = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const writeRes = await window.electronAPI.project.writeFeatureFile({
+          projectId,
+          feature: 'caption',
+          fileName: PROJECT_SETTINGS_FILE,
+          content: payload,
+        });
+        if (!writeRes?.success) {
+          throw new Error(writeRes?.error || 'Không thể lưu caption-settings.json');
+        }
+        revisionRef.current = nextRevision;
+        setSettingsRevision(nextRevision);
+        setSettingsUpdatedAt(updatedAt);
+      });
+    saveQueueRef.current = queued;
+    await queued;
+  }, [projectId, settingsValues]);
+
+  useEffect(() => {
+    if (!projectId || !paths || !loadedRef.current) return;
+    const timer = window.setTimeout(() => {
+      saveSettings('ui').catch((error) => {
+        console.error('[CaptionSettings] Lỗi auto-save:', error);
+      });
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [projectId, paths, settingsValues, saveSettings]);
 
   return {
     inputType, setInputType,
@@ -210,5 +313,8 @@ export function useCaptionSettings() {
     logoPosition, setLogoPosition,
     logoScale, setLogoScale,
     processingMode, setProcessingMode,
+    settingsRevision,
+    settingsUpdatedAt,
+    saveSettings,
   };
 }

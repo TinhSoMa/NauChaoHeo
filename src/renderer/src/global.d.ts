@@ -189,6 +189,9 @@ interface CaptionAPI {
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
+  readSession: (sessionPath: string) => Promise<IpcApiResponse<any | null>>;
+  writeSessionAtomic: (sessionPath: string, data: any) => Promise<IpcApiResponse<string>>;
+  patchSession: (sessionPath: string, patch: any) => Promise<IpcApiResponse<any>>;
 }
 
 // ============================================
