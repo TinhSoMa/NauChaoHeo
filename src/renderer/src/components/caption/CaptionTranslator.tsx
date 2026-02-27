@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import folderIconUrl from '../../../../../resources/icons/folder.svg';
@@ -15,12 +15,15 @@ import {
   STEP_LABELS,
   LINES_PER_FILE_OPTIONS,
 } from '../../config/captionConfig';
-import { Step, ThumbnailFolderItem } from './CaptionTypes';
+import { HardsubTimingMetrics, Step } from './CaptionTypes';
 import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
-import { SubtitlePreview } from './SubtitlePreview';
-import { Settings, Download } from 'lucide-react';
+import { useHardsubSettings } from './hooks/useHardsubSettings';
+import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
+import { ThumbnailListPanel } from './components/ThumbnailListPanel';
+import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
+import { Download } from 'lucide-react';
 
 export function CaptionTranslator() {
   // Project output paths
@@ -35,15 +38,11 @@ export function CaptionTranslator() {
     inputType: settings.inputType,
   });
 
-  // 3. Subtitle Position State (for hardsub drag-drop)
-  const [subtitlePosition, setSubtitlePosition] = useState<{ x: number; y: number } | null>(null);
-
-  // 3b. Thumbnail State
-  const [thumbnailFrameTimeSec, setThumbnailFrameTimeSec] = useState<number | null>(null);
-  const [thumbnailText, setThumbnailText] = useState('');
-  const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
-  const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
-  const [thumbnailAutoStartValue, setThumbnailAutoStartValue] = useState('');
+  const hardsubSettings = useHardsubSettings({
+    inputType: settings.inputType,
+    filePath: fileManager.filePath,
+    folderVideos: fileManager.folderVideos,
+  });
 
   // 4. Processing Hook
   const processing = useCaptionProcessing({
@@ -52,7 +51,13 @@ export function CaptionTranslator() {
     filePath: fileManager.filePath,
     inputType: settings.inputType,
     captionFolder,
-    settings: { ...settings, subtitlePosition, thumbnailFrameTimeSec, thumbnailText, thumbnailTextsByOrder },
+    settings: {
+      ...settings,
+      subtitlePosition: hardsubSettings.subtitlePosition,
+      thumbnailFrameTimeSec: hardsubSettings.thumbnailFrameTimeSec,
+      thumbnailText: hardsubSettings.thumbnailText,
+      thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
+    },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
   });
@@ -133,47 +138,10 @@ export function CaptionTranslator() {
   const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
   const [diskSubtitleDuration, setDiskSubtitleDuration] = useState<number | null>(null);
 
-  const selectedDraftPaths = useMemo(
-    () => (settings.inputType === 'draft' && fileManager.filePath ? fileManager.filePath.split('; ') : []),
-    [settings.inputType, fileManager.filePath]
-  );
-
   // Section 6 (Cấu hình) luôn dùng folder đầu tiên làm tham chiếu cấu hình.
   // Folder đang xử lý (processing.currentFolder) chỉ dùng cho progress badge ở Section 7.
-  const firstFolderPath = selectedDraftPaths[0] ?? '';
-  const isMultiFolder = selectedDraftPaths.length > 1;
-  const isThumbnailEnabled = thumbnailFrameTimeSec !== null && thumbnailFrameTimeSec !== undefined;
-
-  useEffect(() => {
-    const changed = selectedDraftPaths.length !== folderOrderSnapshot.length
-      || selectedDraftPaths.some((path, idx) => path !== folderOrderSnapshot[idx]);
-    if (!changed) return;
-
-    setFolderOrderSnapshot(selectedDraftPaths);
-    setThumbnailTextsByOrder(new Array(selectedDraftPaths.length).fill(''));
-  }, [selectedDraftPaths, folderOrderSnapshot]);
-
-  const updateThumbnailTextByOrder = (idx: number, value: string) => {
-    setThumbnailTextsByOrder(prev => {
-      const next = prev.length === selectedDraftPaths.length
-        ? [...prev]
-        : new Array(selectedDraftPaths.length).fill('');
-      next[idx] = value;
-      return next;
-    });
-  };
-
-  const handleAutoFillThumbnailByEpisode = () => {
-    const normalized = thumbnailAutoStartValue.trim();
-    const match = normalized.match(/-?\d+/);
-    if (!match) return;
-
-    const startEpisode = Number.parseInt(match[0], 10);
-    if (!Number.isFinite(startEpisode)) return;
-
-    const generated = selectedDraftPaths.map((_, idx) => `Tập ${startEpisode + idx}`);
-    setThumbnailTextsByOrder(generated);
-  };
+  const firstFolderPath = hardsubSettings.firstFolderPath;
+  const isMultiFolder = hardsubSettings.isMultiFolder;
 
   // Khi đang xử lý multi-folder, dùng path của folder đang xử lý để hiển thị thông số video chính xác.
   // Khi idle, hiển thị folder đầu tiên trong danh sách.
@@ -185,24 +153,6 @@ export function CaptionTranslator() {
   const displayOutputDir = settings.inputType === 'srt'
     ? (displayPath ? displayPath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
     : (displayPath ? `${displayPath}/caption_output` : '');
-
-  const thumbnailFolderItems: ThumbnailFolderItem[] = isMultiFolder
-    ? selectedDraftPaths.map((folderPath, idx) => {
-        const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
-        const videoName = fileManager.folderVideos[folderPath]?.name || 'Chưa tìm thấy video';
-        const text = thumbnailTextsByOrder[idx] || '';
-        return {
-          index: idx + 1,
-          folderPath,
-          folderName,
-          videoName,
-          text,
-          hasError: isThumbnailEnabled && !text.trim(),
-        };
-      })
-    : [];
-
-  const hasMissingThumbnailText = thumbnailFolderItems.some(item => item.hasError);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -337,15 +287,19 @@ export function CaptionTranslator() {
 
   const step4Scale = srtTimeScale > 0 ? srtTimeScale : 1.0;
   const step7Speed = settings.renderAudioSpeed > 0 ? settings.renderAudioSpeed : 1.0;
-  const audioEffectiveSpeed = step4Scale - (step7Speed - 1);
   const subRenderDuration = subtitleSyncDurationSec;
-  const videoSubBaseDuration = step4Scale > 0 ? (subRenderDuration / step4Scale) : subRenderDuration;
-
-  let autoVideoSpeed = 1.0;
-  if (videoSubBaseDuration > 0 && audioExpectedDuration > 0) {
-    autoVideoSpeed = videoSubBaseDuration / audioExpectedDuration;
-  }
-  const videoMarkerSec = audioExpectedDuration * autoVideoSpeed;
+  const timingCalc = calculateHardsubTiming({
+    step4Scale,
+    step7Speed,
+    subRenderDuration,
+    audioScaledDuration: audioExpectedDuration,
+    configuredSrtTimeScale: srtTimeScale,
+    srtAlreadyScaled: false,
+  });
+  const audioEffectiveSpeed = timingCalc.audioEffectiveSpeed;
+  const videoSubBaseDuration = timingCalc.videoSubBaseDuration;
+  const autoVideoSpeed = timingCalc.videoSpeedMultiplier;
+  const videoMarkerSec = timingCalc.videoMarkerSec;
 
   const formatDuration = (seconds: number) => {
     if (seconds <= 0) return '--';
@@ -552,7 +506,7 @@ export function CaptionTranslator() {
             disabled={settings.translateMethod === 'impit'}
             style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
           >
-            {GEMINI_MODELS.map(m => (
+            {GEMINI_MODELS.map((m: { value: string; label: string }) => (
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
@@ -616,291 +570,56 @@ export function CaptionTranslator() {
       {/* Cột phải: Split, Controls */}
       <div className={styles.rightColumn}>
         {/* Section 6: Video Options (Only shows when Step 7 is checked) */}
-        {processing.enabledSteps.has(7) && (
-          <div className={styles.section} style={{ marginTop: '20px' }}>
-            <div className={styles.sectionTitle}><Settings size={16} style={{display: 'inline-block', verticalAlign: 'middle', marginRight: 8}}/>6. Cấu hình Subtitle Video (Step 7)</div>
-
-            {/* Loại Video Output */}
-            <div className={styles.grid2} style={{marginBottom: 16}}>
-               <div style={{gridColumn: '1 / -1'}}>
-                 <span className={styles.label}>Loại Video Output</span>
-                 <div style={{display: 'flex', gap: '20px', marginTop: 8}}>
-                    <RadioButton
-                      label="Sửa đè (Hardsub) lên Video Gốc"
-                      checked={settings.renderMode === 'hardsub'}
-                      onChange={() => settings.setRenderMode('hardsub')}
-                      name="renderMode"
-                    />
-                    <RadioButton
-                      label="Tạo Video Nền Đen rời (Import CapCut)"
-                      checked={settings.renderMode === 'black_bg'}
-                      onChange={() => settings.setRenderMode('black_bg')}
-                      name="renderMode"
-                    />
-                 </div>
-               </div>
-            </div>
-
-            {/* Render Styles*/}
-            <div className={styles.grid2} style={{marginBottom: 12}}>
-               <div className={styles.inputGroup}>
-                 <span className={styles.label}>Font Chữ</span>
-                 <select
-                    className={styles.select}
-                    value={settings.style?.fontName || 'ZYVNA Fairy'}
-                    onChange={e => settings.setStyle(s => ({...s, fontName: e.target.value}))}
-                 >
-                    {availableFonts.map(font => (
-                      <option key={font} value={font}>{font}</option>
-                    ))}
-                 </select>
-               </div>
-               <div className={styles.inputGroup}>
-                 <span className={styles.label}>
-                   Font Size (px)
-                   {settings.renderMode === 'black_bg' && (
-                     <span style={{fontSize: 11, color: 'var(--text-tertiary)', display: 'block', marginTop: 2}}>
-                       Tự tính = 90% chiều cao strip
-                     </span>
-                   )}
-                 </span>
-                 <Input
-                    type="number"
-                    value={settings.style?.fontSize}
-                    onChange={e => settings.setStyle(s => ({...s, fontSize: Number(e.target.value)}))}
-                    min={20} max={200}
-                    disabled={settings.renderMode === 'black_bg'}
-                 />
-               </div>
-            </div>
-
-
-
-            <div className={styles.grid2} style={{marginBottom: 12}}>
-               <div className={styles.inputGroup} style={{ gridColumn: '1 / span 2' }}>
-                 <span className={styles.label}>Tốc độ Video tự thích ứng (Auto-Fit)</span>
-                 <div style={{ padding: '12px', background: 'rgba(0,0,0,0.1)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                   
-                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                     <span style={{ fontSize: '13px', width: '120px' }}>Tăng tốc Audio:</span>
-                     <Input
-                        type="number"
-                        value={settings.renderAudioSpeed}
-                        onChange={e => settings.setRenderAudioSpeed(Number(e.target.value))}
-                        min={0.5} max={5} step={0.1}
-                        style={{ width: '80px' }}
-                     />
-                     <span style={{ fontSize: '12px', fontWeight: 'bold' }}>x</span>
-                   </div>
-
-                   {isMultiFolder && (
-                     <div style={{ fontSize: '11px', color: 'var(--color-accent, #4a9eff)', marginBottom: '2px' }}>
-                       📁 {videoInfo?.name ?? displayPath.split(/[/\\]/).pop()}
-                       {isEstimated && <span style={{ color: 'var(--color-text-muted)', marginLeft: 6 }}>(~ước tính từ video)</span>}
-                     </div>
-                   )}
-                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px', fontSize: '12px' }}>
-                     <div>
-                       <div style={{ color: 'var(--text-secondary)' }}>🎤 Thời lượng Audio mới:</div>
-                       <div style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{formatDuration(audioExpectedDuration)}</div>
-                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>(Gốc: {formatDuration(baseAudioDuration)})</div>
-                     </div>
-                     <div>
-                       <div style={{ color: 'var(--text-secondary)' }}>🎬 Tốc độ Video cần thiết:</div>
-                       <div style={{ fontWeight: 'bold', color: autoVideoSpeed > 1 ? 'var(--color-warning)' : 'var(--color-success)' }}>
-                         {autoVideoSpeed.toFixed(2)}x
-                       </div>
-                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                         Mốc video chuẩn (gốc): {formatDuration(videoMarkerSec)}
-                       </div>
-                       <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                         {isMultiFolder
-                           ? `Mốc sync: ${formatDuration(videoSubBaseDuration)}`
-                           : `(Để khớp vỏn vẹn ${formatDuration(audioExpectedDuration)})`}
-                       </div>
-                     </div>
-                   </div>
-
-                 </div>
-               </div>
-            </div>
-
-            <div className={styles.grid2} style={{marginBottom: 12}}>
-               <div className={styles.inputGroup}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <span className={styles.label}>Âm lượng Video gốc (%)</span>
-                   <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{settings.videoVolume}%</span>
-                 </div>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                   <input
-                      type="range"
-                      value={settings.videoVolume}
-                      onChange={e => settings.setVideoVolume(Number(e.target.value))}
-                      min={0} max={200} step={10}
-                      style={{ flex: 1, cursor: 'pointer' }}
-                   />
-                 </div>
-                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                   Gắn liền với hình ảnh
-                 </div>
-               </div>
-               <div className={styles.inputGroup}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <span className={styles.label}>Âm lượng Audio TTS (%)</span>
-                   <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{settings.audioVolume}%</span>
-                 </div>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                   <input
-                      type="range"
-                      value={settings.audioVolume}
-                      onChange={e => settings.setAudioVolume(Number(e.target.value))}
-                      min={0} max={200} step={10}
-                      style={{ flex: 1, cursor: 'pointer' }}
-                   />
-                 </div>
-                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                   Âm thanh giọng đọc
-                 </div>
-               </div>
-            </div>
-
-             <div className={styles.grid2} style={{marginBottom: 12}}>
-
-               
-               <div className={styles.inputGroup}>
-                 <span className={styles.label}>Màu Chữ</span>
-                 <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 6, position: 'relative'}}>
-                   <div style={{
-                     width: 36, height: 36,
-                     borderRadius: 8,
-                     background: settings.style?.fontColor || '#FFFF00',
-                     border: '2px solid rgba(255,255,255,0.2)',
-                     boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                     flexShrink: 0,
-                   }} />
-                   <span style={{fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: 13}}>
-                     {(settings.style?.fontColor || '#FFFF00').toUpperCase()}
-                   </span>
-                   <input
-                     type="color"
-                     value={settings.style?.fontColor || '#FFFF00'}
-                     onChange={e => settings.setStyle(s => ({...s, fontColor: e.target.value}))}
-                     style={{position: 'absolute', opacity: 0, width: '100%', height: '100%', cursor: 'pointer', top: 0, left: 0}}
-                   />
-                 </label>
-               </div>
-               <div className={styles.inputGroup}>
-                 <span className={styles.label}>Hardware Acceleration</span>
-                 <div style={{marginTop: 8}}>
-                    <select
-                      className={styles.select}
-                      value={settings.hardwareAcceleration}
-                      onChange={(e) => settings.setHardwareAcceleration(e.target.value as any)}
-                    >
-                      <option value="none">CPU (libx264)</option>
-                      <option value="qsv">Intel QuickSync (QSV)</option>
-                    </select>
-                 </div>
-               </div>
-            </div>
-            {settings.renderMode === 'hardsub' && settings.inputType === 'draft' && isMultiFolder && (
-              <div className={styles.thumbnailListSection}>
-                <div className={styles.thumbnailListHeader}>
-                  <span>Danh sách Thumbnail theo folder</span>
-                  <span className={styles.thumbnailListHint}>Map theo thứ tự folder đã chọn</span>
-                </div>
-                <div className={styles.thumbnailAutoFillRow}>
-                  <input
-                    type="text"
-                    className={styles.thumbnailAutoFillInput}
-                    value={thumbnailAutoStartValue}
-                    onChange={(e) => setThumbnailAutoStartValue(e.target.value)}
-                    placeholder="Nhập số bắt đầu (vd: 4 hoặc 1.)"
-                  />
-                  <button
-                    type="button"
-                    className={styles.thumbnailAutoFillBtn}
-                    onClick={handleAutoFillThumbnailByEpisode}
-                    title="Tự động điền theo mẫu Tập N, Tập N+1..."
-                  >
-                    Tự động điền Tập
-                  </button>
-                </div>
-                <div className={styles.thumbnailListTable}>
-                  <div className={styles.thumbnailListRowHead}>
-                    <span>STT</span>
-                    <span>Folder</span>
-                    <span>Video</span>
-                    <span>Thumbnail text</span>
-                  </div>
-                  {thumbnailFolderItems.map(item => (
-                    <div
-                      key={`${item.folderPath}-${item.index}`}
-                      className={`${styles.thumbnailListRow} ${item.hasError ? styles.thumbnailListRowError : ''}`}
-                    >
-                      <span className={styles.thumbnailListIdx}>{item.index}</span>
-                      <span className={styles.thumbnailListFolder} title={item.folderPath}>
-                        {item.folderName}
-                      </span>
-                      <span className={styles.thumbnailListVideo} title={item.videoName}>
-                        {item.videoName}
-                      </span>
-                      <input
-                        type="text"
-                        className={styles.thumbnailListInput}
-                        value={item.text}
-                        onChange={(e) => updateThumbnailTextByOrder(item.index - 1, e.target.value)}
-                        placeholder="Nhập text thumbnail cho folder này..."
-                      />
-                    </div>
-                  ))}
-                </div>
-                {isThumbnailEnabled && hasMissingThumbnailText && (
-                  <div className={styles.thumbnailListWarning}>
-                    Thiếu thumbnail text ở một hoặc nhiều folder. Step 7 sẽ bị chặn cho đến khi nhập đủ.
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Subtitle Preview (hardsub only) */}
-            {settings.renderMode === 'hardsub' && settings.inputType === 'draft' && (
-              <SubtitlePreview
-                videoPath={fileManager.firstVideoPath}
-                style={settings.style}
-                entries={fileManager.entries}
-                blackoutTop={settings.blackoutTop}
-                renderResolution={settings.renderResolution}
-                logoPath={settings.logoPath}
-                logoPosition={settings.logoPosition}
-                logoScale={settings.logoScale}
-                onPositionChange={setSubtitlePosition}
-                onBlackoutChange={settings.setBlackoutTop}
-                onRenderResolutionChange={settings.setRenderResolution}
-                onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
-                onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
-                thumbnailText={isMultiFolder ? (thumbnailTextsByOrder[0] || '') : thumbnailText}
-                onThumbnailTextChange={isMultiFolder ? undefined : setThumbnailText}
-                thumbnailTextReadOnly={isMultiFolder}
-                thumbnailTextHelper={isMultiFolder ? 'Multi-folder: nhập text riêng cho từng folder trong danh sách phía trên.' : undefined}
-                onFrameTimeChange={(t) => setThumbnailFrameTimeSec(t)}
-                onSelectLogo={async () => {
-                  const result = await (window.electronAPI as any).invoke('dialog:openFile', {
-                    filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
-                    properties: ['openFile'],
-                  });
-                  if (!result?.canceled && result?.filePaths?.[0]) {
-                    settings.setLogoPath(result.filePaths[0]);
-                    settings.setLogoPosition(undefined);
-                  }
-                }}
-                onRemoveLogo={() => {
-                  settings.setLogoPath(undefined);
-                  settings.setLogoPosition(undefined);
-                }}
-              />
-            )}
-          </div>
-        )}
+        <HardsubSettingsPanel
+          visible={processing.enabledSteps.has(7)}
+          settings={settings}
+          availableFonts={availableFonts}
+          metrics={{
+            isMultiFolder,
+            isEstimated,
+            displayPath,
+            videoName: videoInfo?.name,
+            baseAudioDuration,
+            audioExpectedDuration,
+            videoSubBaseDuration,
+            videoMarkerSec,
+            autoVideoSpeed,
+            formatDuration,
+          } as HardsubTimingMetrics}
+          entries={fileManager.entries}
+          firstVideoPath={fileManager.firstVideoPath}
+          thumbnailListPanel={(
+            <ThumbnailListPanel
+              visible={settings.renderMode === 'hardsub' && settings.inputType === 'draft' && isMultiFolder}
+              items={hardsubSettings.thumbnailFolderItems}
+              autoStartValue={hardsubSettings.thumbnailAutoStartValue}
+              onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
+              onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
+              onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
+              showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
+            />
+          )}
+          thumbnailPreviewText={isMultiFolder ? (hardsubSettings.thumbnailTextsByOrder[0] || '') : hardsubSettings.thumbnailText}
+          onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
+          thumbnailTextReadOnly={isMultiFolder}
+          thumbnailTextHelper={isMultiFolder ? 'Multi-folder: nhập text riêng cho từng folder trong danh sách phía trên.' : undefined}
+          onSubtitlePositionChange={hardsubSettings.setSubtitlePosition}
+          onThumbnailFrameTimeChange={hardsubSettings.setThumbnailFrameTimeSec}
+          onSelectLogo={async () => {
+            const result = await (window.electronAPI as any).invoke('dialog:openFile', {
+              filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+              properties: ['openFile'],
+            });
+            if (!result?.canceled && result?.filePaths?.[0]) {
+              settings.setLogoPath(result.filePaths[0]);
+              settings.setLogoPosition(undefined);
+            }
+          }}
+          onRemoveLogo={() => {
+            settings.setLogoPath(undefined);
+            settings.setLogoPosition(undefined);
+          }}
+        />
 
         {/* Section 5: Controls */}
         <div className={styles.section} style={{ flex: 1, display: 'flex', flexDirection: 'column', marginTop: '20px' }}>

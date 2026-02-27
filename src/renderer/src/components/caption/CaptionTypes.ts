@@ -31,6 +31,19 @@ export interface ThumbnailFolderItem {
   hasError: boolean;
 }
 
+export interface HardsubTimingMetrics {
+  isMultiFolder: boolean;
+  isEstimated: boolean;
+  displayPath: string;
+  videoName?: string;
+  baseAudioDuration: number;
+  audioExpectedDuration: number;
+  videoSubBaseDuration: number;
+  videoMarkerSec: number;
+  autoVideoSpeed: number;
+  formatDuration: (seconds: number) => string;
+}
+
 export type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type ProcessStatus = 'idle' | 'running' | 'success' | 'error';
 export type ProcessingMode = 'folder-first' | 'step-first';

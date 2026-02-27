@@ -5,8 +5,10 @@ import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { parseSrtFile } from './srtParser';
 import { RenderVideoOptions } from '../../../shared/types/caption';
+import { calculateHardsubTiming } from '../../../shared/utils/hardsubTiming';
 import { hexToAssColor } from './assConverter';
-import { getVideoMetadata } from './videoRenderer'; // Temporary import, in the future this should be inside a videoUtils or ffmpegUtils
+import { getVideoMetadata } from './hardsub/mediaProbe';
+import { readRenderTimingContext } from './hardsub/timingContext';
 import { registerTempFile } from './garbageCollector';
 
 export interface SubtitlePrepResult {
@@ -33,25 +35,6 @@ export interface SubtitlePrepResult {
   configuredSrtTimeScale: number;
   appliedSrtTimeScale: number;
   srtAlreadyScaled: boolean;
-}
-
-interface RenderTimingContext {
-  step4SrtScale?: number;
-  step7AudioSpeed?: number;
-  audioSpeedModel?: 'step4_minus_step7_delta';
-}
-
-async function readRenderTimingContext(contextPath?: string): Promise<RenderTimingContext | null> {
-  if (!contextPath || !existsSync(contextPath)) {
-    return null;
-  }
-  try {
-    const raw = await fs.readFile(contextPath, 'utf-8');
-    const parsed = JSON.parse(raw) as RenderTimingContext;
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 function parseScaleFromSrtFileName(srtPath: string): number | null {
@@ -94,16 +77,20 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
       : (contextStep4Scale != null || contextStep7Speed != null ? 'timing_context' : 'fallback_default');
 
   const audioSpeedModel = options.audioSpeedModel || timingContext?.audioSpeedModel || 'step4_minus_step7_delta';
-  const audioEffectiveSpeed = audioSpeedModel === 'step4_minus_step7_delta'
-    ? (step4Scale - (step7Speed - 1))
-    : step4Scale;
   const fileNameScaleHint = parseScaleFromSrtFileName(srtPath);
   const srtAlreadyScaled = !!(
     fileNameScaleHint &&
     fileNameScaleHint > 1 &&
     Math.abs(fileNameScaleHint - step4Scale) < 0.02
   );
-  const appliedSrtTimeScale = srtAlreadyScaled ? 1.0 : configuredSrtTimeScale;
+  const appliedSrtTimeScale = calculateHardsubTiming({
+    step4Scale,
+    step7Speed,
+    subRenderDuration: 1,
+    audioScaledDuration: 1,
+    configuredSrtTimeScale,
+    srtAlreadyScaled,
+  }).appliedSrtTimeScale;
 
   let rawDuration = (!isHardsub && options.targetDuration) ? options.targetDuration : 60;
   let srtEndTimeSec = 0;
@@ -137,17 +124,23 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
 
   // Mốc sub theo SRT render hiện tại (thường là subtitle_1.3x.srt).
   const subRenderDuration = srtEndTimeSec > 0 ? srtEndTimeSec : 0;
-  // Quy đổi về mốc video gốc theo cấu hình step4.
-  const videoSubBaseDuration = step4Scale > 0 ? subRenderDuration / step4Scale : subRenderDuration;
 
   // Audio render thực tế (đã scale ở step7 qua file audio_*.wav/mp3).
   const audioBaseDuration = totalAudioDurationSec > 0 ? totalAudioDurationSec : subRenderDuration;
   const duration = subRenderDuration > 0 ? subRenderDuration : rawDuration;
   const newAudioDuration = audioBaseDuration / audioSpeed;
-  const videoSpeedNeeded = (videoSubBaseDuration > 0 && newAudioDuration > 0)
-    ? (videoSubBaseDuration / newAudioDuration)
-    : 1.0;
-  const videoMarkerSec = newAudioDuration * videoSpeedNeeded;
+  const timing = calculateHardsubTiming({
+    step4Scale,
+    step7Speed,
+    subRenderDuration,
+    audioScaledDuration: newAudioDuration,
+    configuredSrtTimeScale,
+    srtAlreadyScaled,
+  });
+  const audioEffectiveSpeed = timing.audioEffectiveSpeed;
+  const videoSubBaseDuration = timing.videoSubBaseDuration;
+  const videoSpeedNeeded = timing.videoSpeedMultiplier;
+  const videoMarkerSec = timing.videoMarkerSec;
 
   let finalWidth = width;
   let finalHeight = userHeight || 150;
@@ -163,7 +156,7 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   let needsScale = false;
   let hasVideoAudio = false;
   let originalVideoDuration = 0;
-  let videoSpeedMultiplier = videoSpeedNeeded > 0 ? videoSpeedNeeded : 1.0;
+  const videoSpeedMultiplier = videoSpeedNeeded > 0 ? videoSpeedNeeded : 1.0;
 
   if (videoPath && existsSync(videoPath)) {
     try {

@@ -3,11 +3,14 @@
  */
 
 export { CaptionTranslator } from './CaptionTranslator';
+export { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
+export { ThumbnailListPanel } from './components/ThumbnailListPanel';
 export type {
   SubtitleEntry,
   TranslationProgress,
   TTSProgress,
   ThumbnailFolderItem,
+  HardsubTimingMetrics,
   Step,
   ProcessStatus,
   ProcessingMode,
