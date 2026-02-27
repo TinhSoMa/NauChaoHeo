@@ -33,6 +33,10 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
   const logoBoundsRef = useRef<{ cx: number; cy: number; hw: number; hh: number } | null>(null);
   // Stores corner-drag start data
   const cornerDragRef = useRef<{ initialDist: number; initialScale: number } | null>(null);
+  // Video metadata for frame scrubbing (path, fps, duration) — không trigger re-render
+  const videoMetaRef = useRef<{ path: string; fps: number; duration: number } | null>(null);
+
+  const [frameTimeSec, setFrameTimeSec] = useState(0);
 
   const [state, setState] = useState<SubtitlePreviewState>({
     frameData: null,
@@ -117,6 +121,13 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       if (metaRes?.success && metaRes.data) {
         vw = metaRes.data.width;
         vh = metaRes.data.actualHeight || metaRes.data.height || 1080;
+        // Lưu metadata để scrubber dùng sau
+        videoMetaRef.current = {
+          path: videoPath,
+          fps: metaRes.data.fps || 30,
+          duration: metaRes.data.duration || 0,
+        };
+        setFrameTimeSec(0);
       }
 
       const frameRes = await api.extractFrame(videoPath);
@@ -154,6 +165,29 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       setState(prev => ({ ...prev, isLoading: false, error: `${e}` }));
     }
   }, [localBlackoutTop, onPositionChange]);
+
+  // Chỉ thay ảnh nền canvas — KHÔNG reset subtitlePosition, KHÔNG gọi onPositionChange
+  const loadFrameAt = useCallback(async (timeSec: number) => {
+    const meta = videoMetaRef.current;
+    if (!meta) return;
+    setState(prev => ({ ...prev, isLoading: true }));
+    try {
+      const api = (window.electronAPI as any).captionVideo;
+      const frameNumber = Math.round(timeSec * meta.fps);
+      const frameRes = await api.extractFrame(meta.path, frameNumber);
+      if (frameRes?.success && frameRes.data) {
+        const fd = frameRes.data.frameData.startsWith('data:')
+          ? frameRes.data.frameData
+          : `data:image/png;base64,${frameRes.data.frameData}`;
+        // Chỉ cập nhật frameData, spread prev giữ nguyên subtitlePosition/videoSize
+        setState(prev => ({ ...prev, frameData: fd, isLoading: false }));
+      } else {
+        setState(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, []);
 
   // Helper: convert canvas Y to video fraction (0-1)
   const canvasYToFraction = useCallback((cy: number) => {
@@ -635,6 +669,10 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     blackoutTop: localBlackoutTop,
     logoScale: localLogoScale,
     loadPreview,
+    loadFrameAt,
+    frameTimeSec,
+    setFrameTimeSec,
+    videoDuration: videoMetaRef.current?.duration ?? 0,
     resetToCenter,
     clearBlackout,
     handleMouseDown,

@@ -191,6 +191,25 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
         </div>
       </div>
 
+      {preview.frameData && (
+        <div className={styles.scrubberRow}>
+          <span className={styles.scrubberLabel}>{preview.frameTimeSec.toFixed(1)}s</span>
+          <input
+            type="range"
+            className={styles.scrubber}
+            min={0}
+            max={Math.min(5, preview.videoDuration || 5)}
+            step={0.1}
+            value={preview.frameTimeSec}
+            onChange={e => preview.setFrameTimeSec(parseFloat(e.target.value))}
+            onMouseUp={e => preview.loadFrameAt(parseFloat((e.target as HTMLInputElement).value))}
+            onTouchEnd={e => preview.loadFrameAt(parseFloat((e.target as HTMLInputElement).value))}
+            title="Chọn frame xem trước trong 5s đầu video"
+          />
+          <span className={styles.scrubberHint}>5s đầu</span>
+        </div>
+      )}
+
       {!videoPath && (
         <div className={styles.hint}>
           Chọn thư mục CapCut có video để xem preview
