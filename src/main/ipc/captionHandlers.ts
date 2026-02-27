@@ -25,6 +25,121 @@ interface IpcResponse<T = unknown> {
   error?: string;
 }
 
+function decodeUtf16Be(input: Buffer): string {
+  if (input.length < 2) {
+    return '';
+  }
+  const le = Buffer.allocUnsafe(input.length);
+  for (let i = 0; i + 1 < input.length; i += 2) {
+    le[i] = input[i + 1];
+    le[i + 1] = input[i];
+  }
+  return le.toString('utf16le').replace(/\u0000/g, '').trim();
+}
+
+async function extractFontFamilyName(fontPath: string): Promise<string | null> {
+  try {
+    const fs = await import('fs/promises');
+    const buffer = await fs.readFile(fontPath);
+    if (buffer.length < 12) {
+      return null;
+    }
+
+    const numTables = buffer.readUInt16BE(4);
+    let nameTableOffset = -1;
+    let nameTableLength = 0;
+    let recordOffset = 12;
+
+    for (let i = 0; i < numTables; i++) {
+      const tag = buffer.toString('ascii', recordOffset, recordOffset + 4);
+      const tableOffset = buffer.readUInt32BE(recordOffset + 8);
+      const tableLength = buffer.readUInt32BE(recordOffset + 12);
+      if (tag === 'name') {
+        nameTableOffset = tableOffset;
+        nameTableLength = tableLength;
+        break;
+      }
+      recordOffset += 16;
+    }
+
+    if (nameTableOffset < 0 || nameTableLength <= 0) {
+      return null;
+    }
+
+    const count = buffer.readUInt16BE(nameTableOffset + 2);
+    const stringOffset = buffer.readUInt16BE(nameTableOffset + 4);
+    const recordsStart = nameTableOffset + 6;
+    const stringsStart = nameTableOffset + stringOffset;
+
+    const candidates: string[] = [];
+    const fallback: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const rec = recordsStart + i * 12;
+      const platformId = buffer.readUInt16BE(rec);
+      const encodingId = buffer.readUInt16BE(rec + 2);
+      const languageId = buffer.readUInt16BE(rec + 4);
+      const nameId = buffer.readUInt16BE(rec + 6);
+      const length = buffer.readUInt16BE(rec + 8);
+      const offset = buffer.readUInt16BE(rec + 10);
+
+      if (nameId !== 1 || length <= 0) {
+        continue;
+      }
+
+      const start = stringsStart + offset;
+      const end = start + length;
+      if (start < 0 || end > buffer.length) {
+        continue;
+      }
+
+      const raw = buffer.subarray(start, end);
+      let decoded = '';
+      if (platformId === 3) {
+        decoded = decodeUtf16Be(raw);
+      } else if (platformId === 1 || encodingId === 0) {
+        decoded = raw.toString('latin1').replace(/\u0000/g, '').trim();
+      } else {
+        decoded = raw.toString('utf8').replace(/\u0000/g, '').trim();
+      }
+
+      if (!decoded) {
+        continue;
+      }
+
+      if (platformId === 3 && languageId === 0x0409) {
+        candidates.push(decoded);
+      } else {
+        fallback.push(decoded);
+      }
+    }
+
+    return candidates[0] || fallback[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveCaptionFontsDir(
+  pathMod: typeof import('path'),
+  fsMod: typeof import('fs')
+): string | null {
+  const candidates = [
+    pathMod.join(process.resourcesPath || '', 'fonts'),
+    pathMod.join(process.cwd(), 'resources', 'fonts'),
+    pathMod.join(__dirname, '../../resources/fonts'),
+    pathMod.resolve(__dirname, '../../../resources/fonts'),
+    pathMod.resolve('resources', 'fonts'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fsMod.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 /**
  * Đăng ký tất cả IPC handlers cho Caption
  */
@@ -234,6 +349,7 @@ export function registerCaptionHandlers(): void {
         thumbnailEnabled?: boolean;
         thumbnailTimeSec?: number;
         thumbnailText?: string;
+        thumbnailFontName?: string;
       }
     ): Promise<IpcResponse<{ outputPath: string; duration: number }>> => {
       console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);
@@ -302,24 +418,33 @@ export function registerCaptionHandlers(): void {
         const fs = await import('fs');
         const path = await import('path');
 
-        const fontsDir = process.env.NODE_ENV === 'development'
-          ? path.join(__dirname, '../../resources/fonts')
-          : path.join(process.resourcesPath, 'fonts');
+        const fontsDir = resolveCaptionFontsDir(path, fs);
         
-        if (!fs.existsSync(fontsDir)) {
+        if (!fontsDir || !fs.existsSync(fontsDir)) {
           return { success: true, data: ['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto'] }; // fallback
         }
 
         const files = await fs.promises.readdir(fontsDir);
-        const fonts = files
-          .filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'))
-          .map(f => f.substring(0, f.lastIndexOf('.'))); // remove extension
+        const fontFiles = files.filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'));
+        const fonts: string[] = [];
+        for (const file of fontFiles) {
+          const familyName = await extractFontFamilyName(path.join(fontsDir, file));
+          const fallbackName = file.substring(0, file.lastIndexOf('.'));
+          fonts.push((familyName || fallbackName).trim());
+        }
+        const deduped = Array.from(new Set(fonts)).filter(Boolean);
         
         // Add defaults if missing
-        if (!fonts.includes('Be Vietnam Pro')) fonts.push('Be Vietnam Pro');
-        if (!fonts.includes('Roboto')) fonts.push('Roboto');
+        if (!deduped.includes('Be Vietnam Pro')) deduped.push('Be Vietnam Pro');
+        if (!deduped.includes('Roboto')) deduped.push('Roboto');
 
-        return { success: true, data: fonts };
+        console.log('[CaptionHandlers][Font] getAvailableFonts', {
+          fontsDir,
+          count: deduped.length,
+          fonts: deduped,
+        });
+
+        return { success: true, data: deduped };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi đọc thư mục fonts:', error);
         return { success: false, error: String(error) };
@@ -334,17 +459,37 @@ export function registerCaptionHandlers(): void {
         const fs = await import('fs');
         const path = await import('path');
 
-        const fontsDir = process.env.NODE_ENV === 'development'
-          ? path.join(__dirname, '../../resources/fonts')
-          : path.join(process.resourcesPath, 'fonts');
-          
-        const fontPath = path.join(fontsDir, `${fontName}.ttf`);
-        if (fs.existsSync(fontPath)) {
-          const buffer = await fs.promises.readFile(fontPath);
-          const base64 = buffer.toString('base64');
-          return { success: true, data: `data:font/truetype;charset=utf-8;base64,${base64}` };
+        const fontsDir = resolveCaptionFontsDir(path, fs);
+        if (!fontsDir || !fs.existsSync(fontsDir)) {
+          return { success: false, error: 'Fonts dir not found' };
         }
-        return { success: false, error: 'Font not found' };
+
+        const files = await fs.promises.readdir(fontsDir);
+        const fontFiles = files.filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'));
+
+        let matchedPath: string | null = null;
+        for (const file of fontFiles) {
+          const fullPath = path.join(fontsDir, file);
+          const familyName = await extractFontFamilyName(fullPath);
+          const fallbackName = file.substring(0, file.lastIndexOf('.'));
+          if (
+            (familyName && familyName.toLowerCase() === fontName.toLowerCase()) ||
+            fallbackName.toLowerCase() === fontName.toLowerCase()
+          ) {
+            matchedPath = fullPath;
+            break;
+          }
+        }
+
+        if (!matchedPath) {
+          return { success: false, error: `Font not found: ${fontName}` };
+        }
+
+        const ext = path.extname(matchedPath).toLowerCase();
+        const mime = ext === '.otf' ? 'font/otf' : 'font/truetype';
+        const buffer = await fs.promises.readFile(matchedPath);
+        const base64 = buffer.toString('base64');
+        return { success: true, data: `data:${mime};charset=utf-8;base64,${base64}` };
       } catch (error) {
         console.error(`[CaptionHandlers] Lỗi đọc font ${fontName}:`, error);
         return { success: false, error: String(error) };

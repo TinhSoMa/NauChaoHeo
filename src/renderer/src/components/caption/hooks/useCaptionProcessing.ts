@@ -111,6 +111,7 @@ interface UseCaptionProcessingProps {
     translateMethod?: 'api' | 'impit';
     thumbnailFrameTimeSec?: number | null;
     thumbnailText?: string;
+    thumbnailFontName?: string;
     thumbnailTextsByOrder?: string[];
   };
   enabledSteps: Set<Step>;
@@ -606,6 +607,7 @@ export function useCaptionProcessing({
           thumbnailEnabled,
           thumbnailTimeSec: settings.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
+          thumbnailFontName: settings.thumbnailFontName,
         });
 
         if (renderRes.success) {

@@ -23,9 +23,10 @@ export interface UseSubtitlePreviewOptions {
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
   thumbnailText?: string; // preview overlay ở trung tâm frame khi nhập thumbnail text
+  thumbnailFontName?: string; // font riêng cho thumbnail text
 }
 
-export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onLogoPositionChange, onLogoScaleChange, thumbnailText }: UseSubtitlePreviewOptions) {
+export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onLogoPositionChange, onLogoScaleChange, thumbnailText, thumbnailFontName }: UseSubtitlePreviewOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -416,8 +417,9 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     // ===== Thumbnail text overlay (preview only) =====
     if (thumbnailText?.trim()) {
       const thumbFontSize = Math.max(14, drawH * 0.07);
+      const thumbFont = thumbnailFontName?.trim() || style.fontName;
       ctx.save();
-      ctx.font = `bold ${thumbFontSize}px "${style.fontName}", Inter, sans-serif`;
+      ctx.font = `bold ${thumbFontSize}px "${thumbFont}", Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const centerX = offX + drawW / 2;
@@ -444,7 +446,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       ctx.setLineDash([]);
       ctx.restore();
     }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName]);
 
   // Load video frame image
   useEffect(() => {
@@ -500,42 +502,54 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     loadLogo();
   }, [logoPath, state.videoSize]);
 
-  // Load custom font
+  // Load custom fonts for preview (subtitle + thumbnail)
   useEffect(() => {
-    const fontName = style.fontName;
-    if (!fontName) return;
+    const loadFontByName = async (fontName: string) => {
+      const normalized = fontName?.trim();
+      if (!normalized) return;
 
-    const styleId = `preview-font-${fontName.replace(/\s+/g, '-')}`;
-    if (document.getElementById(styleId)) {
-      document.fonts.load(`12px "${fontName}"`).then(() => drawCanvas());
-      return;
-    }
+      const styleId = `preview-font-${normalized.replace(/\s+/g, '-')}`;
+      if (document.getElementById(styleId)) {
+        await document.fonts.load(`12px "${normalized}"`);
+        return;
+      }
 
-    const loadFont = async () => {
+      const res = await (window.electronAPI as any).captionVideo.getFontData(normalized);
+      if (!res?.success || !res.data) {
+        return;
+      }
+
+      const styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      const fontFormat = String(res.data).includes('font/otf') ? 'opentype' : 'truetype';
+      styleEl.innerHTML = `
+        @font-face {
+          font-family: '${normalized}';
+          src: url('${res.data}') format('${fontFormat}');
+        }
+      `;
+      document.head.appendChild(styleEl);
+      await document.fonts.load(`12px "${normalized}"`);
+    };
+
+    const run = async () => {
       try {
-        const res = await (window.electronAPI as any).captionVideo.getFontData(fontName);
-        if (res?.success && res.data) {
-          const styleEl = document.createElement('style');
-          styleEl.id = styleId;
-          styleEl.innerHTML = `
-            @font-face {
-              font-family: '${fontName}';
-              src: url('${res.data}') format('truetype');
-            }
-          `;
-          document.head.appendChild(styleEl);
-          
-          await document.fonts.load(`12px "${fontName}"`);
-          drawCanvas();
+        const fontsToLoad = Array.from(
+          new Set([style.fontName, thumbnailFontName].map(f => f?.trim()).filter(Boolean))
+        ) as string[];
+
+        for (const fontName of fontsToLoad) {
+          await loadFontByName(fontName);
         }
       } catch (e) {
         console.error('Lỗi tải font base64:', e);
+      } finally {
         drawCanvas();
       }
     };
 
-    loadFont();
-  }, [style.fontName, drawCanvas]);
+    run();
+  }, [style.fontName, thumbnailFontName, drawCanvas]);
 
   // Redraw on state changes
   useEffect(() => {

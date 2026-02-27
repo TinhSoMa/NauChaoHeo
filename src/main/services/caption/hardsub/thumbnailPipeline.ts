@@ -14,6 +14,7 @@ interface ThumbnailClipOptions {
   timeSec: number;
   durationSec: number;
   thumbnailText?: string;
+  thumbnailFontName?: string;
   width: number;
   height: number;
   fps?: number;
@@ -38,19 +39,55 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   const includeAudio = opts.includeAudio !== false;
 
   const escapeFilterPath = (p: string) => p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-  const resolveThumbnailFontPath = (): string | null => {
+  const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const resolveFontsDir = (): string | null => {
     const candidates = [
-      path.join(process.resourcesPath, 'fonts', 'BrightwallPersonal.ttf'),
-      path.join(app.getAppPath(), 'resources', 'fonts', 'BrightwallPersonal.ttf'),
-      path.join(process.cwd(), 'resources', 'fonts', 'BrightwallPersonal.ttf'),
-      path.resolve('resources', 'fonts', 'BrightwallPersonal.ttf'),
-    ];
+      path.join(process.resourcesPath || '', 'fonts'),
+      path.join(app.getAppPath(), 'resources', 'fonts'),
+      path.join(process.cwd(), 'resources', 'fonts'),
+      path.resolve('resources', 'fonts'),
+    ].filter(Boolean);
+
     for (const candidate of candidates) {
       if (existsSync(candidate)) {
         return candidate;
       }
     }
     return null;
+  };
+
+  const resolveThumbnailFontPath = async (fontName?: string): Promise<string | null> => {
+    const fontsDir = resolveFontsDir();
+    if (!fontsDir) {
+      return null;
+    }
+
+    const requestedName = (fontName?.trim() || 'BrightwallPersonal').trim();
+    const requestedNormalized = normalizeName(requestedName);
+
+    try {
+      const files = await fs.readdir(fontsDir);
+      const fontFiles = files.filter((file) => file.toLowerCase().endsWith('.ttf') || file.toLowerCase().endsWith('.otf'));
+
+      const exact = fontFiles.find((file) => normalizeName(path.parse(file).name) === requestedNormalized);
+      if (exact) {
+        return path.join(fontsDir, exact);
+      }
+
+      const close = fontFiles.find((file) => {
+        const base = normalizeName(path.parse(file).name);
+        return base.includes(requestedNormalized) || requestedNormalized.includes(base);
+      });
+      if (close) {
+        return path.join(fontsDir, close);
+      }
+
+      const fallback = fontFiles.find((file) => normalizeName(path.parse(file).name) === 'brightwallpersonal')
+        || fontFiles[0];
+      return fallback ? path.join(fontsDir, fallback) : null;
+    } catch {
+      return null;
+    }
   };
 
   const extractArgs = ['-y', '-ss', String(opts.timeSec), '-i', opts.videoPath, '-vframes', '1', '-q:v', '2', framePng];
@@ -76,14 +113,14 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
 
   const thumbnailFontSize = 145;
   const borderWidth = 4;
-  const thumbnailFontPath = resolveThumbnailFontPath();
+  const thumbnailFontPath = await resolveThumbnailFontPath(opts.thumbnailFontName);
   let textFilter = '';
   const baseVideoFilter = `scale=${safeW}:${safeH}`;
   if (opts.thumbnailText?.trim()) {
     const thumbnailText = opts.thumbnailText.trim();
     await fs.writeFile(textFilePath, thumbnailText, 'utf-8');
     if (!thumbnailFontPath) {
-      console.warn('[Thumbnail] Không tìm thấy BrightwallPersonal.ttf, fallback dùng font mặc định của hệ thống.');
+      console.warn('[Thumbnail] Không tìm thấy file font thumbnail, fallback dùng font mặc định của hệ thống.');
     }
     const fontParam = thumbnailFontPath ? `fontfile='${escapeFilterPath(thumbnailFontPath)}':` : '';
     textFilter =
@@ -96,7 +133,7 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   console.log(
     `[Thumbnail] create clip params | timeSec=${opts.timeSec}, durationSec=${opts.durationSec}, ` +
     `size=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, textLength=${thumbTextLog.length}, textPreview="${thumbTextLog.preview}", ` +
-    `font=${thumbnailFontPath || 'system-default'}, fontSize=${thumbnailFontSize}, fontColor=yellow, border=${borderWidth}`
+    `fontName=${opts.thumbnailFontName || 'BrightwallPersonal'}, fontFile=${thumbnailFontPath || 'system-default'}, fontSize=${thumbnailFontSize}, fontColor=yellow, border=${borderWidth}`
   );
 
   const clipArgs = includeAudio
@@ -267,7 +304,11 @@ export async function applyThumbnailPostProcess(
   const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
   console.log(
     `[VideoRenderer] 🖼 Tạo thumbnail tại ${options.thumbnailTimeSec}s`,
-    { textLength: thumbTextLog.length, textPreview: thumbTextLog.preview }
+    {
+      textLength: thumbTextLog.length,
+      textPreview: thumbTextLog.preview,
+      thumbnailFontName: options.thumbnailFontName || 'BrightwallPersonal',
+    }
   );
 
   const thumbResult = await createThumbnailClip({
@@ -275,6 +316,7 @@ export async function applyThumbnailPostProcess(
     timeSec: options.thumbnailTimeSec,
     durationSec: 0.2,
     thumbnailText: options.thumbnailText,
+    thumbnailFontName: options.thumbnailFontName,
     width: outputMeta.metadata.width,
     height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
     fps: outputMeta.metadata.fps,
@@ -299,4 +341,3 @@ export async function applyThumbnailPostProcess(
   console.log('[VideoRenderer] ✅ Thumbnail đã ghép thành công');
   return result;
 }
-

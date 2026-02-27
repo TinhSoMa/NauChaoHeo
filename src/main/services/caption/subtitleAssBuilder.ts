@@ -48,6 +48,24 @@ function parseScaleFromSrtFileName(srtPath: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function resolveCaptionFontsDir(): string | null {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'fonts'),
+    path.join(app.getAppPath(), 'resources', 'fonts'),
+    path.join(process.cwd(), 'resources', 'fonts'),
+    path.resolve(__dirname, '../../../../../resources/fonts'),
+    path.resolve('resources', 'fonts'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Tính duration và export file ASS tạm để sử dụng trong bộ lọc FFmpeg
  */
@@ -196,6 +214,7 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   }
 
   const s = options.style || { fontName: 'Arial', fontSize: 48, fontColor: '#FFFF00', shadow: 2, marginV: 0, alignment: 5 };
+  console.log(`[VideoRenderer][Font] ASS font selected: "${s.fontName}"`);
   let effectiveFontSize = Math.round(s.fontSize * scaleFactor);
   let effectiveShadow = Math.max(0, Math.round(s.shadow * scaleFactor));
   let effectiveOutline = Math.max(1, Math.round(2 * scaleFactor));
@@ -297,14 +316,17 @@ export function getSubtitleFilter(tempAssPath: string) {
   const assPathEscaped = tempAssPath.replace(/\\/g, '/').replace(/:/g, '\\:');
   let fontsDirParam = '';
   try {
-    const fontsDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'fonts')
-      : path.join(app.getAppPath(), 'resources', 'fonts');
-    if (existsSync(fontsDir)) {
+    const fontsDir = resolveCaptionFontsDir();
+    if (fontsDir && existsSync(fontsDir)) {
       const fontsDirEscaped = fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:');
       fontsDirParam = `:fontsdir='${fontsDirEscaped}'`;
+      console.log(`[VideoRenderer][Font] ASS fontsdir: ${fontsDir}`);
+    } else {
+      console.warn('[VideoRenderer][Font] Không tìm thấy resources/fonts. FFmpeg có thể fallback font mặc định.');
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[VideoRenderer][Font] Lỗi resolve fontsdir:', e);
+  }
 
   return `ass='${assPathEscaped}'${fontsDirParam}`;
 }

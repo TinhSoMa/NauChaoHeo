@@ -29,13 +29,14 @@ interface SubtitlePreviewProps {
   onRemoveLogo?: () => void;
   // Thumbnail
   thumbnailText?: string;
+  thumbnailFontName?: string;
   onThumbnailTextChange?: (text: string) => void;
   thumbnailTextReadOnly?: boolean;
   thumbnailTextHelper?: string;
   onFrameTimeChange?: (timeSec: number | null) => void;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
   const preview = useSubtitlePreview({
     style,
     entries,
@@ -48,6 +49,7 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
     onLogoPositionChange,
     onLogoScaleChange,
     thumbnailText,
+    thumbnailFontName,
   });
 
   // Load preview when video path changes — khi video load xong, kích hoạt thumbnail ở frame 0

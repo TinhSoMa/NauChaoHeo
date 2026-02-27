@@ -338,6 +338,7 @@ export interface RenderVideoOptions {
   thumbnailEnabled?: boolean; // Có prepend thumbnail 0.2s vào đầu video không
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
   thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
+  thumbnailFontName?: string; // Font riêng cho thumbnail text (tách biệt với subtitle font)
 }
 
 /**

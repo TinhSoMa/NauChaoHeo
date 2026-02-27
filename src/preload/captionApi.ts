@@ -183,6 +183,7 @@ export interface CaptionVideoAPI {
     thumbnailEnabled?: boolean;
     thumbnailTimeSec?: number;
     thumbnailText?: string;
+    thumbnailFontName?: string;
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number }>>;
 
   // Listen to render progress

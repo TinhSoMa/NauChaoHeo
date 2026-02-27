@@ -54,6 +54,7 @@ export function useCaptionSettings() {
   const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0); // Render Audio Speed
   const [videoVolume, setVideoVolume] = useState<number>(100);
   const [audioVolume, setAudioVolume] = useState<number>(100);
+  const [thumbnailFontName, setThumbnailFontName] = useState<string>('BrightwallPersonal');
 
   const [logoPath, setLogoPathState] = useState<string | undefined>(undefined);
   const [logoPosition, setLogoPositionState] = useState<{ x: number; y: number } | undefined>(undefined);
@@ -115,6 +116,7 @@ export function useCaptionSettings() {
     renderAudioSpeed?: number;
     videoVolume?: number;
     audioVolume?: number;
+    thumbnailFontName?: string;
     translateMethod?: 'api' | 'impit';
   }>({
     feature: 'caption',
@@ -142,6 +144,7 @@ export function useCaptionSettings() {
       renderAudioSpeed,
       videoVolume,
       audioVolume,
+      thumbnailFontName,
       // logo fields are global — saved via appSettings, not per-project
     }),
     deserialize: (saved) => {
@@ -167,11 +170,14 @@ export function useCaptionSettings() {
       if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
       if (typeof saved.videoVolume === 'number') setVideoVolume(saved.videoVolume);
       if (typeof saved.audioVolume === 'number') setAudioVolume(saved.audioVolume);
+      if (typeof saved.thumbnailFontName === 'string' && saved.thumbnailFontName.trim().length > 0) {
+        setThumbnailFontName(saved.thumbnailFontName);
+      }
       // logo fields are global — loaded from appSettings, not per-project
     },
     deps: [
       srtSpeed, splitByLines, linesPerFile, numberOfParts, enabledSteps, audioDir, autoFitAudio,
-      hardwareAcceleration, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume,
+      hardwareAcceleration, style, renderMode, renderResolution, blackoutTop, audioSpeed, renderAudioSpeed, videoVolume, audioVolume, thumbnailFontName,
       translateMethod
     ],
   });
@@ -199,6 +205,7 @@ export function useCaptionSettings() {
     renderAudioSpeed, setRenderAudioSpeed,
     videoVolume, setVideoVolume,
     audioVolume, setAudioVolume,
+    thumbnailFontName, setThumbnailFontName,
     logoPath, setLogoPath,
     logoPosition, setLogoPosition,
     logoScale, setLogoScale,

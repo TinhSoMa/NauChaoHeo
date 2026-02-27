@@ -60,7 +60,7 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
 
       <div className={styles.grid2} style={{ marginBottom: 12 }}>
         <div className={styles.inputGroup}>
-          <span className={styles.label}>Font Chữ</span>
+          <span className={styles.label}>Font Subtitle</span>
           <select
             className={styles.select}
             value={settings.style?.fontName || 'ZYVNA Fairy'}
@@ -71,6 +71,21 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             ))}
           </select>
         </div>
+        <div className={styles.inputGroup}>
+          <span className={styles.label}>Font Thumbnail</span>
+          <select
+            className={styles.select}
+            value={settings.thumbnailFontName || 'BrightwallPersonal'}
+            onChange={e => settings.setThumbnailFontName(e.target.value)}
+          >
+            {props.availableFonts.map(font => (
+              <option key={`thumb-${font}`} value={font}>{font}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className={styles.grid2} style={{ marginBottom: 12 }}>
         <div className={styles.inputGroup}>
           <span className={styles.label}>
             Font Size (px)
@@ -236,6 +251,7 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
           logoPath={settings.logoPath}
           logoPosition={settings.logoPosition}
           logoScale={settings.logoScale}
+          thumbnailFontName={settings.thumbnailFontName}
           onPositionChange={props.onSubtitlePositionChange}
           onBlackoutChange={settings.setBlackoutTop}
           onRenderResolutionChange={settings.setRenderResolution}
@@ -253,4 +269,3 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
     </div>
   );
 }
-
