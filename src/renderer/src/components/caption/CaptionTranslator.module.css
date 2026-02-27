@@ -253,3 +253,136 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.thumbnailListSection {
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--color-surface);
+}
+
+.thumbnailListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.thumbnailListHint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+.thumbnailListTable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thumbnailAutoFillRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.thumbnailAutoFillInput {
+  flex: 1;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+.thumbnailAutoFillInput:focus {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.thumbnailAutoFillBtn {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.thumbnailAutoFillBtn:hover {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.thumbnailListRowHead,
+.thumbnailListRow {
+  display: grid;
+  grid-template-columns: 44px minmax(130px, 1fr) minmax(180px, 1fr) minmax(220px, 1.5fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.thumbnailListRowHead {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  padding: 0 2px;
+}
+
+.thumbnailListRow {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--color-card);
+}
+
+.thumbnailListRowError {
+  border-color: var(--color-error, #ef4444);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+
+.thumbnailListIdx {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.thumbnailListFolder,
+.thumbnailListVideo {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thumbnailListVideo {
+  color: var(--color-text-secondary);
+}
+
+.thumbnailListInput {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+.thumbnailListInput:focus {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.thumbnailListWarning {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--color-warning, #f59e0b);
+}

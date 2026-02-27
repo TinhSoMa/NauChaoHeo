@@ -22,6 +22,15 @@ export interface TTSProgress {
   message: string;
 }
 
+export interface ThumbnailFolderItem {
+  index: number;
+  folderPath: string;
+  folderName: string;
+  videoName: string;
+  text: string;
+  hasError: boolean;
+}
+
 export type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type ProcessStatus = 'idle' | 'running' | 'success' | 'error';
 export type ProcessingMode = 'folder-first' | 'step-first';

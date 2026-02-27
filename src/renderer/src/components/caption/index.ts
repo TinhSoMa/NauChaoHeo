@@ -3,4 +3,13 @@
  */
 
 export { CaptionTranslator } from './CaptionTranslator';
+export type {
+  SubtitleEntry,
+  TranslationProgress,
+  TTSProgress,
+  ThumbnailFolderItem,
+  Step,
+  ProcessStatus,
+  ProcessingMode,
+} from './CaptionTypes';
 

@@ -111,6 +111,7 @@ interface UseCaptionProcessingProps {
     translateMethod?: 'api' | 'impit';
     thumbnailFrameTimeSec?: number | null;
     thumbnailText?: string;
+    thumbnailTextsByOrder?: string[];
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
@@ -205,10 +206,40 @@ export function useCaptionProcessing({
     const inputPaths = inputType === 'draft' && filePath ? filePath.split('; ') : [filePath];
     const totalFolders = inputPaths.length;
     const isMulti = totalFolders > 1;
+    const step7Enabled = steps.includes(7);
+    const thumbnailEnabled = settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined;
 
     // Xóa audioFiles cũ khi chạy multi-folder để tránh dùng nhầm dữ liệu cũ
     if (isMulti) {
       setAudioFiles([]);
+    }
+
+    if (isMulti && step7Enabled && thumbnailEnabled) {
+      const thumbnailTextsByOrder = settings.thumbnailTextsByOrder || [];
+      const missingFolders: string[] = [];
+
+      for (let i = 0; i < inputPaths.length; i++) {
+        const folderName = inputPaths[i].split(/[/\\]/).pop() || `Folder ${i + 1}`;
+        const text = (thumbnailTextsByOrder[i] || '').trim();
+        if (!text) {
+          missingFolders.push(`[${i + 1}] ${folderName}`);
+        }
+      }
+
+      if (thumbnailTextsByOrder.length !== totalFolders || missingFolders.length > 0) {
+        const mismatchMsg = thumbnailTextsByOrder.length !== totalFolders
+          ? `Số lượng text (${thumbnailTextsByOrder.length}) không khớp số folder (${totalFolders}).`
+          : '';
+        const missingMsg = missingFolders.length > 0
+          ? `Thiếu text cho: ${missingFolders.join(', ')}.`
+          : '';
+        const finalMessage = `Lỗi cấu hình thumbnail multi-folder. ${mismatchMsg} ${missingMsg}`.trim();
+        setStatus('error');
+        setCurrentStep(null);
+        setCurrentFolder(null);
+        setProgress({ current: 0, total: totalFolders, message: finalMessage });
+        return;
+      }
     }
 
     // ========== PER-FOLDER STATE MAP (dùng cho step-first mode) ==========
@@ -537,6 +568,13 @@ export function useCaptionProcessing({
 
         setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
 
+        const thumbnailTextForRender = isMulti
+          ? (settings.thumbnailTextsByOrder?.[folderIdx] || '').trim()
+          : (settings.thumbnailText || '').trim();
+        console.log(
+          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, text="${thumbnailTextForRender}"`
+        );
+
         // @ts-ignore
         const renderRes = await window.electronAPI.captionVideo.renderVideo({
           srtPath: srtFileForVideo,
@@ -565,9 +603,9 @@ export function useCaptionProcessing({
           logoPath: settings.logoPath,
           logoPosition: settings.logoPosition,
           logoScale: settings.logoScale,
-          thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
+          thumbnailEnabled,
           thumbnailTimeSec: settings.thumbnailFrameTimeSec ?? undefined,
-          thumbnailText: settings.thumbnailText,
+          thumbnailText: thumbnailTextForRender,
         });
 
         if (renderRes.success) {

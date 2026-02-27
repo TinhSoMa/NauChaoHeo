@@ -30,10 +30,12 @@ interface SubtitlePreviewProps {
   // Thumbnail
   thumbnailText?: string;
   onThumbnailTextChange?: (text: string) => void;
+  thumbnailTextReadOnly?: boolean;
+  thumbnailTextHelper?: string;
   onFrameTimeChange?: (timeSec: number | null) => void;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, onThumbnailTextChange, onFrameTimeChange }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
   const preview = useSubtitlePreview({
     style,
     entries,
@@ -231,12 +233,20 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
             <input
               type="text"
               className={styles.thumbnailTextInput}
-              placeholder="Tiêu đề video... (bỏ trống = không có chữ)"
+              placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh text ở danh sách phía trên' : 'Tiêu đề video... (bỏ trống = không có chữ)'}
               value={thumbnailText || ''}
               onChange={e => onThumbnailTextChange?.(e.target.value)}
-              title="Văn bản hiển thị ở trung tâm thumbnail 0.2s đầu video"
+              readOnly={!!thumbnailTextReadOnly}
+              title={thumbnailTextReadOnly
+                ? 'Đang ở chế độ multi-folder: text này chỉ để preview, hãy chỉnh trong danh sách theo folder'
+                : 'Văn bản hiển thị ở trung tâm thumbnail 0.2s đầu video'}
             />
           </div>
+          {thumbnailTextHelper && (
+            <div className={styles.scrubberHint} style={{ marginTop: 4 }}>
+              {thumbnailTextHelper}
+            </div>
+          )}
         </>
       )}
 

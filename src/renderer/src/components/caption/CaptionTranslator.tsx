@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import folderIconUrl from '../../../../../resources/icons/folder.svg';
@@ -15,7 +15,7 @@ import {
   STEP_LABELS,
   LINES_PER_FILE_OPTIONS,
 } from '../../config/captionConfig';
-import { Step } from './CaptionTypes';
+import { Step, ThumbnailFolderItem } from './CaptionTypes';
 import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
@@ -41,6 +41,9 @@ export function CaptionTranslator() {
   // 3b. Thumbnail State
   const [thumbnailFrameTimeSec, setThumbnailFrameTimeSec] = useState<number | null>(null);
   const [thumbnailText, setThumbnailText] = useState('');
+  const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
+  const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
+  const [thumbnailAutoStartValue, setThumbnailAutoStartValue] = useState('');
 
   // 4. Processing Hook
   const processing = useCaptionProcessing({
@@ -49,7 +52,7 @@ export function CaptionTranslator() {
     filePath: fileManager.filePath,
     inputType: settings.inputType,
     captionFolder,
-    settings: { ...settings, subtitlePosition, thumbnailFrameTimeSec, thumbnailText },
+    settings: { ...settings, subtitlePosition, thumbnailFrameTimeSec, thumbnailText, thumbnailTextsByOrder },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
   });
@@ -130,10 +133,47 @@ export function CaptionTranslator() {
   const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
   const [diskSubtitleDuration, setDiskSubtitleDuration] = useState<number | null>(null);
 
+  const selectedDraftPaths = useMemo(
+    () => (settings.inputType === 'draft' && fileManager.filePath ? fileManager.filePath.split('; ') : []),
+    [settings.inputType, fileManager.filePath]
+  );
+
   // Section 6 (Cấu hình) luôn dùng folder đầu tiên làm tham chiếu cấu hình.
   // Folder đang xử lý (processing.currentFolder) chỉ dùng cho progress badge ở Section 7.
-  const firstFolderPath = fileManager.filePath?.split('; ')[0] ?? '';
-  const isMultiFolder = (fileManager.filePath?.split('; ').length ?? 0) > 1;
+  const firstFolderPath = selectedDraftPaths[0] ?? '';
+  const isMultiFolder = selectedDraftPaths.length > 1;
+  const isThumbnailEnabled = thumbnailFrameTimeSec !== null && thumbnailFrameTimeSec !== undefined;
+
+  useEffect(() => {
+    const changed = selectedDraftPaths.length !== folderOrderSnapshot.length
+      || selectedDraftPaths.some((path, idx) => path !== folderOrderSnapshot[idx]);
+    if (!changed) return;
+
+    setFolderOrderSnapshot(selectedDraftPaths);
+    setThumbnailTextsByOrder(new Array(selectedDraftPaths.length).fill(''));
+  }, [selectedDraftPaths, folderOrderSnapshot]);
+
+  const updateThumbnailTextByOrder = (idx: number, value: string) => {
+    setThumbnailTextsByOrder(prev => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill('');
+      next[idx] = value;
+      return next;
+    });
+  };
+
+  const handleAutoFillThumbnailByEpisode = () => {
+    const normalized = thumbnailAutoStartValue.trim();
+    const match = normalized.match(/-?\d+/);
+    if (!match) return;
+
+    const startEpisode = Number.parseInt(match[0], 10);
+    if (!Number.isFinite(startEpisode)) return;
+
+    const generated = selectedDraftPaths.map((_, idx) => `Tập ${startEpisode + idx}`);
+    setThumbnailTextsByOrder(generated);
+  };
 
   // Khi đang xử lý multi-folder, dùng path của folder đang xử lý để hiển thị thông số video chính xác.
   // Khi idle, hiển thị folder đầu tiên trong danh sách.
@@ -145,6 +185,24 @@ export function CaptionTranslator() {
   const displayOutputDir = settings.inputType === 'srt'
     ? (displayPath ? displayPath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
     : (displayPath ? `${displayPath}/caption_output` : '');
+
+  const thumbnailFolderItems: ThumbnailFolderItem[] = isMultiFolder
+    ? selectedDraftPaths.map((folderPath, idx) => {
+        const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
+        const videoName = fileManager.folderVideos[folderPath]?.name || 'Chưa tìm thấy video';
+        const text = thumbnailTextsByOrder[idx] || '';
+        return {
+          index: idx + 1,
+          folderPath,
+          folderName,
+          videoName,
+          text,
+          hasError: isThumbnailEnabled && !text.trim(),
+        };
+      })
+    : [];
+
+  const hasMissingThumbnailText = thumbnailFolderItems.some(item => item.hasError);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -745,6 +803,65 @@ export function CaptionTranslator() {
                  </div>
                </div>
             </div>
+            {settings.renderMode === 'hardsub' && settings.inputType === 'draft' && isMultiFolder && (
+              <div className={styles.thumbnailListSection}>
+                <div className={styles.thumbnailListHeader}>
+                  <span>Danh sách Thumbnail theo folder</span>
+                  <span className={styles.thumbnailListHint}>Map theo thứ tự folder đã chọn</span>
+                </div>
+                <div className={styles.thumbnailAutoFillRow}>
+                  <input
+                    type="text"
+                    className={styles.thumbnailAutoFillInput}
+                    value={thumbnailAutoStartValue}
+                    onChange={(e) => setThumbnailAutoStartValue(e.target.value)}
+                    placeholder="Nhập số bắt đầu (vd: 4 hoặc 1.)"
+                  />
+                  <button
+                    type="button"
+                    className={styles.thumbnailAutoFillBtn}
+                    onClick={handleAutoFillThumbnailByEpisode}
+                    title="Tự động điền theo mẫu Tập N, Tập N+1..."
+                  >
+                    Tự động điền Tập
+                  </button>
+                </div>
+                <div className={styles.thumbnailListTable}>
+                  <div className={styles.thumbnailListRowHead}>
+                    <span>STT</span>
+                    <span>Folder</span>
+                    <span>Video</span>
+                    <span>Thumbnail text</span>
+                  </div>
+                  {thumbnailFolderItems.map(item => (
+                    <div
+                      key={`${item.folderPath}-${item.index}`}
+                      className={`${styles.thumbnailListRow} ${item.hasError ? styles.thumbnailListRowError : ''}`}
+                    >
+                      <span className={styles.thumbnailListIdx}>{item.index}</span>
+                      <span className={styles.thumbnailListFolder} title={item.folderPath}>
+                        {item.folderName}
+                      </span>
+                      <span className={styles.thumbnailListVideo} title={item.videoName}>
+                        {item.videoName}
+                      </span>
+                      <input
+                        type="text"
+                        className={styles.thumbnailListInput}
+                        value={item.text}
+                        onChange={(e) => updateThumbnailTextByOrder(item.index - 1, e.target.value)}
+                        placeholder="Nhập text thumbnail cho folder này..."
+                      />
+                    </div>
+                  ))}
+                </div>
+                {isThumbnailEnabled && hasMissingThumbnailText && (
+                  <div className={styles.thumbnailListWarning}>
+                    Thiếu thumbnail text ở một hoặc nhiều folder. Step 7 sẽ bị chặn cho đến khi nhập đủ.
+                  </div>
+                )}
+              </div>
+            )}
             {/* Subtitle Preview (hardsub only) */}
             {settings.renderMode === 'hardsub' && settings.inputType === 'draft' && (
               <SubtitlePreview
@@ -761,8 +878,10 @@ export function CaptionTranslator() {
                 onRenderResolutionChange={settings.setRenderResolution}
                 onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
                 onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
-                thumbnailText={thumbnailText}
-                onThumbnailTextChange={setThumbnailText}
+                thumbnailText={isMultiFolder ? (thumbnailTextsByOrder[0] || '') : thumbnailText}
+                onThumbnailTextChange={isMultiFolder ? undefined : setThumbnailText}
+                thumbnailTextReadOnly={isMultiFolder}
+                thumbnailTextHelper={isMultiFolder ? 'Multi-folder: nhập text riêng cho từng folder trong danh sách phía trên.' : undefined}
                 onFrameTimeChange={(t) => setThumbnailFrameTimeSec(t)}
                 onSelectLogo={async () => {
                   const result = await (window.electronAPI as any).invoke('dialog:openFile', {

@@ -290,6 +290,15 @@ function roundValue(value: number | null | undefined): number | null {
   return Math.round(value * 1000) / 1000;
 }
 
+function summarizeThumbnailTextForLog(text?: string): { length: number; preview: string } {
+  const normalized = (text || '').replace(/\s+/g, ' ').trim();
+  const preview = normalized.length > 80 ? `${normalized.slice(0, 80)}...` : normalized;
+  return {
+    length: normalized.length,
+    preview,
+  };
+}
+
 async function writeHardsubTimingJson(outputVideoPath: string, payload: unknown): Promise<string> {
   const ext = path.extname(outputVideoPath);
   const base = outputVideoPath.slice(0, outputVideoPath.length - ext.length);
@@ -827,9 +836,10 @@ async function createThumbnailClip(opts: {
       `text_shaping=1:fix_bounds=1:x=(w-text_w)/2:y=(h-text_h)/2`;
   }
   const finalVideoFilter = `${baseVideoFilter}${textFilter}`;
+  const thumbTextLog = summarizeThumbnailTextForLog(opts.thumbnailText);
   console.log(
     `[Thumbnail] create clip params | timeSec=${opts.timeSec}, durationSec=${opts.durationSec}, ` +
-    `size=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, text="${opts.thumbnailText || ''}", ` +
+    `size=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, textLength=${thumbTextLog.length}, textPreview="${thumbTextLog.preview}", ` +
     `font=${thumbnailFontPath || 'system-default'}, fontSize=${thumbnailFontSize}, fontColor=yellow, border=${borderWidth}`
   );
 
@@ -1032,7 +1042,11 @@ export async function renderVideo(
       duration: outputMeta.metadata.duration,
     });
 
-    console.log(`[VideoRenderer] 🖼 Tạo thumbnail tại ${options.thumbnailTimeSec}s, text="${options.thumbnailText || ''}"...`);
+    const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
+    console.log(
+      `[VideoRenderer] 🖼 Tạo thumbnail tại ${options.thumbnailTimeSec}s`,
+      { textLength: thumbTextLog.length, textPreview: thumbTextLog.preview }
+    );
     const thumbWidth = outputMeta.metadata.width;
     const thumbHeight = outputMeta.metadata.actualHeight || outputMeta.metadata.height;
     const thumbResult = await createThumbnailClip({
