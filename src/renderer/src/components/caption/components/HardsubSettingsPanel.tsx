@@ -94,6 +94,23 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
         </div>
       </div>
 
+      <div className={styles.grid2} style={{ marginBottom: 12 }}>
+        <div className={styles.inputGroup}>
+          <span className={styles.label}>Thời lượng Thumbnail (giây)</span>
+          <Input
+            type="number"
+            min={0.1}
+            max={10}
+            step={0.1}
+            value={settings.thumbnailDurationSec ?? 0.5}
+            onChange={(e) => settings.setThumbnailDurationSec?.(Number(e.target.value))}
+          />
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
+            Áp dụng cho đoạn thumbnail chèn vào đầu video (mặc định 0.5s).
+          </div>
+        </div>
+      </div>
+
       {settings.renderMode === 'hardsub_portrait_9_16' && (
         <div className={styles.grid2} style={{ marginBottom: 12 }}>
           <div className={styles.inputGroup} style={{ gridColumn: '1 / span 2' }}>
@@ -280,6 +297,7 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
           videoPath={props.firstVideoPath}
           style={settings.style}
           entries={props.entries}
+          subtitlePosition={settings.subtitlePosition}
           blackoutTop={settings.blackoutTop}
           renderMode={settings.renderMode}
           renderResolution={settings.renderResolution}

@@ -320,7 +320,7 @@ export interface RenderVideoOptions {
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
-  blackoutTop?: number;   // Vùng tô đen: tỉ lệ 0-1 từ trên xuống, VD 0.85 = che 15% dưới video
+  blackoutTop?: number;   // Tỉ lệ 0-1 từ trên xuống; landscape = tô đen đáy, portrait = mốc bắt đầu blur đáy foreground
   audioSpeed?: number;    // Tốc độ phát audio (sẽ tự động tính videoSpeed để khớp)
   step7AudioSpeedInput?: number; // Tốc độ audio người dùng nhập ở Step 7 (giữ riêng để trace khi audioPath đã pre-adjust)
   srtTimeScale?: number;  // Scale timeline SRT đã dùng khi merge audio (vd: settings.srtSpeed)
@@ -336,7 +336,8 @@ export interface RenderVideoOptions {
   logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
   portraitForegroundCropPercent?: number; // Chỉ dùng cho mode 9:16, crop tổng theo chiều ngang (%)
   // --- Thumbnail prepend ---
-  thumbnailEnabled?: boolean; // Có prepend thumbnail 0.2s vào đầu video không
+  thumbnailEnabled?: boolean; // Có prepend thumbnail vào đầu video không
+  thumbnailDurationSec?: number; // Thời lượng prepend thumbnail (giây), fallback 0.5
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
   thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
   thumbnailFontName?: string; // Font riêng cho thumbnail text (tách biệt với subtitle font)
@@ -482,6 +483,7 @@ export interface CaptionProjectSettingsValues {
   videoVolume?: number;
   audioVolume?: number;
   thumbnailFontName?: string;
+  thumbnailDurationSec?: number;
   subtitlePosition?: { x: number; y: number } | null;
   thumbnailFrameTimeSec?: number | null;
   layoutProfiles?: {
@@ -491,6 +493,7 @@ export interface CaptionProjectSettingsValues {
       blackoutTop?: number | null;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
+      thumbnailDurationSec?: number;
       logoPath?: string;
       logoPosition?: { x: number; y: number };
       logoScale?: number;
@@ -503,6 +506,7 @@ export interface CaptionProjectSettingsValues {
       blackoutTop?: number | null;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
+      thumbnailDurationSec?: number;
       logoPath?: string;
       logoPosition?: { x: number; y: number };
       logoScale?: number;

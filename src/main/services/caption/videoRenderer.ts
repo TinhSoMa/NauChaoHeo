@@ -312,6 +312,13 @@ export async function renderHardsubVideo(
     step7AudioSpeed,
     audioEffectiveSpeed,
     videoMarkerSec,
+    thumbnail: {
+      mode: 'landscape_hardsub',
+      cropStrategy: 'none',
+      fillStrategy: 'scale_to_output',
+      outputAspect: `${prep.renderWidth}:${prep.renderHeight}`,
+      durationSec: options.thumbnailDurationSec ?? 0.5,
+    },
   });
 
   console.log('[VideoRenderer][Hardsub] Render config', {
@@ -428,9 +435,12 @@ export async function renderHardsubPortraitVideo(
   let videoCodec = 'libx264';
   let codecParams = ['-preset', 'medium', '-crf', '23'];
   if (options.hardwareAcceleration === 'qsv') {
-    // Portrait blur pipeline + hw decode có thể sinh artifact nền xanh (nửa khung) trên một số driver QSV.
-    // Giữ encode bằng QSV nhưng decode/filter theo software để ổn định.
-    hwaccelArgs = [];
+    // Portrait filter graph (split/blur/overlay/ass) ổn định hơn khi decode software.
+    // Giữ QSV encode để vẫn có tăng tốc xuất file.
+    // Có thể bật lại full QSV decode+encode để benchmark bằng env:
+    //   CAPTION_PORTRAIT_QSV_DECODE=1
+    const enableQsvDecode = process.env.CAPTION_PORTRAIT_QSV_DECODE === '1';
+    hwaccelArgs = enableQsvDecode ? ['-hwaccel', 'auto'] : [];
     videoCodec = 'h264_qsv';
     codecParams = ['-preset', 'fast', '-global_quality', '25'];
   }
@@ -497,9 +507,10 @@ export async function renderHardsubPortraitVideo(
     const rounded = Math.max(2, Math.round(value));
     return rounded % 2 === 0 ? rounded : rounded + 1;
   };
-  const bgDownscaleWidth = even(portraitCanvas.width / 6);
-  const bgDownscaleHeight = even(portraitCanvas.height / 6);
-  const bgBlurLumaRadius = 10;
+  // Ưu tiên tốc độ cho mode 9:16: downscale nền mạnh hơn trước khi blur.
+  const bgDownscaleWidth = even(portraitCanvas.width / 8);
+  const bgDownscaleHeight = even(portraitCanvas.height / 8);
+  const bgBlurLumaRadius = 8;
   const bgBlurLumaPower = 1;
   const nearPortraitAspectThreshold = 0.05;
 
@@ -641,6 +652,13 @@ export async function renderHardsubPortraitVideo(
     ratioNormalizeApplied: true,
     targetSar: '1:1',
     targetDar: '9:16',
+    thumbnail: {
+      mode: 'portrait_9_16',
+      cropStrategy: 'center_3_4',
+      fillStrategy: 'cropped_bg_blur_top_bottom',
+      outputAspect: `${portraitCanvas.width}:${portraitCanvas.height}`,
+      durationSec: options.thumbnailDurationSec ?? 0.5,
+    },
   });
 
   console.log('[VideoRenderer][HardsubPortrait] Render config', {
@@ -656,7 +674,11 @@ export async function renderHardsubPortraitVideo(
     layoutStrategy,
     foregroundCropPercent,
     ratioNormalize: 'setsar=1,setdar=9/16',
-    decodePath: options.hardwareAcceleration === 'qsv' ? 'software_decode + qsv_encode' : 'software',
+    decodePath: options.hardwareAcceleration === 'qsv'
+      ? ((process.env.CAPTION_PORTRAIT_QSV_DECODE === '1')
+        ? 'qsv_decode + qsv_encode'
+        : 'software_decode + qsv_encode')
+      : 'software',
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
     audioMergeWindowInVideo: hasTtsAudio
@@ -837,6 +859,14 @@ export async function renderVideo(
     result = await renderBlackBackgroundVideo(options, progressCallback);
   }
 
+  console.log('[VideoRenderer] Thumbnail pre-process config', {
+    renderMode: options.renderMode || 'black_bg',
+    renderResolution: options.renderResolution || 'original',
+    thumbnailEnabled: !!options.thumbnailEnabled,
+    thumbnailTimeSec: options.thumbnailTimeSec ?? null,
+    thumbnailDurationSec: options.thumbnailDurationSec ?? 0.5,
+    thumbnailFontName: options.thumbnailFontName || null,
+  });
   result = await applyThumbnailPostProcess(options, result);
   return result;
 }

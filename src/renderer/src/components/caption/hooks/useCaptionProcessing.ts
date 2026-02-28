@@ -130,6 +130,7 @@ interface UseCaptionProcessingProps {
     processingMode?: ProcessingMode;
     translateMethod?: 'api' | 'impit';
     thumbnailFrameTimeSec?: number | null;
+    thumbnailDurationSec?: number;
     thumbnailText?: string;
     thumbnailFontName?: string;
     thumbnailTextsByOrder?: string[];
@@ -382,6 +383,7 @@ export function useCaptionProcessing({
         audioVolume: cfg.audioVolume,
         style: cfg.style,
         thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
+        thumbnailDurationSec: cfg.thumbnailDurationSec,
         thumbnailText: isMulti
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim(),
@@ -423,6 +425,7 @@ export function useCaptionProcessing({
       thumbnailFontName: cfg.thumbnailFontName,
       subtitlePosition: cfg.subtitlePosition,
       thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
+      thumbnailDurationSec: cfg.thumbnailDurationSec,
       layoutProfiles: cfg.layoutProfiles,
       portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
       processingMode: cfg.processingMode,
@@ -1078,7 +1081,7 @@ export function useCaptionProcessing({
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim();
         console.log(
-          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, text="${thumbnailTextForRender}"`
+          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, text="${thumbnailTextForRender}"`
         );
 
         // @ts-ignore
@@ -1113,6 +1116,7 @@ export function useCaptionProcessing({
           logoScale: cfg.logoScale,
           portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
           thumbnailEnabled,
+          thumbnailDurationSec: cfg.thumbnailDurationSec,
           thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
           thumbnailFontName: cfg.thumbnailFontName,

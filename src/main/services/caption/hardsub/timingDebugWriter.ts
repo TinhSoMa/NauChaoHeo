@@ -54,6 +54,13 @@ export function buildHardsubTimingPayload(input: {
   ratioNormalizeApplied?: boolean;
   targetSar?: string;
   targetDar?: string;
+  thumbnail?: {
+    mode: 'landscape_hardsub' | 'portrait_9_16';
+    cropStrategy: 'none' | 'center_3_4';
+    fillStrategy: 'scale_to_output' | 'cropped_bg_blur_top_bottom';
+    outputAspect: string;
+    durationSec?: number;
+  } | null;
 }): unknown {
   const {
     options,
@@ -90,6 +97,7 @@ export function buildHardsubTimingPayload(input: {
     ratioNormalizeApplied,
     targetSar,
     targetDar,
+    thumbnail,
   } = input;
 
   const translatedSrtPath = path.join(path.dirname(options.srtPath), 'translated.srt');
@@ -160,6 +168,7 @@ export function buildHardsubTimingPayload(input: {
       ratioNormalizeApplied: ratioNormalizeApplied ?? false,
       targetSar: targetSar || null,
       targetDar: targetDar || null,
+      thumbnail: thumbnail || null,
     },
   };
 }

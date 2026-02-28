@@ -363,6 +363,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       audioSpeed: settings.audioSpeed,
       subtitlePosition: settings.subtitlePosition,
       thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
+      thumbnailDurationSec: settings.thumbnailDurationSec,
       portraitForegroundCropPercent: settings.portraitForegroundCropPercent,
       layoutProfiles: settings.layoutProfiles,
     },

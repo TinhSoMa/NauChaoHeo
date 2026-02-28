@@ -2,7 +2,7 @@
  * SubtitlePreview - Canvas preview hiển thị frame video + subtitle có thể kéo thả
  * Hỗ trợ 2 chế độ:
  *  - subtitle: kéo để đặt vị trí subtitle
- *  - blackout: kéo để đặt vùng tô đen che phía dưới video
+ *  - blackout: landscape = tô đen đáy, portrait = blur đáy foreground
  */
 
 import { useEffect } from 'react';
@@ -15,6 +15,7 @@ interface SubtitlePreviewProps {
   videoPath: string | null;
   style: ASSStyleConfig;
   entries?: SubtitleEntry[];
+  subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -38,10 +39,12 @@ interface SubtitlePreviewProps {
   onFrameTimeChange?: (timeSec: number | null) => void;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
+  const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const preview = useSubtitlePreview({
     style,
     entries,
+    subtitlePosition,
     blackoutTop,
     renderMode,
     renderResolution,
@@ -87,10 +90,10 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
         <button
           className={`${styles.modeBtn} ${preview.mode === 'blackout' ? styles.modeBtnActive : ''}`}
           onClick={() => preview.setMode('blackout')}
-          title="Kéo để đặt vùng tô đen phía dưới video"
+          title={isPortraitMode ? 'Kéo để đặt vùng blur đáy video chính' : 'Kéo để đặt vùng tô đen phía dưới video'}
         >
           <Square size={13} />
-          Tô đen
+          {isPortraitMode ? 'Blur đáy' : 'Tô đen'}
         </button>
         {logoPath ? (
           <div style={{ display: 'flex', gap: 4 }}>
@@ -160,11 +163,11 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
           ) : (
             <>
               {preview.blackoutTop !== null
-                ? `Che ${blackoutPct}% dưới video`
-                : 'Kéo để đặt vùng tô đen'}
+                ? (isPortraitMode ? `Blur ${blackoutPct}% đáy video chính` : `Che ${blackoutPct}% dưới video`)
+                : (isPortraitMode ? 'Kéo để đặt vùng blur đáy' : 'Kéo để đặt vùng tô đen')}
               {' | '}
               {preview.videoSize.width}×{preview.videoSize.height}
-              {renderMode === 'hardsub_portrait_9_16' && (
+              {isPortraitMode && (
                 <> {' | '}crop ngang {Math.round(portraitForegroundCropPercent ?? 0)}%</>
               )}
             </>
@@ -204,7 +207,7 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
             <button
               className={`${styles.resetBtn} ${styles.dangerBtn}`}
               onClick={preview.clearBlackout}
-              title="Xóa vùng tô đen"
+              title={isPortraitMode ? 'Xóa vùng blur đáy' : 'Xóa vùng tô đen'}
             >
               <Trash2 size={12} /> Xóa
             </button>
@@ -249,7 +252,7 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
               readOnly={!!thumbnailTextReadOnly}
               title={thumbnailTextReadOnly
                 ? 'Đang ở chế độ multi-folder: text này chỉ để preview, hãy chỉnh trong danh sách theo folder'
-                : 'Văn bản hiển thị ở trung tâm thumbnail 0.2s đầu video'}
+                : 'Văn bản hiển thị ở trung tâm thumbnail ở đầu video'}
             />
           </div>
           {thumbnailTextHelper && (

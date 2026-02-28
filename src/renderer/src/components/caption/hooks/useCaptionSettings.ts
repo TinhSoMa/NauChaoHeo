@@ -29,6 +29,7 @@ interface LayoutProfile {
   foregroundCropPercent: number;
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
+  thumbnailDurationSec: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale: number;
@@ -56,6 +57,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
+  thumbnailDurationSec: 0.5,
   logoPath: undefined,
   logoPosition: undefined,
   logoScale: 1.0,
@@ -69,6 +71,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
+  thumbnailDurationSec: 0.5,
   logoPath: undefined,
   logoPosition: undefined,
   logoScale: 1.0,
@@ -116,6 +119,9 @@ function normalizeProfile(
   }
   if (patch.thumbnailFrameTimeSec === null || typeof patch.thumbnailFrameTimeSec === 'number') {
     next.thumbnailFrameTimeSec = patch.thumbnailFrameTimeSec as number | null;
+  }
+  if (typeof patch.thumbnailDurationSec === 'number' && Number.isFinite(patch.thumbnailDurationSec)) {
+    next.thumbnailDurationSec = Math.min(10, Math.max(0.1, patch.thumbnailDurationSec));
   }
   if (typeof patch.logoPath === 'string' && patch.logoPath.trim().length > 0) {
     next.logoPath = patch.logoPath;
@@ -261,6 +267,11 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, thumbnailFrameTimeSec: value }));
   }, [updateActiveProfile]);
 
+  const setThumbnailDurationSec = useCallback((value: number) => {
+    const normalized = Math.min(10, Math.max(0.1, Number.isFinite(value) ? value : 0.5));
+    updateActiveProfile((current) => ({ ...current, thumbnailDurationSec: normalized }));
+  }, [updateActiveProfile]);
+
   const settingsValues = useMemo(
     () => ({
       inputType,
@@ -289,6 +300,7 @@ export function useCaptionSettings() {
       thumbnailFontName: activeProfile.thumbnailFontName,
       subtitlePosition: activeProfile.subtitlePosition,
       thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
+      thumbnailDurationSec: activeProfile.thumbnailDurationSec,
       logoPath: activeProfile.logoPath,
       logoPosition: activeProfile.logoPosition,
       logoScale: activeProfile.logoScale,
@@ -370,6 +382,7 @@ export function useCaptionSettings() {
       foregroundCropPercent: saved.portraitForegroundCropPercent,
       subtitlePosition: saved.subtitlePosition,
       thumbnailFrameTimeSec: saved.thumbnailFrameTimeSec,
+      thumbnailDurationSec: saved.thumbnailDurationSec,
       logoPath: saved.logoPath,
       logoPosition: saved.logoPosition,
       logoScale: saved.logoScale,
@@ -514,6 +527,8 @@ export function useCaptionSettings() {
     setSubtitlePosition,
     thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
     setThumbnailFrameTimeSec,
+    thumbnailDurationSec: activeProfile.thumbnailDurationSec,
+    setThumbnailDurationSec,
     audioSpeed, setAudioSpeed,
     renderAudioSpeed, setRenderAudioSpeed,
     videoVolume, setVideoVolume,

@@ -41,7 +41,7 @@ export interface VideoFilterBuildInput {
   needsScale: boolean;
   renderWidth: number;
   renderHeight: number;
-  blackoutTop?: number | null;
+  blackoutTop?: number | null; // 0-1 từ trên xuống; dùng cho nhánh landscape (tô đen đáy)
   videoSpeedMultiplier: number;
   subtitleFilter: string;
 }
@@ -54,7 +54,7 @@ export interface PortraitVideoFilterBuildInput {
   sourceAspect: number;
   layoutStrategy: 'blur_composite' | 'direct_fit_no_blur';
   foregroundCropPercent: number;
-  blackoutTop?: number | null;
+  blackoutTop?: number | null; // 0-1 theo output; với portrait: mốc bắt đầu blur vùng đáy của foreground
   bgDownscaleWidth: number;
   bgDownscaleHeight: number;
   bgBlurLumaRadius: number;

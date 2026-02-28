@@ -16,6 +16,7 @@ type PreviewRenderResolution = RenderVideoOptions['renderResolution'];
 export interface UseSubtitlePreviewOptions {
   style: ASSStyleConfig;
   entries?: SubtitleEntry[];
+  subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;  // fraction 0-1 (persisted from settings)
   renderMode?: PreviewRenderMode;
   renderResolution?: PreviewRenderResolution;
@@ -91,6 +92,7 @@ function resolvePreviewCoordinateSpace(
 export function useSubtitlePreview({
   style,
   entries,
+  subtitlePosition,
   blackoutTop,
   renderMode,
   renderResolution,
@@ -109,6 +111,7 @@ export function useSubtitlePreview({
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const logoImageRef = useRef<HTMLImageElement | null>(null);
+  const blurScratchRef = useRef<HTMLCanvasElement | null>(null);
   // Stores logo bounding box in canvas-pixel coords, updated every drawCanvas
   const logoBoundsRef = useRef<{ cx: number; cy: number; hw: number; hh: number } | null>(null);
   // Stores corner-drag start data
@@ -121,7 +124,9 @@ export function useSubtitlePreview({
   const [state, setState] = useState<SubtitlePreviewState>({
     frameData: null,
     videoSize: { width: 1920, height: 1080 },
-    subtitlePosition: { x: 960, y: 540 },
+    subtitlePosition: subtitlePosition
+      ? { ...subtitlePosition }
+      : { x: 960, y: 540 },
     isLoading: false,
     error: null,
   });
@@ -158,6 +163,24 @@ export function useSubtitlePreview({
   useEffect(() => {
     setLocalBlackoutTop(blackoutTop ?? null);
   }, [blackoutTop]);
+
+  useEffect(() => {
+    if (!subtitlePosition) {
+      return;
+    }
+    setState((prev) => {
+      if (
+        prev.subtitlePosition.x === subtitlePosition.x &&
+        prev.subtitlePosition.y === subtitlePosition.y
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        subtitlePosition: { ...subtitlePosition },
+      };
+    });
+  }, [subtitlePosition]);
   
   useEffect(() => {
     localLogoPositionRef.current = logoPosition ?? null;
@@ -218,20 +241,23 @@ export function useSubtitlePreview({
           : `data:image/png;base64,${frameRes.data.frameData}`;
 
         setState(prev => {
-          let initialY = Math.floor(previewSpace.height / 2);
-          if (localBlackoutTop !== null && localBlackoutTop < 1) {
-            const blackoutMidFrac = localBlackoutTop + (1 - localBlackoutTop) / 2;
-            initialY = Math.floor(previewSpace.height * blackoutMidFrac);
+          let nextPosition = prev.subtitlePosition;
+          if (subtitlePosition) {
+            nextPosition = { ...subtitlePosition };
+          } else if (!Number.isFinite(prev.subtitlePosition.x) || !Number.isFinite(prev.subtitlePosition.y)) {
+            let initialY = Math.floor(previewSpace.height / 2);
+            if (localBlackoutTop !== null && localBlackoutTop < 1) {
+              const blackoutMidFrac = localBlackoutTop + (1 - localBlackoutTop) / 2;
+              initialY = Math.floor(previewSpace.height * blackoutMidFrac);
+            }
+            nextPosition = { x: Math.floor(previewSpace.width / 2), y: initialY };
           }
-          const initialCenter = { x: Math.floor(previewSpace.width / 2), y: initialY };
-          
-          setTimeout(() => onPositionChange?.(initialCenter), 0);
 
           return {
             ...prev,
             frameData: fd,
             videoSize: previewSpace,
-            subtitlePosition: initialCenter,
+            subtitlePosition: nextPosition,
             isLoading: false,
           };
         });
@@ -245,7 +271,7 @@ export function useSubtitlePreview({
     } catch (e) {
       setState(prev => ({ ...prev, isLoading: false, error: `${e}` }));
     }
-  }, [localBlackoutTop, onPositionChange, renderMode, renderResolution]);
+  }, [localBlackoutTop, renderMode, renderResolution, subtitlePosition]);
 
   // Chỉ thay ảnh nền canvas — KHÔNG reset subtitlePosition, KHÔNG gọi onPositionChange
   const loadFrameAt = useCallback(async (timeSec: number) => {
@@ -322,6 +348,8 @@ export function useSubtitlePreview({
     ctx.fillStyle = '#111827';
     ctx.fillRect(0, 0, cw, ch);
 
+    let portraitFgRect: { x: number; y: number; width: number; height: number } | null = null;
+
     if (isPortraitMode) {
       const sourceAspect = img.width / Math.max(1, img.height);
       const outputAspect = previewWidth / Math.max(1, previewHeight);
@@ -365,6 +393,7 @@ export function useSubtitlePreview({
         width: fgRectInner.width,
         height: fgRectInner.height,
       };
+      portraitFgRect = fgRect;
       ctx.drawImage(
         img,
         fgSrcX,
@@ -383,28 +412,78 @@ export function useSubtitlePreview({
     // ===== Draw blackout band at bottom =====
     if (localBlackoutTop !== null && localBlackoutTop < 1) {
       const bandY = outputRect.y + outputRect.height * localBlackoutTop;
-      const bandH = outputRect.height * (1 - localBlackoutTop);
-
-      // Black fill
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
-      ctx.fillRect(outputRect.x, bandY, outputRect.width, bandH);
-
-      // Red top edge line
-      ctx.strokeStyle = 'rgba(255, 60, 60, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(outputRect.x, bandY);
-      ctx.lineTo(outputRect.x + outputRect.width, bandY);
-      ctx.stroke();
-
-      // Label
       const pct = Math.round((1 - localBlackoutTop) * 100);
-      ctx.fillStyle = 'rgba(255, 60, 60, 0.9)';
-      ctx.font = '11px "JetBrains Mono", monospace';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(`che ${pct}%`, outputRect.x + outputRect.width - 6, bandY - 4);
+
+      if (isPortraitMode && portraitFgRect) {
+        const fgBottom = portraitFgRect.y + portraitFgRect.height;
+        const blurStartY = Math.max(portraitFgRect.y, Math.min(fgBottom, bandY));
+        const blurH = fgBottom - blurStartY;
+
+        if (blurH > 1 && portraitFgRect.width > 1) {
+          const sx = Math.max(0, Math.floor(portraitFgRect.x));
+          const sy = Math.max(0, Math.floor(blurStartY));
+          const sw = Math.max(1, Math.min(cw - sx, Math.floor(portraitFgRect.width)));
+          const sh = Math.max(1, Math.min(ch - sy, Math.floor(blurH)));
+
+          let scratch = blurScratchRef.current;
+          if (!scratch) {
+            scratch = document.createElement('canvas');
+            blurScratchRef.current = scratch;
+          }
+          if (scratch.width !== sw || scratch.height !== sh) {
+            scratch.width = sw;
+            scratch.height = sh;
+          }
+
+          const scratchCtx = scratch.getContext('2d');
+          if (scratchCtx) {
+            scratchCtx.clearRect(0, 0, sw, sh);
+            scratchCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(sx, sy, sw, sh);
+            ctx.clip();
+            ctx.filter = 'blur(14px)';
+            // Draw 2 passes để vùng blur đủ rõ mà không cần thêm slider strength.
+            ctx.drawImage(scratch, sx, sy, sw, sh);
+            ctx.drawImage(scratch, sx, sy, sw, sh);
+            ctx.restore();
+          }
+        }
+
+        ctx.strokeStyle = 'rgba(255, 60, 60, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(portraitFgRect.x, blurStartY);
+        ctx.lineTo(portraitFgRect.x + portraitFgRect.width, blurStartY);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255, 60, 60, 0.9)';
+        ctx.font = '11px "JetBrains Mono", monospace';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`blur ${pct}%`, portraitFgRect.x + portraitFgRect.width - 6, blurStartY - 4);
+      } else {
+        const bandH = outputRect.height * (1 - localBlackoutTop);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
+        ctx.fillRect(outputRect.x, bandY, outputRect.width, bandH);
+
+        ctx.strokeStyle = 'rgba(255, 60, 60, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(outputRect.x, bandY);
+        ctx.lineTo(outputRect.x + outputRect.width, bandY);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255, 60, 60, 0.9)';
+        ctx.font = '11px "JetBrains Mono", monospace';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`che ${pct}%`, outputRect.x + outputRect.width - 6, bandY - 4);
+      }
     }
 
     // ===== Subtitle text =====
