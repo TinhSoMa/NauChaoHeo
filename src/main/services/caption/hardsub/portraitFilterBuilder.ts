@@ -11,8 +11,8 @@ function appendForegroundBottomBlur(
 
   const escapeExprCommas = (expr: string) => expr.replace(/,/g, '\\,');
   const blackoutTop = Math.max(0, Math.min(1, input.blackoutTop));
-  const blackoutY = Math.round(blackoutTop * input.outputHeight);
-  const blurStartExprRaw = `max(0,min(ih-2,${blackoutY}-(${input.outputHeight}-ih)/2))`;
+  // blackoutTop cho portrait phải neo theo foreground (video gốc), không theo toàn canvas 9:16.
+  const blurStartExprRaw = `max(0,min(ih-2,ih*${blackoutTop.toFixed(6)}))`;
   const blurStartEvenExprRaw = `trunc(${blurStartExprRaw}/2)*2`;
   const blurHeightExprRaw = `max(2,trunc((ih-${blurStartEvenExprRaw})/2)*2)`;
   const blurStartEvenExpr = escapeExprCommas(blurStartEvenExprRaw);

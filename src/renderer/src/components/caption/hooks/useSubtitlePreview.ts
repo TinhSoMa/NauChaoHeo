@@ -30,6 +30,8 @@ export interface UseSubtitlePreviewOptions {
   onLogoScaleChange?: (scale: number) => void;
   thumbnailText?: string; // preview overlay ở trung tâm frame khi nhập thumbnail text
   thumbnailFontName?: string; // font riêng cho thumbnail text
+  selectedFrameTimeSec?: number | null; // mốc frame đang lưu trong settings
+  renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
 }
 
 function resolvePortraitCanvasByPreset(renderResolution?: PreviewRenderResolution): { width: number; height: number } {
@@ -106,6 +108,8 @@ export function useSubtitlePreview({
   onLogoScaleChange,
   thumbnailText,
   thumbnailFontName,
+  selectedFrameTimeSec,
+  renderSnapshotMode,
 }: UseSubtitlePreviewOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -135,6 +139,7 @@ export function useSubtitlePreview({
   const [isDragging, setIsDragging] = useState(false);
   const [canvasCursor, setCanvasCursor] = useState<string>('crosshair');
   const previewRectRef = useRef({ x: 0, y: 0, width: 1, height: 1 });
+  const portraitFgRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const previewSpaceRef = useRef({ width: 1920, height: 1080 });
 
   // Mode: subtitle positioning, blackout line dragging, or logo positioning
@@ -166,6 +171,24 @@ export function useSubtitlePreview({
 
   useEffect(() => {
     if (!subtitlePosition) {
+      setState((prev) => {
+        const safeW = Math.max(1, prev.videoSize.width);
+        const safeH = Math.max(1, prev.videoSize.height);
+        const fallback = {
+          x: Math.floor(safeW / 2),
+          y: Math.floor(safeH / 2),
+        };
+        if (
+          prev.subtitlePosition.x === fallback.x &&
+          prev.subtitlePosition.y === fallback.y
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          subtitlePosition: fallback,
+        };
+      });
       return;
     }
     setState((prev) => {
@@ -181,6 +204,34 @@ export function useSubtitlePreview({
       };
     });
   }, [subtitlePosition]);
+
+  // Khi đổi mode/resolution, cập nhật lại coordinate-space preview để hiển thị chính xác hơn.
+  useEffect(() => {
+    setState((prev) => {
+      const sourceW = imageRef.current?.width ?? prev.videoSize.width;
+      const sourceH = imageRef.current?.height ?? prev.videoSize.height;
+      const nextSpace = resolvePreviewCoordinateSpace(renderMode, renderResolution, sourceW, sourceH);
+      if (nextSpace.width === prev.videoSize.width && nextSpace.height === prev.videoSize.height) {
+        return prev;
+      }
+
+      let nextPos = prev.subtitlePosition;
+      if (!subtitlePosition) {
+        const relX = prev.subtitlePosition.x / Math.max(1, prev.videoSize.width);
+        const relY = prev.subtitlePosition.y / Math.max(1, prev.videoSize.height);
+        nextPos = {
+          x: Math.max(0, Math.min(nextSpace.width, Math.floor(relX * nextSpace.width))),
+          y: Math.max(0, Math.min(nextSpace.height, Math.floor(relY * nextSpace.height))),
+        };
+      }
+
+      return {
+        ...prev,
+        videoSize: nextSpace,
+        subtitlePosition: nextPos,
+      };
+    });
+  }, [renderMode, renderResolution, subtitlePosition]);
   
   useEffect(() => {
     localLogoPositionRef.current = logoPosition ?? null;
@@ -211,8 +262,9 @@ export function useSubtitlePreview({
     return () => observer.disconnect();
   }, []);
 
-  const loadPreview = useCallback(async (videoPath: string) => {
+  const loadPreview = useCallback(async (videoPath: string, preferredTimeSec?: number | null) => {
     if (!videoPath) return;
+    const shouldResetFrame = videoMetaRef.current?.path !== videoPath;
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -224,17 +276,27 @@ export function useSubtitlePreview({
       if (metaRes?.success && metaRes.data) {
         vw = metaRes.data.width;
         vh = metaRes.data.actualHeight || metaRes.data.height || 1080;
+        const durationSec = Number(metaRes.data.duration) || 0;
+        const fps = Number(metaRes.data.fps) || 30;
+        const desiredSecRaw = preferredTimeSec ?? selectedFrameTimeSec ?? 0;
+        const desiredSec = Math.max(0, Math.min(durationSec > 0 ? durationSec : desiredSecRaw, desiredSecRaw));
         // Lưu metadata để scrubber dùng sau
         videoMetaRef.current = {
           path: videoPath,
-          fps: metaRes.data.fps || 30,
-          duration: metaRes.data.duration || 0,
+          fps,
+          duration: durationSec,
         };
-        setFrameTimeSec(0);
+        if (shouldResetFrame || preferredTimeSec !== undefined) {
+          setFrameTimeSec(desiredSec);
+        }
       }
 
       const previewSpace = resolvePreviewCoordinateSpace(renderMode, renderResolution, vw, vh);
-      const frameRes = await api.extractFrame(videoPath);
+      const activeMeta = videoMetaRef.current;
+      const targetSecRaw = preferredTimeSec ?? selectedFrameTimeSec ?? 0;
+      const targetSec = Math.max(0, Math.min(activeMeta?.duration || targetSecRaw, targetSecRaw));
+      const frameNumber = Math.round(targetSec * (activeMeta?.fps || 30));
+      const frameRes = await api.extractFrame(videoPath, frameNumber);
       if (frameRes?.success && frameRes.data) {
         const fd = frameRes.data.frameData.startsWith('data:')
           ? frameRes.data.frameData
@@ -271,16 +333,17 @@ export function useSubtitlePreview({
     } catch (e) {
       setState(prev => ({ ...prev, isLoading: false, error: `${e}` }));
     }
-  }, [localBlackoutTop, renderMode, renderResolution, subtitlePosition]);
+  }, [localBlackoutTop, renderMode, renderResolution, subtitlePosition, selectedFrameTimeSec]);
 
   // Chỉ thay ảnh nền canvas — KHÔNG reset subtitlePosition, KHÔNG gọi onPositionChange
   const loadFrameAt = useCallback(async (timeSec: number) => {
     const meta = videoMetaRef.current;
     if (!meta) return;
+    const clampedTime = Math.max(0, Math.min(meta.duration || timeSec, timeSec));
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const api = (window.electronAPI as any).captionVideo;
-      const frameNumber = Math.round(timeSec * meta.fps);
+      const frameNumber = Math.round(clampedTime * meta.fps);
       const frameRes = await api.extractFrame(meta.path, frameNumber);
       if (frameRes?.success && frameRes.data) {
         const fd = frameRes.data.frameData.startsWith('data:')
@@ -296,13 +359,34 @@ export function useSubtitlePreview({
     }
   }, []);
 
+  // Đồng bộ frame từ settings khi đổi luồng/profile.
+  useEffect(() => {
+    if (!Number.isFinite(selectedFrameTimeSec as number)) {
+      return;
+    }
+    const target = Math.max(0, Number(selectedFrameTimeSec));
+    if (Math.abs(target - frameTimeSec) < 0.05) {
+      return;
+    }
+    setFrameTimeSec(target);
+    if (videoMetaRef.current?.path) {
+      loadFrameAt(target);
+    }
+  }, [selectedFrameTimeSec, frameTimeSec, loadFrameAt]);
+
   // Helper: convert canvas Y to video fraction (0-1)
   const canvasYToFraction = useCallback((cy: number) => {
+    if (renderMode === 'hardsub_portrait_9_16') {
+      const fgRect = portraitFgRectRef.current;
+      if (fgRect && fgRect.height > 0) {
+        return Math.max(0, Math.min(1, (cy - fgRect.y) / fgRect.height));
+      }
+    }
     const rect = previewRectRef.current;
     if (!rect || rect.height <= 0) return 0.5;
     const relY = Math.max(0, Math.min(1, (cy - rect.y) / rect.height));
     return relY;
-  }, []);
+  }, [renderMode]);
 
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -328,9 +412,9 @@ export function useSubtitlePreview({
       return;
     }
 
-    const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
+    const isPortraitMode = renderMode === 'hardsub_portrait_9_16' && !renderSnapshotMode;
     const outputRect = isPortraitMode
-      ? { x: 0, y: 0, width: cw, height: ch }
+      ? fitRect(cw, ch, 9, 16)
       : fitRect(cw, ch, img.width, img.height);
 
     const previewWidth = Math.max(1, state.videoSize.width);
@@ -408,15 +492,19 @@ export function useSubtitlePreview({
     } else {
       ctx.drawImage(img, outputRect.x, outputRect.y, outputRect.width, outputRect.height);
     }
+    portraitFgRectRef.current = portraitFgRect;
+
+    if (renderSnapshotMode) {
+      return;
+    }
 
     // ===== Draw blackout band at bottom =====
     if (localBlackoutTop !== null && localBlackoutTop < 1) {
-      const bandY = outputRect.y + outputRect.height * localBlackoutTop;
       const pct = Math.round((1 - localBlackoutTop) * 100);
 
       if (isPortraitMode && portraitFgRect) {
         const fgBottom = portraitFgRect.y + portraitFgRect.height;
-        const blurStartY = Math.max(portraitFgRect.y, Math.min(fgBottom, bandY));
+        const blurStartY = portraitFgRect.y + portraitFgRect.height * localBlackoutTop;
         const blurH = fgBottom - blurStartY;
 
         if (blurH > 1 && portraitFgRect.width > 1) {
@@ -466,6 +554,7 @@ export function useSubtitlePreview({
         ctx.textBaseline = 'bottom';
         ctx.fillText(`blur ${pct}%`, portraitFgRect.x + portraitFgRect.width - 6, blurStartY - 4);
       } else {
+        const bandY = outputRect.y + outputRect.height * localBlackoutTop;
         const bandH = outputRect.height * (1 - localBlackoutTop);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
         ctx.fillRect(outputRect.x, bandY, outputRect.width, bandH);
@@ -645,7 +734,7 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
       ctx.restore();
     }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, renderMode, portraitForegroundCropPercent]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, renderMode, portraitForegroundCropPercent, renderSnapshotMode]);
 
   // Load video frame image
   useEffect(() => {

@@ -7,7 +7,7 @@
   width: 100%;
   padding: 24px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: 20px;
   align-items: start;
 }
@@ -21,13 +21,67 @@
 .leftColumn {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+  min-width: 0;
 }
 
 .rightColumn {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+  min-width: 0;
+}
+
+.previewSticky {
+  position: sticky;
+  top: 14px;
+}
+
+.previewDock {
+  width: 100%;
+  min-height: 520px;
+  max-height: calc(100vh - 40px);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  overflow: auto;
+}
+
+.previewDockTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+
+.previewDockHint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.previewModeSwitch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.previewModeBtnActive {
+  background: var(--color-accent, #4a9eff);
+  border-color: var(--color-accent, #4a9eff);
+  color: #fff;
+}
+
+.previewSourceTag {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
 }
 
 .header {
@@ -45,11 +99,91 @@
   border: 1px solid var(--color-border);
 }
 
+.accordion {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
+  overflow: hidden;
+}
+
+.accordionHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  padding: 10px 12px;
+}
+
+.accordionHeaderOpen {
+  border-bottom-color: var(--color-border);
+}
+
+.accordionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.accordionBody {
+  padding: 12px;
+}
+
+.runAccordionTop {
+  order: -1;
+}
+
+.accordionAction {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.statusBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+}
+
+.statusIdle {
+  color: var(--color-text-secondary);
+}
+
+.statusRunning {
+  color: var(--color-accent, #4a9eff);
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.statusDone {
+  color: var(--color-success, #10b981);
+  border-color: var(--color-success, #10b981);
+}
+
+.statusError {
+  color: var(--color-error, #ef4444);
+  border-color: var(--color-error, #ef4444);
+}
+
 .sectionTitle {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-primary);
   margin-bottom: 12px;
+}
+
+.sectionTitleCompact {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: 10px;
 }
 
 
@@ -115,6 +249,12 @@
   gap: 16px;
 }
 
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 
 
 /* Step Checkboxes */
@@ -146,6 +286,49 @@
   line-height: 1.4;
 }
 
+.configSummaryBox {
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--color-surface);
+}
+
+.configSummaryTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: 6px;
+}
+
+.configSummaryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.configSummaryRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.configSummaryKey {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.configSummaryValue {
+  font-size: 11px;
+  color: var(--color-text-primary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Split Config */
 .splitConfig {
   display: grid;
@@ -158,6 +341,25 @@
 .buttonsRow {
   display: flex;
   gap: 12px;
+}
+
+.resetBtnLike {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.resetBtnLike:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
 }
 
 /* Progress Section */
@@ -406,4 +608,25 @@
   margin-top: 8px;
   font-size: 11px;
   color: var(--color-warning, #f59e0b);
+}
+
+@media (max-width: 1200px) {
+  .container {
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+}
+
+@media (max-width: 960px) {
+  .previewSticky {
+    position: static;
+  }
+
+  .previewDock {
+    min-height: 460px;
+    max-height: none;
+  }
+
+  .configSummaryGrid {
+    grid-template-columns: 1fr;
+  }
 }

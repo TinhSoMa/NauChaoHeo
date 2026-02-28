@@ -89,7 +89,8 @@ function cloneProfile(profile: LayoutProfile): LayoutProfile {
 
 function normalizeProfile(
   patch: Record<string, unknown> | undefined,
-  fallback: LayoutProfile
+  fallback: LayoutProfile,
+  layoutKey: LayoutKey
 ): LayoutProfile {
   const next = cloneProfile(fallback);
   if (!patch || typeof patch !== 'object') {
@@ -101,7 +102,11 @@ function normalizeProfile(
     next.style = { ...next.style, ...style };
   }
   if (patch.renderResolution && typeof patch.renderResolution === 'string') {
-    next.renderResolution = patch.renderResolution as RenderResolution;
+    const requested = patch.renderResolution as RenderResolution;
+    // Portrait không hỗ trợ "original" trong thực tế render canvas.
+    next.renderResolution = layoutKey === 'portrait' && requested === 'original'
+      ? '1080p'
+      : requested;
   }
   if (patch.blackoutTop === null || typeof patch.blackoutTop === 'number') {
     next.blackoutTop = patch.blackoutTop as number | null;
@@ -365,11 +370,13 @@ export function useCaptionSettings() {
       setLayoutProfiles({
         landscape: normalizeProfile(
           loadedProfiles.landscape as Record<string, unknown> | undefined,
-          DEFAULT_LANDSCAPE_PROFILE
+          DEFAULT_LANDSCAPE_PROFILE,
+          'landscape'
         ),
         portrait: normalizeProfile(
           loadedProfiles.portrait as Record<string, unknown> | undefined,
-          DEFAULT_PORTRAIT_PROFILE
+          DEFAULT_PORTRAIT_PROFILE,
+          'portrait'
         ),
       });
       return;
@@ -389,8 +396,8 @@ export function useCaptionSettings() {
       thumbnailFontName: saved.thumbnailFontName,
     };
 
-    const mergedLegacyLandscape = normalizeProfile(legacyPatch, DEFAULT_LANDSCAPE_PROFILE);
-    const mergedLegacyPortrait = normalizeProfile(legacyPatch, DEFAULT_PORTRAIT_PROFILE);
+    const mergedLegacyLandscape = normalizeProfile(legacyPatch, DEFAULT_LANDSCAPE_PROFILE, 'landscape');
+    const mergedLegacyPortrait = normalizeProfile(legacyPatch, DEFAULT_PORTRAIT_PROFILE, 'portrait');
     setLayoutProfiles({
       landscape: mergedLegacyLandscape,
       portrait: mergedLegacyPortrait,

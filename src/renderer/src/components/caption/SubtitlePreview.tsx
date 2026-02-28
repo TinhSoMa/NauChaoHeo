@@ -37,10 +37,14 @@ interface SubtitlePreviewProps {
   thumbnailTextReadOnly?: boolean;
   thumbnailTextHelper?: string;
   onFrameTimeChange?: (timeSec: number | null) => void;
+  selectedFrameTimeSec?: number | null;
+  renderSnapshotMode?: boolean;
+  interactiveDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange, selectedFrameTimeSec, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
+  const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
     style,
     entries,
@@ -58,18 +62,47 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     onLogoScaleChange,
     thumbnailText,
     thumbnailFontName,
+    selectedFrameTimeSec,
+    renderSnapshotMode,
   });
 
   // Load preview when video path changes — khi video load xong, kích hoạt thumbnail ở frame 0
   useEffect(() => {
     if (videoPath) {
-      preview.loadPreview(videoPath).then(() => {
-        onFrameTimeChange?.(0);
-      });
+      preview.loadPreview(videoPath, selectedFrameTimeSec ?? 0);
     } else {
       onFrameTimeChange?.(null);
     }
-  }, [videoPath, renderMode, renderResolution]);
+  }, [videoPath]);
+
+  useEffect(() => {
+    if (!videoPath || selectedFrameTimeSec === null || selectedFrameTimeSec === undefined) {
+      return;
+    }
+    if (Math.abs(preview.frameTimeSec - selectedFrameTimeSec) < 0.05) {
+      return;
+    }
+    preview.setFrameTimeSec(selectedFrameTimeSec);
+    preview.loadFrameAt(selectedFrameTimeSec);
+  }, [selectedFrameTimeSec, videoPath]);
+
+  const resolutionOptions = isPortraitMode
+    ? [
+        { value: '1080p', label: '1080p' },
+        { value: '720p', label: '720p' },
+        { value: '540p', label: '540p' },
+        { value: '360p', label: '360p' },
+      ]
+    : [
+        { value: 'original', label: 'Gốc' },
+        { value: '1080p', label: '1080p' },
+        { value: '720p', label: '720p' },
+        { value: '540p', label: '540p' },
+        { value: '360p', label: '360p' },
+      ];
+  const displayRenderResolution = isPortraitMode && (renderResolution === 'original' || !renderResolution)
+    ? '1080p'
+    : (renderResolution || 'original');
 
   const blackoutPct = preview.blackoutTop !== null
     ? Math.round((1 - preview.blackoutTop) * 100)
@@ -79,21 +112,26 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     <div className={styles.previewSection}>
       {/* Mode toggle */}
       <div className={styles.modeBar}>
+        {renderSnapshotMode && (
+          <span className={styles.snapshotBadge}>Render Snapshot</span>
+        )}
         <button
           className={`${styles.modeBtn} ${preview.mode === 'subtitle' ? styles.modeBtnActive : ''}`}
           onClick={() => preview.setMode('subtitle')}
           title="Kéo để đặt vị trí subtitle"
+          disabled={isInteractionDisabled}
         >
           <Crosshair size={13} />
-          Subtitle
+          Sub
         </button>
         <button
           className={`${styles.modeBtn} ${preview.mode === 'blackout' ? styles.modeBtnActive : ''}`}
           onClick={() => preview.setMode('blackout')}
           title={isPortraitMode ? 'Kéo để đặt vùng blur đáy video chính' : 'Kéo để đặt vùng tô đen phía dưới video'}
+          disabled={isInteractionDisabled}
         >
           <Square size={13} />
-          {isPortraitMode ? 'Blur đáy' : 'Tô đen'}
+          {isPortraitMode ? 'Blur' : 'Mask'}
         </button>
         {logoPath ? (
           <div style={{ display: 'flex', gap: 4 }}>
@@ -101,6 +139,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               className={`${styles.modeBtn} ${preview.mode === 'logo' ? styles.modeBtnActive : ''}`}
               onClick={() => preview.setMode('logo')}
               title="Kéo để đặt vị trí Logo Watermark"
+              disabled={isInteractionDisabled}
             >
               <Image size={13} />
               Logo
@@ -110,6 +149,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               onClick={onRemoveLogo}
               title="Xóa Logo"
               style={{ padding: '5px 8px', color: '#ef4444' }}
+              disabled={isInteractionDisabled}
             >
               <Trash2 size={13} />
             </button>
@@ -119,9 +159,10 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
             className={styles.modeBtn}
             onClick={onSelectLogo}
             title="Thêm Logo (Watermark)"
+            disabled={isInteractionDisabled}
           >
             <Image size={13} />
-            Thêm Logo
+            Logo
           </button>
         )}
       </div>
@@ -133,14 +174,17 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
         <canvas
           ref={preview.canvasRef}
           className={styles.canvas}
-          onMouseDown={preview.handleMouseDown}
-          onMouseMove={preview.handleMouseMove}
-          onMouseUp={preview.handleMouseUp}
-          onMouseLeave={preview.handleMouseUp}
-          style={{ cursor: preview.canvasCursor }}
+          onMouseDown={isInteractionDisabled ? undefined : preview.handleMouseDown}
+          onMouseMove={isInteractionDisabled ? undefined : preview.handleMouseMove}
+          onMouseUp={isInteractionDisabled ? undefined : preview.handleMouseUp}
+          onMouseLeave={isInteractionDisabled ? undefined : preview.handleMouseUp}
+          style={{ cursor: isInteractionDisabled ? 'not-allowed' : preview.canvasCursor }}
         />
         {preview.isLoading && (
           <div className={styles.loadingOverlay}>Đang tải preview...</div>
+        )}
+        {isInteractionDisabled && (
+          <div className={styles.disabledOverlay}>{interactiveDisabledReason}</div>
         )}
       </div>
 
@@ -151,6 +195,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               pos({preview.subtitlePosition.x}, {preview.subtitlePosition.y})
               {' | '}
               {preview.videoSize.width}×{preview.videoSize.height}
+              {' | '}
+              {isPortraitMode ? '9:16' : '16:9'} {displayRenderResolution}
             </>
           ) : preview.mode === 'logo' ? (
             <>
@@ -159,6 +205,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               scale {Math.round(preview.logoScale * 100)}%
               {' | '}
               kéo góc để resize
+              {' | '}
+              {isPortraitMode ? '9:16' : '16:9'} {displayRenderResolution}
             </>
           ) : (
             <>
@@ -167,6 +215,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
                 : (isPortraitMode ? 'Kéo để đặt vùng blur đáy' : 'Kéo để đặt vùng tô đen')}
               {' | '}
               {preview.videoSize.width}×{preview.videoSize.height}
+              {' | '}
+              {isPortraitMode ? '9:16' : '16:9'} {displayRenderResolution}
               {isPortraitMode && (
                 <> {' | '}crop ngang {Math.round(portraitForegroundCropPercent ?? 0)}%</>
               )}
@@ -183,6 +233,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
                 className={styles.resetBtn}
                 onClick={() => onPositionChange(null)}
                 title="Xóa position, dùng alignment mặc định"
+                disabled={isInteractionDisabled}
               >
                 Tự động
               </button>
@@ -190,17 +241,17 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           )}
           
           <select
-             className={styles.select}
-             value={renderResolution || 'original'}
+             className={styles.resolutionSelect}
+             value={displayRenderResolution}
              onChange={e => onRenderResolutionChange?.(e.target.value as any)}
-             style={{ width: 'auto', padding: '2px 8px', fontSize: '11px', height: '24px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
-             title="Độ phân giải Video khi Render"
+          title={renderSnapshotMode ? 'Snapshot dùng đúng độ phân giải video render' : (isPortraitMode ? 'Độ phân giải render 9:16' : 'Độ phân giải render 16:9')}
+          disabled={isInteractionDisabled}
           >
-             <option value="original">Gốc</option>
-             <option value="1080p">1080p</option>
-             <option value="720p">720p</option>
-             <option value="540p">540p</option>
-             <option value="360p">360p</option>
+             {resolutionOptions.map((item) => (
+               <option key={item.value} value={item.value}>
+                 {item.label}
+               </option>
+             ))}
           </select>
           
           {preview.mode === 'blackout' && preview.blackoutTop !== null && (
@@ -208,6 +259,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               className={`${styles.resetBtn} ${styles.dangerBtn}`}
               onClick={preview.clearBlackout}
               title={isPortraitMode ? 'Xóa vùng blur đáy' : 'Xóa vùng tô đen'}
+              disabled={isInteractionDisabled}
             >
               <Trash2 size={12} /> Xóa
             </button>
@@ -223,23 +275,26 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               type="range"
               className={styles.scrubber}
               min={0}
-              max={Math.min(5, preview.videoDuration || 5)}
+              max={preview.videoDuration > 0 ? preview.videoDuration : 5}
               step={0.1}
               value={preview.frameTimeSec}
               onChange={e => preview.setFrameTimeSec(parseFloat(e.target.value))}
-              onMouseUp={e => {
+              onMouseUp={isInteractionDisabled ? undefined : (e => {
                 const t = parseFloat((e.target as HTMLInputElement).value);
                 preview.loadFrameAt(t);
                 onFrameTimeChange?.(t);
-              }}
-              onTouchEnd={e => {
+              })}
+              onTouchEnd={isInteractionDisabled ? undefined : (e => {
                 const t = parseFloat((e.target as HTMLInputElement).value);
                 preview.loadFrameAt(t);
                 onFrameTimeChange?.(t);
-              }}
-              title="Chọn frame xem trước trong 5s đầu video — frame được chọn sẽ dùng làm thumbnail"
+              })}
+              title="Chọn frame xem trước theo toàn bộ timeline video — frame được chọn sẽ dùng làm thumbnail"
+              disabled={isInteractionDisabled}
             />
-            <span className={styles.scrubberHint}>5s đầu</span>
+            <span className={styles.scrubberHint}>
+              {preview.videoDuration > 0 ? `${preview.videoDuration.toFixed(1)}s` : 'timeline'}
+            </span>
           </div>
           <div className={styles.thumbnailTextRow}>
             <span className={styles.thumbnailTextLabel}>Thumbnail:</span>
@@ -249,7 +304,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh text ở danh sách phía trên' : 'Tiêu đề video... (bỏ trống = không có chữ)'}
               value={thumbnailText || ''}
               onChange={e => onThumbnailTextChange?.(e.target.value)}
-              readOnly={!!thumbnailTextReadOnly}
+              readOnly={!!thumbnailTextReadOnly || isInteractionDisabled}
               title={thumbnailTextReadOnly
                 ? 'Đang ở chế độ multi-folder: text này chỉ để preview, hãy chỉnh trong danh sách theo folder'
                 : 'Văn bản hiển thị ở trung tâm thumbnail ở đầu video'}

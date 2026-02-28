@@ -62,3 +62,16 @@ export interface StepDependencyIssue {
   reason: string;
   missingDeps: Step[];
 }
+
+export type CaptionStepPanelKey = 'b1' | 'b2' | 'b3' | 'b4' | 'b5' | 'b6' | 'b7' | 'run';
+
+export interface StepPanelState {
+  expanded: boolean;
+  advanced: boolean;
+}
+
+export interface PreviewDockState {
+  pinned: boolean;
+  compact: boolean;
+  disabledReason?: string;
+}

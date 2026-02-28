@@ -16,5 +16,8 @@ export type {
   ProcessingMode,
   StepGuardState,
   StepDependencyIssue,
+  CaptionStepPanelKey,
+  StepPanelState,
+  PreviewDockState,
 } from './CaptionTypes';
 

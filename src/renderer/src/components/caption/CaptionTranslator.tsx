@@ -12,10 +12,9 @@ import {
   VOICES,
   RATE_OPTIONS,
   VOLUME_OPTIONS,
-  STEP_LABELS,
   LINES_PER_FILE_OPTIONS,
 } from '../../config/captionConfig';
-import { HardsubTimingMetrics, Step } from './CaptionTypes';
+import { CaptionStepPanelKey, HardsubTimingMetrics, Step, StepPanelState, SubtitleEntry } from './CaptionTypes';
 import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
@@ -30,8 +29,9 @@ import {
 } from './hooks/captionSessionStore';
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { ThumbnailListPanel } from './components/ThumbnailListPanel';
+import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { Download } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, Eye } from 'lucide-react';
 import { CaptionProjectSettingsValues } from '@shared/types/caption';
 
 export function CaptionTranslator() {
@@ -395,11 +395,118 @@ export function CaptionTranslator() {
   const displayPath = processing.currentFolder?.path ?? firstFolderPath;
   const videoInfo = displayPath ? fileManager.folderVideos[displayPath] : null;
   const originalVideoDuration = videoInfo?.duration || 0;
+  const livePreviewVideoPath = videoInfo?.fullPath || fileManager.firstVideoPath || null;
+
+  const [sessionStepStatus, setSessionStepStatus] = useState<Partial<Record<Step, string>>>({});
+  const [sessionPreviewEntries, setSessionPreviewEntries] = useState<SubtitleEntry[]>([]);
+  const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
+  const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
+  const [previewMode, setPreviewMode] = useState<'render' | 'live'>('render');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
     ? (displayPath ? displayPath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
     : (displayPath ? `${displayPath}/caption_output` : '');
+
+  useEffect(() => {
+    if (!fileManager.filePath) {
+      setSessionStepStatus({});
+      setSessionPreviewEntries(fileManager.entries);
+      setRenderedPreviewVideoPath(null);
+      setPreviewSourceLabel('live_video');
+      return;
+    }
+
+    const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
+    const activeInputPath = processing.currentFolder?.path ?? inputPaths[0];
+    if (!activeInputPath) {
+      return;
+    }
+
+    let cancelled = false;
+    const hydratePreviewFromSession = async () => {
+      try {
+        const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
+        const session = await readCaptionSession(sessionPath, {
+          projectId,
+          inputType: settings.inputType,
+          sourcePath: activeInputPath,
+          folderPath: settings.inputType === 'draft'
+            ? activeInputPath
+            : activeInputPath.replace(/[^/\\]+$/, ''),
+        });
+        if (cancelled) return;
+
+        const nextStepStatus: Partial<Record<Step, string>> = {
+          1: session.steps.step1?.status,
+          2: session.steps.step2?.status,
+          3: session.steps.step3?.status,
+          4: session.steps.step4?.status,
+          5: session.steps.step5?.status,
+          6: session.steps.step6?.status,
+          7: session.steps.step7?.status,
+        };
+        setSessionStepStatus(nextStepStatus);
+
+        const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
+        const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
+        const selectedEntries =
+          (session.steps.step3?.status === 'success' && translated.length > 0)
+            ? translated
+            : (translated.length > 0 ? translated : extracted);
+        setSessionPreviewEntries(selectedEntries.length > 0 ? selectedEntries : fileManager.entries);
+        setPreviewSourceLabel(
+          session.steps.step3?.status === 'success' && translated.length > 0
+            ? 'session_translated_entries'
+            : 'session_extracted_entries'
+        );
+
+        const finalVideoPathRaw =
+          typeof session.artifacts.finalVideoPath === 'string' && session.artifacts.finalVideoPath.trim().length > 0
+            ? session.artifacts.finalVideoPath
+            : (typeof (session.data.renderResult as Record<string, unknown> | undefined)?.outputPath === 'string'
+              ? ((session.data.renderResult as Record<string, unknown>).outputPath as string)
+              : null);
+
+        if (session.steps.step7?.status === 'success' && finalVideoPathRaw) {
+          const verifyRes = await (window.electronAPI as any).captionVideo.getVideoMetadata(finalVideoPathRaw);
+          if (!cancelled && verifyRes?.success) {
+            setRenderedPreviewVideoPath(finalVideoPathRaw);
+          } else if (!cancelled) {
+            setRenderedPreviewVideoPath(null);
+          }
+        } else {
+          setRenderedPreviewVideoPath(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[CaptionTranslator] Không thể hydrate preview từ caption_session.json', error);
+          setSessionPreviewEntries(fileManager.entries);
+          setRenderedPreviewVideoPath(null);
+        }
+      }
+    };
+
+    hydratePreviewFromSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileManager.filePath, fileManager.entries, processing.currentFolder?.path, processing.status, projectId, settings.inputType]);
+
+  useEffect(() => {
+    if (previewMode === 'render' && !renderedPreviewVideoPath) {
+      setPreviewMode('live');
+    }
+  }, [previewMode, renderedPreviewVideoPath]);
+
+  const effectivePreviewMode: 'render' | 'live' =
+    previewMode === 'render' && renderedPreviewVideoPath ? 'render' : 'live';
+  const previewVideoPath = effectivePreviewMode === 'render'
+    ? renderedPreviewVideoPath
+    : livePreviewVideoPath;
+  const previewEntries = effectivePreviewMode === 'render'
+    ? []
+    : (sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -602,420 +709,715 @@ export function CaptionTranslator() {
     return `Step 7 đang bị chặn: ${issue.reason}`;
   })();
 
+  const [stepPanels, setStepPanels] = useState<Record<CaptionStepPanelKey, StepPanelState>>({
+    b1: { expanded: true, advanced: false },
+    b2: { expanded: false, advanced: false },
+    b3: { expanded: true, advanced: false },
+    b4: { expanded: true, advanced: false },
+    b5: { expanded: false, advanced: false },
+    b6: { expanded: false, advanced: false },
+    b7: { expanded: true, advanced: false },
+    run: { expanded: true, advanced: false },
+  });
+
+  const togglePanel = (key: CaptionStepPanelKey) => {
+    setStepPanels((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        expanded: !prev[key].expanded,
+      },
+    }));
+  };
+
+  const getStepBadge = (step: Step): { label: string; className: string } => {
+    const hasIssue = processing.stepDependencyIssues.some((item) => item.step === step);
+    if (processing.status === 'running' && processing.currentStep === step) {
+      return { label: 'Running', className: `${styles.statusBadge} ${styles.statusRunning}` };
+    }
+    if (processing.status === 'error' && processing.currentStep === step) {
+      return { label: 'Error', className: `${styles.statusBadge} ${styles.statusError}` };
+    }
+    if (hasIssue) {
+      return { label: 'Blocked', className: `${styles.statusBadge} ${styles.statusError}` };
+    }
+    const persistedStatus = sessionStepStatus[step];
+    if (persistedStatus === 'success') {
+      return { label: 'Done', className: `${styles.statusBadge} ${styles.statusDone}` };
+    }
+    if (persistedStatus === 'running') {
+      return { label: 'Running', className: `${styles.statusBadge} ${styles.statusRunning}` };
+    }
+    if (persistedStatus === 'error') {
+      return { label: 'Error', className: `${styles.statusBadge} ${styles.statusError}` };
+    }
+    if (persistedStatus === 'stale') {
+      return { label: 'Stale', className: `${styles.statusBadge} ${styles.statusError}` };
+    }
+    if (processing.status === 'success' && processing.enabledSteps.has(step)) {
+      return { label: 'Done', className: `${styles.statusBadge} ${styles.statusDone}` };
+    }
+    return { label: processing.enabledSteps.has(step) ? 'Idle' : 'Off', className: `${styles.statusBadge} ${styles.statusIdle}` };
+  };
+
+  const STEP_SHORT_LABELS: Record<Step, string> = {
+    1: 'Input',
+    2: 'Tách',
+    3: 'Dịch',
+    4: 'TTS',
+    5: 'Trim',
+    6: 'Ghép',
+    7: 'Render',
+  };
+
+  const configSummaryRows = useMemo(() => {
+    const subtitlePos = settings.subtitlePosition
+      ? `${Math.round(settings.subtitlePosition.x)}, ${Math.round(settings.subtitlePosition.y)}`
+      : 'Auto';
+    const logoPos = settings.logoPosition
+      ? `${Math.round(settings.logoPosition.x)}, ${Math.round(settings.logoPosition.y)}`
+      : 'Off';
+    return [
+      { key: 'Input', value: settings.inputType === 'draft' ? 'Draft' : 'SRT' },
+      { key: 'Dịch', value: `${settings.translateMethod?.toUpperCase() || 'API'} / ${settings.geminiModel}` },
+      { key: 'TTS', value: `${settings.voice} | rate ${settings.rate} | vol ${settings.volume}` },
+      { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution}` },
+      { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x` },
+      { key: 'Âm lượng', value: `video ${settings.videoVolume}% | TTS ${settings.audioVolume}%` },
+      { key: 'Sub pos', value: subtitlePos },
+      { key: 'Logo', value: `${logoPos} | scale ${Math.round((settings.logoScale || 1) * 100)}%` },
+      { key: 'Thumbnail', value: `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s` },
+      { key: 'Preview', value: `${effectivePreviewMode === 'render' ? 'Render snapshot' : 'Live'} (${previewSourceLabel})` },
+    ];
+  }, [
+    settings.inputType,
+    settings.translateMethod,
+    settings.geminiModel,
+    settings.voice,
+    settings.rate,
+    settings.volume,
+    settings.renderMode,
+    settings.renderResolution,
+    settings.renderAudioSpeed,
+    settings.videoVolume,
+    settings.audioVolume,
+    settings.subtitlePosition,
+    settings.logoPosition,
+    settings.logoScale,
+    settings.thumbnailDurationSec,
+    settings.thumbnailFrameTimeSec,
+    autoVideoSpeed,
+    effectivePreviewMode,
+    previewSourceLabel,
+  ]);
+
+  const handleSelectLogo = async () => {
+    const result = await (window.electronAPI as any).invoke('dialog:openFile', {
+      filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+      properties: ['openFile'],
+    });
+    if (!result?.canceled && result?.filePaths?.[0]) {
+      settings.setLogoPath(result.filePaths[0]);
+      settings.setLogoPosition(undefined);
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    settings.setLogoPath(undefined);
+    settings.setLogoPosition(undefined);
+  };
+
   return (
     <div className={styles.container}>
-
-      {/* Cột trái: Input, Model, TTS */}
       <div className={styles.leftColumn}>
-        {/* Section 1: File Input */}
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>1. Chọn file đầu vào</div>
-          
-            <div className={styles.fileTypeSelection}>
-            <RadioButton
-              label="File SRT"
-              checked={settings.inputType === 'srt'}
-              onChange={() => settings.setInputType('srt')}
-              name="inputType"
-            />
-            <RadioButton
-              label="Draft JSON (CapCut)"
-              description="Dịch trực tiếp từ CapCut"
-              checked={settings.inputType === 'draft'}
-              onChange={() => settings.setInputType('draft')}
-              name="inputType"
-            />
-          </div>
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b1.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b1')}
+          >
+            <div className={styles.accordionTitle}>B1 Input</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(1).className}>{getStepBadge(1).label}</span>
+              {stepPanels.b1.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b1.expanded && (
+            <div className={styles.accordionBody}>
+              <div className={styles.fileTypeSelection}>
+                <RadioButton
+                  label="SRT"
+                  checked={settings.inputType === 'srt'}
+                  onChange={() => settings.setInputType('srt')}
+                  name="inputType"
+                />
+                <RadioButton
+                  label="Draft"
+                  description="CapCut"
+                  checked={settings.inputType === 'draft'}
+                  onChange={() => settings.setInputType('draft')}
+                  name="inputType"
+                />
+              </div>
 
-          <div className={styles.flexRow} style={settings.inputType === 'draft' ? { alignItems: 'stretch' } : {}}>
-            {settings.inputType === 'srt' ? (
-              <Input
-                value={fileManager.filePath}
-                onChange={(e) => fileManager.setFilePath(e.target.value)}
-                placeholder="Đường dẫn file .srt"
-              />
-            ) : (
-              <div 
-                className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
-                onClick={!fileManager.filePath ? fileManager.handleBrowseFile : undefined}
-              >
-                {!fileManager.filePath ? (
-                  <span className={styles.placeholderText}>Chưa chọn thư mục dự án nào...</span>
+              <div className={styles.flexRow} style={settings.inputType === 'draft' ? { alignItems: 'stretch' } : {}}>
+                {settings.inputType === 'srt' ? (
+                  <Input
+                    value={fileManager.filePath}
+                    onChange={(e) => fileManager.setFilePath(e.target.value)}
+                    placeholder="Đường dẫn .srt"
+                  />
                 ) : (
-                  <div className={styles.folderGrid}>
-                    {fileManager.filePath.split('; ').map((path, idx) => {
-                      // Extract folder name from path
-                      const folderName = path.split(/[/\\]/).pop() || path;
-                      const videoInfo = fileManager.folderVideos[path];
-                      
-                      return (
-                        <div key={idx} className={styles.folderBox} title={path}>
-                          <div className={styles.folderBoxHeader}>
-                            <img src={folderIconUrl} alt="folder" className={styles.folderIcon} style={{ width: '16px', height: '16px', marginRight: '6px' }} />
-                            <span className={styles.folderName}>{folderName}</span>
-                          </div>
-                          {videoInfo && (
-                            <div className={styles.folderBoxSubText}>
-                              <img src={videoIconUrl} alt="video" style={{ width: '14px', height: '14px', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
-                              {videoInfo.name}
+                  <div
+                    className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
+                    onClick={!fileManager.filePath ? fileManager.handleBrowseFile : undefined}
+                  >
+                    {!fileManager.filePath ? (
+                      <span className={styles.placeholderText}>Chưa chọn folder...</span>
+                    ) : (
+                      <div className={styles.folderGrid}>
+                        {fileManager.filePath.split('; ').map((path, idx) => {
+                          const folderName = path.split(/[/\\]/).pop() || path;
+                          const vInfo = fileManager.folderVideos[path];
+                          return (
+                            <div key={idx} className={styles.folderBox} title={path}>
+                              <div className={styles.folderBoxHeader}>
+                                <img src={folderIconUrl} alt="folder" className={styles.folderIcon} style={{ width: '16px', height: '16px', marginRight: '6px' }} />
+                                <span className={styles.folderName}>{folderName}</span>
+                              </div>
+                              {vInfo && (
+                                <div className={styles.folderBoxSubText}>
+                                  <img src={videoIconUrl} alt="video" style={{ width: '14px', height: '14px', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
+                                  {vInfo.name}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
+              </div>
+              {fileManager.entries.length > 0 && (
+                <p className={styles.textMuted} style={{ marginTop: '8px' }}>
+                  Đã load: {fileManager.entries.length} dòng
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b2.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b2')}
+          >
+            <div className={styles.accordionTitle}>B2 Tách</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(2).className}>{getStepBadge(2).label}</span>
+              {stepPanels.b2.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b2.expanded && (
+            <div className={styles.accordionBody}>
+              <div className={styles.splitConfig}>
+                <RadioButton
+                  label="Dòng/file"
+                  checked={settings.splitByLines}
+                  onChange={() => settings.setSplitByLines(true)}
+                  name="splitConfig"
+                >
+                  <select
+                    value={settings.linesPerFile}
+                    onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
+                    className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
+                    disabled={!settings.splitByLines}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ marginTop: '8px' }}
+                  >
+                    {LINES_PER_FILE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </RadioButton>
+
+                <RadioButton
+                  label="Số phần"
+                  checked={!settings.splitByLines}
+                  onChange={() => settings.setSplitByLines(false)}
+                  name="splitConfig"
+                >
+                  <Input
+                    type="number"
+                    value={settings.numberOfParts}
+                    onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
+                    min={2}
+                    max={20}
+                    variant="small"
+                    disabled={settings.splitByLines}
+                    onClick={(e) => e.stopPropagation()}
+                    containerClassName={settings.splitByLines ? styles.disabled : ''}
+                    style={{ marginTop: '8px' }}
+                  />
+                </RadioButton>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b3.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b3')}
+          >
+            <div className={styles.accordionTitle}>B3 Dịch</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(3).className}>{getStepBadge(3).label}</span>
+              {stepPanels.b3.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b3.expanded && (
+            <div className={styles.accordionBody}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div className={styles.sectionTitleCompact}>Model dịch</div>
+                <Button
+                  variant="secondary"
+                  onClick={handleDownloadPromptPreview}
+                  disabled={fileManager.entries.length === 0}
+                  title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải prompt preview (batch 1)'}
+                  style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Download size={13} />
+                  Prompt
+                </Button>
+              </div>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <RadioButton
+                  label="API"
+                  checked={settings.translateMethod === 'api'}
+                  onChange={() => settings.setTranslateMethod('api')}
+                  name="translateMethod"
+                />
+                <RadioButton
+                  label="Impit"
+                  checked={settings.translateMethod === 'impit'}
+                  onChange={() => settings.setTranslateMethod('impit')}
+                  name="translateMethod"
+                />
+              </div>
+              <select
+                value={settings.geminiModel}
+                onChange={(e) => settings.setGeminiModel(e.target.value)}
+                className={styles.select}
+                disabled={settings.translateMethod === 'impit'}
+                style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
+              >
+                {GEMINI_MODELS.map((m: { value: string; label: string }) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b4.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b4')}
+          >
+            <div className={styles.accordionTitle}>B4 TTS</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(4).className}>{getStepBadge(4).label}</span>
+              {stepPanels.b4.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b4.expanded && (
+            <div className={styles.accordionBody}>
+              <div className={styles.grid2}>
+                <div>
+                  <label className={styles.label}>Giọng</label>
+                  <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
+                    {VOICES.map((v) => (
+                      <option key={v.value} value={v.value}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={styles.label}>Scale SRT</label>
+                  <Input
+                    type="number"
+                    value={settings.srtSpeed}
+                    onChange={(e) => settings.setSrtSpeed(Number(e.target.value))}
+                    min={1}
+                    max={2}
+                    step={0.1}
+                  />
+                </div>
+              </div>
+              <div className={styles.grid2} style={{ marginTop: '12px' }}>
+                <div>
+                  <label className={styles.label}>Rate</label>
+                  <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
+                    {RATE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={styles.label}>Volume</label>
+                  <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
+                    {VOLUME_OPTIONS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: '12px' }}>
+                <Checkbox
+                  label="Auto fit audio"
+                  checked={settings.autoFitAudio}
+                  onChange={() => settings.setAutoFitAudio(!settings.autoFitAudio)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b7.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b7')}
+          >
+            <div className={styles.accordionTitle}>B7 Render</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(7).className}>{getStepBadge(7).label}</span>
+              {stepPanels.b7.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b7.expanded && (
+            <div className={styles.accordionBody}>
+              <HardsubSettingsPanel
+                visible={processing.enabledSteps.has(7)}
+                settings={settings}
+                availableFonts={availableFonts}
+                metrics={{
+                  isMultiFolder,
+                  isEstimated,
+                  displayPath,
+                  videoName: videoInfo?.name,
+                  baseAudioDuration,
+                  audioExpectedDuration,
+                  videoSubBaseDuration,
+                  videoMarkerSec,
+                  autoVideoSpeed,
+                  formatDuration,
+                } as HardsubTimingMetrics}
+                thumbnailListPanel={(
+                  <ThumbnailListPanel
+                    visible={
+                      (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') &&
+                      settings.inputType === 'draft' &&
+                      isMultiFolder
+                    }
+                    items={hardsubSettings.thumbnailFolderItems}
+                    autoStartValue={hardsubSettings.thumbnailAutoStartValue}
+                    onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
+                    onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
+                    onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
+                    showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
+                    dependencyWarning={step7DependencyWarning}
+                  />
+                )}
+              />
+              {!processing.enabledSteps.has(7) && (
+                <div className={styles.textMuted} style={{ fontSize: 12 }}>
+                  Bật Step 7 ở phần Điều khiển để chỉnh render.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b5.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b5')}
+          >
+            <div className={styles.accordionTitle}>B5 Trim</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(5).className}>{getStepBadge(5).label}</span>
+              {stepPanels.b5.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b5.expanded && (
+            <div className={styles.accordionBody}>
+              <div className={styles.textMuted} style={{ fontSize: 12 }}>
+                Step 5 hiện không có cấu hình riêng.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.accordion}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.b6.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('b6')}
+          >
+            <div className={styles.accordionTitle}>B6 Ghép</div>
+            <div className={styles.accordionAction}>
+              <span className={getStepBadge(6).className}>{getStepBadge(6).label}</span>
+              {stepPanels.b6.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.b6.expanded && (
+            <div className={styles.accordionBody}>
+              <div className={styles.textMuted} style={{ fontSize: 12 }}>
+                Step 6 dùng cấu hình audio ở các bước trước.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={`${styles.accordion} ${styles.runAccordionTop}`}>
+          <button
+            className={`${styles.accordionHeader} ${stepPanels.run.expanded ? styles.accordionHeaderOpen : ''}`}
+            onClick={() => togglePanel('run')}
+          >
+            <div className={styles.accordionTitle}>Chạy & Tiến độ</div>
+            <div className={styles.accordionAction}>
+              <span className={`${styles.statusBadge} ${styles.statusIdle}`}>{processing.status}</span>
+              {stepPanels.run.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </div>
+          </button>
+          {stepPanels.run.expanded && (
+            <div className={styles.accordionBody}>
+              <div className={styles.stepCheckboxes}>
+                {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => (
+                  <Checkbox
+                    key={step}
+                    label={`B${step} ${STEP_SHORT_LABELS[step]}`}
+                    checked={processing.enabledSteps.has(step)}
+                    onChange={() => processing.toggleStep(step)}
+                    highlight={processing.currentStep === step}
+                  />
+                ))}
+              </div>
+
+              <div className={styles.configSummaryBox}>
+                <div className={styles.configSummaryTitle}>Tóm tắt cấu hình hiện tại</div>
+                <div className={styles.configSummaryGrid}>
+                  {configSummaryRows.map((row) => (
+                    <div key={row.key} className={styles.configSummaryRow}>
+                      <span className={styles.configSummaryKey}>{row.key}</span>
+                      <span className={styles.configSummaryValue}>{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {processing.stepDependencyIssues.length > 0 && (
+                <div className={styles.stepGuardBox}>
+                  <div className={styles.stepGuardTitle}>Step bị chặn:</div>
+                  {processing.stepDependencyIssues.slice(0, 6).map((issue, idx) => (
+                    <div key={`${issue.folderPath}-${issue.step}-${idx}`} className={styles.stepGuardItem}>
+                      [{issue.folderName}] Step {issue.step}: {issue.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isMultiFolder && (
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                  <button
+                    className={styles.resetBtnLike}
+                    style={{
+                      flex: 1,
+                      background: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
+                      color: settings.processingMode !== 'step-first' ? '#fff' : 'var(--color-text-muted)',
+                      borderColor: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
+                      cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
+                      opacity: processing.status === 'running' ? 0.5 : 1,
+                    }}
+                    disabled={processing.status === 'running'}
+                    onClick={() => settings.setProcessingMode('folder-first')}
+                    title="Xong từng folder"
+                  >
+                    Folder-first
+                  </button>
+                  <button
+                    className={styles.resetBtnLike}
+                    style={{
+                      flex: 1,
+                      background: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
+                      color: settings.processingMode === 'step-first' ? '#fff' : 'var(--color-text-muted)',
+                      borderColor: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
+                      cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
+                      opacity: processing.status === 'running' ? 0.5 : 1,
+                    }}
+                    disabled={processing.status === 'running'}
+                    onClick={() => settings.setProcessingMode('step-first')}
+                    title="Xong từng step"
+                  >
+                    Step-first
+                  </button>
+                </div>
+              )}
+
+              <div className={styles.buttonsRow}>
+                <Button
+                  onClick={processing.handleStart}
+                  disabled={processing.status === 'running'}
+                  variant="success"
+                  fullWidth
+                >
+                  ▶ Chạy
+                </Button>
+                <Button
+                  onClick={processing.handleStop}
+                  disabled={processing.status !== 'running'}
+                  variant="danger"
+                  fullWidth
+                >
+                  ⏹ Dừng
+                </Button>
+              </div>
+
+              <div className={styles.progressSection} style={{ marginTop: 12 }}>
+                {processing.currentFolder && processing.currentFolder.total > 1 && (
+                  <div className={styles.progressHeader} style={{ marginBottom: '4px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
+                      Project {processing.currentFolder.index}/{processing.currentFolder.total}: {processing.currentFolder.name}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      {processing.currentFolder.index}/{processing.currentFolder.total}
+                    </span>
+                  </div>
+                )}
+                {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <span>{videoInfo?.name ?? 'Video'}</span>
+                    <span>{formatDuration(originalVideoDuration)}</span>
+                    <span>Sync: {formatDuration(videoSubBaseDuration)}</span>
+                    <span>Audio: {formatDuration(audioExpectedDuration)}</span>
+                    <span>Marker: {formatDuration(videoMarkerSec)}</span>
+                    <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
+                      Speed: {autoVideoSpeed.toFixed(2)}x
+                    </span>
+                  </div>
+                )}
+                <div className={styles.progressHeader}>
+                  <span className={styles.textMuted}>{processing.progress.message}</span>
+                  {processing.progress.total > 0 && (
+                    <span className={styles.textMuted}>
+                      {processing.progress.current}/{processing.progress.total}
+                    </span>
+                  )}
+                </div>
+                {processing.currentFolder && processing.currentFolder.total > 1 && (
+                  <div className={styles.progressBar} style={{ marginBottom: '4px' }}>
+                    <div
+                      className={styles.progressFill}
+                      style={{
+                        width: `${((processing.currentFolder.index - 1) / processing.currentFolder.total) * 100}%`,
+                        backgroundColor: 'var(--color-accent, #4a9eff)',
+                        opacity: 0.5,
+                      }}
+                    />
+                  </div>
+                )}
+                {processing.progress.total > 0 && (
+                  <div className={styles.progressBar}>
+                    <div
+                      className={styles.progressFill}
+                      style={{
+                        width: `${(processing.progress.current / processing.progress.total) * 100}%`,
+                        backgroundColor: getProgressColor(),
+                      }}
+                    />
                   </div>
                 )}
               </div>
-            )}
-            <Button onClick={fileManager.handleBrowseFile}>
-              Browse
-            </Button>
-          </div>
-          {fileManager.entries.length > 0 && (
-            <p className={styles.textMuted} style={{ marginTop: '8px' }}>Đã load: {fileManager.entries.length} dòng</p>
+            </div>
           )}
-        </div>
-
-        {/* Section 2: Split Config */}
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>2. Cấu hình chia nhỏ Text</div>
-          <div className={styles.splitConfig}>
-
-            <RadioButton
-              label="Dòng/file"
-              checked={settings.splitByLines}
-              onChange={() => settings.setSplitByLines(true)}
-              name="splitConfig"
-            >
-              <select 
-                value={settings.linesPerFile} 
-                onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
-                className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
-                disabled={!settings.splitByLines}
-                onClick={(e) => e.stopPropagation()}
-                style={{ marginTop: '8px' }}
-              >
-                {LINES_PER_FILE_OPTIONS.map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </RadioButton>
-
-            <RadioButton
-              label="Số phần"
-              checked={!settings.splitByLines}
-              onChange={() => settings.setSplitByLines(false)}
-              name="splitConfig"
-            >
-              <Input
-                type="number"
-                value={settings.numberOfParts}
-                onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
-                min={2}
-                max={20}
-                variant="small"
-                disabled={settings.splitByLines}
-                onClick={(e) => e.stopPropagation()}
-                containerClassName={settings.splitByLines ? styles.disabled : ''}
-                style={{ marginTop: '8px' }}
-              />
-            </RadioButton>
-          </div>
-        </div>
-
-        {/* Section 3: Gemini Model */}
-        <div className={styles.section}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <div className={styles.sectionTitle} style={{ margin: 0 }}>3. Cấu hình Dịch (Step 3)</div>
-            <Button
-              variant="secondary"
-              onClick={handleDownloadPromptPreview}
-              disabled={fileManager.entries.length === 0}
-              title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải preview prompt (batch 1)'}
-              style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
-            >
-              <Download size={13} />
-              Preview Prompt
-            </Button>
-          </div>
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '10px' }}>
-            <RadioButton
-              label="API (Gemini Key)"
-              checked={settings.translateMethod === 'api'}
-              onChange={() => settings.setTranslateMethod('api')}
-              name="translateMethod"
-            />
-            <RadioButton
-              label="Impit (Cookie Browser)"
-              checked={settings.translateMethod === 'impit'}
-              onChange={() => settings.setTranslateMethod('impit')}
-              name="translateMethod"
-            />
-          </div>
-          <select
-            value={settings.geminiModel}
-            onChange={(e) => settings.setGeminiModel(e.target.value)}
-            className={styles.select}
-            disabled={settings.translateMethod === 'impit'}
-            style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
-          >
-            {GEMINI_MODELS.map((m: { value: string; label: string }) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Section 4: TTS Config */}
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>4. Cấu hình Giọng đọc (TTS)</div>
-          <div className={styles.grid2}>
-            <div>
-              <label className={styles.label}>Giọng đọc</label>
-              <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
-                {VOICES.map(v => (
-                  <option key={v.value} value={v.value}>{v.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={styles.label}>Tốc độ SRT</label>
-            <Input
-              type="number"
-              value={settings.srtSpeed}
-              onChange={(e) => settings.setSrtSpeed(Number(e.target.value))}
-              min={1}
-              max={2}
-              step={0.1}
-            />
-            </div>
-          </div>
-          <div className={styles.grid2} style={{ marginTop: '12px' }}>
-            <div>
-              <label className={styles.label}>Tốc độ đọc</label>
-              <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
-                {RATE_OPTIONS.map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={styles.label}>Âm lượng</label>
-              <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
-                {VOLUME_OPTIONS.map(v => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-
-
-          <div style={{ marginTop: '12px' }}>
-            <Checkbox
-              label="Tự động điều chỉnh tốc độ audio (fit vào thời lượng SRT)"
-              checked={settings.autoFitAudio}
-              onChange={() => settings.setAutoFitAudio(!settings.autoFitAudio)}
-            />
-          </div>
         </div>
       </div>
 
-      {/* Cột phải: Split, Controls */}
       <div className={styles.rightColumn}>
-        {/* Section 6: Video Options (Only shows when Step 7 is checked) */}
-        <HardsubSettingsPanel
-          visible={processing.enabledSteps.has(7)}
-          settings={settings}
-          availableFonts={availableFonts}
-          metrics={{
-            isMultiFolder,
-            isEstimated,
-            displayPath,
-            videoName: videoInfo?.name,
-            baseAudioDuration,
-            audioExpectedDuration,
-            videoSubBaseDuration,
-            videoMarkerSec,
-            autoVideoSpeed,
-            formatDuration,
-          } as HardsubTimingMetrics}
-          entries={fileManager.entries}
-          firstVideoPath={fileManager.firstVideoPath}
-          thumbnailListPanel={(
-            <ThumbnailListPanel
-              visible={
-                (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') &&
-                settings.inputType === 'draft' &&
-                isMultiFolder
+        <div className={styles.previewSticky}>
+          <div className={styles.previewDock}>
+            <div className={styles.previewDockTitle}>
+              <Eye size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              Preview
+            </div>
+            <div className={styles.previewDockHint}>
+              Khung cố định. Có thể chuyển Live hoặc Snapshot render từ session.
+            </div>
+            <div className={styles.previewModeSwitch}>
+              <button
+                className={`${styles.resetBtnLike} ${effectivePreviewMode === 'live' ? styles.previewModeBtnActive : ''}`}
+                onClick={() => setPreviewMode('live')}
+                title="Preview live để chỉnh layer"
+              >
+                Live
+              </button>
+              <button
+                className={`${styles.resetBtnLike} ${effectivePreviewMode === 'render' ? styles.previewModeBtnActive : ''}`}
+                onClick={() => setPreviewMode('render')}
+                disabled={!renderedPreviewVideoPath}
+                title={renderedPreviewVideoPath ? 'Preview từ video đã render (giống output)' : 'Chưa có final video trong session'}
+              >
+                Render
+              </button>
+              <span className={styles.previewSourceTag}>
+                {effectivePreviewMode === 'render'
+                  ? 'source: session.finalVideoPath'
+                  : `source: ${previewSourceLabel}`}
+              </span>
+            </div>
+            <SubtitlePreview
+              videoPath={previewVideoPath}
+              style={settings.style}
+              entries={previewEntries}
+              subtitlePosition={settings.subtitlePosition}
+              blackoutTop={settings.blackoutTop}
+              renderMode={settings.renderMode}
+              renderResolution={settings.renderResolution}
+              logoPath={settings.logoPath}
+              logoPosition={settings.logoPosition}
+              logoScale={settings.logoScale}
+              portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
+              thumbnailFontName={settings.thumbnailFontName}
+              onPositionChange={settings.setSubtitlePosition}
+              onBlackoutChange={settings.setBlackoutTop}
+              onRenderResolutionChange={settings.setRenderResolution}
+              onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
+              onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+              thumbnailText={isMultiFolder ? (hardsubSettings.thumbnailTextsByOrder[0] || '') : hardsubSettings.thumbnailText}
+              onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
+              thumbnailTextReadOnly={isMultiFolder}
+              thumbnailTextHelper={isMultiFolder ? 'Multi-folder: chỉnh text ở danh sách bên trái.' : undefined}
+              onFrameTimeChange={settings.setThumbnailFrameTimeSec}
+              selectedFrameTimeSec={settings.thumbnailFrameTimeSec}
+              renderSnapshotMode={effectivePreviewMode === 'render'}
+              onSelectLogo={handleSelectLogo}
+              onRemoveLogo={handleRemoveLogo}
+              interactiveDisabledReason={
+                effectivePreviewMode === 'render'
+                  ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
+                  : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
               }
-              items={hardsubSettings.thumbnailFolderItems}
-              autoStartValue={hardsubSettings.thumbnailAutoStartValue}
-              onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
-              onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
-              onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
-              showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
-              dependencyWarning={step7DependencyWarning}
             />
-          )}
-          thumbnailPreviewText={isMultiFolder ? (hardsubSettings.thumbnailTextsByOrder[0] || '') : hardsubSettings.thumbnailText}
-          onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
-          thumbnailTextReadOnly={isMultiFolder}
-          thumbnailTextHelper={isMultiFolder ? 'Multi-folder: nhập text riêng cho từng folder trong danh sách phía trên.' : undefined}
-          onSubtitlePositionChange={settings.setSubtitlePosition}
-          onThumbnailFrameTimeChange={settings.setThumbnailFrameTimeSec}
-          onSelectLogo={async () => {
-            const result = await (window.electronAPI as any).invoke('dialog:openFile', {
-              filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
-              properties: ['openFile'],
-            });
-            if (!result?.canceled && result?.filePaths?.[0]) {
-              settings.setLogoPath(result.filePaths[0]);
-              settings.setLogoPosition(undefined);
-            }
-          }}
-          onRemoveLogo={() => {
-            settings.setLogoPath(undefined);
-            settings.setLogoPosition(undefined);
-          }}
-        />
-
-        {/* Section 5: Controls */}
-        <div className={styles.section} style={{ flex: 1, display: 'flex', flexDirection: 'column', marginTop: '20px' }}>
-          <div className={styles.sectionTitle}>7. Điều khiển & Tiến độ</div>
-          
-          {/* Step Checkboxes */}
-          <div className={styles.stepCheckboxes}>
-            {([1, 2, 3, 4, 5, 6, 7] as Step[]).map(step => (
-              <Checkbox
-                key={step}
-                label={STEP_LABELS[step - 1]}
-                checked={processing.enabledSteps.has(step)}
-                onChange={() => processing.toggleStep(step)}
-                highlight={processing.currentStep === step}
-              />
-            ))}
-          </div>
-
-          {processing.stepDependencyIssues.length > 0 && (
-            <div className={styles.stepGuardBox}>
-              <div className={styles.stepGuardTitle}>Step bị chặn do thiếu dữ liệu session:</div>
-              {processing.stepDependencyIssues.slice(0, 6).map((issue, idx) => (
-                <div key={`${issue.folderPath}-${issue.step}-${idx}`} className={styles.stepGuardItem}>
-                  [{issue.folderName}] Step {issue.step}: {issue.reason}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Processing Mode Toggle — chỉ hiển thị khi multi-folder */}
-          {isMultiFolder && (
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-              <button
-                style={{
-                  flex: 1, padding: '5px 8px', fontSize: '12px', fontWeight: 600,
-                  borderRadius: '6px', border: '1px solid',
-                  cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
-                  opacity: processing.status === 'running' ? 0.5 : 1,
-                  background: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
-                  color: settings.processingMode !== 'step-first' ? '#fff' : 'var(--color-text-muted)',
-                  borderColor: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
-                }}
-                disabled={processing.status === 'running'}
-                onClick={() => settings.setProcessingMode('folder-first')}
-                title="Hoàn thành tất cả bước của folder 1 rồi mới sang folder 2"
-              >
-                📁 Folder-first
-              </button>
-              <button
-                style={{
-                  flex: 1, padding: '5px 8px', fontSize: '12px', fontWeight: 600,
-                  borderRadius: '6px', border: '1px solid',
-                  cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
-                  opacity: processing.status === 'running' ? 0.5 : 1,
-                  background: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
-                  color: settings.processingMode === 'step-first' ? '#fff' : 'var(--color-text-muted)',
-                  borderColor: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
-                }}
-                disabled={processing.status === 'running'}
-                onClick={() => settings.setProcessingMode('step-first')}
-                title="Bước 1 tất cả folder → Bước 2 tất cả folder → ..."
-              >
-                ⚡ Step-first
-              </button>
-            </div>
-          )}
-
-          {/* Buttons */}
-          <div className={styles.buttonsRow}>
-            <Button
-              onClick={processing.handleStart}
-              disabled={processing.status === 'running'}
-              variant="success"
-              fullWidth
-            >
-              ▶ START
-            </Button>
-            <Button
-              onClick={processing.handleStop}
-              disabled={processing.status !== 'running'}
-              variant="danger"
-              fullWidth
-            >
-              ⏹ STOP
-            </Button>
-          </div>
-
-          {/* Progress */}
-          <div className={styles.progressSection} style={{ marginTop: 'auto', paddingTop: '16px' }}>
-            {processing.currentFolder && processing.currentFolder.total > 1 && (
-              <div className={styles.progressHeader} style={{ marginBottom: '4px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
-                  📁 Project {processing.currentFolder.index}/{processing.currentFolder.total}: {processing.currentFolder.name}
-                </span>
-                <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                  {processing.currentFolder.index}/{processing.currentFolder.total}
-                </span>
-              </div>
-            )}
-            {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <span>🎬 {videoInfo?.name ?? 'Video'}</span>
-                <span>⏱ {formatDuration(originalVideoDuration)}</span>
-                <span>🧭 Sync: {formatDuration(videoSubBaseDuration)}</span>
-                <span>🔊 Audio: {formatDuration(audioExpectedDuration)}</span>
-                <span>🎯 Marker: {formatDuration(videoMarkerSec)}</span>
-                <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
-                  🚀 Speed: {autoVideoSpeed.toFixed(2)}x
-                </span>
-              </div>
-            )}
-            <div className={styles.progressHeader}>
-              <span className={styles.textMuted}>{processing.progress.message}</span>
-              {processing.progress.total > 0 && <span className={styles.textMuted}>{processing.progress.current}/{processing.progress.total}</span>}
-            </div>
-            {processing.currentFolder && processing.currentFolder.total > 1 && (
-              <div className={styles.progressBar} style={{ marginBottom: '4px' }}>
-                <div
-                  className={styles.progressFill}
-                  style={{
-                    width: `${((processing.currentFolder.index - 1) / processing.currentFolder.total) * 100}%`,
-                    backgroundColor: 'var(--color-accent, #4a9eff)',
-                    opacity: 0.5,
-                  }}
-                />
-              </div>
-            )}
-            {processing.progress.total > 0 && (
-              <div className={styles.progressBar}>
-                <div
-                  className={styles.progressFill}
-                  style={{
-                    width: `${(processing.progress.current / processing.progress.total) * 100}%`,
-                    backgroundColor: getProgressColor(),
-                  }}
-                />
-              </div>
-            )}
           </div>
         </div>
       </div>
