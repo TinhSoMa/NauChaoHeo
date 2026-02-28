@@ -49,11 +49,20 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
               name="renderMode"
             />
             <RadioButton
+              label="Hardsub 9:16 (Blur nền)"
+              checked={settings.renderMode === 'hardsub_portrait_9_16'}
+              onChange={() => settings.setRenderMode('hardsub_portrait_9_16')}
+              name="renderMode"
+            />
+            <RadioButton
               label="Tạo Video Nền Đen rời (Import CapCut)"
               checked={settings.renderMode === 'black_bg'}
               onChange={() => settings.setRenderMode('black_bg')}
               name="renderMode"
             />
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
+            Cấu hình layer/position của chế độ 16:9 và 9:16 được lưu độc lập.
           </div>
         </div>
       </div>
@@ -241,12 +250,13 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
 
       {props.thumbnailListPanel}
 
-      {settings.renderMode === 'hardsub' && settings.inputType === 'draft' && (
+      {(settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') && settings.inputType === 'draft' && (
         <SubtitlePreview
           videoPath={props.firstVideoPath}
           style={settings.style}
           entries={props.entries}
           blackoutTop={settings.blackoutTop}
+          renderMode={settings.renderMode}
           renderResolution={settings.renderResolution}
           logoPath={settings.logoPath}
           logoPosition={settings.logoPosition}

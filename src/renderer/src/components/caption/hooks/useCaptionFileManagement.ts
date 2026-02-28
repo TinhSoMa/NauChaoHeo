@@ -175,9 +175,13 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
         folderPath: inputType === 'draft' ? firstPath : firstPath.replace(/[^/\\]+$/, ''),
       });
       if (cancelled) return;
-      if (session.data.extractedEntries && session.data.extractedEntries.length > 0) {
+      const step3Done = session.steps.step3?.status === 'success';
+      if (step3Done && session.data.translatedEntries && session.data.translatedEntries.length > 0) {
+        setEntries(session.data.translatedEntries as SubtitleEntry[]);
+      } else if (session.data.extractedEntries && session.data.extractedEntries.length > 0) {
         setEntries(session.data.extractedEntries as SubtitleEntry[]);
       } else if (session.data.translatedEntries && session.data.translatedEntries.length > 0) {
+        // backward-safe fallback khi session cũ chưa có step status chuẩn
         setEntries(session.data.translatedEntries as SubtitleEntry[]);
       }
     };

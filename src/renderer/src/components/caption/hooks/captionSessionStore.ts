@@ -1,6 +1,7 @@
 import {
   CaptionSessionV1,
   CaptionProjectSettingsValues,
+  CaptionStepNumber,
   CaptionStepState,
   SubtitleEntry,
 } from '@shared/types/caption';
@@ -99,6 +100,46 @@ export function toStepKey(step: number): 'step1' | 'step2' | 'step3' | 'step4' |
   return `step${step}` as 'step1' | 'step2' | 'step3' | 'step4' | 'step5' | 'step6' | 'step7';
 }
 
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+  if (typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  const parts = keys.map((key) => `"${key}":${stableStringify(record[key])}`);
+  return `{${parts.join(',')}}`;
+}
+
+function hashString(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return `fp_${(hash >>> 0).toString(16)}`;
+}
+
+export function buildObjectFingerprint(value: unknown): string {
+  return hashString(stableStringify(value));
+}
+
+export function buildEntriesFingerprint(entries: SubtitleEntry[] = []): string {
+  const compact = entries.map((entry) => ({
+    index: entry.index,
+    startMs: entry.startMs,
+    endMs: entry.endMs,
+    text: entry.text,
+    translatedText: entry.translatedText,
+  }));
+  return buildObjectFingerprint(compact);
+}
+
 export function makeStepRunning(prev?: CaptionStepState, settingsSnapshot?: Record<string, unknown>): CaptionStepState {
   return {
     ...prev,
@@ -106,6 +147,7 @@ export function makeStepRunning(prev?: CaptionStepState, settingsSnapshot?: Reco
     startedAt: nowIso(),
     endedAt: undefined,
     error: undefined,
+    blockedReason: undefined,
     settingsSnapshot: settingsSnapshot || prev?.settingsSnapshot,
   };
 }
@@ -119,6 +161,7 @@ export function makeStepSuccess(
     status: 'success',
     endedAt: nowIso(),
     error: undefined,
+    blockedReason: undefined,
     metrics: metrics || prev?.metrics,
   };
 }
@@ -132,18 +175,157 @@ export function makeStepError(prev: CaptionStepState | undefined, error: string)
   };
 }
 
-export function markFollowingStepsStale(session: CaptionSessionV1, step: number): CaptionSessionV1 {
+const STEP_DEPENDENCIES: Record<CaptionStepNumber, CaptionStepNumber[]> = {
+  1: [],
+  2: [1],
+  3: [1],
+  4: [3],
+  5: [4],
+  6: [4],
+  7: [3, 6],
+};
+
+function getDependenciesForStep(step: CaptionStepNumber, enabledSteps?: CaptionStepNumber[]): CaptionStepNumber[] {
+  const base = [...STEP_DEPENDENCIES[step]];
+  if (step === 6 && enabledSteps?.includes(5) && !base.includes(5)) {
+    base.push(5);
+  }
+  return base;
+}
+
+function collectDependentSteps(
+  changedStep: CaptionStepNumber,
+  enabledSteps?: CaptionStepNumber[]
+): CaptionStepNumber[] {
+  const queue: CaptionStepNumber[] = [changedStep];
+  const visited = new Set<CaptionStepNumber>([changedStep]);
+  const result: CaptionStepNumber[] = [];
+
+  while (queue.length > 0) {
+    const cur = queue.shift() as CaptionStepNumber;
+    const allSteps: CaptionStepNumber[] = [1, 2, 3, 4, 5, 6, 7];
+    for (const candidate of allSteps) {
+      if (candidate === cur || visited.has(candidate)) continue;
+      const deps = getDependenciesForStep(candidate, enabledSteps);
+      if (deps.includes(cur)) {
+        visited.add(candidate);
+        result.push(candidate);
+        queue.push(candidate);
+      }
+    }
+  }
+
+  return result.sort((a, b) => a - b);
+}
+
+export function markFollowingStepsStale(
+  session: CaptionSessionV1,
+  step: number,
+  blockedReason?: string,
+  enabledSteps?: CaptionStepNumber[]
+): CaptionSessionV1 {
+  const changedStep = (step < 1 || step > 7 ? 1 : step) as CaptionStepNumber;
   const next = { ...session, steps: { ...session.steps } };
-  for (let i = step + 1; i <= 7; i++) {
-    const k = toStepKey(i);
+  const staleSteps = collectDependentSteps(changedStep, enabledSteps);
+  for (const staleStep of staleSteps) {
+    const k = toStepKey(staleStep);
     next.steps[k] = {
       ...next.steps[k],
       status: 'stale',
       error: undefined,
       metrics: undefined,
+      blockedReason: blockedReason || next.steps[k]?.blockedReason,
     };
   }
   return next;
+}
+
+export function resolveStepInputsFromSession(session: CaptionSessionV1, step: CaptionStepNumber) {
+  const extractedEntries = (session.data.extractedEntries || []) as SubtitleEntry[];
+  const translatedEntries = (session.data.translatedEntries || []) as SubtitleEntry[];
+  const ttsAudioFiles = session.data.ttsAudioFiles || [];
+  const mergedAudioPath = typeof session.artifacts.mergedAudioPath === 'string'
+    ? session.artifacts.mergedAudioPath
+    : '';
+  const translatedSrtPath = typeof session.artifacts.translatedSrtPath === 'string'
+    ? session.artifacts.translatedSrtPath
+    : '';
+  const scaledSrtPath = typeof session.artifacts.scaledSrtPath === 'string'
+    ? session.artifacts.scaledSrtPath
+    : '';
+
+  return {
+    step,
+    extractedEntries,
+    translatedEntries,
+    ttsAudioFiles,
+    mergedAudioPath,
+    translatedSrtPath,
+    scaledSrtPath,
+  };
+}
+
+export function canRunStep(
+  session: CaptionSessionV1,
+  step: CaptionStepNumber,
+  enabledSteps: CaptionStepNumber[] = []
+): { ok: boolean; reason?: string; code?: string; missingDeps: CaptionStepNumber[] } {
+  const deps = getDependenciesForStep(step, enabledSteps);
+  const enabledSet = new Set<CaptionStepNumber>(enabledSteps);
+  const missingDeps: CaptionStepNumber[] = [];
+
+  for (const dep of deps) {
+    const depKey = toStepKey(dep);
+    const depState = session.steps[depKey];
+    const depSuccess = depState?.status === 'success';
+    const depWillRun = enabledSet.has(dep) && dep < step;
+    if (!depSuccess && !depWillRun) {
+      missingDeps.push(dep);
+    }
+  }
+
+  if (missingDeps.length > 0) {
+    const first = missingDeps[0];
+    if (step === 7 && first === 3) {
+      return { ok: false, code: 'STEP7_MISSING_STEP3_TRANSLATED', reason: 'Chưa chạy Step 3 hoặc chưa có dữ liệu dịch trong session.', missingDeps };
+    }
+    if (step === 7 && first === 6) {
+      return { ok: false, code: 'STEP7_MISSING_STEP6_MERGED_AUDIO', reason: 'Chưa chạy Step 6 hoặc chưa có merged audio trong session.', missingDeps };
+    }
+    return {
+      ok: false,
+      code: `STEP${step}_MISSING_DEP_${first}`,
+      reason: `Thiếu dữ liệu phụ thuộc Step ${first}.`,
+      missingDeps,
+    };
+  }
+
+  const stepInputs = resolveStepInputsFromSession(session, step);
+  if (step === 2 && !enabledSet.has(1) && stepInputs.extractedEntries.length === 0) {
+    return { ok: false, code: 'STEP2_MISSING_STEP1_EXTRACTED', reason: 'Chưa có extractedEntries trong session. Hãy chạy Step 1 trước.', missingDeps: [1] };
+  }
+  if (step === 3 && !enabledSet.has(1) && stepInputs.extractedEntries.length === 0) {
+    return { ok: false, code: 'STEP3_MISSING_STEP1_EXTRACTED', reason: 'Chưa có extractedEntries trong session. Hãy chạy Step 1 trước.', missingDeps: [1] };
+  }
+  if (step === 4 && !enabledSet.has(3) && stepInputs.translatedEntries.length === 0) {
+    return { ok: false, code: 'STEP4_MISSING_STEP3_TRANSLATED', reason: 'Chưa có translatedEntries trong session. Hãy chạy Step 3 trước.', missingDeps: [3] };
+  }
+  if (step === 5 && !enabledSet.has(4) && stepInputs.ttsAudioFiles.length === 0) {
+    return { ok: false, code: 'STEP5_MISSING_STEP4_TTS', reason: 'Chưa có ttsAudioFiles trong session. Hãy chạy Step 4 trước.', missingDeps: [4] };
+  }
+  if (step === 6 && !enabledSet.has(4) && stepInputs.ttsAudioFiles.length === 0) {
+    return { ok: false, code: 'STEP6_MISSING_STEP4_TTS', reason: 'Chưa có ttsAudioFiles trong session. Hãy chạy Step 4 trước.', missingDeps: [4] };
+  }
+  if (step === 7) {
+    if (!enabledSet.has(3) && stepInputs.translatedEntries.length === 0) {
+      return { ok: false, code: 'STEP7_MISSING_STEP3_TRANSLATED', reason: 'Chưa có translatedEntries trong session. Hãy chạy Step 3 trước.', missingDeps: [3] };
+    }
+    if (!enabledSet.has(6) && !stepInputs.mergedAudioPath) {
+      return { ok: false, code: 'STEP7_MISSING_STEP6_MERGED_AUDIO', reason: 'Chưa có mergedAudioPath trong session. Hãy chạy Step 6 trước.', missingDeps: [6] };
+    }
+  }
+
+  return { ok: true, missingDeps: [] };
 }
 
 export function compactEntries(entries: SubtitleEntry[]): SubtitleEntry[] {

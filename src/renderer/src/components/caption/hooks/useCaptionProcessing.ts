@@ -1,8 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
-import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode } from '../CaptionTypes';
-import { CaptionSessionV1 } from '@shared/types/caption';
+import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode, StepDependencyIssue } from '../CaptionTypes';
+import { CaptionSessionV1, CaptionStepNumber } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
+  buildEntriesFingerprint,
+  buildObjectFingerprint,
+  canRunStep,
   compactEntries,
   getSessionPathForInputPath,
   makeStepError,
@@ -10,6 +13,7 @@ import {
   makeStepSuccess,
   markFollowingStepsStale,
   readCaptionSession,
+  resolveStepInputsFromSession,
   syncSessionWithProjectSettings,
   toStepKey,
   updateCaptionSession,
@@ -110,7 +114,7 @@ interface UseCaptionProcessingProps {
     setAudioDir: (dir: string) => void;
     hardwareAcceleration: 'none' | 'qsv';
     style?: any;
-    renderMode: 'hardsub' | 'black_bg';
+    renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
     subtitlePosition?: { x: number; y: number } | null;
     blackoutTop?: number | null;
@@ -128,6 +132,7 @@ interface UseCaptionProcessingProps {
     thumbnailText?: string;
     thumbnailFontName?: string;
     thumbnailTextsByOrder?: string[];
+    layoutProfiles?: unknown;
     settingsRevision?: number;
     settingsUpdatedAt?: string;
   };
@@ -169,6 +174,7 @@ export function useCaptionProcessing({
   const [status, setStatus] = useState<ProcessStatus>('idle');
   const [progress, setProgress] = useState({ current: 0, total: 0, message: 'Sẵn sàng.' });
   const [currentFolder, setCurrentFolder] = useState<{ index: number; total: number; name: string; path: string } | null>(null);
+  const [stepDependencyIssues, setStepDependencyIssues] = useState<StepDependencyIssue[]>([]);
   
   // State for intermediate data
   const [audioFiles, setAudioFiles] = useState<ProcessingAudioFile[]>([]);
@@ -198,6 +204,7 @@ export function useCaptionProcessing({
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
+    setStepDependencyIssues([]);
     const runLockedSettings = {
       ...settings,
       style: settings.style ? { ...settings.style } : settings.style,
@@ -279,6 +286,52 @@ export function useCaptionProcessing({
       }
     }
 
+    const preflightIssues: StepDependencyIssue[] = [];
+    for (const currentPath of inputPaths) {
+      const folderName = currentPath.split(/[/\\]/).pop() || 'Unknown';
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+      const sessionFallback = {
+        projectId,
+        inputType: inputType as 'srt' | 'draft',
+        sourcePath: currentPath,
+        folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
+      };
+      const session = await readCaptionSession(sessionPath, sessionFallback);
+      for (const step of steps) {
+        const plannedEnabled = steps.filter((s) => s <= step) as CaptionStepNumber[];
+        const guard = canRunStep(session, step as CaptionStepNumber, plannedEnabled);
+        if (!guard.ok) {
+          preflightIssues.push({
+            step,
+            folderPath: currentPath,
+            folderName,
+            code: guard.code || `STEP${step}_BLOCKED`,
+            reason: guard.reason || 'Thiếu dữ liệu phụ thuộc trong caption_session.json.',
+            missingDeps: guard.missingDeps as Step[],
+          });
+        }
+      }
+    }
+
+    if (preflightIssues.length > 0) {
+      const topIssue = preflightIssues[0];
+      const details = preflightIssues
+        .slice(0, 5)
+        .map((issue) => `[${issue.folderName}] Step ${issue.step}: ${issue.reason}`)
+        .join(' | ');
+      setStepDependencyIssues(preflightIssues);
+      setStatus('error');
+      setCurrentStep(null);
+      setCurrentFolder(null);
+      setProgress({
+        current: 0,
+        total: totalFolders,
+        message: `Preflight fail: ${topIssue.reason} (${details})`,
+      });
+      return;
+    }
+    setStepDependencyIssues([]);
+
     // ========== PER-FOLDER STATE MAP (dùng cho step-first mode) ==========
     // Key = folder path, Value = { entries, audioFiles, srtFileForVideo }
     type FolderCtx = {
@@ -291,8 +344,8 @@ export function useCaptionProcessing({
     const folderCtxMap = new Map<string, FolderCtx>();
     for (const p of inputPaths) {
       folderCtxMap.set(p, {
-        entries: (!isMulti && p === inputPaths[0]) ? [...entries] : [],
-        audioFiles: (!isMulti && p === inputPaths[0]) ? [...audioFiles] : [],
+        entries: [],
+        audioFiles: [],
         srtFileForVideo: '',
         outputDir: resolveProcessOutputDir(inputType, p),
         name: p.split(/[/\\]/).pop() || 'Unknown',
@@ -366,6 +419,9 @@ export function useCaptionProcessing({
       videoVolume: cfg.videoVolume,
       audioVolume: cfg.audioVolume,
       thumbnailFontName: cfg.thumbnailFontName,
+      subtitlePosition: cfg.subtitlePosition,
+      thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
+      layoutProfiles: cfg.layoutProfiles,
       processingMode: cfg.processingMode,
     };
 
@@ -428,70 +484,59 @@ export function useCaptionProcessing({
       };
 
       try {
-        setProgress({ current: 0, total: 100, message: msgCtx(`Bước ${step}: Bắt đầu...`) });
-        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
-          const withStale = markFollowingStepsStale(session, step);
-          return {
-            ...withStale,
-            steps: {
-              ...withStale.steps,
-              [stepKey]: makeStepRunning(withStale.steps[stepKey], buildSettingsSnapshot(folderIdx)),
-            },
-          };
-        });
-
-      // Tự động nạp dữ liệu (nếu người dùng skip Bước 1)
-      if (currentEntries.length === 0 && step !== 1) {
-        setProgress({ current: 0, total: 100, message: msgCtx('Đang tải dữ liệu cũ...') });
         const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
-        try {
-          const session = await readCaptionSession(sessionPath, {
-            projectId,
-            inputType: inputType as 'srt' | 'draft',
-            sourcePath: currentPath,
-            folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
-          });
-          if (session.data.translatedEntries && session.data.translatedEntries.length > 0) {
-            currentEntries = session.data.translatedEntries as SubtitleEntry[];
-          } else if (session.data.extractedEntries && session.data.extractedEntries.length > 0) {
-            currentEntries = session.data.extractedEntries as SubtitleEntry[];
-          }
-          if (currentAudioFiles.length === 0 && session.data.ttsAudioFiles && session.data.ttsAudioFiles.length > 0) {
-            currentAudioFiles = normalizeAudioFiles(session.data.ttsAudioFiles as PartialProcessingAudioFile[]);
-            if (!isMulti) setAudioFiles(currentAudioFiles);
-          }
-        } catch (error) {
-          console.warn(`[CaptionProcessing] Không thể hydrate từ session: ${sessionPath}`, error);
+        const sessionFallback = {
+          projectId,
+          inputType: inputType as 'srt' | 'draft',
+          sourcePath: currentPath,
+          folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
+        };
+        const sessionBeforeStep = await readCaptionSession(sessionPath, sessionFallback);
+        const guard = canRunStep(sessionBeforeStep, step as CaptionStepNumber);
+        if (!guard.ok) {
+          throw new Error(`[${folderName}] ${guard.reason || `Chưa chạy các bước phụ thuộc cho Step ${step}.`} (${guard.code || 'STEP_BLOCKED'})`);
+        }
+        if (step === 6 && steps.includes(5) && sessionBeforeStep.steps.step5?.status !== 'success') {
+          throw new Error(`[${folderName}] Step 6 yêu cầu Step 5 đã hoàn thành trong session khi bạn bật Step 5.`);
         }
 
-        const translatedSrtPath = `${processOutputDir}/srt/translated.srt`;
-        try {
-          // @ts-ignore
-          const transResult = await window.electronAPI.caption.parseSrt(translatedSrtPath);
-          if (transResult?.success && transResult?.data?.entries && transResult.data.entries.length > 0) {
-            currentEntries = transResult.data.entries;
+        const stepInputs = resolveStepInputsFromSession(sessionBeforeStep, step as CaptionStepNumber);
+        if (step !== 1) {
+          if (step === 2 || step === 3) {
+            currentEntries = compactEntries(stepInputs.extractedEntries);
+          } else if (step === 4 || step === 6 || step === 7) {
+            currentEntries = compactEntries(stepInputs.translatedEntries);
           }
-        } catch (e) { /* ignore */ }
-
-        if (currentEntries.length === 0) {
-          try {
-            const parseResult = inputType === 'srt'
-              // @ts-ignore
-              ? await window.electronAPI.caption.parseSrt(currentPath)
-              // @ts-ignore
-              : await window.electronAPI.caption.parseDraft(`${currentPath}/draft_content.json`);
-            if (parseResult?.success && parseResult?.data) {
-              currentEntries = parseResult.data.entries;
-            }
-          } catch (e) { /* ignore */ }
+          if (step >= 4 && step <= 6) {
+            currentAudioFiles = normalizeAudioFiles(stepInputs.ttsAudioFiles as PartialProcessingAudioFile[]);
+          }
+          if (step === 7) {
+            srtFileForVideo = stepInputs.scaledSrtPath || stepInputs.translatedSrtPath || '';
+          }
+          if (!isMulti && currentEntries.length > 0) {
+            setEntries(currentEntries);
+          }
         }
-        if (!isMulti && currentEntries.length > 0) setEntries(currentEntries);
-      }
 
-      // Guard cho các bước cần có entries
-      if (currentEntries.length === 0 && step !== 1 && step !== 7 && inputType !== 'srt') {
-        throw new Error(`[${folderName}] Không có dữ liệu Subtitle! Vui lòng bắt đầu từ Bước 1.`);
-      }
+        let currentDataSource = 'session';
+        if (step === 2 || step === 3) currentDataSource = 'session_extracted_entries';
+        if (step === 4) currentDataSource = 'session_translated_entries';
+        if (step === 5 || step === 6) currentDataSource = 'session_tts_audio_files';
+        if (step === 7) currentDataSource = 'session_translated_entries+session_merged_audio';
+
+        setProgress({ current: 0, total: 100, message: msgCtx(`Bước ${step}: Bắt đầu...`) });
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+          ...session,
+          runtime: {
+            ...session.runtime,
+            currentDataSource,
+            lastGuardError: undefined,
+          },
+          steps: {
+            ...session.steps,
+            [stepKey]: makeStepRunning(session.steps[stepKey], buildSettingsSnapshot(folderIdx)),
+          },
+        }));
 
       // ========== STEP 1: INPUT ==========
       if (step === 1) {
@@ -510,23 +555,48 @@ export function useCaptionProcessing({
           }
         }
         setProgress({ current: 1, total: 1, message: msgCtx('Bước 1: Đã load file input') });
-        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-          ...session,
-          data: {
-            ...session.data,
-            extractedEntries: compactEntries(currentEntries),
-          },
-          steps: {
-            ...session.steps,
-            [stepKey]: makeStepSuccess(session.steps[stepKey], {
-              totalEntries: currentEntries.length,
-            }),
-          },
-        }));
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+          const extractedEntries = compactEntries(currentEntries);
+          const outputFingerprint = buildEntriesFingerprint(extractedEntries);
+          const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
+          let nextSession: CaptionSessionV1 = {
+            ...session,
+            data: {
+              ...session.data,
+              extractedEntries,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: {
+                ...makeStepSuccess(session.steps[stepKey], {
+                  totalEntries: currentEntries.length,
+                }),
+                outputFingerprint,
+                inputFingerprint: buildObjectFingerprint({
+                  currentPath,
+                  inputType,
+                }),
+                dependsOn: [],
+              },
+            },
+          };
+          if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+            nextSession = markFollowingStepsStale(
+              nextSession,
+              step,
+              'STEP1_OUTPUT_CHANGED',
+              steps as CaptionStepNumber[]
+            );
+          }
+          return nextSession;
+        });
       }
 
       // ========== STEP 2: SPLIT ==========
       if (step === 2) {
+        if (currentEntries.length === 0) {
+          throw new Error(`[${folderName}] Chưa có dữ liệu Step 1 trong caption_session.json. Hãy chạy Step 1 trước.`);
+        }
         setProgress({ current: 0, total: 1, message: msgCtx('Bước 2: Đang chia nhỏ text...') });
         const textOutputDir = `${processOutputDir}/text`;
         const splitValue = cfg.splitByLines ? cfg.linesPerFile : cfg.numberOfParts;
@@ -544,10 +614,18 @@ export function useCaptionProcessing({
             ...session,
             steps: {
               ...session.steps,
-              [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                partsCount: splitData.partsCount,
-                files: splitData.files,
-              }),
+              [stepKey]: {
+                ...makeStepSuccess(session.steps[stepKey], {
+                  partsCount: splitData.partsCount,
+                  files: splitData.files,
+                }),
+                inputFingerprint: buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]),
+                outputFingerprint: buildObjectFingerprint({
+                  partsCount: splitData.partsCount,
+                  files: splitData.files,
+                }),
+                dependsOn: [1],
+              },
             },
           }));
         } else {
@@ -557,6 +635,9 @@ export function useCaptionProcessing({
 
       // ========== STEP 3: DỊCH ==========
       if (step === 3) {
+        if (currentEntries.length === 0) {
+          throw new Error(`[${folderName}] Chưa có dữ liệu Step 1 trong caption_session.json. Hãy chạy Step 1 trước.`);
+        }
         setProgress({ current: 0, total: currentEntries.length, message: msgCtx('Bước 3: Đang dịch...') });
         // @ts-ignore
         const result = await window.electronAPI.caption.translate({
@@ -575,26 +656,46 @@ export function useCaptionProcessing({
           // @ts-ignore
           await window.electronAPI.caption.exportSrt(currentEntries, srtFileForVideo);
           setProgress({ current: translateData.translatedLines, total: translateData.totalLines, message: msgCtx(`Bước 3: Đã dịch ${translateData.translatedLines} dòng`) });
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            data: {
-              ...session.data,
-              translatedEntries: compactEntries(currentEntries),
-              translatedSrtContent,
-            },
-            artifacts: {
-              ...session.artifacts,
-              translatedSrtPath: srtFileForVideo,
-            },
-            steps: {
-              ...session.steps,
-              [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                totalLines: translateData.totalLines,
-                translatedLines: translateData.translatedLines,
-                failedLines: translateData.failedLines,
-              }),
-            },
-          }));
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const translatedEntries = compactEntries(currentEntries);
+            const inputFingerprint = buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]);
+            const outputFingerprint = buildEntriesFingerprint(translatedEntries);
+            const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
+            let nextSession: CaptionSessionV1 = {
+              ...session,
+              data: {
+                ...session.data,
+                translatedEntries,
+                translatedSrtContent,
+              },
+              artifacts: {
+                ...session.artifacts,
+                translatedSrtPath: srtFileForVideo,
+              },
+              steps: {
+                ...session.steps,
+                [stepKey]: {
+                  ...makeStepSuccess(session.steps[stepKey], {
+                    totalLines: translateData.totalLines,
+                    translatedLines: translateData.translatedLines,
+                    failedLines: translateData.failedLines,
+                  }),
+                  inputFingerprint,
+                  outputFingerprint,
+                  dependsOn: [1],
+                },
+              },
+            };
+            if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+              nextSession = markFollowingStepsStale(
+                nextSession,
+                step,
+                'STEP3_OUTPUT_CHANGED',
+                steps as CaptionStepNumber[]
+              );
+            }
+            return nextSession;
+          });
         } else {
           throw new Error(`[${folderName}] Lỗi dịch: ${result.error}`);
         }
@@ -602,6 +703,9 @@ export function useCaptionProcessing({
 
       // ========== STEP 4: TTS ==========
       if (step === 4) {
+        if (currentEntries.length === 0) {
+          throw new Error(`[${folderName}] Chưa có dữ liệu dịch trong caption_session.json. Hãy chạy Step 3 trước.`);
+        }
         const audioDir = `${processOutputDir}/audio`;
         if (!isMulti) cfg.setAudioDir(audioDir);
         setProgress({ current: 0, total: currentEntries.length, message: msgCtx('Bước 4: Đang tạo audio...') });
@@ -618,24 +722,49 @@ export function useCaptionProcessing({
           currentAudioFiles = normalizeAudioFiles(ttsData.audioFiles as PartialProcessingAudioFile[]);
           if (!isMulti) setAudioFiles(currentAudioFiles);
           setProgress({ current: ttsData.totalGenerated, total: currentEntries.length, message: msgCtx(`Bước 4: Đã tạo ${ttsData.totalGenerated} audio`) });
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            data: {
-              ...session.data,
-              ttsAudioFiles: currentAudioFiles,
-            },
-            artifacts: {
-              ...session.artifacts,
-              audioDir,
-            },
-            steps: {
-              ...session.steps,
-              [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                totalGenerated: ttsData.totalGenerated,
-                totalFailed: ttsData.totalFailed,
-              }),
-            },
-          }));
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const outputFingerprint = buildObjectFingerprint(
+              currentAudioFiles.map((file) => ({
+                index: file.index,
+                path: file.path,
+                startMs: file.startMs,
+                durationMs: file.durationMs,
+              }))
+            );
+            const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
+            let nextSession: CaptionSessionV1 = {
+              ...session,
+              data: {
+                ...session.data,
+                ttsAudioFiles: currentAudioFiles,
+              },
+              artifacts: {
+                ...session.artifacts,
+                audioDir,
+              },
+              steps: {
+                ...session.steps,
+                [stepKey]: {
+                  ...makeStepSuccess(session.steps[stepKey], {
+                    totalGenerated: ttsData.totalGenerated,
+                    totalFailed: ttsData.totalFailed,
+                  }),
+                  inputFingerprint: buildEntriesFingerprint((session.data.translatedEntries || []) as SubtitleEntry[]),
+                  outputFingerprint,
+                  dependsOn: [3],
+                },
+              },
+            };
+            if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+              nextSession = markFollowingStepsStale(
+                nextSession,
+                step,
+                'STEP4_OUTPUT_CHANGED',
+                steps as CaptionStepNumber[]
+              );
+            }
+            return nextSession;
+          });
         } else {
           throw new Error(`[${folderName}] Lỗi tạo audio: ${result.error}`);
         }
@@ -652,23 +781,51 @@ export function useCaptionProcessing({
           const resultEnd = await window.electronAPI.tts.trimSilenceEnd(filesToTrim.map(f => f.path));
           if (result.success && result.data && resultEnd.success && resultEnd.data) {
             setProgress({ current: resultEnd.data.trimmedCount, total: filesToTrim.length, message: msgCtx(`Bước 5: Đã trim ${resultEnd.data.trimmedCount} files`) });
-            await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-              ...session,
-              data: {
-                ...session.data,
-                trimResults: {
-                  trimmedMiddle: result.data,
-                  trimmedEnd: resultEnd.data,
+            await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+              const inputFingerprint = buildObjectFingerprint(
+                filesToTrim.map((file) => ({
+                  path: file.path,
+                  startMs: file.startMs,
+                  durationMs: file.durationMs,
+                }))
+              );
+              const outputFingerprint = buildObjectFingerprint({
+                trimmedMiddle: result.data,
+                trimmedEnd: resultEnd.data,
+              });
+              const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
+              let nextSession: CaptionSessionV1 = {
+                ...session,
+                data: {
+                  ...session.data,
+                  trimResults: {
+                    trimmedMiddle: result.data,
+                    trimmedEnd: resultEnd.data,
+                  },
                 },
-              },
-              steps: {
-                ...session.steps,
-                [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                  totalFiles: filesToTrim.length,
-                  trimmedCount: resultEnd.data.trimmedCount,
-                }),
-              },
-            }));
+                steps: {
+                  ...session.steps,
+                  [stepKey]: {
+                    ...makeStepSuccess(session.steps[stepKey], {
+                      totalFiles: filesToTrim.length,
+                      trimmedCount: resultEnd.data.trimmedCount,
+                    }),
+                    inputFingerprint,
+                    outputFingerprint,
+                    dependsOn: [4],
+                  },
+                },
+              };
+              if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+                nextSession = markFollowingStepsStale(
+                  nextSession,
+                  step,
+                  'STEP5_OUTPUT_CHANGED',
+                  steps as CaptionStepNumber[]
+                );
+              }
+              return nextSession;
+            });
           } else {
             throw new Error(`[${folderName}] Lỗi trim silence: ${result.error || resultEnd.error}`);
           }
@@ -677,10 +834,15 @@ export function useCaptionProcessing({
             ...session,
             steps: {
               ...session.steps,
-              [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                totalFiles: 0,
-                skipped: true,
-              }),
+              [stepKey]: {
+                ...makeStepSuccess(session.steps[stepKey], {
+                  totalFiles: 0,
+                  skipped: true,
+                }),
+                inputFingerprint: buildObjectFingerprint([]),
+                outputFingerprint: buildObjectFingerprint({ skipped: true }),
+                dependsOn: [4],
+              },
             },
           }));
         }
@@ -689,30 +851,15 @@ export function useCaptionProcessing({
       // ========== STEP 6: MERGE AUDIO ==========
       if (step === 6) {
         let filesToMerge = normalizeAudioFiles(currentAudioFiles);
-        const audioDir = `${processOutputDir}/audio`;
 
         if (filesToMerge.length === 0) {
-          setProgress({ current: 0, total: 1, message: msgCtx('Bước 6: Đang nạp lại danh sách audio từ thư mục...') });
-          // @ts-ignore
-          const hydrateResult = await window.electronAPI.tts.generate(currentEntries, {
-            voice: cfg.voice,
-            rate: cfg.rate,
-            volume: cfg.volume,
-            outputDir: audioDir,
-            outputFormat: 'wav',
-          });
-          if (hydrateResult.success && hydrateResult.data?.audioFiles) {
-            currentAudioFiles = normalizeAudioFiles(hydrateResult.data.audioFiles as PartialProcessingAudioFile[]);
-            filesToMerge = normalizeAudioFiles(currentAudioFiles);
-            if (!isMulti) setAudioFiles(currentAudioFiles);
-          }
-        }
-
-        if (filesToMerge.length === 0) {
-          throw new Error(`[${folderName}] Không có audio hợp lệ để ghép trong ${audioDir}. Hãy chạy lại Bước 4.`);
+          throw new Error(`[${folderName}] Chưa có dữ liệu audio từ Step 4 trong caption_session.json. Hãy chạy Step 4 trước.`);
         }
 
         if (cfg.autoFitAudio) {
+          if (currentEntries.length === 0) {
+            throw new Error(`[${folderName}] Thiếu dữ liệu subtitle dịch trong session để fit audio. Hãy chạy Step 3 trước.`);
+          }
           setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang scale audio vừa thời lượng...') });
           const fitItems = filesToMerge
             .map(f => {
@@ -749,28 +896,61 @@ export function useCaptionProcessing({
         const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, cfg.srtSpeed);
         if (result.success) {
           setProgress({ current: 1, total: 1, message: msgCtx('Bước 6: Đã ghép audio thành công') });
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            data: {
-              ...session.data,
-              mergeResult: result.data || { success: true, outputPath: mergedPath },
-            },
-            artifacts: {
-              ...session.artifacts,
-              mergedAudioPath: mergedPath,
-            },
-            timing: {
-              ...session.timing,
-              step4SrtScale: cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0,
-            },
-            steps: {
-              ...session.steps,
-              [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                mergedPath,
-                filesCount: filesToMerge.length,
-              }),
-            },
-          }));
+          const mergeResultPayload: Record<string, unknown> = result.data
+            ? {
+                success: !!result.data.success,
+                outputPath: result.data.outputPath,
+                error: result.data.error,
+              }
+            : { success: true, outputPath: mergedPath };
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const outputFingerprint = buildObjectFingerprint({
+              mergedPath,
+              filesCount: filesToMerge.length,
+              srtSpeed: cfg.srtSpeed,
+            });
+            const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
+            let nextSession: CaptionSessionV1 = {
+              ...session,
+              data: {
+                ...session.data,
+                mergeResult: mergeResultPayload,
+              },
+              artifacts: {
+                ...session.artifacts,
+                mergedAudioPath: mergedPath,
+              },
+              timing: {
+                ...session.timing,
+                step4SrtScale: cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0,
+              },
+              steps: {
+                ...session.steps,
+                [stepKey]: {
+                  ...makeStepSuccess(session.steps[stepKey], {
+                    mergedPath,
+                    filesCount: filesToMerge.length,
+                  }),
+                  inputFingerprint: buildObjectFingerprint(filesToMerge.map((file) => ({
+                    path: file.path,
+                    startMs: file.startMs,
+                    durationMs: file.durationMs,
+                  }))),
+                  outputFingerprint,
+                  dependsOn: steps.includes(5) ? [4, 5] : [4],
+                },
+              },
+            };
+            if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+              nextSession = markFollowingStepsStale(
+                nextSession,
+                step,
+                'STEP6_OUTPUT_CHANGED',
+                steps as CaptionStepNumber[]
+              );
+            }
+            return nextSession;
+          });
         } else {
           throw new Error(`[${folderName}] Lỗi ghép audio: ${result.error}`);
         }
@@ -801,6 +981,21 @@ export function useCaptionProcessing({
           );
         }
 
+        const sessionForRender = await readCaptionSession(sessionPathForStep7, sessionFallback);
+        const step7Inputs = resolveStepInputsFromSession(sessionForRender, 7);
+        const translatedEntriesForRender = compactEntries(step7Inputs.translatedEntries);
+        const mergedAudioPathForRender = step7Inputs.mergedAudioPath;
+        if (translatedEntriesForRender.length === 0) {
+          throw new Error(`[${folderName}] Chưa có dữ liệu dịch trong caption_session.json. Hãy chạy Step 3 trước.`);
+        }
+        if (!mergedAudioPathForRender) {
+          throw new Error(`[${folderName}] Chưa có merged audio trong caption_session.json. Hãy chạy Step 6 trước.`);
+        }
+        currentEntries = translatedEntriesForRender;
+        if (!isMulti) {
+          setEntries(translatedEntriesForRender);
+        }
+
         setProgress({ current: 0, total: 100, message: msgCtx('Bước 7: Đang tìm video gốc tốt nhất...') });
         let finalVideoInputPath: string | undefined = undefined;
         const folderPathsToSearch = inputType === 'draft' ? [currentPath] : [currentPath.replace(/[^/\\]+$/, '')];
@@ -812,7 +1007,7 @@ export function useCaptionProcessing({
 
         if (findBestRes.success && findBestRes.data?.videoPath) {
           const foundVideo = findBestRes.data.videoPath;
-          if (cfg.renderMode === 'hardsub') {
+          if (cfg.renderMode === 'hardsub' || cfg.renderMode === 'hardsub_portrait_9_16') {
             finalVideoInputPath = foundVideo;
             setProgress({ current: 5, total: 100, message: msgCtx(`Bước 7: Đã tìm thấy video ${foundVideo.split(/[/\\]/).pop()}`) });
           } else {
@@ -844,18 +1039,14 @@ export function useCaptionProcessing({
         const scaleLabel = normalizeSpeedLabel(srtScale);
         const scaledSrtPath = `${processOutputDir}/srt/subtitle_${scaleLabel}x.srt`;
 
-        if (currentEntries.length > 0) {
-          const scaledEntries = buildScaledSubtitleEntries(currentEntries, srtScale);
-          // @ts-ignore
-          const scaledSrtResult = await window.electronAPI.caption.exportSrt(scaledEntries, scaledSrtPath);
-          if (scaledSrtResult?.success) {
-            srtFileForVideo = scaledSrtPath;
-            console.log(`[CaptionProcessing] Dùng SRT scaled cho render: ${scaledSrtPath} (scale=${srtScale})`);
-          }
-        }
-
-        if (!srtFileForVideo) {
-          srtFileForVideo = inputType === 'srt' ? currentPath : `${processOutputDir}/srt/translated.srt`;
+        const scaledEntries = buildScaledSubtitleEntries(translatedEntriesForRender, srtScale);
+        // @ts-ignore
+        const scaledSrtResult = await window.electronAPI.caption.exportSrt(scaledEntries, scaledSrtPath);
+        if (scaledSrtResult?.success) {
+          srtFileForVideo = scaledSrtPath;
+          console.log(`[CaptionProcessing] Dùng SRT scaled cho render: ${scaledSrtPath} (scale=${srtScale}, source=session_translated_entries)`);
+        } else {
+          throw new Error(`[${folderName}] Không thể tạo SRT scaled từ dữ liệu dịch trong session.`);
         }
 
         const finalVideoPath = `${processOutputDir}/final_video_${Date.now()}.mp4`;
@@ -866,9 +1057,9 @@ export function useCaptionProcessing({
           ...session,
           artifacts: {
             ...session.artifacts,
-            translatedSrtPath: inputType === 'srt' ? currentPath : session.artifacts.translatedSrtPath,
+            translatedSrtPath: session.artifacts.translatedSrtPath,
             scaledSrtPath: srtFileForVideo,
-            mergedAudioPath: `${processOutputDir}/merged_audio.wav`,
+            mergedAudioPath: mergedAudioPathForRender,
           },
           timing: {
             ...session.timing,
@@ -894,7 +1085,9 @@ export function useCaptionProcessing({
           width: stripWidth,
           height: stripHeight,
           videoPath: finalVideoInputPath,
-          targetDuration: cfg.renderMode === 'hardsub' ? targetDuration : undefined,
+          targetDuration: (cfg.renderMode === 'hardsub' || cfg.renderMode === 'hardsub_portrait_9_16')
+            ? targetDuration
+            : undefined,
           hardwareAcceleration: cfg.hardwareAcceleration,
           style: cfg.style,
           renderMode: cfg.renderMode,
@@ -902,7 +1095,7 @@ export function useCaptionProcessing({
           position: cfg.subtitlePosition || undefined,
           blackoutTop: (cfg.blackoutTop != null && cfg.blackoutTop < 1)
             ? cfg.blackoutTop : undefined,
-          audioPath: `${processOutputDir}/merged_audio.wav`,
+          audioPath: mergedAudioPathForRender,
           audioSpeed: cfg.renderAudioSpeed,
           step7AudioSpeedInput: step7AudioSpeed,
           srtTimeScale: srtScale,
@@ -919,6 +1112,8 @@ export function useCaptionProcessing({
           thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
           thumbnailFontName: cfg.thumbnailFontName,
+          step7SubtitleSource: 'session_translated_entries',
+          step7AudioSource: 'session_merged_audio',
         });
 
         if (renderRes.success) {
@@ -958,6 +1153,8 @@ export function useCaptionProcessing({
                 renderAt: nowIso(),
               },
               renderTimingPayload: timingPayload,
+              step7SubtitleSource: 'session_translated_entries',
+              step7AudioSource: 'session_merged_audio',
             },
             artifacts: {
               ...session.artifacts,
@@ -969,10 +1166,28 @@ export function useCaptionProcessing({
             },
             steps: {
               ...session.steps,
-              [stepKey]: makeStepSuccess(session.steps[stepKey], {
-                duration: renderRes.data?.duration || 0,
-                outputPath: renderedPath,
-              }),
+              [stepKey]: {
+                ...makeStepSuccess(session.steps[stepKey], {
+                  duration: renderRes.data?.duration || 0,
+                  outputPath: renderedPath,
+                }),
+                inputFingerprint: buildObjectFingerprint({
+                  translatedEntries: translatedEntriesForRender.map((entry) => ({
+                    index: entry.index,
+                    startMs: entry.startMs,
+                    endMs: entry.endMs,
+                    translatedText: entry.translatedText,
+                    text: entry.text,
+                  })),
+                  mergedAudioPath: mergedAudioPathForRender,
+                  srtScale,
+                }),
+                outputFingerprint: buildObjectFingerprint({
+                  outputPath: renderedPath,
+                  duration: renderRes.data?.duration || 0,
+                }),
+                dependsOn: [3, 6],
+              },
             },
           }));
           console.log(`[CaptionProcessing][Step7] Đã lưu timing payload vào caption_session.json cho ${folderName}.`);
@@ -995,6 +1210,7 @@ export function useCaptionProcessing({
           runtime: {
             ...session.runtime,
             lastMessage: String(error),
+            lastGuardError: String(error),
           },
         }));
         throw error;
@@ -1042,6 +1258,7 @@ export function useCaptionProcessing({
           ? ` (${failedFolders.size} lỗi: ${Array.from(failedFolders).map(p => p.split(/[/\\]/).pop()).join(', ')})`
           : '';
         setStatus(failedFolders.size === totalFolders ? 'error' : 'success');
+        setStepDependencyIssues([]);
         setProgress({
           current: successCount,
           total: totalFolders,
@@ -1071,6 +1288,7 @@ export function useCaptionProcessing({
         }
 
         setStatus('success');
+        setStepDependencyIssues([]);
         setProgress({
           current: totalFolders,
           total: totalFolders,
@@ -1104,5 +1322,6 @@ export function useCaptionProcessing({
     currentStep,
     audioFiles,
     currentFolder,
+    stepDependencyIssues,
   };
 }

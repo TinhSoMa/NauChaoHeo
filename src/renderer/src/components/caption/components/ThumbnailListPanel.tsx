@@ -9,6 +9,7 @@ interface ThumbnailListPanelProps {
   onAutoFill: () => void;
   onItemTextChange: (indexZeroBased: number, value: string) => void;
   showMissingWarning: boolean;
+  dependencyWarning?: string;
 }
 
 export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
@@ -73,7 +74,11 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
           Thiếu thumbnail text ở một hoặc nhiều folder. Step 7 sẽ bị chặn cho đến khi nhập đủ.
         </div>
       )}
+      {props.dependencyWarning && (
+        <div className={styles.thumbnailListWarning}>
+          {props.dependencyWarning}
+        </div>
+      )}
     </div>
   );
 }
-

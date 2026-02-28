@@ -46,3 +46,19 @@ export interface VideoFilterBuildInput {
   subtitleFilter: string;
 }
 
+export interface PortraitVideoFilterBuildInput {
+  outputWidth: number;
+  outputHeight: number;
+  subtitleFilter: string;
+  videoSpeedMultiplier: number;
+  blackoutTop?: number | null;
+  bgDownscaleWidth: number;
+  bgDownscaleHeight: number;
+  bgBlurLumaRadius: number;
+  bgBlurLumaPower: number;
+}
+
+export interface PortraitVideoFilterBuildOutput {
+  filterParts: string[];
+  outputLabel: string;
+}

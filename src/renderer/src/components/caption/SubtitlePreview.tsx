@@ -16,6 +16,7 @@ interface SubtitlePreviewProps {
   style: ASSStyleConfig;
   entries?: SubtitleEntry[];
   blackoutTop?: number | null;
+  renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   logoPath?: string;
   logoPosition?: { x: number; y: number };
@@ -36,11 +37,13 @@ interface SubtitlePreviewProps {
   onFrameTimeChange?: (timeSec: number | null) => void;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
   const preview = useSubtitlePreview({
     style,
     entries,
     blackoutTop,
+    renderMode,
+    renderResolution,
     logoPath,
     logoPosition,
     logoScale,
@@ -61,7 +64,7 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
     } else {
       onFrameTimeChange?.(null);
     }
-  }, [videoPath]);
+  }, [videoPath, renderMode, renderResolution]);
 
   const blackoutPct = preview.blackoutTop !== null
     ? Math.round((1 - preview.blackoutTop) * 100)
@@ -120,7 +123,7 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
 
       <div
         ref={preview.containerRef}
-        className={`${styles.canvasContainer} ${preview.isDragging ? styles.dragging : ''} ${preview.mode === 'blackout' ? styles.blackoutMode : ''}`}
+        className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.mode === 'blackout' ? styles.blackoutMode : ''}`}
       >
         <canvas
           ref={preview.canvasRef}

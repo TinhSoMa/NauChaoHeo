@@ -14,5 +14,7 @@ export type {
   Step,
   ProcessStatus,
   ProcessingMode,
+  StepGuardState,
+  StepDependencyIssue,
 } from './CaptionTypes';
 

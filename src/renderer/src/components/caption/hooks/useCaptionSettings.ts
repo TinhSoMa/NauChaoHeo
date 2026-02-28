@@ -18,6 +18,27 @@ import { nowIso } from '@shared/utils/captionSession';
 
 const PROJECT_SETTINGS_FILE = 'caption-settings.json';
 
+type RenderMode = 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
+type RenderResolution = 'original' | '1080p' | '720p' | '540p' | '360p';
+type LayoutKey = 'landscape' | 'portrait';
+
+interface LayoutProfile {
+  style: ASSStyleConfig;
+  renderResolution: RenderResolution;
+  blackoutTop: number | null;
+  subtitlePosition: { x: number; y: number } | null;
+  thumbnailFrameTimeSec: number | null;
+  logoPath?: string;
+  logoPosition?: { x: number; y: number };
+  logoScale: number;
+  thumbnailFontName: string;
+}
+
+interface LayoutProfilesState {
+  landscape: LayoutProfile;
+  portrait: LayoutProfile;
+}
+
 export const DEFAULT_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
   fontSize: 62,
@@ -26,6 +47,95 @@ export const DEFAULT_STYLE: ASSStyleConfig = {
   marginV: 50,
   alignment: 2,
 };
+
+const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
+  style: { ...DEFAULT_STYLE },
+  renderResolution: 'original',
+  blackoutTop: 0.9,
+  subtitlePosition: null,
+  thumbnailFrameTimeSec: null,
+  logoPath: undefined,
+  logoPosition: undefined,
+  logoScale: 1.0,
+  thumbnailFontName: 'BrightwallPersonal',
+};
+
+const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
+  style: { ...DEFAULT_STYLE },
+  renderResolution: '1080p',
+  blackoutTop: 0.9,
+  subtitlePosition: null,
+  thumbnailFrameTimeSec: null,
+  logoPath: undefined,
+  logoPosition: undefined,
+  logoScale: 1.0,
+  thumbnailFontName: 'BrightwallPersonal',
+};
+
+function cloneProfile(profile: LayoutProfile): LayoutProfile {
+  return {
+    ...profile,
+    style: { ...profile.style },
+    subtitlePosition: profile.subtitlePosition ? { ...profile.subtitlePosition } : null,
+    logoPosition: profile.logoPosition ? { ...profile.logoPosition } : undefined,
+  };
+}
+
+function normalizeProfile(
+  patch: Record<string, unknown> | undefined,
+  fallback: LayoutProfile
+): LayoutProfile {
+  const next = cloneProfile(fallback);
+  if (!patch || typeof patch !== 'object') {
+    return next;
+  }
+
+  const style = patch.style as ASSStyleConfig | undefined;
+  if (style && typeof style === 'object') {
+    next.style = { ...next.style, ...style };
+  }
+  if (patch.renderResolution && typeof patch.renderResolution === 'string') {
+    next.renderResolution = patch.renderResolution as RenderResolution;
+  }
+  if (patch.blackoutTop === null || typeof patch.blackoutTop === 'number') {
+    next.blackoutTop = patch.blackoutTop as number | null;
+  }
+  if (patch.subtitlePosition === null) {
+    next.subtitlePosition = null;
+  } else if (patch.subtitlePosition && typeof patch.subtitlePosition === 'object') {
+    const p = patch.subtitlePosition as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      next.subtitlePosition = { x: p.x, y: p.y };
+    }
+  }
+  if (patch.thumbnailFrameTimeSec === null || typeof patch.thumbnailFrameTimeSec === 'number') {
+    next.thumbnailFrameTimeSec = patch.thumbnailFrameTimeSec as number | null;
+  }
+  if (typeof patch.logoPath === 'string' && patch.logoPath.trim().length > 0) {
+    next.logoPath = patch.logoPath;
+  } else if (patch.logoPath === null || patch.logoPath === undefined) {
+    next.logoPath = undefined;
+  }
+  if (patch.logoPosition === null) {
+    next.logoPosition = undefined;
+  } else if (patch.logoPosition && typeof patch.logoPosition === 'object') {
+    const p = patch.logoPosition as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      next.logoPosition = { x: p.x, y: p.y };
+    }
+  }
+  if (typeof patch.logoScale === 'number') {
+    next.logoScale = patch.logoScale;
+  }
+  if (typeof patch.thumbnailFontName === 'string' && patch.thumbnailFontName.trim().length > 0) {
+    next.thumbnailFontName = patch.thumbnailFontName;
+  }
+  return next;
+}
+
+function resolveLayoutKey(renderMode: RenderMode): LayoutKey {
+  return renderMode === 'hardsub_portrait_9_16' ? 'portrait' : 'landscape';
+}
 
 export function useCaptionSettings() {
   const { projectId, paths } = useProjectContext();
@@ -45,19 +155,16 @@ export function useCaptionSettings() {
   const [autoFitAudio, setAutoFitAudio] = useState(false);
 
   const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv'>('qsv');
-  const [style, setStyle] = useState<ASSStyleConfig>(DEFAULT_STYLE);
-  const [renderMode, setRenderMode] = useState<'hardsub' | 'black_bg'>('hardsub');
-  const [renderResolution, setRenderResolution] = useState<'original' | '1080p' | '720p' | '540p' | '360p'>('original');
-  const [blackoutTop, setBlackoutTop] = useState<number | null>(0.9);
+  const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
   const [audioSpeed, setAudioSpeed] = useState<number>(1.0);
   const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0);
   const [videoVolume, setVideoVolume] = useState<number>(100);
   const [audioVolume, setAudioVolume] = useState<number>(100);
-  const [thumbnailFontName, setThumbnailFontName] = useState<string>('BrightwallPersonal');
 
-  const [logoPath, setLogoPathState] = useState<string | undefined>(undefined);
-  const [logoPosition, setLogoPositionState] = useState<{ x: number; y: number } | undefined>(undefined);
-  const [logoScale, setLogoScaleState] = useState<number>(1.0);
+  const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>({
+    landscape: cloneProfile(DEFAULT_LANDSCAPE_PROFILE),
+    portrait: cloneProfile(DEFAULT_PORTRAIT_PROFILE),
+  });
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
   const [translateMethod, setTranslateMethod] = useState<'api' | 'impit'>('api');
@@ -75,28 +182,62 @@ export function useCaptionSettings() {
     revisionRef.current = 0;
   }, [projectId]);
 
-  useEffect(() => {
-    (window.electronAPI as any).appSettings.getAll().then((res: any) => {
-      if (res?.success && res.data) {
-        if (res.data.captionLogoPath != null) setLogoPathState(res.data.captionLogoPath);
-        if (res.data.captionLogoPosition != null) setLogoPositionState(res.data.captionLogoPosition);
-        if (typeof res.data.captionLogoScale === 'number') setLogoScaleState(res.data.captionLogoScale);
-      }
-    });
-  }, []);
+  const activeLayoutKey = resolveLayoutKey(renderMode);
+  const activeProfile = layoutProfiles[activeLayoutKey];
 
-  const setLogoPath = useCallback((v: string | undefined) => {
-    setLogoPathState(v);
-    (window.electronAPI as any).appSettings.update({ captionLogoPath: v ?? null });
-  }, []);
-  const setLogoPosition = useCallback((v: { x: number; y: number } | undefined) => {
-    setLogoPositionState(v);
-    (window.electronAPI as any).appSettings.update({ captionLogoPosition: v ?? null });
-  }, []);
-  const setLogoScale = useCallback((v: number) => {
-    setLogoScaleState(v);
-    (window.electronAPI as any).appSettings.update({ captionLogoScale: v });
-  }, []);
+  const updateActiveProfile = useCallback(
+    (updater: (current: LayoutProfile) => LayoutProfile) => {
+      setLayoutProfiles((prev) => ({
+        ...prev,
+        [activeLayoutKey]: updater(prev[activeLayoutKey]),
+      }));
+    },
+    [activeLayoutKey]
+  );
+
+  const setStyle = useCallback(
+    (value: ASSStyleConfig | ((prev: ASSStyleConfig) => ASSStyleConfig)) => {
+      updateActiveProfile((current) => {
+        const nextStyle = typeof value === 'function'
+          ? (value as (prev: ASSStyleConfig) => ASSStyleConfig)(current.style)
+          : value;
+        return { ...current, style: { ...nextStyle } };
+      });
+    },
+    [updateActiveProfile]
+  );
+
+  const setRenderResolution = useCallback((value: RenderResolution) => {
+    updateActiveProfile((current) => ({ ...current, renderResolution: value }));
+  }, [updateActiveProfile]);
+
+  const setBlackoutTop = useCallback((value: number | null) => {
+    updateActiveProfile((current) => ({ ...current, blackoutTop: value }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailFontName = useCallback((value: string) => {
+    updateActiveProfile((current) => ({ ...current, thumbnailFontName: value }));
+  }, [updateActiveProfile]);
+
+  const setLogoPath = useCallback((value: string | undefined) => {
+    updateActiveProfile((current) => ({ ...current, logoPath: value }));
+  }, [updateActiveProfile]);
+
+  const setLogoPosition = useCallback((value: { x: number; y: number } | undefined) => {
+    updateActiveProfile((current) => ({ ...current, logoPosition: value }));
+  }, [updateActiveProfile]);
+
+  const setLogoScale = useCallback((value: number) => {
+    updateActiveProfile((current) => ({ ...current, logoScale: value }));
+  }, [updateActiveProfile]);
+
+  const setSubtitlePosition = useCallback((value: { x: number; y: number } | null) => {
+    updateActiveProfile((current) => ({ ...current, subtitlePosition: value ? { ...value } : null }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailFrameTimeSec = useCallback((value: number | null) => {
+    updateActiveProfile((current) => ({ ...current, thumbnailFrameTimeSec: value }));
+  }, [updateActiveProfile]);
 
   const settingsValues = useMemo(
     () => ({
@@ -114,15 +255,24 @@ export function useCaptionSettings() {
       audioDir,
       autoFitAudio,
       hardwareAcceleration,
-      style,
+      style: activeProfile.style,
       renderMode,
-      renderResolution,
-      blackoutTop,
+      renderResolution: activeProfile.renderResolution,
+      blackoutTop: activeProfile.blackoutTop,
       audioSpeed,
       renderAudioSpeed,
       videoVolume,
       audioVolume,
-      thumbnailFontName,
+      thumbnailFontName: activeProfile.thumbnailFontName,
+      subtitlePosition: activeProfile.subtitlePosition,
+      thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
+      logoPath: activeProfile.logoPath,
+      logoPosition: activeProfile.logoPosition,
+      logoScale: activeProfile.logoScale,
+      layoutProfiles: {
+        landscape: cloneProfile(layoutProfiles.landscape),
+        portrait: cloneProfile(layoutProfiles.portrait),
+      },
       processingMode,
     }),
     [
@@ -140,15 +290,13 @@ export function useCaptionSettings() {
       audioDir,
       autoFitAudio,
       hardwareAcceleration,
-      style,
+      activeProfile,
       renderMode,
-      renderResolution,
-      blackoutTop,
       audioSpeed,
       renderAudioSpeed,
       videoVolume,
       audioVolume,
-      thumbnailFontName,
+      layoutProfiles,
       processingMode,
     ]
   );
@@ -168,20 +316,48 @@ export function useCaptionSettings() {
     if (saved.audioDir) setAudioDir(saved.audioDir);
     if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
     if (saved.hardwareAcceleration) setHardwareAcceleration(saved.hardwareAcceleration);
-    if (saved.style) setStyle(saved.style);
-    if (saved.renderMode) setRenderMode(saved.renderMode);
-    if (saved.renderResolution) setRenderResolution(saved.renderResolution);
-    if (saved.blackoutTop !== undefined) setBlackoutTop(saved.blackoutTop);
+    if (saved.renderMode) setRenderMode(saved.renderMode as RenderMode);
     if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
     if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
     if (typeof saved.videoVolume === 'number') setVideoVolume(saved.videoVolume);
     if (typeof saved.audioVolume === 'number') setAudioVolume(saved.audioVolume);
-    if (typeof saved.thumbnailFontName === 'string' && saved.thumbnailFontName.trim().length > 0) {
-      setThumbnailFontName(saved.thumbnailFontName);
-    }
     if (saved.processingMode === 'folder-first' || saved.processingMode === 'step-first') {
       setProcessingMode(saved.processingMode);
     }
+
+    const loadedProfiles = saved.layoutProfiles as Record<string, unknown> | undefined;
+    if (loadedProfiles && typeof loadedProfiles === 'object') {
+      setLayoutProfiles({
+        landscape: normalizeProfile(
+          loadedProfiles.landscape as Record<string, unknown> | undefined,
+          DEFAULT_LANDSCAPE_PROFILE
+        ),
+        portrait: normalizeProfile(
+          loadedProfiles.portrait as Record<string, unknown> | undefined,
+          DEFAULT_PORTRAIT_PROFILE
+        ),
+      });
+      return;
+    }
+
+    const legacyPatch: Record<string, unknown> = {
+      style: saved.style,
+      renderResolution: saved.renderResolution,
+      blackoutTop: saved.blackoutTop,
+      subtitlePosition: saved.subtitlePosition,
+      thumbnailFrameTimeSec: saved.thumbnailFrameTimeSec,
+      logoPath: saved.logoPath,
+      logoPosition: saved.logoPosition,
+      logoScale: saved.logoScale,
+      thumbnailFontName: saved.thumbnailFontName,
+    };
+
+    const mergedLegacyLandscape = normalizeProfile(legacyPatch, DEFAULT_LANDSCAPE_PROFILE);
+    const mergedLegacyPortrait = normalizeProfile(legacyPatch, DEFAULT_PORTRAIT_PROFILE);
+    setLayoutProfiles({
+      landscape: mergedLegacyLandscape,
+      portrait: mergedLegacyPortrait,
+    });
   }, []);
 
   useEffect(() => {
@@ -219,7 +395,6 @@ export function useCaptionSettings() {
           return;
         }
 
-        // Legacy fallback: file cũ chỉ chứa object settings.
         applyLoadedSettings(parsed || {});
         revisionRef.current = 1;
         if (!cancelled) {
@@ -300,18 +475,30 @@ export function useCaptionSettings() {
     audioDir, setAudioDir,
     autoFitAudio, setAutoFitAudio,
     hardwareAcceleration, setHardwareAcceleration,
-    style, setStyle,
+    style: activeProfile.style,
+    setStyle,
     renderMode, setRenderMode,
-    renderResolution, setRenderResolution,
-    blackoutTop, setBlackoutTop,
+    renderResolution: activeProfile.renderResolution,
+    setRenderResolution,
+    blackoutTop: activeProfile.blackoutTop,
+    setBlackoutTop,
+    subtitlePosition: activeProfile.subtitlePosition,
+    setSubtitlePosition,
+    thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
+    setThumbnailFrameTimeSec,
     audioSpeed, setAudioSpeed,
     renderAudioSpeed, setRenderAudioSpeed,
     videoVolume, setVideoVolume,
     audioVolume, setAudioVolume,
-    thumbnailFontName, setThumbnailFontName,
-    logoPath, setLogoPath,
-    logoPosition, setLogoPosition,
-    logoScale, setLogoScale,
+    thumbnailFontName: activeProfile.thumbnailFontName,
+    setThumbnailFontName,
+    logoPath: activeProfile.logoPath,
+    setLogoPath,
+    logoPosition: activeProfile.logoPosition,
+    setLogoPosition,
+    logoScale: activeProfile.logoScale,
+    setLogoScale,
+    layoutProfiles,
     processingMode, setProcessingMode,
     settingsRevision,
     settingsUpdatedAt,

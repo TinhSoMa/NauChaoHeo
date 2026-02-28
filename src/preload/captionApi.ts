@@ -186,7 +186,7 @@ export interface CaptionVideoAPI {
     timingContextPath?: string;
     audioSpeedModel?: 'step4_minus_step7_delta';
     ttsRate?: string;
-    renderMode?: 'hardsub' | 'black_bg';
+    renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
     renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
     position?: { x: number; y: number };
     blackoutTop?: number;
@@ -203,6 +203,8 @@ export interface CaptionVideoAPI {
     thumbnailTimeSec?: number;
     thumbnailText?: string;
     thumbnailFontName?: string;
+    step7SubtitleSource?: 'session_translated_entries';
+    step7AudioSource?: 'session_merged_audio';
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>>;
 
   // Listen to render progress

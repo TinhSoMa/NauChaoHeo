@@ -13,7 +13,11 @@ import {
   VideoMetadata,
 } from '../../../shared/types/caption';
 import { isFFmpegAvailable } from '../../utils/ffmpegPath';
-import { prepareSubtitleAndDuration, getSubtitleFilter } from './subtitleAssBuilder';
+import {
+  prepareSubtitleAndDuration,
+  prepareSubtitleAndDurationPortrait,
+  getSubtitleFilter,
+} from './subtitleAssBuilder';
 import {
   extractVideoFrame as probeExtractVideoFrame,
   getVideoMetadata as probeGetVideoMetadata,
@@ -21,6 +25,7 @@ import {
   readSrtDurationSec,
 } from './hardsub/mediaProbe';
 import { buildVideoFilter } from './hardsub/filterBuilder';
+import { buildPortraitVideoFilter } from './hardsub/portraitFilterBuilder';
 import { buildSpeedAdjustedAudioFile, buildAtempoFilter } from './hardsub/audioSpeedAdjuster';
 import { buildHardsubAudioMix } from './hardsub/audioMixBuilder';
 import { runFFmpegProcess } from './hardsub/ffmpegRunner';
@@ -31,6 +36,21 @@ import { applyThumbnailPostProcess } from './hardsub/thumbnailPipeline';
 
 export const getVideoMetadata = probeGetVideoMetadata;
 export const extractVideoFrame = probeExtractVideoFrame;
+
+function resolvePortraitCanvasByPreset(
+  renderResolution?: RenderVideoOptions['renderResolution']
+): { width: number; height: number } {
+  if (renderResolution === '720p') {
+    return { width: 720, height: 1280 };
+  }
+  if (renderResolution === '540p') {
+    return { width: 540, height: 960 };
+  }
+  if (renderResolution === '360p') {
+    return { width: 360, height: 640 };
+  }
+  return { width: 1080, height: 1920 };
+}
 
 /**
  * Render video đè (Hardsub)
@@ -272,6 +292,10 @@ export async function renderHardsubVideo(
       audioAfterStep7ScaleSec: audioAfterSpeedDurationSec,
       videoMarkerSec,
     },
+    dataSource: {
+      subtitleSource: options.step7SubtitleSource || 'unknown',
+      audioSource: options.step7AudioSource || 'unknown',
+    },
     subtitleWindow: {
       subtitleEndSec: prep.duration,
       trimApplied,
@@ -279,6 +303,283 @@ export async function renderHardsubVideo(
     note: 'Không trim audio/video. mergeWindowInVideo là timeline video gốc; mergeWindowInOutputTimeline là timeline sau setpts.',
   });
   console.log('[VideoRenderer][Hardsub][TimingPayload]', hardsubTimingDebug);
+
+  const totalFrames = Math.floor(outputDuration * fps);
+  const renderResult = await runFFmpegProcess({
+    args,
+    totalFrames,
+    fps,
+    outputPath,
+    tempAssPath: prep.tempAssPath,
+    duration: outputDuration,
+    progressCallback,
+  });
+  if (renderResult.success) {
+    renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
+  }
+  return renderResult;
+}
+
+/**
+ * Render hardsub chuyển khung 16:9 -> 9:16 với nền blur
+ */
+export async function renderHardsubPortraitVideo(
+  options: RenderVideoOptions,
+  progressCallback?: (progress: RenderProgress) => void
+): Promise<RenderResult> {
+  if (!options.videoPath || !existsSync(options.videoPath)) {
+    return { success: false, error: 'Chế độ hardsub 9:16 yêu cầu videoPath' };
+  }
+
+  const { outputPath } = options;
+  const outputDir = path.dirname(outputPath);
+  await fs.mkdir(outputDir, { recursive: true });
+
+  const audioSpeedInput = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
+  const adjustedAudio = await buildSpeedAdjustedAudioFile(options.audioPath, audioSpeedInput);
+  if (!adjustedAudio.success) {
+    return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted' };
+  }
+
+  const portraitCanvas = resolvePortraitCanvasByPreset(options.renderResolution);
+  const renderOptions: RenderVideoOptions = {
+    ...options,
+    width: portraitCanvas.width,
+    height: portraitCanvas.height,
+    audioPath: adjustedAudio.audioPath,
+    audioSpeed: 1.0,
+    step7AudioSpeedInput: audioSpeedInput,
+  };
+
+  const prep = await prepareSubtitleAndDurationPortrait(renderOptions, portraitCanvas);
+  const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+
+  let hwaccelArgs: string[] = [];
+  let videoCodec = 'libx264';
+  let codecParams = ['-preset', 'medium', '-crf', '23'];
+  if (options.hardwareAcceleration === 'qsv') {
+    hwaccelArgs = ['-hwaccel', 'auto'];
+    videoCodec = 'h264_qsv';
+    codecParams = ['-preset', 'fast', '-global_quality', '25'];
+  }
+
+  const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
+    ? prep.originalVideoDuration / prep.videoSpeedMultiplier
+    : prep.originalVideoDuration;
+  const outputDuration = Math.max(
+    stretchedVideoDuration > 0 ? stretchedVideoDuration : 0,
+    prep.newAudioDuration > 0 ? prep.newAudioDuration : 0
+  ) || prep.newAudioDuration;
+  const finalDurationStr = outputDuration.toFixed(3);
+  console.log(
+    `[VideoRenderer] HardsubPortrait duration | videoTotal=${prep.originalVideoDuration.toFixed(3)}s, ` +
+    `videoSpeedMultiplier=${prep.videoSpeedMultiplier.toFixed(4)}, stretchedVideo=${stretchedVideoDuration.toFixed(3)}s, ` +
+    `audioForSync=${prep.newAudioDuration.toFixed(3)}s, outputDuration=${outputDuration.toFixed(3)}s`
+  );
+
+  const inputArgs = [...hwaccelArgs, '-i', renderOptions.videoPath!];
+  let hasTtsAudio = false;
+  if (renderOptions.audioPath && existsSync(renderOptions.audioPath)) {
+    inputArgs.push('-i', renderOptions.audioPath);
+    hasTtsAudio = true;
+  }
+
+  const step4SrtScale = prep.step4ScaleUsed && prep.step4ScaleUsed > 0
+    ? prep.step4ScaleUsed
+    : (options.step4SrtScale && options.step4SrtScale > 0 ? options.step4SrtScale : 1.0);
+  const srtTimeScaleConfigured = prep.configuredSrtTimeScale > 0 ? prep.configuredSrtTimeScale : 1.0;
+  const srtTimeScaleApplied = prep.appliedSrtTimeScale > 0 ? prep.appliedSrtTimeScale : 1.0;
+  const step7AudioSpeed = prep.step7SpeedUsed && prep.step7SpeedUsed > 0 ? prep.step7SpeedUsed : audioSpeedInput;
+  const audioEffectiveSpeed = prep.audioEffectiveSpeed;
+  let subtitleDurationOriginalSec = prep.videoSubBaseDuration > 0 ? prep.videoSubBaseDuration : 0;
+  const subtitleDurationScaledSec = prep.subRenderDuration > 0 ? prep.subRenderDuration : prep.duration;
+  const videoMarkerSec = prep.videoMarkerSec > 0 ? prep.videoMarkerSec : 0;
+  const trimApplied = false;
+
+  const audioStartInOutputSec = hasTtsAudio ? 0 : null;
+  const audioEndInOutputSec = hasTtsAudio ? Math.min(prep.newAudioDuration, outputDuration) : null;
+  const resolvedVideoMarkerSec = videoMarkerSec > 0
+    ? videoMarkerSec
+    : ((audioEndInOutputSec ?? 0) * (prep.videoSpeedMultiplier > 0 ? prep.videoSpeedMultiplier : 1.0));
+  const audioStartInVideoSec = hasTtsAudio ? 0 : null;
+  const audioEndInVideoSec = hasTtsAudio ? resolvedVideoMarkerSec : null;
+
+  const translatedSrtPath = path.join(path.dirname(options.srtPath), 'translated.srt');
+  const translatedSrtDurationSec = subtitleDurationOriginalSec <= 0 ? await readSrtDurationSec(translatedSrtPath) : null;
+  if (subtitleDurationOriginalSec <= 0 && translatedSrtDurationSec && translatedSrtDurationSec > 0) {
+    subtitleDurationOriginalSec = translatedSrtDurationSec;
+  }
+  const audioOriginalDurationSec = await readMediaDurationSec(options.audioPath);
+  const audioAfterSpeedDurationSec = await readMediaDurationSec(renderOptions.audioPath);
+  const videoSubDurationAfterScaleSec = subtitleDurationOriginalSec * step4SrtScale;
+
+  let hasLogo = false;
+  let logoInputIndex = -1;
+  if (renderOptions.logoPath && existsSync(renderOptions.logoPath)) {
+    inputArgs.push('-i', renderOptions.logoPath);
+    hasLogo = true;
+    logoInputIndex = inputArgs.filter(arg => arg === '-i').length - 1;
+  }
+
+  const even = (value: number) => {
+    const rounded = Math.max(2, Math.round(value));
+    return rounded % 2 === 0 ? rounded : rounded + 1;
+  };
+  const bgDownscaleWidth = even(portraitCanvas.width / 6);
+  const bgDownscaleHeight = even(portraitCanvas.height / 6);
+  const bgBlurLumaRadius = 10;
+  const bgBlurLumaPower = 1;
+
+  const portraitVideo = buildPortraitVideoFilter({
+    outputWidth: portraitCanvas.width,
+    outputHeight: portraitCanvas.height,
+    subtitleFilter,
+    videoSpeedMultiplier: prep.videoSpeedMultiplier,
+    blackoutTop: options.blackoutTop,
+    bgDownscaleWidth,
+    bgDownscaleHeight,
+    bgBlurLumaRadius,
+    bgBlurLumaPower,
+  });
+
+  const filterComplexParts: string[] = [];
+  const audioMix = buildHardsubAudioMix({
+    hasVideoAudio: prep.hasVideoAudio,
+    hasTtsAudio,
+    videoVolume: renderOptions.videoVolume !== undefined ? renderOptions.videoVolume : 100,
+    audioVolume: renderOptions.audioVolume !== undefined ? renderOptions.audioVolume : 100,
+    videoSpeedMultiplier: prep.videoSpeedMultiplier,
+    audioSpeed: prep.audioSpeed,
+  });
+  filterComplexParts.push(...audioMix.filterParts);
+
+  const portraitFilterParts = [...portraitVideo.filterParts];
+  if (portraitFilterParts.length > 0) {
+    portraitFilterParts[0] = `[0:v]${portraitFilterParts[0]}`;
+  }
+  filterComplexParts.push(...portraitFilterParts);
+
+  if (hasLogo && logoInputIndex > 0) {
+    const userLogoScale = renderOptions.logoScale ?? 1.0;
+    const totalLogoScale = prep.scaleFactor * userLogoScale;
+    const logoScaleFilter = totalLogoScale !== 1 ? `scale=iw*${totalLogoScale}:ih*${totalLogoScale}` : 'copy';
+
+    let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
+    let logoYAxis = `50*${prep.scaleFactor}`;
+    if (renderOptions.logoPosition) {
+      logoXAxis = `${Math.round(renderOptions.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
+      logoYAxis = `${Math.round(renderOptions.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+    }
+
+    filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
+    filterComplexParts.push(`[${portraitVideo.outputLabel}][logo_scaled]overlay=x=${logoXAxis}:y=${logoYAxis}[v_out]`);
+  } else {
+    filterComplexParts.push(`[${portraitVideo.outputLabel}]copy[v_out]`);
+  }
+
+  const mapArgs: string[] = ['-map', '[v_out]'];
+  if (audioMix.mapAudioArg) {
+    mapArgs.push('-map', audioMix.mapAudioArg);
+  }
+
+  const fps = 24;
+  const args = [
+    ...inputArgs,
+    '-filter_complex', filterComplexParts.join(';'),
+    ...mapArgs,
+    '-c:v', videoCodec,
+    ...codecParams,
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-pix_fmt', 'yuv420p',
+    '-r', fps.toString(),
+    '-t', finalDurationStr,
+    '-y',
+    outputPath,
+  ];
+
+  const hardsubTimingDebug = buildHardsubTimingPayload({
+    options,
+    renderOptions,
+    prep,
+    outputPath,
+    subtitleDurationOriginalSec,
+    subtitleDurationScaledSec,
+    audioOriginalDurationSec,
+    audioAfterSpeedDurationSec,
+    videoSubDurationAfterScaleSec,
+    outputDuration,
+    stretchedVideoDuration,
+    hasTtsAudio,
+    audioStartInVideoSec,
+    audioEndInVideoSec,
+    audioStartInOutputSec,
+    audioEndInOutputSec,
+    trimApplied,
+    adjustedAudioGenerated: adjustedAudio.generated,
+    step4SrtScale,
+    srtTimeScaleConfigured,
+    srtTimeScaleApplied,
+    step7AudioSpeed,
+    audioEffectiveSpeed,
+    videoMarkerSec,
+    layoutMode: 'portrait_blur_9_16',
+    canvas: portraitCanvas,
+    bgBlur: {
+      downscaleW: bgDownscaleWidth,
+      downscaleH: bgDownscaleHeight,
+      blur: `${bgBlurLumaRadius}:${bgBlurLumaPower}`,
+    },
+    fgFitMode: 'scale-by-aspect-keep-ratio-center',
+  });
+
+  console.log('[VideoRenderer][HardsubPortrait] Render config', {
+    inputVideo: renderOptions.videoPath,
+    inputAudio: renderOptions.audioPath ?? null,
+    outputVideo: outputPath,
+    canvas: portraitCanvas,
+    hasVideoAudio: prep.hasVideoAudio,
+    hasTtsAudio,
+    audioMergeWindowInVideo: hasTtsAudio
+      ? {
+          startSec: audioStartInVideoSec,
+          endSec: audioEndInVideoSec,
+          startLabel: `${(audioStartInVideoSec ?? 0).toFixed(3)}s`,
+          endLabel: `${(audioEndInVideoSec ?? 0).toFixed(3)}s`,
+        }
+      : null,
+    audioMergeWindowInOutputTimeline: hasTtsAudio
+      ? {
+          startSec: audioStartInOutputSec,
+          endSec: audioEndInOutputSec,
+          startLabel: `${(audioStartInOutputSec ?? 0).toFixed(3)}s`,
+          endLabel: `${(audioEndInOutputSec ?? 0).toFixed(3)}s`,
+        }
+      : null,
+    duration: {
+      videoTotalSec: prep.originalVideoDuration,
+      ttsEffectiveSec: prep.newAudioDuration,
+      outputRenderSec: outputDuration,
+    },
+    speed: {
+      calcMode: 'audio_speed_adjusted_video_marker',
+      audioSpeedModel: options.audioSpeedModel || 'step4_minus_step7_delta',
+      videoSpeedMultiplier: prep.videoSpeedMultiplier,
+      audioSpeedInput: step7AudioSpeed,
+      step4SrtScale,
+      srtTimeScaleConfigured,
+      srtTimeScaleApplied,
+      srtAlreadyScaled: prep.srtAlreadyScaled,
+      audioEffectiveSpeed,
+      audioPreAdjustedFile: adjustedAudio.generated,
+      speedCalcSource: prep.speedCalcSource,
+    },
+    dataSource: {
+      subtitleSource: options.step7SubtitleSource || 'unknown',
+      audioSource: options.step7AudioSource || 'unknown',
+    },
+  });
+  console.log('[VideoRenderer][HardsubPortrait][TimingPayload]', hardsubTimingDebug);
 
   const totalFrames = Math.floor(outputDuration * fps);
   const renderResult = await runFFmpegProcess({
@@ -399,7 +700,9 @@ export async function renderVideo(
   }
 
   let result: RenderResult;
-  if (options.renderMode === 'hardsub' && options.videoPath) {
+  if (options.renderMode === 'hardsub_portrait_9_16' && options.videoPath) {
+    result = await renderHardsubPortraitVideo(options, progressCallback);
+  } else if (options.renderMode === 'hardsub' && options.videoPath) {
     result = await renderHardsubVideo(options, progressCallback);
   } else {
     result = await renderBlackBackgroundVideo(options, progressCallback);

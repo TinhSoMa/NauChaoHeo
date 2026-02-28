@@ -317,7 +317,7 @@ export interface RenderVideoOptions {
   targetDuration?: number; // Độ dài cố định (tuỳ chọn) cho nền đen
   hardwareAcceleration?: 'none' | 'qsv';
   style?: ASSStyleConfig;
-  renderMode?: 'hardsub' | 'black_bg';
+  renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
   blackoutTop?: number;   // Vùng tô đen: tỉ lệ 0-1 từ trên xuống, VD 0.85 = che 15% dưới video
@@ -339,6 +339,8 @@ export interface RenderVideoOptions {
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
   thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
   thumbnailFontName?: string; // Font riêng cho thumbnail text (tách biệt với subtitle font)
+  step7SubtitleSource?: 'session_translated_entries';
+  step7AudioSource?: 'session_merged_audio';
 }
 
 /**
@@ -380,6 +382,7 @@ export interface ExtractFrameResult {
 // ============================================
 
 export type CaptionStepStatus = 'idle' | 'running' | 'success' | 'error' | 'stale';
+export type CaptionStepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface CaptionStepState {
   status: CaptionStepStatus;
@@ -388,6 +391,10 @@ export interface CaptionStepState {
   error?: string;
   metrics?: Record<string, unknown>;
   settingsSnapshot?: Record<string, unknown>;
+  inputFingerprint?: string;
+  outputFingerprint?: string;
+  dependsOn?: CaptionStepNumber[];
+  blockedReason?: string;
 }
 
 export interface CaptionSessionSettings {
@@ -408,6 +415,8 @@ export interface CaptionSessionData {
   mergeResult?: Record<string, unknown>;
   renderResult?: Record<string, unknown>;
   renderTimingPayload?: Record<string, unknown>;
+  step7SubtitleSource?: 'session_translated_entries';
+  step7AudioSource?: 'session_merged_audio';
 }
 
 export interface CaptionSessionArtifacts {
@@ -436,6 +445,8 @@ export interface CaptionSessionRuntime {
   processingMode?: 'folder-first' | 'step-first';
   currentStep?: number | null;
   lastMessage?: string;
+  currentDataSource?: string;
+  lastGuardError?: string;
   progress?: {
     current: number;
     total: number;
@@ -461,7 +472,7 @@ export interface CaptionProjectSettingsValues {
   autoFitAudio?: boolean;
   hardwareAcceleration?: 'none' | 'qsv';
   style?: ASSStyleConfig;
-  renderMode?: 'hardsub' | 'black_bg';
+  renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   blackoutTop?: number | null;
   audioSpeed?: number;
@@ -469,6 +480,32 @@ export interface CaptionProjectSettingsValues {
   videoVolume?: number;
   audioVolume?: number;
   thumbnailFontName?: string;
+  subtitlePosition?: { x: number; y: number } | null;
+  thumbnailFrameTimeSec?: number | null;
+  layoutProfiles?: {
+    landscape?: {
+      style?: ASSStyleConfig;
+      renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+      blackoutTop?: number | null;
+      subtitlePosition?: { x: number; y: number } | null;
+      thumbnailFrameTimeSec?: number | null;
+      logoPath?: string;
+      logoPosition?: { x: number; y: number };
+      logoScale?: number;
+      thumbnailFontName?: string;
+    };
+    portrait?: {
+      style?: ASSStyleConfig;
+      renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+      blackoutTop?: number | null;
+      subtitlePosition?: { x: number; y: number } | null;
+      thumbnailFrameTimeSec?: number | null;
+      logoPath?: string;
+      logoPosition?: { x: number; y: number };
+      logoScale?: number;
+      thumbnailFontName?: string;
+    };
+  };
   processingMode?: 'folder-first' | 'step-first';
 }
 
@@ -518,3 +555,4 @@ export const CAPTION_SESSION_IPC_CHANNELS = {
   WRITE_ATOMIC: 'captionSession:writeAtomic',
   PATCH: 'captionSession:patch',
 } as const;
+

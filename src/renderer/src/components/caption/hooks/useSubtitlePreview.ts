@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ASSStyleConfig, SubtitleEntry } from '@shared/types/caption';
+import { ASSStyleConfig, RenderVideoOptions, SubtitleEntry } from '@shared/types/caption';
 
 interface SubtitlePreviewState {
   frameData: string | null;
@@ -10,11 +10,15 @@ interface SubtitlePreviewState {
 }
 
 export type PreviewMode = 'subtitle' | 'blackout' | 'logo';
+type PreviewRenderMode = RenderVideoOptions['renderMode'];
+type PreviewRenderResolution = RenderVideoOptions['renderResolution'];
 
 export interface UseSubtitlePreviewOptions {
   style: ASSStyleConfig;
   entries?: SubtitleEntry[];
   blackoutTop?: number | null;  // fraction 0-1 (persisted from settings)
+  renderMode?: PreviewRenderMode;
+  renderResolution?: PreviewRenderResolution;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;  // user-set scale multiplier (1.0 = native size)
@@ -26,7 +30,79 @@ export interface UseSubtitlePreviewOptions {
   thumbnailFontName?: string; // font riêng cho thumbnail text
 }
 
-export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onLogoPositionChange, onLogoScaleChange, thumbnailText, thumbnailFontName }: UseSubtitlePreviewOptions) {
+function resolvePortraitCanvasByPreset(renderResolution?: PreviewRenderResolution): { width: number; height: number } {
+  if (renderResolution === '720p') {
+    return { width: 720, height: 1280 };
+  }
+  if (renderResolution === '540p') {
+    return { width: 540, height: 960 };
+  }
+  if (renderResolution === '360p') {
+    return { width: 360, height: 640 };
+  }
+  return { width: 1080, height: 1920 };
+}
+
+function fitRect(
+  containerWidth: number,
+  containerHeight: number,
+  targetWidth: number,
+  targetHeight: number
+): { x: number; y: number; width: number; height: number } {
+  const safeTargetWidth = Math.max(1, targetWidth);
+  const safeTargetHeight = Math.max(1, targetHeight);
+  const targetRatio = safeTargetWidth / safeTargetHeight;
+  const containerRatio = Math.max(1e-6, containerWidth) / Math.max(1e-6, containerHeight);
+
+  let width = containerWidth;
+  let height = containerHeight;
+  if (containerRatio > targetRatio) {
+    height = containerHeight;
+    width = height * targetRatio;
+  } else {
+    width = containerWidth;
+    height = width / targetRatio;
+  }
+
+  return {
+    x: (containerWidth - width) / 2,
+    y: (containerHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+function resolvePreviewCoordinateSpace(
+  renderMode: PreviewRenderMode,
+  renderResolution: PreviewRenderResolution,
+  sourceWidth: number,
+  sourceHeight: number
+): { width: number; height: number } {
+  if (renderMode === 'hardsub_portrait_9_16') {
+    return resolvePortraitCanvasByPreset(renderResolution);
+  }
+  return {
+    width: Math.max(1, sourceWidth),
+    height: Math.max(1, sourceHeight),
+  };
+}
+
+export function useSubtitlePreview({
+  style,
+  entries,
+  blackoutTop,
+  renderMode,
+  renderResolution,
+  logoPath,
+  logoPosition,
+  logoScale,
+  onPositionChange,
+  onBlackoutChange,
+  onLogoPositionChange,
+  onLogoScaleChange,
+  thumbnailText,
+  thumbnailFontName,
+}: UseSubtitlePreviewOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -50,9 +126,9 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
 
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [scaleRatio, setScaleRatio] = useState(1);
-  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 });
   const [canvasCursor, setCanvasCursor] = useState<string>('crosshair');
+  const previewRectRef = useRef({ x: 0, y: 0, width: 1, height: 1 });
+  const previewSpaceRef = useRef({ width: 1920, height: 1080 });
 
   // Mode: subtitle positioning, blackout line dragging, or logo positioning
   const [mode, setMode] = useState<PreviewMode>('subtitle');
@@ -132,6 +208,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
         setFrameTimeSec(0);
       }
 
+      const previewSpace = resolvePreviewCoordinateSpace(renderMode, renderResolution, vw, vh);
       const frameRes = await api.extractFrame(videoPath);
       if (frameRes?.success && frameRes.data) {
         const fd = frameRes.data.frameData.startsWith('data:')
@@ -139,19 +216,19 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
           : `data:image/png;base64,${frameRes.data.frameData}`;
 
         setState(prev => {
-          let initialY = Math.floor(vh / 2);
+          let initialY = Math.floor(previewSpace.height / 2);
           if (localBlackoutTop !== null && localBlackoutTop < 1) {
             const blackoutMidFrac = localBlackoutTop + (1 - localBlackoutTop) / 2;
-            initialY = Math.floor(vh * blackoutMidFrac);
+            initialY = Math.floor(previewSpace.height * blackoutMidFrac);
           }
-          const initialCenter = { x: Math.floor(vw / 2), y: initialY };
+          const initialCenter = { x: Math.floor(previewSpace.width / 2), y: initialY };
           
           setTimeout(() => onPositionChange?.(initialCenter), 0);
 
           return {
             ...prev,
             frameData: fd,
-            videoSize: { width: vw, height: vh },
+            videoSize: previewSpace,
             subtitlePosition: initialCenter,
             isLoading: false,
           };
@@ -166,7 +243,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     } catch (e) {
       setState(prev => ({ ...prev, isLoading: false, error: `${e}` }));
     }
-  }, [localBlackoutTop, onPositionChange]);
+  }, [localBlackoutTop, onPositionChange, renderMode, renderResolution]);
 
   // Chỉ thay ảnh nền canvas — KHÔNG reset subtitlePosition, KHÔNG gọi onPositionChange
   const loadFrameAt = useCallback(async (timeSec: number) => {
@@ -193,26 +270,11 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
 
   // Helper: convert canvas Y to video fraction (0-1)
   const canvasYToFraction = useCallback((cy: number) => {
-    const img = imageRef.current;
-    if (!img) return 0.5;
-    const imgRatio = img.width / img.height;
-    const cw = containerSize.width || 400;
-    const ch = containerSize.height || 225;
-    const canvasRatio = cw / ch;
-
-    let drawH: number;
-    if (canvasRatio > imgRatio) {
-      drawH = ch;
-    } else {
-      const drawW = cw;
-      drawH = drawW / imgRatio;
-    }
-    const offY = (ch - drawH) / 2;
-
-    // Clamp to video area
-    const relY = Math.max(0, Math.min(1, (cy - offY) / drawH));
+    const rect = previewRectRef.current;
+    if (!rect || rect.height <= 0) return 0.5;
+    const relY = Math.max(0, Math.min(1, (cy - rect.y) / rect.height));
     return relY;
-  }, [containerSize]);
+  }, []);
 
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -238,48 +300,69 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       return;
     }
 
-    const imgRatio = img.width / img.height;
-    const canvasRatio = cw / ch;
+    const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
+    const outputRect = isPortraitMode
+      ? { x: 0, y: 0, width: cw, height: ch }
+      : fitRect(cw, ch, img.width, img.height);
 
-    let drawW: number, drawH: number;
-    if (canvasRatio > imgRatio) {
-      drawH = ch;
-      drawW = drawH * imgRatio;
-    } else {
-      drawW = cw;
-      drawH = drawW / imgRatio;
-    }
+    const previewWidth = Math.max(1, state.videoSize.width);
+    const previewHeight = Math.max(1, state.videoSize.height);
+    previewRectRef.current = outputRect;
+    previewSpaceRef.current = { width: previewWidth, height: previewHeight };
 
-    const offX = (cw - drawW) / 2;
-    const offY = (ch - drawH) / 2;
-
-    const ratio = img.width / drawW;
-    setScaleRatio(ratio);
-    setImageOffset({ x: offX, y: offY });
+    const ratio = previewWidth / Math.max(1, outputRect.width);
+    const mapPreviewToCanvas = (x: number, y: number) => ({
+      x: outputRect.x + (x / previewWidth) * outputRect.width,
+      y: outputRect.y + (y / previewHeight) * outputRect.height,
+    });
 
     // Background
     ctx.fillStyle = '#111827';
     ctx.fillRect(0, 0, cw, ch);
 
-    // Video frame
-    ctx.drawImage(img, offX, offY, drawW, drawH);
+    if (isPortraitMode) {
+      // Mô phỏng pipeline render 9:16: nền blur + video gốc đặt giữa.
+      ctx.save();
+      ctx.filter = 'blur(18px)';
+      ctx.drawImage(
+        img,
+        outputRect.x - 24,
+        outputRect.y - 24,
+        outputRect.width + 48,
+        outputRect.height + 48
+      );
+      ctx.restore();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.fillRect(outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+
+      const fgRectInner = fitRect(outputRect.width, outputRect.height, img.width, img.height);
+      const fgRect = {
+        x: outputRect.x + fgRectInner.x,
+        y: outputRect.y + fgRectInner.y,
+        width: fgRectInner.width,
+        height: fgRectInner.height,
+      };
+      ctx.drawImage(img, fgRect.x, fgRect.y, fgRect.width, fgRect.height);
+    } else {
+      ctx.drawImage(img, outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+    }
 
     // ===== Draw blackout band at bottom =====
     if (localBlackoutTop !== null && localBlackoutTop < 1) {
-      const bandY = offY + drawH * localBlackoutTop;
-      const bandH = drawH * (1 - localBlackoutTop);
+      const bandY = outputRect.y + outputRect.height * localBlackoutTop;
+      const bandH = outputRect.height * (1 - localBlackoutTop);
 
       // Black fill
       ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
-      ctx.fillRect(offX, bandY, drawW, bandH);
+      ctx.fillRect(outputRect.x, bandY, outputRect.width, bandH);
 
       // Red top edge line
       ctx.strokeStyle = 'rgba(255, 60, 60, 0.8)';
       ctx.lineWidth = 2;
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(offX, bandY);
-      ctx.lineTo(offX + drawW, bandY);
+      ctx.moveTo(outputRect.x, bandY);
+      ctx.lineTo(outputRect.x + outputRect.width, bandY);
       ctx.stroke();
 
       // Label
@@ -288,7 +371,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       ctx.font = '11px "JetBrains Mono", monospace';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
-      ctx.fillText(`che ${pct}%`, offX + drawW - 6, bandY - 4);
+      ctx.fillText(`che ${pct}%`, outputRect.x + outputRect.width - 6, bandY - 4);
     }
 
     // ===== Subtitle text =====
@@ -298,8 +381,11 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     }
 
     const pos = state.subtitlePosition;
-    const textX = (pos.x / ratio) + offX;
-    const textY = (pos.y / ratio) + offY;
+    const clampedX = Math.max(0, Math.min(previewWidth, pos.x));
+    const clampedY = Math.max(0, Math.min(previewHeight, pos.y));
+    const mappedText = mapPreviewToCanvas(clampedX, clampedY);
+    const textX = mappedText.x;
+    const textY = mappedText.y;
 
     const videoH = state.videoSize.height;
     let effectiveFontSize = style.fontSize;
@@ -359,8 +445,9 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       const logoXCoord = localLogoPosition?.x ?? (logoImg.width / 2) + 50;
       const logoYCoord = localLogoPosition?.y ?? (logoImg.height / 2) + 50;
       
-      const logoDrawX = (logoXCoord / ratio) + offX;
-      const logoDrawY = (logoYCoord / ratio) + offY;
+      const mappedLogo = mapPreviewToCanvas(logoXCoord, logoYCoord);
+      const logoDrawX = mappedLogo.x;
+      const logoDrawY = mappedLogo.y;
       
       // Vẽ logo (tâm ở logoDrawX, logoDrawY)
       const scaledLogoW = (logoImg.width / ratio) * localLogoScale;
@@ -416,14 +503,14 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
 
     // ===== Thumbnail text overlay (preview only) =====
     if (thumbnailText?.trim()) {
-      const thumbFontSize = Math.max(14, drawH * 0.07);
+      const thumbFontSize = Math.max(14, outputRect.height * 0.07);
       const thumbFont = thumbnailFontName?.trim() || style.fontName;
       ctx.save();
       ctx.font = `bold ${thumbFontSize}px "${thumbFont}", Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const centerX = offX + drawW / 2;
-      const centerY = offY + drawH / 2;
+      const centerX = outputRect.x + outputRect.width / 2;
+      const centerY = outputRect.y + outputRect.height / 2;
       const measured = ctx.measureText(thumbnailText.trim());
       const pad = thumbFontSize * 0.5;
       const boxW = measured.width + pad * 2;
@@ -446,7 +533,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       ctx.setLineDash([]);
       ctx.restore();
     }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, renderMode]);
 
   // Load video frame image
   useEffect(() => {
@@ -575,6 +662,21 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     ].some(c => Math.abs(cx - c.x) <= HIT && Math.abs(cy - c.y) <= HIT);
   }, []);
 
+  const canvasToPreviewCoords = useCallback((cx: number, cy: number) => {
+    const rect = previewRectRef.current;
+    const space = previewSpaceRef.current;
+    const safeW = Math.max(1, rect.width);
+    const safeH = Math.max(1, rect.height);
+
+    const relX = Math.max(0, Math.min(1, (cx - rect.x) / safeW));
+    const relY = Math.max(0, Math.min(1, (cy - rect.y) / safeH));
+
+    return {
+      x: Math.floor(relX * Math.max(1, space.width)),
+      y: Math.floor(relY * Math.max(1, space.height)),
+    };
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!state.frameData) return;
 
@@ -586,10 +688,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     setIsDragging(true);
 
     if (mode === 'subtitle') {
-      const newPos = {
-        x: Math.max(0, Math.min(state.videoSize.width, Math.floor((cx - imageOffset.x) * scaleRatio))),
-        y: Math.max(0, Math.min(state.videoSize.height, Math.floor((cy - imageOffset.y) * scaleRatio))),
-      };
+      const newPos = canvasToPreviewCoords(cx, cy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
       onPositionChange?.(newPos);
     } else if (mode === 'logo') {
@@ -601,10 +700,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       } else {
         // Di chuyển logo — chỉ cập nhật local, commit khi mouseUp
         cornerDragRef.current = null;
-        const newPos = {
-          x: Math.max(0, Math.min(state.videoSize.width, Math.floor((cx - imageOffset.x) * scaleRatio))),
-          y: Math.max(0, Math.min(state.videoSize.height, Math.floor((cy - imageOffset.y) * scaleRatio))),
-        };
+        const newPos = canvasToPreviewCoords(cx, cy);
         setLocalLogoPositionSynced(newPos);
       }
     } else {
@@ -612,7 +708,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
       const frac = canvasYToFraction(cy);
       setLocalBlackoutTop(frac);
     }
-  }, [state.frameData, state.videoSize, mode, imageOffset, scaleRatio, isNearCorner, onPositionChange, canvasYToFraction]);
+  }, [state.frameData, mode, isNearCorner, onPositionChange, canvasYToFraction, canvasToPreviewCoords]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -630,10 +726,7 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
     if (!isDragging || !state.frameData) return;
 
     if (mode === 'subtitle') {
-      const newPos = {
-        x: Math.max(0, Math.min(state.videoSize.width, Math.floor((cx - imageOffset.x) * scaleRatio))),
-        y: Math.max(0, Math.min(state.videoSize.height, Math.floor((cy - imageOffset.y) * scaleRatio))),
-      };
+      const newPos = canvasToPreviewCoords(cx, cy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
     } else if (mode === 'logo') {
       if (cornerDragRef.current) {
@@ -645,17 +738,14 @@ export function useSubtitlePreview({ style, entries, blackoutTop, logoPath, logo
         setLocalLogoScaleSynced(newScale);
       } else {
         // Di chuyển logo
-        const newPos = {
-          x: Math.max(0, Math.min(state.videoSize.width, Math.floor((cx - imageOffset.x) * scaleRatio))),
-          y: Math.max(0, Math.min(state.videoSize.height, Math.floor((cy - imageOffset.y) * scaleRatio))),
-        };
+        const newPos = canvasToPreviewCoords(cx, cy);
         setLocalLogoPositionSynced(newPos);
       }
     } else {
       const frac = canvasYToFraction(cy);
       setLocalBlackoutTop(frac);
     }
-  }, [isDragging, state.frameData, state.videoSize, mode, imageOffset, scaleRatio, isNearCorner, canvasYToFraction]);
+  }, [isDragging, state.frameData, mode, isNearCorner, canvasYToFraction, canvasToPreviewCoords]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);

@@ -5,11 +5,10 @@ interface UseHardsubSettingsOptions {
   inputType: 'srt' | 'draft';
   filePath: string;
   folderVideos: Record<string, { name: string; fullPath: string; duration: number }>;
+  thumbnailEnabled: boolean;
 }
 
 export function useHardsubSettings(options: UseHardsubSettingsOptions) {
-  const [subtitlePosition, setSubtitlePosition] = useState<{ x: number; y: number } | null>(null);
-  const [thumbnailFrameTimeSec, setThumbnailFrameTimeSec] = useState<number | null>(null);
   const [thumbnailText, setThumbnailText] = useState('');
   const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
   const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
@@ -21,7 +20,7 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   );
   const isMultiFolder = selectedDraftPaths.length > 1;
   const firstFolderPath = selectedDraftPaths[0] ?? '';
-  const isThumbnailEnabled = thumbnailFrameTimeSec !== null && thumbnailFrameTimeSec !== undefined;
+  const isThumbnailEnabled = options.thumbnailEnabled;
 
   useEffect(() => {
     const changed = selectedDraftPaths.length !== folderOrderSnapshot.length
@@ -76,10 +75,6 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const hasMissingThumbnailText = thumbnailFolderItems.some(item => item.hasError);
 
   return {
-    subtitlePosition,
-    setSubtitlePosition,
-    thumbnailFrameTimeSec,
-    setThumbnailFrameTimeSec,
     thumbnailText,
     setThumbnailText,
     thumbnailTextsByOrder,

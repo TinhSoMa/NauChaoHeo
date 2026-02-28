@@ -353,7 +353,7 @@ export function registerCaptionHandlers(): void {
         targetDuration?: number;
         hardwareAcceleration?: 'none' | 'qsv';
         style?: any;
-        renderMode?: 'hardsub' | 'black_bg';
+        renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
         renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
         position?: { x: number; y: number };
         blackoutTop?: number;
@@ -374,6 +374,8 @@ export function registerCaptionHandlers(): void {
         thumbnailTimeSec?: number;
         thumbnailText?: string;
         thumbnailFontName?: string;
+        step7SubtitleSource?: 'session_translated_entries';
+        step7AudioSource?: 'session_merged_audio';
       }
     ): Promise<IpcResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>> => {
       console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);

@@ -51,6 +51,7 @@ export function CaptionTranslator() {
     inputType: settings.inputType,
     filePath: fileManager.filePath,
     folderVideos: fileManager.folderVideos,
+    thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
   });
 
   const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
@@ -77,6 +78,9 @@ export function CaptionTranslator() {
     videoVolume: settings.videoVolume,
     audioVolume: settings.audioVolume,
     thumbnailFontName: settings.thumbnailFontName,
+    subtitlePosition: settings.subtitlePosition,
+    thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
+    layoutProfiles: settings.layoutProfiles,
     processingMode: settings.processingMode,
   }), [
     settings.inputType,
@@ -102,6 +106,9 @@ export function CaptionTranslator() {
     settings.videoVolume,
     settings.audioVolume,
     settings.thumbnailFontName,
+    settings.subtitlePosition,
+    settings.thumbnailFrameTimeSec,
+    settings.layoutProfiles,
     settings.processingMode,
   ]);
 
@@ -291,8 +298,6 @@ export function CaptionTranslator() {
     captionFolder,
     settings: {
       ...settings,
-      subtitlePosition: hardsubSettings.subtitlePosition,
-      thumbnailFrameTimeSec: hardsubSettings.thumbnailFrameTimeSec,
       thumbnailText: hardsubSettings.thumbnailText,
       thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
     },
@@ -587,6 +592,12 @@ export function CaptionTranslator() {
     return 'var(--color-primary)';
   };
 
+  const step7DependencyWarning = (() => {
+    const issue = processing.stepDependencyIssues.find((item) => item.step === 7);
+    if (!issue) return undefined;
+    return `Step 7 đang bị chặn: ${issue.reason}`;
+  })();
+
   return (
     <div className={styles.container}>
 
@@ -828,21 +839,26 @@ export function CaptionTranslator() {
           firstVideoPath={fileManager.firstVideoPath}
           thumbnailListPanel={(
             <ThumbnailListPanel
-              visible={settings.renderMode === 'hardsub' && settings.inputType === 'draft' && isMultiFolder}
+              visible={
+                (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') &&
+                settings.inputType === 'draft' &&
+                isMultiFolder
+              }
               items={hardsubSettings.thumbnailFolderItems}
               autoStartValue={hardsubSettings.thumbnailAutoStartValue}
               onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
               onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
               onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
               showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
+              dependencyWarning={step7DependencyWarning}
             />
           )}
           thumbnailPreviewText={isMultiFolder ? (hardsubSettings.thumbnailTextsByOrder[0] || '') : hardsubSettings.thumbnailText}
           onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
           thumbnailTextReadOnly={isMultiFolder}
           thumbnailTextHelper={isMultiFolder ? 'Multi-folder: nhập text riêng cho từng folder trong danh sách phía trên.' : undefined}
-          onSubtitlePositionChange={hardsubSettings.setSubtitlePosition}
-          onThumbnailFrameTimeChange={hardsubSettings.setThumbnailFrameTimeSec}
+          onSubtitlePositionChange={settings.setSubtitlePosition}
+          onThumbnailFrameTimeChange={settings.setThumbnailFrameTimeSec}
           onSelectLogo={async () => {
             const result = await (window.electronAPI as any).invoke('dialog:openFile', {
               filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
@@ -875,6 +891,17 @@ export function CaptionTranslator() {
               />
             ))}
           </div>
+
+          {processing.stepDependencyIssues.length > 0 && (
+            <div className={styles.stepGuardBox}>
+              <div className={styles.stepGuardTitle}>Step bị chặn do thiếu dữ liệu session:</div>
+              {processing.stepDependencyIssues.slice(0, 6).map((issue, idx) => (
+                <div key={`${issue.folderPath}-${issue.step}-${idx}`} className={styles.stepGuardItem}>
+                  [{issue.folderName}] Step {issue.step}: {issue.reason}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Processing Mode Toggle — chỉ hiển thị khi multi-folder */}
           {isMultiFolder && (

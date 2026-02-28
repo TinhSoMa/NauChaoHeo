@@ -52,6 +52,13 @@
   cursor: crosshair;
 }
 
+.canvasContainerPortrait {
+  aspect-ratio: 9 / 16;
+  max-width: min(100%, 420px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .canvasContainer.dragging {
   cursor: grabbing;
 }

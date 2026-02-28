@@ -37,6 +37,11 @@ export interface SubtitlePrepResult {
   srtAlreadyScaled: boolean;
 }
 
+interface PortraitAssCanvas {
+  width: number;
+  height: number;
+}
+
 function parseScaleFromSrtFileName(srtPath: string): number | null {
   const baseName = path.basename(srtPath).toLowerCase();
   const match = baseName.match(/(?:subtitle|translated)_([0-9]+(?:[._][0-9]+)?)x\.srt$/i);
@@ -69,11 +74,14 @@ function resolveCaptionFontsDir(): string | null {
 /**
  * Tính duration và export file ASS tạm để sử dụng trong bộ lọc FFmpeg
  */
-export async function prepareSubtitleAndDuration(options: RenderVideoOptions): Promise<SubtitlePrepResult> {
+async function prepareSubtitleAndDurationCore(
+  options: RenderVideoOptions,
+  portraitAssCanvas?: PortraitAssCanvas
+): Promise<SubtitlePrepResult> {
   const { srtPath, width, height: userHeight, videoPath, outputPath } = options;
   const audioSpeed = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
   const configuredSrtTimeScale = options.srtTimeScale && options.srtTimeScale > 0 ? options.srtTimeScale : 1.0;
-  const isHardsub = options.renderMode === 'hardsub' && !!videoPath;
+  const isHardsub = (options.renderMode === 'hardsub' || options.renderMode === 'hardsub_portrait_9_16') && !!videoPath;
   const defaultTimingContextPath = outputPath
     ? path.join(path.dirname(outputPath), 'caption_session.json')
     : undefined;
@@ -160,8 +168,8 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
   const videoSpeedNeeded = timing.videoSpeedMultiplier;
   const videoMarkerSec = timing.videoMarkerSec;
 
-  let finalWidth = width;
-  let finalHeight = userHeight || 150;
+  let finalWidth = portraitAssCanvas?.width ?? width;
+  let finalHeight = portraitAssCanvas?.height ?? (userHeight || 150);
   if (finalWidth % 2 !== 0) finalWidth += 1;
   if (finalHeight % 2 !== 0) finalHeight += 1;
   finalWidth = Math.max(64, Math.min(7680, finalWidth));
@@ -180,8 +188,10 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
     try {
       const probeResult = await getVideoMetadata(videoPath);
       if (probeResult.success && probeResult.metadata) {
-        renderWidth = probeResult.metadata.width;
-        renderHeight = probeResult.metadata.actualHeight || probeResult.metadata.height;
+        if (!portraitAssCanvas) {
+          renderWidth = probeResult.metadata.width;
+          renderHeight = probeResult.metadata.actualHeight || probeResult.metadata.height;
+        }
         hasVideoAudio = !!probeResult.metadata.hasAudio;
         originalVideoDuration = probeResult.metadata.duration;
       }
@@ -195,22 +205,25 @@ export async function prepareSubtitleAndDuration(options: RenderVideoOptions): P
     `videoSpeedNeeded=${videoSpeedNeeded.toFixed(4)}, videoMarkerSec=${videoMarkerSec.toFixed(3)}s, ` +
     `srtScaleConfigured=${configuredSrtTimeScale}, srtScaleApplied=${appliedSrtTimeScale}, srtAlreadyScaled=${srtAlreadyScaled}, ` +
     `ttsRate=${options.ttsRate || 'n/a'}, audioModel=${audioSpeedModel}, ` +
-    `videoTotal=${originalVideoDuration.toFixed(3)}s, durationUsed=${duration.toFixed(3)}s`
+    `videoTotal=${originalVideoDuration.toFixed(3)}s, durationUsed=${duration.toFixed(3)}s, ` +
+    `subtitleSource=${options.step7SubtitleSource || 'unknown'}, audioSource=${options.step7AudioSource || 'unknown'}`
   );
 
-  let MAX_OUTPUT_HEIGHT = 1080;
-  if (options.renderResolution === '720p') MAX_OUTPUT_HEIGHT = 720;
-  if (options.renderResolution === '540p') MAX_OUTPUT_HEIGHT = 540;
-  if (options.renderResolution === '360p') MAX_OUTPUT_HEIGHT = 360;
-  if (options.renderResolution === 'original') MAX_OUTPUT_HEIGHT = 99999;
-  
   let scaleFactor = 1;
-  if (renderHeight > MAX_OUTPUT_HEIGHT && videoPath && existsSync(videoPath)) {
-    scaleFactor = MAX_OUTPUT_HEIGHT / renderHeight;
-    renderWidth = Math.round(renderWidth * scaleFactor);
-    if (renderWidth % 2 !== 0) renderWidth += 1;
-    renderHeight = MAX_OUTPUT_HEIGHT;
-    needsScale = true;
+  if (!portraitAssCanvas) {
+    let MAX_OUTPUT_HEIGHT = 1080;
+    if (options.renderResolution === '720p') MAX_OUTPUT_HEIGHT = 720;
+    if (options.renderResolution === '540p') MAX_OUTPUT_HEIGHT = 540;
+    if (options.renderResolution === '360p') MAX_OUTPUT_HEIGHT = 360;
+    if (options.renderResolution === 'original') MAX_OUTPUT_HEIGHT = 99999;
+
+    if (renderHeight > MAX_OUTPUT_HEIGHT && videoPath && existsSync(videoPath)) {
+      scaleFactor = MAX_OUTPUT_HEIGHT / renderHeight;
+      renderWidth = Math.round(renderWidth * scaleFactor);
+      if (renderWidth % 2 !== 0) renderWidth += 1;
+      renderHeight = MAX_OUTPUT_HEIGHT;
+      needsScale = true;
+    }
   }
 
   const s = options.style || { fontName: 'Arial', fontSize: 48, fontColor: '#FFFF00', shadow: 2, marginV: 0, alignment: 5 };
@@ -307,6 +320,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     appliedSrtTimeScale,
     srtAlreadyScaled,
   };
+}
+
+export async function prepareSubtitleAndDuration(options: RenderVideoOptions): Promise<SubtitlePrepResult> {
+  return prepareSubtitleAndDurationCore(options);
+}
+
+export async function prepareSubtitleAndDurationPortrait(
+  options: RenderVideoOptions,
+  canvas: PortraitAssCanvas
+): Promise<SubtitlePrepResult> {
+  return prepareSubtitleAndDurationCore(options, canvas);
 }
 
 /**
