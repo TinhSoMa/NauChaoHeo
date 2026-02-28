@@ -400,6 +400,7 @@ export function CaptionTranslator() {
   const livePreviewVideoPath = videoInfo?.fullPath || fileManager.firstVideoPath || null;
 
   const [sessionStepStatus, setSessionStepStatus] = useState<Partial<Record<Step, string>>>({});
+  const [sessionStepSkipped, setSessionStepSkipped] = useState<Partial<Record<Step, boolean>>>({});
   const [sessionPreviewEntries, setSessionPreviewEntries] = useState<SubtitleEntry[]>([]);
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
@@ -417,6 +418,7 @@ export function CaptionTranslator() {
   useEffect(() => {
     if (!fileManager.filePath) {
       setSessionStepStatus({});
+      setSessionStepSkipped({});
       setSessionPreviewEntries(fileManager.entries);
       setRenderedPreviewVideoPath(null);
       setPreviewSourceLabel('live_video');
@@ -452,7 +454,27 @@ export function CaptionTranslator() {
           6: session.steps.step6?.status,
           7: session.steps.step7?.status,
         };
+        const isSkipped = (stepState: unknown): boolean => {
+          const record = (stepState && typeof stepState === 'object')
+            ? (stepState as Record<string, unknown>)
+            : {};
+          const metrics = (record.metrics && typeof record.metrics === 'object')
+            ? (record.metrics as Record<string, unknown>)
+            : {};
+          return record.status === 'success'
+            && (metrics.skipped === true || metrics.skipBy === 'session_contract');
+        };
+        const nextStepSkipped: Partial<Record<Step, boolean>> = {
+          1: isSkipped(session.steps.step1),
+          2: isSkipped(session.steps.step2),
+          3: isSkipped(session.steps.step3),
+          4: isSkipped(session.steps.step4),
+          5: isSkipped(session.steps.step5),
+          6: isSkipped(session.steps.step6),
+          7: isSkipped(session.steps.step7),
+        };
         setSessionStepStatus(nextStepStatus);
+        setSessionStepSkipped(nextStepSkipped);
 
         const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
         const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
@@ -487,6 +509,7 @@ export function CaptionTranslator() {
       } catch (error) {
         if (!cancelled) {
           console.warn('[CaptionTranslator] Không thể hydrate preview từ caption_session.json', error);
+          setSessionStepSkipped({});
           setSessionPreviewEntries(fileManager.entries);
           setRenderedPreviewVideoPath(null);
         }
@@ -814,6 +837,9 @@ export function CaptionTranslator() {
       return { label: 'Blocked', className: `${styles.statusBadge} ${styles.statusError}` };
     }
     const persistedStatus = sessionStepStatus[step];
+    if (persistedStatus === 'success' && sessionStepSkipped[step]) {
+      return { label: 'Skipped', className: `${styles.statusBadge} ${styles.statusSkipped}` };
+    }
     if (persistedStatus === 'success') {
       return { label: 'Done', className: `${styles.statusBadge} ${styles.statusDone}` };
     }

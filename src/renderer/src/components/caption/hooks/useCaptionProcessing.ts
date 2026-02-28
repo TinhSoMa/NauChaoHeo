@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode, StepDependencyIssue } from '../CaptionTypes';
-import { CaptionSessionV1, CaptionStepNumber, CaptionProjectSettingsValues } from '@shared/types/caption';
+import { CaptionArtifactFile, CaptionSessionV1, CaptionStepNumber, CaptionProjectSettingsValues } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
   buildEntriesFingerprint,
@@ -12,8 +12,11 @@ import {
   makeStepRunning,
   makeStepSuccess,
   markFollowingStepsStale,
+  recordStepSkipped,
   readCaptionSession,
   resolveStepInputsFromSession,
+  setStepArtifacts,
+  shouldSkipStep,
   syncSessionWithProjectSettings,
   toStepKey,
   updateCaptionSession,
@@ -66,6 +69,38 @@ function msToSrtTime(ms: number): string {
 function normalizeSpeedLabel(speed: number): string {
   const fixed = speed.toFixed(2);
   return fixed.replace(/\.?0+$/, '');
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function toSafeThumbSlug(thumbnailText?: string): string {
+  const raw = (thumbnailText || '').trim();
+  if (!raw) {
+    return 'no_thumb';
+  }
+  const ascii = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase();
+  const slug = ascii
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  return slug || 'no_thumb';
+}
+
+function buildRenderedVideoName(
+  renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16',
+  thumbnailText?: string
+): string {
+  const now = new Date();
+  const dateMonthHour = `${pad2(now.getDate())}${pad2(now.getMonth() + 1)}${pad2(now.getHours())}`;
+  const aspect = renderMode === 'hardsub_portrait_9_16' ? '9_16' : '16_9';
+  const thumbSlug = toSafeThumbSlug(thumbnailText);
+  return `nauchaoheo_video_${aspect}_${thumbSlug}_${dateMonthHour}.mp4`;
 }
 
 function buildScaledSubtitleEntries(entries: SubtitleEntry[], scale: number): SubtitleEntry[] {
@@ -160,6 +195,24 @@ function resolveProcessOutputDir(inputType: string, currentPath: string): string
   return inputType === 'draft'
     ? `${currentPath}/caption_output`
     : currentPath.replace(/[^/\\]+$/, 'caption_output');
+}
+
+function pushArtifact(
+  artifacts: CaptionArtifactFile[],
+  role: string,
+  pathValue: unknown,
+  kind: 'file' | 'dir' = 'file',
+  note?: string
+) {
+  if (typeof pathValue !== 'string' || !pathValue.trim()) {
+    return;
+  }
+  artifacts.push({
+    role,
+    kind,
+    path: pathValue.trim(),
+    note,
+  });
 }
 
 export function useCaptionProcessing({
@@ -389,6 +442,7 @@ export function useCaptionProcessing({
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim(),
         thumbnailFontName: cfg.thumbnailFontName,
+        thumbnailFontSize: cfg.thumbnailFontSize,
         portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
         logoPath: cfg.logoPath,
         logoPosition: cfg.logoPosition,
@@ -424,6 +478,7 @@ export function useCaptionProcessing({
       videoVolume: cfg.videoVolume,
       audioVolume: cfg.audioVolume,
       thumbnailFontName: cfg.thumbnailFontName,
+      thumbnailFontSize: cfg.thumbnailFontSize,
       subtitlePosition: cfg.subtitlePosition,
       thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
       thumbnailDurationSec: cfg.thumbnailDurationSec,
@@ -508,7 +563,7 @@ export function useCaptionProcessing({
         }
 
         const stepInputs = resolveStepInputsFromSession(sessionBeforeStep, step as CaptionStepNumber);
-        if (step !== 1) {
+        const hydrateStepInputContext = () => {
           if (step === 2 || step === 3) {
             currentEntries = compactEntries(stepInputs.extractedEntries);
           } else if (step === 4 || step === 6 || step === 7) {
@@ -520,9 +575,26 @@ export function useCaptionProcessing({
           if (step === 7) {
             srtFileForVideo = stepInputs.scaledSrtPath || stepInputs.translatedSrtPath || '';
           }
-          if (!isMulti && currentEntries.length > 0) {
-            setEntries(currentEntries);
+        };
+        const hydrateStepOutputContext = () => {
+          if (step === 1 || step === 2) {
+            currentEntries = compactEntries(stepInputs.extractedEntries);
+          } else if (step >= 3) {
+            currentEntries = compactEntries(stepInputs.translatedEntries);
           }
+          if (step >= 4 && step <= 6) {
+            currentAudioFiles = normalizeAudioFiles(stepInputs.ttsAudioFiles as PartialProcessingAudioFile[]);
+          }
+          if (step === 7) {
+            srtFileForVideo = stepInputs.scaledSrtPath || stepInputs.translatedSrtPath || '';
+          }
+        };
+        hydrateStepInputContext();
+        if (!isMulti && currentEntries.length > 0) {
+          setEntries(currentEntries);
+        }
+        if (!isMulti && step >= 4 && step <= 6 && currentAudioFiles.length > 0) {
+          setAudioFiles(currentAudioFiles);
         }
 
         let currentDataSource = 'session';
@@ -530,6 +602,44 @@ export function useCaptionProcessing({
         if (step === 4) currentDataSource = 'session_translated_entries';
         if (step === 5 || step === 6) currentDataSource = 'session_tts_audio_files';
         if (step === 7) currentDataSource = 'session_translated_entries+session_merged_audio';
+
+        const skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber);
+        if (skipDecision.skip) {
+          hydrateStepOutputContext();
+          const skipReason = skipDecision.reason || 'session_output_ready';
+          const skipMessage = msgCtx(`Bước ${step}: Skip (${skipReason})`);
+          setProgress({ current: 1, total: 1, message: skipMessage });
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            data: step === 7
+              ? {
+                  ...session.data,
+                  step7SubtitleSource: 'session_translated_entries',
+                  step7AudioSource: 'session_merged_audio',
+                }
+              : session.data,
+            runtime: {
+              ...session.runtime,
+              currentDataSource,
+              lastMessage: skipMessage,
+              lastGuardError: undefined,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: recordStepSkipped(session.steps[stepKey], skipReason),
+            },
+          }));
+          if (!isMulti && currentEntries.length > 0) {
+            setEntries(currentEntries);
+          }
+          if (!isMulti && step >= 4 && step <= 6 && currentAudioFiles.length > 0) {
+            setAudioFiles(currentAudioFiles);
+          }
+          ctx.entries = currentEntries;
+          ctx.audioFiles = currentAudioFiles;
+          ctx.srtFileForVideo = srtFileForVideo;
+          return;
+        }
 
         setProgress({ current: 0, total: 100, message: msgCtx(`Bước ${step}: Bắt đầu...`) });
         await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
@@ -564,6 +674,13 @@ export function useCaptionProcessing({
         setProgress({ current: 1, total: 1, message: msgCtx('Bước 1: Đã load file input') });
         await updateSessionForStep(currentPath, step, folderIdx, (session) => {
           const extractedEntries = compactEntries(currentEntries);
+          const stepArtifacts: CaptionArtifactFile[] = [];
+          if (inputType === 'draft') {
+            pushArtifact(stepArtifacts, 'draft_folder', currentPath, 'dir');
+            pushArtifact(stepArtifacts, 'draft_content_json', `${currentPath}/draft_content.json`, 'file');
+          } else {
+            pushArtifact(stepArtifacts, 'source_srt', currentPath, 'file');
+          }
           const outputFingerprint = buildEntriesFingerprint(extractedEntries);
           const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
           let nextSession: CaptionSessionV1 = {
@@ -587,6 +704,7 @@ export function useCaptionProcessing({
               },
             },
           };
+          nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
           if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
             nextSession = markFollowingStepsStale(
               nextSession,
@@ -617,24 +735,33 @@ export function useCaptionProcessing({
         if (result.success && result.data) {
           const splitData = result.data;
           setProgress({ current: 1, total: 1, message: msgCtx(`Bước 2: Đã tạo ${splitData.partsCount} phần`) });
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            steps: {
-              ...session.steps,
-              [stepKey]: {
-                ...makeStepSuccess(session.steps[stepKey], {
-                  partsCount: splitData.partsCount,
-                  files: splitData.files,
-                }),
-                inputFingerprint: buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]),
-                outputFingerprint: buildObjectFingerprint({
-                  partsCount: splitData.partsCount,
-                  files: splitData.files,
-                }),
-                dependsOn: [1],
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const stepArtifacts: CaptionArtifactFile[] = [];
+            pushArtifact(stepArtifacts, 'split_output_dir', textOutputDir, 'dir');
+            for (const file of splitData.files || []) {
+              pushArtifact(stepArtifacts, 'split_part', file, 'file');
+            }
+            let nextSession: CaptionSessionV1 = {
+              ...session,
+              steps: {
+                ...session.steps,
+                [stepKey]: {
+                  ...makeStepSuccess(session.steps[stepKey], {
+                    partsCount: splitData.partsCount,
+                    files: splitData.files,
+                  }),
+                  inputFingerprint: buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]),
+                  outputFingerprint: buildObjectFingerprint({
+                    partsCount: splitData.partsCount,
+                    files: splitData.files,
+                  }),
+                  dependsOn: [1],
+                },
               },
-            },
-          }));
+            };
+            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
+            return nextSession;
+          });
         } else {
           throw new Error(`[${folderName}] Lỗi chia file: ${result.error}`);
         }
@@ -664,6 +791,8 @@ export function useCaptionProcessing({
           await window.electronAPI.caption.exportSrt(currentEntries, srtFileForVideo);
           setProgress({ current: translateData.translatedLines, total: translateData.totalLines, message: msgCtx(`Bước 3: Đã dịch ${translateData.translatedLines} dòng`) });
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const stepArtifacts: CaptionArtifactFile[] = [];
+            pushArtifact(stepArtifacts, 'translated_srt', srtFileForVideo, 'file');
             const translatedEntries = compactEntries(currentEntries);
             const inputFingerprint = buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]);
             const outputFingerprint = buildEntriesFingerprint(translatedEntries);
@@ -693,6 +822,7 @@ export function useCaptionProcessing({
                 },
               },
             };
+            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
             if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
               nextSession = markFollowingStepsStale(
                 nextSession,
@@ -730,6 +860,11 @@ export function useCaptionProcessing({
           if (!isMulti) setAudioFiles(currentAudioFiles);
           setProgress({ current: ttsData.totalGenerated, total: currentEntries.length, message: msgCtx(`Bước 4: Đã tạo ${ttsData.totalGenerated} audio`) });
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const stepArtifacts: CaptionArtifactFile[] = [];
+            pushArtifact(stepArtifacts, 'audio_output_dir', audioDir, 'dir');
+            for (const file of currentAudioFiles) {
+              pushArtifact(stepArtifacts, 'tts_audio_clip', file.path, 'file');
+            }
             const outputFingerprint = buildObjectFingerprint(
               currentAudioFiles.map((file) => ({
                 index: file.index,
@@ -762,6 +897,7 @@ export function useCaptionProcessing({
                 },
               },
             };
+            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
             if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
               nextSession = markFollowingStepsStale(
                 nextSession,
@@ -789,6 +925,10 @@ export function useCaptionProcessing({
           if (result.success && result.data && resultEnd.success && resultEnd.data) {
             setProgress({ current: resultEnd.data.trimmedCount, total: filesToTrim.length, message: msgCtx(`Bước 5: Đã trim ${resultEnd.data.trimmedCount} files`) });
             await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+              const stepArtifacts: CaptionArtifactFile[] = [];
+              for (const file of filesToTrim) {
+                pushArtifact(stepArtifacts, 'trimmed_audio_clip', file.path, 'file');
+              }
               const inputFingerprint = buildObjectFingerprint(
                 filesToTrim.map((file) => ({
                   path: file.path,
@@ -823,6 +963,7 @@ export function useCaptionProcessing({
                   },
                 },
               };
+              nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
               if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
                 nextSession = markFollowingStepsStale(
                   nextSession,
@@ -837,21 +978,25 @@ export function useCaptionProcessing({
             throw new Error(`[${folderName}] Lỗi trim silence: ${result.error || resultEnd.error}`);
           }
         } else {
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            steps: {
-              ...session.steps,
-              [stepKey]: {
-                ...makeStepSuccess(session.steps[stepKey], {
-                  totalFiles: 0,
-                  skipped: true,
-                }),
-                inputFingerprint: buildObjectFingerprint([]),
-                outputFingerprint: buildObjectFingerprint({ skipped: true }),
-                dependsOn: [4],
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            let nextSession: CaptionSessionV1 = {
+              ...session,
+              steps: {
+                ...session.steps,
+                [stepKey]: {
+                  ...makeStepSuccess(session.steps[stepKey], {
+                    totalFiles: 0,
+                    skipped: true,
+                  }),
+                  inputFingerprint: buildObjectFingerprint([]),
+                  outputFingerprint: buildObjectFingerprint({ skipped: true }),
+                  dependsOn: [4],
+                },
               },
-            },
-          }));
+            };
+            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, []);
+            return nextSession;
+          });
         }
       }
 
@@ -911,6 +1056,11 @@ export function useCaptionProcessing({
               }
             : { success: true, outputPath: mergedPath };
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const stepArtifacts: CaptionArtifactFile[] = [];
+            pushArtifact(stepArtifacts, 'merged_audio', mergedPath, 'file');
+            for (const file of filesToMerge) {
+              pushArtifact(stepArtifacts, 'merge_input_audio', file.path, 'file');
+            }
             const outputFingerprint = buildObjectFingerprint({
               mergedPath,
               filesCount: filesToMerge.length,
@@ -948,6 +1098,7 @@ export function useCaptionProcessing({
                 },
               },
             };
+            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
             if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
               nextSession = markFollowingStepsStale(
                 nextSession,
@@ -1056,31 +1207,41 @@ export function useCaptionProcessing({
           throw new Error(`[${folderName}] Không thể tạo SRT scaled từ dữ liệu dịch trong session.`);
         }
 
-        const finalVideoPath = `${processOutputDir}/final_video_${Date.now()}.mp4`;
-        const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
-        const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
-          ? cfg.renderAudioSpeed : 1.0;
-        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-          ...session,
-          artifacts: {
-            ...session.artifacts,
-            translatedSrtPath: session.artifacts.translatedSrtPath,
-            scaledSrtPath: srtFileForVideo,
-            mergedAudioPath: mergedAudioPathForRender,
-          },
-          timing: {
-            ...session.timing,
-            step4SrtScale: srtScale,
-            step7AudioSpeed,
-            audioSpeedModel: 'step4_minus_step7_delta',
-          },
-        }));
-
-        setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
-
         const thumbnailTextForRender = isMulti
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim();
+        const finalVideoFileName = buildRenderedVideoName(cfg.renderMode, thumbnailTextForRender);
+        const finalVideoPath = `${processOutputDir}/${finalVideoFileName}`;
+        console.log(`[CaptionProcessing][Step7] Output filename: ${finalVideoFileName}`);
+        const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
+        const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
+          ? cfg.renderAudioSpeed : 1.0;
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+          const stepArtifacts: CaptionArtifactFile[] = [];
+          pushArtifact(stepArtifacts, 'scaled_srt_for_render', srtFileForVideo, 'file');
+          pushArtifact(stepArtifacts, 'merged_audio_for_render', mergedAudioPathForRender, 'file');
+          pushArtifact(stepArtifacts, 'source_video', finalVideoInputPath, 'file');
+          let nextSession: CaptionSessionV1 = {
+            ...session,
+            artifacts: {
+              ...session.artifacts,
+              translatedSrtPath: session.artifacts.translatedSrtPath,
+              scaledSrtPath: srtFileForVideo,
+              mergedAudioPath: mergedAudioPathForRender,
+            },
+            timing: {
+              ...session.timing,
+              step4SrtScale: srtScale,
+              step7AudioSpeed,
+              audioSpeedModel: 'step4_minus_step7_delta',
+            },
+          };
+          nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
+          return nextSession;
+        });
+
+        setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
+
         console.log(
           `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, font=${cfg.thumbnailFontName || 'BrightwallPersonal'}, fontSize=${cfg.thumbnailFontSize ?? 145}, text="${thumbnailTextForRender}"`
         );
@@ -1152,54 +1313,63 @@ export function useCaptionProcessing({
             console.warn(`[CaptionProcessing][Step7] Backend không trả timing payload cho ${folderName}.`);
           }
           setProgress({ current: 100, total: 100, message: msgCtx(`Bước 7: Đã render video thành công! (${renderRes.data?.duration?.toFixed(1)}s)`) });
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            data: {
-              ...session.data,
-              renderResult: {
-                success: true,
-                outputPath: renderedPath,
-                duration: renderRes.data?.duration || 0,
-                renderAt: nowIso(),
-              },
-              renderTimingPayload: timingPayload,
-              step7SubtitleSource: 'session_translated_entries',
-              step7AudioSource: 'session_merged_audio',
-            },
-            artifacts: {
-              ...session.artifacts,
-              finalVideoPath: renderedPath,
-            },
-            timing: {
-              ...session.timing,
-              ...timingFromRender,
-            },
-            steps: {
-              ...session.steps,
-              [stepKey]: {
-                ...makeStepSuccess(session.steps[stepKey], {
-                  duration: renderRes.data?.duration || 0,
-                  outputPath: renderedPath,
-                }),
-                inputFingerprint: buildObjectFingerprint({
-                  translatedEntries: translatedEntriesForRender.map((entry) => ({
-                    index: entry.index,
-                    startMs: entry.startMs,
-                    endMs: entry.endMs,
-                    translatedText: entry.translatedText,
-                    text: entry.text,
-                  })),
-                  mergedAudioPath: mergedAudioPathForRender,
-                  srtScale,
-                }),
-                outputFingerprint: buildObjectFingerprint({
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+            const stepArtifacts: CaptionArtifactFile[] = [];
+            pushArtifact(stepArtifacts, 'final_video', renderedPath, 'file');
+            pushArtifact(stepArtifacts, 'scaled_srt_for_render', srtFileForVideo, 'file');
+            pushArtifact(stepArtifacts, 'merged_audio_for_render', mergedAudioPathForRender, 'file');
+            pushArtifact(stepArtifacts, 'source_video', finalVideoInputPath, 'file');
+            let nextSession: CaptionSessionV1 = {
+              ...session,
+              data: {
+                ...session.data,
+                renderResult: {
+                  success: true,
                   outputPath: renderedPath,
                   duration: renderRes.data?.duration || 0,
-                }),
-                dependsOn: [3, 6],
+                  renderAt: nowIso(),
+                },
+                renderTimingPayload: timingPayload,
+                step7SubtitleSource: 'session_translated_entries',
+                step7AudioSource: 'session_merged_audio',
               },
-            },
-          }));
+              artifacts: {
+                ...session.artifacts,
+                finalVideoPath: renderedPath,
+              },
+              timing: {
+                ...session.timing,
+                ...timingFromRender,
+              },
+              steps: {
+                ...session.steps,
+                [stepKey]: {
+                  ...makeStepSuccess(session.steps[stepKey], {
+                    duration: renderRes.data?.duration || 0,
+                    outputPath: renderedPath,
+                  }),
+                  inputFingerprint: buildObjectFingerprint({
+                    translatedEntries: translatedEntriesForRender.map((entry) => ({
+                      index: entry.index,
+                      startMs: entry.startMs,
+                      endMs: entry.endMs,
+                      translatedText: entry.translatedText,
+                      text: entry.text,
+                    })),
+                    mergedAudioPath: mergedAudioPathForRender,
+                    srtScale,
+                  }),
+                  outputFingerprint: buildObjectFingerprint({
+                    outputPath: renderedPath,
+                    duration: renderRes.data?.duration || 0,
+                  }),
+                  dependsOn: [3, 6],
+                },
+              },
+            };
+            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
+            return nextSession;
+          });
           console.log(`[CaptionProcessing][Step7] Đã lưu timing payload vào caption_session.json cho ${folderName}.`);
         } else {
           throw new Error(`[${folderName}] Lỗi render video: ${renderRes.error}`);

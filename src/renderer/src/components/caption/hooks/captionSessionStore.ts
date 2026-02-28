@@ -1,4 +1,5 @@
 import {
+  CaptionArtifactFile,
   CaptionSessionV1,
   CaptionProjectSettingsValues,
   CaptionStepNumber,
@@ -326,6 +327,156 @@ export function canRunStep(
   }
 
   return { ok: true, missingDeps: [] };
+}
+
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function isSkipMetric(stepState?: CaptionStepState): boolean {
+  const metrics = toRecord(stepState?.metrics);
+  return metrics.skipped === true || metrics.skipBy === 'session_contract';
+}
+
+export function validateStepOutputForSkip(
+  session: CaptionSessionV1,
+  step: CaptionStepNumber
+): { ok: boolean; reason?: string } {
+  const data = session.data || {};
+  const artifacts = session.artifacts || {};
+  const stepState = session.steps?.[toStepKey(step)];
+
+  if (step === 1) {
+    const extracted = Array.isArray(data.extractedEntries) ? data.extractedEntries : [];
+    if (extracted.length > 0) return { ok: true };
+    return { ok: false, reason: 'missing_extracted_entries' };
+  }
+
+  if (step === 2) {
+    const metrics = toRecord(stepState?.metrics);
+    const files = Array.isArray(metrics.files) ? metrics.files : [];
+    const partsCount = typeof metrics.partsCount === 'number' ? metrics.partsCount : 0;
+    if (partsCount > 0 || files.length > 0) return { ok: true };
+    return { ok: false, reason: 'missing_split_metadata' };
+  }
+
+  if (step === 3) {
+    const translated = Array.isArray(data.translatedEntries) ? data.translatedEntries : [];
+    if (translated.length === 0) return { ok: false, reason: 'missing_translated_entries' };
+    if (!hasNonEmptyString(data.translatedSrtContent)) return { ok: false, reason: 'missing_translated_srt_content' };
+    return { ok: true };
+  }
+
+  if (step === 4) {
+    const tts = Array.isArray(data.ttsAudioFiles) ? data.ttsAudioFiles : [];
+    const valid = tts.some((item: unknown) => {
+      const rec = toRecord(item);
+      return hasNonEmptyString(rec.path) && typeof rec.startMs === 'number';
+    });
+    if (!valid) return { ok: false, reason: 'missing_tts_audio_files' };
+    return { ok: true };
+  }
+
+  if (step === 5) {
+    if (isSkipMetric(stepState)) return { ok: true };
+    const trimResults = toRecord(data.trimResults);
+    if (Object.keys(trimResults).length > 0) return { ok: true };
+    return { ok: false, reason: 'missing_trim_results' };
+  }
+
+  if (step === 6) {
+    const mergeResult = toRecord(data.mergeResult);
+    if (mergeResult.success !== true) return { ok: false, reason: 'missing_merge_success' };
+    if (!hasNonEmptyString(artifacts.mergedAudioPath)) return { ok: false, reason: 'missing_merged_audio_path' };
+    return { ok: true };
+  }
+
+  if (step === 7) {
+    const renderResult = toRecord(data.renderResult);
+    if (renderResult.success !== true) return { ok: false, reason: 'missing_render_success' };
+    if (!hasNonEmptyString(artifacts.finalVideoPath)) return { ok: false, reason: 'missing_final_video_path' };
+    return { ok: true };
+  }
+
+  return { ok: false, reason: 'unknown_step' };
+}
+
+export function shouldSkipStep(
+  session: CaptionSessionV1,
+  step: CaptionStepNumber
+): { skip: boolean; reason?: string } {
+  const stepKey = toStepKey(step);
+  const stepState = session.steps[stepKey];
+  if (!stepState || stepState.status !== 'success') {
+    return { skip: false, reason: 'not_success_yet' };
+  }
+  if (stepState.status === 'stale') {
+    return { skip: false, reason: 'step_stale' };
+  }
+  const outputCheck = validateStepOutputForSkip(session, step);
+  if (!outputCheck.ok) {
+    return { skip: false, reason: outputCheck.reason };
+  }
+  return { skip: true, reason: 'session_output_ready' };
+}
+
+export function recordStepSkipped(
+  prev: CaptionStepState | undefined,
+  reason?: string
+): CaptionStepState {
+  const oldMetrics = toRecord(prev?.metrics);
+  return makeStepSuccess(prev, {
+    ...oldMetrics,
+    skipped: true,
+    skipReason: reason || 'session_output_ready',
+    skipAt: nowIso(),
+    skipBy: 'session_contract',
+  });
+}
+
+export function normalizeStepArtifacts(files: CaptionArtifactFile[] = []): CaptionArtifactFile[] {
+  const seen = new Set<string>();
+  const normalized: CaptionArtifactFile[] = [];
+
+  for (const file of files) {
+    if (!file || !hasNonEmptyString(file.path)) continue;
+    const role = hasNonEmptyString(file.role) ? file.role.trim() : 'artifact';
+    const kind: 'file' | 'dir' = file.kind === 'dir' ? 'dir' : 'file';
+    const key = `${role}|${kind}|${file.path.trim()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({
+      role,
+      kind,
+      path: file.path.trim(),
+      note: hasNonEmptyString(file.note) ? file.note.trim() : undefined,
+    });
+  }
+
+  return normalized;
+}
+
+export function setStepArtifacts(
+  session: CaptionSessionV1,
+  step: CaptionStepNumber,
+  files: CaptionArtifactFile[]
+): CaptionSessionV1 {
+  const stepKey = toStepKey(step);
+  const nextFiles = normalizeStepArtifacts(files);
+  return {
+    ...session,
+    data: {
+      ...session.data,
+      stepArtifacts: {
+        ...(session.data.stepArtifacts || {}),
+        [stepKey]: nextFiles,
+      },
+    },
+  };
 }
 
 export function compactEntries(entries: SubtitleEntry[]): SubtitleEntry[] {

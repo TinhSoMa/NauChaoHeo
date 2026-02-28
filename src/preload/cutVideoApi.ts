@@ -30,6 +30,54 @@ export interface CutVideoAPI {
   stopVideoSplit: () => Promise<{ success: boolean }>;
   onSplitProgress: (callback: (data: { totalPercent: number; currentClipName: string; currentPercent: number }) => void) => () => void;
   onSplitLog: (callback: (data: { clipName: string; status: string; time: string }) => void) => () => void;
+
+  scanRenderedForMerge: (options: {
+    folders: string[];
+    mode: '16_9' | '9_16';
+  }) => Promise<{
+    success: boolean;
+    data?: {
+      canMerge: boolean;
+      outputAspect: '16_9' | '9_16';
+      items: Array<{
+        inputFolder: string;
+        scanDir: string;
+        status: 'ok' | 'missing' | 'invalid' | 'mismatch';
+        message?: string;
+        matchedFilePath?: string;
+        fileName?: string;
+        metadata?: {
+          duration: number;
+          width: number;
+          height: number;
+          fps: number;
+          hasAudio: boolean;
+          videoCodec: string;
+          audioCodec?: string;
+        };
+      }>;
+      sortedVideoPaths: string[];
+      blockingReason?: string;
+    };
+    error?: string;
+  }>;
+  startVideoMerge: (options: {
+    folders: string[];
+    mode: '16_9' | '9_16';
+    outputDir: string;
+  }) => Promise<{ success: boolean; data?: { outputPath: string }; error?: string }>;
+  stopVideoMerge: () => Promise<{ success: boolean }>;
+  onMergeProgress: (callback: (data: {
+    percent: number;
+    stage: 'scan' | 'preflight' | 'concat' | 'completed' | 'stopped' | 'error';
+    message: string;
+    currentFile?: string;
+  }) => void) => () => void;
+  onMergeLog: (callback: (data: {
+    status: 'info' | 'success' | 'error' | 'processing';
+    message: string;
+    time: string;
+  }) => void) => () => void;
 }
 
 export const cutVideoApi: CutVideoAPI = {
@@ -63,5 +111,18 @@ export const cutVideoApi: CutVideoAPI = {
     const subscription = (_event: any, data: any) => callback(data);
     ipcRenderer.on('cutVideo:splitLog', subscription);
     return () => ipcRenderer.removeListener('cutVideo:splitLog', subscription);
-  }
+  },
+  scanRenderedForMerge: (options) => ipcRenderer.invoke('cutVideo:scanRenderedForMerge', options),
+  startVideoMerge: (options) => ipcRenderer.invoke('cutVideo:startVideoMerge', options),
+  stopVideoMerge: () => ipcRenderer.invoke('cutVideo:stopVideoMerge'),
+  onMergeProgress: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:mergeProgress', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:mergeProgress', subscription);
+  },
+  onMergeLog: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:mergeLog', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:mergeLog', subscription);
+  },
 };

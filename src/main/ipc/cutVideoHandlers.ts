@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { cutVideoService } from '../services/cutVideo/cutVideoService';
 import { audioExtractorService } from '../services/cutVideo/audioExtractorService';
 import { videoSplitterService } from '../services/cutVideo/videoSplitterService';
+import { videoMergerService } from '../services/cutVideo/videoMergerService';
 
 // To keep track of running extractions and allow stopping
 let activeExtractionProcess = false;
@@ -143,6 +144,55 @@ export function registerCutVideoHandlers(): void {
       return result;
     } catch (err: any) {
       return { success: false, error: err.message };
+    }
+  });
+
+  // ---- Video Merger Handlers ----
+  ipcMain.handle('cutVideo:scanRenderedForMerge', async (_, options: {
+    folders: string[];
+    mode: '16_9' | '9_16';
+  }) => {
+    return await videoMergerService.scanFoldersForRenderedVideos(options);
+  });
+
+  ipcMain.handle('cutVideo:stopVideoMerge', async () => {
+    videoMergerService.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('cutVideo:startVideoMerge', async (event, options: {
+    folders: string[];
+    mode: '16_9' | '9_16';
+    outputDir: string;
+  }) => {
+    const sender = event.sender;
+
+    const emitProgress = (data: {
+      percent: number;
+      stage: 'scan' | 'preflight' | 'concat' | 'completed' | 'stopped' | 'error';
+      message: string;
+      currentFile?: string;
+    }) => {
+      sender.send('cutVideo:mergeProgress', data);
+    };
+
+    const emitLog = (data: {
+      status: 'info' | 'success' | 'error' | 'processing';
+      message: string;
+      time: string;
+    }) => {
+      sender.send('cutVideo:mergeLog', data);
+    };
+
+    try {
+      const result = await videoMergerService.mergeRenderedVideos({
+        ...options,
+        onProgress: emitProgress,
+        onLog: emitLog,
+      });
+      return result;
+    } catch (err: any) {
+      return { success: false, error: err?.message || String(err) };
     }
   });
 }

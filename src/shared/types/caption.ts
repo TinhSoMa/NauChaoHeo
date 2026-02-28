@@ -439,6 +439,24 @@ export interface CaptionSessionData {
   renderTimingPayload?: Record<string, unknown>;
   step7SubtitleSource?: 'session_translated_entries';
   step7AudioSource?: 'session_merged_audio';
+  stepArtifacts?: CaptionStepArtifactsMap;
+}
+
+export interface CaptionArtifactFile {
+  role: string;
+  path: string;
+  kind: 'file' | 'dir';
+  note?: string;
+}
+
+export interface CaptionStepArtifactsMap {
+  step1?: CaptionArtifactFile[];
+  step2?: CaptionArtifactFile[];
+  step3?: CaptionArtifactFile[];
+  step4?: CaptionArtifactFile[];
+  step5?: CaptionArtifactFile[];
+  step6?: CaptionArtifactFile[];
+  step7?: CaptionArtifactFile[];
 }
 
 export interface CaptionSessionArtifacts {

@@ -250,6 +250,11 @@
   border-color: var(--color-success, #10b981);
 }
 
+.statusSkipped {
+  color: #f59e0b;
+  border-color: #f59e0b;
+}
+
 .statusError {
   color: var(--color-error, #ef4444);
   border-color: var(--color-error, #ef4444);

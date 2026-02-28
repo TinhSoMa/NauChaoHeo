@@ -14,6 +14,7 @@ export type {
   Step,
   ProcessStatus,
   ProcessingMode,
+  StepBadgeStatus,
   StepGuardState,
   StepDependencyIssue,
   CaptionStepPanelKey,

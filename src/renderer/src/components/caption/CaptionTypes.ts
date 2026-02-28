@@ -63,6 +63,8 @@ export interface StepDependencyIssue {
   missingDeps: Step[];
 }
 
+export type StepBadgeStatus = 'off' | 'idle' | 'running' | 'done' | 'error' | 'stale' | 'skipped';
+
 export type CaptionStepPanelKey = 'b1' | 'b2' | 'b3' | 'b4' | 'b5' | 'b6' | 'b7' | 'run';
 
 export interface StepPanelState {
