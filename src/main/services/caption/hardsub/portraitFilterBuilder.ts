@@ -3,17 +3,32 @@ import { PortraitVideoFilterBuildInput, PortraitVideoFilterBuildOutput } from '.
 export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): PortraitVideoFilterBuildOutput {
   const parts: string[] = [];
   const outputAspect = (input.outputWidth / input.outputHeight).toFixed(6);
+  const sourceAspect = Number.isFinite(input.sourceAspect) ? input.sourceAspect : 0;
+  const cropPercent = Math.min(20, Math.max(0, Number.isFinite(input.foregroundCropPercent) ? input.foregroundCropPercent : 0));
+  const cropRatio = (1 - cropPercent / 100).toFixed(6);
+  const cropWExpr = `trunc(iw*${cropRatio}/2)*2`;
+  const cropFilter = `crop=${cropWExpr}:ih:(iw-${cropWExpr})/2:0`;
 
-  parts.push('split=2[bg][fg]');
-  parts.push(
-    `[bg]scale=${input.bgDownscaleWidth}:${input.bgDownscaleHeight},` +
-    `boxblur=${input.bgBlurLumaRadius}:${input.bgBlurLumaPower},` +
-    `scale=${input.outputWidth}:${input.outputHeight}[bg_blur]`
-  );
-  parts.push(
-    `[fg]scale='if(gte(a,${outputAspect}),${input.outputWidth},-2)':'if(gte(a,${outputAspect}),-2,${input.outputHeight})'[fg_fit]`
-  );
-  parts.push('[bg_blur][fg_fit]overlay=(W-w)/2:(H-h)/2[v_canvas]');
+  if (input.layoutStrategy === 'direct_fit_no_blur' && sourceAspect > 0) {
+    parts.push(
+      `${cropFilter},` +
+      `scale='if(gte(a,${outputAspect}),${input.outputWidth},-2)':'if(gte(a,${outputAspect}),-2,${input.outputHeight})',` +
+      `pad=${input.outputWidth}:${input.outputHeight}:(ow-iw)/2:(oh-ih)/2:black,` +
+      `setsar=1,setdar=9/16[v_canvas]`
+    );
+  } else {
+    parts.push('split=2[bg][fg]');
+    parts.push(
+      `[bg]scale=${input.bgDownscaleWidth}:${input.bgDownscaleHeight},` +
+      `boxblur=${input.bgBlurLumaRadius}:${input.bgBlurLumaPower},` +
+      `scale=${input.outputWidth}:${input.outputHeight}[bg_blur]`
+    );
+    parts.push(
+      `[fg]${cropFilter},` +
+      `scale='if(gte(a,${outputAspect}),${input.outputWidth},-2)':'if(gte(a,${outputAspect}),-2,${input.outputHeight})'[fg_fit]`
+    );
+    parts.push('[bg_blur][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v_canvas]');
+  }
 
   let currentLabel = 'v_canvas';
   if (input.blackoutTop != null && input.blackoutTop < 1) {

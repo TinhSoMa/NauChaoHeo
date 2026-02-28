@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode, StepDependencyIssue } from '../CaptionTypes';
-import { CaptionSessionV1, CaptionStepNumber } from '@shared/types/caption';
+import { CaptionSessionV1, CaptionStepNumber, CaptionProjectSettingsValues } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
   buildEntriesFingerprint,
@@ -126,13 +126,14 @@ interface UseCaptionProcessingProps {
     logoPath?: string;
     logoPosition?: { x: number; y: number } | null;
     logoScale?: number;
+    portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
     translateMethod?: 'api' | 'impit';
     thumbnailFrameTimeSec?: number | null;
     thumbnailText?: string;
     thumbnailFontName?: string;
     thumbnailTextsByOrder?: string[];
-    layoutProfiles?: unknown;
+    layoutProfiles?: CaptionProjectSettingsValues['layoutProfiles'];
     settingsRevision?: number;
     settingsUpdatedAt?: string;
   };
@@ -385,6 +386,7 @@ export function useCaptionProcessing({
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim(),
         thumbnailFontName: cfg.thumbnailFontName,
+        portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
         logoPath: cfg.logoPath,
         logoPosition: cfg.logoPosition,
         logoScale: cfg.logoScale,
@@ -395,7 +397,7 @@ export function useCaptionProcessing({
       processingMode,
     });
 
-    const projectSettingsForRun = {
+    const projectSettingsForRun: CaptionProjectSettingsValues = {
       inputType: inputType as 'srt' | 'draft',
       geminiModel: cfg.geminiModel,
       translateMethod: cfg.translateMethod,
@@ -422,6 +424,7 @@ export function useCaptionProcessing({
       subtitlePosition: cfg.subtitlePosition,
       thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
       layoutProfiles: cfg.layoutProfiles,
+      portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
       processingMode: cfg.processingMode,
     };
 
@@ -1108,6 +1111,7 @@ export function useCaptionProcessing({
           logoPath: cfg.logoPath,
           logoPosition: cfg.logoPosition,
           logoScale: cfg.logoScale,
+          portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
           thumbnailEnabled,
           thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,

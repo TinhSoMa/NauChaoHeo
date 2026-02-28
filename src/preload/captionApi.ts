@@ -198,6 +198,7 @@ export interface CaptionVideoAPI {
     logoPath?: string;
     logoPosition?: { x: number; y: number };
     logoScale?: number;
+    portraitForegroundCropPercent?: number;
     style?: any;
     thumbnailEnabled?: boolean;
     thumbnailTimeSec?: number;

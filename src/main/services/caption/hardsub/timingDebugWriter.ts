@@ -48,6 +48,12 @@ export function buildHardsubTimingPayload(input: {
   canvas?: { width: number; height: number };
   bgBlur?: { downscaleW: number; downscaleH: number; blur: string };
   fgFitMode?: string;
+  layoutStrategy?: 'blur_composite' | 'direct_fit_no_blur';
+  foregroundCropPercent?: number;
+  aspect?: { source: number; output: number; diffRatio: number };
+  ratioNormalizeApplied?: boolean;
+  targetSar?: string;
+  targetDar?: string;
 }): unknown {
   const {
     options,
@@ -78,6 +84,12 @@ export function buildHardsubTimingPayload(input: {
     canvas,
     bgBlur,
     fgFitMode,
+    layoutStrategy,
+    foregroundCropPercent,
+    aspect,
+    ratioNormalizeApplied,
+    targetSar,
+    targetDar,
   } = input;
 
   const translatedSrtPath = path.join(path.dirname(options.srtPath), 'translated.srt');
@@ -139,9 +151,15 @@ export function buildHardsubTimingPayload(input: {
       speedCalcSource: prep.speedCalcSource,
       audioPreAdjustedFile: adjustedAudioGenerated,
       layoutMode: layoutMode || 'landscape_hardsub',
+      layoutStrategy: layoutStrategy || null,
+      foregroundCropPercent: foregroundCropPercent ?? null,
+      aspect: aspect || null,
       canvas: canvas || null,
       bgBlur: bgBlur || null,
       fgFitMode: fgFitMode || null,
+      ratioNormalizeApplied: ratioNormalizeApplied ?? false,
+      targetSar: targetSar || null,
+      targetDar: targetDar || null,
     },
   };
 }

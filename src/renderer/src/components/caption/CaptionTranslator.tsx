@@ -80,6 +80,7 @@ export function CaptionTranslator() {
     thumbnailFontName: settings.thumbnailFontName,
     subtitlePosition: settings.subtitlePosition,
     thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
+    portraitForegroundCropPercent: settings.portraitForegroundCropPercent,
     layoutProfiles: settings.layoutProfiles,
     processingMode: settings.processingMode,
   }), [
@@ -108,6 +109,7 @@ export function CaptionTranslator() {
     settings.thumbnailFontName,
     settings.subtitlePosition,
     settings.thumbnailFrameTimeSec,
+    settings.portraitForegroundCropPercent,
     settings.layoutProfiles,
     settings.processingMode,
   ]);

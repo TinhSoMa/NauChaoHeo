@@ -370,6 +370,7 @@ export function registerCaptionHandlers(): void {
         logoPath?: string;
         logoPosition?: { x: number; y: number };
         logoScale?: number;
+        portraitForegroundCropPercent?: number;
         thumbnailEnabled?: boolean;
         thumbnailTimeSec?: number;
         thumbnailText?: string;

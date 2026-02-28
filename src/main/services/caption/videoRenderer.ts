@@ -6,13 +6,14 @@
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import {
   RenderVideoOptions,
   RenderProgress,
   RenderResult,
   VideoMetadata,
 } from '../../../shared/types/caption';
-import { isFFmpegAvailable } from '../../utils/ffmpegPath';
+import { getFFprobePath, isFFmpegAvailable } from '../../utils/ffmpegPath';
 import {
   prepareSubtitleAndDuration,
   prepareSubtitleAndDurationPortrait,
@@ -50,6 +51,75 @@ function resolvePortraitCanvasByPreset(
     return { width: 360, height: 640 };
   }
   return { width: 1080, height: 1920 };
+}
+
+async function probeOutputAspectForLog(videoPath: string): Promise<{
+  width: number;
+  height: number;
+  sampleAspectRatio: string | null;
+  displayAspectRatio: string | null;
+  frameRate: string | null;
+} | null> {
+  if (!videoPath || !existsSync(videoPath)) {
+    return null;
+  }
+
+  const ffprobePath = getFFprobePath();
+  if (!existsSync(ffprobePath)) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const args = [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height,sample_aspect_ratio,display_aspect_ratio,r_frame_rate',
+      '-of', 'json',
+      videoPath,
+    ];
+
+    const proc = spawn(ffprobePath, args);
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        if (stderr.trim()) {
+          console.warn('[VideoRenderer][HardsubPortrait] ffprobe output aspect thất bại:', stderr.trim());
+        }
+        resolve(null);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout);
+        const stream = Array.isArray(parsed?.streams) ? parsed.streams[0] : null;
+        if (!stream) {
+          resolve(null);
+          return;
+        }
+        resolve({
+          width: Number(stream.width) || 0,
+          height: Number(stream.height) || 0,
+          sampleAspectRatio: typeof stream.sample_aspect_ratio === 'string' ? stream.sample_aspect_ratio : null,
+          displayAspectRatio: typeof stream.display_aspect_ratio === 'string' ? stream.display_aspect_ratio : null,
+          frameRate: typeof stream.r_frame_rate === 'string' ? stream.r_frame_rate : null,
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+
+    proc.on('error', () => {
+      resolve(null);
+    });
+  });
 }
 
 /**
@@ -358,7 +428,9 @@ export async function renderHardsubPortraitVideo(
   let videoCodec = 'libx264';
   let codecParams = ['-preset', 'medium', '-crf', '23'];
   if (options.hardwareAcceleration === 'qsv') {
-    hwaccelArgs = ['-hwaccel', 'auto'];
+    // Portrait blur pipeline + hw decode có thể sinh artifact nền xanh (nửa khung) trên một số driver QSV.
+    // Giữ encode bằng QSV nhưng decode/filter theo software để ổn định.
+    hwaccelArgs = [];
     videoCodec = 'h264_qsv';
     codecParams = ['-preset', 'fast', '-global_quality', '25'];
   }
@@ -429,11 +501,39 @@ export async function renderHardsubPortraitVideo(
   const bgDownscaleHeight = even(portraitCanvas.height / 6);
   const bgBlurLumaRadius = 10;
   const bgBlurLumaPower = 1;
+  const nearPortraitAspectThreshold = 0.05;
+
+  let sourceWidth = portraitCanvas.width;
+  let sourceHeight = portraitCanvas.height;
+  try {
+    const sourceMeta = await getVideoMetadata(renderOptions.videoPath!);
+    if (sourceMeta.success && sourceMeta.metadata) {
+      sourceWidth = sourceMeta.metadata.width;
+      sourceHeight = sourceMeta.metadata.actualHeight || sourceMeta.metadata.height;
+    }
+  } catch (error) {
+    console.warn('[VideoRenderer][HardsubPortrait] Không đọc được source metadata, dùng fallback canvas.', error);
+  }
+
+  const sourceAspect = sourceWidth / Math.max(1, sourceHeight);
+  const outputAspect = portraitCanvas.width / portraitCanvas.height;
+  const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
+  const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
+    aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
+  const foregroundCropPercent = Math.min(
+    20,
+    Math.max(0, Number.isFinite(options.portraitForegroundCropPercent ?? 0)
+      ? (options.portraitForegroundCropPercent as number)
+      : 0)
+  );
 
   const portraitVideo = buildPortraitVideoFilter({
     outputWidth: portraitCanvas.width,
     outputHeight: portraitCanvas.height,
     subtitleFilter,
+    sourceAspect,
+    layoutStrategy,
+    foregroundCropPercent,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     blackoutTop: options.blackoutTop,
     bgDownscaleWidth,
@@ -531,6 +631,16 @@ export async function renderHardsubPortraitVideo(
       blur: `${bgBlurLumaRadius}:${bgBlurLumaPower}`,
     },
     fgFitMode: 'scale-by-aspect-keep-ratio-center',
+    layoutStrategy,
+    foregroundCropPercent,
+    aspect: {
+      source: sourceAspect,
+      output: outputAspect,
+      diffRatio: aspectDiffRatio,
+    },
+    ratioNormalizeApplied: true,
+    targetSar: '1:1',
+    targetDar: '9:16',
   });
 
   console.log('[VideoRenderer][HardsubPortrait] Render config', {
@@ -538,6 +648,15 @@ export async function renderHardsubPortraitVideo(
     inputAudio: renderOptions.audioPath ?? null,
     outputVideo: outputPath,
     canvas: portraitCanvas,
+    aspect: {
+      source: sourceAspect,
+      output: outputAspect,
+      diffRatio: aspectDiffRatio,
+    },
+    layoutStrategy,
+    foregroundCropPercent,
+    ratioNormalize: 'setsar=1,setdar=9/16',
+    decodePath: options.hardwareAcceleration === 'qsv' ? 'software_decode + qsv_encode' : 'software',
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
     audioMergeWindowInVideo: hasTtsAudio
@@ -593,6 +712,16 @@ export async function renderHardsubPortraitVideo(
   });
   if (renderResult.success) {
     renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
+    const outputAspectMeta = await probeOutputAspectForLog(outputPath);
+    if (outputAspectMeta) {
+      console.log('[VideoRenderer][HardsubPortrait] Output aspect check', {
+        width: outputAspectMeta.width,
+        height: outputAspectMeta.height,
+        sampleAspectRatio: outputAspectMeta.sampleAspectRatio,
+        displayAspectRatio: outputAspectMeta.displayAspectRatio,
+        frameRate: outputAspectMeta.frameRate,
+      });
+    }
   }
   return renderResult;
 }

@@ -94,6 +94,31 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
         </div>
       </div>
 
+      {settings.renderMode === 'hardsub_portrait_9_16' && (
+        <div className={styles.grid2} style={{ marginBottom: 12 }}>
+          <div className={styles.inputGroup} style={{ gridColumn: '1 / span 2' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className={styles.label}>Crop ngang video chính (%)</span>
+              <span style={{ fontSize: '12px', fontWeight: 'bold' }}>
+                {Math.round(settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={20}
+              step={1}
+              value={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
+              onChange={(e) => settings.setPortraitForegroundCropPercent?.(Number(e.target.value))}
+              style={{ width: '100%', cursor: 'pointer', marginTop: '6px' }}
+            />
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              0% = fit toàn video, 20% = cắt tổng 20% ngang (10% mỗi bên). Không crop chiều cao.
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={styles.grid2} style={{ marginBottom: 12 }}>
         <div className={styles.inputGroup}>
           <span className={styles.label}>
@@ -261,6 +286,7 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
           logoPath={settings.logoPath}
           logoPosition={settings.logoPosition}
           logoScale={settings.logoScale}
+          portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
           thumbnailFontName={settings.thumbnailFontName}
           onPositionChange={props.onSubtitlePositionChange}
           onBlackoutChange={settings.setBlackoutTop}

@@ -334,6 +334,7 @@ export interface RenderVideoOptions {
   logoPath?: string;      // Đường dẫn file logo để watermark
   logoPosition?: { x: number; y: number }; // Toạ độ (tâm) chèn logo
   logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
+  portraitForegroundCropPercent?: number; // Chỉ dùng cho mode 9:16, crop tổng theo chiều ngang (%)
   // --- Thumbnail prepend ---
   thumbnailEnabled?: boolean; // Có prepend thumbnail 0.2s vào đầu video không
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
@@ -477,6 +478,7 @@ export interface CaptionProjectSettingsValues {
   blackoutTop?: number | null;
   audioSpeed?: number;
   renderAudioSpeed?: number;
+  portraitForegroundCropPercent?: number;
   videoVolume?: number;
   audioVolume?: number;
   thumbnailFontName?: string;
@@ -493,6 +495,7 @@ export interface CaptionProjectSettingsValues {
       logoPosition?: { x: number; y: number };
       logoScale?: number;
       thumbnailFontName?: string;
+      foregroundCropPercent?: number;
     };
     portrait?: {
       style?: ASSStyleConfig;
@@ -504,6 +507,7 @@ export interface CaptionProjectSettingsValues {
       logoPosition?: { x: number; y: number };
       logoScale?: number;
       thumbnailFontName?: string;
+      foregroundCropPercent?: number;
     };
   };
   processingMode?: 'folder-first' | 'step-first';

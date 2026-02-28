@@ -51,6 +51,9 @@ export interface PortraitVideoFilterBuildInput {
   outputHeight: number;
   subtitleFilter: string;
   videoSpeedMultiplier: number;
+  sourceAspect: number;
+  layoutStrategy: 'blur_composite' | 'direct_fit_no_blur';
+  foregroundCropPercent: number;
   blackoutTop?: number | null;
   bgDownscaleWidth: number;
   bgDownscaleHeight: number;

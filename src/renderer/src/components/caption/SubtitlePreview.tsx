@@ -21,6 +21,7 @@ interface SubtitlePreviewProps {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
+  portraitForegroundCropPercent?: number;
   onPositionChange: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (value: number | null) => void;
   onRenderResolutionChange?: (value: 'original' | '1080p' | '720p' | '540p' | '360p') => void;
@@ -37,7 +38,7 @@ interface SubtitlePreviewProps {
   onFrameTimeChange?: (timeSec: number | null) => void;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange }: SubtitlePreviewProps) {
   const preview = useSubtitlePreview({
     style,
     entries,
@@ -47,6 +48,7 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
     logoPath,
     logoPosition,
     logoScale,
+    portraitForegroundCropPercent,
     onPositionChange: (pos) => onPositionChange(pos),
     onBlackoutChange,
     onLogoPositionChange,
@@ -162,6 +164,9 @@ export function SubtitlePreview({ videoPath, style, entries, blackoutTop, render
                 : 'Kéo để đặt vùng tô đen'}
               {' | '}
               {preview.videoSize.width}×{preview.videoSize.height}
+              {renderMode === 'hardsub_portrait_9_16' && (
+                <> {' | '}crop ngang {Math.round(portraitForegroundCropPercent ?? 0)}%</>
+              )}
             </>
           )}
         </span>

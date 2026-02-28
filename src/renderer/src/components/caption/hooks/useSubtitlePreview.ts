@@ -22,6 +22,7 @@ export interface UseSubtitlePreviewOptions {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;  // user-set scale multiplier (1.0 = native size)
+  portraitForegroundCropPercent?: number; // crop ngang tổng (%) cho mode 9:16
   onPositionChange?: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (top: number | null) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
@@ -96,6 +97,7 @@ export function useSubtitlePreview({
   logoPath,
   logoPosition,
   logoScale,
+  portraitForegroundCropPercent,
   onPositionChange,
   onBlackoutChange,
   onLogoPositionChange,
@@ -321,28 +323,59 @@ export function useSubtitlePreview({
     ctx.fillRect(0, 0, cw, ch);
 
     if (isPortraitMode) {
-      // Mô phỏng pipeline render 9:16: nền blur + video gốc đặt giữa.
-      ctx.save();
-      ctx.filter = 'blur(18px)';
-      ctx.drawImage(
-        img,
-        outputRect.x - 24,
-        outputRect.y - 24,
-        outputRect.width + 48,
-        outputRect.height + 48
-      );
-      ctx.restore();
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-      ctx.fillRect(outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+      const sourceAspect = img.width / Math.max(1, img.height);
+      const outputAspect = previewWidth / Math.max(1, previewHeight);
+      const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
+      const layoutStrategy = aspectDiffRatio <= 0.05 ? 'direct_fit_no_blur' : 'blur_composite';
 
-      const fgRectInner = fitRect(outputRect.width, outputRect.height, img.width, img.height);
+      const cropPercent = Math.min(
+        20,
+        Math.max(0, Number.isFinite(portraitForegroundCropPercent ?? 0) ? (portraitForegroundCropPercent as number) : 0)
+      );
+      const cropRatio = 1 - cropPercent / 100;
+      const fgSrcW = Math.max(2, Math.floor((img.width * cropRatio) / 2) * 2);
+      const fgSrcX = Math.max(0, Math.floor((img.width - fgSrcW) / 2));
+      const fgSrcH = img.height;
+      const fgSrcY = 0;
+
+      if (layoutStrategy === 'blur_composite') {
+        // Giữ phong cách nền blur hiện tại.
+        ctx.save();
+        ctx.filter = 'blur(18px)';
+        ctx.drawImage(
+          img,
+          outputRect.x - 24,
+          outputRect.y - 24,
+          outputRect.width + 48,
+          outputRect.height + 48
+        );
+        ctx.restore();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.fillRect(outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+      } else {
+        // Input gần 9:16: bypass blur để giữ nét.
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+      }
+
+      const fgRectInner = fitRect(outputRect.width, outputRect.height, fgSrcW, fgSrcH);
       const fgRect = {
         x: outputRect.x + fgRectInner.x,
         y: outputRect.y + fgRectInner.y,
         width: fgRectInner.width,
         height: fgRectInner.height,
       };
-      ctx.drawImage(img, fgRect.x, fgRect.y, fgRect.width, fgRect.height);
+      ctx.drawImage(
+        img,
+        fgSrcX,
+        fgSrcY,
+        fgSrcW,
+        fgSrcH,
+        fgRect.x,
+        fgRect.y,
+        fgRect.width,
+        fgRect.height
+      );
     } else {
       ctx.drawImage(img, outputRect.x, outputRect.y, outputRect.width, outputRect.height);
     }
@@ -533,7 +566,7 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
       ctx.restore();
     }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, renderMode]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, renderMode, portraitForegroundCropPercent]);
 
   // Load video frame image
   useEffect(() => {

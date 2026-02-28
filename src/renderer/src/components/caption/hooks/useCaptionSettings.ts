@@ -26,6 +26,7 @@ interface LayoutProfile {
   style: ASSStyleConfig;
   renderResolution: RenderResolution;
   blackoutTop: number | null;
+  foregroundCropPercent: number;
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
   logoPath?: string;
@@ -52,6 +53,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   style: { ...DEFAULT_STYLE },
   renderResolution: 'original',
   blackoutTop: 0.9,
+  foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   logoPath: undefined,
@@ -64,6 +66,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   style: { ...DEFAULT_STYLE },
   renderResolution: '1080p',
   blackoutTop: 0.9,
+  foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   logoPath: undefined,
@@ -99,6 +102,9 @@ function normalizeProfile(
   }
   if (patch.blackoutTop === null || typeof patch.blackoutTop === 'number') {
     next.blackoutTop = patch.blackoutTop as number | null;
+  }
+  if (typeof patch.foregroundCropPercent === 'number') {
+    next.foregroundCropPercent = Math.min(20, Math.max(0, patch.foregroundCropPercent));
   }
   if (patch.subtitlePosition === null) {
     next.subtitlePosition = null;
@@ -215,6 +221,22 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, blackoutTop: value }));
   }, [updateActiveProfile]);
 
+  const setForegroundCropPercent = useCallback((value: number) => {
+    const normalized = Math.min(20, Math.max(0, Number.isFinite(value) ? value : 0));
+    updateActiveProfile((current) => ({ ...current, foregroundCropPercent: normalized }));
+  }, [updateActiveProfile]);
+
+  const setPortraitForegroundCropPercent = useCallback((value: number) => {
+    const normalized = Math.min(20, Math.max(0, Number.isFinite(value) ? value : 0));
+    setLayoutProfiles((prev) => ({
+      ...prev,
+      portrait: {
+        ...prev.portrait,
+        foregroundCropPercent: normalized,
+      },
+    }));
+  }, []);
+
   const setThumbnailFontName = useCallback((value: string) => {
     updateActiveProfile((current) => ({ ...current, thumbnailFontName: value }));
   }, [updateActiveProfile]);
@@ -259,6 +281,7 @@ export function useCaptionSettings() {
       renderMode,
       renderResolution: activeProfile.renderResolution,
       blackoutTop: activeProfile.blackoutTop,
+      portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
       audioSpeed,
       renderAudioSpeed,
       videoVolume,
@@ -344,6 +367,7 @@ export function useCaptionSettings() {
       style: saved.style,
       renderResolution: saved.renderResolution,
       blackoutTop: saved.blackoutTop,
+      foregroundCropPercent: saved.portraitForegroundCropPercent,
       subtitlePosition: saved.subtitlePosition,
       thumbnailFrameTimeSec: saved.thumbnailFrameTimeSec,
       logoPath: saved.logoPath,
@@ -482,6 +506,10 @@ export function useCaptionSettings() {
     setRenderResolution,
     blackoutTop: activeProfile.blackoutTop,
     setBlackoutTop,
+    foregroundCropPercent: activeProfile.foregroundCropPercent,
+    setForegroundCropPercent,
+    portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
+    setPortraitForegroundCropPercent,
     subtitlePosition: activeProfile.subtitlePosition,
     setSubtitlePosition,
     thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,

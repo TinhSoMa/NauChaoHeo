@@ -361,6 +361,10 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       thumbnailFontName: settings.thumbnailFontName,
       blackoutTop: settings.blackoutTop,
       audioSpeed: settings.audioSpeed,
+      subtitlePosition: settings.subtitlePosition,
+      thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
+      portraitForegroundCropPercent: settings.portraitForegroundCropPercent,
+      layoutProfiles: settings.layoutProfiles,
     },
   };
 }
