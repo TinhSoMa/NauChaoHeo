@@ -30,6 +30,7 @@ export interface UseSubtitlePreviewOptions {
   onLogoScaleChange?: (scale: number) => void;
   thumbnailText?: string; // preview overlay ở trung tâm frame khi nhập thumbnail text
   thumbnailFontName?: string; // font riêng cho thumbnail text
+  thumbnailFontSize?: number; // cỡ chữ thumbnail text
   selectedFrameTimeSec?: number | null; // mốc frame đang lưu trong settings
   renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
 }
@@ -108,6 +109,7 @@ export function useSubtitlePreview({
   onLogoScaleChange,
   thumbnailText,
   thumbnailFontName,
+  thumbnailFontSize,
   selectedFrameTimeSec,
   renderSnapshotMode,
 }: UseSubtitlePreviewOptions) {
@@ -704,7 +706,7 @@ export function useSubtitlePreview({
 
     // ===== Thumbnail text overlay (preview only) =====
     if (thumbnailText?.trim()) {
-      const thumbFontSize = Math.max(14, outputRect.height * 0.07);
+      const thumbFontSize = Math.max(14, Number.isFinite(thumbnailFontSize as number) ? Number(thumbnailFontSize) / ratio : outputRect.height * 0.07);
       const thumbFont = thumbnailFontName?.trim() || style.fontName;
       ctx.save();
       ctx.font = `bold ${thumbFontSize}px "${thumbFont}", Inter, sans-serif`;
@@ -734,7 +736,7 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
       ctx.restore();
     }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, renderMode, portraitForegroundCropPercent, renderSnapshotMode]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, thumbnailFontSize, renderMode, portraitForegroundCropPercent, renderSnapshotMode]);
 
   // Load video frame image
   useEffect(() => {

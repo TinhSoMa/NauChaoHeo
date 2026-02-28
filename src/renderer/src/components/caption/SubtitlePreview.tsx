@@ -33,6 +33,7 @@ interface SubtitlePreviewProps {
   // Thumbnail
   thumbnailText?: string;
   thumbnailFontName?: string;
+  thumbnailFontSize?: number;
   onThumbnailTextChange?: (text: string) => void;
   thumbnailTextReadOnly?: boolean;
   thumbnailTextHelper?: string;
@@ -42,7 +43,7 @@ interface SubtitlePreviewProps {
   interactiveDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange, selectedFrameTimeSec, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, thumbnailFontSize, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange, selectedFrameTimeSec, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -62,6 +63,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     onLogoScaleChange,
     thumbnailText,
     thumbnailFontName,
+    thumbnailFontSize,
     selectedFrameTimeSec,
     renderSnapshotMode,
   });

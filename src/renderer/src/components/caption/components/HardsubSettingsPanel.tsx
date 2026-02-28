@@ -97,6 +97,17 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             onChange={(e) => settings.setThumbnailDurationSec?.(Number(e.target.value))}
           />
         </div>
+        <div className={styles.inputGroup}>
+          <span className={styles.label}>Font Size Thumb</span>
+          <Input
+            type="number"
+            min={24}
+            max={260}
+            step={1}
+            value={settings.thumbnailFontSize ?? 145}
+            onChange={(e) => settings.setThumbnailFontSize?.(Number(e.target.value))}
+          />
+        </div>
       </div>
 
       {settings.renderMode === 'hardsub_portrait_9_16' && (

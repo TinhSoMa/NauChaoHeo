@@ -60,6 +60,8 @@ export function buildHardsubTimingPayload(input: {
     fillStrategy: 'scale_to_output' | 'cropped_bg_blur_top_bottom';
     outputAspect: string;
     durationSec?: number;
+    fontName?: string;
+    fontSize?: number;
   } | null;
 }): unknown {
   const {

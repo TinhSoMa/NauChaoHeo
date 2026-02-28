@@ -133,6 +133,7 @@ interface UseCaptionProcessingProps {
     thumbnailDurationSec?: number;
     thumbnailText?: string;
     thumbnailFontName?: string;
+    thumbnailFontSize?: number;
     thumbnailTextsByOrder?: string[];
     layoutProfiles?: CaptionProjectSettingsValues['layoutProfiles'];
     settingsRevision?: number;
@@ -1081,7 +1082,7 @@ export function useCaptionProcessing({
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim();
         console.log(
-          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, text="${thumbnailTextForRender}"`
+          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, font=${cfg.thumbnailFontName || 'BrightwallPersonal'}, fontSize=${cfg.thumbnailFontSize ?? 145}, text="${thumbnailTextForRender}"`
         );
 
         // @ts-ignore
@@ -1120,6 +1121,7 @@ export function useCaptionProcessing({
           thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
           thumbnailFontName: cfg.thumbnailFontName,
+          thumbnailFontSize: cfg.thumbnailFontSize,
           step7SubtitleSource: 'session_translated_entries',
           step7AudioSource: 'session_merged_audio',
         });

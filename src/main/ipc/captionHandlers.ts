@@ -7,6 +7,8 @@ import {
   CAPTION_IPC_CHANNELS,
   CAPTION_SESSION_IPC_CHANNELS,
   ParseSrtResult,
+  RenderThumbnailPreviewFrameOptions,
+  RenderThumbnailPreviewFrameResult,
   TranslationOptions,
   TranslationResult,
   SubtitleEntry,
@@ -376,6 +378,7 @@ export function registerCaptionHandlers(): void {
         thumbnailTimeSec?: number;
         thumbnailText?: string;
         thumbnailFontName?: string;
+        thumbnailFontSize?: number;
         step7SubtitleSource?: 'session_translated_entries';
         step7AudioSource?: 'session_merged_audio';
       }
@@ -560,6 +563,30 @@ export function registerCaptionHandlers(): void {
         return { success: false, error: result.error };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi extract frame:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - RENDER THUMBNAIL PREVIEW FRAME
+  // ============================================
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_PREVIEW_FRAME,
+    async (
+      _event: IpcMainInvokeEvent,
+      options: RenderThumbnailPreviewFrameOptions
+    ): Promise<IpcResponse<RenderThumbnailPreviewFrameResult>> => {
+      const safeVideoPath = typeof options?.videoPath === 'string' ? options.videoPath : '';
+      console.log(`[CaptionHandlers] Render thumbnail preview frame: ${safeVideoPath || '(empty)'}`);
+      try {
+        const result = await CaptionService.renderThumbnailPreviewFrame(options);
+        if (result.success) {
+          return { success: true, data: result };
+        }
+        return { success: false, error: result.error || 'Không thể render thumbnail preview frame' };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi render thumbnail preview frame:', error);
         return { success: false, error: String(error) };
       }
     }

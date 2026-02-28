@@ -4,7 +4,12 @@ import { existsSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { app } from 'electron';
-import { RenderResult, RenderVideoOptions } from '../../../../shared/types/caption';
+import {
+  RenderResult,
+  RenderThumbnailPreviewFrameOptions,
+  RenderThumbnailPreviewFrameResult,
+  RenderVideoOptions,
+} from '../../../../shared/types/caption';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
 import { summarizeThumbnailTextForLog } from './timingDebugWriter';
@@ -15,6 +20,7 @@ interface ThumbnailClipOptions {
   durationSec: number;
   thumbnailText?: string;
   thumbnailFontName?: string;
+  thumbnailFontSize?: number;
   width: number;
   height: number;
   renderMode?: RenderVideoOptions['renderMode'];
@@ -31,6 +37,11 @@ interface ThumbnailLayoutBuildResult {
 }
 
 const DEFAULT_THUMBNAIL_DURATION_SEC = 0.5;
+const DEFAULT_THUMBNAIL_FONT_NAME = 'BrightwallPersonal';
+const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
+const MIN_THUMBNAIL_FONT_SIZE = 24;
+const MAX_THUMBNAIL_FONT_SIZE = 260;
+const THUMBNAIL_TEXT_BORDER_WIDTH = 4;
 
 function normalizeThumbnailDurationSec(value?: number): number {
   if (!Number.isFinite(value)) {
@@ -39,9 +50,172 @@ function normalizeThumbnailDurationSec(value?: number): number {
   return Math.min(10, Math.max(0.1, value as number));
 }
 
+function normalizeThumbnailFontSize(value?: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_THUMBNAIL_FONT_SIZE;
+  }
+  return Math.min(MAX_THUMBNAIL_FONT_SIZE, Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(value as number)));
+}
+
 function ensureEven(value: number): number {
   const rounded = Math.max(2, Math.round(value));
   return rounded % 2 === 0 ? rounded : rounded - 1;
+}
+
+function escapeFilterPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+}
+
+function normalizeName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function resolveFontsDir(): string | null {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'fonts'),
+    path.join(app.getAppPath(), 'resources', 'fonts'),
+    path.join(process.cwd(), 'resources', 'fonts'),
+    path.resolve('resources', 'fonts'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function resolveThumbnailFontPath(fontName?: string): Promise<string | null> {
+  const fontsDir = resolveFontsDir();
+  if (!fontsDir) {
+    return null;
+  }
+
+  const requestedName = (fontName?.trim() || DEFAULT_THUMBNAIL_FONT_NAME).trim();
+  const requestedNormalized = normalizeName(requestedName);
+
+  try {
+    const files = await fs.readdir(fontsDir);
+    const fontFiles = files.filter((file) => file.toLowerCase().endsWith('.ttf') || file.toLowerCase().endsWith('.otf'));
+
+    const exact = fontFiles.find((file) => normalizeName(path.parse(file).name) === requestedNormalized);
+    if (exact) {
+      return path.join(fontsDir, exact);
+    }
+
+    const close = fontFiles.find((file) => {
+      const base = normalizeName(path.parse(file).name);
+      return base.includes(requestedNormalized) || requestedNormalized.includes(base);
+    });
+    if (close) {
+      return path.join(fontsDir, close);
+    }
+
+    const fallback = fontFiles.find((file) => normalizeName(path.parse(file).name) === 'brightwallpersonal')
+      || fontFiles[0];
+    return fallback ? path.join(fontsDir, fallback) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function extractFrameToPng(
+  ffmpegPath: string,
+  videoPath: string,
+  timeSec: number,
+  outputPngPath: string
+): Promise<{ success: boolean; error?: string }> {
+  const extractArgs = ['-y', '-ss', String(timeSec), '-i', videoPath, '-vframes', '1', '-q:v', '2', outputPngPath];
+  let extractStderr = '';
+  const extractOk = await new Promise<boolean>((resolve) => {
+    const proc = spawn(ffmpegPath, extractArgs);
+    proc.stderr?.on('data', (d) => { extractStderr += d.toString(); });
+    proc.on('close', (code) => {
+      const ok = code === 0 && existsSync(outputPngPath);
+      if (!ok) {
+        console.error('[Thumbnail] extract frame failed (code', code, '):\n', extractStderr.slice(-800));
+      }
+      resolve(ok);
+    });
+    proc.on('error', (err) => {
+      console.error('[Thumbnail] spawn extract error:', err);
+      resolve(false);
+    });
+  });
+  if (!extractOk) {
+    return { success: false, error: `Không extract được frame thumbnail\n${extractStderr.slice(-400)}` };
+  }
+  return { success: true };
+}
+
+async function buildThumbnailDrawTextFilter(options: {
+  thumbnailText?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+  textFilePath: string;
+}): Promise<{
+  drawTextFilter: string | null;
+  thumbnailFontPath: string | null;
+  thumbnailFontSize: number;
+}> {
+  const thumbnailFontSize = normalizeThumbnailFontSize(options.thumbnailFontSize);
+  const thumbnailFontPath = await resolveThumbnailFontPath(options.thumbnailFontName);
+
+  if (!options.thumbnailText?.trim()) {
+    return { drawTextFilter: null, thumbnailFontPath, thumbnailFontSize };
+  }
+
+  const thumbnailText = options.thumbnailText.trim();
+  await fs.writeFile(options.textFilePath, thumbnailText, 'utf-8');
+  if (!thumbnailFontPath) {
+    console.warn('[Thumbnail] Không tìm thấy file font thumbnail, fallback dùng font mặc định của hệ thống.');
+  }
+  const fontParam = thumbnailFontPath ? `fontfile='${escapeFilterPath(thumbnailFontPath)}':` : '';
+  const drawTextFilter =
+    `drawtext=textfile='${escapeFilterPath(options.textFilePath)}':reload=0:` +
+    `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
+    'text_shaping=1:fix_bounds=1:x=(w-text_w)/2:y=(h-text_h)/2';
+
+  return { drawTextFilter, thumbnailFontPath, thumbnailFontSize };
+}
+
+function resolvePortraitCanvasByPreset(
+  renderResolution?: RenderVideoOptions['renderResolution']
+): { width: number; height: number } {
+  if (renderResolution === '720p') {
+    return { width: 720, height: 1280 };
+  }
+  if (renderResolution === '540p') {
+    return { width: 540, height: 960 };
+  }
+  if (renderResolution === '360p') {
+    return { width: 360, height: 640 };
+  }
+  return { width: 1080, height: 1920 };
+}
+
+function resolveLandscapeCanvasBySource(
+  sourceWidth: number,
+  sourceHeight: number,
+  renderResolution?: RenderVideoOptions['renderResolution']
+): { width: number; height: number } {
+  const safeSourceW = ensureEven(Math.max(2, sourceWidth));
+  const safeSourceH = ensureEven(Math.max(2, sourceHeight));
+  let maxOutputHeight = 1080;
+  if (renderResolution === '720p') maxOutputHeight = 720;
+  if (renderResolution === '540p') maxOutputHeight = 540;
+  if (renderResolution === '360p') maxOutputHeight = 360;
+  if (renderResolution === 'original') maxOutputHeight = 99999;
+
+  if (safeSourceH > maxOutputHeight) {
+    const scaleFactor = maxOutputHeight / safeSourceH;
+    return {
+      width: ensureEven(safeSourceW * scaleFactor),
+      height: ensureEven(maxOutputHeight),
+    };
+  }
+  return { width: safeSourceW, height: safeSourceH };
 }
 
 async function readPngDimensions(filePath: string): Promise<{ width: number; height: number } | null> {
@@ -155,77 +329,9 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   const includeAudio = opts.includeAudio !== false;
   const isPortraitMode = opts.renderMode === 'hardsub_portrait_9_16';
 
-  const escapeFilterPath = (p: string) => p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-  const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const resolveFontsDir = (): string | null => {
-    const candidates = [
-      path.join(process.resourcesPath || '', 'fonts'),
-      path.join(app.getAppPath(), 'resources', 'fonts'),
-      path.join(process.cwd(), 'resources', 'fonts'),
-      path.resolve('resources', 'fonts'),
-    ].filter(Boolean);
-
-    for (const candidate of candidates) {
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-    return null;
-  };
-
-  const resolveThumbnailFontPath = async (fontName?: string): Promise<string | null> => {
-    const fontsDir = resolveFontsDir();
-    if (!fontsDir) {
-      return null;
-    }
-
-    const requestedName = (fontName?.trim() || 'BrightwallPersonal').trim();
-    const requestedNormalized = normalizeName(requestedName);
-
-    try {
-      const files = await fs.readdir(fontsDir);
-      const fontFiles = files.filter((file) => file.toLowerCase().endsWith('.ttf') || file.toLowerCase().endsWith('.otf'));
-
-      const exact = fontFiles.find((file) => normalizeName(path.parse(file).name) === requestedNormalized);
-      if (exact) {
-        return path.join(fontsDir, exact);
-      }
-
-      const close = fontFiles.find((file) => {
-        const base = normalizeName(path.parse(file).name);
-        return base.includes(requestedNormalized) || requestedNormalized.includes(base);
-      });
-      if (close) {
-        return path.join(fontsDir, close);
-      }
-
-      const fallback = fontFiles.find((file) => normalizeName(path.parse(file).name) === 'brightwallpersonal')
-        || fontFiles[0];
-      return fallback ? path.join(fontsDir, fallback) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const extractArgs = ['-y', '-ss', String(opts.timeSec), '-i', opts.videoPath, '-vframes', '1', '-q:v', '2', framePng];
-  let extractStderr = '';
-  const extractOk = await new Promise<boolean>((resolve) => {
-    const proc = spawn(ffmpegPath, extractArgs);
-    proc.stderr?.on('data', (d) => { extractStderr += d.toString(); });
-    proc.on('close', (code) => {
-      const ok = code === 0 && existsSync(framePng);
-      if (!ok) {
-        console.error('[Thumbnail] extract frame failed (code', code, '):\n', extractStderr.slice(-800));
-      }
-      resolve(ok);
-    });
-    proc.on('error', (err) => {
-      console.error('[Thumbnail] spawn extract error:', err);
-      resolve(false);
-    });
-  });
-  if (!extractOk) {
-    return { success: false, error: `Không extract được frame thumbnail\n${extractStderr.slice(-400)}` };
+  const extractRes = await extractFrameToPng(ffmpegPath, opts.videoPath, opts.timeSec, framePng);
+  if (!extractRes.success) {
+    return { success: false, error: extractRes.error };
   }
 
   const frameSize = await readPngDimensions(framePng);
@@ -236,22 +342,13 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     ? opts.sourceHeight
     : (frameSize?.height || safeH);
 
-  const thumbnailFontSize = 145;
-  const borderWidth = 4;
-  const thumbnailFontPath = await resolveThumbnailFontPath(opts.thumbnailFontName);
-  let drawTextFilter: string | null = null;
-  if (opts.thumbnailText?.trim()) {
-    const thumbnailText = opts.thumbnailText.trim();
-    await fs.writeFile(textFilePath, thumbnailText, 'utf-8');
-    if (!thumbnailFontPath) {
-      console.warn('[Thumbnail] Không tìm thấy file font thumbnail, fallback dùng font mặc định của hệ thống.');
-    }
-    const fontParam = thumbnailFontPath ? `fontfile='${escapeFilterPath(thumbnailFontPath)}':` : '';
-    drawTextFilter =
-      `drawtext=textfile='${escapeFilterPath(textFilePath)}':reload=0:` +
-      `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${borderWidth}:bordercolor=black:` +
-      'text_shaping=1:fix_bounds=1:x=(w-text_w)/2:y=(h-text_h)/2';
-  }
+  const drawTextContext = await buildThumbnailDrawTextFilter({
+    thumbnailText: opts.thumbnailText,
+    thumbnailFontName: opts.thumbnailFontName,
+    thumbnailFontSize: opts.thumbnailFontSize,
+    textFilePath,
+  });
+  const drawTextFilter = drawTextContext.drawTextFilter;
 
   const layoutResult = isPortraitMode
     ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextFilter)
@@ -263,7 +360,8 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     `mode=${isPortraitMode ? 'hardsub_portrait_9_16' : 'hardsub'}, ` +
     `source=${sourceWidth}x${sourceHeight}, output=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, ` +
     `textLength=${thumbTextLog.length}, textPreview="${thumbTextLog.preview}", ` +
-    `fontName=${opts.thumbnailFontName || 'BrightwallPersonal'}, fontFile=${thumbnailFontPath || 'system-default'}, fontSize=${thumbnailFontSize}, fontColor=yellow, border=${borderWidth}, ` +
+    `fontName=${opts.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME}, fontFile=${drawTextContext.thumbnailFontPath || 'system-default'}, ` +
+    `fontSize=${drawTextContext.thumbnailFontSize}, fontColor=yellow, border=${THUMBNAIL_TEXT_BORDER_WIDTH}, ` +
     `layout=${JSON.stringify(layoutResult.debug)}`
   );
 
@@ -401,6 +499,119 @@ async function prependThumbnailClip(
   });
 }
 
+export async function renderThumbnailPreviewFrame(
+  options: RenderThumbnailPreviewFrameOptions
+): Promise<RenderThumbnailPreviewFrameResult> {
+  const ffmpegPath = getFFmpegPath();
+  if (!existsSync(ffmpegPath)) {
+    return { success: false, error: 'FFmpeg không tìm thấy' };
+  }
+  if (!options?.videoPath || !existsSync(options.videoPath)) {
+    return { success: false, error: 'Thiếu videoPath để render thumbnail preview' };
+  }
+  if (!Number.isFinite(options.thumbnailTimeSec) || (options.thumbnailTimeSec as number) < 0) {
+    return { success: false, error: 'thumbnailTimeSec không hợp lệ' };
+  }
+
+  const tempDir = os.tmpdir();
+  const ts = Date.now();
+  const framePng = path.join(tempDir, `thumb_preview_frame_${ts}.png`);
+  const textFilePath = path.join(tempDir, `thumb_preview_text_${ts}.txt`);
+  const timeSec = Number(options.thumbnailTimeSec);
+
+  try {
+    const extractRes = await extractFrameToPng(ffmpegPath, options.videoPath, timeSec, framePng);
+    if (!extractRes.success) {
+      return { success: false, error: extractRes.error };
+    }
+
+    const sourceMeta = await getVideoMetadata(options.videoPath);
+    const sourceWidth = sourceMeta.success && sourceMeta.metadata
+      ? sourceMeta.metadata.width
+      : 1920;
+    const sourceHeight = sourceMeta.success && sourceMeta.metadata
+      ? (sourceMeta.metadata.actualHeight || sourceMeta.metadata.height)
+      : 1080;
+
+    const outputCanvas = options.renderMode === 'hardsub_portrait_9_16'
+      ? resolvePortraitCanvasByPreset(options.renderResolution)
+      : resolveLandscapeCanvasBySource(sourceWidth, sourceHeight, options.renderResolution);
+    const safeW = ensureEven(outputCanvas.width);
+    const safeH = ensureEven(outputCanvas.height);
+
+    const drawTextContext = await buildThumbnailDrawTextFilter({
+      thumbnailText: options.thumbnailText,
+      thumbnailFontName: options.thumbnailFontName,
+      thumbnailFontSize: options.thumbnailFontSize,
+      textFilePath,
+    });
+
+    const layoutResult = options.renderMode === 'hardsub_portrait_9_16'
+      ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextContext.drawTextFilter)
+      : buildLandscapeThumbnailFilter(safeW, safeH, drawTextContext.drawTextFilter);
+
+    let stderr = '';
+    const chunks: Buffer[] = [];
+    const args = [
+      '-y',
+      '-i', framePng,
+      '-filter_complex', layoutResult.filterComplex,
+      '-map', `[${layoutResult.outputLabel}]`,
+      '-frames:v', '1',
+      '-f', 'image2pipe',
+      '-vcodec', 'png',
+      '-',
+    ];
+
+    const ok = await new Promise<boolean>((resolve) => {
+      const proc = spawn(ffmpegPath, args);
+      proc.stdout?.on('data', (d) => chunks.push(d as Buffer));
+      proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => resolve(code === 0 && chunks.length > 0));
+      proc.on('error', () => resolve(false));
+    });
+
+    if (!ok) {
+      return { success: false, error: `Không render được thumbnail preview frame\n${stderr.slice(-400)}` };
+    }
+
+    const frameBuffer = Buffer.concat(chunks);
+    const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
+    console.log('[ThumbnailPreview] render frame success', {
+      mode: options.renderMode || 'hardsub',
+      renderResolution: options.renderResolution || 'original',
+      sourceSize: `${sourceWidth}x${sourceHeight}`,
+      outputSize: `${safeW}x${safeH}`,
+      thumbnailTimeSec: timeSec,
+      textLength: thumbTextLog.length,
+      textPreview: thumbTextLog.preview,
+      thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+      thumbnailFontSize: drawTextContext.thumbnailFontSize,
+      layout: layoutResult.debug,
+    });
+
+    return {
+      success: true,
+      frameData: frameBuffer.toString('base64'),
+      width: safeW,
+      height: safeH,
+      debug: {
+        ...layoutResult.debug,
+        sourceSize: { width: sourceWidth, height: sourceHeight },
+        outputSize: { width: safeW, height: safeH },
+        thumbnailTimeSec: timeSec,
+        thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+        thumbnailFontSize: drawTextContext.thumbnailFontSize,
+      },
+    };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  } finally {
+    try { await fs.unlink(framePng); } catch {}
+    try { await fs.unlink(textFilePath); } catch {}
+  }
+}
+
 export async function applyThumbnailPostProcess(
   options: RenderVideoOptions,
   result: RenderResult
@@ -454,7 +665,8 @@ export async function applyThumbnailPostProcess(
       durationSec: thumbnailDurationSec,
       textLength: thumbTextLog.length,
       textPreview: thumbTextLog.preview,
-      thumbnailFontName: options.thumbnailFontName || 'BrightwallPersonal',
+      thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+      thumbnailFontSize: normalizeThumbnailFontSize(options.thumbnailFontSize),
     }
   );
 
@@ -464,6 +676,7 @@ export async function applyThumbnailPostProcess(
     durationSec: thumbnailDurationSec,
     thumbnailText: options.thumbnailText,
     thumbnailFontName: options.thumbnailFontName,
+    thumbnailFontSize: options.thumbnailFontSize,
     width: outputMeta.metadata.width,
     height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
     renderMode: options.renderMode,

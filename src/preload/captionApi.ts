@@ -166,6 +166,8 @@ import {
   VideoMetadata,
   RenderProgress,
   CAPTION_VIDEO_IPC_CHANNELS,
+  RenderThumbnailPreviewFrameOptions,
+  RenderThumbnailPreviewFrameResult,
 } from '../shared/types/caption';
 
 /**
@@ -205,6 +207,7 @@ export interface CaptionVideoAPI {
     thumbnailTimeSec?: number;
     thumbnailText?: string;
     thumbnailFontName?: string;
+    thumbnailFontSize?: number;
     step7SubtitleSource?: 'session_translated_entries';
     step7AudioSource?: 'session_merged_audio';
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>>;
@@ -221,6 +224,11 @@ export interface CaptionVideoAPI {
     width: number;
     height: number;
   }>>;
+
+  // Render thumbnail preview frame thật (pipeline thumbnail)
+  renderThumbnailPreviewFrame: (
+    options: RenderThumbnailPreviewFrameOptions
+  ) => Promise<IpcApiResponse<RenderThumbnailPreviewFrameResult>>;
 
   // Auto-detect best video in folders
   findBestVideoInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<{
@@ -257,6 +265,9 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
 
     extractFrame: (videoPath: string, frameNumber?: number) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.EXTRACT_FRAME, videoPath, frameNumber),
+
+    renderThumbnailPreviewFrame: (options: RenderThumbnailPreviewFrameOptions) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_PREVIEW_FRAME, options),
 
     findBestVideoInFolders: (folderPaths: string[]) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO, folderPaths),

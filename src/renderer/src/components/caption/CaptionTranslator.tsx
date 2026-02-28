@@ -31,7 +31,7 @@ import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { ChevronDown, ChevronUp, Download, Eye } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, Eye, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { CaptionProjectSettingsValues } from '@shared/types/caption';
 
 export function CaptionTranslator() {
@@ -78,6 +78,7 @@ export function CaptionTranslator() {
     videoVolume: settings.videoVolume,
     audioVolume: settings.audioVolume,
     thumbnailFontName: settings.thumbnailFontName,
+    thumbnailFontSize: settings.thumbnailFontSize,
     subtitlePosition: settings.subtitlePosition,
     thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
     thumbnailDurationSec: settings.thumbnailDurationSec,
@@ -108,6 +109,7 @@ export function CaptionTranslator() {
     settings.videoVolume,
     settings.audioVolume,
     settings.thumbnailFontName,
+    settings.thumbnailFontSize,
     settings.subtitlePosition,
     settings.thumbnailFrameTimeSec,
     settings.thumbnailDurationSec,
@@ -402,6 +404,10 @@ export function CaptionTranslator() {
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('render');
+  const [thumbnailPreviewFrameData, setThumbnailPreviewFrameData] = useState<string | null>(null);
+  const [thumbnailPreviewSize, setThumbnailPreviewSize] = useState<{ width: number; height: number } | null>(null);
+  const [thumbnailPreviewStatus, setThumbnailPreviewStatus] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle');
+  const [thumbnailPreviewMessage, setThumbnailPreviewMessage] = useState<string>('Chưa render thumbnail preview.');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
@@ -507,6 +513,72 @@ export function CaptionTranslator() {
   const previewEntries = effectivePreviewMode === 'render'
     ? []
     : (sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries);
+  const firstFolderVideoInfo = firstFolderPath ? fileManager.folderVideos[firstFolderPath] : null;
+  const thumbnailPreviewVideoPath = firstFolderVideoInfo?.fullPath || fileManager.firstVideoPath || null;
+  const thumbnailPreviewText = isMultiFolder
+    ? (hardsubSettings.thumbnailTextsByOrder[0] || '')
+    : hardsubSettings.thumbnailText;
+  const thumbnailPreviewFrameSec = settings.thumbnailFrameTimeSec ?? 0;
+  const thumbnailPreviewAspect = thumbnailPreviewSize
+    ? `${thumbnailPreviewSize.width} / ${thumbnailPreviewSize.height}`
+    : undefined;
+
+  useEffect(() => {
+    setThumbnailPreviewFrameData(null);
+    setThumbnailPreviewSize(null);
+    setThumbnailPreviewStatus('idle');
+    setThumbnailPreviewMessage('Cấu hình đã đổi. Bấm "Làm mới" để render thumbnail frame thật.');
+  }, [
+    thumbnailPreviewVideoPath,
+    thumbnailPreviewText,
+    settings.thumbnailFontName,
+    settings.thumbnailFontSize,
+    settings.thumbnailFrameTimeSec,
+    settings.renderMode,
+    settings.renderResolution,
+  ]);
+
+  const handleRefreshThumbnailPreview = async () => {
+    if (!thumbnailPreviewVideoPath) {
+      setThumbnailPreviewStatus('error');
+      setThumbnailPreviewMessage('Không tìm thấy video nguồn để render thumbnail preview.');
+      return;
+    }
+
+    setThumbnailPreviewStatus('rendering');
+    setThumbnailPreviewMessage('Đang render thumbnail frame thật...');
+    try {
+      const api = (window.electronAPI as any).captionVideo;
+      const res = await api.renderThumbnailPreviewFrame({
+        videoPath: thumbnailPreviewVideoPath,
+        thumbnailTimeSec: thumbnailPreviewFrameSec,
+        renderMode: settings.renderMode,
+        renderResolution: settings.renderResolution,
+        thumbnailText: thumbnailPreviewText,
+        thumbnailFontName: settings.thumbnailFontName,
+        thumbnailFontSize: settings.thumbnailFontSize,
+      });
+
+      if (!res?.success || !res.data?.success || !res.data?.frameData) {
+        const err = res?.error || res?.data?.error || 'Không thể render thumbnail preview frame.';
+        setThumbnailPreviewStatus('error');
+        setThumbnailPreviewMessage(err);
+        return;
+      }
+
+      setThumbnailPreviewFrameData(res.data.frameData);
+      setThumbnailPreviewSize(
+        typeof res.data.width === 'number' && typeof res.data.height === 'number'
+          ? { width: res.data.width, height: res.data.height }
+          : null
+      );
+      setThumbnailPreviewStatus('ready');
+      setThumbnailPreviewMessage('Đã cập nhật thumbnail preview frame thật.');
+    } catch (error) {
+      setThumbnailPreviewStatus('error');
+      setThumbnailPreviewMessage(String(error));
+    }
+  };
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -786,7 +858,7 @@ export function CaptionTranslator() {
       { key: 'Âm lượng', value: `video ${settings.videoVolume}% | TTS ${settings.audioVolume}%` },
       { key: 'Sub pos', value: subtitlePos },
       { key: 'Logo', value: `${logoPos} | scale ${Math.round((settings.logoScale || 1) * 100)}%` },
-      { key: 'Thumbnail', value: `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s` },
+      { key: 'Thumbnail', value: `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s | ${settings.thumbnailFontName} ${settings.thumbnailFontSize ?? 145}px` },
       { key: 'Preview', value: `${effectivePreviewMode === 'render' ? 'Render snapshot' : 'Live'} (${previewSourceLabel})` },
     ];
   }, [
@@ -806,6 +878,8 @@ export function CaptionTranslator() {
     settings.logoScale,
     settings.thumbnailDurationSec,
     settings.thumbnailFrameTimeSec,
+    settings.thumbnailFontName,
+    settings.thumbnailFontSize,
     autoVideoSpeed,
     effectivePreviewMode,
     previewSourceLabel,
@@ -1398,6 +1472,7 @@ export function CaptionTranslator() {
               logoScale={settings.logoScale}
               portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
               thumbnailFontName={settings.thumbnailFontName}
+              thumbnailFontSize={settings.thumbnailFontSize}
               onPositionChange={settings.setSubtitlePosition}
               onBlackoutChange={settings.setBlackoutTop}
               onRenderResolutionChange={settings.setRenderResolution}
@@ -1418,6 +1493,59 @@ export function CaptionTranslator() {
                   : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
               }
             />
+            <div className={styles.thumbnailPreviewPanel}>
+              <div className={styles.thumbnailPreviewHeader}>
+                <span className={styles.thumbnailPreviewTitle}>
+                  <ImageIcon size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                  Thumbnail Preview (Frame thật)
+                </span>
+                <span className={styles.thumbnailPreviewSource}>
+                  {isMultiFolder ? 'Nguồn: folder đầu tiên' : 'Nguồn: folder hiện tại'}
+                </span>
+              </div>
+              <div className={styles.thumbnailPreviewMeta}>
+                frame {thumbnailPreviewFrameSec.toFixed(2)}s | {settings.thumbnailFontName} {settings.thumbnailFontSize ?? 145}px
+              </div>
+              <div
+                className={styles.thumbnailPreviewImageBox}
+                style={thumbnailPreviewAspect ? { aspectRatio: thumbnailPreviewAspect } : undefined}
+              >
+                {thumbnailPreviewFrameData ? (
+                  <img
+                    src={`data:image/png;base64,${thumbnailPreviewFrameData}`}
+                    alt="Thumbnail preview frame thật"
+                    className={styles.thumbnailPreviewImage}
+                  />
+                ) : (
+                  <div className={styles.thumbnailPreviewPlaceholder}>
+                    Chưa có ảnh thumbnail preview.
+                  </div>
+                )}
+              </div>
+              <div className={styles.thumbnailPreviewActions}>
+                <button
+                  className={styles.resetBtnLike}
+                  onClick={handleRefreshThumbnailPreview}
+                  disabled={!thumbnailPreviewVideoPath || thumbnailPreviewStatus === 'rendering'}
+                  title={!thumbnailPreviewVideoPath ? 'Không có video nguồn' : 'Render lại thumbnail frame thật'}
+                >
+                  <RefreshCw size={12} />
+                  {thumbnailPreviewStatus === 'rendering' ? 'Đang render...' : 'Làm mới'}
+                </button>
+                <span className={styles.thumbnailPreviewStatus}>
+                  {thumbnailPreviewStatus === 'ready' && thumbnailPreviewSize
+                    ? `Ready ${thumbnailPreviewSize.width}x${thumbnailPreviewSize.height}`
+                    : thumbnailPreviewStatus === 'rendering'
+                      ? 'Rendering...'
+                      : thumbnailPreviewStatus === 'error'
+                        ? 'Error'
+                        : 'Idle'}
+                </span>
+              </div>
+              <div className={styles.thumbnailPreviewMessage} title={thumbnailPreviewMessage}>
+                {thumbnailPreviewMessage}
+              </div>
+            </div>
           </div>
         </div>
       </div>

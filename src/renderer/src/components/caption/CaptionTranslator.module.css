@@ -7,7 +7,7 @@
   width: 100%;
   padding: 24px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
+  grid-template-columns: minmax(0, 1fr) 520px;
   gap: 20px;
   align-items: start;
 }
@@ -40,12 +40,12 @@
 .previewDock {
   width: 100%;
   min-height: 520px;
-  max-height: calc(100vh - 40px);
+  max-height: none;
   padding: 12px;
   border-radius: 12px;
   background: var(--color-card);
   border: 1px solid var(--color-border);
-  overflow: auto;
+  overflow: visible;
 }
 
 .previewDockTitle {
@@ -82,6 +82,89 @@
   padding: 2px 6px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
+}
+
+.thumbnailPreviewPanel {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.thumbnailPreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.thumbnailPreviewTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.thumbnailPreviewSource {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.thumbnailPreviewMeta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.thumbnailPreviewImageBox {
+  width: 100%;
+  min-height: 160px;
+  height: auto;
+  max-height: 72vh;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: #0f172a;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thumbnailPreviewImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.thumbnailPreviewPlaceholder {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.thumbnailPreviewActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.thumbnailPreviewStatus {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.thumbnailPreviewMessage {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header {
@@ -612,7 +695,7 @@
 
 @media (max-width: 1200px) {
   .container {
-    grid-template-columns: minmax(0, 1fr) 380px;
+    grid-template-columns: minmax(0, 1fr) 440px;
   }
 }
 

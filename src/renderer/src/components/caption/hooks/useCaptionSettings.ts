@@ -34,6 +34,7 @@ interface LayoutProfile {
   logoPosition?: { x: number; y: number };
   logoScale: number;
   thumbnailFontName: string;
+  thumbnailFontSize: number;
 }
 
 interface LayoutProfilesState {
@@ -62,6 +63,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   logoPosition: undefined,
   logoScale: 1.0,
   thumbnailFontName: 'BrightwallPersonal',
+  thumbnailFontSize: 145,
 };
 
 const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
@@ -76,6 +78,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   logoPosition: undefined,
   logoScale: 1.0,
   thumbnailFontName: 'BrightwallPersonal',
+  thumbnailFontSize: 145,
 };
 
 function cloneProfile(profile: LayoutProfile): LayoutProfile {
@@ -146,6 +149,9 @@ function normalizeProfile(
   }
   if (typeof patch.thumbnailFontName === 'string' && patch.thumbnailFontName.trim().length > 0) {
     next.thumbnailFontName = patch.thumbnailFontName;
+  }
+  if (typeof patch.thumbnailFontSize === 'number' && Number.isFinite(patch.thumbnailFontSize)) {
+    next.thumbnailFontSize = Math.min(260, Math.max(24, Math.round(patch.thumbnailFontSize)));
   }
   return next;
 }
@@ -252,6 +258,11 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, thumbnailFontName: value }));
   }, [updateActiveProfile]);
 
+  const setThumbnailFontSize = useCallback((value: number) => {
+    const normalized = Math.min(260, Math.max(24, Number.isFinite(value) ? Math.round(value) : 145));
+    updateActiveProfile((current) => ({ ...current, thumbnailFontSize: normalized }));
+  }, [updateActiveProfile]);
+
   const setLogoPath = useCallback((value: string | undefined) => {
     updateActiveProfile((current) => ({ ...current, logoPath: value }));
   }, [updateActiveProfile]);
@@ -303,6 +314,7 @@ export function useCaptionSettings() {
       videoVolume,
       audioVolume,
       thumbnailFontName: activeProfile.thumbnailFontName,
+      thumbnailFontSize: activeProfile.thumbnailFontSize,
       subtitlePosition: activeProfile.subtitlePosition,
       thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
       thumbnailDurationSec: activeProfile.thumbnailDurationSec,
@@ -394,6 +406,7 @@ export function useCaptionSettings() {
       logoPosition: saved.logoPosition,
       logoScale: saved.logoScale,
       thumbnailFontName: saved.thumbnailFontName,
+      thumbnailFontSize: saved.thumbnailFontSize,
     };
 
     const mergedLegacyLandscape = normalizeProfile(legacyPatch, DEFAULT_LANDSCAPE_PROFILE, 'landscape');
@@ -542,6 +555,8 @@ export function useCaptionSettings() {
     audioVolume, setAudioVolume,
     thumbnailFontName: activeProfile.thumbnailFontName,
     setThumbnailFontName,
+    thumbnailFontSize: activeProfile.thumbnailFontSize,
+    setThumbnailFontSize,
     logoPath: activeProfile.logoPath,
     setLogoPath,
     logoPosition: activeProfile.logoPosition,

@@ -341,6 +341,7 @@ export interface RenderVideoOptions {
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
   thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
   thumbnailFontName?: string; // Font riêng cho thumbnail text (tách biệt với subtitle font)
+  thumbnailFontSize?: number; // Cỡ chữ riêng cho thumbnail text
   step7SubtitleSource?: 'session_translated_entries';
   step7AudioSource?: 'session_merged_audio';
 }
@@ -376,6 +377,25 @@ export interface ExtractFrameResult {
   frameData?: string;     // Base64 encoded PNG
   width?: number;
   height?: number;
+  error?: string;
+}
+
+export interface RenderThumbnailPreviewFrameOptions {
+  videoPath: string;
+  thumbnailTimeSec: number;
+  renderMode?: RenderVideoOptions['renderMode'];
+  renderResolution?: RenderVideoOptions['renderResolution'];
+  thumbnailText?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+}
+
+export interface RenderThumbnailPreviewFrameResult {
+  success: boolean;
+  frameData?: string; // Base64 PNG (không kèm data-uri prefix)
+  width?: number;
+  height?: number;
+  debug?: Record<string, unknown>;
   error?: string;
 }
 
@@ -483,6 +503,7 @@ export interface CaptionProjectSettingsValues {
   videoVolume?: number;
   audioVolume?: number;
   thumbnailFontName?: string;
+  thumbnailFontSize?: number;
   thumbnailDurationSec?: number;
   subtitlePosition?: { x: number; y: number } | null;
   thumbnailFrameTimeSec?: number | null;
@@ -498,6 +519,7 @@ export interface CaptionProjectSettingsValues {
       logoPosition?: { x: number; y: number };
       logoScale?: number;
       thumbnailFontName?: string;
+      thumbnailFontSize?: number;
       foregroundCropPercent?: number;
     };
     portrait?: {
@@ -511,6 +533,7 @@ export interface CaptionProjectSettingsValues {
       logoPosition?: { x: number; y: number };
       logoScale?: number;
       thumbnailFontName?: string;
+      thumbnailFontSize?: number;
       foregroundCropPercent?: number;
     };
   };
@@ -554,6 +577,7 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   RENDER_PROGRESS: 'captionVideo:renderProgress',
   GET_VIDEO_METADATA: 'captionVideo:getVideoMetadata',
   EXTRACT_FRAME: 'captionVideo:extractFrame',
+  RENDER_THUMBNAIL_PREVIEW_FRAME: 'captionVideo:renderThumbnailPreviewFrame',
   FIND_BEST_VIDEO: 'captionVideo:findBestVideo',
   GET_AVAILABLE_FONTS: 'captionVideo:getAvailableFonts',
 } as const;

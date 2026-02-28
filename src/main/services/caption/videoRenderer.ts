@@ -8,6 +8,8 @@ import { existsSync } from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import {
+  RenderThumbnailPreviewFrameOptions,
+  RenderThumbnailPreviewFrameResult,
   RenderVideoOptions,
   RenderProgress,
   RenderResult,
@@ -33,7 +35,10 @@ import { runFFmpegProcess } from './hardsub/ffmpegRunner';
 import {
   buildHardsubTimingPayload,
 } from './hardsub/timingDebugWriter';
-import { applyThumbnailPostProcess } from './hardsub/thumbnailPipeline';
+import {
+  applyThumbnailPostProcess,
+  renderThumbnailPreviewFrame as renderThumbnailPreviewFramePipeline,
+} from './hardsub/thumbnailPipeline';
 
 export const getVideoMetadata = probeGetVideoMetadata;
 export const extractVideoFrame = probeExtractVideoFrame;
@@ -318,6 +323,8 @@ export async function renderHardsubVideo(
       fillStrategy: 'scale_to_output',
       outputAspect: `${prep.renderWidth}:${prep.renderHeight}`,
       durationSec: options.thumbnailDurationSec ?? 0.5,
+      fontName: options.thumbnailFontName || 'BrightwallPersonal',
+      fontSize: options.thumbnailFontSize ?? 145,
     },
   });
 
@@ -658,6 +665,8 @@ export async function renderHardsubPortraitVideo(
       fillStrategy: 'cropped_bg_blur_top_bottom',
       outputAspect: `${portraitCanvas.width}:${portraitCanvas.height}`,
       durationSec: options.thumbnailDurationSec ?? 0.5,
+      fontName: options.thumbnailFontName || 'BrightwallPersonal',
+      fontSize: options.thumbnailFontSize ?? 145,
     },
   });
 
@@ -866,9 +875,16 @@ export async function renderVideo(
     thumbnailTimeSec: options.thumbnailTimeSec ?? null,
     thumbnailDurationSec: options.thumbnailDurationSec ?? 0.5,
     thumbnailFontName: options.thumbnailFontName || null,
+    thumbnailFontSize: options.thumbnailFontSize ?? 145,
   });
   result = await applyThumbnailPostProcess(options, result);
   return result;
+}
+
+export async function renderThumbnailPreviewFrame(
+  options: RenderThumbnailPreviewFrameOptions
+): Promise<RenderThumbnailPreviewFrameResult> {
+  return renderThumbnailPreviewFramePipeline(options);
 }
 
 /**

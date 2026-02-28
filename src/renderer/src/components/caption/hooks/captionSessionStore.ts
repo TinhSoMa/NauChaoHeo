@@ -359,6 +359,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       videoVolume: settings.videoVolume,
       audioVolume: settings.audioVolume,
       thumbnailFontName: settings.thumbnailFontName,
+      thumbnailFontSize: settings.thumbnailFontSize,
       blackoutTop: settings.blackoutTop,
       audioSpeed: settings.audioSpeed,
       subtitlePosition: settings.subtitlePosition,
