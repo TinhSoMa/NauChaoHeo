@@ -94,13 +94,14 @@ function toSafeThumbSlug(thumbnailText?: string): string {
 
 function buildRenderedVideoName(
   renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16',
+  renderContainer: 'mp4' | 'mov',
   thumbnailText?: string
 ): string {
   const now = new Date();
   const dateMonthHour = `${pad2(now.getDate())}${pad2(now.getMonth() + 1)}${pad2(now.getHours())}`;
   const aspect = renderMode === 'hardsub_portrait_9_16' ? '9_16' : '16_9';
   const thumbSlug = toSafeThumbSlug(thumbnailText);
-  return `nauchaoheo_video_${aspect}_${thumbSlug}_${dateMonthHour}.mp4`;
+  return `nauchaoheo_video_${aspect}_${thumbSlug}_${dateMonthHour}.${renderContainer}`;
 }
 
 function buildScaledSubtitleEntries(entries: SubtitleEntry[], scale: number): SubtitleEntry[] {
@@ -151,6 +152,7 @@ interface UseCaptionProcessingProps {
     style?: any;
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
+    renderContainer?: 'mp4' | 'mov';
     subtitlePosition?: { x: number; y: number } | null;
     blackoutTop?: number | null;
     autoFitAudio: boolean;
@@ -431,6 +433,7 @@ export function useCaptionProcessing({
       step7Render: {
         renderMode: cfg.renderMode,
         renderResolution: cfg.renderResolution,
+        renderContainer: cfg.renderContainer || 'mp4',
         hardwareAcceleration: cfg.hardwareAcceleration,
         renderAudioSpeed: cfg.renderAudioSpeed,
         videoVolume: cfg.videoVolume,
@@ -472,6 +475,7 @@ export function useCaptionProcessing({
       style: cfg.style,
       renderMode: cfg.renderMode,
       renderResolution: cfg.renderResolution,
+      renderContainer: cfg.renderContainer || 'mp4',
       blackoutTop: cfg.blackoutTop,
       audioSpeed: cfg.audioSpeed,
       renderAudioSpeed: cfg.renderAudioSpeed,
@@ -1210,7 +1214,11 @@ export function useCaptionProcessing({
         const thumbnailTextForRender = isMulti
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim();
-        const finalVideoFileName = buildRenderedVideoName(cfg.renderMode, thumbnailTextForRender);
+        const finalVideoFileName = buildRenderedVideoName(
+          cfg.renderMode,
+          cfg.renderContainer || 'mp4',
+          thumbnailTextForRender
+        );
         const finalVideoPath = `${processOutputDir}/${finalVideoFileName}`;
         console.log(`[CaptionProcessing][Step7] Output filename: ${finalVideoFileName}`);
         const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
@@ -1344,10 +1352,16 @@ export function useCaptionProcessing({
               steps: {
                 ...session.steps,
                 [stepKey]: {
-                  ...makeStepSuccess(session.steps[stepKey], {
+                  ...session.steps[stepKey],
+                  status: 'idle',
+                  endedAt: nowIso(),
+                  error: undefined,
+                  blockedReason: undefined,
+                  metrics: {
+                    lastRenderAt: nowIso(),
                     duration: renderRes.data?.duration || 0,
                     outputPath: renderedPath,
-                  }),
+                  },
                   inputFingerprint: buildObjectFingerprint({
                     translatedEntries: translatedEntriesForRender.map((entry) => ({
                       index: entry.index,

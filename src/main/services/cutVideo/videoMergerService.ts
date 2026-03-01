@@ -70,9 +70,9 @@ interface ProbeProfileResult {
   error?: string;
 }
 
-const SUPPORTED_EXT = '.mp4';
-const NAME_PATTERN_WITH_THUMB = /^nauchaoheo_video_(16_9|9_16)_([a-z0-9_]+)_(\d{6})\.mp4$/i;
-const NAME_PATTERN_LEGACY = /^nauchaoheo_video_(16_9|9_16)_(\d{6})\.mp4$/i;
+const SUPPORTED_EXTS = new Set(['.mp4', '.mov']);
+const NAME_PATTERN_WITH_THUMB = /^nauchaoheo_video_(16_9|9_16)_([a-z0-9_]+)_(\d{6})\.(mp4|mov)$/i;
+const NAME_PATTERN_LEGACY = /^nauchaoheo_video_(16_9|9_16)_(\d{6})\.(mp4|mov)$/i;
 const NATURAL_NAME_COLLATOR = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
 
 function nowIso(): string {
@@ -269,7 +269,7 @@ class VideoMergerService {
       try {
         const dirEntries = await fs.readdir(scanDir);
         const candidates = dirEntries
-          .filter((name) => path.extname(name).toLowerCase() === SUPPORTED_EXT)
+          .filter((name) => SUPPORTED_EXTS.has(path.extname(name).toLowerCase()))
           .filter((name) => this.fileMatchesMode(name, mode));
 
         if (candidates.length === 0) {

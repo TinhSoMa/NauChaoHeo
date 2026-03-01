@@ -72,6 +72,7 @@ export function CaptionTranslator() {
     style: settings.style,
     renderMode: settings.renderMode,
     renderResolution: settings.renderResolution,
+    renderContainer: settings.renderContainer,
     blackoutTop: settings.blackoutTop,
     audioSpeed: settings.audioSpeed,
     renderAudioSpeed: settings.renderAudioSpeed,
@@ -103,6 +104,7 @@ export function CaptionTranslator() {
     settings.style,
     settings.renderMode,
     settings.renderResolution,
+    settings.renderContainer,
     settings.blackoutTop,
     settings.audioSpeed,
     settings.renderAudioSpeed,
@@ -496,7 +498,7 @@ export function CaptionTranslator() {
               ? ((session.data.renderResult as Record<string, unknown>).outputPath as string)
               : null);
 
-        if (session.steps.step7?.status === 'success' && finalVideoPathRaw) {
+        if (finalVideoPathRaw) {
           const verifyRes = await (window.electronAPI as any).captionVideo.getVideoMetadata(finalVideoPathRaw);
           if (!cancelled && verifyRes?.success) {
             setRenderedPreviewVideoPath(finalVideoPathRaw);
@@ -879,7 +881,7 @@ export function CaptionTranslator() {
       { key: 'Input', value: settings.inputType === 'draft' ? 'Draft' : 'SRT' },
       { key: 'Dịch', value: `${settings.translateMethod?.toUpperCase() || 'API'} / ${settings.geminiModel}` },
       { key: 'TTS', value: `${settings.voice} | rate ${settings.rate} | vol ${settings.volume}` },
-      { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution}` },
+      { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution} / ${settings.renderContainer?.toUpperCase() || 'MP4'}` },
       { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x` },
       { key: 'Âm lượng', value: `video ${settings.videoVolume}% | TTS ${settings.audioVolume}%` },
       { key: 'Sub pos', value: subtitlePos },
@@ -896,6 +898,7 @@ export function CaptionTranslator() {
     settings.volume,
     settings.renderMode,
     settings.renderResolution,
+    settings.renderContainer,
     settings.renderAudioSpeed,
     settings.videoVolume,
     settings.audioVolume,

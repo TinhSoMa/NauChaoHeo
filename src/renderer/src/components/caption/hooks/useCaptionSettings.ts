@@ -25,6 +25,7 @@ type LayoutKey = 'landscape' | 'portrait';
 interface LayoutProfile {
   style: ASSStyleConfig;
   renderResolution: RenderResolution;
+  renderContainer: 'mp4' | 'mov';
   blackoutTop: number | null;
   foregroundCropPercent: number;
   subtitlePosition: { x: number; y: number } | null;
@@ -54,6 +55,7 @@ export const DEFAULT_STYLE: ASSStyleConfig = {
 const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   style: { ...DEFAULT_STYLE },
   renderResolution: 'original',
+  renderContainer: 'mp4',
   blackoutTop: 0.9,
   foregroundCropPercent: 0,
   subtitlePosition: null,
@@ -69,6 +71,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
 const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   style: { ...DEFAULT_STYLE },
   renderResolution: '1080p',
+  renderContainer: 'mp4',
   blackoutTop: 0.9,
   foregroundCropPercent: 0,
   subtitlePosition: null,
@@ -110,6 +113,9 @@ function normalizeProfile(
     next.renderResolution = layoutKey === 'portrait' && requested === 'original'
       ? '1080p'
       : requested;
+  }
+  if (patch.renderContainer === 'mp4' || patch.renderContainer === 'mov') {
+    next.renderContainer = patch.renderContainer;
   }
   if (patch.blackoutTop === null || typeof patch.blackoutTop === 'number') {
     next.blackoutTop = patch.blackoutTop as number | null;
@@ -234,6 +240,10 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, renderResolution: value }));
   }, [updateActiveProfile]);
 
+  const setRenderContainer = useCallback((value: 'mp4' | 'mov') => {
+    updateActiveProfile((current) => ({ ...current, renderContainer: value }));
+  }, [updateActiveProfile]);
+
   const setBlackoutTop = useCallback((value: number | null) => {
     updateActiveProfile((current) => ({ ...current, blackoutTop: value }));
   }, [updateActiveProfile]);
@@ -307,6 +317,7 @@ export function useCaptionSettings() {
       style: activeProfile.style,
       renderMode,
       renderResolution: activeProfile.renderResolution,
+      renderContainer: activeProfile.renderContainer,
       blackoutTop: activeProfile.blackoutTop,
       portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
       audioSpeed,
@@ -397,6 +408,7 @@ export function useCaptionSettings() {
     const legacyPatch: Record<string, unknown> = {
       style: saved.style,
       renderResolution: saved.renderResolution,
+      renderContainer: saved.renderContainer,
       blackoutTop: saved.blackoutTop,
       foregroundCropPercent: saved.portraitForegroundCropPercent,
       subtitlePosition: saved.subtitlePosition,
@@ -537,6 +549,8 @@ export function useCaptionSettings() {
     renderMode, setRenderMode,
     renderResolution: activeProfile.renderResolution,
     setRenderResolution,
+    renderContainer: activeProfile.renderContainer,
+    setRenderContainer,
     blackoutTop: activeProfile.blackoutTop,
     setBlackoutTop,
     foregroundCropPercent: activeProfile.foregroundCropPercent,

@@ -514,6 +514,7 @@ export interface CaptionProjectSettingsValues {
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  renderContainer?: 'mp4' | 'mov';
   blackoutTop?: number | null;
   audioSpeed?: number;
   renderAudioSpeed?: number;
@@ -529,6 +530,7 @@ export interface CaptionProjectSettingsValues {
     landscape?: {
       style?: ASSStyleConfig;
       renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+      renderContainer?: 'mp4' | 'mov';
       blackoutTop?: number | null;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
@@ -543,6 +545,7 @@ export interface CaptionProjectSettingsValues {
     portrait?: {
       style?: ASSStyleConfig;
       renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+      renderContainer?: 'mp4' | 'mov';
       blackoutTop?: number | null;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;

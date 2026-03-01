@@ -409,6 +409,10 @@ export function shouldSkipStep(
   session: CaptionSessionV1,
   step: CaptionStepNumber
 ): { skip: boolean; reason?: string } {
+  // Step 7 (render video) luôn cho phép chạy lại nhiều lần.
+  if (step === 7) {
+    return { skip: false, reason: 'step7_always_rerender' };
+  }
   const stepKey = toStepKey(step);
   const stepState = session.steps[stepKey];
   if (!stepState || stepState.status !== 'success') {
@@ -505,6 +509,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       style: settings.style,
       renderMode: settings.renderMode,
       renderResolution: settings.renderResolution,
+      renderContainer: settings.renderContainer,
       hardwareAcceleration: settings.hardwareAcceleration,
       renderAudioSpeed: settings.renderAudioSpeed,
       videoVolume: settings.videoVolume,

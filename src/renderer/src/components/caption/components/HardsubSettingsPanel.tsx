@@ -52,6 +52,17 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             />
           </div>
         </div>
+        <div className={styles.inputGroup}>
+          <span className={styles.label}>Định dạng xuất</span>
+          <select
+            className={styles.select}
+            value={settings.renderContainer || 'mp4'}
+            onChange={(e) => settings.setRenderContainer?.(e.target.value as 'mp4' | 'mov')}
+          >
+            <option value="mp4">MP4</option>
+            <option value="mov">MOV</option>
+          </select>
+        </div>
       </div>
 
       <div className={styles.grid2} style={{ marginBottom: 12 }}>
