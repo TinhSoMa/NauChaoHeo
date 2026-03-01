@@ -62,6 +62,8 @@ export function buildHardsubTimingPayload(input: {
     durationSec?: number;
     fontName?: string;
     fontSize?: number;
+    pipeline?: 'inline_single_stream' | 'post_concat_copy';
+    audio?: 'silent_prefix' | 'none';
   } | null;
 }): unknown {
   const {

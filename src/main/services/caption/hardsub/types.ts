@@ -1,4 +1,4 @@
-import { RenderProgress, VideoMetadata } from '../../../../shared/types/caption';
+import { RenderProgress, RenderVideoOptions, VideoMetadata } from '../../../../shared/types/caption';
 
 export interface MediaProbeResult {
   success: boolean;
@@ -19,6 +19,7 @@ export interface RunFFmpegProcessOptions {
   fps: number;
   outputPath: string;
   tempAssPath: string;
+  cleanupTempPaths?: string[];
   duration: number;
   progressCallback?: (progress: RenderProgress) => void;
 }
@@ -64,4 +65,41 @@ export interface PortraitVideoFilterBuildInput {
 export interface PortraitVideoFilterBuildOutput {
   filterParts: string[];
   outputLabel: string;
+}
+
+export interface InlineThumbnailVideoFilterBuildInput {
+  renderMode?: RenderVideoOptions['renderMode'];
+  videoInputLabel?: string;
+  outputWidth: number;
+  outputHeight: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  fps: number;
+  thumbnailTimeSec: number;
+  thumbnailDurationSec: number;
+  thumbnailText?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+}
+
+export interface InlineThumbnailVideoFilterBuildOutput {
+  filterParts: string[];
+  outputLabel: string;
+  cleanupFiles: string[];
+  debug: Record<string, unknown>;
+  thumbnailFontPath: string | null;
+  thumbnailFontSize: number;
+}
+
+export interface InlineThumbnailSilentAudioBuildInput {
+  outputLabel?: string;
+  durationSec: number;
+  sampleRate?: number;
+  channelLayout?: string;
+}
+
+export interface InlineThumbnailSilentAudioBuildOutput {
+  filterPart: string;
+  outputLabel: string;
+  debug: Record<string, unknown>;
 }

@@ -13,6 +13,12 @@ import {
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
 import { summarizeThumbnailTextForLog } from './timingDebugWriter';
+import {
+  InlineThumbnailSilentAudioBuildInput,
+  InlineThumbnailSilentAudioBuildOutput,
+  InlineThumbnailVideoFilterBuildInput,
+  InlineThumbnailVideoFilterBuildOutput,
+} from './types';
 
 interface ThumbnailClipOptions {
   videoPath: string;
@@ -43,7 +49,7 @@ const MIN_THUMBNAIL_FONT_SIZE = 24;
 const MAX_THUMBNAIL_FONT_SIZE = 260;
 const THUMBNAIL_TEXT_BORDER_WIDTH = 4;
 
-function normalizeThumbnailDurationSec(value?: number): number {
+export function normalizeThumbnailDurationSec(value?: number): number {
   if (!Number.isFinite(value)) {
     return DEFAULT_THUMBNAIL_DURATION_SEC;
   }
@@ -307,6 +313,179 @@ function buildPortraitThumbnailFilter(
       bgFillMode: 'from_cropped_frame',
       cropStrategy: 'center_3_4',
       fillStrategy: 'cropped_bg_blur_top_bottom',
+    },
+  };
+}
+
+function buildInlineLandscapeThumbnailFilterParts(
+  inputLabel: string,
+  outputLabelPrefix: string,
+  safeW: number,
+  safeH: number,
+  drawTextFilter: string | null
+): { filterParts: string[]; outputLabel: string; debug: Record<string, unknown> } {
+  const layoutLabel = `${outputLabelPrefix}_layout`;
+  const outputLabel = drawTextFilter ? `${outputLabelPrefix}_out` : layoutLabel;
+  const parts: string[] = [
+    `${inputLabel}scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`,
+  ];
+  if (drawTextFilter) {
+    parts.push(`[${layoutLabel}]${drawTextFilter}[${outputLabel}]`);
+  }
+  return {
+    filterParts: parts,
+    outputLabel,
+    debug: {
+      mode: 'landscape_hardsub',
+      cropRatio: 'none',
+      outputSize: `${safeW}x${safeH}`,
+      bgFillMode: 'scale_to_output',
+    },
+  };
+}
+
+function buildInlinePortraitThumbnailFilterParts(
+  inputLabel: string,
+  outputLabelPrefix: string,
+  safeW: number,
+  safeH: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  drawTextFilter: string | null
+): { filterParts: string[]; outputLabel: string; debug: Record<string, unknown> } {
+  const cropH = sourceHeight;
+  const cropW = ensureEven(Math.min(sourceWidth, sourceHeight * 3 / 4));
+  const cropX = Math.max(0, Math.floor((sourceWidth - cropW) / 2));
+
+  let fgW = safeW;
+  let fgH = ensureEven((fgW * cropH) / cropW);
+  if (fgH > safeH) {
+    fgH = safeH;
+    fgW = ensureEven((fgH * cropW) / cropH);
+  }
+
+  const cropBgLabel = `${outputLabelPrefix}_crop_bg`;
+  const cropFgLabel = `${outputLabelPrefix}_crop_fg`;
+  const bgFillLabel = `${outputLabelPrefix}_bg_fill`;
+  const fgFitLabel = `${outputLabelPrefix}_fg_fit`;
+  const layoutLabel = `${outputLabelPrefix}_layout`;
+  const outputLabel = drawTextFilter ? `${outputLabelPrefix}_out` : layoutLabel;
+  const parts: string[] = [
+    `${inputLabel}crop=${cropW}:${cropH}:${cropX}:0,split=2[${cropBgLabel}][${cropFgLabel}]`,
+    `[${cropBgLabel}]scale=${safeW}:${safeH},boxblur=8:1[${bgFillLabel}]`,
+    `[${cropFgLabel}]scale=${fgW}:${fgH}[${fgFitLabel}]`,
+    `[${bgFillLabel}][${fgFitLabel}]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`,
+  ];
+  if (drawTextFilter) {
+    parts.push(`[${layoutLabel}]${drawTextFilter}[${outputLabel}]`);
+  }
+
+  return {
+    filterParts: parts,
+    outputLabel,
+    debug: {
+      mode: 'portrait_9_16',
+      cropRatio: '3:4',
+      cropRect: { x: cropX, y: 0, width: cropW, height: cropH },
+      outputSize: `${safeW}x${safeH}`,
+      fgSize: `${fgW}x${fgH}`,
+      bgFillMode: 'from_cropped_frame',
+      cropStrategy: 'center_3_4',
+      fillStrategy: 'cropped_bg_blur_top_bottom',
+    },
+  };
+}
+
+export async function buildInlineThumbnailVideoFilter(
+  options: InlineThumbnailVideoFilterBuildInput
+): Promise<InlineThumbnailVideoFilterBuildOutput> {
+  const safeW = ensureEven(options.outputWidth);
+  const safeH = ensureEven(options.outputHeight);
+  const safeSourceW = ensureEven(Math.max(2, options.sourceWidth));
+  const safeSourceH = ensureEven(Math.max(2, options.sourceHeight));
+  const safeFps = Number.isFinite(options.fps) && options.fps > 0 ? Math.round(options.fps) : 24;
+  const timeSec = Math.max(0, Number.isFinite(options.thumbnailTimeSec) ? options.thumbnailTimeSec : 0);
+  const durationSec = normalizeThumbnailDurationSec(options.thumbnailDurationSec);
+  const frameWindowSec = Math.max(1 / safeFps, 0.04);
+  const endSec = timeSec + frameWindowSec;
+  const prefix = 'thumb_inline';
+  const inputLabel = options.videoInputLabel || '[0:v]';
+  const sourceFreezeLabel = `${prefix}_src`;
+  const textFilePath = path.join(os.tmpdir(), `${prefix}_text_${Date.now()}.txt`);
+  const cleanupFiles: string[] = [];
+
+  const drawTextContext = await buildThumbnailDrawTextFilter({
+    thumbnailText: options.thumbnailText,
+    thumbnailFontName: options.thumbnailFontName,
+    thumbnailFontSize: options.thumbnailFontSize,
+    textFilePath,
+  });
+  if (drawTextContext.drawTextFilter) {
+    cleanupFiles.push(textFilePath);
+  }
+
+  const sourceFreezePart =
+    `${inputLabel}trim=start=${timeSec}:end=${endSec},setpts=PTS-STARTPTS,fps=${safeFps},` +
+    `tpad=stop_mode=clone:stop_duration=${durationSec},trim=duration=${durationSec},fps=${safeFps}` +
+    `[${sourceFreezeLabel}]`;
+
+  const layout = options.renderMode === 'hardsub_portrait_9_16'
+    ? buildInlinePortraitThumbnailFilterParts(
+        `[${sourceFreezeLabel}]`,
+        prefix,
+        safeW,
+        safeH,
+        safeSourceW,
+        safeSourceH,
+        drawTextContext.drawTextFilter
+      )
+    : buildInlineLandscapeThumbnailFilterParts(
+        `[${sourceFreezeLabel}]`,
+        prefix,
+        safeW,
+        safeH,
+        drawTextContext.drawTextFilter
+      );
+
+  return {
+    filterParts: [sourceFreezePart, ...layout.filterParts],
+    outputLabel: layout.outputLabel,
+    cleanupFiles,
+    debug: {
+      ...layout.debug,
+      sourceFreeze: {
+        thumbnailTimeSec: timeSec,
+        thumbnailEndSec: endSec,
+        durationSec,
+        fps: safeFps,
+      },
+    },
+    thumbnailFontPath: drawTextContext.thumbnailFontPath,
+    thumbnailFontSize: drawTextContext.thumbnailFontSize,
+  };
+}
+
+export function buildInlineThumbnailSilentAudio(
+  options: InlineThumbnailSilentAudioBuildInput
+): InlineThumbnailSilentAudioBuildOutput {
+  const durationSec = normalizeThumbnailDurationSec(options.durationSec);
+  const sampleRate = Number.isFinite(options.sampleRate) && (options.sampleRate || 0) > 0
+    ? Math.round(options.sampleRate as number)
+    : 44100;
+  const channelLayout = options.channelLayout?.trim() || 'stereo';
+  const outputLabel = options.outputLabel?.trim() || 'thumb_a_inline';
+  const filterPart =
+    `anullsrc=channel_layout=${channelLayout}:sample_rate=${sampleRate},` +
+    `atrim=duration=${durationSec},asetpts=N/SR/TB[${outputLabel}]`;
+
+  return {
+    filterPart,
+    outputLabel,
+    debug: {
+      mode: 'silent_prefix',
+      durationSec,
+      sampleRate,
+      channelLayout,
     },
   };
 }

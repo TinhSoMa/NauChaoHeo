@@ -8,6 +8,22 @@ import { RunFFmpegProcessOptions } from './types';
 export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<RenderResult> {
   const ffmpegPath = getFFmpegPath();
 
+  const cleanupTempFiles = async (): Promise<void> => {
+    try {
+      unregisterTempFile(options.tempAssPath);
+      await fs.unlink(options.tempAssPath);
+    } catch {}
+
+    for (const extraPath of options.cleanupTempPaths || []) {
+      if (!extraPath) {
+        continue;
+      }
+      try {
+        await fs.unlink(extraPath);
+      } catch {}
+    }
+  };
+
   return new Promise((resolve) => {
     const process = spawn(ffmpegPath, options.args);
     let stderr = '';
@@ -32,10 +48,7 @@ export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<Rend
     });
 
     process.on('close', async (code) => {
-      try {
-        unregisterTempFile(options.tempAssPath);
-        await fs.unlink(options.tempAssPath);
-      } catch {}
+      await cleanupTempFiles();
 
       if (code === 0) {
         options.progressCallback?.({
@@ -62,10 +75,7 @@ export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<Rend
     });
 
     process.on('error', async (error) => {
-      try {
-        unregisterTempFile(options.tempAssPath);
-        await fs.unlink(options.tempAssPath);
-      } catch {}
+      await cleanupTempFiles();
       resolve({ success: false, error: `Lỗi FFmpeg: ${error.message}` });
     });
   });
