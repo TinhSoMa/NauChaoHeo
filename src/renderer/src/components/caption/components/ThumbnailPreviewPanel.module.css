@@ -32,6 +32,55 @@
   margin-bottom: 8px;
 }
 
+.downloadRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  min-height: 24px;
+}
+
+.downloadBtn {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.downloadBtn:hover:not(:disabled) {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.downloadBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.downloadStatus {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.downloadStatusMuted {
+  color: var(--color-text-secondary);
+}
+
+.downloadStatusOk {
+  color: var(--color-success, #10b981);
+}
+
+.downloadStatusError {
+  color: var(--color-error, #ef4444);
+}
+
 .statusRows {
   display: grid;
   gap: 6px;

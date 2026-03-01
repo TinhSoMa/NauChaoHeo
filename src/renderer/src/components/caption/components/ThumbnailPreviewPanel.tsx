@@ -50,6 +50,11 @@ type TruncationState = {
   secondary: boolean;
 };
 
+type DownloadStatus = {
+  tone: 'idle' | 'ok' | 'error' | 'pending';
+  message: string;
+};
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   if (value < 0) return 0;
@@ -126,6 +131,23 @@ function statusClass(status: string): string {
   return styles.badgeIdle;
 }
 
+function sanitizeFileName(value: string): string {
+  const cleaned = value
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > 0 ? cleaned : 'thumbnail';
+}
+
+function formatDateToken(input: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${input.getFullYear()}${pad(input.getMonth() + 1)}${pad(input.getDate())}_${pad(input.getHours())}${pad(input.getMinutes())}${pad(input.getSeconds())}`;
+}
+
+function toBase64Payload(value: string): string {
+  return value.replace(/^data:[^;]+;base64,/, '');
+}
+
 export function ThumbnailPreviewPanel({
   videoPath,
   sourceLabel,
@@ -162,6 +184,8 @@ export function ThumbnailPreviewPanel({
   const [videoSourceSize, setVideoSourceSize] = useState<{ width: number; height: number }>({ width: 1920, height: 1080 });
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [truncationState, setTruncationState] = useState<TruncationState>({ primary: false, secondary: false });
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({ tone: 'idle', message: '' });
   const truncationRef = useRef<TruncationState>({ primary: false, secondary: false });
 
   const previewState = useThumbnailPreviewState({
@@ -480,6 +504,85 @@ export function ThumbnailPreviewPanel({
   const hasPrimaryText = thumbnailText.trim().length > 0;
   const hasSecondaryText = thumbnailTextSecondary.trim().length > 0;
 
+  const handleDownloadThumbnail = useCallback(async () => {
+    if (!videoPath || isDownloading) {
+      return;
+    }
+
+    setIsDownloading(true);
+    setDownloadStatus({ tone: 'pending', message: 'Đang render thumbnail để tải...' });
+
+    try {
+      previewState.commitDraft();
+      const api = (window.electronAPI as any).captionVideo;
+      const renderRes = await api.renderThumbnailPreviewFrame({
+        videoPath,
+        thumbnailTimeSec: previewState.draftFrameTimeSec,
+        renderMode,
+        renderResolution,
+        thumbnailText,
+        thumbnailTextSecondary,
+        thumbnailFontName,
+        thumbnailFontSize,
+        thumbnailTextPrimaryFontName,
+        thumbnailTextPrimaryFontSize,
+        thumbnailTextSecondaryFontName,
+        thumbnailTextSecondaryFontSize,
+        thumbnailLineHeightRatio,
+        thumbnailTextPrimaryPosition: previewState.draftPrimaryPosition,
+        thumbnailTextSecondaryPosition: previewState.draftSecondaryPosition,
+      });
+
+      if (!renderRes?.success || !renderRes?.data?.success || !renderRes?.data?.frameData) {
+        throw new Error(renderRes?.error || renderRes?.data?.error || 'Không thể tạo ảnh thumbnail.');
+      }
+
+      const now = new Date();
+      const fileBase = sanitizeFileName(sourceLabel || 'thumbnail');
+      const defaultPath = `${fileBase}_${renderMode}_${formatDateToken(now)}.png`;
+      const saveRes = await (window.electronAPI as any).invoke('dialog:showSaveDialog', {
+        title: 'Lưu thumbnail',
+        defaultPath,
+        filters: [{ name: 'PNG Image', extensions: ['png'] }],
+      });
+      if (!saveRes?.filePath) {
+        setDownloadStatus({ tone: 'idle', message: 'Đã hủy lưu thumbnail.' });
+        return;
+      }
+
+      const writeRes = await (window.electronAPI as any).invoke('fs:writeBase64File', {
+        filePath: saveRes.filePath,
+        base64Data: toBase64Payload(renderRes.data.frameData),
+      });
+      if (!writeRes?.success) {
+        throw new Error(writeRes?.error || 'Không thể ghi file thumbnail.');
+      }
+
+      const fileName = String(saveRes.filePath).split(/[\\/]/).pop() || 'thumbnail.png';
+      setDownloadStatus({ tone: 'ok', message: `Đã lưu ${fileName}` });
+    } catch (error) {
+      setDownloadStatus({ tone: 'error', message: `Lưu thumbnail thất bại: ${String(error)}` });
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [
+    isDownloading,
+    previewState,
+    renderMode,
+    renderResolution,
+    sourceLabel,
+    thumbnailFontName,
+    thumbnailFontSize,
+    thumbnailLineHeightRatio,
+    thumbnailText,
+    thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondary,
+    thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize,
+    videoPath,
+  ]);
+
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
@@ -518,6 +621,30 @@ export function ThumbnailPreviewPanel({
         >
           Preview thật
         </button>
+      </div>
+
+      <div className={styles.downloadRow}>
+        <button
+          type="button"
+          className={styles.downloadBtn}
+          onClick={handleDownloadThumbnail}
+          disabled={!videoPath || isDownloading}
+          title={!videoPath ? 'Chưa có video nguồn để tải thumbnail' : 'Lưu thumbnail PNG'}
+        >
+          {isDownloading ? 'Đang tải...' : 'Tải thumbnail PNG'}
+        </button>
+        {downloadStatus.message && (
+          <span
+            className={`${styles.downloadStatus} ${
+              downloadStatus.tone === 'error'
+                ? styles.downloadStatusError
+                : (downloadStatus.tone === 'ok' ? styles.downloadStatusOk : styles.downloadStatusMuted)
+            }`}
+            title={downloadStatus.message}
+          >
+            {downloadStatus.message}
+          </span>
+        )}
       </div>
 
       {previewState.tab === 'edit' && (

@@ -810,6 +810,33 @@ export function registerCaptionHandlers(): void {
     }
   );
 
+  // ============================================
+  // WRITE BASE64 FILE (dùng cho thumbnail download)
+  // ============================================
+  ipcMain.handle(
+    'fs:writeBase64File',
+    async (
+      _event: IpcMainInvokeEvent,
+      args: { filePath: string; base64Data: string }
+    ): Promise<IpcResponse<void>> => {
+      try {
+        const { filePath, base64Data } = args;
+        const sanitizedBase64 = String(base64Data || '').replace(/^data:[^;]+;base64,/, '');
+        if (!filePath || sanitizedBase64.length === 0) {
+          return { success: false, error: 'Thiếu filePath hoặc base64Data.' };
+        }
+        const fsPromises = await import('fs/promises');
+        const buffer = Buffer.from(sanitizedBase64, 'base64');
+        await fsPromises.writeFile(filePath, buffer);
+        console.log(`[CaptionHandlers] fs:writeBase64File -> ${filePath}`);
+        return { success: true };
+      } catch (error) {
+        console.error('[CaptionHandlers] fs:writeBase64File error:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   console.log('[CaptionHandlers] Đã đăng ký handlers thành công');
 }
 
