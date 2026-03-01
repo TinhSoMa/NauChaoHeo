@@ -62,6 +62,11 @@ export const DEFAULT_STYLE: ASSStyleConfig = {
   alignment: 2,
 };
 
+const MIN_SUBTITLE_FONT_SIZE = 1;
+const MAX_SUBTITLE_FONT_SIZE = 1000;
+const MIN_SUBTITLE_SHADOW = 0;
+const MAX_SUBTITLE_SHADOW = 20;
+
 const DEFAULT_THUMBNAIL_FONT_NAME = 'BrightwallPersonal';
 const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
 const DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO = 1.16;
@@ -69,6 +74,32 @@ const MIN_THUMBNAIL_FONT_SIZE = 24;
 const MAX_THUMBNAIL_FONT_SIZE = 400;
 const MIN_THUMBNAIL_LINE_HEIGHT_RATIO = 0;
 const MAX_THUMBNAIL_LINE_HEIGHT_RATIO = 4;
+
+function normalizeAssStyle(style: ASSStyleConfig, fallback: ASSStyleConfig = DEFAULT_STYLE): ASSStyleConfig {
+  const fontName = typeof style.fontName === 'string' && style.fontName.trim().length > 0
+    ? style.fontName.trim()
+    : fallback.fontName;
+  const fontColor = typeof style.fontColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(style.fontColor)
+    ? style.fontColor
+    : fallback.fontColor;
+  const fontSize = Number.isFinite(style.fontSize)
+    ? Math.min(MAX_SUBTITLE_FONT_SIZE, Math.max(MIN_SUBTITLE_FONT_SIZE, Math.round(style.fontSize)))
+    : fallback.fontSize;
+  const shadow = Number.isFinite(style.shadow)
+    ? Math.min(MAX_SUBTITLE_SHADOW, Math.max(MIN_SUBTITLE_SHADOW, style.shadow))
+    : fallback.shadow;
+  const marginV = Number.isFinite(style.marginV) ? style.marginV : fallback.marginV;
+  const alignment = [2, 5, 8].includes(style.alignment) ? style.alignment : fallback.alignment;
+
+  return {
+    fontName,
+    fontSize,
+    fontColor,
+    shadow,
+    marginV,
+    alignment,
+  };
+}
 
 const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   style: { ...DEFAULT_STYLE },
@@ -141,7 +172,7 @@ function normalizeProfile(
 
   const style = patch.style as ASSStyleConfig | undefined;
   if (style && typeof style === 'object') {
-    next.style = { ...next.style, ...style };
+    next.style = normalizeAssStyle({ ...next.style, ...style }, fallback.style);
   }
   if (patch.renderResolution && typeof patch.renderResolution === 'string') {
     const requested = patch.renderResolution as RenderResolution;
@@ -253,6 +284,7 @@ function normalizeProfile(
       };
     }
   }
+  next.style = normalizeAssStyle(next.style, fallback.style);
   return next;
 }
 
@@ -324,7 +356,7 @@ export function useCaptionSettings() {
         const nextStyle = typeof value === 'function'
           ? (value as (prev: ASSStyleConfig) => ASSStyleConfig)(current.style)
           : value;
-        return { ...current, style: { ...nextStyle } };
+        return { ...current, style: normalizeAssStyle({ ...nextStyle }, current.style) };
       });
     },
     [updateActiveProfile]

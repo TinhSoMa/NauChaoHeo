@@ -31,6 +31,52 @@ export interface UseSubtitlePreviewOptions {
   renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
 }
 
+const MIN_SUBTITLE_FONT_SIZE = 1;
+const MAX_SUBTITLE_FONT_SIZE = 1000;
+const MIN_SUBTITLE_SHADOW = 0;
+const MAX_SUBTITLE_SHADOW = 20;
+const DEFAULT_SUBTITLE_FONT_SIZE = 48;
+const DEFAULT_SUBTITLE_SHADOW = 2;
+
+function clampNumber(value: number, minValue: number, maxValue: number): number {
+  return Math.min(maxValue, Math.max(minValue, value));
+}
+
+function normalizeSubtitleFontSize(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_SUBTITLE_FONT_SIZE;
+  }
+  return clampNumber(Math.round(value as number), MIN_SUBTITLE_FONT_SIZE, MAX_SUBTITLE_FONT_SIZE);
+}
+
+function normalizeSubtitleShadow(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_SUBTITLE_SHADOW;
+  }
+  return clampNumber(value as number, MIN_SUBTITLE_SHADOW, MAX_SUBTITLE_SHADOW);
+}
+
+function resolveSubtitleScaleFactor(
+  renderMode: PreviewRenderMode,
+  renderResolution: PreviewRenderResolution,
+  sourceHeight: number
+): number {
+  if (renderMode === 'hardsub_portrait_9_16' || renderMode === 'black_bg') {
+    return 1;
+  }
+
+  let maxOutputHeight = 1080;
+  if (renderResolution === '720p') maxOutputHeight = 720;
+  if (renderResolution === '540p') maxOutputHeight = 540;
+  if (renderResolution === '360p') maxOutputHeight = 360;
+  if (renderResolution === 'original') maxOutputHeight = 99999;
+
+  if (sourceHeight > maxOutputHeight) {
+    return maxOutputHeight / sourceHeight;
+  }
+  return 1;
+}
+
 function resolvePortraitCanvasByPreset(renderResolution?: PreviewRenderResolution): { width: number; height: number } {
   if (renderResolution === '720p') {
     return { width: 720, height: 1280 };
@@ -567,17 +613,18 @@ export function useSubtitlePreview({
     const textX = mappedText.x;
     const textY = mappedText.y;
 
-    const videoH = state.videoSize.height;
-    let effectiveFontSize = style.fontSize;
-    if (videoH < 400) {
-      effectiveFontSize = Math.max(16, Math.floor(videoH * 0.9));
-    } else if (style.fontSize > videoH * 0.15) {
-      effectiveFontSize = Math.floor(videoH * 0.08);
-    }
-    const fontSizeScaled = Math.max(12, effectiveFontSize / ratio);
+    const normalizedUserFontSize = normalizeSubtitleFontSize(style.fontSize);
+    const shadowBase = normalizeSubtitleShadow(style.shadow);
+    const subtitleScaleFactor = resolveSubtitleScaleFactor(renderMode, renderResolution, state.videoSize.height);
+    const effectiveFontSize = Math.max(1, Math.round(normalizedUserFontSize * subtitleScaleFactor));
+    const effectiveOutline = Math.max(1, Math.round(effectiveFontSize * 0.06));
+    const effectiveShadow = shadowBase === 0
+      ? 0
+      : Math.max(1, Math.round(effectiveOutline * 0.5 * (shadowBase / 4)));
 
-    const outlineScaled = Math.max(1, 2 / ratio);
-    const shadowScaled = Math.max(0, style.shadow / ratio);
+    const fontSizeScaled = Math.max(1, effectiveFontSize / ratio);
+    const outlineScaled = Math.max(1, effectiveOutline / ratio);
+    const shadowScaled = effectiveShadow / ratio;
 
     ctx.font = `${fontSizeScaled}px "${style.fontName}", sans-serif`;
     ctx.textAlign = 'center';
@@ -591,7 +638,7 @@ export function useSubtitlePreview({
     lines.forEach((line, i) => {
       const ly = startY + i * lineHeight;
 
-      if (style.shadow > 0) {
+      if (effectiveShadow > 0) {
         ctx.save();
         ctx.shadowColor = 'transparent';
         ctx.fillStyle = 'rgba(0,0,0,0.8)';
@@ -605,7 +652,7 @@ export function useSubtitlePreview({
 
       ctx.save();
       ctx.strokeStyle = '#000000';
-      ctx.lineWidth = outlineScaled * 2;
+      ctx.lineWidth = outlineScaled;
       ctx.lineJoin = 'round';
       ctx.shadowColor = 'transparent';
       ctx.strokeText(line, textX, ly);
@@ -681,7 +728,7 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
     }
 
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, renderMode, portraitForegroundCropPercent, renderSnapshotMode]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode]);
 
   // Load video frame image
   useEffect(() => {

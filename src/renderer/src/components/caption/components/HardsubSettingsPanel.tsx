@@ -323,9 +323,8 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
                 type="number"
                 value={settings.style?.fontSize}
                 onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontSize: Number(e.target.value) }))}
-                min={20}
-                max={200}
-                disabled={settings.renderMode === 'black_bg'}
+                min={1}
+                max={1000}
               />
             </div>
             <div className={styles.inputGroup}>

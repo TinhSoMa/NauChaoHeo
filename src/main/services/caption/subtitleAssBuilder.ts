@@ -42,6 +42,31 @@ interface PortraitAssCanvas {
   height: number;
 }
 
+const MIN_SUBTITLE_FONT_SIZE = 1;
+const MAX_SUBTITLE_FONT_SIZE = 1000;
+const MIN_SUBTITLE_SHADOW = 0;
+const MAX_SUBTITLE_SHADOW = 20;
+const DEFAULT_SUBTITLE_FONT_SIZE = 48;
+const DEFAULT_SUBTITLE_SHADOW = 2;
+
+function clampNumber(value: number, minValue: number, maxValue: number): number {
+  return Math.min(maxValue, Math.max(minValue, value));
+}
+
+function normalizeSubtitleFontSize(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_SUBTITLE_FONT_SIZE;
+  }
+  return clampNumber(Math.round(value as number), MIN_SUBTITLE_FONT_SIZE, MAX_SUBTITLE_FONT_SIZE);
+}
+
+function normalizeSubtitleShadow(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_SUBTITLE_SHADOW;
+  }
+  return clampNumber(value as number, MIN_SUBTITLE_SHADOW, MAX_SUBTITLE_SHADOW);
+}
+
 function parseScaleFromSrtFileName(srtPath: string): number | null {
   const baseName = path.basename(srtPath).toLowerCase();
   const match = baseName.match(/(?:subtitle|translated)_([0-9]+(?:[._][0-9]+)?)x\.srt$/i);
@@ -228,15 +253,13 @@ async function prepareSubtitleAndDurationCore(
 
   const s = options.style || { fontName: 'Arial', fontSize: 48, fontColor: '#FFFF00', shadow: 2, marginV: 0, alignment: 5 };
   console.log(`[VideoRenderer][Font] ASS font selected: "${s.fontName}"`);
-  let effectiveFontSize = Math.round(s.fontSize * scaleFactor);
-  let effectiveShadow = Math.max(0, Math.round(s.shadow * scaleFactor));
-  let effectiveOutline = Math.max(1, Math.round(2 * scaleFactor));
-
-  if (renderHeight < 400 && (!videoPath || !existsSync(videoPath))) {
-    effectiveFontSize = Math.max(16, Math.floor(renderHeight * 0.9));
-  } else if (effectiveFontSize > renderHeight * 0.15) {
-    effectiveFontSize = Math.floor(renderHeight * 0.08);
-  }
+  const normalizedUserFontSize = normalizeSubtitleFontSize(s.fontSize);
+  const shadowBase = normalizeSubtitleShadow(s.shadow);
+  const effectiveFontSize = Math.max(1, Math.round(normalizedUserFontSize * scaleFactor));
+  const effectiveOutline = Math.max(1, Math.round(effectiveFontSize * 0.06));
+  const effectiveShadow = shadowBase === 0
+    ? 0
+    : Math.max(1, Math.round(effectiveOutline * 0.5 * (shadowBase / 4)));
 
   const assColor = hexToAssColor(s.fontColor);
   const assAlignment = 5;
