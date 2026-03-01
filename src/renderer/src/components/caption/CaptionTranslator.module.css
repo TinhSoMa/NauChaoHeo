@@ -608,11 +608,18 @@
 .thumbnailListHeader {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
+}
+
+.thumbnailListTitleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .thumbnailListHint {
@@ -621,14 +628,34 @@
   color: var(--color-text-secondary);
 }
 
+.thumbnailListCountBadge {
+  font-size: 10px;
+  line-height: 1;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-card);
+  white-space: nowrap;
+}
+
+.thumbnailListToolbar {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card);
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
 .thumbnailListTable {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .thumbnailAutoFillRow {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -637,7 +664,6 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 8px;
 }
 
 .thumbnailSecondaryGlobalLabel {
@@ -677,33 +703,14 @@
   border-color: var(--color-accent, #4a9eff);
 }
 
-.thumbnailListRowHead,
-.thumbnailListRow {
-  display: grid;
-  grid-template-columns:
-    44px
-    minmax(120px, 1fr)
-    minmax(160px, 1fr)
-    minmax(180px, 1.2fr)
-    minmax(180px, 1.2fr)
-    minmax(100px, 0.7fr);
-  gap: 8px;
-  align-items: start;
-}
-
-.thumbnailListRowHead {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  font-weight: 600;
-  padding: 0 2px;
-  align-items: center;
-}
-
-.thumbnailListRow {
+.thumbnailListCard {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 6px;
+  border-radius: 10px;
+  padding: 10px;
   background: var(--color-card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .thumbnailListRowError {
@@ -711,10 +718,30 @@
   box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.2);
 }
 
-.thumbnailListIdx {
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
+.thumbnailListCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.thumbnailListOrderBadge {
+  min-width: 34px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.thumbnailListCardHeaderInfo {
+  min-width: 0;
+  flex: 1;
 }
 
 .thumbnailListFolder,
@@ -730,19 +757,35 @@
   color: var(--color-text-secondary);
 }
 
-.thumbnailListInput {
-  width: 100%;
+.thumbnailListPath {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px dashed var(--color-border);
   border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  padding: 6px 8px;
-  font-size: 12px;
-  outline: none;
+  padding: 5px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.thumbnailListInput:focus {
-  border-color: var(--color-accent, #4a9eff);
+.thumbnailListCardBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.thumbnailListField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.thumbnailListFieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .thumbnailListTextarea {
@@ -781,6 +824,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .thumbnailOverrideBadge,
@@ -841,5 +886,33 @@
 
   .step7GroupBody {
     grid-template-columns: 1fr;
+  }
+
+  .thumbnailAutoFillRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .thumbnailSecondaryGlobalRow {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .thumbnailSecondaryGlobalLabel {
+    min-width: 0;
+    padding-top: 0;
+  }
+
+  .thumbnailListCardHeader {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .thumbnailListCardBody {
+    grid-template-columns: 1fr;
+  }
+
+  .thumbnailSecondarySyncCell {
+    justify-content: flex-start;
   }
 }

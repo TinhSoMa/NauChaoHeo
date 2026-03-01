@@ -28,6 +28,10 @@ extraResources:
     to: ffmpeg
     filter:
       - "**/*"
+  - from: resources/fonts
+    to: fonts
+    filter:
+      - "**/*"
 
 # Cấu hình Windows
 win:
