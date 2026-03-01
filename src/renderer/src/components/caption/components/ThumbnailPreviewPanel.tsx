@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './ThumbnailPreviewPanel.module.css';
 import { useThumbnailPreviewState } from '../hooks/useThumbnailPreviewState';
 import { ThumbnailPreviewContextKey, ThumbnailPreviewLayer } from '../CaptionTypes';
+import { layoutThumbnailText } from '@shared/utils/thumbnailTextLayout';
 
 type RenderMode = 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
 type RenderResolution = 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -19,8 +20,14 @@ interface ThumbnailPreviewPanelProps {
   onThumbnailTextSecondaryChange?: (text: string) => void;
   thumbnailFrameTimeSec: number | null;
   onThumbnailFrameTimeSecChange: (timeSec: number | null) => void;
+  // Legacy font chung (fallback)
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;
@@ -36,6 +43,11 @@ type DrawState = {
   regionRect: DrawRect;
   primaryRect: DrawRect | null;
   secondaryRect: DrawRect | null;
+};
+
+type TruncationState = {
+  primary: boolean;
+  secondary: boolean;
 };
 
 function clamp01(value: number): number {
@@ -129,6 +141,11 @@ export function ThumbnailPreviewPanel({
   onThumbnailFrameTimeSecChange,
   thumbnailFontName,
   thumbnailFontSize,
+  thumbnailTextPrimaryFontName,
+  thumbnailTextPrimaryFontSize,
+  thumbnailTextSecondaryFontName,
+  thumbnailTextSecondaryFontSize,
+  thumbnailLineHeightRatio,
   thumbnailTextPrimaryPosition,
   thumbnailTextSecondaryPosition,
   onThumbnailTextPrimaryPositionChange,
@@ -144,6 +161,8 @@ export function ThumbnailPreviewPanel({
 
   const [videoSourceSize, setVideoSourceSize] = useState<{ width: number; height: number }>({ width: 1920, height: 1080 });
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [truncationState, setTruncationState] = useState<TruncationState>({ primary: false, secondary: false });
+  const truncationRef = useRef<TruncationState>({ primary: false, secondary: false });
 
   const previewState = useThumbnailPreviewState({
     videoPath,
@@ -155,6 +174,11 @@ export function ThumbnailPreviewPanel({
     onThumbnailFrameTimeSecChange,
     thumbnailFontName,
     thumbnailFontSize,
+    thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     onThumbnailTextPrimaryPositionChange,
@@ -253,24 +277,43 @@ export function ThumbnailPreviewPanel({
     }
 
     const scale = outputRect.width / Math.max(1, outW);
-    const thumbFontPx = Math.max(12, (thumbnailFontSize ?? 145) * scale);
-    const fontName = (thumbnailFontName || 'BrightwallPersonal').trim();
+    const primaryFontPx = Math.max(12, (thumbnailTextPrimaryFontSize ?? thumbnailFontSize ?? 145) * scale);
+    const secondaryFontPx = Math.max(12, (thumbnailTextSecondaryFontSize ?? thumbnailFontSize ?? 145) * scale);
+    const primaryFontName = (thumbnailTextPrimaryFontName || thumbnailFontName || 'BrightwallPersonal').trim();
+    const secondaryFontName = (thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal').trim();
+    const lineHeightRatio = Math.min(4, Math.max(0, Number.isFinite(thumbnailLineHeightRatio) ? (thumbnailLineHeightRatio as number) : 1.16));
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `bold ${thumbFontPx}px "${fontName}", sans-serif`;
 
     const drawTextBox = (
       text: string,
       pos: { x: number; y: number },
-      layer: ThumbnailPreviewLayer
-    ): DrawRect | null => {
-      const trimmed = text.trim();
-      if (!trimmed) return null;
-      const measured = ctx.measureText(trimmed);
-      const padX = thumbFontPx * 0.5;
-      const padY = thumbFontPx * 0.2;
-      const boxW = measured.width + padX * 2;
-      const boxH = thumbFontPx + padY * 2;
+      layer: ThumbnailPreviewLayer,
+      fontName: string,
+      fontPx: number
+    ): { rect: DrawRect | null; truncated: boolean } => {
+      ctx.font = `bold ${fontPx}px "${fontName}", sans-serif`;
+      const layout = layoutThumbnailText({
+        text,
+        maxWidthPx: regionRect.width * 0.92,
+        regionHeightPx: regionRect.height,
+        fontSizePx: fontPx,
+        maxLines: 3,
+        lineHeightRatio,
+        autoWrap: false,
+        measureTextWidth: (value: string) => ctx.measureText(value).width,
+      });
+      if (!layout.textForDraw || layout.lineCount === 0) {
+        return { rect: null, truncated: false };
+      }
+      const lineWidths = layout.lines.map((line: string) => ctx.measureText(line).width);
+      const maxLineWidth = lineWidths.length > 0 ? Math.max(...lineWidths) : 0;
+      const maxPadX = Math.max(0, (regionRect.width - maxLineWidth) / 2);
+      const maxPadY = Math.max(0, (regionRect.height - layout.lineCount * layout.lineHeightPx) / 2);
+      const padX = Math.min(fontPx * 0.5, maxPadX);
+      const padY = Math.min(fontPx * 0.2, maxPadY);
+      const boxW = Math.min(regionRect.width, maxLineWidth + padX * 2);
+      const boxH = Math.min(regionRect.height, layout.lineCount * layout.lineHeightPx + padY * 2);
       const anchorX = regionRect.x + clamp01(pos.x) * regionRect.width;
       const anchorY = regionRect.y + clamp01(pos.y) * regionRect.height;
       let x = anchorX - boxW / 2;
@@ -284,22 +327,54 @@ export function ThumbnailPreviewPanel({
       ctx.lineWidth = 1.5;
       ctx.strokeRect(x, y, boxW, boxH);
       ctx.strokeStyle = '#000';
-      ctx.lineWidth = Math.max(1, thumbFontPx * 0.06);
+      ctx.lineWidth = Math.max(1, fontPx * 0.06);
       ctx.lineJoin = 'round';
-      ctx.strokeText(trimmed, x + boxW / 2, y + boxH / 2);
       ctx.fillStyle = '#fff';
-      ctx.fillText(trimmed, x + boxW / 2, y + boxH / 2);
-      return { x, y, width: boxW, height: boxH };
+
+      const startY = y + padY + layout.lineHeightPx / 2;
+      for (let index = 0; index < layout.lines.length; index++) {
+        const line = layout.lines[index];
+        const ly = startY + index * layout.lineHeightPx;
+        ctx.strokeText(line, x + boxW / 2, ly);
+        ctx.fillText(line, x + boxW / 2, ly);
+      }
+      return {
+        rect: { x, y, width: boxW, height: boxH },
+        truncated: layout.truncated,
+      };
     };
 
-    const primaryRect = drawTextBox(thumbnailText, previewState.draftPrimaryPosition, 'primary');
-    const secondaryRect = drawTextBox(thumbnailTextSecondary, previewState.draftSecondaryPosition, 'secondary');
+    const primaryResult = drawTextBox(
+      thumbnailText,
+      previewState.draftPrimaryPosition,
+      'primary',
+      primaryFontName,
+      primaryFontPx
+    );
+    const secondaryResult = drawTextBox(
+      thumbnailTextSecondary,
+      previewState.draftSecondaryPosition,
+      'secondary',
+      secondaryFontName,
+      secondaryFontPx
+    );
+    const nextTruncation: TruncationState = {
+      primary: primaryResult.truncated,
+      secondary: secondaryResult.truncated,
+    };
+    if (
+      truncationRef.current.primary !== nextTruncation.primary
+      || truncationRef.current.secondary !== nextTruncation.secondary
+    ) {
+      truncationRef.current = nextTruncation;
+      setTruncationState(nextTruncation);
+    }
 
     drawStateRef.current = {
       outputRect,
       regionRect,
-      primaryRect,
-      secondaryRect,
+      primaryRect: primaryResult.rect,
+      secondaryRect: secondaryResult.rect,
     };
   }, [
     containerSize.height,
@@ -312,6 +387,11 @@ export function ThumbnailPreviewPanel({
     renderMode,
     thumbnailFontName,
     thumbnailFontSize,
+    thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio,
     thumbnailText,
     thumbnailTextSecondary,
   ]);
@@ -445,23 +525,23 @@ export function ThumbnailPreviewPanel({
           <div className={styles.controls}>
             <div className={styles.fullRow}>
               <span className={styles.label}>Text1</span>
-              <input
-                type="text"
-                className={styles.input}
+              <textarea
+                className={`${styles.input} ${styles.textareaInput}`}
                 value={thumbnailText}
                 onChange={(e) => onThumbnailTextChange?.(e.target.value)}
                 readOnly={!!thumbnailTextReadOnly}
+                rows={2}
                 placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh Text1 ở danh sách bên trái' : 'Tiêu đề video...'}
               />
             </div>
             <div className={styles.fullRow}>
               <span className={styles.label}>Text2</span>
-              <input
-                type="text"
-                className={styles.input}
+              <textarea
+                className={`${styles.input} ${styles.textareaInput}`}
                 value={thumbnailTextSecondary}
                 onChange={(e) => onThumbnailTextSecondaryChange?.(e.target.value)}
                 readOnly={!!thumbnailTextReadOnly}
+                rows={2}
                 placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh Text2 ở danh sách bên trái' : 'Tên phim...'}
               />
             </div>
@@ -513,10 +593,27 @@ export function ThumbnailPreviewPanel({
           </div>
 
           <div className={styles.metaRow}>
-            <span>Font: {thumbnailFontName || 'BrightwallPersonal'} {thumbnailFontSize ?? 145}px</span>
+            <span>
+              Text1 font: {(thumbnailTextPrimaryFontName || thumbnailFontName || 'BrightwallPersonal')}
+              {' '}
+              {thumbnailTextPrimaryFontSize ?? thumbnailFontSize ?? 145}px
+            </span>
+            <span>
+              Text2 font: {(thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal')}
+              {' '}
+              {thumbnailTextSecondaryFontSize ?? thumbnailFontSize ?? 145}px
+            </span>
+            <span>Line: {Number(thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x</span>
             <span>Text1: ({previewState.draftPrimaryPosition.x.toFixed(3)}, {previewState.draftPrimaryPosition.y.toFixed(3)})</span>
             <span>Text2: ({previewState.draftSecondaryPosition.x.toFixed(3)}, {previewState.draftSecondaryPosition.y.toFixed(3)})</span>
           </div>
+          <div className={styles.hint}>Enter để xuống dòng thủ công. Text tràn sẽ không tự xuống dòng.</div>
+          {(truncationState.primary || truncationState.secondary) && (
+            <div className={styles.truncateBadges}>
+              {truncationState.primary && <span className={styles.truncateBadge}>Text1 bị cắt</span>}
+              {truncationState.secondary && <span className={styles.truncateBadge}>Text2 bị cắt</span>}
+            </div>
+          )}
           {thumbnailTextHelper && <div className={styles.hint}>{thumbnailTextHelper}</div>}
           {renderMode === 'hardsub_portrait_9_16' && (
             <div className={styles.hint}>Mode 9:16: Text được clamp trong vùng foreground 3:4.</div>

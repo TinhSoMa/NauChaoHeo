@@ -46,11 +46,11 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
       </div>
       <div className={styles.thumbnailSecondaryGlobalRow}>
         <span className={styles.thumbnailSecondaryGlobalLabel}>Text2 global</span>
-        <input
-          type="text"
-          className={styles.thumbnailAutoFillInput}
+        <textarea
+          className={`${styles.thumbnailAutoFillInput} ${styles.thumbnailGlobalTextarea}`}
           value={props.secondaryGlobalText}
           onChange={(e) => props.onSecondaryGlobalTextChange(e.target.value)}
+          rows={2}
           placeholder="Tên phim (áp dụng cho folder chưa override)..."
         />
       </div>
@@ -75,18 +75,18 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
             <span className={styles.thumbnailListVideo} title={item.videoName}>
               {item.videoName}
             </span>
-            <input
-              type="text"
-              className={styles.thumbnailListInput}
+            <textarea
+              className={styles.thumbnailListTextarea}
               value={item.text}
               onChange={(e) => props.onItemTextChange(item.index - 1, e.target.value)}
+              rows={2}
               placeholder="Text1 theo folder..."
             />
-            <input
-              type="text"
-              className={styles.thumbnailListInput}
+            <textarea
+              className={styles.thumbnailListTextarea}
               value={item.secondaryText}
               onChange={(e) => props.onItemSecondaryTextChange(item.index - 1, e.target.value)}
+              rows={2}
               placeholder="Text2 (tên phim)..."
             />
             <div className={styles.thumbnailSecondarySyncCell}>

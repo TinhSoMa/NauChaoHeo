@@ -171,6 +171,13 @@
   font-size: 12px;
 }
 
+.textareaInput {
+  resize: vertical;
+  min-height: 52px;
+  max-height: 120px;
+  line-height: 1.35;
+}
+
 .range {
   width: 100%;
 }
@@ -200,6 +207,23 @@
   font-size: 11px;
   color: var(--color-text-secondary);
   margin-top: 6px;
+}
+
+.truncateBadges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.truncateBadge {
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--color-warning, #f59e0b);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 50%, transparent);
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 14%, transparent);
 }
 
 .syncBadge {

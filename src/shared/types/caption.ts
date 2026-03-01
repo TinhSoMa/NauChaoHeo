@@ -341,8 +341,13 @@ export interface RenderVideoOptions {
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
   thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
   thumbnailTextSecondary?: string; // Văn bản phụ (ví dụ tên phim), bỏ trống = không render
-  thumbnailFontName?: string; // Font riêng cho thumbnail text (tách biệt với subtitle font)
-  thumbnailFontSize?: number; // Cỡ chữ riêng cho thumbnail text
+  thumbnailFontName?: string; // Legacy: font chung cho cả text1/text2
+  thumbnailFontSize?: number; // Legacy: size chung cho cả text1/text2
+  thumbnailTextPrimaryFontName?: string; // Font riêng cho text1
+  thumbnailTextPrimaryFontSize?: number; // Cỡ chữ riêng cho text1
+  thumbnailTextSecondaryFontName?: string; // Font riêng cho text2
+  thumbnailTextSecondaryFontSize?: number; // Cỡ chữ riêng cho text2
+  thumbnailLineHeightRatio?: number; // Khoảng cách dòng cho text thumbnail (áp dụng cho Enter + wrap)
   thumbnailTextPrimaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text1 trong vùng hợp lệ
   thumbnailTextSecondaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text2 trong vùng hợp lệ
   step7SubtitleSource?: 'session_translated_entries';
@@ -392,6 +397,11 @@ export interface RenderThumbnailPreviewFrameOptions {
   thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
 }
@@ -545,6 +555,11 @@ export interface CaptionProjectSettingsValues {
   audioVolume?: number;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextSecondary?: string;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
@@ -567,6 +582,11 @@ export interface CaptionProjectSettingsValues {
       logoScale?: number;
       thumbnailFontName?: string;
       thumbnailFontSize?: number;
+      thumbnailTextPrimaryFontName?: string;
+      thumbnailTextPrimaryFontSize?: number;
+      thumbnailTextSecondaryFontName?: string;
+      thumbnailTextSecondaryFontSize?: number;
+      thumbnailLineHeightRatio?: number;
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };
       thumbnailTextSecondaryPosition?: { x: number; y: number };
@@ -585,6 +605,11 @@ export interface CaptionProjectSettingsValues {
       logoScale?: number;
       thumbnailFontName?: string;
       thumbnailFontSize?: number;
+      thumbnailTextPrimaryFontName?: string;
+      thumbnailTextPrimaryFontSize?: number;
+      thumbnailTextSecondaryFontName?: string;
+      thumbnailTextSecondaryFontSize?: number;
+      thumbnailLineHeightRatio?: number;
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };
       thumbnailTextSecondaryPosition?: { x: number; y: number };

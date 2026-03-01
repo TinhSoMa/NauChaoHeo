@@ -10,6 +10,7 @@ import {
   RenderThumbnailPreviewFrameResult,
   RenderVideoOptions,
 } from '../../../../shared/types/caption';
+import { layoutThumbnailText, ThumbnailTextLayoutResult } from '../../../../shared/utils/thumbnailTextLayout';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
 import { summarizeThumbnailTextForLog } from './timingDebugWriter';
@@ -26,8 +27,14 @@ interface ThumbnailClipOptions {
   durationSec: number;
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
+  // Legacy font chung (fallback)
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
   width: number;
@@ -51,8 +58,12 @@ const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
 const DEFAULT_THUMBNAIL_TEXT1_POSITION = { x: 0.5, y: 0.5 };
 const DEFAULT_THUMBNAIL_TEXT2_POSITION = { x: 0.5, y: 0.64 };
 const MIN_THUMBNAIL_FONT_SIZE = 24;
-const MAX_THUMBNAIL_FONT_SIZE = 260;
+const MAX_THUMBNAIL_FONT_SIZE = 400;
 const THUMBNAIL_TEXT_BORDER_WIDTH = 4;
+const THUMBNAIL_TEXT_MAX_LINES = 3;
+const THUMBNAIL_TEXT_LINE_HEIGHT_RATIO = 1.16;
+const MIN_THUMBNAIL_LINE_HEIGHT_RATIO = 0;
+const MAX_THUMBNAIL_LINE_HEIGHT_RATIO = 4;
 
 export function normalizeThumbnailDurationSec(value?: number): number {
   if (!Number.isFinite(value)) {
@@ -66,6 +77,13 @@ function normalizeThumbnailFontSize(value?: number): number {
     return DEFAULT_THUMBNAIL_FONT_SIZE;
   }
   return Math.min(MAX_THUMBNAIL_FONT_SIZE, Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(value as number)));
+}
+
+function normalizeThumbnailLineHeightRatio(value?: number): number {
+  if (!Number.isFinite(value)) {
+    return THUMBNAIL_TEXT_LINE_HEIGHT_RATIO;
+  }
+  return Math.min(MAX_THUMBNAIL_LINE_HEIGHT_RATIO, Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, value as number));
 }
 
 function ensureEven(value: number): number {
@@ -156,6 +174,30 @@ function buildDrawTextPositionExpr(
   return {
     x: `max(${rx},min(${anchorX}-text_w/2,${rx}+${rw}-text_w))`,
     y: `max(${ry},min(${anchorY}-text_h/2,${ry}+${rh}-text_h))`,
+  };
+}
+
+function buildDrawTextBlockTopExpr(
+  region: { x: number; y: number; width: number; height: number },
+  normalizedPos: { x: number; y: number },
+  blockHeightPx: number
+): string {
+  const ry = fmtExprNumber(region.y);
+  const rh = fmtExprNumber(region.height);
+  const ny = fmtExprNumber(normalizedPos.y);
+  const anchorY = `${ry}+${ny}*${rh}`;
+  const blockHeight = fmtExprNumber(Math.max(0, blockHeightPx));
+  return `max(${ry},min(${anchorY}-${blockHeight}/2,${ry}+${rh}-${blockHeight}))`;
+}
+
+function summarizeLayoutForLog(layout: ThumbnailTextLayoutResult): Record<string, unknown> {
+  return {
+    lineCount: layout.lineCount,
+    wrapped: layout.wrapped,
+    truncated: layout.truncated,
+    maxLinesApplied: layout.maxLinesApplied,
+    effectiveMaxLines: layout.effectiveMaxLines,
+    textForDraw: layout.textForDraw,
   };
 }
 
@@ -251,6 +293,11 @@ async function buildThumbnailDrawTextFilter(options: {
   thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
   renderMode?: RenderVideoOptions['renderMode'];
@@ -262,15 +309,34 @@ async function buildThumbnailDrawTextFilter(options: {
   secondaryTextFilePath: string;
 }): Promise<{
   drawTextFilter: string | null;
+  // Legacy alias = primary font
   thumbnailFontPath: string | null;
   thumbnailFontSize: number;
+  lineSpacing: number;
+  primaryFontPath: string | null;
+  primaryFontSize: number;
+  secondaryFontPath: string | null;
+  secondaryFontSize: number;
+  primaryLineSpacing: number;
+  secondaryLineSpacing: number;
   textFilePaths: string[];
   textRegion: { x: number; y: number; width: number; height: number; mode: 'landscape_full' | 'portrait_fg_3_4' };
   primaryPosition: { x: number; y: number };
   secondaryPosition: { x: number; y: number };
+  primaryLayout: ThumbnailTextLayoutResult;
+  secondaryLayout: ThumbnailTextLayoutResult;
 }> {
-  const thumbnailFontSize = normalizeThumbnailFontSize(options.thumbnailFontSize);
-  const thumbnailFontPath = await resolveThumbnailFontPath(options.thumbnailFontName);
+  const primaryFontName = options.thumbnailTextPrimaryFontName || options.thumbnailFontName;
+  const secondaryFontName = options.thumbnailTextSecondaryFontName || options.thumbnailFontName;
+  const primaryFontSize = normalizeThumbnailFontSize(
+    options.thumbnailTextPrimaryFontSize ?? options.thumbnailFontSize
+  );
+  const secondaryFontSize = normalizeThumbnailFontSize(
+    options.thumbnailTextSecondaryFontSize ?? options.thumbnailFontSize ?? primaryFontSize
+  );
+  const lineHeightRatio = normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio);
+  const primaryFontPath = await resolveThumbnailFontPath(primaryFontName);
+  const secondaryFontPath = await resolveThumbnailFontPath(secondaryFontName);
   const textRegion = resolveThumbnailTextRegion(
     options.renderMode,
     options.outputWidth,
@@ -286,59 +352,125 @@ async function buildThumbnailDrawTextFilter(options: {
     options.thumbnailTextSecondaryPosition,
     DEFAULT_THUMBNAIL_TEXT2_POSITION
   );
+  const primaryLineSpacing = Math.round(primaryFontSize * (lineHeightRatio - 1));
+  const secondaryLineSpacing = Math.round(secondaryFontSize * (lineHeightRatio - 1));
+  const layoutInputBase = {
+    maxWidthPx: Math.max(1, textRegion.width * 0.92),
+    regionHeightPx: textRegion.height,
+    maxLines: THUMBNAIL_TEXT_MAX_LINES,
+    lineHeightRatio,
+    autoWrap: false,
+  };
+  const primaryLayout = layoutThumbnailText({
+    ...layoutInputBase,
+    fontSizePx: primaryFontSize,
+    text: options.thumbnailText,
+  });
+  const secondaryLayout = layoutThumbnailText({
+    ...layoutInputBase,
+    fontSizePx: secondaryFontSize,
+    text: options.thumbnailTextSecondary,
+  });
   const textFilePaths: string[] = [];
-  const hasPrimary = !!options.thumbnailText?.trim();
-  const hasSecondary = !!options.thumbnailTextSecondary?.trim();
+  const hasPrimary = primaryLayout.textForDraw.trim().length > 0;
+  const hasSecondary = secondaryLayout.textForDraw.trim().length > 0;
   if (!hasPrimary && !hasSecondary) {
     return {
       drawTextFilter: null,
-      thumbnailFontPath,
-      thumbnailFontSize,
+      thumbnailFontPath: primaryFontPath,
+      thumbnailFontSize: primaryFontSize,
+      lineSpacing: primaryLineSpacing,
+      primaryFontPath,
+      primaryFontSize,
+      secondaryFontPath,
+      secondaryFontSize,
+      primaryLineSpacing,
+      secondaryLineSpacing,
       textFilePaths,
       textRegion,
       primaryPosition,
       secondaryPosition,
+      primaryLayout,
+      secondaryLayout,
     };
   }
 
-  if (hasPrimary) {
-    await fs.writeFile(options.textFilePath, options.thumbnailText!.trim(), 'utf-8');
-    textFilePaths.push(options.textFilePath);
+  if (!primaryFontPath && hasPrimary) {
+    console.warn('[Thumbnail] Không tìm thấy file font Text1, fallback dùng font mặc định của hệ thống.');
   }
-  if (hasSecondary) {
-    await fs.writeFile(options.secondaryTextFilePath, options.thumbnailTextSecondary!.trim(), 'utf-8');
-    textFilePaths.push(options.secondaryTextFilePath);
+  if (!secondaryFontPath && hasSecondary) {
+    console.warn('[Thumbnail] Không tìm thấy file font Text2, fallback dùng font mặc định của hệ thống.');
   }
-  if (!thumbnailFontPath) {
-    console.warn('[Thumbnail] Không tìm thấy file font thumbnail, fallback dùng font mặc định của hệ thống.');
-  }
-  const fontParam = thumbnailFontPath ? `fontfile='${escapeFilterPath(thumbnailFontPath)}':` : '';
+  const primaryFontParam = primaryFontPath ? `fontfile='${escapeFilterPath(primaryFontPath)}':` : '';
+  const secondaryFontParam = secondaryFontPath ? `fontfile='${escapeFilterPath(secondaryFontPath)}':` : '';
   const primaryPosExpr = buildDrawTextPositionExpr(textRegion, primaryPosition);
   const secondaryPosExpr = buildDrawTextPositionExpr(textRegion, secondaryPosition);
   const drawTextFilters: string[] = [];
+  const appendCenteredLineFilters = async (input: {
+    layout: ThumbnailTextLayoutResult;
+    lineBasePath: string;
+    fontParam: string;
+    fontSize: number;
+    position: { x: number; y: number };
+    xExpr: string;
+  }) => {
+    if (input.layout.lineCount === 0) return;
+    const blockHeightPx = input.layout.lineCount * input.layout.lineHeightPx;
+    const blockTopExpr = buildDrawTextBlockTopExpr(textRegion, input.position, blockHeightPx);
+    for (let index = 0; index < input.layout.lines.length; index++) {
+      const lineText = input.layout.lines[index];
+      if (!lineText || lineText.length === 0) {
+        continue;
+      }
+      const lineFilePath = `${input.lineBasePath}.line${index}.txt`;
+      await fs.writeFile(lineFilePath, lineText, 'utf-8');
+      textFilePaths.push(lineFilePath);
+      const lineOffsetExpr = fmtExprNumber(index * input.layout.lineHeightPx);
+      drawTextFilters.push(
+        `drawtext=textfile='${escapeFilterPath(lineFilePath)}':reload=0:` +
+        `${input.fontParam}fontcolor=yellow:fontsize=${input.fontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
+        `text_shaping=1:fix_bounds=1:y_align=text:x='${input.xExpr}':y='${blockTopExpr}+${lineOffsetExpr}'`
+      );
+    }
+  };
   if (hasPrimary) {
-    drawTextFilters.push(
-      `drawtext=textfile='${escapeFilterPath(options.textFilePath)}':reload=0:` +
-      `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
-      `text_shaping=1:fix_bounds=1:x='${primaryPosExpr.x}':y='${primaryPosExpr.y}'`
-    );
+    await appendCenteredLineFilters({
+      layout: primaryLayout,
+      lineBasePath: options.textFilePath,
+      fontParam: primaryFontParam,
+      fontSize: primaryFontSize,
+      position: primaryPosition,
+      xExpr: primaryPosExpr.x,
+    });
   }
   if (hasSecondary) {
-    drawTextFilters.push(
-      `drawtext=textfile='${escapeFilterPath(options.secondaryTextFilePath)}':reload=0:` +
-      `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
-      `text_shaping=1:fix_bounds=1:x='${secondaryPosExpr.x}':y='${secondaryPosExpr.y}'`
-    );
+    await appendCenteredLineFilters({
+      layout: secondaryLayout,
+      lineBasePath: options.secondaryTextFilePath,
+      fontParam: secondaryFontParam,
+      fontSize: secondaryFontSize,
+      position: secondaryPosition,
+      xExpr: secondaryPosExpr.x,
+    });
   }
 
   return {
     drawTextFilter: drawTextFilters.join(','),
-    thumbnailFontPath,
-    thumbnailFontSize,
+    thumbnailFontPath: primaryFontPath,
+    thumbnailFontSize: primaryFontSize,
+    lineSpacing: primaryLineSpacing,
+    primaryFontPath,
+    primaryFontSize,
+    secondaryFontPath,
+    secondaryFontSize,
+    primaryLineSpacing,
+    secondaryLineSpacing,
     textFilePaths,
     textRegion,
     primaryPosition,
     secondaryPosition,
+    primaryLayout,
+    secondaryLayout,
   };
 }
 
@@ -574,6 +706,11 @@ export async function buildInlineThumbnailVideoFilter(
     thumbnailTextSecondary: options.thumbnailTextSecondary,
     thumbnailFontName: options.thumbnailFontName,
     thumbnailFontSize: options.thumbnailFontSize,
+    thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
     renderMode: options.renderMode,
@@ -619,8 +756,25 @@ export async function buildInlineThumbnailVideoFilter(
     debug: {
       ...layout.debug,
       textRegion: drawTextContext.textRegion,
+      textLineHeightRatio: normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio),
+      textLineSpacing: {
+        primary: drawTextContext.primaryLineSpacing,
+        secondary: drawTextContext.secondaryLineSpacing,
+      },
+      textPrimaryFont: {
+        name: options.thumbnailTextPrimaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+        path: drawTextContext.primaryFontPath,
+        size: drawTextContext.primaryFontSize,
+      },
+      textSecondaryFont: {
+        name: options.thumbnailTextSecondaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+        path: drawTextContext.secondaryFontPath,
+        size: drawTextContext.secondaryFontSize,
+      },
       textPrimaryPosition: drawTextContext.primaryPosition,
       textSecondaryPosition: drawTextContext.secondaryPosition,
+      textPrimaryLayout: summarizeLayoutForLog(drawTextContext.primaryLayout),
+      textSecondaryLayout: summarizeLayoutForLog(drawTextContext.secondaryLayout),
       sourceFreeze: {
         thumbnailTimeSec: timeSec,
         durationSec,
@@ -629,6 +783,8 @@ export async function buildInlineThumbnailVideoFilter(
     },
     thumbnailFontPath: drawTextContext.thumbnailFontPath,
     thumbnailFontSize: drawTextContext.thumbnailFontSize,
+    secondaryThumbnailFontPath: drawTextContext.secondaryFontPath,
+    secondaryThumbnailFontSize: drawTextContext.secondaryFontSize,
   };
 }
 
@@ -694,6 +850,11 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     thumbnailTextSecondary: opts.thumbnailTextSecondary,
     thumbnailFontName: opts.thumbnailFontName,
     thumbnailFontSize: opts.thumbnailFontSize,
+    thumbnailTextPrimaryFontName: opts.thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: opts.thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: opts.thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: opts.thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: opts.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: opts.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: opts.thumbnailTextSecondaryPosition,
     renderMode: opts.renderMode,
@@ -718,10 +879,15 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     `source=${sourceWidth}x${sourceHeight}, output=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, ` +
     `text1Length=${thumbTextLog.length}, text1Preview="${thumbTextLog.preview}", ` +
     `text2Length=${thumbText2Log.length}, text2Preview="${thumbText2Log.preview}", ` +
-    `fontName=${opts.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME}, fontFile=${drawTextContext.thumbnailFontPath || 'system-default'}, ` +
-    `fontSize=${drawTextContext.thumbnailFontSize}, fontColor=yellow, border=${THUMBNAIL_TEXT_BORDER_WIDTH}, ` +
+    `font1Name=${opts.thumbnailTextPrimaryFontName || opts.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME}, font1File=${drawTextContext.primaryFontPath || 'system-default'}, ` +
+    `font1Size=${drawTextContext.primaryFontSize}, lineSpacing1=${drawTextContext.primaryLineSpacing}, ` +
+    `font2Name=${opts.thumbnailTextSecondaryFontName || opts.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME}, font2File=${drawTextContext.secondaryFontPath || 'system-default'}, ` +
+    `font2Size=${drawTextContext.secondaryFontSize}, lineSpacing2=${drawTextContext.secondaryLineSpacing}, ` +
+    `lineHeightRatio=${normalizeThumbnailLineHeightRatio(opts.thumbnailLineHeightRatio).toFixed(2)}, ` +
+    `fontColor=yellow, border=${THUMBNAIL_TEXT_BORDER_WIDTH}, ` +
     `textRegion=${JSON.stringify(drawTextContext.textRegion)}, textPos1=${JSON.stringify(drawTextContext.primaryPosition)}, ` +
-    `textPos2=${JSON.stringify(drawTextContext.secondaryPosition)}, ` +
+    `textPos2=${JSON.stringify(drawTextContext.secondaryPosition)}, textLayout1=${JSON.stringify(summarizeLayoutForLog(drawTextContext.primaryLayout))}, ` +
+    `textLayout2=${JSON.stringify(summarizeLayoutForLog(drawTextContext.secondaryLayout))}, ` +
     `layout=${JSON.stringify(layoutResult.debug)}`
   );
 
@@ -907,6 +1073,11 @@ export async function renderThumbnailPreviewFrame(
       thumbnailTextSecondary: options.thumbnailTextSecondary,
       thumbnailFontName: options.thumbnailFontName,
       thumbnailFontSize: options.thumbnailFontSize,
+      thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+      thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+      thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
       thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
       renderMode: options.renderMode,
@@ -960,11 +1131,20 @@ export async function renderThumbnailPreviewFrame(
       text1Preview: thumbTextLog.preview,
       text2Length: thumbText2Log.length,
       text2Preview: thumbText2Log.preview,
-      thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
-      thumbnailFontSize: drawTextContext.thumbnailFontSize,
+      textPrimaryFontName: options.thumbnailTextPrimaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+      textPrimaryFontSize: drawTextContext.primaryFontSize,
+      textSecondaryFontName: options.thumbnailTextSecondaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+      textSecondaryFontSize: drawTextContext.secondaryFontSize,
+      textLineHeightRatio: normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio),
+      textLineSpacing: {
+        primary: drawTextContext.primaryLineSpacing,
+        secondary: drawTextContext.secondaryLineSpacing,
+      },
       textRegion: drawTextContext.textRegion,
       textPrimaryPosition: drawTextContext.primaryPosition,
       textSecondaryPosition: drawTextContext.secondaryPosition,
+      textPrimaryLayout: summarizeLayoutForLog(drawTextContext.primaryLayout),
+      textSecondaryLayout: summarizeLayoutForLog(drawTextContext.secondaryLayout),
       layout: layoutResult.debug,
     });
 
@@ -979,11 +1159,20 @@ export async function renderThumbnailPreviewFrame(
         outputSize: { width: safeW, height: safeH },
         thumbnailTimeSec: timeSec,
         thumbnailTextSecondary: options.thumbnailTextSecondary,
-        thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
-        thumbnailFontSize: drawTextContext.thumbnailFontSize,
+        textPrimaryFontName: options.thumbnailTextPrimaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+        textPrimaryFontSize: drawTextContext.primaryFontSize,
+        textSecondaryFontName: options.thumbnailTextSecondaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+        textSecondaryFontSize: drawTextContext.secondaryFontSize,
+        textLineHeightRatio: normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio),
+        textLineSpacing: {
+          primary: drawTextContext.primaryLineSpacing,
+          secondary: drawTextContext.secondaryLineSpacing,
+        },
         textRegion: drawTextContext.textRegion,
         textPrimaryPosition: drawTextContext.primaryPosition,
         textSecondaryPosition: drawTextContext.secondaryPosition,
+        textPrimaryLayout: summarizeLayoutForLog(drawTextContext.primaryLayout),
+        textSecondaryLayout: summarizeLayoutForLog(drawTextContext.secondaryLayout),
       },
     };
   } catch (error) {
@@ -1051,8 +1240,13 @@ export async function applyThumbnailPostProcess(
       text1Preview: thumbTextLog.preview,
       text2Length: thumbText2Log.length,
       text2Preview: thumbText2Log.preview,
-      thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
-      thumbnailFontSize: normalizeThumbnailFontSize(options.thumbnailFontSize),
+      textPrimaryFontName: options.thumbnailTextPrimaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+      textPrimaryFontSize: normalizeThumbnailFontSize(options.thumbnailTextPrimaryFontSize ?? options.thumbnailFontSize),
+      textSecondaryFontName: options.thumbnailTextSecondaryFontName || options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
+      textSecondaryFontSize: normalizeThumbnailFontSize(
+        options.thumbnailTextSecondaryFontSize ?? options.thumbnailFontSize
+      ),
+      textLineHeightRatio: normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio),
       thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition || DEFAULT_THUMBNAIL_TEXT1_POSITION,
       thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition || DEFAULT_THUMBNAIL_TEXT2_POSITION,
     }
@@ -1066,6 +1260,11 @@ export async function applyThumbnailPostProcess(
     thumbnailTextSecondary: options.thumbnailTextSecondary,
     thumbnailFontName: options.thumbnailFontName,
     thumbnailFontSize: options.thumbnailFontSize,
+    thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
     width: outputMeta.metadata.width,

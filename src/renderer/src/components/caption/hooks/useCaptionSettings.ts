@@ -35,8 +35,15 @@ interface LayoutProfile {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale: number;
+  // Legacy font chung (giữ để tương thích dữ liệu cũ)
   thumbnailFontName: string;
   thumbnailFontSize: number;
+  // Font riêng cho từng text
+  thumbnailTextPrimaryFontName: string;
+  thumbnailTextPrimaryFontSize: number;
+  thumbnailTextSecondaryFontName: string;
+  thumbnailTextSecondaryFontSize: number;
+  thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
 }
@@ -55,6 +62,14 @@ export const DEFAULT_STYLE: ASSStyleConfig = {
   alignment: 2,
 };
 
+const DEFAULT_THUMBNAIL_FONT_NAME = 'BrightwallPersonal';
+const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
+const DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO = 1.16;
+const MIN_THUMBNAIL_FONT_SIZE = 24;
+const MAX_THUMBNAIL_FONT_SIZE = 400;
+const MIN_THUMBNAIL_LINE_HEIGHT_RATIO = 0;
+const MAX_THUMBNAIL_LINE_HEIGHT_RATIO = 4;
+
 const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   style: { ...DEFAULT_STYLE },
   renderResolution: 'original',
@@ -68,8 +83,13 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   logoPath: undefined,
   logoPosition: undefined,
   logoScale: 1.0,
-  thumbnailFontName: 'BrightwallPersonal',
-  thumbnailFontSize: 145,
+  thumbnailFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  thumbnailFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  thumbnailTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextSecondaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  thumbnailTextSecondaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
@@ -87,8 +107,13 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   logoPath: undefined,
   logoPosition: undefined,
   logoScale: 1.0,
-  thumbnailFontName: 'BrightwallPersonal',
-  thumbnailFontSize: 145,
+  thumbnailFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  thumbnailFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  thumbnailTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextSecondaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  thumbnailTextSecondaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
@@ -167,12 +192,49 @@ function normalizeProfile(
   if (typeof patch.logoScale === 'number') {
     next.logoScale = patch.logoScale;
   }
-  if (typeof patch.thumbnailFontName === 'string' && patch.thumbnailFontName.trim().length > 0) {
-    next.thumbnailFontName = patch.thumbnailFontName;
+  const legacyFontName = typeof patch.thumbnailFontName === 'string' && patch.thumbnailFontName.trim().length > 0
+    ? patch.thumbnailFontName.trim()
+    : null;
+  const legacyFontSize = typeof patch.thumbnailFontSize === 'number' && Number.isFinite(patch.thumbnailFontSize)
+    ? Math.min(MAX_THUMBNAIL_FONT_SIZE, Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(patch.thumbnailFontSize)))
+    : null;
+  if (legacyFontName) {
+    next.thumbnailFontName = legacyFontName;
+    next.thumbnailTextPrimaryFontName = legacyFontName;
+    next.thumbnailTextSecondaryFontName = legacyFontName;
   }
-  if (typeof patch.thumbnailFontSize === 'number' && Number.isFinite(patch.thumbnailFontSize)) {
-    next.thumbnailFontSize = Math.min(260, Math.max(24, Math.round(patch.thumbnailFontSize)));
+  if (legacyFontSize != null) {
+    next.thumbnailFontSize = legacyFontSize;
+    next.thumbnailTextPrimaryFontSize = legacyFontSize;
+    next.thumbnailTextSecondaryFontSize = legacyFontSize;
   }
+  if (typeof patch.thumbnailTextPrimaryFontName === 'string' && patch.thumbnailTextPrimaryFontName.trim().length > 0) {
+    next.thumbnailTextPrimaryFontName = patch.thumbnailTextPrimaryFontName.trim();
+  }
+  if (typeof patch.thumbnailTextPrimaryFontSize === 'number' && Number.isFinite(patch.thumbnailTextPrimaryFontSize)) {
+    next.thumbnailTextPrimaryFontSize = Math.min(
+      MAX_THUMBNAIL_FONT_SIZE,
+      Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(patch.thumbnailTextPrimaryFontSize))
+    );
+  }
+  if (typeof patch.thumbnailTextSecondaryFontName === 'string' && patch.thumbnailTextSecondaryFontName.trim().length > 0) {
+    next.thumbnailTextSecondaryFontName = patch.thumbnailTextSecondaryFontName.trim();
+  }
+  if (typeof patch.thumbnailTextSecondaryFontSize === 'number' && Number.isFinite(patch.thumbnailTextSecondaryFontSize)) {
+    next.thumbnailTextSecondaryFontSize = Math.min(
+      MAX_THUMBNAIL_FONT_SIZE,
+      Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(patch.thumbnailTextSecondaryFontSize))
+    );
+  }
+  if (typeof patch.thumbnailLineHeightRatio === 'number' && Number.isFinite(patch.thumbnailLineHeightRatio)) {
+    next.thumbnailLineHeightRatio = Math.min(
+      MAX_THUMBNAIL_LINE_HEIGHT_RATIO,
+      Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, patch.thumbnailLineHeightRatio)
+    );
+  }
+  // Legacy fields luôn mirror theo Text1 để giữ tương thích các luồng cũ.
+  next.thumbnailFontName = next.thumbnailTextPrimaryFontName;
+  next.thumbnailFontSize = next.thumbnailTextPrimaryFontSize;
   if (patch.thumbnailTextPrimaryPosition && typeof patch.thumbnailTextPrimaryPosition === 'object') {
     const p = patch.thumbnailTextPrimaryPosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
@@ -296,13 +358,79 @@ export function useCaptionSettings() {
     }));
   }, []);
 
+  const setThumbnailTextPrimaryFontName = useCallback((value: string) => {
+    const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextPrimaryFontName: nextValue,
+      thumbnailFontName: nextValue,
+    }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailTextPrimaryFontSize = useCallback((value: number) => {
+    const normalized = Math.min(
+      MAX_THUMBNAIL_FONT_SIZE,
+      Math.max(MIN_THUMBNAIL_FONT_SIZE, Number.isFinite(value) ? Math.round(value) : DEFAULT_THUMBNAIL_FONT_SIZE)
+    );
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextPrimaryFontSize: normalized,
+      thumbnailFontSize: normalized,
+    }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailTextSecondaryFontName = useCallback((value: string) => {
+    const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextSecondaryFontName: nextValue,
+    }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailTextSecondaryFontSize = useCallback((value: number) => {
+    const normalized = Math.min(
+      MAX_THUMBNAIL_FONT_SIZE,
+      Math.max(MIN_THUMBNAIL_FONT_SIZE, Number.isFinite(value) ? Math.round(value) : DEFAULT_THUMBNAIL_FONT_SIZE)
+    );
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextSecondaryFontSize: normalized,
+    }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailLineHeightRatio = useCallback((value: number) => {
+    const normalized = Math.min(
+      MAX_THUMBNAIL_LINE_HEIGHT_RATIO,
+      Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, Number.isFinite(value) ? value : DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO)
+    );
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailLineHeightRatio: normalized,
+    }));
+  }, [updateActiveProfile]);
+
+  // Legacy setters giữ hành vi font chung cho cả 2 text.
   const setThumbnailFontName = useCallback((value: string) => {
-    updateActiveProfile((current) => ({ ...current, thumbnailFontName: value }));
+    const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailFontName: nextValue,
+      thumbnailTextPrimaryFontName: nextValue,
+      thumbnailTextSecondaryFontName: nextValue,
+    }));
   }, [updateActiveProfile]);
 
   const setThumbnailFontSize = useCallback((value: number) => {
-    const normalized = Math.min(260, Math.max(24, Number.isFinite(value) ? Math.round(value) : 145));
-    updateActiveProfile((current) => ({ ...current, thumbnailFontSize: normalized }));
+    const normalized = Math.min(
+      MAX_THUMBNAIL_FONT_SIZE,
+      Math.max(MIN_THUMBNAIL_FONT_SIZE, Number.isFinite(value) ? Math.round(value) : DEFAULT_THUMBNAIL_FONT_SIZE)
+    );
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailFontSize: normalized,
+      thumbnailTextPrimaryFontSize: normalized,
+      thumbnailTextSecondaryFontSize: normalized,
+    }));
   }, [updateActiveProfile]);
 
   const setLogoPath = useCallback((value: string | undefined) => {
@@ -380,8 +508,13 @@ export function useCaptionSettings() {
       renderAudioSpeed,
       videoVolume,
       audioVolume,
-      thumbnailFontName: activeProfile.thumbnailFontName,
-      thumbnailFontSize: activeProfile.thumbnailFontSize,
+      thumbnailFontName: activeProfile.thumbnailTextPrimaryFontName,
+      thumbnailFontSize: activeProfile.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryFontName: activeProfile.thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
+      thumbnailTextSecondaryFontName: activeProfile.thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: activeProfile.thumbnailTextSecondaryFontSize,
+      thumbnailLineHeightRatio: activeProfile.thumbnailLineHeightRatio,
       thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
@@ -478,6 +611,11 @@ export function useCaptionSettings() {
       logoScale: saved.logoScale,
       thumbnailFontName: saved.thumbnailFontName,
       thumbnailFontSize: saved.thumbnailFontSize,
+      thumbnailTextPrimaryFontName: saved.thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: saved.thumbnailTextPrimaryFontSize,
+      thumbnailTextSecondaryFontName: saved.thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: saved.thumbnailTextSecondaryFontSize,
+      thumbnailLineHeightRatio: saved.thumbnailLineHeightRatio,
       thumbnailTextSecondary: saved.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: saved.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: saved.thumbnailTextSecondaryPosition,
@@ -629,10 +767,21 @@ export function useCaptionSettings() {
     renderAudioSpeed, setRenderAudioSpeed,
     videoVolume, setVideoVolume,
     audioVolume, setAudioVolume,
-    thumbnailFontName: activeProfile.thumbnailFontName,
+    // Legacy font chung = font của Text1 để tương thích ngược.
+    thumbnailFontName: activeProfile.thumbnailTextPrimaryFontName,
     setThumbnailFontName,
-    thumbnailFontSize: activeProfile.thumbnailFontSize,
+    thumbnailFontSize: activeProfile.thumbnailTextPrimaryFontSize,
     setThumbnailFontSize,
+    thumbnailTextPrimaryFontName: activeProfile.thumbnailTextPrimaryFontName,
+    setThumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
+    setThumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: activeProfile.thumbnailTextSecondaryFontName,
+    setThumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: activeProfile.thumbnailTextSecondaryFontSize,
+    setThumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: activeProfile.thumbnailLineHeightRatio,
+    setThumbnailLineHeightRatio,
     thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
     setThumbnailTextSecondary,
     thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,

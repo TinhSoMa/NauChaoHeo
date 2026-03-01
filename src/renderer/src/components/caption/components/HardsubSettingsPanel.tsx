@@ -81,11 +81,11 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
           </select>
         </div>
         <div className={styles.inputGroup}>
-          <span className={styles.label}>Font Thumb</span>
+          <span className={styles.label}>Font Text1</span>
           <select
             className={styles.select}
-            value={settings.thumbnailFontName || 'BrightwallPersonal'}
-            onChange={(e) => settings.setThumbnailFontName(e.target.value)}
+            value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+            onChange={(e) => settings.setThumbnailTextPrimaryFontName?.(e.target.value)}
           >
             {props.availableFonts.map((font) => (
               <option key={`thumb-${font}`} value={font}>
@@ -109,15 +109,69 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
           />
         </div>
         <div className={styles.inputGroup}>
-          <span className={styles.label}>Font Size Thumb</span>
+          <span className={styles.label}>Size Text1</span>
           <Input
             type="number"
             min={24}
-            max={260}
+            max={400}
             step={1}
-            value={settings.thumbnailFontSize ?? 145}
-            onChange={(e) => settings.setThumbnailFontSize?.(Number(e.target.value))}
+            value={settings.thumbnailTextPrimaryFontSize ?? settings.thumbnailFontSize ?? 145}
+            onChange={(e) => settings.setThumbnailTextPrimaryFontSize?.(Number(e.target.value))}
           />
+        </div>
+      </div>
+
+      <div className={styles.grid2} style={{ marginBottom: 12 }}>
+        <div className={styles.inputGroup}>
+          <span className={styles.label}>Font Text2</span>
+          <select
+            className={styles.select}
+            value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+            onChange={(e) => settings.setThumbnailTextSecondaryFontName?.(e.target.value)}
+          >
+            {props.availableFonts.map((font) => (
+              <option key={`thumb2-${font}`} value={font}>
+                {font}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className={styles.inputGroup}>
+          <span className={styles.label}>Size Text2</span>
+          <Input
+            type="number"
+            min={24}
+            max={400}
+            step={1}
+            value={settings.thumbnailTextSecondaryFontSize ?? settings.thumbnailFontSize ?? 145}
+            onChange={(e) => settings.setThumbnailTextSecondaryFontSize?.(Number(e.target.value))}
+          />
+        </div>
+      </div>
+
+      <div className={styles.grid2} style={{ marginBottom: 12 }}>
+        <div className={styles.inputGroup} style={{ gridColumn: '1 / span 2' }}>
+          <span className={styles.label}>Khoảng cách dòng thumbnail (Enter)</span>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input
+              type="range"
+              min={0}
+              max={4}
+              step={0.02}
+              value={settings.thumbnailLineHeightRatio ?? 1.16}
+              onChange={(e) => settings.setThumbnailLineHeightRatio?.(Number(e.target.value))}
+              style={{ width: '100%', cursor: 'pointer' }}
+            />
+            <Input
+              type="number"
+              min={0}
+              max={4}
+              step={0.02}
+              style={{ width: 90 }}
+              value={Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
+              onChange={(e) => settings.setThumbnailLineHeightRatio?.(Number(e.target.value))}
+            />
+          </div>
         </div>
       </div>
 

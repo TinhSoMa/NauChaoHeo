@@ -89,6 +89,11 @@ export function CaptionTranslator() {
     audioVolume: settings.audioVolume,
     thumbnailFontName: settings.thumbnailFontName,
     thumbnailFontSize: settings.thumbnailFontSize,
+    thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
     thumbnailTextSecondary: settings.thumbnailTextSecondary,
     thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
@@ -124,6 +129,11 @@ export function CaptionTranslator() {
     settings.audioVolume,
     settings.thumbnailFontName,
     settings.thumbnailFontSize,
+    settings.thumbnailTextPrimaryFontName,
+    settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextSecondaryFontName,
+    settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailLineHeightRatio,
     settings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
@@ -272,6 +282,11 @@ export function CaptionTranslator() {
                   thumbnailText: text,
                   thumbnailTextSecondary: secondaryText,
                   thumbnailTextSecondarySource: secondarySource,
+                  thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
+                  thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+                  thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
+                  thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+                  thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
                   thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
                   thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
                 },
@@ -301,6 +316,11 @@ export function CaptionTranslator() {
               thumbnailText: hardsubSettings.thumbnailText,
               thumbnailTextSecondary: settings.thumbnailTextSecondary || '',
               thumbnailTextSecondarySource: 'single',
+              thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
+              thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+              thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
+              thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+              thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
               thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
               thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
             },
@@ -326,6 +346,11 @@ export function CaptionTranslator() {
     hardsubSettings.thumbnailTextsSecondaryByOrder,
     hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     settings.thumbnailTextSecondary,
+    settings.thumbnailTextPrimaryFontName,
+    settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextSecondaryFontName,
+    settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailLineHeightRatio,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
   ]);
@@ -871,7 +896,14 @@ export function CaptionTranslator() {
       { key: 'Âm lượng', value: `video ${settings.videoVolume}% | TTS ${settings.audioVolume}%` },
       { key: 'Sub pos', value: subtitlePos },
       { key: 'Logo', value: `${logoPos} | scale ${Math.round((settings.logoScale || 1) * 100)}%` },
-      { key: 'Thumbnail', value: `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s | ${settings.thumbnailFontName} ${settings.thumbnailFontSize ?? 145}px` },
+      {
+        key: 'Thumbnail',
+        value:
+          `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s | ` +
+          `T1 ${settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextPrimaryFontSize ?? settings.thumbnailFontSize ?? 145}px | ` +
+          `T2 ${settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextSecondaryFontSize ?? settings.thumbnailFontSize ?? 145}px | ` +
+          `line ${Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x`,
+      },
       { key: 'Preview', value: `${effectivePreviewMode === 'render' ? 'Render snapshot' : 'Live'} (${previewSourceLabel})` },
     ];
   }, [
@@ -894,6 +926,11 @@ export function CaptionTranslator() {
     settings.thumbnailFrameTimeSec,
     settings.thumbnailFontName,
     settings.thumbnailFontSize,
+    settings.thumbnailTextPrimaryFontName,
+    settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextSecondaryFontName,
+    settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailLineHeightRatio,
     autoVideoSpeed,
     effectivePreviewMode,
     previewSourceLabel,
@@ -1521,6 +1558,11 @@ export function CaptionTranslator() {
               onThumbnailFrameTimeSecChange={settings.setThumbnailFrameTimeSec}
               thumbnailFontName={settings.thumbnailFontName}
               thumbnailFontSize={settings.thumbnailFontSize}
+              thumbnailTextPrimaryFontName={settings.thumbnailTextPrimaryFontName}
+              thumbnailTextPrimaryFontSize={settings.thumbnailTextPrimaryFontSize}
+              thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
+              thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
+              thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
               thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
               thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
               onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}

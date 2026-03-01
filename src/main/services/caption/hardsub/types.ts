@@ -81,6 +81,11 @@ export interface InlineThumbnailVideoFilterBuildInput {
   thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
 }
@@ -92,6 +97,8 @@ export interface InlineThumbnailVideoFilterBuildOutput {
   debug: Record<string, unknown>;
   thumbnailFontPath: string | null;
   thumbnailFontSize: number;
+  secondaryThumbnailFontPath: string | null;
+  secondaryThumbnailFontSize: number;
 }
 
 export interface InlineThumbnailSilentAudioBuildInput {

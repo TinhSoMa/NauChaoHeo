@@ -37,8 +37,14 @@ interface UseThumbnailPreviewStateOptions {
   thumbnailTextSecondary: string;
   thumbnailFrameTimeSec: number | null;
   onThumbnailFrameTimeSecChange: (value: number | null) => void;
+  // Legacy font chung (fallback)
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;
@@ -105,6 +111,11 @@ export function useThumbnailPreviewState(
     onThumbnailFrameTimeSecChange,
     thumbnailFontName,
     thumbnailFontSize,
+    thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     onThumbnailTextPrimaryPositionChange,
@@ -421,6 +432,11 @@ export function useThumbnailPreviewState(
       thumbnailTextSecondary,
       thumbnailFontName,
       thumbnailFontSize,
+      thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize,
+      thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize,
+      thumbnailLineHeightRatio,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
     });
@@ -430,6 +446,11 @@ export function useThumbnailPreviewState(
     renderResolution,
     thumbnailFontName,
     thumbnailFontSize,
+    thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio,
     thumbnailText,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
@@ -479,6 +500,11 @@ export function useThumbnailPreviewState(
           thumbnailTextSecondary,
           thumbnailFontName,
           thumbnailFontSize,
+          thumbnailTextPrimaryFontName,
+          thumbnailTextPrimaryFontSize,
+          thumbnailTextSecondaryFontName,
+          thumbnailTextSecondaryFontSize,
+          thumbnailLineHeightRatio,
           thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition,
         });
@@ -543,6 +569,11 @@ export function useThumbnailPreviewState(
     renderResolution,
     thumbnailFontName,
     thumbnailFontSize,
+    thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio,
     thumbnailText,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondary,

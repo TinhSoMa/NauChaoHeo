@@ -172,6 +172,11 @@ interface UseCaptionProcessingProps {
     thumbnailTextSecondary?: string;
     thumbnailFontName?: string;
     thumbnailFontSize?: number;
+    thumbnailTextPrimaryFontName?: string;
+    thumbnailTextPrimaryFontSize?: number;
+    thumbnailTextSecondaryFontName?: string;
+    thumbnailTextSecondaryFontSize?: number;
+    thumbnailLineHeightRatio?: number;
     thumbnailTextPrimaryPosition?: { x: number; y: number };
     thumbnailTextSecondaryPosition?: { x: number; y: number };
     thumbnailTextsByOrder?: string[];
@@ -465,6 +470,11 @@ export function useCaptionProcessing({
           : (cfg.thumbnailTextSecondary || '').trim(),
         thumbnailFontName: cfg.thumbnailFontName,
         thumbnailFontSize: cfg.thumbnailFontSize,
+        thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
+        thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+        thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
+        thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+        thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
         thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
         thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
         portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
@@ -504,6 +514,11 @@ export function useCaptionProcessing({
       audioVolume: cfg.audioVolume,
       thumbnailFontName: cfg.thumbnailFontName,
       thumbnailFontSize: cfg.thumbnailFontSize,
+      thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+      thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+      thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
       thumbnailTextSecondary: cfg.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
@@ -1280,7 +1295,11 @@ export function useCaptionProcessing({
         setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
 
         console.log(
-          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, font=${cfg.thumbnailFontName || 'BrightwallPersonal'}, fontSize=${cfg.thumbnailFontSize ?? 145}, text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
+          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, ` +
+          `font1=${cfg.thumbnailTextPrimaryFontName || cfg.thumbnailFontName || 'BrightwallPersonal'} size1=${cfg.thumbnailTextPrimaryFontSize ?? cfg.thumbnailFontSize ?? 145}, ` +
+          `font2=${cfg.thumbnailTextSecondaryFontName || cfg.thumbnailFontName || 'BrightwallPersonal'} size2=${cfg.thumbnailTextSecondaryFontSize ?? cfg.thumbnailFontSize ?? 145}, ` +
+          `lineHeight=${Number(cfg.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x, ` +
+          `text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
         );
 
         // @ts-ignore
@@ -1321,6 +1340,11 @@ export function useCaptionProcessing({
           thumbnailTextSecondary: thumbnailTextSecondaryForRender,
           thumbnailFontName: cfg.thumbnailFontName,
           thumbnailFontSize: cfg.thumbnailFontSize,
+          thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
+          thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+          thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
+          thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+          thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
           thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
           step7SubtitleSource: 'session_translated_entries',
