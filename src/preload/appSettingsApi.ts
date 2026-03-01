@@ -3,6 +3,7 @@
  */
 
 import { ipcRenderer } from 'electron';
+import type { ASSStyleConfig } from '../shared/types/caption';
 
 // IPC Channels (phải khớp với appSettingsHandlers.ts)
 const APP_SETTINGS_IPC_CHANNELS = {
@@ -17,6 +18,24 @@ const APP_SETTINGS_IPC_CHANNELS = {
 } as const;
 
 // Types
+export interface CaptionTypographyLayoutDefaults {
+  style: ASSStyleConfig;
+  subtitlePosition: { x: number; y: number } | null;
+  thumbnailTextPrimaryFontName: string;
+  thumbnailTextPrimaryFontSize: number;
+  thumbnailTextSecondaryFontName: string;
+  thumbnailTextSecondaryFontSize: number;
+  thumbnailLineHeightRatio: number;
+  thumbnailTextPrimaryPosition: { x: number; y: number };
+  thumbnailTextSecondaryPosition: { x: number; y: number };
+}
+
+export interface CaptionTypographyDefaults {
+  schemaVersion: 1;
+  landscape: CaptionTypographyLayoutDefaults;
+  portrait: CaptionTypographyLayoutDefaults;
+}
+
 export interface AppSettings {
   projectsBasePath: string | null;
   theme: 'light' | 'dark' | 'system';
@@ -25,8 +44,14 @@ export interface AppSettings {
   lastActiveProjectId: string | null;
   useProxy: boolean;
   createChatOnWeb: boolean;
+  useStoredContextOnFirstSend: boolean;
   translationPromptId: string | null;
   summaryPromptId: string | null;
+  captionPromptId: string | null;
+  captionLogoPath: string | null;
+  captionLogoPosition: { x: number; y: number } | null;
+  captionLogoScale: number;
+  captionTypographyDefaults: CaptionTypographyDefaults | null;
 }
 
 interface IpcApiResponse<T = unknown> {

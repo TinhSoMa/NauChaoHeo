@@ -6,6 +6,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { ASSStyleConfig } from '../../shared/types/caption';
 
 // ============================================
 // TYPES
@@ -27,6 +28,165 @@ export interface AppSettings {
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;
+  captionTypographyDefaults: CaptionTypographyDefaults | null;
+}
+
+export interface CaptionTypographyLayoutDefaults {
+  style: ASSStyleConfig;
+  subtitlePosition: { x: number; y: number } | null;
+  thumbnailTextPrimaryFontName: string;
+  thumbnailTextPrimaryFontSize: number;
+  thumbnailTextSecondaryFontName: string;
+  thumbnailTextSecondaryFontSize: number;
+  thumbnailLineHeightRatio: number;
+  thumbnailTextPrimaryPosition: { x: number; y: number };
+  thumbnailTextSecondaryPosition: { x: number; y: number };
+}
+
+export interface CaptionTypographyDefaults {
+  schemaVersion: 1;
+  landscape: CaptionTypographyLayoutDefaults;
+  portrait: CaptionTypographyLayoutDefaults;
+}
+
+const DEFAULT_TYPOGRAPHY_STYLE: ASSStyleConfig = {
+  fontName: 'ZYVNA Fairy',
+  fontSize: 62,
+  fontColor: '#FFFF00',
+  shadow: 4,
+  marginV: 50,
+  alignment: 2,
+};
+
+const DEFAULT_TYPOGRAPHY_LAYOUT: CaptionTypographyLayoutDefaults = {
+  style: { ...DEFAULT_TYPOGRAPHY_STYLE },
+  subtitlePosition: null,
+  thumbnailTextPrimaryFontName: 'BrightwallPersonal',
+  thumbnailTextPrimaryFontSize: 145,
+  thumbnailTextSecondaryFontName: 'BrightwallPersonal',
+  thumbnailTextSecondaryFontSize: 145,
+  thumbnailLineHeightRatio: 1.16,
+  thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
+  thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
+};
+
+function cloneTypographyLayout(layout: CaptionTypographyLayoutDefaults): CaptionTypographyLayoutDefaults {
+  return {
+    style: { ...layout.style },
+    subtitlePosition: layout.subtitlePosition ? { ...layout.subtitlePosition } : null,
+    thumbnailTextPrimaryFontName: layout.thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: layout.thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: layout.thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: layout.thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: layout.thumbnailLineHeightRatio,
+    thumbnailTextPrimaryPosition: { ...layout.thumbnailTextPrimaryPosition },
+    thumbnailTextSecondaryPosition: { ...layout.thumbnailTextSecondaryPosition },
+  };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizePoint(
+  value: unknown,
+  fallback: { x: number; y: number },
+  options: { min?: number; max?: number } = {}
+): { x: number; y: number } {
+  if (!value || typeof value !== 'object') {
+    return { ...fallback };
+  }
+  const min = isFiniteNumber(options.min) ? options.min : Number.NEGATIVE_INFINITY;
+  const max = isFiniteNumber(options.max) ? options.max : Number.POSITIVE_INFINITY;
+  const point = value as { x?: unknown; y?: unknown };
+  const x = isFiniteNumber(point.x) ? clamp(point.x, min, max) : fallback.x;
+  const y = isFiniteNumber(point.y) ? clamp(point.y, min, max) : fallback.y;
+  return { x, y };
+}
+
+function normalizeStyle(value: unknown, fallback: ASSStyleConfig): ASSStyleConfig {
+  const style = value && typeof value === 'object' ? (value as Partial<ASSStyleConfig>) : {};
+  const fontName =
+    typeof style.fontName === 'string' && style.fontName.trim().length > 0 ? style.fontName.trim() : fallback.fontName;
+  const fontColor =
+    typeof style.fontColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(style.fontColor)
+      ? style.fontColor
+      : fallback.fontColor;
+  const fontSize = isFiniteNumber(style.fontSize) ? clamp(Math.round(style.fontSize), 1, 1000) : fallback.fontSize;
+  const shadow = isFiniteNumber(style.shadow) ? clamp(style.shadow, 0, 20) : fallback.shadow;
+  const marginV = isFiniteNumber(style.marginV) ? style.marginV : fallback.marginV;
+  const alignment = style.alignment === 2 || style.alignment === 5 || style.alignment === 8 ? style.alignment : fallback.alignment;
+  return {
+    fontName,
+    fontColor,
+    fontSize,
+    shadow,
+    marginV,
+    alignment,
+  };
+}
+
+function normalizeTypographyLayout(
+  value: unknown,
+  fallback: CaptionTypographyLayoutDefaults
+): CaptionTypographyLayoutDefaults {
+  const layout = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const next = cloneTypographyLayout(fallback);
+
+  next.style = normalizeStyle(layout.style, fallback.style);
+  if (layout.subtitlePosition === null) {
+    next.subtitlePosition = null;
+  } else if (layout.subtitlePosition && typeof layout.subtitlePosition === 'object') {
+    next.subtitlePosition = normalizePoint(layout.subtitlePosition, fallback.subtitlePosition ?? { x: 0.5, y: 0.9 });
+  }
+
+  if (typeof layout.thumbnailTextPrimaryFontName === 'string' && layout.thumbnailTextPrimaryFontName.trim().length > 0) {
+    next.thumbnailTextPrimaryFontName = layout.thumbnailTextPrimaryFontName.trim();
+  }
+  if (isFiniteNumber(layout.thumbnailTextPrimaryFontSize)) {
+    next.thumbnailTextPrimaryFontSize = clamp(Math.round(layout.thumbnailTextPrimaryFontSize), 24, 400);
+  }
+  if (typeof layout.thumbnailTextSecondaryFontName === 'string' && layout.thumbnailTextSecondaryFontName.trim().length > 0) {
+    next.thumbnailTextSecondaryFontName = layout.thumbnailTextSecondaryFontName.trim();
+  }
+  if (isFiniteNumber(layout.thumbnailTextSecondaryFontSize)) {
+    next.thumbnailTextSecondaryFontSize = clamp(Math.round(layout.thumbnailTextSecondaryFontSize), 24, 400);
+  }
+  if (isFiniteNumber(layout.thumbnailLineHeightRatio)) {
+    next.thumbnailLineHeightRatio = clamp(layout.thumbnailLineHeightRatio, 0, 4);
+  }
+
+  next.thumbnailTextPrimaryPosition = normalizePoint(layout.thumbnailTextPrimaryPosition, fallback.thumbnailTextPrimaryPosition, {
+    min: 0,
+    max: 1,
+  });
+  next.thumbnailTextSecondaryPosition = normalizePoint(
+    layout.thumbnailTextSecondaryPosition,
+    fallback.thumbnailTextSecondaryPosition,
+    { min: 0, max: 1 }
+  );
+
+  return next;
+}
+
+function normalizeCaptionTypographyDefaults(value: unknown): CaptionTypographyDefaults | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const defaults = value as Record<string, unknown>;
+  if (defaults.schemaVersion !== 1) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    landscape: normalizeTypographyLayout(defaults.landscape, DEFAULT_TYPOGRAPHY_LAYOUT),
+    portrait: normalizeTypographyLayout(defaults.portrait, DEFAULT_TYPOGRAPHY_LAYOUT),
+  };
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -44,6 +204,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   captionLogoPath: null,
   captionLogoPosition: null,
   captionLogoScale: 1.0,
+  captionTypographyDefaults: null,
 };
 
 // ============================================
@@ -76,7 +237,11 @@ class AppSettingsServiceClass {
       if (fs.existsSync(this.settingsPath)) {
         const content = fs.readFileSync(this.settingsPath, 'utf-8');
         const loaded = JSON.parse(content);
-        this.settings = { ...DEFAULT_SETTINGS, ...loaded };
+        this.settings = {
+          ...DEFAULT_SETTINGS,
+          ...loaded,
+          captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
+        };
         console.log('[AppSettings] Loaded settings successfully');
       } else {
         console.log('[AppSettings] No settings file found, using defaults');
@@ -120,7 +285,11 @@ class AppSettingsServiceClass {
    * Update settings (partial update)
    */
   update(partial: Partial<AppSettings>): AppSettings {
-    this.settings = { ...this.settings, ...partial };
+    const nextPartial: Partial<AppSettings> = { ...partial };
+    if (Object.prototype.hasOwnProperty.call(partial, 'captionTypographyDefaults')) {
+      nextPartial.captionTypographyDefaults = normalizeCaptionTypographyDefaults(partial.captionTypographyDefaults);
+    }
+    this.settings = { ...this.settings, ...nextPartial };
     this.save();
     return this.getAll();
   }

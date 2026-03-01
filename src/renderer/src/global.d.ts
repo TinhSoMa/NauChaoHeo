@@ -376,6 +376,25 @@ interface AppSettings {
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;
+  captionTypographyDefaults: CaptionTypographyDefaults | null;
+}
+
+interface CaptionTypographyLayoutDefaults {
+  style: ASSStyleConfig;
+  subtitlePosition: { x: number; y: number } | null;
+  thumbnailTextPrimaryFontName: string;
+  thumbnailTextPrimaryFontSize: number;
+  thumbnailTextSecondaryFontName: string;
+  thumbnailTextSecondaryFontSize: number;
+  thumbnailLineHeightRatio: number;
+  thumbnailTextPrimaryPosition: { x: number; y: number };
+  thumbnailTextSecondaryPosition: { x: number; y: number };
+}
+
+interface CaptionTypographyDefaults {
+  schemaVersion: 1;
+  landscape: CaptionTypographyLayoutDefaults;
+  portrait: CaptionTypographyLayoutDefaults;
 }
 
 /**

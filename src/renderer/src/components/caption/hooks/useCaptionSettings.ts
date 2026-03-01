@@ -53,6 +53,24 @@ interface LayoutProfilesState {
   portrait: LayoutProfile;
 }
 
+interface CaptionTypographyLayoutDefaults {
+  style: ASSStyleConfig;
+  subtitlePosition: { x: number; y: number } | null;
+  thumbnailTextPrimaryFontName: string;
+  thumbnailTextPrimaryFontSize: number;
+  thumbnailTextSecondaryFontName: string;
+  thumbnailTextSecondaryFontSize: number;
+  thumbnailLineHeightRatio: number;
+  thumbnailTextPrimaryPosition: { x: number; y: number };
+  thumbnailTextSecondaryPosition: { x: number; y: number };
+}
+
+interface CaptionTypographyDefaults {
+  schemaVersion: 1;
+  landscape: CaptionTypographyLayoutDefaults;
+  portrait: CaptionTypographyLayoutDefaults;
+}
+
 export const DEFAULT_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
   fontSize: 62,
@@ -292,6 +310,63 @@ function resolveLayoutKey(renderMode: RenderMode): LayoutKey {
   return renderMode === 'hardsub_portrait_9_16' ? 'portrait' : 'landscape';
 }
 
+function createDefaultLayoutProfiles(): LayoutProfilesState {
+  return {
+    landscape: cloneProfile(DEFAULT_LANDSCAPE_PROFILE),
+    portrait: cloneProfile(DEFAULT_PORTRAIT_PROFILE),
+  };
+}
+
+function toTypographyLayoutDefaults(profile: LayoutProfile): CaptionTypographyLayoutDefaults {
+  return {
+    style: { ...profile.style },
+    subtitlePosition: profile.subtitlePosition ? { ...profile.subtitlePosition } : null,
+    thumbnailTextPrimaryFontName: profile.thumbnailTextPrimaryFontName,
+    thumbnailTextPrimaryFontSize: profile.thumbnailTextPrimaryFontSize,
+    thumbnailTextSecondaryFontName: profile.thumbnailTextSecondaryFontName,
+    thumbnailTextSecondaryFontSize: profile.thumbnailTextSecondaryFontSize,
+    thumbnailLineHeightRatio: profile.thumbnailLineHeightRatio,
+    thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
+    thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
+  };
+}
+
+function buildTypographyDefaults(layoutProfiles: LayoutProfilesState): CaptionTypographyDefaults {
+  return {
+    schemaVersion: 1,
+    landscape: toTypographyLayoutDefaults(layoutProfiles.landscape),
+    portrait: toTypographyLayoutDefaults(layoutProfiles.portrait),
+  };
+}
+
+function typographyDefaultsFingerprint(value: CaptionTypographyDefaults): string {
+  return JSON.stringify(value);
+}
+
+function buildGlobalFallbackProfiles(rawDefaults: unknown): LayoutProfilesState {
+  const defaults = createDefaultLayoutProfiles();
+  if (!rawDefaults || typeof rawDefaults !== 'object') {
+    return defaults;
+  }
+  const typed = rawDefaults as Partial<CaptionTypographyDefaults>;
+  if (typed.schemaVersion !== 1) {
+    return defaults;
+  }
+
+  return {
+    landscape: normalizeProfile(
+      typed.landscape as unknown as Record<string, unknown> | undefined,
+      defaults.landscape,
+      'landscape'
+    ),
+    portrait: normalizeProfile(
+      typed.portrait as unknown as Record<string, unknown> | undefined,
+      defaults.portrait,
+      'portrait'
+    ),
+  };
+}
+
 export function useCaptionSettings() {
   const { projectId, paths } = useProjectContext();
 
@@ -316,10 +391,7 @@ export function useCaptionSettings() {
   const [videoVolume, setVideoVolume] = useState<number>(100);
   const [audioVolume, setAudioVolume] = useState<number>(100);
 
-  const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>({
-    landscape: cloneProfile(DEFAULT_LANDSCAPE_PROFILE),
-    portrait: cloneProfile(DEFAULT_PORTRAIT_PROFILE),
-  });
+  const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>(createDefaultLayoutProfiles);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
   const [translateMethod, setTranslateMethod] = useState<'api' | 'impit'>('api');
@@ -329,16 +401,30 @@ export function useCaptionSettings() {
   const [settingsUpdatedAt, setSettingsUpdatedAt] = useState<string>(nowIso());
 
   const loadedRef = useRef(false);
+  const isHydratingRef = useRef(false);
+  const typographyDefaultsDirtyRef = useRef(false);
+  const [typographyDefaultsDirtyTick, setTypographyDefaultsDirtyTick] = useState(0);
+  const lastSavedGlobalTypographyFingerprintRef = useRef('');
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const revisionRef = useRef(0);
 
   useEffect(() => {
     saveQueueRef.current = Promise.resolve();
     revisionRef.current = 0;
+    typographyDefaultsDirtyRef.current = false;
+    setTypographyDefaultsDirtyTick(0);
   }, [projectId]);
 
   const activeLayoutKey = resolveLayoutKey(renderMode);
   const activeProfile = layoutProfiles[activeLayoutKey];
+
+  const markTypographyDefaultsDirty = useCallback(() => {
+    if (isHydratingRef.current) {
+      return;
+    }
+    typographyDefaultsDirtyRef.current = true;
+    setTypographyDefaultsDirtyTick((prev) => prev + 1);
+  }, []);
 
   const updateActiveProfile = useCallback(
     (updater: (current: LayoutProfile) => LayoutProfile) => {
@@ -352,6 +438,7 @@ export function useCaptionSettings() {
 
   const setStyle = useCallback(
     (value: ASSStyleConfig | ((prev: ASSStyleConfig) => ASSStyleConfig)) => {
+      markTypographyDefaultsDirty();
       updateActiveProfile((current) => {
         const nextStyle = typeof value === 'function'
           ? (value as (prev: ASSStyleConfig) => ASSStyleConfig)(current.style)
@@ -359,7 +446,7 @@ export function useCaptionSettings() {
         return { ...current, style: normalizeAssStyle({ ...nextStyle }, current.style) };
       });
     },
-    [updateActiveProfile]
+    [markTypographyDefaultsDirty, updateActiveProfile]
   );
 
   const setRenderResolution = useCallback((value: RenderResolution) => {
@@ -392,78 +479,85 @@ export function useCaptionSettings() {
 
   const setThumbnailTextPrimaryFontName = useCallback((value: string) => {
     const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailTextPrimaryFontName: nextValue,
       thumbnailFontName: nextValue,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailTextPrimaryFontSize = useCallback((value: number) => {
     const normalized = Math.min(
       MAX_THUMBNAIL_FONT_SIZE,
       Math.max(MIN_THUMBNAIL_FONT_SIZE, Number.isFinite(value) ? Math.round(value) : DEFAULT_THUMBNAIL_FONT_SIZE)
     );
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailTextPrimaryFontSize: normalized,
       thumbnailFontSize: normalized,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailTextSecondaryFontName = useCallback((value: string) => {
     const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailTextSecondaryFontName: nextValue,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailTextSecondaryFontSize = useCallback((value: number) => {
     const normalized = Math.min(
       MAX_THUMBNAIL_FONT_SIZE,
       Math.max(MIN_THUMBNAIL_FONT_SIZE, Number.isFinite(value) ? Math.round(value) : DEFAULT_THUMBNAIL_FONT_SIZE)
     );
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailTextSecondaryFontSize: normalized,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailLineHeightRatio = useCallback((value: number) => {
     const normalized = Math.min(
       MAX_THUMBNAIL_LINE_HEIGHT_RATIO,
       Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, Number.isFinite(value) ? value : DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO)
     );
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailLineHeightRatio: normalized,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   // Legacy setters giữ hành vi font chung cho cả 2 text.
   const setThumbnailFontName = useCallback((value: string) => {
     const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailFontName: nextValue,
       thumbnailTextPrimaryFontName: nextValue,
       thumbnailTextSecondaryFontName: nextValue,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailFontSize = useCallback((value: number) => {
     const normalized = Math.min(
       MAX_THUMBNAIL_FONT_SIZE,
       Math.max(MIN_THUMBNAIL_FONT_SIZE, Number.isFinite(value) ? Math.round(value) : DEFAULT_THUMBNAIL_FONT_SIZE)
     );
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailFontSize: normalized,
       thumbnailTextPrimaryFontSize: normalized,
       thumbnailTextSecondaryFontSize: normalized,
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setLogoPath = useCallback((value: string | undefined) => {
     updateActiveProfile((current) => ({ ...current, logoPath: value }));
@@ -478,8 +572,9 @@ export function useCaptionSettings() {
   }, [updateActiveProfile]);
 
   const setSubtitlePosition = useCallback((value: { x: number; y: number } | null) => {
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({ ...current, subtitlePosition: value ? { ...value } : null }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailFrameTimeSec = useCallback((value: number | null) => {
     updateActiveProfile((current) => ({ ...current, thumbnailFrameTimeSec: value }));
@@ -495,6 +590,7 @@ export function useCaptionSettings() {
   }, [updateActiveProfile]);
 
   const setThumbnailTextPrimaryPosition = useCallback((value: { x: number; y: number }) => {
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailTextPrimaryPosition: {
@@ -502,9 +598,10 @@ export function useCaptionSettings() {
         y: Math.min(1, Math.max(0, Number.isFinite(value.y) ? value.y : current.thumbnailTextPrimaryPosition.y)),
       },
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailTextSecondaryPosition = useCallback((value: { x: number; y: number }) => {
+    markTypographyDefaultsDirty();
     updateActiveProfile((current) => ({
       ...current,
       thumbnailTextSecondaryPosition: {
@@ -512,7 +609,7 @@ export function useCaptionSettings() {
         y: Math.min(1, Math.max(0, Number.isFinite(value.y) ? value.y : current.thumbnailTextSecondaryPosition.y)),
       },
     }));
-  }, [updateActiveProfile]);
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const settingsValues = useMemo(
     () => ({
@@ -588,7 +685,8 @@ export function useCaptionSettings() {
     ]
   );
 
-  const applyLoadedSettings = useCallback((saved: any) => {
+  const applyLoadedSettings = useCallback((saved: any, fallbackProfiles?: LayoutProfilesState) => {
+    const fallback = fallbackProfiles ?? createDefaultLayoutProfiles();
     if (saved.inputType) setInputType(saved.inputType);
     if (saved.geminiModel) setGeminiModel(saved.geminiModel);
     if (saved.translateMethod) setTranslateMethod(saved.translateMethod as 'api' | 'impit');
@@ -617,12 +715,12 @@ export function useCaptionSettings() {
       setLayoutProfiles({
         landscape: normalizeProfile(
           loadedProfiles.landscape as Record<string, unknown> | undefined,
-          DEFAULT_LANDSCAPE_PROFILE,
+          fallback.landscape,
           'landscape'
         ),
         portrait: normalizeProfile(
           loadedProfiles.portrait as Record<string, unknown> | undefined,
-          DEFAULT_PORTRAIT_PROFILE,
+          fallback.portrait,
           'portrait'
         ),
       });
@@ -653,8 +751,8 @@ export function useCaptionSettings() {
       thumbnailTextSecondaryPosition: saved.thumbnailTextSecondaryPosition,
     };
 
-    const mergedLegacyLandscape = normalizeProfile(legacyPatch, DEFAULT_LANDSCAPE_PROFILE, 'landscape');
-    const mergedLegacyPortrait = normalizeProfile(legacyPatch, DEFAULT_PORTRAIT_PROFILE, 'portrait');
+    const mergedLegacyLandscape = normalizeProfile(legacyPatch, fallback.landscape, 'landscape');
+    const mergedLegacyPortrait = normalizeProfile(legacyPatch, fallback.portrait, 'portrait');
     setLayoutProfiles({
       landscape: mergedLegacyLandscape,
       portrait: mergedLegacyPortrait,
@@ -664,19 +762,31 @@ export function useCaptionSettings() {
   useEffect(() => {
     if (!projectId || !paths) {
       loadedRef.current = false;
+      isHydratingRef.current = false;
       return;
     }
     loadedRef.current = false;
+    isHydratingRef.current = true;
+    typographyDefaultsDirtyRef.current = false;
     let cancelled = false;
 
     const load = async () => {
       try {
-        const res = await window.electronAPI.project.readFeatureFile({
-          projectId,
-          feature: 'caption',
-          fileName: PROJECT_SETTINGS_FILE,
-        });
-        if (!res?.success || !res.data) {
+        const [appSettingsRes, projectSettingsRes] = await Promise.all([
+          window.electronAPI.appSettings.getAll(),
+          window.electronAPI.project.readFeatureFile({
+            projectId,
+            feature: 'caption',
+            fileName: PROJECT_SETTINGS_FILE,
+          }),
+        ]);
+
+        const globalFallbackProfiles = buildGlobalFallbackProfiles(appSettingsRes?.data?.captionTypographyDefaults);
+        const normalizedGlobalDefaults = buildTypographyDefaults(globalFallbackProfiles);
+        lastSavedGlobalTypographyFingerprintRef.current = typographyDefaultsFingerprint(normalizedGlobalDefaults);
+
+        if (!projectSettingsRes?.success || !projectSettingsRes.data) {
+          setLayoutProfiles(globalFallbackProfiles);
           revisionRef.current = 0;
           if (!cancelled) {
             setSettingsRevision(0);
@@ -685,9 +795,9 @@ export function useCaptionSettings() {
           return;
         }
 
-        const parsed = JSON.parse(res.data);
+        const parsed = JSON.parse(projectSettingsRes.data);
         if (parsed?.schemaVersion === 1 && parsed?.settings && typeof parsed.settings === 'object') {
-          applyLoadedSettings(parsed.settings);
+          applyLoadedSettings(parsed.settings, globalFallbackProfiles);
           revisionRef.current = typeof parsed.settingsRevision === 'number' ? parsed.settingsRevision : 0;
           if (!cancelled) {
             setSettingsRevision(revisionRef.current);
@@ -696,7 +806,7 @@ export function useCaptionSettings() {
           return;
         }
 
-        applyLoadedSettings(parsed || {});
+        applyLoadedSettings(parsed || {}, globalFallbackProfiles);
         revisionRef.current = 1;
         if (!cancelled) {
           setSettingsRevision(1);
@@ -706,6 +816,7 @@ export function useCaptionSettings() {
         console.error('[CaptionSettings] Lỗi load caption-settings.json:', error);
       } finally {
         if (!cancelled) {
+          isHydratingRef.current = false;
           loadedRef.current = true;
         }
       }
@@ -760,6 +871,38 @@ export function useCaptionSettings() {
       window.clearTimeout(timer);
     };
   }, [projectId, paths, settingsValues, saveSettings]);
+
+  useEffect(() => {
+    if (!projectId || !paths || !loadedRef.current || isHydratingRef.current) {
+      return;
+    }
+    if (!typographyDefaultsDirtyRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const snapshot = buildTypographyDefaults(layoutProfiles);
+      const nextFingerprint = typographyDefaultsFingerprint(snapshot);
+      if (nextFingerprint === lastSavedGlobalTypographyFingerprintRef.current) {
+        typographyDefaultsDirtyRef.current = false;
+        return;
+      }
+      window.electronAPI.appSettings.update({ captionTypographyDefaults: snapshot }).then((res) => {
+        if (!res?.success) {
+          console.error('[CaptionSettings] Lỗi lưu captionTypographyDefaults vào appSettings:', res?.error);
+          return;
+        }
+        lastSavedGlobalTypographyFingerprintRef.current = nextFingerprint;
+        typographyDefaultsDirtyRef.current = false;
+      }).catch((error) => {
+        console.error('[CaptionSettings] Lỗi lưu captionTypographyDefaults vào AppData:', error);
+      });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [projectId, paths, layoutProfiles, typographyDefaultsDirtyTick]);
 
   return {
     inputType, setInputType,
