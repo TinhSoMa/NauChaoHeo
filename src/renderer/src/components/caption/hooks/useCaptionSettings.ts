@@ -31,11 +31,14 @@ interface LayoutProfile {
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
   thumbnailDurationSec: number;
+  thumbnailTextSecondary: string;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale: number;
   thumbnailFontName: string;
   thumbnailFontSize: number;
+  thumbnailTextPrimaryPosition: { x: number; y: number };
+  thumbnailTextSecondaryPosition: { x: number; y: number };
 }
 
 interface LayoutProfilesState {
@@ -61,11 +64,14 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   thumbnailDurationSec: 0.5,
+  thumbnailTextSecondary: '',
   logoPath: undefined,
   logoPosition: undefined,
   logoScale: 1.0,
   thumbnailFontName: 'BrightwallPersonal',
   thumbnailFontSize: 145,
+  thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
+  thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
 
 const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
@@ -77,11 +83,14 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   thumbnailDurationSec: 0.5,
+  thumbnailTextSecondary: '',
   logoPath: undefined,
   logoPosition: undefined,
   logoScale: 1.0,
   thumbnailFontName: 'BrightwallPersonal',
   thumbnailFontSize: 145,
+  thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
+  thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
 
 function cloneProfile(profile: LayoutProfile): LayoutProfile {
@@ -90,6 +99,8 @@ function cloneProfile(profile: LayoutProfile): LayoutProfile {
     style: { ...profile.style },
     subtitlePosition: profile.subtitlePosition ? { ...profile.subtitlePosition } : null,
     logoPosition: profile.logoPosition ? { ...profile.logoPosition } : undefined,
+    thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
+    thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
   };
 }
 
@@ -137,6 +148,9 @@ function normalizeProfile(
   if (typeof patch.thumbnailDurationSec === 'number' && Number.isFinite(patch.thumbnailDurationSec)) {
     next.thumbnailDurationSec = Math.min(10, Math.max(0.1, patch.thumbnailDurationSec));
   }
+  if (typeof patch.thumbnailTextSecondary === 'string') {
+    next.thumbnailTextSecondary = patch.thumbnailTextSecondary;
+  }
   if (typeof patch.logoPath === 'string' && patch.logoPath.trim().length > 0) {
     next.logoPath = patch.logoPath;
   } else if (patch.logoPath === null || patch.logoPath === undefined) {
@@ -158,6 +172,24 @@ function normalizeProfile(
   }
   if (typeof patch.thumbnailFontSize === 'number' && Number.isFinite(patch.thumbnailFontSize)) {
     next.thumbnailFontSize = Math.min(260, Math.max(24, Math.round(patch.thumbnailFontSize)));
+  }
+  if (patch.thumbnailTextPrimaryPosition && typeof patch.thumbnailTextPrimaryPosition === 'object') {
+    const p = patch.thumbnailTextPrimaryPosition as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      next.thumbnailTextPrimaryPosition = {
+        x: Math.min(1, Math.max(0, p.x)),
+        y: Math.min(1, Math.max(0, p.y)),
+      };
+    }
+  }
+  if (patch.thumbnailTextSecondaryPosition && typeof patch.thumbnailTextSecondaryPosition === 'object') {
+    const p = patch.thumbnailTextSecondaryPosition as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      next.thumbnailTextSecondaryPosition = {
+        x: Math.min(1, Math.max(0, p.x)),
+        y: Math.min(1, Math.max(0, p.y)),
+      };
+    }
   }
   return next;
 }
@@ -298,6 +330,30 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, thumbnailDurationSec: normalized }));
   }, [updateActiveProfile]);
 
+  const setThumbnailTextSecondary = useCallback((value: string) => {
+    updateActiveProfile((current) => ({ ...current, thumbnailTextSecondary: value }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailTextPrimaryPosition = useCallback((value: { x: number; y: number }) => {
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextPrimaryPosition: {
+        x: Math.min(1, Math.max(0, Number.isFinite(value.x) ? value.x : current.thumbnailTextPrimaryPosition.x)),
+        y: Math.min(1, Math.max(0, Number.isFinite(value.y) ? value.y : current.thumbnailTextPrimaryPosition.y)),
+      },
+    }));
+  }, [updateActiveProfile]);
+
+  const setThumbnailTextSecondaryPosition = useCallback((value: { x: number; y: number }) => {
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextSecondaryPosition: {
+        x: Math.min(1, Math.max(0, Number.isFinite(value.x) ? value.x : current.thumbnailTextSecondaryPosition.x)),
+        y: Math.min(1, Math.max(0, Number.isFinite(value.y) ? value.y : current.thumbnailTextSecondaryPosition.y)),
+      },
+    }));
+  }, [updateActiveProfile]);
+
   const settingsValues = useMemo(
     () => ({
       inputType,
@@ -326,6 +382,9 @@ export function useCaptionSettings() {
       audioVolume,
       thumbnailFontName: activeProfile.thumbnailFontName,
       thumbnailFontSize: activeProfile.thumbnailFontSize,
+      thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
+      thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
       subtitlePosition: activeProfile.subtitlePosition,
       thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
       thumbnailDurationSec: activeProfile.thumbnailDurationSec,
@@ -419,6 +478,9 @@ export function useCaptionSettings() {
       logoScale: saved.logoScale,
       thumbnailFontName: saved.thumbnailFontName,
       thumbnailFontSize: saved.thumbnailFontSize,
+      thumbnailTextSecondary: saved.thumbnailTextSecondary,
+      thumbnailTextPrimaryPosition: saved.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: saved.thumbnailTextSecondaryPosition,
     };
 
     const mergedLegacyLandscape = normalizeProfile(legacyPatch, DEFAULT_LANDSCAPE_PROFILE, 'landscape');
@@ -571,6 +633,12 @@ export function useCaptionSettings() {
     setThumbnailFontName,
     thumbnailFontSize: activeProfile.thumbnailFontSize,
     setThumbnailFontSize,
+    thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
+    setThumbnailTextSecondary,
+    thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
+    setThumbnailTextPrimaryPosition,
+    thumbnailTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
+    setThumbnailTextSecondaryPosition,
     logoPath: activeProfile.logoPath,
     setLogoPath,
     logoPosition: activeProfile.logoPosition,

@@ -78,8 +78,11 @@ export interface InlineThumbnailVideoFilterBuildInput {
   thumbnailTimeSec: number;
   thumbnailDurationSec: number;
   thumbnailText?: string;
+  thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
 }
 
 export interface InlineThumbnailVideoFilterBuildOutput {

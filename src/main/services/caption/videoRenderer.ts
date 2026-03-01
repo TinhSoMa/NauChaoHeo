@@ -165,6 +165,8 @@ async function injectInlineThumbnailAtEnd(input: {
   outputHeight: number;
   sourceWidth: number;
   sourceHeight: number;
+  thumbnailVideoInputLabel?: string;
+  thumbnailInputSeeked?: boolean;
 }): Promise<{
   finalVideoLabel: string;
   finalAudioLabel: string | null;
@@ -187,22 +189,26 @@ async function injectInlineThumbnailAtEnd(input: {
 
   const thumbVideo = await buildInlineThumbnailVideoFilter({
     renderMode: input.options.renderMode,
-    videoInputLabel: '[0:v]',
+    videoInputLabel: input.thumbnailVideoInputLabel || '[0:v]',
     outputWidth: input.outputWidth,
     outputHeight: input.outputHeight,
     sourceWidth: input.sourceWidth,
     sourceHeight: input.sourceHeight,
     fps: input.fps,
-    thumbnailTimeSec: input.options.thumbnailTimeSec,
+    thumbnailTimeSec: input.thumbnailInputSeeked ? 0 : input.options.thumbnailTimeSec,
     thumbnailDurationSec,
     thumbnailText: input.options.thumbnailText,
+    thumbnailTextSecondary: input.options.thumbnailTextSecondary,
     thumbnailFontName: input.options.thumbnailFontName,
     thumbnailFontSize: input.options.thumbnailFontSize,
+    thumbnailTextPrimaryPosition: input.options.thumbnailTextPrimaryPosition,
+    thumbnailTextSecondaryPosition: input.options.thumbnailTextSecondaryPosition,
   });
   input.filterComplexParts.push(...thumbVideo.filterParts);
 
   const mainVideoLabel = ensureFilterLabelReference(input.mainVideoLabel);
   const thumbVideoLabel = ensureFilterLabelReference(thumbVideo.outputLabel);
+  const finalVideoRawLabel = '[v_out_inline_raw]';
   const finalVideoLabel = '[v_out_inline]';
 
   if (input.mainAudioLabel) {
@@ -211,7 +217,10 @@ async function injectInlineThumbnailAtEnd(input: {
       `${ensureFilterLabelReference(input.mainAudioLabel)}adelay=${delayMs}:all=1[a_out_inline]`
     );
     input.filterComplexParts.push(
-      `${thumbVideoLabel}${mainVideoLabel}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoLabel)}]`
+      `${thumbVideoLabel}${mainVideoLabel}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoRawLabel)}]`
+    );
+    input.filterComplexParts.push(
+      `${finalVideoRawLabel}format=yuv420p,setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
     );
     console.log('[VideoRenderer][ThumbnailInline]', {
       enabled: true,
@@ -234,7 +243,10 @@ async function injectInlineThumbnailAtEnd(input: {
   }
 
   input.filterComplexParts.push(
-    `${thumbVideoLabel}${mainVideoLabel}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoLabel)}]`
+    `${thumbVideoLabel}${mainVideoLabel}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoRawLabel)}]`
+  );
+  input.filterComplexParts.push(
+    `${finalVideoRawLabel}format=yuv420p,setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
   );
   console.log('[VideoRenderer][ThumbnailInline]', {
     enabled: true,
@@ -365,6 +377,15 @@ export async function renderHardsubVideo(
     hasLogo = true;
     logoInputIndex = inputArgs.filter(arg => arg === '-i').length - 1;
   }
+  let thumbnailVideoInputLabel = '[0:v]';
+  let thumbnailInputSeeked = false;
+  if (renderOptions.thumbnailEnabled && renderOptions.thumbnailTimeSec !== undefined && renderOptions.thumbnailTimeSec !== null) {
+    const thumbnailTimeSec = Math.max(0, Number(renderOptions.thumbnailTimeSec));
+    inputArgs.push('-ss', String(thumbnailTimeSec), '-an', '-i', renderOptions.videoPath!);
+    const thumbnailInputIndex = inputArgs.filter(arg => arg === '-i').length - 1;
+    thumbnailVideoInputLabel = `[${thumbnailInputIndex}:v]`;
+    thumbnailInputSeeked = true;
+  }
 
   const filterComplexParts: string[] = [];
   const audioMix = buildHardsubAudioMix({
@@ -411,6 +432,8 @@ export async function renderHardsubVideo(
     outputHeight: prep.renderHeight,
     sourceWidth: prep.renderWidth,
     sourceHeight: prep.renderHeight,
+    thumbnailVideoInputLabel,
+    thumbnailInputSeeked,
   });
   const outputDuration = mainOutputDuration + inlineThumbnail.thumbnailDurationSec;
   const finalDurationStr = outputDuration.toFixed(3);
@@ -660,6 +683,15 @@ export async function renderHardsubPortraitVideo(
     hasLogo = true;
     logoInputIndex = inputArgs.filter(arg => arg === '-i').length - 1;
   }
+  let thumbnailVideoInputLabel = '[0:v]';
+  let thumbnailInputSeeked = false;
+  if (renderOptions.thumbnailEnabled && renderOptions.thumbnailTimeSec !== undefined && renderOptions.thumbnailTimeSec !== null) {
+    const thumbnailTimeSec = Math.max(0, Number(renderOptions.thumbnailTimeSec));
+    inputArgs.push('-ss', String(thumbnailTimeSec), '-an', '-i', renderOptions.videoPath!);
+    const thumbnailInputIndex = inputArgs.filter(arg => arg === '-i').length - 1;
+    thumbnailVideoInputLabel = `[${thumbnailInputIndex}:v]`;
+    thumbnailInputSeeked = true;
+  }
 
   const even = (value: number) => {
     const rounded = Math.max(2, Math.round(value));
@@ -760,6 +792,8 @@ export async function renderHardsubPortraitVideo(
     outputHeight: portraitCanvas.height,
     sourceWidth,
     sourceHeight,
+    thumbnailVideoInputLabel,
+    thumbnailInputSeeked,
   });
   const outputDuration = mainOutputDuration + inlineThumbnail.thumbnailDurationSec;
   const finalDurationStr = outputDuration.toFixed(3);
@@ -1051,8 +1085,11 @@ export async function renderVideo(
     thumbnailEnabled: !!options.thumbnailEnabled,
     thumbnailTimeSec: options.thumbnailTimeSec ?? null,
     thumbnailDurationSec: options.thumbnailDurationSec ?? 0.5,
+    thumbnailTextSecondary: options.thumbnailTextSecondary ?? '',
     thumbnailFontName: options.thumbnailFontName || null,
     thumbnailFontSize: options.thumbnailFontSize ?? 145,
+    thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition ?? null,
+    thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition ?? null,
   });
 
   if (options.renderMode === 'black_bg') {

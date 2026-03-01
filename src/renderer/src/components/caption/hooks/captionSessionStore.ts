@@ -6,6 +6,7 @@ import {
   CaptionStepState,
   SubtitleEntry,
 } from '@shared/types/caption';
+import { ThumbnailPreviewRuntimeState } from '../CaptionTypes';
 import {
   createDefaultCaptionSession,
   getCaptionSessionPathFromInput,
@@ -26,6 +27,57 @@ export function getInputPaths(inputType: CaptionInputType, filePath: string): st
 
 export function getSessionPathForInputPath(inputType: CaptionInputType, inputPath: string): string {
   return getCaptionSessionPathFromInput(inputType, inputPath);
+}
+
+const DEFAULT_THUMBNAIL_PREVIEW_RUNTIME: Required<ThumbnailPreviewRuntimeState> = {
+  tab: 'edit',
+  activeLayer: 'primary',
+  sourceStatus: 'idle',
+  realStatus: 'idle',
+  lastRealError: '',
+  lastSyncHash: '',
+  lastSyncAt: '',
+};
+
+export function readThumbnailPreviewRuntime(
+  session: CaptionSessionV1
+): Required<ThumbnailPreviewRuntimeState> {
+  const runtime = (session.runtime?.thumbnailPreview || {}) as ThumbnailPreviewRuntimeState;
+  return {
+    tab: runtime.tab || DEFAULT_THUMBNAIL_PREVIEW_RUNTIME.tab,
+    activeLayer: runtime.activeLayer || DEFAULT_THUMBNAIL_PREVIEW_RUNTIME.activeLayer,
+    sourceStatus: runtime.sourceStatus || DEFAULT_THUMBNAIL_PREVIEW_RUNTIME.sourceStatus,
+    realStatus: runtime.realStatus || DEFAULT_THUMBNAIL_PREVIEW_RUNTIME.realStatus,
+    lastRealError: typeof runtime.lastRealError === 'string' ? runtime.lastRealError : '',
+    lastSyncHash: typeof runtime.lastSyncHash === 'string' ? runtime.lastSyncHash : '',
+    lastSyncAt: typeof runtime.lastSyncAt === 'string' ? runtime.lastSyncAt : '',
+  };
+}
+
+export function writeThumbnailPreviewRuntime(
+  session: CaptionSessionV1,
+  runtimePatch: Partial<ThumbnailPreviewRuntimeState>
+): CaptionSessionV1 {
+  const current = readThumbnailPreviewRuntime(session);
+  return {
+    ...session,
+    runtime: {
+      ...session.runtime,
+      thumbnailPreview: {
+        ...current,
+        ...runtimePatch,
+      },
+    },
+  };
+}
+
+export function buildThumbnailPreviewHash(payload: Record<string, unknown>): string {
+  return buildObjectFingerprint(payload);
+}
+
+export function shouldSkipRealPreviewRequest(lastHash: string, nextHash: string): boolean {
+  if (!nextHash) return false;
+  return lastHash === nextHash;
 }
 
 export async function readCaptionSession(
@@ -516,6 +568,9 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       audioVolume: settings.audioVolume,
       thumbnailFontName: settings.thumbnailFontName,
       thumbnailFontSize: settings.thumbnailFontSize,
+      thumbnailTextSecondary: settings.thumbnailTextSecondary,
+      thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
       blackoutTop: settings.blackoutTop,
       audioSpeed: settings.audioSpeed,
       subtitlePosition: settings.subtitlePosition,

@@ -340,8 +340,11 @@ export interface RenderVideoOptions {
   thumbnailDurationSec?: number; // Thời lượng prepend thumbnail (giây), fallback 0.5
   thumbnailTimeSec?: number;  // Giây trong video nguồn để freeze frame làm thumbnail
   thumbnailText?: string;     // Văn bản hiển thị ở trung tâm thumbnail (bỏ trống = không có chữ)
+  thumbnailTextSecondary?: string; // Văn bản phụ (ví dụ tên phim), bỏ trống = không render
   thumbnailFontName?: string; // Font riêng cho thumbnail text (tách biệt với subtitle font)
   thumbnailFontSize?: number; // Cỡ chữ riêng cho thumbnail text
+  thumbnailTextPrimaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text1 trong vùng hợp lệ
+  thumbnailTextSecondaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text2 trong vùng hợp lệ
   step7SubtitleSource?: 'session_translated_entries';
   step7AudioSource?: 'session_merged_audio';
 }
@@ -386,8 +389,11 @@ export interface RenderThumbnailPreviewFrameOptions {
   renderMode?: RenderVideoOptions['renderMode'];
   renderResolution?: RenderVideoOptions['renderResolution'];
   thumbnailText?: string;
+  thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
 }
 
 export interface RenderThumbnailPreviewFrameResult {
@@ -480,6 +486,21 @@ export interface CaptionSessionTiming {
   videoMarkerSec?: number;
 }
 
+export type CaptionThumbnailPreviewTab = 'edit' | 'real';
+export type CaptionThumbnailPreviewLayer = 'primary' | 'secondary';
+export type CaptionThumbnailPreviewSourceStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type CaptionThumbnailPreviewRealStatus = 'idle' | 'pending' | 'updating' | 'ready' | 'error';
+
+export interface CaptionThumbnailPreviewRuntimeState {
+  tab?: CaptionThumbnailPreviewTab;
+  activeLayer?: CaptionThumbnailPreviewLayer;
+  sourceStatus?: CaptionThumbnailPreviewSourceStatus;
+  realStatus?: CaptionThumbnailPreviewRealStatus;
+  lastRealError?: string;
+  lastSyncHash?: string;
+  lastSyncAt?: string;
+}
+
 export interface CaptionSessionRuntime {
   enabledSteps?: number[];
   processingMode?: 'folder-first' | 'step-first';
@@ -492,6 +513,7 @@ export interface CaptionSessionRuntime {
     total: number;
     message: string;
   };
+  thumbnailPreview?: CaptionThumbnailPreviewRuntimeState;
 }
 
 export type CaptionSettingsSyncState = 'synced' | 'pending' | 'error';
@@ -523,6 +545,11 @@ export interface CaptionProjectSettingsValues {
   audioVolume?: number;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextSecondary?: string;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryByOrder?: string[];
+  thumbnailTextSecondaryOverrideFlags?: boolean[];
   thumbnailDurationSec?: number;
   subtitlePosition?: { x: number; y: number } | null;
   thumbnailFrameTimeSec?: number | null;
@@ -540,6 +567,9 @@ export interface CaptionProjectSettingsValues {
       logoScale?: number;
       thumbnailFontName?: string;
       thumbnailFontSize?: number;
+      thumbnailTextSecondary?: string;
+      thumbnailTextPrimaryPosition?: { x: number; y: number };
+      thumbnailTextSecondaryPosition?: { x: number; y: number };
       foregroundCropPercent?: number;
     };
     portrait?: {
@@ -555,6 +585,9 @@ export interface CaptionProjectSettingsValues {
       logoScale?: number;
       thumbnailFontName?: string;
       thumbnailFontSize?: number;
+      thumbnailTextSecondary?: string;
+      thumbnailTextPrimaryPosition?: { x: number; y: number };
+      thumbnailTextSecondaryPosition?: { x: number; y: number };
       foregroundCropPercent?: number;
     };
   };

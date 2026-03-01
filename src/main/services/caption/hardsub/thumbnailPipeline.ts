@@ -25,8 +25,11 @@ interface ThumbnailClipOptions {
   timeSec: number;
   durationSec: number;
   thumbnailText?: string;
+  thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
   width: number;
   height: number;
   renderMode?: RenderVideoOptions['renderMode'];
@@ -45,6 +48,8 @@ interface ThumbnailLayoutBuildResult {
 const DEFAULT_THUMBNAIL_DURATION_SEC = 0.5;
 const DEFAULT_THUMBNAIL_FONT_NAME = 'BrightwallPersonal';
 const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
+const DEFAULT_THUMBNAIL_TEXT1_POSITION = { x: 0.5, y: 0.5 };
+const DEFAULT_THUMBNAIL_TEXT2_POSITION = { x: 0.5, y: 0.64 };
 const MIN_THUMBNAIL_FONT_SIZE = 24;
 const MAX_THUMBNAIL_FONT_SIZE = 260;
 const THUMBNAIL_TEXT_BORDER_WIDTH = 4;
@@ -66,6 +71,92 @@ function normalizeThumbnailFontSize(value?: number): number {
 function ensureEven(value: number): number {
   const rounded = Math.max(2, Math.round(value));
   return rounded % 2 === 0 ? rounded : rounded - 1;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function normalizeThumbnailTextPosition(
+  value: { x: number; y: number } | undefined,
+  fallback: { x: number; y: number }
+): { x: number; y: number } {
+  return {
+    x: clamp01(value?.x ?? fallback.x),
+    y: clamp01(value?.y ?? fallback.y),
+  };
+}
+
+function computePortraitForegroundRect(
+  outputWidth: number,
+  outputHeight: number,
+  sourceWidth: number,
+  sourceHeight: number
+): { x: number; y: number; width: number; height: number } {
+  const cropH = Math.max(2, sourceHeight);
+  const cropW = ensureEven(Math.min(sourceWidth, sourceHeight * 3 / 4));
+  let fgW = outputWidth;
+  let fgH = ensureEven((fgW * cropH) / cropW);
+  if (fgH > outputHeight) {
+    fgH = outputHeight;
+    fgW = ensureEven((fgH * cropW) / cropH);
+  }
+  const fgX = Math.max(0, Math.floor((outputWidth - fgW) / 2));
+  const fgY = Math.max(0, Math.floor((outputHeight - fgH) / 2));
+  return {
+    x: fgX,
+    y: fgY,
+    width: fgW,
+    height: fgH,
+  };
+}
+
+function resolveThumbnailTextRegion(
+  renderMode: RenderVideoOptions['renderMode'] | undefined,
+  outputWidth: number,
+  outputHeight: number,
+  sourceWidth: number,
+  sourceHeight: number
+): { x: number; y: number; width: number; height: number; mode: 'landscape_full' | 'portrait_fg_3_4' } {
+  if (renderMode === 'hardsub_portrait_9_16') {
+    const fgRect = computePortraitForegroundRect(outputWidth, outputHeight, sourceWidth, sourceHeight);
+    return {
+      ...fgRect,
+      mode: 'portrait_fg_3_4',
+    };
+  }
+  return {
+    x: 0,
+    y: 0,
+    width: outputWidth,
+    height: outputHeight,
+    mode: 'landscape_full',
+  };
+}
+
+function fmtExprNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function buildDrawTextPositionExpr(
+  region: { x: number; y: number; width: number; height: number },
+  normalizedPos: { x: number; y: number }
+): { x: string; y: string } {
+  const rx = fmtExprNumber(region.x);
+  const ry = fmtExprNumber(region.y);
+  const rw = fmtExprNumber(region.width);
+  const rh = fmtExprNumber(region.height);
+  const nx = fmtExprNumber(normalizedPos.x);
+  const ny = fmtExprNumber(normalizedPos.y);
+  const anchorX = `${rx}+${nx}*${rw}`;
+  const anchorY = `${ry}+${ny}*${rh}`;
+  return {
+    x: `max(${rx},min(${anchorX}-text_w/2,${rx}+${rw}-text_w))`,
+    y: `max(${ry},min(${anchorY}-text_h/2,${ry}+${rh}-text_h))`,
+  };
 }
 
 function escapeFilterPath(p: string): string {
@@ -157,33 +248,98 @@ async function extractFrameToPng(
 
 async function buildThumbnailDrawTextFilter(options: {
   thumbnailText?: string;
+  thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
+  renderMode?: RenderVideoOptions['renderMode'];
+  outputWidth: number;
+  outputHeight: number;
+  sourceWidth: number;
+  sourceHeight: number;
   textFilePath: string;
+  secondaryTextFilePath: string;
 }): Promise<{
   drawTextFilter: string | null;
   thumbnailFontPath: string | null;
   thumbnailFontSize: number;
+  textFilePaths: string[];
+  textRegion: { x: number; y: number; width: number; height: number; mode: 'landscape_full' | 'portrait_fg_3_4' };
+  primaryPosition: { x: number; y: number };
+  secondaryPosition: { x: number; y: number };
 }> {
   const thumbnailFontSize = normalizeThumbnailFontSize(options.thumbnailFontSize);
   const thumbnailFontPath = await resolveThumbnailFontPath(options.thumbnailFontName);
-
-  if (!options.thumbnailText?.trim()) {
-    return { drawTextFilter: null, thumbnailFontPath, thumbnailFontSize };
+  const textRegion = resolveThumbnailTextRegion(
+    options.renderMode,
+    options.outputWidth,
+    options.outputHeight,
+    options.sourceWidth,
+    options.sourceHeight
+  );
+  const primaryPosition = normalizeThumbnailTextPosition(
+    options.thumbnailTextPrimaryPosition,
+    DEFAULT_THUMBNAIL_TEXT1_POSITION
+  );
+  const secondaryPosition = normalizeThumbnailTextPosition(
+    options.thumbnailTextSecondaryPosition,
+    DEFAULT_THUMBNAIL_TEXT2_POSITION
+  );
+  const textFilePaths: string[] = [];
+  const hasPrimary = !!options.thumbnailText?.trim();
+  const hasSecondary = !!options.thumbnailTextSecondary?.trim();
+  if (!hasPrimary && !hasSecondary) {
+    return {
+      drawTextFilter: null,
+      thumbnailFontPath,
+      thumbnailFontSize,
+      textFilePaths,
+      textRegion,
+      primaryPosition,
+      secondaryPosition,
+    };
   }
 
-  const thumbnailText = options.thumbnailText.trim();
-  await fs.writeFile(options.textFilePath, thumbnailText, 'utf-8');
+  if (hasPrimary) {
+    await fs.writeFile(options.textFilePath, options.thumbnailText!.trim(), 'utf-8');
+    textFilePaths.push(options.textFilePath);
+  }
+  if (hasSecondary) {
+    await fs.writeFile(options.secondaryTextFilePath, options.thumbnailTextSecondary!.trim(), 'utf-8');
+    textFilePaths.push(options.secondaryTextFilePath);
+  }
   if (!thumbnailFontPath) {
     console.warn('[Thumbnail] Không tìm thấy file font thumbnail, fallback dùng font mặc định của hệ thống.');
   }
   const fontParam = thumbnailFontPath ? `fontfile='${escapeFilterPath(thumbnailFontPath)}':` : '';
-  const drawTextFilter =
-    `drawtext=textfile='${escapeFilterPath(options.textFilePath)}':reload=0:` +
-    `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
-    'text_shaping=1:fix_bounds=1:x=(w-text_w)/2:y=(h-text_h)/2';
+  const primaryPosExpr = buildDrawTextPositionExpr(textRegion, primaryPosition);
+  const secondaryPosExpr = buildDrawTextPositionExpr(textRegion, secondaryPosition);
+  const drawTextFilters: string[] = [];
+  if (hasPrimary) {
+    drawTextFilters.push(
+      `drawtext=textfile='${escapeFilterPath(options.textFilePath)}':reload=0:` +
+      `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
+      `text_shaping=1:fix_bounds=1:x='${primaryPosExpr.x}':y='${primaryPosExpr.y}'`
+    );
+  }
+  if (hasSecondary) {
+    drawTextFilters.push(
+      `drawtext=textfile='${escapeFilterPath(options.secondaryTextFilePath)}':reload=0:` +
+      `${fontParam}fontcolor=yellow:fontsize=${thumbnailFontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
+      `text_shaping=1:fix_bounds=1:x='${secondaryPosExpr.x}':y='${secondaryPosExpr.y}'`
+    );
+  }
 
-  return { drawTextFilter, thumbnailFontPath, thumbnailFontSize };
+  return {
+    drawTextFilter: drawTextFilters.join(','),
+    thumbnailFontPath,
+    thumbnailFontSize,
+    textFilePaths,
+    textRegion,
+    primaryPosition,
+    secondaryPosition,
+  };
 }
 
 function resolvePortraitCanvasByPreset(
@@ -293,7 +449,7 @@ function buildPortraitThumbnailFilter(
 
   const parts: string[] = [
     `[0:v]crop=${cropW}:${cropH}:${cropX}:0,split=2[crop_bg][crop_fg]`,
-    `[crop_bg]scale=${safeW}:${safeH},boxblur=8:1[bg_fill]`,
+    `[crop_bg]scale=${safeW}:${safeH}[bg_fill]`,
     `[crop_fg]scale=${fgW}:${fgH}[fg_fit]`,
     `[bg_fill][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=${safeW}/${safeH}[v_layout]`,
   ];
@@ -312,7 +468,7 @@ function buildPortraitThumbnailFilter(
       fgSize: `${fgW}x${fgH}`,
       bgFillMode: 'from_cropped_frame',
       cropStrategy: 'center_3_4',
-      fillStrategy: 'cropped_bg_blur_top_bottom',
+      fillStrategy: 'cropped_bg_fill_top_bottom',
     },
   };
 }
@@ -371,10 +527,10 @@ function buildInlinePortraitThumbnailFilterParts(
   const layoutLabel = `${outputLabelPrefix}_layout`;
   const outputLabel = drawTextFilter ? `${outputLabelPrefix}_out` : layoutLabel;
   const parts: string[] = [
-    `${inputLabel}crop=${cropW}:${cropH}:${cropX}:0,split=2[${cropBgLabel}][${cropFgLabel}]`,
-    `[${cropBgLabel}]scale=${safeW}:${safeH},boxblur=8:1[${bgFillLabel}]`,
-    `[${cropFgLabel}]scale=${fgW}:${fgH}[${fgFitLabel}]`,
-    `[${bgFillLabel}][${fgFitLabel}]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`,
+    `${inputLabel}crop=${cropW}:${cropH}:${cropX}:0,format=yuv420p,split=2[${cropBgLabel}][${cropFgLabel}]`,
+    `[${cropBgLabel}]scale=${safeW}:${safeH},format=yuv420p[${bgFillLabel}]`,
+    `[${cropFgLabel}]scale=${fgW}:${fgH},format=yuv420p[${fgFitLabel}]`,
+    `[${bgFillLabel}][${fgFitLabel}]overlay=(W-w)/2:(H-h)/2,format=yuv420p,setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`,
   ];
   if (drawTextFilter) {
     parts.push(`[${layoutLabel}]${drawTextFilter}[${outputLabel}]`);
@@ -391,7 +547,7 @@ function buildInlinePortraitThumbnailFilterParts(
       fgSize: `${fgW}x${fgH}`,
       bgFillMode: 'from_cropped_frame',
       cropStrategy: 'center_3_4',
-      fillStrategy: 'cropped_bg_blur_top_bottom',
+      fillStrategy: 'cropped_bg_fill_top_bottom',
     },
   };
 }
@@ -406,27 +562,36 @@ export async function buildInlineThumbnailVideoFilter(
   const safeFps = Number.isFinite(options.fps) && options.fps > 0 ? Math.round(options.fps) : 24;
   const timeSec = Math.max(0, Number.isFinite(options.thumbnailTimeSec) ? options.thumbnailTimeSec : 0);
   const durationSec = normalizeThumbnailDurationSec(options.thumbnailDurationSec);
-  const frameWindowSec = Math.max(1 / safeFps, 0.04);
-  const endSec = timeSec + frameWindowSec;
   const prefix = 'thumb_inline';
   const inputLabel = options.videoInputLabel || '[0:v]';
   const sourceFreezeLabel = `${prefix}_src`;
   const textFilePath = path.join(os.tmpdir(), `${prefix}_text_${Date.now()}.txt`);
+  const secondaryTextFilePath = path.join(os.tmpdir(), `${prefix}_text2_${Date.now()}.txt`);
   const cleanupFiles: string[] = [];
 
   const drawTextContext = await buildThumbnailDrawTextFilter({
     thumbnailText: options.thumbnailText,
+    thumbnailTextSecondary: options.thumbnailTextSecondary,
     thumbnailFontName: options.thumbnailFontName,
     thumbnailFontSize: options.thumbnailFontSize,
+    thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
+    thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+    renderMode: options.renderMode,
+    outputWidth: safeW,
+    outputHeight: safeH,
+    sourceWidth: safeSourceW,
+    sourceHeight: safeSourceH,
     textFilePath,
+    secondaryTextFilePath,
   });
-  if (drawTextContext.drawTextFilter) {
-    cleanupFiles.push(textFilePath);
+  if (drawTextContext.textFilePaths.length > 0) {
+    cleanupFiles.push(...drawTextContext.textFilePaths);
   }
 
   const sourceFreezePart =
-    `${inputLabel}trim=start=${timeSec}:end=${endSec},setpts=PTS-STARTPTS,fps=${safeFps},` +
-    `tpad=stop_mode=clone:stop_duration=${durationSec},trim=duration=${durationSec},fps=${safeFps}` +
+    `${inputLabel}trim=start=${timeSec},settb=AVTB,setpts=PTS-STARTPTS,fps=${safeFps},` +
+    `select='eq(n,0)',setpts=N/FRAME_RATE/TB,format=yuv420p,` +
+    `tpad=stop_mode=clone:stop_duration=${durationSec},trim=duration=${durationSec},fps=${safeFps},format=yuv420p` +
     `[${sourceFreezeLabel}]`;
 
   const layout = options.renderMode === 'hardsub_portrait_9_16'
@@ -453,9 +618,11 @@ export async function buildInlineThumbnailVideoFilter(
     cleanupFiles,
     debug: {
       ...layout.debug,
+      textRegion: drawTextContext.textRegion,
+      textPrimaryPosition: drawTextContext.primaryPosition,
+      textSecondaryPosition: drawTextContext.secondaryPosition,
       sourceFreeze: {
         thumbnailTimeSec: timeSec,
-        thumbnailEndSec: endSec,
         durationSec,
         fps: safeFps,
       },
@@ -501,6 +668,7 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   const framePng = path.join(tempDir, `thumb_frame_${ts}.png`);
   const clipPath = path.join(tempDir, `thumb_clip_${ts}.mp4`);
   const textFilePath = path.join(tempDir, `thumb_text_${ts}.txt`);
+  const secondaryTextFilePath = path.join(tempDir, `thumb_text2_${ts}.txt`);
 
   const safeW = ensureEven(opts.width);
   const safeH = ensureEven(opts.height);
@@ -523,9 +691,18 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
 
   const drawTextContext = await buildThumbnailDrawTextFilter({
     thumbnailText: opts.thumbnailText,
+    thumbnailTextSecondary: opts.thumbnailTextSecondary,
     thumbnailFontName: opts.thumbnailFontName,
     thumbnailFontSize: opts.thumbnailFontSize,
+    thumbnailTextPrimaryPosition: opts.thumbnailTextPrimaryPosition,
+    thumbnailTextSecondaryPosition: opts.thumbnailTextSecondaryPosition,
+    renderMode: opts.renderMode,
+    outputWidth: safeW,
+    outputHeight: safeH,
+    sourceWidth,
+    sourceHeight,
     textFilePath,
+    secondaryTextFilePath,
   });
   const drawTextFilter = drawTextContext.drawTextFilter;
 
@@ -534,13 +711,17 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     : buildLandscapeThumbnailFilter(safeW, safeH, drawTextFilter);
 
   const thumbTextLog = summarizeThumbnailTextForLog(opts.thumbnailText);
+  const thumbText2Log = summarizeThumbnailTextForLog(opts.thumbnailTextSecondary);
   console.log(
     `[Thumbnail] create clip params | timeSec=${opts.timeSec}, durationSec=${opts.durationSec}, ` +
     `mode=${isPortraitMode ? 'hardsub_portrait_9_16' : 'hardsub'}, ` +
     `source=${sourceWidth}x${sourceHeight}, output=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, ` +
-    `textLength=${thumbTextLog.length}, textPreview="${thumbTextLog.preview}", ` +
+    `text1Length=${thumbTextLog.length}, text1Preview="${thumbTextLog.preview}", ` +
+    `text2Length=${thumbText2Log.length}, text2Preview="${thumbText2Log.preview}", ` +
     `fontName=${opts.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME}, fontFile=${drawTextContext.thumbnailFontPath || 'system-default'}, ` +
     `fontSize=${drawTextContext.thumbnailFontSize}, fontColor=yellow, border=${THUMBNAIL_TEXT_BORDER_WIDTH}, ` +
+    `textRegion=${JSON.stringify(drawTextContext.textRegion)}, textPos1=${JSON.stringify(drawTextContext.primaryPosition)}, ` +
+    `textPos2=${JSON.stringify(drawTextContext.secondaryPosition)}, ` +
     `layout=${JSON.stringify(layoutResult.debug)}`
   );
 
@@ -581,7 +762,9 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   });
 
   try { await fs.unlink(framePng); } catch {}
-  try { await fs.unlink(textFilePath); } catch {}
+  for (const cleanupPath of drawTextContext.textFilePaths) {
+    try { await fs.unlink(cleanupPath); } catch {}
+  }
 
   if (!clipOk) {
     return { success: false, error: `Không tạo được thumbnail clip\n${clipStderr.slice(-400)}` };
@@ -696,6 +879,7 @@ export async function renderThumbnailPreviewFrame(
   const ts = Date.now();
   const framePng = path.join(tempDir, `thumb_preview_frame_${ts}.png`);
   const textFilePath = path.join(tempDir, `thumb_preview_text_${ts}.txt`);
+  const secondaryTextFilePath = path.join(tempDir, `thumb_preview_text2_${ts}.txt`);
   const timeSec = Number(options.thumbnailTimeSec);
 
   try {
@@ -720,9 +904,18 @@ export async function renderThumbnailPreviewFrame(
 
     const drawTextContext = await buildThumbnailDrawTextFilter({
       thumbnailText: options.thumbnailText,
+      thumbnailTextSecondary: options.thumbnailTextSecondary,
       thumbnailFontName: options.thumbnailFontName,
       thumbnailFontSize: options.thumbnailFontSize,
+      thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+      renderMode: options.renderMode,
+      outputWidth: safeW,
+      outputHeight: safeH,
+      sourceWidth,
+      sourceHeight,
       textFilePath,
+      secondaryTextFilePath,
     });
 
     const layoutResult = options.renderMode === 'hardsub_portrait_9_16'
@@ -756,16 +949,22 @@ export async function renderThumbnailPreviewFrame(
 
     const frameBuffer = Buffer.concat(chunks);
     const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
+    const thumbText2Log = summarizeThumbnailTextForLog(options.thumbnailTextSecondary);
     console.log('[ThumbnailPreview] render frame success', {
       mode: options.renderMode || 'hardsub',
       renderResolution: options.renderResolution || 'original',
       sourceSize: `${sourceWidth}x${sourceHeight}`,
       outputSize: `${safeW}x${safeH}`,
       thumbnailTimeSec: timeSec,
-      textLength: thumbTextLog.length,
-      textPreview: thumbTextLog.preview,
+      text1Length: thumbTextLog.length,
+      text1Preview: thumbTextLog.preview,
+      text2Length: thumbText2Log.length,
+      text2Preview: thumbText2Log.preview,
       thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
       thumbnailFontSize: drawTextContext.thumbnailFontSize,
+      textRegion: drawTextContext.textRegion,
+      textPrimaryPosition: drawTextContext.primaryPosition,
+      textSecondaryPosition: drawTextContext.secondaryPosition,
       layout: layoutResult.debug,
     });
 
@@ -779,8 +978,12 @@ export async function renderThumbnailPreviewFrame(
         sourceSize: { width: sourceWidth, height: sourceHeight },
         outputSize: { width: safeW, height: safeH },
         thumbnailTimeSec: timeSec,
+        thumbnailTextSecondary: options.thumbnailTextSecondary,
         thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
         thumbnailFontSize: drawTextContext.thumbnailFontSize,
+        textRegion: drawTextContext.textRegion,
+        textPrimaryPosition: drawTextContext.primaryPosition,
+        textSecondaryPosition: drawTextContext.secondaryPosition,
       },
     };
   } catch (error) {
@@ -788,6 +991,7 @@ export async function renderThumbnailPreviewFrame(
   } finally {
     try { await fs.unlink(framePng); } catch {}
     try { await fs.unlink(textFilePath); } catch {}
+    try { await fs.unlink(secondaryTextFilePath); } catch {}
   }
 }
 
@@ -835,6 +1039,7 @@ export async function applyThumbnailPostProcess(
   });
 
   const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
+  const thumbText2Log = summarizeThumbnailTextForLog(options.thumbnailTextSecondary);
   console.log(
     `[VideoRenderer] 🖼 Tạo thumbnail tại ${options.thumbnailTimeSec}s`,
     {
@@ -842,10 +1047,14 @@ export async function applyThumbnailPostProcess(
       sourceSize: sourceWidth && sourceHeight ? `${sourceWidth}x${sourceHeight}` : 'unknown',
       outputSize: `${outputMeta.metadata.width}x${outputMeta.metadata.actualHeight || outputMeta.metadata.height}`,
       durationSec: thumbnailDurationSec,
-      textLength: thumbTextLog.length,
-      textPreview: thumbTextLog.preview,
+      text1Length: thumbTextLog.length,
+      text1Preview: thumbTextLog.preview,
+      text2Length: thumbText2Log.length,
+      text2Preview: thumbText2Log.preview,
       thumbnailFontName: options.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME,
       thumbnailFontSize: normalizeThumbnailFontSize(options.thumbnailFontSize),
+      thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition || DEFAULT_THUMBNAIL_TEXT1_POSITION,
+      thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition || DEFAULT_THUMBNAIL_TEXT2_POSITION,
     }
   );
 
@@ -854,8 +1063,11 @@ export async function applyThumbnailPostProcess(
     timeSec: options.thumbnailTimeSec,
     durationSec: thumbnailDurationSec,
     thumbnailText: options.thumbnailText,
+    thumbnailTextSecondary: options.thumbnailTextSecondary,
     thumbnailFontName: options.thumbnailFontName,
     thumbnailFontSize: options.thumbnailFontSize,
+    thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
+    thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
     width: outputMeta.metadata.width,
     height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
     renderMode: options.renderMode,

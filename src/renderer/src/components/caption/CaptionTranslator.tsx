@@ -14,7 +14,14 @@ import {
   VOLUME_OPTIONS,
   LINES_PER_FILE_OPTIONS,
 } from '../../config/captionConfig';
-import { CaptionStepPanelKey, HardsubTimingMetrics, Step, StepPanelState, SubtitleEntry } from './CaptionTypes';
+import {
+  CaptionStepPanelKey,
+  HardsubTimingMetrics,
+  Step,
+  StepPanelState,
+  SubtitleEntry,
+  ThumbnailPreviewContextKey,
+} from './CaptionTypes';
 import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
@@ -29,9 +36,10 @@ import {
 } from './hooks/captionSessionStore';
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { ThumbnailListPanel } from './components/ThumbnailListPanel';
+import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { ChevronDown, ChevronUp, Download, Eye, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, Eye } from 'lucide-react';
 import { CaptionProjectSettingsValues } from '@shared/types/caption';
 
 export function CaptionTranslator() {
@@ -52,6 +60,7 @@ export function CaptionTranslator() {
     filePath: fileManager.filePath,
     folderVideos: fileManager.folderVideos,
     thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
+    thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary || '',
   });
 
   const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
@@ -80,6 +89,9 @@ export function CaptionTranslator() {
     audioVolume: settings.audioVolume,
     thumbnailFontName: settings.thumbnailFontName,
     thumbnailFontSize: settings.thumbnailFontSize,
+    thumbnailTextSecondary: settings.thumbnailTextSecondary,
+    thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
+    thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
     subtitlePosition: settings.subtitlePosition,
     thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
     thumbnailDurationSec: settings.thumbnailDurationSec,
@@ -112,6 +124,9 @@ export function CaptionTranslator() {
     settings.audioVolume,
     settings.thumbnailFontName,
     settings.thumbnailFontSize,
+    settings.thumbnailTextSecondary,
+    settings.thumbnailTextPrimaryPosition,
+    settings.thumbnailTextSecondaryPosition,
     settings.subtitlePosition,
     settings.thumbnailFrameTimeSec,
     settings.thumbnailDurationSec,
@@ -130,6 +145,7 @@ export function CaptionTranslator() {
     const hydrateFolderFields = async () => {
       if (inputPaths.length > 1) {
         const texts: string[] = [];
+        const secondaryTexts: string[] = [];
         for (const inputPath of inputPaths) {
           const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
           const session = await readCaptionSession(sessionPath, {
@@ -140,9 +156,11 @@ export function CaptionTranslator() {
           });
           const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
           texts.push(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
+          secondaryTexts.push(typeof step7.thumbnailTextSecondary === 'string' ? step7.thumbnailTextSecondary : '');
         }
         if (!cancelled) {
           hardsubSettings.setThumbnailTextsByOrder(texts);
+          hardsubSettings.setSecondaryStateFromSession(secondaryTexts);
         }
         return;
       }
@@ -158,6 +176,7 @@ export function CaptionTranslator() {
       const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
       if (!cancelled) {
         hardsubSettings.setThumbnailText(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
+        settings.setThumbnailTextSecondary(typeof step7.thumbnailTextSecondary === 'string' ? step7.thumbnailTextSecondary : '');
       }
     };
 
@@ -239,6 +258,8 @@ export function CaptionTranslator() {
         for (let i = 0; i < inputPaths.length; i++) {
           const inputPath = inputPaths[i];
           const text = (hardsubSettings.thumbnailTextsByOrder[i] || '').trim();
+          const secondaryText = (hardsubSettings.thumbnailTextsSecondaryByOrder[i] || '').trim();
+          const secondarySource = hardsubSettings.thumbnailTextSecondaryOverrideFlags[i] ? 'override' : 'global';
           const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
           await updateCaptionSession(
             sessionPath,
@@ -249,6 +270,10 @@ export function CaptionTranslator() {
                 step7Render: {
                   ...(session.settings.step7Render || {}),
                   thumbnailText: text,
+                  thumbnailTextSecondary: secondaryText,
+                  thumbnailTextSecondarySource: secondarySource,
+                  thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
+                  thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
                 },
               },
             }),
@@ -274,6 +299,10 @@ export function CaptionTranslator() {
             step7Render: {
               ...(session.settings.step7Render || {}),
               thumbnailText: hardsubSettings.thumbnailText,
+              thumbnailTextSecondary: settings.thumbnailTextSecondary || '',
+              thumbnailTextSecondarySource: 'single',
+              thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
+              thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
             },
           },
         }),
@@ -294,6 +323,11 @@ export function CaptionTranslator() {
     settings.inputType,
     hardsubSettings.thumbnailText,
     hardsubSettings.thumbnailTextsByOrder,
+    hardsubSettings.thumbnailTextsSecondaryByOrder,
+    hardsubSettings.thumbnailTextSecondaryOverrideFlags,
+    settings.thumbnailTextSecondary,
+    settings.thumbnailTextPrimaryPosition,
+    settings.thumbnailTextSecondaryPosition,
   ]);
 
   // 4. Processing Hook
@@ -308,6 +342,9 @@ export function CaptionTranslator() {
       ...settings,
       thumbnailText: hardsubSettings.thumbnailText,
       thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
+      thumbnailTextSecondary: settings.thumbnailTextSecondary,
+      thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
+      thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
@@ -407,10 +444,6 @@ export function CaptionTranslator() {
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('render');
-  const [thumbnailPreviewFrameData, setThumbnailPreviewFrameData] = useState<string | null>(null);
-  const [thumbnailPreviewSize, setThumbnailPreviewSize] = useState<{ width: number; height: number } | null>(null);
-  const [thumbnailPreviewStatus, setThumbnailPreviewStatus] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle');
-  const [thumbnailPreviewMessage, setThumbnailPreviewMessage] = useState<string>('Chưa render thumbnail preview.');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
@@ -540,70 +573,22 @@ export function CaptionTranslator() {
     : (sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries);
   const firstFolderVideoInfo = firstFolderPath ? fileManager.folderVideos[firstFolderPath] : null;
   const thumbnailPreviewVideoPath = firstFolderVideoInfo?.fullPath || fileManager.firstVideoPath || null;
+  const thumbnailPreviewInputPath = settings.inputType === 'draft'
+    ? (firstFolderPath || (fileManager.filePath ? fileManager.filePath.split('; ')[0] : ''))
+    : fileManager.filePath;
+  const thumbnailPreviewContextKey: ThumbnailPreviewContextKey | null = (projectId && thumbnailPreviewInputPath)
+    ? {
+        projectId,
+        folderPath: thumbnailPreviewInputPath,
+        layoutKey: settings.renderMode === 'hardsub_portrait_9_16' ? 'portrait' : 'landscape',
+      }
+    : null;
   const thumbnailPreviewText = isMultiFolder
     ? (hardsubSettings.thumbnailTextsByOrder[0] || '')
     : hardsubSettings.thumbnailText;
-  const thumbnailPreviewFrameSec = settings.thumbnailFrameTimeSec ?? 0;
-  const thumbnailPreviewAspect = thumbnailPreviewSize
-    ? `${thumbnailPreviewSize.width} / ${thumbnailPreviewSize.height}`
-    : undefined;
-
-  useEffect(() => {
-    setThumbnailPreviewFrameData(null);
-    setThumbnailPreviewSize(null);
-    setThumbnailPreviewStatus('idle');
-    setThumbnailPreviewMessage('Cấu hình đã đổi. Bấm "Làm mới" để render thumbnail frame thật.');
-  }, [
-    thumbnailPreviewVideoPath,
-    thumbnailPreviewText,
-    settings.thumbnailFontName,
-    settings.thumbnailFontSize,
-    settings.thumbnailFrameTimeSec,
-    settings.renderMode,
-    settings.renderResolution,
-  ]);
-
-  const handleRefreshThumbnailPreview = async () => {
-    if (!thumbnailPreviewVideoPath) {
-      setThumbnailPreviewStatus('error');
-      setThumbnailPreviewMessage('Không tìm thấy video nguồn để render thumbnail preview.');
-      return;
-    }
-
-    setThumbnailPreviewStatus('rendering');
-    setThumbnailPreviewMessage('Đang render thumbnail frame thật...');
-    try {
-      const api = (window.electronAPI as any).captionVideo;
-      const res = await api.renderThumbnailPreviewFrame({
-        videoPath: thumbnailPreviewVideoPath,
-        thumbnailTimeSec: thumbnailPreviewFrameSec,
-        renderMode: settings.renderMode,
-        renderResolution: settings.renderResolution,
-        thumbnailText: thumbnailPreviewText,
-        thumbnailFontName: settings.thumbnailFontName,
-        thumbnailFontSize: settings.thumbnailFontSize,
-      });
-
-      if (!res?.success || !res.data?.success || !res.data?.frameData) {
-        const err = res?.error || res?.data?.error || 'Không thể render thumbnail preview frame.';
-        setThumbnailPreviewStatus('error');
-        setThumbnailPreviewMessage(err);
-        return;
-      }
-
-      setThumbnailPreviewFrameData(res.data.frameData);
-      setThumbnailPreviewSize(
-        typeof res.data.width === 'number' && typeof res.data.height === 'number'
-          ? { width: res.data.width, height: res.data.height }
-          : null
-      );
-      setThumbnailPreviewStatus('ready');
-      setThumbnailPreviewMessage('Đã cập nhật thumbnail preview frame thật.');
-    } catch (error) {
-      setThumbnailPreviewStatus('error');
-      setThumbnailPreviewMessage(String(error));
-    }
-  };
+  const thumbnailPreviewSecondaryText = isMultiFolder
+    ? (hardsubSettings.thumbnailTextsSecondaryByOrder[0] || '')
+    : (settings.thumbnailTextSecondary || '');
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -1237,7 +1222,14 @@ export function CaptionTranslator() {
                     autoStartValue={hardsubSettings.thumbnailAutoStartValue}
                     onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
                     onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
+                    secondaryGlobalText={hardsubSettings.thumbnailTextSecondary}
+                    onSecondaryGlobalTextChange={(value) => {
+                      hardsubSettings.setThumbnailTextSecondaryGlobal(value);
+                      settings.setThumbnailTextSecondary(value);
+                    }}
                     onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
+                    onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
+                    onResetSecondaryOverride={hardsubSettings.resetThumbnailTextSecondaryOverride}
                     showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
                     dependencyWarning={step7DependencyWarning}
                   />
@@ -1500,19 +1492,11 @@ export function CaptionTranslator() {
               logoPosition={settings.logoPosition}
               logoScale={settings.logoScale}
               portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
-              thumbnailFontName={settings.thumbnailFontName}
-              thumbnailFontSize={settings.thumbnailFontSize}
               onPositionChange={settings.setSubtitlePosition}
               onBlackoutChange={settings.setBlackoutTop}
               onRenderResolutionChange={settings.setRenderResolution}
               onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
               onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
-              thumbnailText={isMultiFolder ? (hardsubSettings.thumbnailTextsByOrder[0] || '') : hardsubSettings.thumbnailText}
-              onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
-              thumbnailTextReadOnly={isMultiFolder}
-              thumbnailTextHelper={isMultiFolder ? 'Multi-folder: chỉnh text ở danh sách bên trái.' : undefined}
-              onFrameTimeChange={settings.setThumbnailFrameTimeSec}
-              selectedFrameTimeSec={settings.thumbnailFrameTimeSec}
               renderSnapshotMode={effectivePreviewMode === 'render'}
               onSelectLogo={handleSelectLogo}
               onRemoveLogo={handleRemoveLogo}
@@ -1522,59 +1506,28 @@ export function CaptionTranslator() {
                   : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
               }
             />
-            <div className={styles.thumbnailPreviewPanel}>
-              <div className={styles.thumbnailPreviewHeader}>
-                <span className={styles.thumbnailPreviewTitle}>
-                  <ImageIcon size={13} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                  Thumbnail Preview (Frame thật)
-                </span>
-                <span className={styles.thumbnailPreviewSource}>
-                  {isMultiFolder ? 'Nguồn: folder đầu tiên' : 'Nguồn: folder hiện tại'}
-                </span>
-              </div>
-              <div className={styles.thumbnailPreviewMeta}>
-                frame {thumbnailPreviewFrameSec.toFixed(2)}s | {settings.thumbnailFontName} {settings.thumbnailFontSize ?? 145}px
-              </div>
-              <div
-                className={styles.thumbnailPreviewImageBox}
-                style={thumbnailPreviewAspect ? { aspectRatio: thumbnailPreviewAspect } : undefined}
-              >
-                {thumbnailPreviewFrameData ? (
-                  <img
-                    src={`data:image/png;base64,${thumbnailPreviewFrameData}`}
-                    alt="Thumbnail preview frame thật"
-                    className={styles.thumbnailPreviewImage}
-                  />
-                ) : (
-                  <div className={styles.thumbnailPreviewPlaceholder}>
-                    Chưa có ảnh thumbnail preview.
-                  </div>
-                )}
-              </div>
-              <div className={styles.thumbnailPreviewActions}>
-                <button
-                  className={styles.resetBtnLike}
-                  onClick={handleRefreshThumbnailPreview}
-                  disabled={!thumbnailPreviewVideoPath || thumbnailPreviewStatus === 'rendering'}
-                  title={!thumbnailPreviewVideoPath ? 'Không có video nguồn' : 'Render lại thumbnail frame thật'}
-                >
-                  <RefreshCw size={12} />
-                  {thumbnailPreviewStatus === 'rendering' ? 'Đang render...' : 'Làm mới'}
-                </button>
-                <span className={styles.thumbnailPreviewStatus}>
-                  {thumbnailPreviewStatus === 'ready' && thumbnailPreviewSize
-                    ? `Ready ${thumbnailPreviewSize.width}x${thumbnailPreviewSize.height}`
-                    : thumbnailPreviewStatus === 'rendering'
-                      ? 'Rendering...'
-                      : thumbnailPreviewStatus === 'error'
-                        ? 'Error'
-                        : 'Idle'}
-                </span>
-              </div>
-              <div className={styles.thumbnailPreviewMessage} title={thumbnailPreviewMessage}>
-                {thumbnailPreviewMessage}
-              </div>
-            </div>
+            <ThumbnailPreviewPanel
+              videoPath={thumbnailPreviewVideoPath}
+              sourceLabel={isMultiFolder ? 'Nguồn: folder đầu tiên' : 'Nguồn: folder hiện tại'}
+              renderMode={settings.renderMode}
+              renderResolution={settings.renderResolution}
+              thumbnailText={thumbnailPreviewText}
+              thumbnailTextSecondary={thumbnailPreviewSecondaryText}
+              thumbnailTextReadOnly={isMultiFolder}
+              thumbnailTextHelper={isMultiFolder ? 'Multi-folder: chỉnh text ở danh sách bên trái.' : undefined}
+              onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
+              onThumbnailTextSecondaryChange={isMultiFolder ? undefined : settings.setThumbnailTextSecondary}
+              thumbnailFrameTimeSec={settings.thumbnailFrameTimeSec}
+              onThumbnailFrameTimeSecChange={settings.setThumbnailFrameTimeSec}
+              thumbnailFontName={settings.thumbnailFontName}
+              thumbnailFontSize={settings.thumbnailFontSize}
+              thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
+              thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
+              onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}
+              onThumbnailTextSecondaryPositionChange={settings.setThumbnailTextSecondaryPosition}
+              contextKey={thumbnailPreviewContextKey}
+              inputType={settings.inputType}
+            />
           </div>
         </div>
       </div>

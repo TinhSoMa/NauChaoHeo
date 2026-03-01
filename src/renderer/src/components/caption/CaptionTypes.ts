@@ -28,6 +28,8 @@ export interface ThumbnailFolderItem {
   folderName: string;
   videoName: string;
   text: string;
+  secondaryText: string;
+  secondaryOverridden: boolean;
   hasError: boolean;
 }
 
@@ -76,4 +78,32 @@ export interface PreviewDockState {
   pinned: boolean;
   compact: boolean;
   disabledReason?: string;
+}
+
+export type ThumbnailPreviewLayer = 'primary' | 'secondary';
+export type ThumbnailPreviewTab = 'edit' | 'real';
+export type ThumbnailPreviewSourceStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type ThumbnailPreviewRealStatus = 'idle' | 'pending' | 'updating' | 'ready' | 'error';
+
+export interface ThumbnailPreviewRuntimeState {
+  tab?: ThumbnailPreviewTab;
+  activeLayer?: ThumbnailPreviewLayer;
+  sourceStatus?: ThumbnailPreviewSourceStatus;
+  realStatus?: ThumbnailPreviewRealStatus;
+  lastRealError?: string;
+  lastSyncHash?: string;
+  lastSyncAt?: string;
+}
+
+export interface ThumbnailPreviewDraftState {
+  active: boolean;
+  layer: ThumbnailPreviewLayer;
+  primaryPosition: { x: number; y: number };
+  secondaryPosition: { x: number; y: number };
+}
+
+export interface ThumbnailPreviewContextKey {
+  projectId: string;
+  folderPath: string;
+  layoutKey: 'landscape' | 'portrait';
 }

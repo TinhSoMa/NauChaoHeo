@@ -7,7 +7,11 @@ interface ThumbnailListPanelProps {
   autoStartValue: string;
   onAutoStartValueChange: (value: string) => void;
   onAutoFill: () => void;
+  secondaryGlobalText: string;
+  onSecondaryGlobalTextChange: (value: string) => void;
   onItemTextChange: (indexZeroBased: number, value: string) => void;
+  onItemSecondaryTextChange: (indexZeroBased: number, value: string) => void;
+  onResetSecondaryOverride: (indexZeroBased: number) => void;
   showMissingWarning: boolean;
   dependencyWarning?: string;
 }
@@ -40,12 +44,24 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
           Tự động điền Tập
         </button>
       </div>
+      <div className={styles.thumbnailSecondaryGlobalRow}>
+        <span className={styles.thumbnailSecondaryGlobalLabel}>Text2 global</span>
+        <input
+          type="text"
+          className={styles.thumbnailAutoFillInput}
+          value={props.secondaryGlobalText}
+          onChange={(e) => props.onSecondaryGlobalTextChange(e.target.value)}
+          placeholder="Tên phim (áp dụng cho folder chưa override)..."
+        />
+      </div>
       <div className={styles.thumbnailListTable}>
         <div className={styles.thumbnailListRowHead}>
           <span>STT</span>
           <span>Folder</span>
           <span>Video</span>
-          <span>Thumbnail text</span>
+          <span>Text1</span>
+          <span>Text2</span>
+          <span>Sync</span>
         </div>
         {props.items.map((item) => (
           <div
@@ -64,8 +80,30 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
               className={styles.thumbnailListInput}
               value={item.text}
               onChange={(e) => props.onItemTextChange(item.index - 1, e.target.value)}
-              placeholder="Nhập text thumbnail cho folder này..."
+              placeholder="Text1 theo folder..."
             />
+            <input
+              type="text"
+              className={styles.thumbnailListInput}
+              value={item.secondaryText}
+              onChange={(e) => props.onItemSecondaryTextChange(item.index - 1, e.target.value)}
+              placeholder="Text2 (tên phim)..."
+            />
+            <div className={styles.thumbnailSecondarySyncCell}>
+              <span className={item.secondaryOverridden ? styles.thumbnailOverrideBadge : styles.thumbnailFollowBadge}>
+                {item.secondaryOverridden ? 'Override' : 'Global'}
+              </span>
+              {item.secondaryOverridden && (
+                <button
+                  type="button"
+                  className={styles.thumbnailResetOverrideBtn}
+                  onClick={() => props.onResetSecondaryOverride(item.index - 1)}
+                  title="Bỏ override, dùng lại text2 global"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>

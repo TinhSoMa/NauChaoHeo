@@ -169,9 +169,14 @@ interface UseCaptionProcessingProps {
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
     thumbnailText?: string;
+    thumbnailTextSecondary?: string;
     thumbnailFontName?: string;
     thumbnailFontSize?: number;
+    thumbnailTextPrimaryPosition?: { x: number; y: number };
+    thumbnailTextSecondaryPosition?: { x: number; y: number };
     thumbnailTextsByOrder?: string[];
+    thumbnailTextsSecondaryByOrder?: string[];
+    thumbnailTextSecondaryOverrideFlags?: boolean[];
     layoutProfiles?: CaptionProjectSettingsValues['layoutProfiles'];
     settingsRevision?: number;
     settingsUpdatedAt?: string;
@@ -268,8 +273,19 @@ export function useCaptionProcessing({
       style: settings.style ? { ...settings.style } : settings.style,
       subtitlePosition: settings.subtitlePosition ? { ...settings.subtitlePosition } : settings.subtitlePosition,
       logoPosition: settings.logoPosition ? { ...settings.logoPosition } : settings.logoPosition,
+      thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition
+        ? { ...settings.thumbnailTextPrimaryPosition }
+        : settings.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition
+        ? { ...settings.thumbnailTextSecondaryPosition }
+        : settings.thumbnailTextSecondaryPosition,
       thumbnailTextsByOrder: settings.thumbnailTextsByOrder ? [...settings.thumbnailTextsByOrder] : [],
+      thumbnailTextsSecondaryByOrder: settings.thumbnailTextsSecondaryByOrder ? [...settings.thumbnailTextsSecondaryByOrder] : [],
+      thumbnailTextSecondaryOverrideFlags: settings.thumbnailTextSecondaryOverrideFlags
+        ? [...settings.thumbnailTextSecondaryOverrideFlags]
+        : [],
       thumbnailText: settings.thumbnailText || '',
+      thumbnailTextSecondary: settings.thumbnailTextSecondary || '',
     };
     const cfg = runLockedSettings;
     const processingMode = cfg.processingMode ?? 'folder-first';
@@ -444,8 +460,13 @@ export function useCaptionProcessing({
         thumbnailText: isMulti
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim(),
+        thumbnailTextSecondary: isMulti
+          ? (cfg.thumbnailTextsSecondaryByOrder?.[folderIdx] || '').trim()
+          : (cfg.thumbnailTextSecondary || '').trim(),
         thumbnailFontName: cfg.thumbnailFontName,
         thumbnailFontSize: cfg.thumbnailFontSize,
+        thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
+        thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
         portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
         logoPath: cfg.logoPath,
         logoPosition: cfg.logoPosition,
@@ -483,6 +504,11 @@ export function useCaptionProcessing({
       audioVolume: cfg.audioVolume,
       thumbnailFontName: cfg.thumbnailFontName,
       thumbnailFontSize: cfg.thumbnailFontSize,
+      thumbnailTextSecondary: cfg.thumbnailTextSecondary,
+      thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
+      thumbnailTextsSecondaryByOrder: cfg.thumbnailTextsSecondaryByOrder,
+      thumbnailTextSecondaryOverrideFlags: cfg.thumbnailTextSecondaryOverrideFlags,
       subtitlePosition: cfg.subtitlePosition,
       thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
       thumbnailDurationSec: cfg.thumbnailDurationSec,
@@ -1214,6 +1240,9 @@ export function useCaptionProcessing({
         const thumbnailTextForRender = isMulti
           ? (cfg.thumbnailTextsByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailText || '').trim();
+        const thumbnailTextSecondaryForRender = isMulti
+          ? (cfg.thumbnailTextsSecondaryByOrder?.[folderIdx] || '').trim()
+          : (cfg.thumbnailTextSecondary || '').trim();
         const finalVideoFileName = buildRenderedVideoName(
           cfg.renderMode,
           cfg.renderContainer || 'mp4',
@@ -1251,7 +1280,7 @@ export function useCaptionProcessing({
         setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
 
         console.log(
-          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, font=${cfg.thumbnailFontName || 'BrightwallPersonal'}, fontSize=${cfg.thumbnailFontSize ?? 145}, text="${thumbnailTextForRender}"`
+          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, font=${cfg.thumbnailFontName || 'BrightwallPersonal'}, fontSize=${cfg.thumbnailFontSize ?? 145}, text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
         );
 
         // @ts-ignore
@@ -1289,8 +1318,11 @@ export function useCaptionProcessing({
           thumbnailDurationSec: cfg.thumbnailDurationSec,
           thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
+          thumbnailTextSecondary: thumbnailTextSecondaryForRender,
           thumbnailFontName: cfg.thumbnailFontName,
           thumbnailFontSize: cfg.thumbnailFontSize,
+          thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
+          thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
           step7SubtitleSource: 'session_translated_entries',
           step7AudioSource: 'session_merged_audio',
         });

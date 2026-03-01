@@ -206,8 +206,11 @@ export interface CaptionVideoAPI {
     thumbnailDurationSec?: number;
     thumbnailTimeSec?: number;
     thumbnailText?: string;
+    thumbnailTextSecondary?: string;
     thumbnailFontName?: string;
     thumbnailFontSize?: number;
+    thumbnailTextPrimaryPosition?: { x: number; y: number };
+    thumbnailTextSecondaryPosition?: { x: number; y: number };
     step7SubtitleSource?: 'session_translated_entries';
     step7AudioSource?: 'session_merged_audio';
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>>;

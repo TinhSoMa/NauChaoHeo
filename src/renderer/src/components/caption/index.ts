@@ -5,6 +5,7 @@
 export { CaptionTranslator } from './CaptionTranslator';
 export { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 export { ThumbnailListPanel } from './components/ThumbnailListPanel';
+export { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 export type {
   SubtitleEntry,
   TranslationProgress,
@@ -20,5 +21,12 @@ export type {
   CaptionStepPanelKey,
   StepPanelState,
   PreviewDockState,
+  ThumbnailPreviewLayer,
+  ThumbnailPreviewTab,
+  ThumbnailPreviewSourceStatus,
+  ThumbnailPreviewRealStatus,
+  ThumbnailPreviewRuntimeState,
+  ThumbnailPreviewDraftState,
+  ThumbnailPreviewContextKey,
 } from './CaptionTypes';
 

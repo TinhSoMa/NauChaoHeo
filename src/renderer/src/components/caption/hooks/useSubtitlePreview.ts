@@ -28,10 +28,6 @@ export interface UseSubtitlePreviewOptions {
   onBlackoutChange?: (top: number | null) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
-  thumbnailText?: string; // preview overlay ở trung tâm frame khi nhập thumbnail text
-  thumbnailFontName?: string; // font riêng cho thumbnail text
-  thumbnailFontSize?: number; // cỡ chữ thumbnail text
-  selectedFrameTimeSec?: number | null; // mốc frame đang lưu trong settings
   renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
 }
 
@@ -107,10 +103,6 @@ export function useSubtitlePreview({
   onBlackoutChange,
   onLogoPositionChange,
   onLogoScaleChange,
-  thumbnailText,
-  thumbnailFontName,
-  thumbnailFontSize,
-  selectedFrameTimeSec,
   renderSnapshotMode,
 }: UseSubtitlePreviewOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -280,7 +272,7 @@ export function useSubtitlePreview({
         vh = metaRes.data.actualHeight || metaRes.data.height || 1080;
         const durationSec = Number(metaRes.data.duration) || 0;
         const fps = Number(metaRes.data.fps) || 30;
-        const desiredSecRaw = preferredTimeSec ?? selectedFrameTimeSec ?? 0;
+        const desiredSecRaw = preferredTimeSec ?? 0;
         const desiredSec = Math.max(0, Math.min(durationSec > 0 ? durationSec : desiredSecRaw, desiredSecRaw));
         // Lưu metadata để scrubber dùng sau
         videoMetaRef.current = {
@@ -295,7 +287,7 @@ export function useSubtitlePreview({
 
       const previewSpace = resolvePreviewCoordinateSpace(renderMode, renderResolution, vw, vh);
       const activeMeta = videoMetaRef.current;
-      const targetSecRaw = preferredTimeSec ?? selectedFrameTimeSec ?? 0;
+      const targetSecRaw = preferredTimeSec ?? 0;
       const targetSec = Math.max(0, Math.min(activeMeta?.duration || targetSecRaw, targetSecRaw));
       const frameNumber = Math.round(targetSec * (activeMeta?.fps || 30));
       const frameRes = await api.extractFrame(videoPath, frameNumber);
@@ -335,7 +327,7 @@ export function useSubtitlePreview({
     } catch (e) {
       setState(prev => ({ ...prev, isLoading: false, error: `${e}` }));
     }
-  }, [localBlackoutTop, renderMode, renderResolution, subtitlePosition, selectedFrameTimeSec]);
+  }, [localBlackoutTop, renderMode, renderResolution, subtitlePosition]);
 
   // Chỉ thay ảnh nền canvas — KHÔNG reset subtitlePosition, KHÔNG gọi onPositionChange
   const loadFrameAt = useCallback(async (timeSec: number) => {
@@ -360,21 +352,6 @@ export function useSubtitlePreview({
       setState(prev => ({ ...prev, isLoading: false }));
     }
   }, []);
-
-  // Đồng bộ frame từ settings khi đổi luồng/profile.
-  useEffect(() => {
-    if (!Number.isFinite(selectedFrameTimeSec as number)) {
-      return;
-    }
-    const target = Math.max(0, Number(selectedFrameTimeSec));
-    if (Math.abs(target - frameTimeSec) < 0.05) {
-      return;
-    }
-    setFrameTimeSec(target);
-    if (videoMetaRef.current?.path) {
-      loadFrameAt(target);
-    }
-  }, [selectedFrameTimeSec, frameTimeSec, loadFrameAt]);
 
   // Helper: convert canvas Y to video fraction (0-1)
   const canvasYToFraction = useCallback((cy: number) => {
@@ -704,39 +681,7 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
     }
 
-    // ===== Thumbnail text overlay (preview only) =====
-    if (thumbnailText?.trim()) {
-      const thumbFontSize = Math.max(14, Number.isFinite(thumbnailFontSize as number) ? Number(thumbnailFontSize) / ratio : outputRect.height * 0.07);
-      const thumbFont = thumbnailFontName?.trim() || style.fontName;
-      ctx.save();
-      ctx.font = `bold ${thumbFontSize}px "${thumbFont}", Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const centerX = outputRect.x + outputRect.width / 2;
-      const centerY = outputRect.y + outputRect.height / 2;
-      const measured = ctx.measureText(thumbnailText.trim());
-      const pad = thumbFontSize * 0.5;
-      const boxW = measured.width + pad * 2;
-      const boxH = thumbFontSize + pad;
-      // Semi-transparent black box
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(centerX - boxW / 2, centerY - boxH / 2, boxW, boxH);
-      // White text with black outline
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = Math.max(1, thumbFontSize * 0.06);
-      ctx.lineJoin = 'round';
-      ctx.strokeText(thumbnailText.trim(), centerX, centerY);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(thumbnailText.trim(), centerX, centerY);
-      // Thin yellow border on box to distinguish from video content
-      ctx.strokeStyle = 'rgba(250,200,0,0.7)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.strokeRect(centerX - boxW / 2, centerY - boxH / 2, boxW, boxH);
-      ctx.setLineDash([]);
-      ctx.restore();
-    }
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, thumbnailText, thumbnailFontName, thumbnailFontSize, renderMode, portraitForegroundCropPercent, renderSnapshotMode]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, renderMode, portraitForegroundCropPercent, renderSnapshotMode]);
 
   // Load video frame image
   useEffect(() => {
@@ -792,7 +737,7 @@ export function useSubtitlePreview({
     loadLogo();
   }, [logoPath, state.videoSize]);
 
-  // Load custom fonts for preview (subtitle + thumbnail)
+  // Load custom font for preview subtitle
   useEffect(() => {
     const loadFontByName = async (fontName: string) => {
       const normalized = fontName?.trim();
@@ -824,9 +769,7 @@ export function useSubtitlePreview({
 
     const run = async () => {
       try {
-        const fontsToLoad = Array.from(
-          new Set([style.fontName, thumbnailFontName].map(f => f?.trim()).filter(Boolean))
-        ) as string[];
+        const fontsToLoad = Array.from(new Set([style.fontName].map(f => f?.trim()).filter(Boolean))) as string[];
 
         for (const fontName of fontsToLoad) {
           await loadFontByName(fontName);
@@ -839,7 +782,7 @@ export function useSubtitlePreview({
     };
 
     run();
-  }, [style.fontName, thumbnailFontName, drawCanvas]);
+  }, [style.fontName, drawCanvas]);
 
   // Redraw on state changes
   useEffect(() => {

@@ -30,20 +30,11 @@ interface SubtitlePreviewProps {
   onLogoScaleChange?: (scale: number) => void;
   onSelectLogo?: () => void;
   onRemoveLogo?: () => void;
-  // Thumbnail
-  thumbnailText?: string;
-  thumbnailFontName?: string;
-  thumbnailFontSize?: number;
-  onThumbnailTextChange?: (text: string) => void;
-  thumbnailTextReadOnly?: boolean;
-  thumbnailTextHelper?: string;
-  onFrameTimeChange?: (timeSec: number | null) => void;
-  selectedFrameTimeSec?: number | null;
   renderSnapshotMode?: boolean;
   interactiveDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, thumbnailText, thumbnailFontName, thumbnailFontSize, onThumbnailTextChange, thumbnailTextReadOnly, thumbnailTextHelper, onFrameTimeChange, selectedFrameTimeSec, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -61,32 +52,15 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     onBlackoutChange,
     onLogoPositionChange,
     onLogoScaleChange,
-    thumbnailText,
-    thumbnailFontName,
-    thumbnailFontSize,
-    selectedFrameTimeSec,
     renderSnapshotMode,
   });
 
-  // Load preview when video path changes — khi video load xong, kích hoạt thumbnail ở frame 0
+  // Load preview when video path changes
   useEffect(() => {
     if (videoPath) {
-      preview.loadPreview(videoPath, selectedFrameTimeSec ?? 0);
-    } else {
-      onFrameTimeChange?.(null);
+      preview.loadPreview(videoPath);
     }
   }, [videoPath]);
-
-  useEffect(() => {
-    if (!videoPath || selectedFrameTimeSec === null || selectedFrameTimeSec === undefined) {
-      return;
-    }
-    if (Math.abs(preview.frameTimeSec - selectedFrameTimeSec) < 0.05) {
-      return;
-    }
-    preview.setFrameTimeSec(selectedFrameTimeSec);
-    preview.loadFrameAt(selectedFrameTimeSec);
-  }, [selectedFrameTimeSec, videoPath]);
 
   const resolutionOptions = isPortraitMode
     ? [
@@ -268,57 +242,6 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           )}
         </div>
       </div>
-
-      {preview.frameData && (
-        <>
-          <div className={styles.scrubberRow}>
-            <span className={styles.scrubberLabel}>{preview.frameTimeSec.toFixed(1)}s</span>
-            <input
-              type="range"
-              className={styles.scrubber}
-              min={0}
-              max={preview.videoDuration > 0 ? preview.videoDuration : 5}
-              step={0.1}
-              value={preview.frameTimeSec}
-              onChange={e => preview.setFrameTimeSec(parseFloat(e.target.value))}
-              onMouseUp={isInteractionDisabled ? undefined : (e => {
-                const t = parseFloat((e.target as HTMLInputElement).value);
-                preview.loadFrameAt(t);
-                onFrameTimeChange?.(t);
-              })}
-              onTouchEnd={isInteractionDisabled ? undefined : (e => {
-                const t = parseFloat((e.target as HTMLInputElement).value);
-                preview.loadFrameAt(t);
-                onFrameTimeChange?.(t);
-              })}
-              title="Chọn frame xem trước theo toàn bộ timeline video — frame được chọn sẽ dùng làm thumbnail"
-              disabled={isInteractionDisabled}
-            />
-            <span className={styles.scrubberHint}>
-              {preview.videoDuration > 0 ? `${preview.videoDuration.toFixed(1)}s` : 'timeline'}
-            </span>
-          </div>
-          <div className={styles.thumbnailTextRow}>
-            <span className={styles.thumbnailTextLabel}>Thumbnail:</span>
-            <input
-              type="text"
-              className={styles.thumbnailTextInput}
-              placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh text ở danh sách phía trên' : 'Tiêu đề video... (bỏ trống = không có chữ)'}
-              value={thumbnailText || ''}
-              onChange={e => onThumbnailTextChange?.(e.target.value)}
-              readOnly={!!thumbnailTextReadOnly || isInteractionDisabled}
-              title={thumbnailTextReadOnly
-                ? 'Đang ở chế độ multi-folder: text này chỉ để preview, hãy chỉnh trong danh sách theo folder'
-                : 'Văn bản hiển thị ở trung tâm thumbnail ở đầu video'}
-            />
-          </div>
-          {thumbnailTextHelper && (
-            <div className={styles.scrubberHint} style={{ marginTop: 4 }}>
-              {thumbnailTextHelper}
-            </div>
-          )}
-        </>
-      )}
 
       {!videoPath && (
         <div className={styles.hint}>

@@ -6,11 +6,15 @@ interface UseHardsubSettingsOptions {
   filePath: string;
   folderVideos: Record<string, { name: string; fullPath: string; duration: number }>;
   thumbnailEnabled: boolean;
+  thumbnailTextSecondaryGlobal: string;
 }
 
 export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const [thumbnailText, setThumbnailText] = useState('');
   const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
+  const [thumbnailTextSecondary, setThumbnailTextSecondary] = useState(options.thumbnailTextSecondaryGlobal || '');
+  const [thumbnailTextsSecondaryByOrder, setThumbnailTextsSecondaryByOrder] = useState<string[]>([]);
+  const [thumbnailTextSecondaryOverrideFlags, setThumbnailTextSecondaryOverrideFlags] = useState<boolean[]>([]);
   const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
   const [thumbnailAutoStartValue, setThumbnailAutoStartValue] = useState('');
 
@@ -23,15 +27,58 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const isThumbnailEnabled = options.thumbnailEnabled;
 
   useEffect(() => {
+    setThumbnailTextSecondary(options.thumbnailTextSecondaryGlobal || '');
+  }, [options.thumbnailTextSecondaryGlobal]);
+
+  useEffect(() => {
     const changed = selectedDraftPaths.length !== folderOrderSnapshot.length
       || selectedDraftPaths.some((path, idx) => path !== folderOrderSnapshot[idx]);
     if (!changed) {
       return;
     }
 
+    const prevPaths = folderOrderSnapshot;
+    const remapByPath = <T,>(source: T[], fallback: T): T[] =>
+      selectedDraftPaths.map((path) => {
+        const oldIdx = prevPaths.indexOf(path);
+        if (oldIdx < 0) return fallback;
+        return source[oldIdx] ?? fallback;
+      });
+
     setFolderOrderSnapshot(selectedDraftPaths);
-    setThumbnailTextsByOrder(new Array(selectedDraftPaths.length).fill(''));
-  }, [selectedDraftPaths, folderOrderSnapshot]);
+    setThumbnailTextsByOrder((prev) => remapByPath(prev, ''));
+    setThumbnailTextSecondaryOverrideFlags((prev) => remapByPath(prev, false));
+    setThumbnailTextsSecondaryByOrder((prev) => {
+      const remappedTexts = remapByPath(prev, options.thumbnailTextSecondaryGlobal || '');
+      const remappedFlags = remapByPath(thumbnailTextSecondaryOverrideFlags, false);
+      return remappedTexts.map((value, idx) =>
+        remappedFlags[idx] ? value : (options.thumbnailTextSecondaryGlobal || '')
+      );
+    });
+  }, [
+    selectedDraftPaths,
+    folderOrderSnapshot,
+    options.thumbnailTextSecondaryGlobal,
+    thumbnailTextSecondaryOverrideFlags,
+  ]);
+
+  useEffect(() => {
+    if (!selectedDraftPaths.length) return;
+    setThumbnailTextsSecondaryByOrder((prev) => {
+      const flags = thumbnailTextSecondaryOverrideFlags.length === selectedDraftPaths.length
+        ? thumbnailTextSecondaryOverrideFlags
+        : new Array(selectedDraftPaths.length).fill(false);
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill(options.thumbnailTextSecondaryGlobal || '');
+      for (let i = 0; i < selectedDraftPaths.length; i++) {
+        if (!flags[i]) {
+          next[i] = options.thumbnailTextSecondaryGlobal || '';
+        }
+      }
+      return next;
+    });
+  }, [options.thumbnailTextSecondaryGlobal, selectedDraftPaths, thumbnailTextSecondaryOverrideFlags]);
 
   const updateThumbnailTextByOrder = (idx: number, value: string) => {
     setThumbnailTextsByOrder(prev => {
@@ -41,6 +88,68 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
       next[idx] = value;
       return next;
     });
+  };
+
+  const setThumbnailTextSecondaryGlobal = (value: string) => {
+    setThumbnailTextSecondary(value);
+    if (!selectedDraftPaths.length) return;
+    setThumbnailTextsSecondaryByOrder((prev) => {
+      const flags = thumbnailTextSecondaryOverrideFlags.length === selectedDraftPaths.length
+        ? thumbnailTextSecondaryOverrideFlags
+        : new Array(selectedDraftPaths.length).fill(false);
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill('');
+      for (let i = 0; i < next.length; i++) {
+        if (!flags[i]) {
+          next[i] = value;
+        }
+      }
+      return next;
+    });
+  };
+
+  const setThumbnailTextSecondaryByOrder = (idx: number, value: string) => {
+    setThumbnailTextsSecondaryByOrder((prev) => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill(options.thumbnailTextSecondaryGlobal || '');
+      next[idx] = value;
+      return next;
+    });
+    setThumbnailTextSecondaryOverrideFlags((prev) => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill(false);
+      next[idx] = true;
+      return next;
+    });
+  };
+
+  const resetThumbnailTextSecondaryOverride = (idx: number) => {
+    setThumbnailTextSecondaryOverrideFlags((prev) => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill(false);
+      next[idx] = false;
+      return next;
+    });
+    setThumbnailTextsSecondaryByOrder((prev) => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill(options.thumbnailTextSecondaryGlobal || '');
+      next[idx] = options.thumbnailTextSecondaryGlobal || '';
+      return next;
+    });
+  };
+
+  const setSecondaryStateFromSession = (texts: string[]) => {
+    const normalized = selectedDraftPaths.map((_, idx) => texts[idx] || '');
+    const global = options.thumbnailTextSecondaryGlobal || '';
+    setThumbnailTextsSecondaryByOrder(normalized);
+    setThumbnailTextSecondaryOverrideFlags(
+      normalized.map((text) => text !== global)
+    );
   };
 
   const handleAutoFillThumbnailByEpisode = () => {
@@ -62,12 +171,16 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
         const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
         const videoName = options.folderVideos[folderPath]?.name || 'Chưa tìm thấy video';
         const text = thumbnailTextsByOrder[idx] || '';
+        const secondaryText = thumbnailTextsSecondaryByOrder[idx] || '';
+        const secondaryOverridden = !!thumbnailTextSecondaryOverrideFlags[idx];
         return {
           index: idx + 1,
           folderPath,
           folderName,
           videoName,
           text,
+          secondaryText,
+          secondaryOverridden,
           hasError: isThumbnailEnabled && !text.trim(),
         };
       })
@@ -79,6 +192,14 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     setThumbnailText,
     thumbnailTextsByOrder,
     setThumbnailTextsByOrder,
+    thumbnailTextSecondary,
+    setThumbnailTextSecondary,
+    setThumbnailTextSecondaryGlobal,
+    thumbnailTextsSecondaryByOrder,
+    setThumbnailTextsSecondaryByOrder,
+    setSecondaryStateFromSession,
+    thumbnailTextSecondaryOverrideFlags,
+    setThumbnailTextSecondaryOverrideFlags,
     thumbnailAutoStartValue,
     setThumbnailAutoStartValue,
     selectedDraftPaths,
@@ -88,6 +209,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     thumbnailFolderItems,
     hasMissingThumbnailText,
     updateThumbnailTextByOrder,
+    setThumbnailTextSecondaryByOrder,
+    resetThumbnailTextSecondaryOverride,
     handleAutoFillThumbnailByEpisode,
   };
 }
