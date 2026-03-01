@@ -15,6 +15,11 @@ import { Step, ProcessingMode } from '../CaptionTypes';
 import { ASSStyleConfig, CaptionProjectSettings } from '@shared/types/caption';
 import { useProjectContext } from '../../../context/ProjectContext';
 import { nowIso } from '@shared/utils/captionSession';
+import {
+  clampNormalizedSubtitlePosition,
+  isFiniteSubtitlePosition,
+  isNormalizedSubtitlePosition,
+} from '@shared/utils/subtitlePosition';
 
 const PROJECT_SETTINGS_FILE = 'caption-settings.json';
 
@@ -213,7 +218,10 @@ function normalizeProfile(
   } else if (patch.subtitlePosition && typeof patch.subtitlePosition === 'object') {
     const p = patch.subtitlePosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
-      next.subtitlePosition = { x: p.x, y: p.y };
+      const candidate = { x: p.x, y: p.y };
+      next.subtitlePosition = isNormalizedSubtitlePosition(candidate)
+        ? clampNormalizedSubtitlePosition(candidate)
+        : candidate;
     }
   }
   if (patch.thumbnailFrameTimeSec === null || typeof patch.thumbnailFrameTimeSec === 'number') {
@@ -573,7 +581,13 @@ export function useCaptionSettings() {
 
   const setSubtitlePosition = useCallback((value: { x: number; y: number } | null) => {
     markTypographyDefaultsDirty();
-    updateActiveProfile((current) => ({ ...current, subtitlePosition: value ? { ...value } : null }));
+    updateActiveProfile((current) => {
+      if (!isFiniteSubtitlePosition(value)) {
+        return { ...current, subtitlePosition: null };
+      }
+      const normalized = clampNormalizedSubtitlePosition(value);
+      return { ...current, subtitlePosition: normalized };
+    });
   }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailFrameTimeSec = useCallback((value: number | null) => {

@@ -1,5 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ASSStyleConfig, RenderVideoOptions, SubtitleEntry } from '@shared/types/caption';
+import { resolveLandscapeOutputSize } from '@shared/utils/renderResolution';
+import {
+  clampNormalizedSubtitlePosition,
+  isFiniteSubtitlePosition,
+  isNormalizedSubtitlePosition,
+  toNormalizedSubtitlePosition,
+  toPixelSubtitlePosition,
+} from '@shared/utils/subtitlePosition';
 
 interface SubtitlePreviewState {
   frameData: string | null;
@@ -59,22 +67,16 @@ function normalizeSubtitleShadow(value: number | undefined): number {
 function resolveSubtitleScaleFactor(
   renderMode: PreviewRenderMode,
   renderResolution: PreviewRenderResolution,
+  sourceWidth: number,
   sourceHeight: number
 ): number {
-  if (renderMode === 'hardsub_portrait_9_16' || renderMode === 'black_bg') {
+  if (renderMode === 'hardsub_portrait_9_16') {
     return 1;
   }
-
-  let maxOutputHeight = 1080;
-  if (renderResolution === '720p') maxOutputHeight = 720;
-  if (renderResolution === '540p') maxOutputHeight = 540;
-  if (renderResolution === '360p') maxOutputHeight = 360;
-  if (renderResolution === 'original') maxOutputHeight = 99999;
-
-  if (sourceHeight > maxOutputHeight) {
-    return maxOutputHeight / sourceHeight;
-  }
-  return 1;
+  const safeSourceW = Math.max(2, sourceWidth);
+  const safeSourceH = Math.max(2, sourceHeight);
+  const output = resolveLandscapeOutputSize(safeSourceW, safeSourceH, renderResolution);
+  return output.height / safeSourceH;
 }
 
 function resolvePortraitCanvasByPreset(renderResolution?: PreviewRenderResolution): { width: number; height: number } {
@@ -164,13 +166,14 @@ export function useSubtitlePreview({
   const videoMetaRef = useRef<{ path: string; fps: number; duration: number } | null>(null);
 
   const [frameTimeSec, setFrameTimeSec] = useState(0);
+  const initialSubtitlePosition = isFiniteSubtitlePosition(subtitlePosition)
+    ? toNormalizedSubtitlePosition(subtitlePosition, 1920, 1080)
+    : { x: 0.5, y: 0.5 };
 
   const [state, setState] = useState<SubtitlePreviewState>({
     frameData: null,
     videoSize: { width: 1920, height: 1080 },
-    subtitlePosition: subtitlePosition
-      ? { ...subtitlePosition }
-      : { x: 960, y: 540 },
+    subtitlePosition: initialSubtitlePosition,
     isLoading: false,
     error: null,
   });
@@ -181,6 +184,7 @@ export function useSubtitlePreview({
   const previewRectRef = useRef({ x: 0, y: 0, width: 1, height: 1 });
   const portraitFgRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const previewSpaceRef = useRef({ width: 1920, height: 1080 });
+  const migratedLegacySubtitleRef = useRef<string | null>(null);
 
   // Mode: subtitle positioning, blackout line dragging, or logo positioning
   const [mode, setMode] = useState<PreviewMode>('subtitle');
@@ -210,14 +214,9 @@ export function useSubtitlePreview({
   }, [blackoutTop]);
 
   useEffect(() => {
-    if (!subtitlePosition) {
+    if (!isFiniteSubtitlePosition(subtitlePosition)) {
       setState((prev) => {
-        const safeW = Math.max(1, prev.videoSize.width);
-        const safeH = Math.max(1, prev.videoSize.height);
-        const fallback = {
-          x: Math.floor(safeW / 2),
-          y: Math.floor(safeH / 2),
-        };
+        const fallback = { x: 0.5, y: 0.5 };
         if (
           prev.subtitlePosition.x === fallback.x &&
           prev.subtitlePosition.y === fallback.y
@@ -231,19 +230,24 @@ export function useSubtitlePreview({
       });
       return;
     }
+    const nextNormalized = toNormalizedSubtitlePosition(
+      subtitlePosition,
+      Math.max(1, state.videoSize.width),
+      Math.max(1, state.videoSize.height)
+    );
     setState((prev) => {
       if (
-        prev.subtitlePosition.x === subtitlePosition.x &&
-        prev.subtitlePosition.y === subtitlePosition.y
+        prev.subtitlePosition.x === nextNormalized.x &&
+        prev.subtitlePosition.y === nextNormalized.y
       ) {
         return prev;
       }
       return {
         ...prev,
-        subtitlePosition: { ...subtitlePosition },
+        subtitlePosition: nextNormalized,
       };
     });
-  }, [subtitlePosition]);
+  }, [state.videoSize.height, state.videoSize.width, subtitlePosition]);
 
   // Khi đổi mode/resolution, cập nhật lại coordinate-space preview để hiển thị chính xác hơn.
   useEffect(() => {
@@ -255,23 +259,38 @@ export function useSubtitlePreview({
         return prev;
       }
 
-      let nextPos = prev.subtitlePosition;
-      if (!subtitlePosition) {
-        const relX = prev.subtitlePosition.x / Math.max(1, prev.videoSize.width);
-        const relY = prev.subtitlePosition.y / Math.max(1, prev.videoSize.height);
-        nextPos = {
-          x: Math.max(0, Math.min(nextSpace.width, Math.floor(relX * nextSpace.width))),
-          y: Math.max(0, Math.min(nextSpace.height, Math.floor(relY * nextSpace.height))),
-        };
-      }
-
       return {
         ...prev,
         videoSize: nextSpace,
-        subtitlePosition: nextPos,
       };
     });
-  }, [renderMode, renderResolution, subtitlePosition]);
+  }, [renderMode, renderResolution]);
+
+  useEffect(() => {
+    const legacyPosition = subtitlePosition;
+    if (!state.frameData || !onPositionChange) {
+      return;
+    }
+    if (!isFiniteSubtitlePosition(legacyPosition)) {
+      return;
+    }
+    if (isNormalizedSubtitlePosition(legacyPosition)) {
+      return;
+    }
+    const legacyPoint = legacyPosition as { x: number; y: number };
+    const signature = `${legacyPoint.x}:${legacyPoint.y}:${state.videoSize.width}:${state.videoSize.height}`;
+    if (migratedLegacySubtitleRef.current === signature) {
+      return;
+    }
+    migratedLegacySubtitleRef.current = signature;
+    onPositionChange(toNormalizedSubtitlePosition(legacyPoint, state.videoSize.width, state.videoSize.height));
+  }, [
+    onPositionChange,
+    state.frameData,
+    state.videoSize.height,
+    state.videoSize.width,
+    subtitlePosition,
+  ]);
   
   useEffect(() => {
     localLogoPositionRef.current = logoPosition ?? null;
@@ -344,15 +363,14 @@ export function useSubtitlePreview({
 
         setState(prev => {
           let nextPosition = prev.subtitlePosition;
-          if (subtitlePosition) {
-            nextPosition = { ...subtitlePosition };
+          if (isFiniteSubtitlePosition(subtitlePosition)) {
+            nextPosition = toNormalizedSubtitlePosition(subtitlePosition, previewSpace.width, previewSpace.height);
           } else if (!Number.isFinite(prev.subtitlePosition.x) || !Number.isFinite(prev.subtitlePosition.y)) {
-            let initialY = Math.floor(previewSpace.height / 2);
+            let initialY = 0.5;
             if (localBlackoutTop !== null && localBlackoutTop < 1) {
-              const blackoutMidFrac = localBlackoutTop + (1 - localBlackoutTop) / 2;
-              initialY = Math.floor(previewSpace.height * blackoutMidFrac);
+              initialY = localBlackoutTop + (1 - localBlackoutTop) / 2;
             }
-            nextPosition = { x: Math.floor(previewSpace.width / 2), y: initialY };
+            nextPosition = { x: 0.5, y: Math.max(0, Math.min(1, initialY)) };
           }
 
           return {
@@ -606,16 +624,13 @@ export function useSubtitlePreview({
       displayText = entries[0].translatedText || entries[0].text;
     }
 
-    const pos = state.subtitlePosition;
-    const clampedX = Math.max(0, Math.min(previewWidth, pos.x));
-    const clampedY = Math.max(0, Math.min(previewHeight, pos.y));
-    const mappedText = mapPreviewToCanvas(clampedX, clampedY);
-    const textX = mappedText.x;
-    const textY = mappedText.y;
+    const normalizedSubtitlePos = clampNormalizedSubtitlePosition(state.subtitlePosition);
+    const textX = outputRect.x + normalizedSubtitlePos.x * outputRect.width;
+    const textY = outputRect.y + normalizedSubtitlePos.y * outputRect.height;
 
     const normalizedUserFontSize = normalizeSubtitleFontSize(style.fontSize);
     const shadowBase = normalizeSubtitleShadow(style.shadow);
-    const subtitleScaleFactor = resolveSubtitleScaleFactor(renderMode, renderResolution, state.videoSize.height);
+    const subtitleScaleFactor = resolveSubtitleScaleFactor(renderMode, renderResolution, img.width, img.height);
     const effectiveFontSize = Math.max(1, Math.round(normalizedUserFontSize * subtitleScaleFactor));
     const effectiveOutline = Math.max(1, Math.round(effectiveFontSize * 0.06));
     const effectiveShadow = shadowBase === 0
@@ -870,6 +885,16 @@ export function useSubtitlePreview({
     };
   }, []);
 
+  const canvasToPreviewNormalized = useCallback((cx: number, cy: number) => {
+    const rect = previewRectRef.current;
+    const safeW = Math.max(1, rect.width);
+    const safeH = Math.max(1, rect.height);
+    return {
+      x: Math.max(0, Math.min(1, (cx - rect.x) / safeW)),
+      y: Math.max(0, Math.min(1, (cy - rect.y) / safeH)),
+    };
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!state.frameData) return;
 
@@ -881,7 +906,7 @@ export function useSubtitlePreview({
     setIsDragging(true);
 
     if (mode === 'subtitle') {
-      const newPos = canvasToPreviewCoords(cx, cy);
+      const newPos = canvasToPreviewNormalized(cx, cy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
       onPositionChange?.(newPos);
     } else if (mode === 'logo') {
@@ -901,7 +926,7 @@ export function useSubtitlePreview({
       const frac = canvasYToFraction(cy);
       setLocalBlackoutTop(frac);
     }
-  }, [state.frameData, mode, isNearCorner, onPositionChange, canvasYToFraction, canvasToPreviewCoords]);
+  }, [state.frameData, mode, isNearCorner, onPositionChange, canvasYToFraction, canvasToPreviewCoords, canvasToPreviewNormalized]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -919,7 +944,7 @@ export function useSubtitlePreview({
     if (!isDragging || !state.frameData) return;
 
     if (mode === 'subtitle') {
-      const newPos = canvasToPreviewCoords(cx, cy);
+      const newPos = canvasToPreviewNormalized(cx, cy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
     } else if (mode === 'logo') {
       if (cornerDragRef.current) {
@@ -938,7 +963,7 @@ export function useSubtitlePreview({
       const frac = canvasYToFraction(cy);
       setLocalBlackoutTop(frac);
     }
-  }, [isDragging, state.frameData, mode, isNearCorner, canvasYToFraction, canvasToPreviewCoords]);
+  }, [isDragging, state.frameData, mode, isNearCorner, canvasYToFraction, canvasToPreviewCoords, canvasToPreviewNormalized]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -968,8 +993,8 @@ export function useSubtitlePreview({
   const resetToCenter = useCallback(() => {
     setState(prev => {
       const center = {
-        x: Math.floor(prev.videoSize.width / 2),
-        y: prev.subtitlePosition.y, // Giữ nguyên độ cao (Y) hiện tại
+        x: 0.5,
+        y: Math.max(0, Math.min(1, prev.subtitlePosition.y)), // Giữ nguyên độ cao (Y) hiện tại
       };
       
       // Delay call to outer handler to avoid stale state in render
@@ -984,11 +1009,20 @@ export function useSubtitlePreview({
     onBlackoutChange?.(null);
   }, [onBlackoutChange]);
 
+  const subtitlePositionRel = clampNormalizedSubtitlePosition(state.subtitlePosition);
+  const subtitlePositionPx = toPixelSubtitlePosition(
+    subtitlePositionRel,
+    Math.max(1, state.videoSize.width),
+    Math.max(1, state.videoSize.height)
+  );
+
   return {
     canvasRef,
     containerRef,
     frameData: state.frameData,
-    subtitlePosition: state.subtitlePosition,
+    subtitlePosition: subtitlePositionPx,
+    subtitlePositionRel,
+    subtitlePositionPx,
     videoSize: state.videoSize,
     isLoading: state.isLoading,
     error: state.error,

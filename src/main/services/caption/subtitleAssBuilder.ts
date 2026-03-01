@@ -6,6 +6,12 @@ import { existsSync } from 'fs';
 import { parseSrtFile } from './srtParser';
 import { RenderVideoOptions } from '../../../shared/types/caption';
 import { calculateHardsubTiming } from '../../../shared/utils/hardsubTiming';
+import { resolveLandscapeOutputSize, ensureEven as ensureEvenResolution } from '../../../shared/utils/renderResolution';
+import {
+  clampNormalizedSubtitlePosition,
+  isFiniteSubtitlePosition,
+  isNormalizedSubtitlePosition,
+} from '../../../shared/utils/subtitlePosition';
 import { hexToAssColor } from './assConverter';
 import { getVideoMetadata } from './hardsub/mediaProbe';
 import { readRenderTimingContext } from './hardsub/timingContext';
@@ -104,6 +110,7 @@ async function prepareSubtitleAndDurationCore(
   portraitAssCanvas?: PortraitAssCanvas
 ): Promise<SubtitlePrepResult> {
   const { srtPath, width, height: userHeight, videoPath, outputPath } = options;
+  const activeRenderMode = options.renderMode || 'black_bg';
   const audioSpeed = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
   const configuredSrtTimeScale = options.srtTimeScale && options.srtTimeScale > 0 ? options.srtTimeScale : 1.0;
   const isHardsub = (options.renderMode === 'hardsub' || options.renderMode === 'hardsub_portrait_9_16') && !!videoPath;
@@ -195,27 +202,30 @@ async function prepareSubtitleAndDurationCore(
 
   let finalWidth = portraitAssCanvas?.width ?? width;
   let finalHeight = portraitAssCanvas?.height ?? (userHeight || 150);
-  if (finalWidth % 2 !== 0) finalWidth += 1;
-  if (finalHeight % 2 !== 0) finalHeight += 1;
-  finalWidth = Math.max(64, Math.min(7680, finalWidth));
-  finalHeight = Math.max(64, Math.min(4320, finalHeight));
+  finalWidth = Math.max(64, Math.min(7680, ensureEvenResolution(finalWidth, 64)));
+  finalHeight = Math.max(64, Math.min(4320, ensureEvenResolution(finalHeight, 64)));
 
   const tempAssPath = path.join(os.tmpdir(), `sub_${Date.now()}.ass`);
 
   let renderWidth = finalWidth;
   let renderHeight = finalHeight;
+  let sourceVideoWidth = Math.max(2, ensureEvenResolution(width, 2));
+  let sourceVideoHeight = Math.max(2, ensureEvenResolution(userHeight || 150, 2));
   let needsScale = false;
   let hasVideoAudio = false;
   let originalVideoDuration = 0;
   const videoSpeedMultiplier = videoSpeedNeeded > 0 ? videoSpeedNeeded : 1.0;
+  const hasSourceVideo = !!(videoPath && existsSync(videoPath));
 
-  if (videoPath && existsSync(videoPath)) {
+  if (hasSourceVideo) {
     try {
       const probeResult = await getVideoMetadata(videoPath);
       if (probeResult.success && probeResult.metadata) {
+        sourceVideoWidth = Math.max(2, ensureEvenResolution(probeResult.metadata.width, 2));
+        sourceVideoHeight = Math.max(2, ensureEvenResolution(probeResult.metadata.actualHeight || probeResult.metadata.height, 2));
         if (!portraitAssCanvas) {
-          renderWidth = probeResult.metadata.width;
-          renderHeight = probeResult.metadata.actualHeight || probeResult.metadata.height;
+          renderWidth = sourceVideoWidth;
+          renderHeight = sourceVideoHeight;
         }
         hasVideoAudio = !!probeResult.metadata.hasAudio;
         originalVideoDuration = probeResult.metadata.duration;
@@ -236,19 +246,35 @@ async function prepareSubtitleAndDurationCore(
 
   let scaleFactor = 1;
   if (!portraitAssCanvas) {
-    let MAX_OUTPUT_HEIGHT = 1080;
-    if (options.renderResolution === '720p') MAX_OUTPUT_HEIGHT = 720;
-    if (options.renderResolution === '540p') MAX_OUTPUT_HEIGHT = 540;
-    if (options.renderResolution === '360p') MAX_OUTPUT_HEIGHT = 360;
-    if (options.renderResolution === 'original') MAX_OUTPUT_HEIGHT = 99999;
+    const skipBlackBgScale = activeRenderMode === 'black_bg' && !hasSourceVideo;
+    const outputSize = skipBlackBgScale
+      ? {
+          width: sourceVideoWidth,
+          height: sourceVideoHeight,
+          scaleFactor: 1,
+          isUpscale: false,
+          isDownscale: false,
+        }
+      : resolveLandscapeOutputSize(sourceVideoWidth, sourceVideoHeight, options.renderResolution);
 
-    if (renderHeight > MAX_OUTPUT_HEIGHT && videoPath && existsSync(videoPath)) {
-      scaleFactor = MAX_OUTPUT_HEIGHT / renderHeight;
-      renderWidth = Math.round(renderWidth * scaleFactor);
-      if (renderWidth % 2 !== 0) renderWidth += 1;
-      renderHeight = MAX_OUTPUT_HEIGHT;
-      needsScale = true;
+    renderWidth = outputSize.width;
+    renderHeight = outputSize.height;
+    scaleFactor = outputSize.scaleFactor;
+    needsScale = renderWidth !== sourceVideoWidth || renderHeight !== sourceVideoHeight;
+
+    if (activeRenderMode === 'black_bg' && hasSourceVideo) {
+      finalWidth = Math.max(64, Math.min(7680, ensureEvenResolution(finalWidth * scaleFactor, 64)));
+      finalHeight = Math.max(64, Math.min(4320, ensureEvenResolution(finalHeight * scaleFactor, 64)));
     }
+
+    console.log('[VideoRenderer][Resolution][Landscape]', {
+      sourceSize: `${sourceVideoWidth}x${sourceVideoHeight}`,
+      targetResolution: options.renderResolution || '1080p',
+      outputSize: `${renderWidth}x${renderHeight}`,
+      scaleFactor: Number(scaleFactor.toFixed(6)),
+      isUpscale: outputSize.isUpscale,
+      isDownscale: outputSize.isDownscale,
+    });
   }
 
   const s = options.style || { fontName: 'Arial', fontSize: 48, fontColor: '#FFFF00', shadow: 2, marginV: 0, alignment: 5 };
@@ -318,10 +344,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const startAss = msToAssTime(scaledStartMs / step7Speed);
     const endAss = msToAssTime(scaledEndMs / step7Speed);
     let text = (entry.translatedText || entry.text).replace(/\n/g, '\\N');
-    if (options.position) {
-      const posX = Math.round(options.position.x * scaleFactor);
-      const posY = Math.round(options.position.y * scaleFactor);
-      text = `{\\pos(${posX},${posY})}${text}`;
+    if (isFiniteSubtitlePosition(options.position)) {
+      let posX = 0;
+      let posY = 0;
+      if (isNormalizedSubtitlePosition(options.position)) {
+        const normalized = clampNormalizedSubtitlePosition(options.position);
+        posX = Math.round(normalized.x * renderWidth);
+        posY = Math.round(normalized.y * renderHeight);
+      } else {
+        posX = Math.round(options.position.x * scaleFactor);
+        posY = Math.round(options.position.y * scaleFactor);
+      }
+      const clampedX = Math.max(0, Math.min(renderWidth, posX));
+      const clampedY = Math.max(0, Math.min(renderHeight, posY));
+      text = `{\\pos(${clampedX},${clampedY})}${text}`;
     }
     assContent += `Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${text}\n`;
   }

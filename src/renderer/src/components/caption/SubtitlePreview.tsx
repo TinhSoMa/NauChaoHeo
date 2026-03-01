@@ -168,7 +168,9 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
         <span className={styles.positionInfo}>
           {preview.mode === 'subtitle' ? (
             <>
-              pos({preview.subtitlePosition.x}, {preview.subtitlePosition.y})
+              rel({preview.subtitlePositionRel.x.toFixed(3)}, {preview.subtitlePositionRel.y.toFixed(3)})
+              {' | '}
+              px({preview.subtitlePositionPx.x}, {preview.subtitlePositionPx.y})
               {' | '}
               {preview.videoSize.width}×{preview.videoSize.height}
               {' | '}

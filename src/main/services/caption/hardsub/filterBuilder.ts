@@ -4,7 +4,7 @@ export function buildVideoFilter(input: VideoFilterBuildInput): string {
   const filterParts: string[] = [];
 
   if (input.needsScale) {
-    filterParts.push(`scale=${input.renderWidth}:${input.renderHeight}`);
+    filterParts.push(`scale=${input.renderWidth}:${input.renderHeight}:flags=bicubic`);
   }
   if (input.blackoutTop != null && input.blackoutTop < 1) {
     const blackoutY = Math.round(input.blackoutTop * input.renderHeight);
@@ -19,4 +19,3 @@ export function buildVideoFilter(input: VideoFilterBuildInput): string {
 
   return filterParts.join(',');
 }
-
