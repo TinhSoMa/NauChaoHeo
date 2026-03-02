@@ -12,6 +12,10 @@ import {
   isFiniteSubtitlePosition,
   isNormalizedSubtitlePosition,
 } from '../../../shared/utils/subtitlePosition';
+import {
+  buildSubtitleShadowLayers,
+  opacityToAssAlphaHex,
+} from '../../../shared/utils/subtitleShadowProfile';
 import { hexToAssColor } from './assConverter';
 import { getVideoMetadata } from './hardsub/mediaProbe';
 import { readRenderTimingContext } from './hardsub/timingContext';
@@ -54,8 +58,6 @@ const MIN_SUBTITLE_SHADOW = 0;
 const MAX_SUBTITLE_SHADOW = 20;
 const DEFAULT_SUBTITLE_FONT_SIZE = 48;
 const DEFAULT_SUBTITLE_SHADOW = 2;
-const SUBTITLE_SHADOW_STRONG_OPACITY = 0.9;
-const SUBTITLE_SHADOW_SOFT_OPACITY = 0.15;
 
 function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -73,12 +75,6 @@ function normalizeSubtitleShadow(value: number | undefined): number {
     return DEFAULT_SUBTITLE_SHADOW;
   }
   return clampNumber(value as number, MIN_SUBTITLE_SHADOW, MAX_SUBTITLE_SHADOW);
-}
-
-function opacityToAssAlphaHex(opacity: number): string {
-  const normalizedOpacity = clampNumber(opacity, 0, 1);
-  const alpha = Math.round((1 - normalizedOpacity) * 255);
-  return alpha.toString(16).toUpperCase().padStart(2, '0');
 }
 
 function parseScaleFromSrtFileName(srtPath: string): number | null {
@@ -293,10 +289,14 @@ async function prepareSubtitleAndDurationCore(
   const effectiveShadow = shadowBase === 0
     ? 0
     : Math.max(1, Math.round(effectiveFontSize * 0.04 * (shadowBase / 4)));
-  const strongShadowOffset = Math.max(1, effectiveShadow);
-  const softShadowOffset = Math.max(strongShadowOffset + 1, Math.round(effectiveShadow * 1.8));
-  const strongShadowAlpha = opacityToAssAlphaHex(SUBTITLE_SHADOW_STRONG_OPACITY);
-  const softShadowAlpha = opacityToAssAlphaHex(SUBTITLE_SHADOW_SOFT_OPACITY);
+  const shadowLayers = buildSubtitleShadowLayers(effectiveShadow);
+  const orderedShadowLayers = [...shadowLayers].reverse();
+  console.log('[VideoRenderer][SubtitleShadow]', {
+    shadowLayers: shadowLayers.length,
+    shadowAlphaRange: '0.95->0.05',
+    effectiveShadow,
+    fontSize: effectiveFontSize,
+  });
 
   const assColor = hexToAssColor(s.fontColor);
   const assAlignment = 5;
@@ -370,19 +370,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const clampedX = Math.max(0, Math.min(renderWidth, posX));
     const clampedY = Math.max(0, Math.min(renderHeight, posY));
 
-    if (effectiveShadow > 0) {
-      const softShadowText =
-        `{\\an5\\pos(${clampedX + softShadowOffset},${clampedY + softShadowOffset})` +
-        `\\1c&H000000&\\1a&H${softShadowAlpha}&\\bord0\\shad0\\blur3}${text}`;
-      const strongShadowText =
-        `{\\an5\\pos(${clampedX + strongShadowOffset},${clampedY + strongShadowOffset})` +
-        `\\1c&H000000&\\1a&H${strongShadowAlpha}&\\bord0\\shad0\\blur1}${text}`;
-      assContent += `Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${softShadowText}\n`;
-      assContent += `Dialogue: 1,${startAss},${endAss},Default,,0,0,0,,${strongShadowText}\n`;
+    if (orderedShadowLayers.length > 0) {
+      orderedShadowLayers.forEach((layer, layerIndex) => {
+        const alphaHex = opacityToAssAlphaHex(layer.opacity);
+        const blurValue = Number(layer.blurPx.toFixed(2));
+        const shadowText =
+          `{\\an5\\pos(${clampedX + layer.offsetPx},${clampedY + layer.offsetPx})` +
+          `\\1c&H000000&\\1a&H${alphaHex}&\\bord0\\shad0\\blur${blurValue}}${text}`;
+        assContent += `Dialogue: ${layerIndex},${startAss},${endAss},Default,,0,0,0,,${shadowText}\n`;
+      });
     }
 
     const mainText = `{\\an5\\pos(${clampedX},${clampedY})\\bord0\\shad0}${text}`;
-    assContent += `Dialogue: 2,${startAss},${endAss},Default,,0,0,0,,${mainText}\n`;
+    assContent += `Dialogue: ${orderedShadowLayers.length},${startAss},${endAss},Default,,0,0,0,,${mainText}\n`;
   }
 
   await fs.writeFile(tempAssPath, assContent, 'utf-8');

@@ -14,7 +14,10 @@ import {
   isConvexQuad,
   normalizeQuad,
   quadBoundingBox,
+  resolveCopySourceY,
+  resolveCoverRectPixels,
 } from '@shared/utils/maskCoverGeometry';
+import { buildSubtitleShadowLayers } from '@shared/utils/subtitleShadowProfile';
 
 interface SubtitlePreviewState {
   frameData: string | null;
@@ -56,8 +59,6 @@ const MIN_SUBTITLE_SHADOW = 0;
 const MAX_SUBTITLE_SHADOW = 20;
 const DEFAULT_SUBTITLE_FONT_SIZE = 48;
 const DEFAULT_SUBTITLE_SHADOW = 2;
-const SUBTITLE_SHADOW_STRONG_OPACITY = 0.9;
-const SUBTITLE_SHADOW_SOFT_OPACITY = 0.15;
 
 function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -188,6 +189,9 @@ interface CoverRect {
 type CoverDragEdge = 'left' | 'right' | 'top' | 'bottom';
 
 const MIN_COVER_RECT_SIZE = 0.02;
+const MIN_PREVIEW_ZOOM = 1;
+const MAX_PREVIEW_ZOOM = 4;
+const PREVIEW_ZOOM_STEP = 0.1;
 
 function rectToQuad(rect: CoverRect): CoverQuad {
   return {
@@ -234,6 +238,13 @@ export function useSubtitlePreview({
   const imageRef = useRef<HTMLImageElement | null>(null);
   const logoImageRef = useRef<HTMLImageElement | null>(null);
   const blurScratchRef = useRef<HTMLCanvasElement | null>(null);
+  const worldCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const panDragRef = useRef<{
+    startX: number;
+    startY: number;
+    startPanX: number;
+    startPanY: number;
+  } | null>(null);
   // Stores logo bounding box in canvas-pixel coords, updated every drawCanvas
   const logoBoundsRef = useRef<{ cx: number; cy: number; hw: number; hh: number } | null>(null);
   // Stores corner-drag start data
@@ -257,6 +268,10 @@ export function useSubtitlePreview({
 
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [spacePressed, setSpacePressed] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
   const [canvasCursor, setCanvasCursor] = useState<string>('crosshair');
   const previewRectRef = useRef({ x: 0, y: 0, width: 1, height: 1 });
   const portraitFgRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -274,6 +289,7 @@ export function useSubtitlePreview({
   const localCoverQuadRef = useRef<CoverQuad>(initialCoverQuad);
   const [coverQuadValid, setCoverQuadValid] = useState<boolean>(true);
   const [copyOffsetPx, setCopyOffsetPx] = useState<number>(0);
+  const [copyRectDebug, setCopyRectDebug] = useState<{ x: number; y: number; w: number; h: number; sourceY: number } | null>(null);
   const coverDragEdgeRef = useRef<{
     edge: CoverDragEdge;
     startRect: CoverRect;
@@ -306,6 +322,38 @@ export function useSubtitlePreview({
     setLocalCoverQuad(normalizedRectQuad);
     setCoverQuadValid(isConvexQuad(normalizedRectQuad));
   };
+
+  const clampPan = useCallback((pan: { x: number; y: number }, zoom: number, width: number, height: number) => {
+    if (zoom <= MIN_PREVIEW_ZOOM) {
+      return { x: 0, y: 0 };
+    }
+    const minX = width - width * zoom;
+    const minY = height - height * zoom;
+    return {
+      x: Math.max(minX, Math.min(0, pan.x)),
+      y: Math.max(minY, Math.min(0, pan.y)),
+    };
+  }, []);
+
+  const resetViewTransform = useCallback(() => {
+    setPreviewZoom(1);
+    setPreviewPan({ x: 0, y: 0 });
+    setIsPanning(false);
+    panDragRef.current = null;
+  }, []);
+
+  const setZoom = useCallback((value: number) => {
+    const nextZoom = clampNumber(value, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
+    setPreviewZoom(nextZoom);
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    setZoom(previewZoom + PREVIEW_ZOOM_STEP);
+  }, [previewZoom, setZoom]);
+
+  const zoomOut = useCallback(() => {
+    setZoom(previewZoom - PREVIEW_ZOOM_STEP);
+  }, [previewZoom, setZoom]);
 
   // Sync from prop when it changes externally
   useEffect(() => {
@@ -410,6 +458,52 @@ export function useSubtitlePreview({
     setLocalLogoScale(logoScale ?? 1.0);
   }, [logoScale]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return;
+        }
+      }
+      event.preventDefault();
+      setSpacePressed(true);
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        setSpacePressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { passive: false });
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const cw = containerSize.width || 400;
+    const ch = containerSize.height || 225;
+    setPreviewPan((prev) => {
+      const next = clampPan(prev, previewZoom, cw, ch);
+      if (next.x === prev.x && next.y === prev.y) {
+        return prev;
+      }
+      return next;
+    });
+  }, [clampPan, containerSize.height, containerSize.width, previewZoom]);
+
+  useEffect(() => {
+    resetViewTransform();
+  }, [renderMode, renderResolution, resetViewTransform]);
+
   // ---------------------------------------------------------
   // Resize observer
   useEffect(() => {
@@ -432,6 +526,9 @@ export function useSubtitlePreview({
   const loadPreview = useCallback(async (videoPath: string, preferredTimeSec?: number | null) => {
     if (!videoPath) return;
     const shouldResetFrame = videoMetaRef.current?.path !== videoPath;
+    if (shouldResetFrame) {
+      resetViewTransform();
+    }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
@@ -503,7 +600,7 @@ export function useSubtitlePreview({
     } catch (e) {
       setState(prev => ({ ...prev, isLoading: false, error: `${e}` }));
     }
-  }, [localBlackoutTop, renderMode, renderResolution, subtitlePosition]);
+  }, [localBlackoutTop, renderMode, renderResolution, resetViewTransform, subtitlePosition]);
 
   // Chỉ thay ảnh nền canvas — KHÔNG reset subtitlePosition, KHÔNG gọi onPositionChange
   const loadFrameAt = useCallback(async (timeSec: number) => {
@@ -548,15 +645,39 @@ export function useSubtitlePreview({
   }, [renderMode]);
 
   const drawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const hostCanvas = canvasRef.current;
+    if (!hostCanvas) return;
+    const hostCtx = hostCanvas.getContext('2d');
+    if (!hostCtx) return;
 
     const cw = containerSize.width || 400;
     const ch = containerSize.height || 225;
-    canvas.width = cw;
-    canvas.height = ch;
+    hostCanvas.width = cw;
+    hostCanvas.height = ch;
+
+    let worldCanvas = worldCanvasRef.current;
+    if (!worldCanvas) {
+      worldCanvas = document.createElement('canvas');
+      worldCanvasRef.current = worldCanvas;
+    }
+    if (worldCanvas.width !== cw || worldCanvas.height !== ch) {
+      worldCanvas.width = cw;
+      worldCanvas.height = ch;
+    }
+    const canvas = worldCanvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const presentWorldCanvas = () => {
+      hostCtx.setTransform(1, 0, 0, 1, 0, 0);
+      hostCtx.clearRect(0, 0, cw, ch);
+      hostCtx.fillStyle = '#111827';
+      hostCtx.fillRect(0, 0, cw, ch);
+      hostCtx.save();
+      hostCtx.setTransform(previewZoom, 0, 0, previewZoom, previewPan.x, previewPan.y);
+      hostCtx.drawImage(canvas, 0, 0, cw, ch);
+      hostCtx.restore();
+    };
 
     const img = imageRef.current;
 
@@ -568,6 +689,7 @@ export function useSubtitlePreview({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('Chưa có video preview', cw / 2, ch / 2);
+      presentWorldCanvas();
       return;
     }
 
@@ -656,6 +778,7 @@ export function useSubtitlePreview({
     coverActiveRegionRef.current = coverRegion;
 
     if (renderSnapshotMode) {
+      presentWorldCanvas();
       return;
     }
 
@@ -663,22 +786,36 @@ export function useSubtitlePreview({
     if (localCoverMode === 'copy_from_above') {
       const quad = normalizeQuad(localCoverQuad);
       const region = coverRegion;
-      const toCanvasPoint = (point: CoverQuadPoint): CoverQuadPoint => ({
-        x: region.x + point.x * region.width,
-        y: region.y + point.y * region.height,
-      });
-      const pTl = toCanvasPoint(quad.tl);
-      const pTr = toCanvasPoint(quad.tr);
-      const pBr = toCanvasPoint(quad.br);
-      const pBl = toCanvasPoint(quad.bl);
-      const poly = [pTl, pTr, pBr, pBl];
+      const rectPx = resolveCoverRectPixels(quad, previewWidth, previewHeight);
       const normOffset = computeCopyOffset(quad);
-      const offset = Math.max(0, Math.round(normOffset * region.height));
+      const offset = Math.max(0, Math.round(normOffset * previewHeight));
+      const sourceYPx = resolveCopySourceY(rectPx.y, rectPx.h, offset, previewHeight);
       setCopyOffsetPx(offset);
       const validQuad = isConvexQuad(quad);
       setCoverQuadValid(validQuad);
+      setCopyRectDebug((prev) => {
+        if (
+          prev &&
+          prev.x === rectPx.x &&
+          prev.y === rectPx.y &&
+          prev.w === rectPx.w &&
+          prev.h === rectPx.h &&
+          prev.sourceY === sourceYPx
+        ) {
+          return prev;
+        }
+        return { x: rectPx.x, y: rectPx.y, w: rectPx.w, h: rectPx.h, sourceY: sourceYPx };
+      });
 
-      if (validQuad && offset > 0) {
+      const scaleX = region.width / previewWidth;
+      const scaleY = region.height / previewHeight;
+      const rectCanvasX = region.x + rectPx.x * scaleX;
+      const rectCanvasY = region.y + rectPx.y * scaleY;
+      const rectCanvasW = rectPx.w * scaleX;
+      const rectCanvasH = rectPx.h * scaleY;
+      const sourceCanvasY = region.y + sourceYPx * scaleY;
+
+      if (validQuad && offset > 0 && rectCanvasW > 0 && rectCanvasH > 0) {
         let scratch = blurScratchRef.current;
         if (!scratch) {
           scratch = document.createElement('canvas');
@@ -692,39 +829,32 @@ export function useSubtitlePreview({
         if (scratchCtx) {
           scratchCtx.clearRect(0, 0, cw, ch);
           scratchCtx.drawImage(canvas, 0, 0, cw, ch);
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.moveTo(poly[0].x, poly[0].y);
-          ctx.lineTo(poly[1].x, poly[1].y);
-          ctx.lineTo(poly[2].x, poly[2].y);
-          ctx.lineTo(poly[3].x, poly[3].y);
-          ctx.closePath();
-          ctx.clip();
-          // Dịch xuống để destination lấy pixel từ phía trên.
-          ctx.drawImage(scratch, 0, offset, cw, ch);
-          ctx.restore();
+          ctx.drawImage(
+            scratch,
+            rectCanvasX,
+            sourceCanvasY,
+            rectCanvasW,
+            rectCanvasH,
+            rectCanvasX,
+            rectCanvasY,
+            rectCanvasW,
+            rectCanvasH
+          );
         }
       }
 
       ctx.strokeStyle = validQuad ? 'rgba(34, 197, 94, 0.95)' : 'rgba(239, 68, 68, 0.95)';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(poly[0].x, poly[0].y);
-      ctx.lineTo(poly[1].x, poly[1].y);
-      ctx.lineTo(poly[2].x, poly[2].y);
-      ctx.lineTo(poly[3].x, poly[3].y);
-      ctx.closePath();
-      ctx.stroke();
+      ctx.strokeRect(rectCanvasX, rectCanvasY, rectCanvasW, rectCanvasH);
       ctx.setLineDash([]);
 
       if (mode === 'blackout') {
         const edgeHandles = [
-          { x: (pTl.x + pBl.x) / 2, y: (pTl.y + pBl.y) / 2 }, // left
-          { x: (pTr.x + pBr.x) / 2, y: (pTr.y + pBr.y) / 2 }, // right
-          { x: (pTl.x + pTr.x) / 2, y: (pTl.y + pTr.y) / 2 }, // top
-          { x: (pBl.x + pBr.x) / 2, y: (pBl.y + pBr.y) / 2 }, // bottom
+          { x: rectCanvasX, y: rectCanvasY + rectCanvasH / 2 }, // left
+          { x: rectCanvasX + rectCanvasW, y: rectCanvasY + rectCanvasH / 2 }, // right
+          { x: rectCanvasX + rectCanvasW / 2, y: rectCanvasY }, // top
+          { x: rectCanvasX + rectCanvasW / 2, y: rectCanvasY + rectCanvasH }, // bottom
         ];
         for (const p of edgeHandles) {
           ctx.fillStyle = '#facc15';
@@ -742,10 +872,11 @@ export function useSubtitlePreview({
       ctx.textBaseline = 'top';
       ctx.fillText(
         `copy ${Math.round((1 - bbox.minY) * 100)}% | off=${offset}px`,
-        pTl.x + 6,
-        pTl.y + 6
+        rectCanvasX + 6,
+        rectCanvasY + 6
       );
     } else if (localBlackoutTop !== null && localBlackoutTop < 1) {
+      setCopyRectDebug(null);
       const pct = Math.round((1 - localBlackoutTop) * 100);
 
       if (isPortraitMode && portraitFgRect) {
@@ -822,6 +953,7 @@ export function useSubtitlePreview({
     } else {
       setCopyOffsetPx(0);
       setCoverQuadValid(isConvexQuad(localCoverQuadRef.current));
+      setCopyRectDebug(null);
     }
 
     // ===== Subtitle text =====
@@ -843,9 +975,12 @@ export function useSubtitlePreview({
       : Math.max(1, Math.round(effectiveFontSize * 0.04 * (shadowBase / 4)));
 
     const fontSizeScaled = Math.max(1, effectiveFontSize / ratio);
-    const shadowScaled = effectiveShadow / ratio;
-    const shadowStrongOffset = Math.max(1, shadowScaled);
-    const shadowSoftOffset = Math.max(shadowStrongOffset + 1, shadowStrongOffset * 1.8);
+    const shadowLayers = buildSubtitleShadowLayers(effectiveShadow).map((layer) => ({
+      opacity: layer.opacity,
+      offsetPx: layer.offsetPx / ratio,
+      blurPx: Math.max(0.6 / ratio, layer.blurPx / ratio),
+    }));
+    const orderedShadowLayers = [...shadowLayers].reverse();
 
     ctx.font = `${fontSizeScaled}px "${style.fontName}", sans-serif`;
     ctx.textAlign = 'center';
@@ -859,19 +994,15 @@ export function useSubtitlePreview({
     lines.forEach((line, i) => {
       const ly = startY + i * lineHeight;
 
-      if (effectiveShadow > 0) {
-        ctx.save();
-        ctx.shadowColor = `rgba(0, 0, 0, ${SUBTITLE_SHADOW_SOFT_OPACITY})`;
-        ctx.shadowBlur = Math.max(1, fontSizeScaled * 0.06);
-        ctx.fillStyle = `rgba(0, 0, 0, ${SUBTITLE_SHADOW_SOFT_OPACITY})`;
-        ctx.fillText(line, textX + shadowSoftOffset, ly + shadowSoftOffset);
-        ctx.restore();
-
-        ctx.save();
-        ctx.shadowColor = 'transparent';
-        ctx.fillStyle = `rgba(0, 0, 0, ${SUBTITLE_SHADOW_STRONG_OPACITY})`;
-        ctx.fillText(line, textX + shadowStrongOffset, ly + shadowStrongOffset);
-        ctx.restore();
+      if (orderedShadowLayers.length > 0) {
+        orderedShadowLayers.forEach((layer) => {
+          ctx.save();
+          ctx.shadowColor = `rgba(0, 0, 0, ${layer.opacity})`;
+          ctx.shadowBlur = layer.blurPx;
+          ctx.fillStyle = `rgba(0, 0, 0, ${layer.opacity})`;
+          ctx.fillText(line, textX + layer.offsetPx, ly + layer.offsetPx);
+          ctx.restore();
+        });
       }
 
       ctx.save();
@@ -944,7 +1075,8 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
     }
 
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, localLogoPosition, localLogoScale, mode, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode]);
+    presentWorldCanvas();
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, localLogoPosition, localLogoScale, mode, previewPan.x, previewPan.y, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode]);
 
   // Load video frame image
   useEffect(() => {
@@ -1086,6 +1218,11 @@ export function useSubtitlePreview({
     };
   }, []);
 
+  const screenToWorldPoint = useCallback((sx: number, sy: number) => ({
+    x: (sx - previewPan.x) / previewZoom,
+    y: (sy - previewPan.y) / previewZoom,
+  }), [previewPan.x, previewPan.y, previewZoom]);
+
   const canvasToPreviewNormalized = useCallback((cx: number, cy: number) => {
     const rect = previewRectRef.current;
     const safeW = Math.max(1, rect.width);
@@ -1173,28 +1310,43 @@ export function useSubtitlePreview({
     if (!rect) return;
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    const worldPoint = screenToWorldPoint(cx, cy);
+    const wx = worldPoint.x;
+    const wy = worldPoint.y;
+
+    if (spacePressed && previewZoom > MIN_PREVIEW_ZOOM) {
+      setIsPanning(true);
+      panDragRef.current = {
+        startX: cx,
+        startY: cy,
+        startPanX: previewPan.x,
+        startPanY: previewPan.y,
+      };
+      setCanvasCursor('grabbing');
+      return;
+    }
 
     setIsDragging(true);
 
     if (mode === 'subtitle') {
-      const newPos = canvasToPreviewNormalized(cx, cy);
+      const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
       onPositionChange?.(newPos);
     } else if (mode === 'logo') {
       const b = logoBoundsRef.current;
-      if (b && isNearCorner(cx, cy)) {
+      if (b && isNearCorner(wx, wy)) {
         // Bắt đầu kéo góc để resize — dùng ref để đọc scale hiện tại chính xác
-        const dist = Math.sqrt((cx - b.cx) ** 2 + (cy - b.cy) ** 2);
+        const dist = Math.sqrt((wx - b.cx) ** 2 + (wy - b.cy) ** 2);
         cornerDragRef.current = { initialDist: Math.max(dist, 1), initialScale: localLogoScaleRef.current };
       } else {
         // Di chuyển logo — chỉ cập nhật local, commit khi mouseUp
         cornerDragRef.current = null;
-        const newPos = canvasToPreviewCoords(cx, cy);
+        const newPos = canvasToPreviewCoords(wx, wy);
         setLocalLogoPositionSynced(newPos);
       }
     } else {
       if (localCoverMode === 'copy_from_above') {
-        const edgeKey = hitCoverEdge(cx, cy);
+        const edgeKey = hitCoverEdge(wx, wy);
         if (edgeKey) {
           coverDragEdgeRef.current = {
             edge: edgeKey,
@@ -1203,10 +1355,10 @@ export function useSubtitlePreview({
           coverDragWholeRef.current = null;
           return;
         }
-        if (isPointInsideCoverQuad(cx, cy)) {
+        if (isPointInsideCoverQuad(wx, wy)) {
           coverDragEdgeRef.current = null;
           coverDragWholeRef.current = {
-            startPoint: canvasToCoverNormalized(cx, cy),
+            startPoint: canvasToCoverNormalized(wx, wy),
             startQuad: rectToQuad(quadToRect(normalizeQuad(localCoverQuadRef.current))),
           };
           return;
@@ -1216,21 +1368,26 @@ export function useSubtitlePreview({
       }
 
       // Blackout mode: set the top Y of blackout band
-      const frac = canvasYToFraction(cy);
+      const frac = canvasYToFraction(wy);
       setLocalBlackoutTop(frac);
     }
   }, [
-    state.frameData,
-    mode,
-    isNearCorner,
-    onPositionChange,
-    canvasYToFraction,
+    canvasToCoverNormalized,
     canvasToPreviewCoords,
     canvasToPreviewNormalized,
-    localCoverMode,
+    canvasYToFraction,
+    state.frameData,
     hitCoverEdge,
+    isNearCorner,
     isPointInsideCoverQuad,
-    canvasToCoverNormalized,
+    localCoverMode,
+    onPositionChange,
+    previewPan.x,
+    previewPan.y,
+    previewZoom,
+    screenToWorldPoint,
+    spacePressed,
+    mode,
   ]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -1238,18 +1395,39 @@ export function useSubtitlePreview({
     if (!rect) return;
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    const worldPoint = screenToWorldPoint(cx, cy);
+    const wx = worldPoint.x;
+    const wy = worldPoint.y;
+
+    if (isPanning && panDragRef.current) {
+      const dx = cx - panDragRef.current.startX;
+      const dy = cy - panDragRef.current.startY;
+      const cw = containerSize.width || 400;
+      const ch = containerSize.height || 225;
+      setPreviewPan(clampPan({
+        x: panDragRef.current.startPanX + dx,
+        y: panDragRef.current.startPanY + dy,
+      }, previewZoom, cw, ch));
+      setCanvasCursor('grabbing');
+      return;
+    }
+
+    if (spacePressed && previewZoom > MIN_PREVIEW_ZOOM && !isDragging) {
+      setCanvasCursor('grab');
+      return;
+    }
 
     // Cập nhật cursor khi hover (không cần đang kéo)
     if (mode === 'logo' && !isDragging) {
-      setCanvasCursor(isNearCorner(cx, cy) ? 'nwse-resize' : 'move');
+      setCanvasCursor(isNearCorner(wx, wy) ? 'nwse-resize' : 'move');
     } else if (mode !== 'logo') {
       if (mode === 'blackout' && localCoverMode === 'copy_from_above') {
-        const edgeKey = hitCoverEdge(cx, cy);
+        const edgeKey = hitCoverEdge(wx, wy);
         if (edgeKey === 'left' || edgeKey === 'right') {
           setCanvasCursor('ew-resize');
         } else if (edgeKey === 'top' || edgeKey === 'bottom') {
           setCanvasCursor('ns-resize');
-        } else if (isPointInsideCoverQuad(cx, cy)) {
+        } else if (isPointInsideCoverQuad(wx, wy)) {
           setCanvasCursor('move');
         } else {
           setCanvasCursor('crosshair');
@@ -1262,25 +1440,25 @@ export function useSubtitlePreview({
     if (!isDragging || !state.frameData) return;
 
     if (mode === 'subtitle') {
-      const newPos = canvasToPreviewNormalized(cx, cy);
+      const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
     } else if (mode === 'logo') {
       if (cornerDragRef.current) {
         // Resize từ góc: tính scale theo tỉ lệ khoảng cách tới tâm
         const b = logoBoundsRef.current;
         if (!b) return;
-        const dist = Math.sqrt((cx - b.cx) ** 2 + (cy - b.cy) ** 2);
+        const dist = Math.sqrt((wx - b.cx) ** 2 + (wy - b.cy) ** 2);
         const newScale = Math.max(0.05, Math.min(10, cornerDragRef.current.initialScale * (dist / cornerDragRef.current.initialDist)));
         setLocalLogoScaleSynced(newScale);
       } else {
         // Di chuyển logo
-        const newPos = canvasToPreviewCoords(cx, cy);
+        const newPos = canvasToPreviewCoords(wx, wy);
         setLocalLogoPositionSynced(newPos);
       }
     } else {
       if (localCoverMode === 'copy_from_above') {
         if (coverDragEdgeRef.current) {
-          const nextPoint = canvasToCoverNormalized(cx, cy);
+          const nextPoint = canvasToCoverNormalized(wx, wy);
           const resized = resizeCoverRectByEdge(
             coverDragEdgeRef.current.startRect,
             coverDragEdgeRef.current.edge,
@@ -1288,7 +1466,7 @@ export function useSubtitlePreview({
           );
           setLocalCoverQuadSynced(rectToQuad(resized));
         } else if (coverDragWholeRef.current) {
-          const nowPoint = canvasToCoverNormalized(cx, cy);
+          const nowPoint = canvasToCoverNormalized(wx, wy);
           const deltaX = nowPoint.x - coverDragWholeRef.current.startPoint.x;
           const deltaY = nowPoint.y - coverDragWholeRef.current.startPoint.y;
           const moved = translateQuad(coverDragWholeRef.current.startQuad, deltaX, deltaY);
@@ -1296,26 +1474,40 @@ export function useSubtitlePreview({
           setLocalCoverQuadSynced(rectToQuad(movedRect));
         }
       } else {
-        const frac = canvasYToFraction(cy);
+        const frac = canvasYToFraction(wy);
         setLocalBlackoutTop(frac);
       }
     }
   }, [
-    isDragging,
-    state.frameData,
-    mode,
-    isNearCorner,
-    canvasYToFraction,
+    canvasToCoverNormalized,
     canvasToPreviewCoords,
     canvasToPreviewNormalized,
-    localCoverMode,
+    canvasYToFraction,
+    clampPan,
+    containerSize.height,
+    containerSize.width,
     hitCoverEdge,
+    isNearCorner,
+    isPanning,
     isPointInsideCoverQuad,
-    canvasToCoverNormalized,
+    isDragging,
+    localCoverMode,
+    mode,
+    previewZoom,
     resizeCoverRectByEdge,
+    screenToWorldPoint,
+    spacePressed,
+    state.frameData,
   ]);
 
   const handleMouseUp = useCallback(() => {
+    if (isPanning) {
+      setIsPanning(false);
+      panDragRef.current = null;
+      setCanvasCursor(spacePressed && previewZoom > MIN_PREVIEW_ZOOM ? 'grab' : 'crosshair');
+      return;
+    }
+
     setIsDragging(false);
     if (mode === 'subtitle') {
       if (state.frameData) {
@@ -1349,12 +1541,15 @@ export function useSubtitlePreview({
     state.frameData,
     state.subtitlePosition,
     onPositionChange,
+    isPanning,
     onLogoPositionChange,
     onLogoScaleChange,
     localBlackoutTop,
     onBlackoutChange,
     localCoverMode,
     onCoverQuadChange,
+    previewZoom,
+    spacePressed,
   ]);
 
   const resetToCenter = useCallback(() => {
@@ -1405,7 +1600,13 @@ export function useSubtitlePreview({
     isLoading: state.isLoading,
     error: state.error,
     isDragging,
+    isPanning,
     canvasCursor,
+    zoom: previewZoom,
+    setZoom,
+    zoomIn,
+    zoomOut,
+    resetViewTransform,
     mode,
     setMode,
     coverMode: localCoverMode,
@@ -1413,6 +1614,7 @@ export function useSubtitlePreview({
     coverQuad: localCoverQuad,
     coverQuadValid,
     copyOffsetPx,
+    copyRectDebug,
     blackoutTop: localBlackoutTop,
     logoScale: localLogoScale,
     loadPreview,

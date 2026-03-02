@@ -7,6 +7,15 @@ export interface QuadBoundingBox {
   maxY: number;
 }
 
+export interface CoverRectPixels {
+  x: number;
+  y: number;
+  maxX: number;
+  maxY: number;
+  w: number;
+  h: number;
+}
+
 const MIN_CONVEX_AREA = 1e-6;
 
 function clamp01(value: number): number {
@@ -93,6 +102,42 @@ export function computeCopyOffset(quad: CoverQuad): number {
   const bbox = quadBoundingBox(quad);
   const h = Math.max(0, bbox.maxY - bbox.minY);
   return Math.max(0, Math.min(h, bbox.minY));
+}
+
+export function resolveCoverRectPixels(
+  quad: CoverQuad,
+  renderWidth: number,
+  renderHeight: number
+): CoverRectPixels {
+  const bbox = quadBoundingBox(quad);
+  const safeW = Math.max(1, Math.round(renderWidth));
+  const safeH = Math.max(1, Math.round(renderHeight));
+
+  const x = Math.max(0, Math.min(safeW - 1, Math.floor(bbox.minX * safeW)));
+  const y = Math.max(0, Math.min(safeH - 1, Math.floor(bbox.minY * safeH)));
+  const maxX = Math.max(x + 1, Math.min(safeW, Math.ceil(bbox.maxX * safeW)));
+  const maxY = Math.max(y + 1, Math.min(safeH, Math.ceil(bbox.maxY * safeH)));
+  return {
+    x,
+    y,
+    maxX,
+    maxY,
+    w: Math.max(1, maxX - x),
+    h: Math.max(1, maxY - y),
+  };
+}
+
+export function resolveCopySourceY(
+  y: number,
+  h: number,
+  offsetPx: number,
+  renderHeight: number
+): number {
+  const safeH = Math.max(1, Math.round(renderHeight));
+  const patchH = Math.max(1, Math.round(h));
+  const safeY = Math.max(0, Math.min(safeH - patchH, Math.round(y)));
+  const safeOffset = Math.max(0, Math.round(offsetPx));
+  return Math.max(0, Math.min(safeH - patchH, safeY - safeOffset));
 }
 
 export function translateQuadY(quad: CoverQuad, deltaY: number): CoverQuad {

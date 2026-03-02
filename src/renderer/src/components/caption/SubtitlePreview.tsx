@@ -8,7 +8,7 @@
 import { useEffect } from 'react';
 import { ASSStyleConfig, CoverQuad, SubtitleEntry } from '@shared/types/caption';
 import { useSubtitlePreview } from './hooks/useSubtitlePreview';
-import { Crosshair, RotateCcw, Square, Trash2, Image } from 'lucide-react';
+import { Crosshair, RotateCcw, Square, Trash2, Image, ZoomIn, ZoomOut } from 'lucide-react';
 import styles from './SubtitlePreview.module.css';
 
 interface SubtitlePreviewProps {
@@ -167,7 +167,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
 
       <div
         ref={preview.containerRef}
-        className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.mode === 'blackout' ? (preview.coverMode === 'copy_from_above' ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
+        className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? (preview.coverMode === 'copy_from_above' ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
       >
         <canvas
           ref={preview.canvasRef}
@@ -205,6 +205,46 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
         </div>
       )}
 
+      {!renderSnapshotMode && (
+        <div className={styles.zoomRow}>
+          <button
+            className={styles.zoomBtn}
+            onClick={preview.zoomOut}
+            disabled={isInteractionDisabled}
+            title="Thu nhỏ preview"
+          >
+            <ZoomOut size={12} />
+          </button>
+          <input
+            className={styles.zoomSlider}
+            type="range"
+            min={100}
+            max={400}
+            step={5}
+            value={Math.round(preview.zoom * 100)}
+            onChange={(e) => preview.setZoom((Number(e.target.value) || 100) / 100)}
+            disabled={isInteractionDisabled}
+          />
+          <button
+            className={styles.zoomBtn}
+            onClick={preview.zoomIn}
+            disabled={isInteractionDisabled}
+            title="Phóng to preview"
+          >
+            <ZoomIn size={12} />
+          </button>
+          <button
+            className={styles.resetBtn}
+            onClick={preview.resetViewTransform}
+            disabled={isInteractionDisabled}
+            title="Reset zoom/pan"
+          >
+            <RotateCcw size={12} /> Zoom {Math.round(preview.zoom * 100)}%
+          </button>
+          <span className={styles.zoomHint}>Giữ Space + kéo để pan</span>
+        </div>
+      )}
+
       <div className={styles.infoBar}>
         <span className={styles.positionInfo}>
           {preview.mode === 'subtitle' ? (
@@ -230,7 +270,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           ) : (
             <>
               {preview.coverMode === 'copy_from_above'
-                ? `Copy vùng trên | offset ${preview.copyOffsetPx}px | ${preview.coverQuadValid ? 'quad hợp lệ' : 'quad không hợp lệ'}`
+                ? `Copy vùng trên | offset ${preview.copyOffsetPx}px | rect px ${preview.copyRectDebug ? `${preview.copyRectDebug.x},${preview.copyRectDebug.y},${preview.copyRectDebug.w},${preview.copyRectDebug.h}` : 'n/a'} | sourceY ${preview.copyRectDebug ? preview.copyRectDebug.sourceY : 'n/a'} | ${preview.coverQuadValid ? 'quad hợp lệ' : 'quad không hợp lệ'}`
                 : (preview.blackoutTop !== null
                   ? (isPortraitMode ? `Blur ${blackoutPct}% đáy video chính` : `Che ${blackoutPct}% dưới video`)
                   : (isPortraitMode ? 'Kéo để đặt vùng blur đáy' : 'Kéo để đặt vùng tô đen'))}

@@ -6,6 +6,8 @@ import {
   pointInConvexQuadExprBuilder,
   quadBoundingBox,
   quadHeight,
+  resolveCopySourceY,
+  resolveCoverRectPixels,
   toPixelQuad,
 } from '../../../../shared/utils/maskCoverGeometry';
 
@@ -93,20 +95,15 @@ export function buildCopyFromAboveFilter(
   const isRect = isAxisAlignedRectangle(normalized);
 
   if (isRect) {
-    const bboxX = Math.max(0, Math.min(input.renderWidth - 1, Math.floor(bbox.minX * input.renderWidth)));
-    const bboxY = Math.max(0, Math.min(input.renderHeight - 1, Math.floor(bbox.minY * input.renderHeight)));
-    const bboxMaxX = Math.max(bboxX + 1, Math.min(input.renderWidth, Math.ceil(bbox.maxX * input.renderWidth)));
-    const bboxMaxY = Math.max(bboxY + 1, Math.min(input.renderHeight, Math.ceil(bbox.maxY * input.renderHeight)));
-    const bboxW = Math.max(1, bboxMaxX - bboxX);
-    const bboxH = Math.max(1, bboxMaxY - bboxY);
-    const sourceY = Math.max(0, Math.min(input.renderHeight - bboxH, bboxY - offsetPx));
+    const rectPx = resolveCoverRectPixels(normalized, input.renderWidth, input.renderHeight);
+    const sourceY = resolveCopySourceY(rectPx.y, rectPx.h, offsetPx, input.renderHeight);
     const patchLabel = `[${prefix}_patch]`;
 
     return {
       filterParts: [
         `${ensureLabelRef(input.inputLabel)}split=2${baseLabel}${shiftSrcLabel}`,
-        `${shiftSrcLabel}crop=${bboxW}:${bboxH}:${bboxX}:${sourceY}${patchLabel}`,
-        `${baseLabel}${patchLabel}overlay=${bboxX}:${bboxY}:eval=init${outputLabel}`,
+        `${shiftSrcLabel}crop=${rectPx.w}:${rectPx.h}:${rectPx.x}:${sourceY}${patchLabel}`,
+        `${baseLabel}${patchLabel}overlay=${rectPx.x}:${rectPx.y}:eval=init${outputLabel}`,
       ],
       outputLabel,
       applied: true,
@@ -117,10 +114,10 @@ export function buildCopyFromAboveFilter(
         bbox,
         quadPx,
         patch: {
-          x: bboxX,
-          y: bboxY,
-          w: bboxW,
-          h: bboxH,
+          x: rectPx.x,
+          y: rectPx.y,
+          w: rectPx.w,
+          h: rectPx.h,
           sourceY,
         },
       },

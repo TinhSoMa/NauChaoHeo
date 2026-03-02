@@ -89,6 +89,10 @@
   cursor: grabbing;
 }
 
+.canvasContainer.panning {
+  cursor: grabbing;
+}
+
 .canvasContainer.blackoutMode {
   cursor: ns-resize;
   border-color: rgba(255, 60, 60, 0.4);
@@ -232,6 +236,49 @@
   height: 4px;
   accent-color: var(--color-primary);
   cursor: pointer;
+}
+
+.zoomRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.zoomBtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.zoomBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.zoomBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
+.zoomSlider {
+  width: min(260px, 50vw);
+  height: 4px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.zoomHint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
 }
 
 /* Thumbnail text input */
