@@ -4,6 +4,7 @@ import { audioExtractorService } from '../services/cutVideo/audioExtractorServic
 import { videoSplitterService } from '../services/cutVideo/videoSplitterService';
 import { videoMergerService } from '../services/cutVideo/videoMergerService';
 import { videoAudioMixerService } from '../services/cutVideo/videoAudioMixerService';
+import { capcutProjectBatchService, DEFAULT_CAPCUT_DRAFTS_PATH } from '../services/cutVideo/capcutProjectBatchService';
 
 // To keep track of running extractions and allow stopping
 let activeExtractionProcess = false;
@@ -22,14 +23,27 @@ export function registerCutVideoHandlers(): void {
     folders: string[], 
     format: 'mp3' | 'aac' | 'wav' | 'flac', 
     keepStructure: boolean, 
-    overwrite: boolean 
+    overwrite: boolean,
+    capcutProjectPath?: string,
+    capcutDraftsPath?: string,
+    autoAttachToCapcut?: boolean,
   }) => {
     activeExtractionProcess = true;
     const { folders, format, keepStructure, overwrite } = options;
+    const capcutProjectPath = options.capcutProjectPath?.trim();
+    const capcutDraftsPath = options.capcutDraftsPath || DEFAULT_CAPCUT_DRAFTS_PATH;
+    const autoAttachToCapcut = options.autoAttachToCapcut !== false;
     const sender = event.sender;
 
-    const emitLog = (file: string, folder: string, status: string, time: string) => {
-       sender.send('cutVideo:extractionLog', { file, folder, status, time });
+    const emitLog = (
+      file: string,
+      folder: string,
+      status: string,
+      time: string,
+      phase: 'extract' | 'capcut_attach' = 'extract',
+      detail?: string,
+    ) => {
+       sender.send('cutVideo:extractionLog', { file, folder, status, time, phase, detail });
     };
 
     const emitProgress = (progressData: any) => {
@@ -58,11 +72,27 @@ export function registerCutVideoHandlers(): void {
         return { success: false, error: 'Không tìm thấy file media nào trong thư mục' };
       }
 
+      let capcutAttachAvailable = autoAttachToCapcut;
+      if (autoAttachToCapcut) {
+        const env = await capcutProjectBatchService.checkEnvironment();
+        if (!env.success) {
+          capcutAttachAvailable = false;
+          emitLog(
+            '---',
+            capcutDraftsPath,
+            'error',
+            new Date().toISOString(),
+            'capcut_attach',
+            env.error || 'Không thể sử dụng pycapcut.',
+          );
+        }
+      }
+
       // 2. Process each file
       let currentIdx = 0;
       for (const fileItem of filesToProcess) {
         if (!activeExtractionProcess) {
-          emitLog(fileItem.name, fileItem.folder, 'error', '--:--');
+          emitLog(fileItem.name, fileItem.folder, 'info', '--:--', 'extract', 'Đã dừng theo yêu cầu.');
           break; // Stopped by user
         }
 
@@ -74,7 +104,7 @@ export function registerCutVideoHandlers(): void {
           currentPercent: 0
         });
         
-        emitLog(fileItem.name, fileItem.folder, 'processing', '--:--');
+        emitLog(fileItem.name, fileItem.folder, 'processing', '--:--', 'extract');
 
         // Extract
         const result = await audioExtractorService.extractAudio({
@@ -90,9 +120,47 @@ export function registerCutVideoHandlers(): void {
 
         // Update post-extraction
         if (result.success) {
-          emitLog(fileItem.name, fileItem.folder, 'completed', new Date().toISOString());
+          emitLog(
+            fileItem.name,
+            fileItem.folder,
+            'completed',
+            new Date().toISOString(),
+            'extract',
+            result.outputPath,
+          );
+
+          if (capcutAttachAvailable) {
+            emitLog(
+              fileItem.name,
+              fileItem.folder,
+              'processing',
+              new Date().toISOString(),
+              'capcut_attach',
+              'Đang gắn audio vào project CapCut...',
+            );
+            const projectPathForAttach = capcutProjectPath || fileItem.folder;
+            const attachResult = await capcutProjectBatchService.attachAudioToProject({
+              capcutProjectPath: projectPathForAttach,
+              extractedAudioPath: result.outputPath,
+            });
+            emitLog(
+              fileItem.name,
+              fileItem.folder,
+              attachResult.success ? 'completed' : (attachResult.skipped ? 'info' : 'error'),
+              new Date().toISOString(),
+              'capcut_attach',
+              `${attachResult.message} (project: ${projectPathForAttach})`,
+            );
+          }
         } else {
-          emitLog(fileItem.name, fileItem.folder, 'error', new Date().toISOString());
+          emitLog(
+            fileItem.name,
+            fileItem.folder,
+            'error',
+            new Date().toISOString(),
+            'extract',
+            result.error,
+          );
         }
 
         emitProgress({ 
@@ -243,5 +311,30 @@ export function registerCutVideoHandlers(): void {
     } catch (err: any) {
       return { success: false, error: err?.message || String(err) };
     }
+  });
+
+  // ---- CapCut Project Batch Handlers ----
+  ipcMain.handle('cutVideo:scanVideosForCapcut', async (_, folderPath: string) => {
+    return await capcutProjectBatchService.scanVideos(folderPath);
+  });
+
+  ipcMain.handle('cutVideo:stopCapcutProjectBatch', async () => {
+    capcutProjectBatchService.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('cutVideo:startCapcutProjectBatch', async (event, options: {
+    sourceFolderPath: string;
+    capcutDraftsPath: string;
+    namingMode: 'index_plus_filename' | 'month_day_suffix';
+  }) => {
+    const sender = event.sender;
+    return await capcutProjectBatchService.createProjects({
+      sourceFolderPath: options.sourceFolderPath,
+      capcutDraftsPath: options.capcutDraftsPath,
+      namingMode: options.namingMode,
+      onProgress: (data) => sender.send('cutVideo:capcutProgress', data),
+      onLog: (data) => sender.send('cutVideo:capcutLog', data),
+    });
   });
 }

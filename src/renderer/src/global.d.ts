@@ -164,10 +164,20 @@ interface CutVideoAPI {
     format: 'mp3' | 'aac' | 'wav' | 'flac';
     keepStructure: boolean;
     overwrite: boolean;
+    capcutProjectPath?: string;
+    capcutDraftsPath?: string;
+    autoAttachToCapcut?: boolean;
   }) => Promise<{ success: boolean; error?: string }>;
   stopExtraction: () => Promise<{ success: boolean }>;
   onExtractionProgress: (callback: (data: { totalPercent: number; currentFile: string; currentPercent: number }) => void) => () => void;
-  onExtractionLog: (callback: (data: { file: string; folder: string; status: string; time: string }) => void) => () => void;
+  onExtractionLog: (callback: (data: {
+    file: string;
+    folder: string;
+    status: string;
+    time: string;
+    phase?: 'extract' | 'capcut_attach';
+    detail?: string;
+  }) => void) => () => void;
 
   getVideoInfo: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMediaInfo: (filePath: string) => Promise<{
@@ -255,6 +265,58 @@ interface CutVideoAPI {
     status: 'info' | 'success' | 'error' | 'processing';
     message: string;
     time: string;
+  }) => void) => () => void;
+
+  scanVideosForCapcut: (folderPath: string) => Promise<{
+    success: boolean;
+    data?: {
+      folderPath: string;
+      videos: Array<{
+        fileName: string;
+        fullPath: string;
+        ext: string;
+      }>;
+      count: number;
+    };
+    error?: string;
+  }>;
+  startCapcutProjectBatch: (options: {
+    sourceFolderPath: string;
+    capcutDraftsPath: string;
+    namingMode: 'index_plus_filename' | 'month_day_suffix';
+  }) => Promise<{
+    success: boolean;
+    data?: {
+      total: number;
+      created: number;
+      failed: number;
+      stopped: boolean;
+      projects: Array<{
+        videoName: string;
+        projectName: string;
+        status: 'success' | 'error';
+        copiedClipCount?: number;
+        assetFolder?: string;
+        error?: string;
+      }>;
+    };
+    error?: string;
+  }>;
+  stopCapcutProjectBatch: () => Promise<{ success: boolean }>;
+  onCapcutProgress: (callback: (data: {
+    total: number;
+    current: number;
+    percent: number;
+    currentVideoName?: string;
+    stage: 'preflight' | 'scanning' | 'creating' | 'copying_clips' | 'completed' | 'stopped' | 'error';
+    message: string;
+  }) => void) => () => void;
+  onCapcutLog: (callback: (data: {
+    time: string;
+    status: 'info' | 'processing' | 'success' | 'error';
+    message: string;
+    videoName?: string;
+    projectName?: string;
   }) => void) => () => void;
 }
 

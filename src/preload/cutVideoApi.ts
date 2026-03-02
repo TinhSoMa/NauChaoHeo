@@ -10,6 +10,39 @@ export interface ScanFolderResult {
   error?: string;
 }
 
+export interface ScanVideosForCapcutResult {
+  success: boolean;
+  data?: {
+    folderPath: string;
+    videos: Array<{
+      fileName: string;
+      fullPath: string;
+      ext: string;
+    }>;
+    count: number;
+  };
+  error?: string;
+}
+
+export interface CapcutBatchResult {
+  success: boolean;
+  data?: {
+    total: number;
+    created: number;
+    failed: number;
+    stopped: boolean;
+    projects: Array<{
+      videoName: string;
+      projectName: string;
+      status: 'success' | 'error';
+      copiedClipCount?: number;
+      assetFolder?: string;
+      error?: string;
+    }>;
+  };
+  error?: string;
+}
+
 export interface CutVideoAPI {
   scanFolder: (folderPath: string) => Promise<ScanFolderResult>;
   startAudioExtraction: (options: {
@@ -17,10 +50,20 @@ export interface CutVideoAPI {
     format: 'mp3' | 'aac' | 'wav' | 'flac';
     keepStructure: boolean;
     overwrite: boolean;
+    capcutProjectPath?: string;
+    capcutDraftsPath?: string;
+    autoAttachToCapcut?: boolean;
   }) => Promise<{ success: boolean; error?: string }>;
   stopExtraction: () => Promise<{ success: boolean }>;
   onExtractionProgress: (callback: (data: { totalPercent: number; currentFile: string; currentPercent: number }) => void) => () => void;
-  onExtractionLog: (callback: (data: { file: string; folder: string; status: string; time: string }) => void) => () => void;
+  onExtractionLog: (callback: (data: {
+    file: string;
+    folder: string;
+    status: string;
+    time: string;
+    phase?: 'extract' | 'capcut_attach';
+    detail?: string;
+  }) => void) => () => void;
   
   getVideoInfo: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMediaInfo: (filePath: string) => Promise<{ success: boolean; data?: { duration: number; hasVideo: boolean; hasAudio: boolean; width?: number; height?: number }; error?: string }>;
@@ -99,6 +142,29 @@ export interface CutVideoAPI {
     message: string;
     time: string;
   }) => void) => () => void;
+
+  scanVideosForCapcut: (folderPath: string) => Promise<ScanVideosForCapcutResult>;
+  startCapcutProjectBatch: (options: {
+    sourceFolderPath: string;
+    capcutDraftsPath: string;
+    namingMode: 'index_plus_filename' | 'month_day_suffix';
+  }) => Promise<CapcutBatchResult>;
+  stopCapcutProjectBatch: () => Promise<{ success: boolean }>;
+  onCapcutProgress: (callback: (data: {
+    total: number;
+    current: number;
+    percent: number;
+    currentVideoName?: string;
+    stage: 'preflight' | 'scanning' | 'creating' | 'copying_clips' | 'completed' | 'stopped' | 'error';
+    message: string;
+  }) => void) => () => void;
+  onCapcutLog: (callback: (data: {
+    time: string;
+    status: 'info' | 'processing' | 'success' | 'error';
+    message: string;
+    videoName?: string;
+    projectName?: string;
+  }) => void) => () => void;
 }
 
 export const cutVideoApi: CutVideoAPI = {
@@ -158,5 +224,18 @@ export const cutVideoApi: CutVideoAPI = {
     const subscription = (_event: any, data: any) => callback(data);
     ipcRenderer.on('cutVideo:audioMixLog', subscription);
     return () => ipcRenderer.removeListener('cutVideo:audioMixLog', subscription);
+  },
+  scanVideosForCapcut: (folderPath: string) => ipcRenderer.invoke('cutVideo:scanVideosForCapcut', folderPath),
+  startCapcutProjectBatch: (options) => ipcRenderer.invoke('cutVideo:startCapcutProjectBatch', options),
+  stopCapcutProjectBatch: () => ipcRenderer.invoke('cutVideo:stopCapcutProjectBatch'),
+  onCapcutProgress: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:capcutProgress', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:capcutProgress', subscription);
+  },
+  onCapcutLog: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:capcutLog', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:capcutLog', subscription);
   },
 };

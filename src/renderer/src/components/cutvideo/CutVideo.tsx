@@ -4,9 +4,10 @@ import { AudioExtractor } from './AudioExtractor';
 import { VideoSplitter } from './VideoSplitter';
 import { VideoMerger } from './VideoMerger';
 import { VideoAudioMixer } from './VideoAudioMixer';
-import { Link2, Music2, Scissors, ListMusic } from 'lucide-react';
+import { CapcutProjectCreator } from './CapcutProjectCreator';
+import { Link2, Music2, Scissors, ListMusic, Clapperboard } from 'lucide-react';
 
-type CutVideoTab = 'audio' | 'split' | 'merge' | 'musicMix';
+type CutVideoTab = 'audio' | 'split' | 'merge' | 'musicMix' | 'capcut';
 
 interface TabConfig {
   id: CutVideoTab;
@@ -43,6 +44,12 @@ export const CutVideo: React.FC = () => {
         label: 'Ghép Nhạc',
         subtitle: 'Trộn playlist nhạc vào 1 video',
         icon: <ListMusic size={16} />,
+      },
+      {
+        id: 'capcut',
+        label: 'CapCut Draft',
+        subtitle: 'Tạo hàng loạt project từ folder video',
+        icon: <Clapperboard size={16} />,
       },
     ],
     []
@@ -115,6 +122,15 @@ export const CutVideo: React.FC = () => {
           className={styles.tabPanel}
         >
           {activeTab === 'musicMix' && <VideoAudioMixer />}
+        </div>
+        <div
+          role="tabpanel"
+          id="cutvideo-tabpanel-capcut"
+          aria-labelledby="cutvideo-tab-capcut"
+          hidden={activeTab !== 'capcut'}
+          className={styles.tabPanel}
+        >
+          {activeTab === 'capcut' && <CapcutProjectCreator />}
         </div>
       </div>
     </div>

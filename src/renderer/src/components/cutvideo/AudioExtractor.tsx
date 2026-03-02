@@ -9,7 +9,11 @@ interface LogItem {
   folder: string;
   status: string;
   time: string;
+  phase?: 'extract' | 'capcut_attach';
+  detail?: string;
 }
+
+const DEFAULT_CAPCUT_PROJECT_PATH = '';
 
 export const AudioExtractor: React.FC = () => {
   const { folders, handleAddFolders, handleRemoveFolder } = useFolderManager();
@@ -18,6 +22,7 @@ export const AudioExtractor: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState({ totalPercent: 0, currentFile: '', currentPercent: 0 });
   const [logs, setLogs] = useState<LogItem[]>([]);
+  const [capcutProjectPath, setCapcutProjectPath] = useState(DEFAULT_CAPCUT_PROJECT_PATH);
 
   // ----- Setup IPC Listeners -----
   useEffect(() => {
@@ -29,7 +34,9 @@ export const AudioExtractor: React.FC = () => {
 
     const cleanupLog = window.electronAPI.cutVideo.onExtractionLog((newLog: LogItem) => {
       setLogs((prev) => {
-        const existingIndex = prev.findIndex(l => l.file === newLog.file && l.folder === newLog.folder);
+        const existingIndex = prev.findIndex(
+          (l) => l.file === newLog.file && l.folder === newLog.folder && l.phase === newLog.phase,
+        );
         if (existingIndex >= 0) {
           // Update existing
           const updated = [...prev];
@@ -48,6 +55,18 @@ export const AudioExtractor: React.FC = () => {
     };
   }, []);
 
+  const handlePickCapcutProjectFolder = async () => {
+    try {
+      const result = await window.electronAPI.invoke('dialog:openFile', {
+        properties: ['openDirectory'],
+      }) as { canceled: boolean; filePaths: string[] };
+      if (result?.canceled || !result?.filePaths?.length) return;
+      setCapcutProjectPath(result.filePaths[0]);
+    } catch (error) {
+      console.error('Lỗi chọn thư mục project CapCut:', error);
+    }
+  };
+
   // ----- Actions -----
   const handleStart = async () => {
     if (folders.length === 0) {
@@ -63,7 +82,9 @@ export const AudioExtractor: React.FC = () => {
         folders: folderPaths,
         format: 'mp3',
         keepStructure: true,
-        overwrite: false
+        overwrite: false,
+        capcutProjectPath: capcutProjectPath.trim() || undefined,
+        autoAttachToCapcut: true,
       });
 
       if (!result.success && result.error) {
@@ -93,9 +114,15 @@ export const AudioExtractor: React.FC = () => {
       case 'completed': return <span className={`${styles.badge} ${styles.badgeSuccess}`}>✅ Hoàn thành</span>;
       case 'processing': return <span className={`${styles.badge} ${styles.badgeProcessing}`}>⏳ Đang xử lý</span>;
       case 'error': return <span className={`${styles.badge} ${styles.badgeError}`}>❌ Lỗi</span>;
+      case 'info': return <span className={`${styles.badge} ${styles.bagdePending}`}>ℹ️ Info</span>;
       case 'pending': return <span className={`${styles.badge} ${styles.bagdePending}`}>⏸ Chờ</span>;
       default: return null;
     }
+  };
+
+  const phaseLabel = (phase?: LogItem['phase']) => {
+    if (phase === 'capcut_attach') return 'CapCut';
+    return 'Extract';
   };
 
   return (
@@ -133,6 +160,22 @@ export const AudioExtractor: React.FC = () => {
               );
             })
           )}
+        </div>
+      </div>
+
+      <div className={styles.section}>
+        <h3 className={styles.sectionTitle}>Project CapCut (đầu vào)</h3>
+        <div className={styles.inputGroup}>
+          <input
+            className={styles.input}
+            value={capcutProjectPath}
+            onChange={(e) => setCapcutProjectPath(e.target.value)}
+            placeholder="Để trống = dùng chính folder đang xử lý"
+            disabled={isProcessing}
+          />
+          <Button variant="secondary" onClick={handlePickCapcutProjectFolder} disabled={isProcessing}>
+            <FolderPlus size={14} />
+          </Button>
         </div>
       </div>
 
@@ -175,16 +218,20 @@ export const AudioExtractor: React.FC = () => {
               <tr>
                 <th>Tên file</th>
                 <th>Thư mục nguồn</th>
+                <th>Pha</th>
                 <th>Trạng thái</th>
+                <th>Chi tiết</th>
                 <th>Thời gian</th>
               </tr>
             </thead>
             <tbody>
               {logs.map((log, index) => (
-                <tr key={index}>
+                <tr key={`${log.file}-${log.folder}-${log.phase || 'extract'}-${index}`}>
                   <td>{log.file}</td>
                   <td>{log.folder}</td>
+                  <td>{phaseLabel(log.phase)}</td>
                   <td>{renderBadge(log.status)}</td>
+                  <td title={log.detail || ''}>{log.detail || '--'}</td>
                   <td>{log.time}</td>
                 </tr>
               ))}
