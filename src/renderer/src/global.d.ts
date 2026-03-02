@@ -170,6 +170,17 @@ interface CutVideoAPI {
   onExtractionLog: (callback: (data: { file: string; folder: string; status: string; time: string }) => void) => () => void;
 
   getVideoInfo: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMediaInfo: (filePath: string) => Promise<{
+    success: boolean;
+    data?: {
+      duration: number;
+      hasVideo: boolean;
+      hasAudio: boolean;
+      width?: number;
+      height?: number;
+    };
+    error?: string;
+  }>;
   startVideoSplit: (options: {
     inputPath: string;
     clips: { name: string; startStr: string; durationStr: string }[];
@@ -221,6 +232,26 @@ interface CutVideoAPI {
     currentFile?: string;
   }) => void) => () => void;
   onMergeLog: (callback: (data: {
+    status: 'info' | 'success' | 'error' | 'processing';
+    message: string;
+    time: string;
+  }) => void) => () => void;
+
+  startVideoAudioMix: (options: {
+    videoPath: string;
+    audioPaths: string[];
+    videoVolumePercent: number;
+    musicVolumePercent: number;
+    outputPath?: string;
+  }) => Promise<{ success: boolean; data?: { outputPath: string }; error?: string }>;
+  stopVideoAudioMix: () => Promise<{ success: boolean }>;
+  onAudioMixProgress: (callback: (data: {
+    percent: number;
+    stage: 'preflight' | 'building_playlist' | 'mixing' | 'completed' | 'stopped' | 'error';
+    message: string;
+    currentFile?: string;
+  }) => void) => () => void;
+  onAudioMixLog: (callback: (data: {
     status: 'info' | 'success' | 'error' | 'processing';
     message: string;
     time: string;

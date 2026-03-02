@@ -231,6 +231,38 @@
   width: 100%;
 }
 
+.frameTools {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.frameBtn {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.frameBtn:hover:not(:disabled) {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.frameBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.frameTimeInput {
+  width: 130px;
+  margin-left: auto;
+}
+
 .layerSwitch {
   display: flex;
   gap: 6px;

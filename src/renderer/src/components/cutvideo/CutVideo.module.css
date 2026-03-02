@@ -7,15 +7,122 @@
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 20px;
+  min-height: 100%;
 }
 
-@media (min-width: 1200px) {
+.workspaceHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workspaceTitle {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: 0.2px;
+}
+
+.workspaceSubtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.tabBar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tabButton {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.tabButton:hover {
+  border-color: var(--color-primary);
+  background: rgba(24, 144, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.tabButtonActive {
+  border-color: var(--color-primary);
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.18), rgba(24, 144, 255, 0.04));
+}
+
+.tabIcon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: rgba(24, 144, 255, 0.14);
+  flex-shrink: 0;
+}
+
+.tabText {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tabLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.tabSubLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspaceBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tabPanel {
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .tabBar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
   .container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    align-items: start;
-    gap: 24px;
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .workspaceTitle {
+    font-size: 20px;
+  }
+
+  .tabButton {
+    padding: 10px 12px;
   }
 }
 
@@ -627,6 +734,19 @@
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
   white-space: nowrap;
+}
+
+.volumeControl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.rangeInput {
+  width: 100%;
+  accent-color: var(--color-primary);
+  cursor: pointer;
 }
 
 .textMuted {

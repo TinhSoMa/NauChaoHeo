@@ -156,6 +156,7 @@ export function CaptionTranslator() {
       if (inputPaths.length > 1) {
         const texts: string[] = [];
         const secondaryTexts: string[] = [];
+        const secondaryOverrideFlags: boolean[] = [];
         for (const inputPath of inputPaths) {
           const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
           const session = await readCaptionSession(sessionPath, {
@@ -167,10 +168,11 @@ export function CaptionTranslator() {
           const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
           texts.push(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
           secondaryTexts.push(typeof step7.thumbnailTextSecondary === 'string' ? step7.thumbnailTextSecondary : '');
+          secondaryOverrideFlags.push(step7.thumbnailTextSecondarySource === 'override');
         }
         if (!cancelled) {
           hardsubSettings.setThumbnailTextsByOrder(texts);
-          hardsubSettings.setSecondaryStateFromSession(secondaryTexts);
+          hardsubSettings.setSecondaryStateFromSession(secondaryTexts, secondaryOverrideFlags);
         }
         return;
       }

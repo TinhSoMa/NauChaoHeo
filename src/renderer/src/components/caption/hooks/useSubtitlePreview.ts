@@ -45,6 +45,8 @@ const MIN_SUBTITLE_SHADOW = 0;
 const MAX_SUBTITLE_SHADOW = 20;
 const DEFAULT_SUBTITLE_FONT_SIZE = 48;
 const DEFAULT_SUBTITLE_SHADOW = 2;
+const SUBTITLE_SHADOW_STRONG_OPACITY = 0.9;
+const SUBTITLE_SHADOW_SOFT_OPACITY = 0.15;
 
 function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -632,14 +634,14 @@ export function useSubtitlePreview({
     const shadowBase = normalizeSubtitleShadow(style.shadow);
     const subtitleScaleFactor = resolveSubtitleScaleFactor(renderMode, renderResolution, img.width, img.height);
     const effectiveFontSize = Math.max(1, Math.round(normalizedUserFontSize * subtitleScaleFactor));
-    const effectiveOutline = Math.max(1, Math.round(effectiveFontSize * 0.06));
     const effectiveShadow = shadowBase === 0
       ? 0
-      : Math.max(1, Math.round(effectiveOutline * 0.5 * (shadowBase / 4)));
+      : Math.max(1, Math.round(effectiveFontSize * 0.04 * (shadowBase / 4)));
 
     const fontSizeScaled = Math.max(1, effectiveFontSize / ratio);
-    const outlineScaled = Math.max(1, effectiveOutline / ratio);
     const shadowScaled = effectiveShadow / ratio;
+    const shadowStrongOffset = Math.max(1, shadowScaled);
+    const shadowSoftOffset = Math.max(shadowStrongOffset + 1, shadowStrongOffset * 1.8);
 
     ctx.font = `${fontSizeScaled}px "${style.fontName}", sans-serif`;
     ctx.textAlign = 'center';
@@ -655,23 +657,18 @@ export function useSubtitlePreview({
 
       if (effectiveShadow > 0) {
         ctx.save();
+        ctx.shadowColor = `rgba(0, 0, 0, ${SUBTITLE_SHADOW_SOFT_OPACITY})`;
+        ctx.shadowBlur = Math.max(1, fontSizeScaled * 0.06);
+        ctx.fillStyle = `rgba(0, 0, 0, ${SUBTITLE_SHADOW_SOFT_OPACITY})`;
+        ctx.fillText(line, textX + shadowSoftOffset, ly + shadowSoftOffset);
+        ctx.restore();
+
+        ctx.save();
         ctx.shadowColor = 'transparent';
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-        ctx.lineWidth = outlineScaled;
-        ctx.lineJoin = 'round';
-        ctx.fillText(line, textX + shadowScaled, ly + shadowScaled);
-        ctx.strokeText(line, textX + shadowScaled, ly + shadowScaled);
+        ctx.fillStyle = `rgba(0, 0, 0, ${SUBTITLE_SHADOW_STRONG_OPACITY})`;
+        ctx.fillText(line, textX + shadowStrongOffset, ly + shadowStrongOffset);
         ctx.restore();
       }
-
-      ctx.save();
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = outlineScaled;
-      ctx.lineJoin = 'round';
-      ctx.shadowColor = 'transparent';
-      ctx.strokeText(line, textX, ly);
-      ctx.restore();
 
       ctx.save();
       ctx.fillStyle = style.fontColor;

@@ -77,6 +77,11 @@ interface UseThumbnailPreviewStateResult {
   isSynced: boolean;
   syncLabel: string;
   duration: number;
+  fps: number;
+  frameStepSec: number;
+  draftFrameIndex: number;
+  totalFrames: number;
+  stepFrame: (delta: number) => void;
 }
 
 function clamp01(value: number): number {
@@ -96,6 +101,12 @@ function sameNum(a: number, b: number): boolean {
 
 function toDataUri(frameData: string): string {
   return frameData.startsWith('data:') ? frameData : `data:image/png;base64,${frameData}`;
+}
+
+function toFrameIndex(timeSec: number, fps: number): number {
+  const safeFps = Number.isFinite(fps) && fps > 0 ? fps : 30;
+  const safeTime = Number.isFinite(timeSec) ? Math.max(0, timeSec) : 0;
+  return Math.max(0, Math.round(safeTime * safeFps));
 }
 
 export function useThumbnailPreviewState(
@@ -149,11 +160,13 @@ export function useThumbnailPreviewState(
   const [isDraftDragging, setIsDraftDragging] = useState(false);
 
   const [tab, setTabState] = useState<ThumbnailPreviewTab>('edit');
+  const [sourceRefreshSeq, setSourceRefreshSeq] = useState(0);
   const [activeLayer, setActiveLayerState] = useState<ThumbnailPreviewLayer>('primary');
   const [sourceStatus, setSourceStatus] = useState<ThumbnailPreviewSourceStatus>('idle');
   const [sourceMessage, setSourceMessage] = useState('Sẵn sàng.');
   const [frameData, setFrameData] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState(5);
+  const [videoFps, setVideoFps] = useState(30);
 
   const [realStatus, setRealStatus] = useState<ThumbnailPreviewRealStatus>('idle');
   const [realMessage, setRealMessage] = useState('Đang chờ cập nhật preview thật...');
@@ -163,10 +176,12 @@ export function useThumbnailPreviewState(
   const [lastSyncAt, setLastSyncAt] = useState('');
 
   const sourceRequestRef = useRef(0);
+  const sourceTimerRef = useRef<number | null>(null);
   const realRequestRef = useRef(0);
   const sourceHashRef = useRef('');
   const contextRef = useRef(contextId);
   const videoMetaCacheRef = useRef(new Map<string, VideoMeta>());
+  const sourceFrameCacheRef = useRef(new Map<string, string>());
   const realFrameCacheRef = useRef(new Map<string, { frameData: string; size: { width: number; height: number } | null }>());
   const runtimePatchRef = useRef<Partial<ThumbnailPreviewRuntimeState> | null>(null);
   const runtimeTimerRef = useRef<number | null>(null);
@@ -216,6 +231,9 @@ export function useThumbnailPreviewState(
 
   const setTab = useCallback((nextTab: ThumbnailPreviewTab) => {
     setTabState(nextTab);
+    if (nextTab === 'edit') {
+      setSourceRefreshSeq((prev) => prev + 1);
+    }
     persistRuntimePatch({ tab: nextTab });
   }, [persistRuntimePatch]);
 
@@ -337,8 +355,22 @@ export function useThumbnailPreviewState(
   }, [contextId, sessionFallback, sessionPath]);
 
   const setDraftFrameTimeSec = useCallback((value: number) => {
-    setDraftFrameTimeSecState(Math.max(0, Number.isFinite(value) ? value : 0));
-  }, []);
+    const safeValue = Math.max(0, Number.isFinite(value) ? value : 0);
+    const maxDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : safeValue;
+    setDraftFrameTimeSecState(Math.min(safeValue, maxDuration));
+  }, [videoDuration]);
+
+  const stepFrame = useCallback((delta: number) => {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    const safeFps = Number.isFinite(videoFps) && videoFps > 0 ? videoFps : 30;
+    const nextStep = 1 / safeFps;
+    setDraftFrameTimeSecState((prev) => {
+      const currentFrame = toFrameIndex(prev, safeFps);
+      const maxFrame = Math.max(0, toFrameIndex(videoDuration, safeFps));
+      const nextFrame = Math.max(0, Math.min(maxFrame, currentFrame + Math.round(delta)));
+      return nextFrame * nextStep;
+    });
+  }, [videoDuration, videoFps]);
 
   const beginDraftDrag = useCallback((layer: ThumbnailPreviewLayer) => {
     setIsDraftDragging(true);
@@ -354,12 +386,51 @@ export function useThumbnailPreviewState(
     setDraftSecondaryPosition(next);
   }, []);
 
+  useEffect(() => {
+    if (!videoPath) {
+      setVideoDuration(5);
+      setVideoFps(30);
+      return;
+    }
+    const cached = videoMetaCacheRef.current.get(videoPath);
+    if (cached) {
+      setVideoDuration(cached.duration && cached.duration > 0 ? cached.duration : 5);
+      setVideoFps(cached.fps && cached.fps > 0 ? cached.fps : 30);
+      return;
+    }
+    let cancelled = false;
+    const loadMeta = async () => {
+      try {
+        const api = (window.electronAPI as any).captionVideo;
+        const metaRes = await api.getVideoMetadata(videoPath);
+        if (cancelled) return;
+        if (metaRes?.success && metaRes.data) {
+          const meta = metaRes.data as VideoMeta;
+          videoMetaCacheRef.current.set(videoPath, meta);
+          setVideoDuration(meta.duration && meta.duration > 0 ? meta.duration : 5);
+          setVideoFps(meta.fps && meta.fps > 0 ? meta.fps : 30);
+        }
+      } catch {}
+    };
+    loadMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [videoPath]);
+
+  const draftFrameIndex = useMemo(
+    () => toFrameIndex(draftFrameTimeSec, videoFps),
+    [draftFrameTimeSec, videoFps]
+  );
+
   const sourceDependencyHash = useMemo(() => {
     return buildThumbnailPreviewHash({
       videoPath,
-      frameTimeSec: draftFrameTimeSec,
+      frameIndex: draftFrameIndex,
+      tab,
+      refreshSeq: sourceRefreshSeq,
     });
-  }, [draftFrameTimeSec, videoPath]);
+  }, [draftFrameIndex, sourceRefreshSeq, tab, videoPath]);
 
   useEffect(() => {
     if (!videoPath) {
@@ -374,28 +445,31 @@ export function useThumbnailPreviewState(
       return;
     }
     sourceHashRef.current = sourceDependencyHash;
+    const cacheKey = `${videoPath}|${draftFrameIndex}`;
+    const cachedFrame = sourceFrameCacheRef.current.get(cacheKey);
+    if (cachedFrame) {
+      setFrameData(cachedFrame);
+      setSourceStatus('ready');
+      setSourceMessage(`Frame #${draftFrameIndex} (${draftFrameTimeSec.toFixed(2)}s)`);
+      persistRuntimePatch({ sourceStatus: 'ready' });
+      return;
+    }
+
+    if (sourceTimerRef.current != null) {
+      window.clearTimeout(sourceTimerRef.current);
+      sourceTimerRef.current = null;
+    }
+
     const requestId = ++sourceRequestRef.current;
     setSourceStatus('loading');
     setSourceMessage('Đang tải frame nguồn...');
     persistRuntimePatch({ sourceStatus: 'loading' });
 
-    const load = async () => {
+    const sourceDebounceMs = tab === 'edit' ? 0 : 90;
+    sourceTimerRef.current = window.setTimeout(async () => {
       try {
         const api = (window.electronAPI as any).captionVideo;
-        let meta = videoMetaCacheRef.current.get(videoPath) || null;
-        if (!meta) {
-          const metaRes = await api.getVideoMetadata(videoPath);
-          if (metaRes?.success && metaRes.data) {
-            meta = metaRes.data as VideoMeta;
-            videoMetaCacheRef.current.set(videoPath, meta);
-          }
-        }
-        if (requestId !== sourceRequestRef.current || contextRef.current !== contextId) return;
-        const safeFps = meta?.fps && meta.fps > 0 ? meta.fps : 30;
-        const safeDuration = meta?.duration && meta.duration > 0 ? meta.duration : draftFrameTimeSec;
-        const clampedTime = Math.max(0, Math.min(draftFrameTimeSec, safeDuration));
-        const frameNumber = Math.round(clampedTime * safeFps);
-        const frameRes = await api.extractFrame(videoPath, frameNumber);
+        const frameRes = await api.extractFrame(videoPath, draftFrameIndex);
         if (requestId !== sourceRequestRef.current || contextRef.current !== contextId) return;
         if (!frameRes?.success || !frameRes.data?.frameData) {
           setFrameData(null);
@@ -404,11 +478,17 @@ export function useThumbnailPreviewState(
           persistRuntimePatch({ sourceStatus: 'error' });
           return;
         }
-        const nextDuration = meta?.duration && meta.duration > 0 ? meta.duration : 5;
-        setVideoDuration(nextDuration);
-        setFrameData(toDataUri(frameRes.data.frameData));
+        const dataUri = toDataUri(frameRes.data.frameData);
+        sourceFrameCacheRef.current.set(cacheKey, dataUri);
+        if (sourceFrameCacheRef.current.size > 150) {
+          const firstKey = sourceFrameCacheRef.current.keys().next().value as string | undefined;
+          if (firstKey) {
+            sourceFrameCacheRef.current.delete(firstKey);
+          }
+        }
+        setFrameData(dataUri);
         setSourceStatus('ready');
-        setSourceMessage(`Frame ${clampedTime.toFixed(2)}s`);
+        setSourceMessage(`Frame #${draftFrameIndex} (${draftFrameTimeSec.toFixed(2)}s)`);
         persistRuntimePatch({ sourceStatus: 'ready' });
       } catch (error) {
         if (requestId !== sourceRequestRef.current || contextRef.current !== contextId) return;
@@ -417,9 +497,15 @@ export function useThumbnailPreviewState(
         setSourceMessage(String(error));
         persistRuntimePatch({ sourceStatus: 'error' });
       }
+    }, sourceDebounceMs);
+
+    return () => {
+      if (sourceTimerRef.current != null) {
+        window.clearTimeout(sourceTimerRef.current);
+        sourceTimerRef.current = null;
+      }
     };
-    load();
-  }, [contextId, draftFrameTimeSec, frameData, persistRuntimePatch, sourceDependencyHash, videoPath]);
+  }, [contextId, draftFrameIndex, draftFrameTimeSec, frameData, persistRuntimePatch, sourceDependencyHash, tab, videoPath]);
 
   const realDependencyHash = useMemo(() => {
     if (!videoPath) return '';
@@ -588,6 +674,9 @@ export function useThumbnailPreviewState(
       ? (lastSyncAt ? `Synced ${new Date(lastSyncAt).toLocaleTimeString()}` : 'Synced')
       : 'Out of sync');
 
+  const frameStepSec = Number.isFinite(videoFps) && videoFps > 0 ? (1 / videoFps) : (1 / 30);
+  const totalFrames = Math.max(1, toFrameIndex(videoDuration, videoFps) + 1);
+
   return {
     tab,
     setTab,
@@ -612,5 +701,10 @@ export function useThumbnailPreviewState(
     isSynced,
     syncLabel,
     duration: videoDuration,
+    fps: videoFps,
+    frameStepSec,
+    draftFrameIndex,
+    totalFrames,
+    stepFrame,
   };
 }

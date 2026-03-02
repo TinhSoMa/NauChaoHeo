@@ -54,6 +54,8 @@ const MIN_SUBTITLE_SHADOW = 0;
 const MAX_SUBTITLE_SHADOW = 20;
 const DEFAULT_SUBTITLE_FONT_SIZE = 48;
 const DEFAULT_SUBTITLE_SHADOW = 2;
+const SUBTITLE_SHADOW_STRONG_OPACITY = 0.9;
+const SUBTITLE_SHADOW_SOFT_OPACITY = 0.15;
 
 function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -71,6 +73,12 @@ function normalizeSubtitleShadow(value: number | undefined): number {
     return DEFAULT_SUBTITLE_SHADOW;
   }
   return clampNumber(value as number, MIN_SUBTITLE_SHADOW, MAX_SUBTITLE_SHADOW);
+}
+
+function opacityToAssAlphaHex(opacity: number): string {
+  const normalizedOpacity = clampNumber(opacity, 0, 1);
+  const alpha = Math.round((1 - normalizedOpacity) * 255);
+  return alpha.toString(16).toUpperCase().padStart(2, '0');
 }
 
 function parseScaleFromSrtFileName(srtPath: string): number | null {
@@ -282,10 +290,13 @@ async function prepareSubtitleAndDurationCore(
   const normalizedUserFontSize = normalizeSubtitleFontSize(s.fontSize);
   const shadowBase = normalizeSubtitleShadow(s.shadow);
   const effectiveFontSize = Math.max(1, Math.round(normalizedUserFontSize * scaleFactor));
-  const effectiveOutline = Math.max(1, Math.round(effectiveFontSize * 0.06));
   const effectiveShadow = shadowBase === 0
     ? 0
-    : Math.max(1, Math.round(effectiveOutline * 0.5 * (shadowBase / 4)));
+    : Math.max(1, Math.round(effectiveFontSize * 0.04 * (shadowBase / 4)));
+  const strongShadowOffset = Math.max(1, effectiveShadow);
+  const softShadowOffset = Math.max(strongShadowOffset + 1, Math.round(effectiveShadow * 1.8));
+  const strongShadowAlpha = opacityToAssAlphaHex(SUBTITLE_SHADOW_STRONG_OPACITY);
+  const softShadowAlpha = opacityToAssAlphaHex(SUBTITLE_SHADOW_SOFT_OPACITY);
 
   const assColor = hexToAssColor(s.fontColor);
   const assAlignment = 5;
@@ -319,7 +330,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${s.fontName},${effectiveFontSize},${assColor},&H000000FF,&H00000000,&HFF000000,0,0,0,0,100,100,0,0,1,${effectiveOutline},${effectiveShadow},${assAlignment},0,0,${assMarginV},1
+Style: Default,${s.fontName},${effectiveFontSize},${assColor},&H000000FF,&H00000000,&H1A000000,0,0,0,0,100,100,0,0,1,0,0,${assAlignment},0,0,${assMarginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -343,10 +354,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     // Subtitle phải hiện đúng lúc đó → chia step7Speed.
     const startAss = msToAssTime(scaledStartMs / step7Speed);
     const endAss = msToAssTime(scaledEndMs / step7Speed);
-    let text = (entry.translatedText || entry.text).replace(/\n/g, '\\N');
+    const text = (entry.translatedText || entry.text).replace(/\n/g, '\\N');
+    let posX = Math.round(renderWidth / 2);
+    let posY = Math.round(renderHeight / 2);
     if (isFiniteSubtitlePosition(options.position)) {
-      let posX = 0;
-      let posY = 0;
       if (isNormalizedSubtitlePosition(options.position)) {
         const normalized = clampNormalizedSubtitlePosition(options.position);
         posX = Math.round(normalized.x * renderWidth);
@@ -355,11 +366,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         posX = Math.round(options.position.x * scaleFactor);
         posY = Math.round(options.position.y * scaleFactor);
       }
-      const clampedX = Math.max(0, Math.min(renderWidth, posX));
-      const clampedY = Math.max(0, Math.min(renderHeight, posY));
-      text = `{\\pos(${clampedX},${clampedY})}${text}`;
     }
-    assContent += `Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${text}\n`;
+    const clampedX = Math.max(0, Math.min(renderWidth, posX));
+    const clampedY = Math.max(0, Math.min(renderHeight, posY));
+
+    if (effectiveShadow > 0) {
+      const softShadowText =
+        `{\\an5\\pos(${clampedX + softShadowOffset},${clampedY + softShadowOffset})` +
+        `\\1c&H000000&\\1a&H${softShadowAlpha}&\\bord0\\shad0\\blur3}${text}`;
+      const strongShadowText =
+        `{\\an5\\pos(${clampedX + strongShadowOffset},${clampedY + strongShadowOffset})` +
+        `\\1c&H000000&\\1a&H${strongShadowAlpha}&\\bord0\\shad0\\blur1}${text}`;
+      assContent += `Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${softShadowText}\n`;
+      assContent += `Dialogue: 1,${startAss},${endAss},Default,,0,0,0,,${strongShadowText}\n`;
+    }
+
+    const mainText = `{\\an5\\pos(${clampedX},${clampedY})\\bord0\\shad0}${text}`;
+    assContent += `Dialogue: 2,${startAss},${endAss},Default,,0,0,0,,${mainText}\n`;
   }
 
   await fs.writeFile(tempAssPath, assContent, 'utf-8');

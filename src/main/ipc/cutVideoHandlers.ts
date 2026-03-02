@@ -3,6 +3,7 @@ import { cutVideoService } from '../services/cutVideo/cutVideoService';
 import { audioExtractorService } from '../services/cutVideo/audioExtractorService';
 import { videoSplitterService } from '../services/cutVideo/videoSplitterService';
 import { videoMergerService } from '../services/cutVideo/videoMergerService';
+import { videoAudioMixerService } from '../services/cutVideo/videoAudioMixerService';
 
 // To keep track of running extractions and allow stopping
 let activeExtractionProcess = false;
@@ -115,6 +116,10 @@ export function registerCutVideoHandlers(): void {
     return await cutVideoService.getVideoInfo(filePath);
   });
 
+  ipcMain.handle('cutVideo:getMediaInfo', async (_, filePath: string) => {
+    return await videoAudioMixerService.getMediaInfo(filePath);
+  });
+
   ipcMain.handle('cutVideo:stopVideoSplit', async () => {
     videoSplitterService.stop();
     return { success: true };
@@ -186,6 +191,50 @@ export function registerCutVideoHandlers(): void {
 
     try {
       const result = await videoMergerService.mergeRenderedVideos({
+        ...options,
+        onProgress: emitProgress,
+        onLog: emitLog,
+      });
+      return result;
+    } catch (err: any) {
+      return { success: false, error: err?.message || String(err) };
+    }
+  });
+
+  // ---- Video Audio Mixer Handlers ----
+  ipcMain.handle('cutVideo:stopVideoAudioMix', async () => {
+    videoAudioMixerService.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('cutVideo:startVideoAudioMix', async (event, options: {
+    videoPath: string;
+    audioPaths: string[];
+    videoVolumePercent: number;
+    musicVolumePercent: number;
+    outputPath?: string;
+  }) => {
+    const sender = event.sender;
+
+    const emitProgress = (data: {
+      percent: number;
+      stage: 'preflight' | 'building_playlist' | 'mixing' | 'completed' | 'stopped' | 'error';
+      message: string;
+      currentFile?: string;
+    }) => {
+      sender.send('cutVideo:audioMixProgress', data);
+    };
+
+    const emitLog = (data: {
+      status: 'info' | 'success' | 'error' | 'processing';
+      message: string;
+      time: string;
+    }) => {
+      sender.send('cutVideo:audioMixLog', data);
+    };
+
+    try {
+      const result = await videoAudioMixerService.mixVideoWithPlaylist({
         ...options,
         onProgress: emitProgress,
         onLog: emitLog,

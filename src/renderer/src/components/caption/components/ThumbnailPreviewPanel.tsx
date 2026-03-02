@@ -184,6 +184,7 @@ export function ThumbnailPreviewPanel({
   const [videoSourceSize, setVideoSourceSize] = useState<{ width: number; height: number }>({ width: 1920, height: 1080 });
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [truncationState, setTruncationState] = useState<TruncationState>({ primary: false, secondary: false });
+  const [frameImageRevision, setFrameImageRevision] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>({ tone: 'idle', message: '' });
   const truncationRef = useRef<TruncationState>({ primary: false, secondary: false });
@@ -214,15 +215,21 @@ export function ThumbnailPreviewPanel({
   useEffect(() => {
     if (!previewState.frameData) {
       imageRef.current = null;
+      setFrameImageRevision((prev) => prev + 1);
       return;
     }
     const img = new Image();
     img.onload = () => {
       imageRef.current = img;
-      setVideoSourceSize({
-        width: Math.max(2, img.naturalWidth || img.width || 1920),
-        height: Math.max(2, img.naturalHeight || img.height || 1080),
-      });
+      const nextWidth = Math.max(2, img.naturalWidth || img.width || 1920);
+      const nextHeight = Math.max(2, img.naturalHeight || img.height || 1080);
+      setVideoSourceSize((prev) => (
+        prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight }
+      ));
+      // Force redraw dù kích thước frame không đổi (đổi timestamp/frame vẫn phải cập nhật ngay).
+      setFrameImageRevision((prev) => prev + 1);
     };
     img.src = previewState.frameData;
   }, [previewState.frameData]);
@@ -403,6 +410,7 @@ export function ThumbnailPreviewPanel({
   }, [
     containerSize.height,
     containerSize.width,
+    frameImageRevision,
     outputSize.height,
     outputSize.width,
     previewState.activeLayer,
@@ -673,19 +681,59 @@ export function ThumbnailPreviewPanel({
               />
             </div>
             <div className={styles.fullRow}>
-              <span className={styles.label}>Frame thumbnail: {previewState.draftFrameTimeSec.toFixed(2)}s</span>
+              <span className={styles.label}>
+                Frame thumbnail: {previewState.draftFrameTimeSec.toFixed(3)}s
+                {' '}
+                (#{previewState.draftFrameIndex}/{Math.max(0, previewState.totalFrames - 1)} @ {previewState.fps.toFixed(2)}fps)
+              </span>
               <input
                 className={styles.range}
                 type="range"
                 min={0}
                 max={previewState.duration}
-                step={0.1}
+                step={previewState.frameStepSec}
                 value={previewState.draftFrameTimeSec}
                 onChange={(e) => previewState.setDraftFrameTimeSec(Number(e.target.value))}
                 onMouseUp={previewState.commitDraft}
                 onTouchEnd={previewState.commitDraft}
                 onBlur={previewState.commitDraft}
               />
+              <div className={styles.frameTools}>
+                <button
+                  type="button"
+                  className={styles.frameBtn}
+                  onClick={() => {
+                    previewState.stepFrame(-1);
+                    window.setTimeout(() => previewState.commitDraft(), 0);
+                  }}
+                  disabled={!videoPath}
+                  title="Lùi 1 frame"
+                >
+                  -1f
+                </button>
+                <button
+                  type="button"
+                  className={styles.frameBtn}
+                  onClick={() => {
+                    previewState.stepFrame(1);
+                    window.setTimeout(() => previewState.commitDraft(), 0);
+                  }}
+                  disabled={!videoPath}
+                  title="Tiến 1 frame"
+                >
+                  +1f
+                </button>
+                <input
+                  className={`${styles.input} ${styles.frameTimeInput}`}
+                  type="number"
+                  min={0}
+                  max={previewState.duration}
+                  step={previewState.frameStepSec}
+                  value={previewState.draftFrameTimeSec}
+                  onChange={(e) => previewState.setDraftFrameTimeSec(Number(e.target.value))}
+                  onBlur={previewState.commitDraft}
+                />
+              </div>
             </div>
           </div>
 

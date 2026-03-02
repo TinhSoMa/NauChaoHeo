@@ -134,7 +134,7 @@ ScaledBorderAndShadow: no
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.fontName},${style.fontSize},${assColor},&H000000FF,&H00000000,&HFF000000,0,0,0,0,100,100,0,0,1,2,${style.shadow},${style.alignment},10,10,${style.marginV},1
+Style: Default,${style.fontName},${style.fontSize},${assColor},&H000000FF,&H00000000,&H1A000000,0,0,0,0,100,100,0,0,1,0,${style.shadow},${style.alignment},10,10,${style.marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

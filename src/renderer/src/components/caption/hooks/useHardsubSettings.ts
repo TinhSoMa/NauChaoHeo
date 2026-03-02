@@ -9,6 +9,10 @@ interface UseHardsubSettingsOptions {
   thumbnailTextSecondaryGlobal: string;
 }
 
+function normalizeTextForCompare(value: string): string {
+  return (value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+}
+
 export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const [thumbnailText, setThumbnailText] = useState('');
   const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
@@ -91,8 +95,23 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   };
 
   const setThumbnailTextSecondaryGlobal = (value: string) => {
+    const prevGlobalNormalized = normalizeTextForCompare(thumbnailTextSecondary);
     setThumbnailTextSecondary(value);
     if (!selectedDraftPaths.length) return;
+    setThumbnailTextSecondaryOverrideFlags((prev) => {
+      const nextFlags = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill(false);
+      for (let i = 0; i < nextFlags.length; i++) {
+        const currentText = thumbnailTextsSecondaryByOrder[i] || '';
+        // Backward-compat: nếu text đang trùng global cũ (khác chỉ do CRLF/trim),
+        // coi như không override để global mới được áp dụng.
+        if (normalizeTextForCompare(currentText) === prevGlobalNormalized) {
+          nextFlags[i] = false;
+        }
+      }
+      return nextFlags;
+    });
     setThumbnailTextsSecondaryByOrder((prev) => {
       const flags = thumbnailTextSecondaryOverrideFlags.length === selectedDraftPaths.length
         ? thumbnailTextSecondaryOverrideFlags
@@ -101,7 +120,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
         ? [...prev]
         : new Array(selectedDraftPaths.length).fill('');
       for (let i = 0; i < next.length; i++) {
-        if (!flags[i]) {
+        const isAutoBound = !flags[i] || normalizeTextForCompare(next[i] || '') === prevGlobalNormalized;
+        if (isAutoBound) {
           next[i] = value;
         }
       }
@@ -143,13 +163,15 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     });
   };
 
-  const setSecondaryStateFromSession = (texts: string[]) => {
+  const setSecondaryStateFromSession = (texts: string[], overrideFlagsFromSession?: boolean[]) => {
     const normalized = selectedDraftPaths.map((_, idx) => texts[idx] || '');
     const global = options.thumbnailTextSecondaryGlobal || '';
+    const normalizedGlobal = normalizeTextForCompare(global);
+    const resolvedFlags = overrideFlagsFromSession && overrideFlagsFromSession.length === selectedDraftPaths.length
+      ? [...overrideFlagsFromSession]
+      : normalized.map((text) => normalizeTextForCompare(text) !== normalizedGlobal);
     setThumbnailTextsSecondaryByOrder(normalized);
-    setThumbnailTextSecondaryOverrideFlags(
-      normalized.map((text) => text !== global)
-    );
+    setThumbnailTextSecondaryOverrideFlags(resolvedFlags);
   };
 
   const handleAutoFillThumbnailByEpisode = () => {

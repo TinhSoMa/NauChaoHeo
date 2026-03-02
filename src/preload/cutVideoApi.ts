@@ -23,6 +23,7 @@ export interface CutVideoAPI {
   onExtractionLog: (callback: (data: { file: string; folder: string; status: string; time: string }) => void) => () => void;
   
   getVideoInfo: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  getMediaInfo: (filePath: string) => Promise<{ success: boolean; data?: { duration: number; hasVideo: boolean; hasAudio: boolean; width?: number; height?: number }; error?: string }>;
   startVideoSplit: (options: {
     inputPath: string;
     clips: { name: string; startStr: string; durationStr: string }[];
@@ -78,6 +79,26 @@ export interface CutVideoAPI {
     message: string;
     time: string;
   }) => void) => () => void;
+
+  startVideoAudioMix: (options: {
+    videoPath: string;
+    audioPaths: string[];
+    videoVolumePercent: number;
+    musicVolumePercent: number;
+    outputPath?: string;
+  }) => Promise<{ success: boolean; data?: { outputPath: string }; error?: string }>;
+  stopVideoAudioMix: () => Promise<{ success: boolean }>;
+  onAudioMixProgress: (callback: (data: {
+    percent: number;
+    stage: 'preflight' | 'building_playlist' | 'mixing' | 'completed' | 'stopped' | 'error';
+    message: string;
+    currentFile?: string;
+  }) => void) => () => void;
+  onAudioMixLog: (callback: (data: {
+    status: 'info' | 'success' | 'error' | 'processing';
+    message: string;
+    time: string;
+  }) => void) => () => void;
 }
 
 export const cutVideoApi: CutVideoAPI = {
@@ -100,6 +121,7 @@ export const cutVideoApi: CutVideoAPI = {
   },
 
   getVideoInfo: (filePath: string) => ipcRenderer.invoke('cutVideo:getVideoInfo', filePath),
+  getMediaInfo: (filePath: string) => ipcRenderer.invoke('cutVideo:getMediaInfo', filePath),
   startVideoSplit: (options) => ipcRenderer.invoke('cutVideo:startVideoSplit', options),
   stopVideoSplit: () => ipcRenderer.invoke('cutVideo:stopVideoSplit'),
   onSplitProgress: (callback) => {
@@ -124,5 +146,17 @@ export const cutVideoApi: CutVideoAPI = {
     const subscription = (_event: any, data: any) => callback(data);
     ipcRenderer.on('cutVideo:mergeLog', subscription);
     return () => ipcRenderer.removeListener('cutVideo:mergeLog', subscription);
+  },
+  startVideoAudioMix: (options) => ipcRenderer.invoke('cutVideo:startVideoAudioMix', options),
+  stopVideoAudioMix: () => ipcRenderer.invoke('cutVideo:stopVideoAudioMix'),
+  onAudioMixProgress: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:audioMixProgress', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:audioMixProgress', subscription);
+  },
+  onAudioMixLog: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:audioMixLog', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:audioMixLog', subscription);
   },
 };
