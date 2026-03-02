@@ -12,7 +12,7 @@ import {
   InputType,
 } from '../../../config/captionConfig';
 import { Step, ProcessingMode } from '../CaptionTypes';
-import { ASSStyleConfig, CaptionProjectSettings } from '@shared/types/caption';
+import { ASSStyleConfig, CaptionCoverMode, CaptionProjectSettings, CoverQuad } from '@shared/types/caption';
 import { useProjectContext } from '../../../context/ProjectContext';
 import { nowIso } from '@shared/utils/captionSession';
 import {
@@ -20,6 +20,7 @@ import {
   isFiniteSubtitlePosition,
   isNormalizedSubtitlePosition,
 } from '@shared/utils/subtitlePosition';
+import { isConvexQuad, normalizeQuad } from '@shared/utils/maskCoverGeometry';
 
 const PROJECT_SETTINGS_FILE = 'caption-settings.json';
 
@@ -32,6 +33,8 @@ interface LayoutProfile {
   renderResolution: RenderResolution;
   renderContainer: 'mp4' | 'mov';
   blackoutTop: number | null;
+  coverMode: CaptionCoverMode;
+  coverQuad: CoverQuad;
   foregroundCropPercent: number;
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
@@ -129,6 +132,8 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   renderResolution: 'original',
   renderContainer: 'mp4',
   blackoutTop: 0.9,
+  coverMode: 'blackout_bottom',
+  coverQuad: normalizeQuad(),
   foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
@@ -153,6 +158,8 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   renderResolution: '1080p',
   renderContainer: 'mp4',
   blackoutTop: 0.9,
+  coverMode: 'blackout_bottom',
+  coverQuad: normalizeQuad(),
   foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
@@ -177,6 +184,7 @@ function cloneProfile(profile: LayoutProfile): LayoutProfile {
     ...profile,
     style: { ...profile.style },
     subtitlePosition: profile.subtitlePosition ? { ...profile.subtitlePosition } : null,
+    coverQuad: normalizeQuad(profile.coverQuad),
     logoPosition: profile.logoPosition ? { ...profile.logoPosition } : undefined,
     thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
     thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
@@ -209,6 +217,13 @@ function normalizeProfile(
   }
   if (patch.blackoutTop === null || typeof patch.blackoutTop === 'number') {
     next.blackoutTop = patch.blackoutTop as number | null;
+  }
+  if (patch.coverMode === 'blackout_bottom' || patch.coverMode === 'copy_from_above') {
+    next.coverMode = patch.coverMode as CaptionCoverMode;
+  }
+  if (patch.coverQuad && typeof patch.coverQuad === 'object') {
+    const normalized = normalizeQuad(patch.coverQuad as Partial<CoverQuad>);
+    next.coverQuad = isConvexQuad(normalized) ? normalized : normalizeQuad(fallback.coverQuad);
   }
   if (typeof patch.foregroundCropPercent === 'number') {
     next.foregroundCropPercent = Math.min(20, Math.max(0, patch.foregroundCropPercent));
@@ -392,7 +407,7 @@ export function useCaptionSettings() {
   const [audioDir, setAudioDir] = useState('');
   const [autoFitAudio, setAutoFitAudio] = useState(false);
 
-  const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv'>('qsv');
+  const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv' | 'nvenc'>('qsv');
   const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
   const [audioSpeed, setAudioSpeed] = useState<number>(1.0);
   const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0);
@@ -467,6 +482,18 @@ export function useCaptionSettings() {
 
   const setBlackoutTop = useCallback((value: number | null) => {
     updateActiveProfile((current) => ({ ...current, blackoutTop: value }));
+  }, [updateActiveProfile]);
+
+  const setCoverMode = useCallback((value: CaptionCoverMode) => {
+    updateActiveProfile((current) => ({ ...current, coverMode: value }));
+  }, [updateActiveProfile]);
+
+  const setCoverQuad = useCallback((value: CoverQuad) => {
+    const normalized = normalizeQuad(value);
+    if (!isConvexQuad(normalized)) {
+      return;
+    }
+    updateActiveProfile((current) => ({ ...current, coverQuad: normalized }));
   }, [updateActiveProfile]);
 
   const setForegroundCropPercent = useCallback((value: number) => {
@@ -646,6 +673,8 @@ export function useCaptionSettings() {
       renderResolution: activeProfile.renderResolution,
       renderContainer: activeProfile.renderContainer,
       blackoutTop: activeProfile.blackoutTop,
+      coverMode: activeProfile.coverMode,
+      coverQuad: activeProfile.coverQuad,
       portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
       audioSpeed,
       renderAudioSpeed,
@@ -714,7 +743,9 @@ export function useCaptionSettings() {
     if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps as Step[]));
     if (saved.audioDir) setAudioDir(saved.audioDir);
     if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
-    if (saved.hardwareAcceleration) setHardwareAcceleration(saved.hardwareAcceleration);
+    if (saved.hardwareAcceleration === 'none' || saved.hardwareAcceleration === 'qsv' || saved.hardwareAcceleration === 'nvenc') {
+      setHardwareAcceleration(saved.hardwareAcceleration);
+    }
     if (saved.renderMode) setRenderMode(saved.renderMode as RenderMode);
     if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
     if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
@@ -746,6 +777,8 @@ export function useCaptionSettings() {
       renderResolution: saved.renderResolution,
       renderContainer: saved.renderContainer,
       blackoutTop: saved.blackoutTop,
+      coverMode: saved.coverMode,
+      coverQuad: saved.coverQuad,
       foregroundCropPercent: saved.portraitForegroundCropPercent,
       subtitlePosition: saved.subtitlePosition,
       thumbnailFrameTimeSec: saved.thumbnailFrameTimeSec,
@@ -942,6 +975,10 @@ export function useCaptionSettings() {
     setRenderContainer,
     blackoutTop: activeProfile.blackoutTop,
     setBlackoutTop,
+    coverMode: activeProfile.coverMode,
+    setCoverMode,
+    coverQuad: activeProfile.coverQuad,
+    setCoverQuad,
     foregroundCropPercent: activeProfile.foregroundCropPercent,
     setForegroundCropPercent,
     portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,

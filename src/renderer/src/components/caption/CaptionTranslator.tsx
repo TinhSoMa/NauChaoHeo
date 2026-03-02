@@ -83,6 +83,8 @@ export function CaptionTranslator() {
     renderResolution: settings.renderResolution,
     renderContainer: settings.renderContainer,
     blackoutTop: settings.blackoutTop,
+    coverMode: settings.coverMode,
+    coverQuad: settings.coverQuad,
     audioSpeed: settings.audioSpeed,
     renderAudioSpeed: settings.renderAudioSpeed,
     videoVolume: settings.videoVolume,
@@ -123,6 +125,8 @@ export function CaptionTranslator() {
     settings.renderResolution,
     settings.renderContainer,
     settings.blackoutTop,
+    settings.coverMode,
+    settings.coverQuad,
     settings.audioSpeed,
     settings.renderAudioSpeed,
     settings.videoVolume,
@@ -1525,6 +1529,8 @@ export function CaptionTranslator() {
               entries={previewEntries}
               subtitlePosition={settings.subtitlePosition}
               blackoutTop={settings.blackoutTop}
+              coverMode={settings.coverMode}
+              coverQuad={settings.coverQuad}
               renderMode={settings.renderMode}
               renderResolution={settings.renderResolution}
               logoPath={settings.logoPath}
@@ -1533,6 +1539,8 @@ export function CaptionTranslator() {
               portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
               onPositionChange={settings.setSubtitlePosition}
               onBlackoutChange={settings.setBlackoutTop}
+              onCoverModeChange={settings.setCoverMode}
+              onCoverQuadChange={settings.setCoverQuad}
               onRenderResolutionChange={settings.setRenderResolution}
               onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
               onLogoScaleChange={(scale) => settings.setLogoScale(scale)}

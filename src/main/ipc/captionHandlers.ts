@@ -353,12 +353,19 @@ export function registerCaptionHandlers(): void {
         height: number;
         videoPath?: string;
         targetDuration?: number;
-        hardwareAcceleration?: 'none' | 'qsv';
+        hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
         style?: any;
         renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
         renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
         position?: { x: number; y: number };
         blackoutTop?: number;
+        coverMode?: 'blackout_bottom' | 'copy_from_above';
+        coverQuad?: {
+          tl: { x: number; y: number };
+          tr: { x: number; y: number };
+          br: { x: number; y: number };
+          bl: { x: number; y: number };
+        };
         audioSpeed?: number;
         step7AudioSpeedInput?: number;
         srtTimeScale?: number;

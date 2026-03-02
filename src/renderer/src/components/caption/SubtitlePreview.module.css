@@ -98,6 +98,10 @@
   cursor: ns-resize;
 }
 
+.canvasContainer.coverCopyMode {
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
 .canvas {
   width: 100%;
   height: 100%;

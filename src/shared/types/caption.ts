@@ -281,6 +281,20 @@ export interface ASSStyleConfig {
   alignment: number; // 2: bottom center, 5: middle center, 8: top center
 }
 
+export type CaptionCoverMode = 'blackout_bottom' | 'copy_from_above';
+
+export interface CoverQuadPoint {
+  x: number;
+  y: number;
+}
+
+export interface CoverQuad {
+  tl: CoverQuadPoint;
+  tr: CoverQuadPoint;
+  br: CoverQuadPoint;
+  bl: CoverQuadPoint;
+}
+
 /**
  * Options để convert SRT sang ASS
  */
@@ -315,12 +329,14 @@ export interface RenderVideoOptions {
   height?: number;        // Optional - nếu không có sẽ tự tính từ style
   videoPath?: string;     // Đường dẫn video gốc để hardsub (nếu không có sẽ tạo nền đen)
   targetDuration?: number; // Độ dài cố định (tuỳ chọn) cho nền đen
-  hardwareAcceleration?: 'none' | 'qsv';
+  hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
   blackoutTop?: number;   // Tỉ lệ 0-1 từ trên xuống; landscape = tô đen đáy, portrait = mốc bắt đầu blur đáy foreground
+  coverMode?: CaptionCoverMode; // Chế độ che video (legacy mặc định: blackout_bottom)
+  coverQuad?: CoverQuad; // Tứ giác normalized (0..1) cho mode copy_from_above
   audioSpeed?: number;    // Tốc độ phát audio (sẽ tự động tính videoSpeed để khớp)
   step7AudioSpeedInput?: number; // Tốc độ audio người dùng nhập ở Step 7 (giữ riêng để trace khi audioPath đã pre-adjust)
   srtTimeScale?: number;  // Scale timeline SRT đã dùng khi merge audio (vd: settings.srtSpeed)
@@ -542,12 +558,14 @@ export interface CaptionProjectSettingsValues {
   enabledSteps?: number[];
   audioDir?: string;
   autoFitAudio?: boolean;
-  hardwareAcceleration?: 'none' | 'qsv';
+  hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   renderContainer?: 'mp4' | 'mov';
   blackoutTop?: number | null;
+  coverMode?: CaptionCoverMode;
+  coverQuad?: CoverQuad | null;
   audioSpeed?: number;
   renderAudioSpeed?: number;
   portraitForegroundCropPercent?: number;
@@ -574,6 +592,8 @@ export interface CaptionProjectSettingsValues {
       renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
       renderContainer?: 'mp4' | 'mov';
       blackoutTop?: number | null;
+      coverMode?: CaptionCoverMode;
+      coverQuad?: CoverQuad | null;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
@@ -597,6 +617,8 @@ export interface CaptionProjectSettingsValues {
       renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
       renderContainer?: 'mp4' | 'mov';
       blackoutTop?: number | null;
+      coverMode?: CaptionCoverMode;
+      coverQuad?: CoverQuad | null;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;

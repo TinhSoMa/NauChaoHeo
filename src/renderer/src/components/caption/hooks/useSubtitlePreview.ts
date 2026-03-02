@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ASSStyleConfig, RenderVideoOptions, SubtitleEntry } from '@shared/types/caption';
+import { ASSStyleConfig, CoverQuad, CoverQuadPoint, RenderVideoOptions, SubtitleEntry } from '@shared/types/caption';
 import { resolveLandscapeOutputSize } from '@shared/utils/renderResolution';
 import {
   clampNormalizedSubtitlePosition,
@@ -8,6 +8,13 @@ import {
   toNormalizedSubtitlePosition,
   toPixelSubtitlePosition,
 } from '@shared/utils/subtitlePosition';
+import {
+  computeCopyOffset,
+  defaultCoverQuad,
+  isConvexQuad,
+  normalizeQuad,
+  quadBoundingBox,
+} from '@shared/utils/maskCoverGeometry';
 
 interface SubtitlePreviewState {
   frameData: string | null;
@@ -26,6 +33,8 @@ export interface UseSubtitlePreviewOptions {
   entries?: SubtitleEntry[];
   subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;  // fraction 0-1 (persisted from settings)
+  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverQuad?: CoverQuad;
   renderMode?: PreviewRenderMode;
   renderResolution?: PreviewRenderResolution;
   logoPath?: string;
@@ -34,6 +43,8 @@ export interface UseSubtitlePreviewOptions {
   portraitForegroundCropPercent?: number; // crop ngang tổng (%) cho mode 9:16
   onPositionChange?: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (top: number | null) => void;
+  onCoverModeChange?: (mode: 'blackout_bottom' | 'copy_from_above') => void;
+  onCoverQuadChange?: (quad: CoverQuad) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
   renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
@@ -138,11 +149,72 @@ function resolvePreviewCoordinateSpace(
   };
 }
 
+function pointInPolygon(point: CoverQuadPoint, poly: CoverQuadPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+    const intersects = ((yi > point.y) !== (yj > point.y))
+      && (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 1e-9) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function translateQuad(quad: CoverQuad, dx: number, dy: number): CoverQuad {
+  const minX = Math.min(quad.tl.x, quad.tr.x, quad.br.x, quad.bl.x);
+  const maxX = Math.max(quad.tl.x, quad.tr.x, quad.br.x, quad.bl.x);
+  const minY = Math.min(quad.tl.y, quad.tr.y, quad.br.y, quad.bl.y);
+  const maxY = Math.max(quad.tl.y, quad.tr.y, quad.br.y, quad.bl.y);
+  const safeDx = Math.min(1 - maxX, Math.max(-minX, dx));
+  const safeDy = Math.min(1 - maxY, Math.max(-minY, dy));
+  return {
+    tl: { x: quad.tl.x + safeDx, y: quad.tl.y + safeDy },
+    tr: { x: quad.tr.x + safeDx, y: quad.tr.y + safeDy },
+    br: { x: quad.br.x + safeDx, y: quad.br.y + safeDy },
+    bl: { x: quad.bl.x + safeDx, y: quad.bl.y + safeDy },
+  };
+}
+
+interface CoverRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+type CoverDragEdge = 'left' | 'right' | 'top' | 'bottom';
+
+const MIN_COVER_RECT_SIZE = 0.02;
+
+function rectToQuad(rect: CoverRect): CoverQuad {
+  return {
+    tl: { x: rect.left, y: rect.top },
+    tr: { x: rect.right, y: rect.top },
+    br: { x: rect.right, y: rect.bottom },
+    bl: { x: rect.left, y: rect.bottom },
+  };
+}
+
+function quadToRect(quad: CoverQuad): CoverRect {
+  const bbox = quadBoundingBox(quad);
+  return {
+    left: bbox.minX,
+    right: bbox.maxX,
+    top: bbox.minY,
+    bottom: bbox.maxY,
+  };
+}
+
 export function useSubtitlePreview({
   style,
   entries,
   subtitlePosition,
   blackoutTop,
+  coverMode,
+  coverQuad,
   renderMode,
   renderResolution,
   logoPath,
@@ -151,6 +223,8 @@ export function useSubtitlePreview({
   portraitForegroundCropPercent,
   onPositionChange,
   onBlackoutChange,
+  onCoverModeChange,
+  onCoverQuadChange,
   onLogoPositionChange,
   onLogoScaleChange,
   renderSnapshotMode,
@@ -166,6 +240,7 @@ export function useSubtitlePreview({
   const cornerDragRef = useRef<{ initialDist: number; initialScale: number } | null>(null);
   // Video metadata for frame scrubbing (path, fps, duration) — không trigger re-render
   const videoMetaRef = useRef<{ path: string; fps: number; duration: number } | null>(null);
+  const frameRequestSerialRef = useRef(0);
 
   const [frameTimeSec, setFrameTimeSec] = useState(0);
   const initialSubtitlePosition = isFiniteSubtitlePosition(subtitlePosition)
@@ -193,6 +268,21 @@ export function useSubtitlePreview({
 
   // Local blackout top (fraction 0-1) for live dragging — synced from prop
   const [localBlackoutTop, setLocalBlackoutTop] = useState<number | null>(blackoutTop ?? null);
+  const [localCoverMode, setLocalCoverMode] = useState<'blackout_bottom' | 'copy_from_above'>(coverMode || 'blackout_bottom');
+  const initialCoverQuad = rectToQuad(quadToRect(normalizeQuad(coverQuad)));
+  const [localCoverQuad, setLocalCoverQuad] = useState<CoverQuad>(initialCoverQuad);
+  const localCoverQuadRef = useRef<CoverQuad>(initialCoverQuad);
+  const [coverQuadValid, setCoverQuadValid] = useState<boolean>(true);
+  const [copyOffsetPx, setCopyOffsetPx] = useState<number>(0);
+  const coverDragEdgeRef = useRef<{
+    edge: CoverDragEdge;
+    startRect: CoverRect;
+  } | null>(null);
+  const coverDragWholeRef = useRef<{
+    startPoint: CoverQuadPoint;
+    startQuad: CoverQuad;
+  } | null>(null);
+  const coverActiveRegionRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   
   // Local logo position for dragging
   const [localLogoPosition, setLocalLogoPosition] = useState<{ x: number; y: number } | null>(logoPosition ?? null);
@@ -210,10 +300,26 @@ export function useSubtitlePreview({
     setLocalLogoScale(s);
   };
 
+  const setLocalCoverQuadSynced = (quad: CoverQuad) => {
+    const normalizedRectQuad = rectToQuad(quadToRect(normalizeQuad(quad)));
+    localCoverQuadRef.current = normalizedRectQuad;
+    setLocalCoverQuad(normalizedRectQuad);
+    setCoverQuadValid(isConvexQuad(normalizedRectQuad));
+  };
+
   // Sync from prop when it changes externally
   useEffect(() => {
     setLocalBlackoutTop(blackoutTop ?? null);
   }, [blackoutTop]);
+
+  useEffect(() => {
+    setLocalCoverMode(coverMode || 'blackout_bottom');
+  }, [coverMode]);
+
+  useEffect(() => {
+    const normalized = normalizeQuad(coverQuad);
+    setLocalCoverQuadSynced(normalized);
+  }, [coverQuad]);
 
   useEffect(() => {
     if (!isFiniteSubtitlePosition(subtitlePosition)) {
@@ -357,7 +463,11 @@ export function useSubtitlePreview({
       const targetSecRaw = preferredTimeSec ?? 0;
       const targetSec = Math.max(0, Math.min(activeMeta?.duration || targetSecRaw, targetSecRaw));
       const frameNumber = Math.round(targetSec * (activeMeta?.fps || 30));
+      const requestSerial = ++frameRequestSerialRef.current;
       const frameRes = await api.extractFrame(videoPath, frameNumber);
+      if (requestSerial !== frameRequestSerialRef.current) {
+        return;
+      }
       if (frameRes?.success && frameRes.data) {
         const fd = frameRes.data.frameData.startsWith('data:')
           ? frameRes.data.frameData
@@ -404,7 +514,11 @@ export function useSubtitlePreview({
     try {
       const api = (window.electronAPI as any).captionVideo;
       const frameNumber = Math.round(clampedTime * meta.fps);
+      const requestSerial = ++frameRequestSerialRef.current;
       const frameRes = await api.extractFrame(meta.path, frameNumber);
+      if (requestSerial !== frameRequestSerialRef.current) {
+        return;
+      }
       if (frameRes?.success && frameRes.data) {
         const fd = frameRes.data.frameData.startsWith('data:')
           ? frameRes.data.frameData
@@ -538,13 +652,100 @@ export function useSubtitlePreview({
       ctx.drawImage(img, outputRect.x, outputRect.y, outputRect.width, outputRect.height);
     }
     portraitFgRectRef.current = portraitFgRect;
+    const coverRegion = outputRect;
+    coverActiveRegionRef.current = coverRegion;
 
     if (renderSnapshotMode) {
       return;
     }
 
-    // ===== Draw blackout band at bottom =====
-    if (localBlackoutTop !== null && localBlackoutTop < 1) {
+    // ===== Draw cover/mask layer =====
+    if (localCoverMode === 'copy_from_above') {
+      const quad = normalizeQuad(localCoverQuad);
+      const region = coverRegion;
+      const toCanvasPoint = (point: CoverQuadPoint): CoverQuadPoint => ({
+        x: region.x + point.x * region.width,
+        y: region.y + point.y * region.height,
+      });
+      const pTl = toCanvasPoint(quad.tl);
+      const pTr = toCanvasPoint(quad.tr);
+      const pBr = toCanvasPoint(quad.br);
+      const pBl = toCanvasPoint(quad.bl);
+      const poly = [pTl, pTr, pBr, pBl];
+      const normOffset = computeCopyOffset(quad);
+      const offset = Math.max(0, Math.round(normOffset * region.height));
+      setCopyOffsetPx(offset);
+      const validQuad = isConvexQuad(quad);
+      setCoverQuadValid(validQuad);
+
+      if (validQuad && offset > 0) {
+        let scratch = blurScratchRef.current;
+        if (!scratch) {
+          scratch = document.createElement('canvas');
+          blurScratchRef.current = scratch;
+        }
+        if (scratch.width !== cw || scratch.height !== ch) {
+          scratch.width = cw;
+          scratch.height = ch;
+        }
+        const scratchCtx = scratch.getContext('2d');
+        if (scratchCtx) {
+          scratchCtx.clearRect(0, 0, cw, ch);
+          scratchCtx.drawImage(canvas, 0, 0, cw, ch);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(poly[0].x, poly[0].y);
+          ctx.lineTo(poly[1].x, poly[1].y);
+          ctx.lineTo(poly[2].x, poly[2].y);
+          ctx.lineTo(poly[3].x, poly[3].y);
+          ctx.closePath();
+          ctx.clip();
+          // Dịch xuống để destination lấy pixel từ phía trên.
+          ctx.drawImage(scratch, 0, offset, cw, ch);
+          ctx.restore();
+        }
+      }
+
+      ctx.strokeStyle = validQuad ? 'rgba(34, 197, 94, 0.95)' : 'rgba(239, 68, 68, 0.95)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x, poly[0].y);
+      ctx.lineTo(poly[1].x, poly[1].y);
+      ctx.lineTo(poly[2].x, poly[2].y);
+      ctx.lineTo(poly[3].x, poly[3].y);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (mode === 'blackout') {
+        const edgeHandles = [
+          { x: (pTl.x + pBl.x) / 2, y: (pTl.y + pBl.y) / 2 }, // left
+          { x: (pTr.x + pBr.x) / 2, y: (pTr.y + pBr.y) / 2 }, // right
+          { x: (pTl.x + pTr.x) / 2, y: (pTl.y + pTr.y) / 2 }, // top
+          { x: (pBl.x + pBr.x) / 2, y: (pBl.y + pBr.y) / 2 }, // bottom
+        ];
+        for (const p of edgeHandles) {
+          ctx.fillStyle = '#facc15';
+          ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+          ctx.strokeStyle = '#111827';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(p.x - 5, p.y - 5, 10, 10);
+        }
+      }
+
+      const bbox = quadBoundingBox(quad);
+      ctx.fillStyle = validQuad ? 'rgba(34, 197, 94, 0.95)' : 'rgba(239, 68, 68, 0.95)';
+      ctx.font = '11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(
+        `copy ${Math.round((1 - bbox.minY) * 100)}% | off=${offset}px`,
+        pTl.x + 6,
+        pTl.y + 6
+      );
+    } else if (localBlackoutTop !== null && localBlackoutTop < 1) {
       const pct = Math.round((1 - localBlackoutTop) * 100);
 
       if (isPortraitMode && portraitFgRect) {
@@ -618,6 +819,9 @@ export function useSubtitlePreview({
         ctx.textBaseline = 'bottom';
         ctx.fillText(`che ${pct}%`, outputRect.x + outputRect.width - 6, bandY - 4);
       }
+    } else {
+      setCopyOffsetPx(0);
+      setCoverQuadValid(isConvexQuad(localCoverQuadRef.current));
     }
 
     // ===== Subtitle text =====
@@ -740,7 +944,7 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
     }
 
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localLogoPosition, localLogoScale, mode, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, localLogoPosition, localLogoScale, mode, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode]);
 
   // Load video frame image
   useEffect(() => {
@@ -892,6 +1096,76 @@ export function useSubtitlePreview({
     };
   }, []);
 
+  const canvasToCoverNormalized = useCallback((cx: number, cy: number) => {
+    const region = coverActiveRegionRef.current || previewRectRef.current;
+    const safeW = Math.max(1, region.width);
+    const safeH = Math.max(1, region.height);
+    return {
+      x: Math.max(0, Math.min(1, (cx - region.x) / safeW)),
+      y: Math.max(0, Math.min(1, (cy - region.y) / safeH)),
+    };
+  }, []);
+
+  const coverQuadCanvasPoints = useCallback(() => {
+    const region = coverActiveRegionRef.current || previewRectRef.current;
+    const quad = localCoverQuadRef.current;
+    const map = (p: CoverQuadPoint) => ({
+      x: region.x + p.x * region.width,
+      y: region.y + p.y * region.height,
+    });
+    return {
+      tl: map(quad.tl),
+      tr: map(quad.tr),
+      br: map(quad.br),
+      bl: map(quad.bl),
+    };
+  }, []);
+
+  const hitCoverEdge = useCallback((cx: number, cy: number): CoverDragEdge | null => {
+    const points = coverQuadCanvasPoints();
+    const tolerance = 12;
+    const minY = Math.min(points.tl.y, points.bl.y);
+    const maxY = Math.max(points.tl.y, points.bl.y);
+    const minX = Math.min(points.tl.x, points.tr.x);
+    const maxX = Math.max(points.tl.x, points.tr.x);
+
+    if (Math.abs(cx - points.tl.x) <= tolerance && cy >= minY - tolerance && cy <= maxY + tolerance) {
+      return 'left';
+    }
+    if (Math.abs(cx - points.tr.x) <= tolerance && cy >= minY - tolerance && cy <= maxY + tolerance) {
+      return 'right';
+    }
+    if (Math.abs(cy - points.tl.y) <= tolerance && cx >= minX - tolerance && cx <= maxX + tolerance) {
+      return 'top';
+    }
+    if (Math.abs(cy - points.bl.y) <= tolerance && cx >= minX - tolerance && cx <= maxX + tolerance) {
+      return 'bottom';
+    }
+    return null;
+  }, [coverQuadCanvasPoints]);
+
+  const isPointInsideCoverQuad = useCallback((cx: number, cy: number): boolean => {
+    const points = coverQuadCanvasPoints();
+    return pointInPolygon(
+      { x: cx, y: cy },
+      [points.tl, points.tr, points.br, points.bl]
+    );
+  }, [coverQuadCanvasPoints]);
+
+  const resizeCoverRectByEdge = useCallback((rect: CoverRect, edge: CoverDragEdge, point: CoverQuadPoint): CoverRect => {
+    let next = { ...rect };
+    if (edge === 'left') {
+      next.left = Math.max(0, Math.min(point.x, next.right - MIN_COVER_RECT_SIZE));
+    } else if (edge === 'right') {
+      next.right = Math.min(1, Math.max(point.x, next.left + MIN_COVER_RECT_SIZE));
+    } else if (edge === 'top') {
+      next.top = Math.max(0, Math.min(point.y, next.bottom - MIN_COVER_RECT_SIZE));
+    } else if (edge === 'bottom') {
+      next.bottom = Math.min(1, Math.max(point.y, next.top + MIN_COVER_RECT_SIZE));
+    }
+    return next;
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!state.frameData) return;
 
@@ -919,11 +1193,45 @@ export function useSubtitlePreview({
         setLocalLogoPositionSynced(newPos);
       }
     } else {
+      if (localCoverMode === 'copy_from_above') {
+        const edgeKey = hitCoverEdge(cx, cy);
+        if (edgeKey) {
+          coverDragEdgeRef.current = {
+            edge: edgeKey,
+            startRect: quadToRect(normalizeQuad(localCoverQuadRef.current)),
+          };
+          coverDragWholeRef.current = null;
+          return;
+        }
+        if (isPointInsideCoverQuad(cx, cy)) {
+          coverDragEdgeRef.current = null;
+          coverDragWholeRef.current = {
+            startPoint: canvasToCoverNormalized(cx, cy),
+            startQuad: rectToQuad(quadToRect(normalizeQuad(localCoverQuadRef.current))),
+          };
+          return;
+        }
+        setIsDragging(false);
+        return;
+      }
+
       // Blackout mode: set the top Y of blackout band
       const frac = canvasYToFraction(cy);
       setLocalBlackoutTop(frac);
     }
-  }, [state.frameData, mode, isNearCorner, onPositionChange, canvasYToFraction, canvasToPreviewCoords, canvasToPreviewNormalized]);
+  }, [
+    state.frameData,
+    mode,
+    isNearCorner,
+    onPositionChange,
+    canvasYToFraction,
+    canvasToPreviewCoords,
+    canvasToPreviewNormalized,
+    localCoverMode,
+    hitCoverEdge,
+    isPointInsideCoverQuad,
+    canvasToCoverNormalized,
+  ]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -935,7 +1243,20 @@ export function useSubtitlePreview({
     if (mode === 'logo' && !isDragging) {
       setCanvasCursor(isNearCorner(cx, cy) ? 'nwse-resize' : 'move');
     } else if (mode !== 'logo') {
-      setCanvasCursor(mode === 'blackout' ? 'ns-resize' : 'crosshair');
+      if (mode === 'blackout' && localCoverMode === 'copy_from_above') {
+        const edgeKey = hitCoverEdge(cx, cy);
+        if (edgeKey === 'left' || edgeKey === 'right') {
+          setCanvasCursor('ew-resize');
+        } else if (edgeKey === 'top' || edgeKey === 'bottom') {
+          setCanvasCursor('ns-resize');
+        } else if (isPointInsideCoverQuad(cx, cy)) {
+          setCanvasCursor('move');
+        } else {
+          setCanvasCursor('crosshair');
+        }
+      } else {
+        setCanvasCursor(mode === 'blackout' ? 'ns-resize' : 'crosshair');
+      }
     }
 
     if (!isDragging || !state.frameData) return;
@@ -957,10 +1278,42 @@ export function useSubtitlePreview({
         setLocalLogoPositionSynced(newPos);
       }
     } else {
-      const frac = canvasYToFraction(cy);
-      setLocalBlackoutTop(frac);
+      if (localCoverMode === 'copy_from_above') {
+        if (coverDragEdgeRef.current) {
+          const nextPoint = canvasToCoverNormalized(cx, cy);
+          const resized = resizeCoverRectByEdge(
+            coverDragEdgeRef.current.startRect,
+            coverDragEdgeRef.current.edge,
+            nextPoint
+          );
+          setLocalCoverQuadSynced(rectToQuad(resized));
+        } else if (coverDragWholeRef.current) {
+          const nowPoint = canvasToCoverNormalized(cx, cy);
+          const deltaX = nowPoint.x - coverDragWholeRef.current.startPoint.x;
+          const deltaY = nowPoint.y - coverDragWholeRef.current.startPoint.y;
+          const moved = translateQuad(coverDragWholeRef.current.startQuad, deltaX, deltaY);
+          const movedRect = quadToRect(moved);
+          setLocalCoverQuadSynced(rectToQuad(movedRect));
+        }
+      } else {
+        const frac = canvasYToFraction(cy);
+        setLocalBlackoutTop(frac);
+      }
     }
-  }, [isDragging, state.frameData, mode, isNearCorner, canvasYToFraction, canvasToPreviewCoords, canvasToPreviewNormalized]);
+  }, [
+    isDragging,
+    state.frameData,
+    mode,
+    isNearCorner,
+    canvasYToFraction,
+    canvasToPreviewCoords,
+    canvasToPreviewNormalized,
+    localCoverMode,
+    hitCoverEdge,
+    isPointInsideCoverQuad,
+    canvasToCoverNormalized,
+    resizeCoverRectByEdge,
+  ]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -982,10 +1335,27 @@ export function useSubtitlePreview({
         }
       }
     } else {
-      // Commit blackout value
-      onBlackoutChange?.(localBlackoutTop);
+      if (localCoverMode === 'copy_from_above') {
+        coverDragEdgeRef.current = null;
+        coverDragWholeRef.current = null;
+        onCoverQuadChange?.(localCoverQuadRef.current);
+      } else {
+        // Commit blackout value
+        onBlackoutChange?.(localBlackoutTop);
+      }
     }
-  }, [mode, state.frameData, state.subtitlePosition, onPositionChange, onLogoPositionChange, onLogoScaleChange, localBlackoutTop, onBlackoutChange]);
+  }, [
+    mode,
+    state.frameData,
+    state.subtitlePosition,
+    onPositionChange,
+    onLogoPositionChange,
+    onLogoScaleChange,
+    localBlackoutTop,
+    onBlackoutChange,
+    localCoverMode,
+    onCoverQuadChange,
+  ]);
 
   const resetToCenter = useCallback(() => {
     setState(prev => {
@@ -1005,6 +1375,17 @@ export function useSubtitlePreview({
     setLocalBlackoutTop(null);
     onBlackoutChange?.(null);
   }, [onBlackoutChange]);
+
+  const setCoverMode = useCallback((value: 'blackout_bottom' | 'copy_from_above') => {
+    setLocalCoverMode(value);
+    onCoverModeChange?.(value);
+  }, [onCoverModeChange]);
+
+  const resetCoverQuad = useCallback(() => {
+    const next = defaultCoverQuad();
+    setLocalCoverQuadSynced(next);
+    onCoverQuadChange?.(next);
+  }, [onCoverQuadChange]);
 
   const subtitlePositionRel = clampNormalizedSubtitlePosition(state.subtitlePosition);
   const subtitlePositionPx = toPixelSubtitlePosition(
@@ -1027,6 +1408,11 @@ export function useSubtitlePreview({
     canvasCursor,
     mode,
     setMode,
+    coverMode: localCoverMode,
+    setCoverMode,
+    coverQuad: localCoverQuad,
+    coverQuadValid,
+    copyOffsetPx,
     blackoutTop: localBlackoutTop,
     logoScale: localLogoScale,
     loadPreview,
@@ -1036,6 +1422,7 @@ export function useSubtitlePreview({
     videoDuration: videoMetaRef.current?.duration ?? 0,
     resetToCenter,
     clearBlackout,
+    resetCoverQuad,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,

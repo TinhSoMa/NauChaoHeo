@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode, StepDependencyIssue } from '../CaptionTypes';
-import { CaptionArtifactFile, CaptionSessionV1, CaptionStepNumber, CaptionProjectSettingsValues } from '@shared/types/caption';
+import { CaptionArtifactFile, CaptionSessionV1, CaptionStepNumber, CaptionProjectSettingsValues, CoverQuad } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
   buildEntriesFingerprint,
@@ -148,13 +148,15 @@ interface UseCaptionProcessingProps {
     srtSpeed: number;
     audioDir: string;
     setAudioDir: (dir: string) => void;
-    hardwareAcceleration: 'none' | 'qsv';
+    hardwareAcceleration: 'none' | 'qsv' | 'nvenc';
     style?: any;
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
     renderContainer?: 'mp4' | 'mov';
     subtitlePosition?: { x: number; y: number } | null;
     blackoutTop?: number | null;
+    coverMode?: 'blackout_bottom' | 'copy_from_above';
+    coverQuad?: CoverQuad;
     autoFitAudio: boolean;
     audioSpeed?: number;
     renderAudioSpeed?: number;
@@ -277,6 +279,14 @@ export function useCaptionProcessing({
       ...settings,
       style: settings.style ? { ...settings.style } : settings.style,
       subtitlePosition: settings.subtitlePosition ? { ...settings.subtitlePosition } : settings.subtitlePosition,
+      coverQuad: settings.coverQuad
+        ? {
+            tl: { ...settings.coverQuad.tl },
+            tr: { ...settings.coverQuad.tr },
+            br: { ...settings.coverQuad.br },
+            bl: { ...settings.coverQuad.bl },
+          }
+        : settings.coverQuad,
       logoPosition: settings.logoPosition ? { ...settings.logoPosition } : settings.logoPosition,
       thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition
         ? { ...settings.thumbnailTextPrimaryPosition }
@@ -459,6 +469,8 @@ export function useCaptionProcessing({
         renderAudioSpeed: cfg.renderAudioSpeed,
         videoVolume: cfg.videoVolume,
         audioVolume: cfg.audioVolume,
+        coverMode: cfg.coverMode || 'blackout_bottom',
+        coverQuad: cfg.coverQuad,
         style: cfg.style,
         thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
         thumbnailDurationSec: cfg.thumbnailDurationSec,
@@ -508,6 +520,8 @@ export function useCaptionProcessing({
       renderResolution: cfg.renderResolution,
       renderContainer: cfg.renderContainer || 'mp4',
       blackoutTop: cfg.blackoutTop,
+      coverMode: cfg.coverMode || 'blackout_bottom',
+      coverQuad: cfg.coverQuad,
       audioSpeed: cfg.audioSpeed,
       renderAudioSpeed: cfg.renderAudioSpeed,
       videoVolume: cfg.videoVolume,
@@ -1319,6 +1333,8 @@ export function useCaptionProcessing({
           position: cfg.subtitlePosition || undefined,
           blackoutTop: (cfg.blackoutTop != null && cfg.blackoutTop < 1)
             ? cfg.blackoutTop : undefined,
+          coverMode: cfg.coverMode || 'blackout_bottom',
+          coverQuad: cfg.coverQuad,
           audioPath: mergedAudioPathForRender,
           audioSpeed: cfg.renderAudioSpeed,
           step7AudioSpeedInput: step7AudioSpeed,

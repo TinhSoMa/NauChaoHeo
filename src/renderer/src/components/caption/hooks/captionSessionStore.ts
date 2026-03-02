@@ -577,6 +577,8 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
       blackoutTop: settings.blackoutTop,
+      coverMode: settings.coverMode,
+      coverQuad: settings.coverQuad,
       audioSpeed: settings.audioSpeed,
       subtitlePosition: settings.subtitlePosition,
       thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,

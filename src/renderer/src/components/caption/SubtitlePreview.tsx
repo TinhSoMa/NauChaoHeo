@@ -6,7 +6,7 @@
  */
 
 import { useEffect } from 'react';
-import { ASSStyleConfig, SubtitleEntry } from '@shared/types/caption';
+import { ASSStyleConfig, CoverQuad, SubtitleEntry } from '@shared/types/caption';
 import { useSubtitlePreview } from './hooks/useSubtitlePreview';
 import { Crosshair, RotateCcw, Square, Trash2, Image } from 'lucide-react';
 import styles from './SubtitlePreview.module.css';
@@ -17,6 +17,8 @@ interface SubtitlePreviewProps {
   entries?: SubtitleEntry[];
   subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;
+  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverQuad?: CoverQuad;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   logoPath?: string;
@@ -25,6 +27,8 @@ interface SubtitlePreviewProps {
   portraitForegroundCropPercent?: number;
   onPositionChange: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (value: number | null) => void;
+  onCoverModeChange?: (value: 'blackout_bottom' | 'copy_from_above') => void;
+  onCoverQuadChange?: (value: CoverQuad) => void;
   onRenderResolutionChange?: (value: 'original' | '1080p' | '720p' | '540p' | '360p') => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
@@ -34,7 +38,7 @@ interface SubtitlePreviewProps {
   interactiveDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -42,6 +46,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     entries,
     subtitlePosition,
     blackoutTop,
+    coverMode,
+    coverQuad,
     renderMode,
     renderResolution,
     logoPath,
@@ -50,6 +56,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     portraitForegroundCropPercent,
     onPositionChange: (pos) => onPositionChange(pos),
     onBlackoutChange,
+    onCoverModeChange,
+    onCoverQuadChange,
     onLogoPositionChange,
     onLogoScaleChange,
     renderSnapshotMode,
@@ -61,6 +69,16 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
       preview.loadPreview(videoPath);
     }
   }, [videoPath]);
+
+  useEffect(() => {
+    if (!videoPath || preview.videoDuration <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      preview.loadFrameAt(preview.frameTimeSec);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [videoPath, preview.videoDuration, preview.frameTimeSec, preview.loadFrameAt]);
 
   const resolutionOptions = isPortraitMode
     ? [
@@ -103,7 +121,11 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
         <button
           className={`${styles.modeBtn} ${preview.mode === 'blackout' ? styles.modeBtnActive : ''}`}
           onClick={() => preview.setMode('blackout')}
-          title={isPortraitMode ? 'Kéo để đặt vùng blur đáy video chính' : 'Kéo để đặt vùng tô đen phía dưới video'}
+          title={
+            preview.coverMode === 'copy_from_above'
+              ? 'Kéo cạnh trái/phải/top/bottom hoặc kéo cả vùng để copy vùng phía trên che nội dung'
+              : (isPortraitMode ? 'Kéo để đặt vùng blur đáy video chính' : 'Kéo để đặt vùng tô đen phía dưới video')
+          }
           disabled={isInteractionDisabled}
         >
           <Square size={13} />
@@ -145,7 +167,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
 
       <div
         ref={preview.containerRef}
-        className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.mode === 'blackout' ? styles.blackoutMode : ''}`}
+        className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.mode === 'blackout' ? (preview.coverMode === 'copy_from_above' ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
       >
         <canvas
           ref={preview.canvasRef}
@@ -163,6 +185,25 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           <div className={styles.disabledOverlay}>{interactiveDisabledReason}</div>
         )}
       </div>
+
+      {!renderSnapshotMode && videoPath && preview.videoDuration > 0 && (
+        <div className={styles.scrubberRow}>
+          <span className={styles.scrubberLabel}>Frame</span>
+          <input
+            className={styles.scrubber}
+            type="range"
+            min={0}
+            max={preview.videoDuration}
+            step={Math.max(0.01, preview.videoDuration / 500)}
+            value={Math.min(preview.frameTimeSec, preview.videoDuration)}
+            onChange={(e) => preview.setFrameTimeSec(Number(e.target.value) || 0)}
+            disabled={isInteractionDisabled || preview.isLoading}
+          />
+          <span className={styles.scrubberHint}>
+            {preview.frameTimeSec.toFixed(2)}s / {preview.videoDuration.toFixed(2)}s
+          </span>
+        </div>
+      )}
 
       <div className={styles.infoBar}>
         <span className={styles.positionInfo}>
@@ -188,9 +229,11 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
             </>
           ) : (
             <>
-              {preview.blackoutTop !== null
-                ? (isPortraitMode ? `Blur ${blackoutPct}% đáy video chính` : `Che ${blackoutPct}% dưới video`)
-                : (isPortraitMode ? 'Kéo để đặt vùng blur đáy' : 'Kéo để đặt vùng tô đen')}
+              {preview.coverMode === 'copy_from_above'
+                ? `Copy vùng trên | offset ${preview.copyOffsetPx}px | ${preview.coverQuadValid ? 'quad hợp lệ' : 'quad không hợp lệ'}`
+                : (preview.blackoutTop !== null
+                  ? (isPortraitMode ? `Blur ${blackoutPct}% đáy video chính` : `Che ${blackoutPct}% dưới video`)
+                  : (isPortraitMode ? 'Kéo để đặt vùng blur đáy' : 'Kéo để đặt vùng tô đen'))}
               {' | '}
               {preview.videoSize.width}×{preview.videoSize.height}
               {' | '}
@@ -231,8 +274,21 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
                </option>
              ))}
           </select>
+
+          {preview.mode === 'blackout' && (
+            <select
+              className={styles.resolutionSelect}
+              value={preview.coverMode}
+              onChange={(e) => preview.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above')}
+              disabled={isInteractionDisabled || renderMode === 'black_bg'}
+              title="Chọn kiểu che video"
+            >
+              <option value="blackout_bottom">Che đen đáy</option>
+              <option value="copy_from_above">Copy vùng trên (hình chữ nhật)</option>
+            </select>
+          )}
           
-          {preview.mode === 'blackout' && preview.blackoutTop !== null && (
+          {preview.mode === 'blackout' && preview.coverMode === 'blackout_bottom' && preview.blackoutTop !== null && (
             <button
               className={`${styles.resetBtn} ${styles.dangerBtn}`}
               onClick={preview.clearBlackout}
@@ -240,6 +296,16 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               disabled={isInteractionDisabled}
             >
               <Trash2 size={12} /> Xóa
+            </button>
+          )}
+          {preview.mode === 'blackout' && preview.coverMode === 'copy_from_above' && (
+            <button
+              className={styles.resetBtn}
+              onClick={preview.resetCoverQuad}
+              title="Đưa vùng chữ nhật về mặc định"
+              disabled={isInteractionDisabled || renderMode === 'black_bg'}
+            >
+              <RotateCcw size={12} /> Reset Quad
             </button>
           )}
         </div>

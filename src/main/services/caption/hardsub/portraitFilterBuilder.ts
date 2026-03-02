@@ -1,10 +1,14 @@
 import { PortraitVideoFilterBuildInput, PortraitVideoFilterBuildOutput } from './types';
+import { buildCopyFromAboveFilter } from './coverMaskFilterBuilder';
 
 function appendForegroundBottomBlur(
   parts: string[],
   input: PortraitVideoFilterBuildInput,
   fgLabel: string
 ): string {
+  if (input.coverMode === 'copy_from_above') {
+    return fgLabel;
+  }
   if (input.blackoutTop == null || input.blackoutTop >= 1) {
     return fgLabel;
   }
@@ -39,14 +43,14 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
     `scale='if(gte(a,${outputAspect}),${input.outputWidth},-2)':'if(gte(a,${outputAspect}),-2,${input.outputHeight})'`;
 
   if (input.layoutStrategy === 'direct_fit_no_blur' && sourceAspect > 0) {
-    parts.push(`${fgScaleFilter}[fg_fit]`);
+    parts.push(`${input.inputLabel}${fgScaleFilter}[fg_fit]`);
     const fgLabel = appendForegroundBottomBlur(parts, input, 'fg_fit');
     parts.push(
       `[${fgLabel}]pad=${input.outputWidth}:${input.outputHeight}:(ow-iw)/2:(oh-ih)/2:black,` +
       'setsar=1,setdar=9/16[v_canvas]'
     );
   } else {
-    parts.push('split=2[bg][fg]');
+    parts.push(`${input.inputLabel}split=2[bg][fg]`);
     parts.push(
       `[bg]scale=${input.bgDownscaleWidth}:${input.bgDownscaleHeight},` +
       `boxblur=${input.bgBlurLumaRadius}:${input.bgBlurLumaPower},` +
@@ -57,14 +61,31 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
     parts.push(`[bg_blur][${fgLabel}]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v_canvas]`);
   }
 
-  let currentLabel = 'v_canvas';
-  if (input.videoSpeedMultiplier !== 1.0) {
-    const ptsMultiplier = (1 / input.videoSpeedMultiplier).toFixed(4);
-    parts.push(`[${currentLabel}]setpts=${ptsMultiplier}*PTS[v_timed]`);
-    currentLabel = 'v_timed';
+  let currentLabel = '[v_canvas]';
+
+  if (input.coverMode === 'copy_from_above') {
+    const cover = buildCopyFromAboveFilter({
+      inputLabel: currentLabel,
+      outputLabel: 'v_canvas_covered',
+      renderWidth: input.outputWidth,
+      renderHeight: input.outputHeight,
+      coverQuad: input.coverQuad,
+      labelPrefix: 'portrait_cover',
+    });
+    parts.push(...cover.filterParts);
+    if (!cover.applied) {
+      console.warn('[PortraitFilter][Cover] Skip copy_from_above:', cover.reason || 'unknown_reason');
+    }
+    currentLabel = cover.outputLabel;
   }
 
-  parts.push(`[${currentLabel}]${input.subtitleFilter}[v_subbed]`);
+  if (input.videoSpeedMultiplier !== 1.0) {
+    const ptsMultiplier = (1 / input.videoSpeedMultiplier).toFixed(4);
+    parts.push(`${currentLabel}setpts=${ptsMultiplier}*PTS[v_timed]`);
+    currentLabel = '[v_timed]';
+  }
+
+  parts.push(`${currentLabel}${input.subtitleFilter}[v_subbed]`);
   parts.push('[v_subbed]format=nv12[v_portrait_out]');
   return {
     filterParts: parts,

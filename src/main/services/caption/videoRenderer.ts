@@ -60,6 +60,58 @@ function resolvePortraitCanvasByPreset(
   return { width: 1080, height: 1920 };
 }
 
+interface EncoderProfile {
+  hwaccelArgs: string[];
+  videoCodec: string;
+  codecParams: string[];
+  pixelFormat: 'yuv420p' | 'nv12';
+  decodePath: string;
+}
+
+function resolveEncoderProfile(
+  hardware: RenderVideoOptions['hardwareAcceleration'],
+  renderMode: RenderVideoOptions['renderMode']
+): EncoderProfile {
+  if (hardware === 'qsv') {
+    if (renderMode === 'hardsub_portrait_9_16') {
+      // Portrait filter graph dày đặc filter CPU; decode software ổn định hơn.
+      const enableQsvDecode = process.env.CAPTION_PORTRAIT_QSV_DECODE === '1';
+      return {
+        hwaccelArgs: enableQsvDecode ? ['-hwaccel', 'auto'] : [],
+        videoCodec: 'h264_qsv',
+        codecParams: ['-preset', 'fast', '-global_quality', '25'],
+        pixelFormat: 'nv12',
+        decodePath: enableQsvDecode ? 'qsv_decode + qsv_encode' : 'software_decode + qsv_encode',
+      };
+    }
+    return {
+      hwaccelArgs: ['-hwaccel', 'auto'],
+      videoCodec: 'h264_qsv',
+      codecParams: ['-preset', 'fast', '-global_quality', '25'],
+      pixelFormat: 'nv12',
+      decodePath: 'auto_decode + qsv_encode',
+    };
+  }
+
+  if (hardware === 'nvenc') {
+    return {
+      hwaccelArgs: [],
+      videoCodec: 'h264_nvenc',
+      codecParams: ['-preset', 'p4', '-rc', 'vbr', '-cq', '24', '-b:v', '0'],
+      pixelFormat: 'nv12',
+      decodePath: 'software_decode + nvenc_encode',
+    };
+  }
+
+  return {
+    hwaccelArgs: [],
+    videoCodec: 'libx264',
+    codecParams: ['-preset', 'medium', '-crf', '23'],
+    pixelFormat: 'yuv420p',
+    decodePath: 'software',
+  };
+}
+
 async function probeOutputAspectForLog(videoPath: string): Promise<{
   width: number;
   height: number;
@@ -302,24 +354,20 @@ export async function renderHardsubVideo(
 
   const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+  const coverMode = options.coverMode || 'blackout_bottom';
   const videoFilter = buildVideoFilter({
+    inputLabel: '[0:v]',
     needsScale: prep.needsScale,
     renderWidth: prep.renderWidth,
     renderHeight: prep.renderHeight,
     blackoutTop: options.blackoutTop,
+    coverMode,
+    coverQuad: options.coverQuad,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     subtitleFilter,
   });
 
-  let hwaccelArgs: string[] = [];
-  let videoCodec = 'libx264';
-  let codecParams = ['-preset', 'medium', '-crf', '23'];
-
-  if (options.hardwareAcceleration === 'qsv') {
-    hwaccelArgs = ['-hwaccel', 'auto'];
-    videoCodec = 'h264_qsv';
-    codecParams = ['-preset', 'fast', '-global_quality', '25'];
-  }
+  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode);
 
   // Hardsub: tính thời lượng output đúng cho cả 2 trường hợp:
   //   - videoSpeedMultiplier < 1 (video chậm đi):  stretchedVideo > newAudio  -> dùng stretchedVideo
@@ -338,7 +386,7 @@ export async function renderHardsubVideo(
     `audioForSync=${prep.newAudioDuration.toFixed(3)}s, outputDuration=${mainOutputDuration.toFixed(3)}s`
   );
 
-  const inputArgs = [...hwaccelArgs, '-i', renderOptions.videoPath!];
+  const inputArgs = [...encoderProfile.hwaccelArgs, '-i', renderOptions.videoPath!];
   let hasTtsAudio = false;
   if (renderOptions.audioPath && existsSync(renderOptions.audioPath)) {
     inputArgs.push('-i', renderOptions.audioPath);
@@ -402,7 +450,7 @@ export async function renderHardsubVideo(
     audioSpeed: prep.audioSpeed,
   });
   filterComplexParts.push(...audioMix.filterParts);
-  filterComplexParts.push(`[0:v]${videoFilter}[v_base]`);
+  filterComplexParts.push(...videoFilter.filterParts);
 
   if (hasLogo && logoInputIndex > 0) {
     const userLogoScale = renderOptions.logoScale ?? 1.0;
@@ -418,9 +466,9 @@ export async function renderHardsubVideo(
     }
 
     filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
-    filterComplexParts.push(`[v_base][logo_scaled]overlay=x=${logoXAxis}:y=${logoYAxis}[v_out]`);
+    filterComplexParts.push(`${videoFilter.outputLabel}[logo_scaled]overlay=x=${logoXAxis}:y=${logoYAxis}[v_out]`);
   } else {
-    filterComplexParts.push('[v_base]copy[v_out]');
+    filterComplexParts.push(`${videoFilter.outputLabel}null[v_out]`);
   }
 
   const fps = 24;
@@ -458,16 +506,23 @@ export async function renderHardsubVideo(
     ...inputArgs,
     '-filter_complex', filterComplexParts.join(';'),
     ...mapArgs,
-    '-c:v', videoCodec,
-    ...codecParams,
+    '-c:v', encoderProfile.videoCodec,
+    ...encoderProfile.codecParams,
     '-c:a', 'aac',
     '-b:a', '192k',
-    '-pix_fmt', 'yuv420p',
+    '-pix_fmt', encoderProfile.pixelFormat,
     '-r', fps.toString(),
     '-t', finalDurationStr,
     '-y',
     outputPath,
   ];
+  console.log('[VideoRenderer][Hardsub] Encoder profile', {
+    hardware: options.hardwareAcceleration || 'none',
+    codec: encoderProfile.videoCodec,
+    pixelFormat: encoderProfile.pixelFormat,
+    decodePath: encoderProfile.decodePath,
+    hwaccelArgs: encoderProfile.hwaccelArgs,
+  });
 
   const hardsubTimingDebug = buildHardsubTimingPayload({
     options,
@@ -562,6 +617,10 @@ export async function renderHardsubVideo(
       subtitleSource: options.step7SubtitleSource || 'unknown',
       audioSource: options.step7AudioSource || 'unknown',
     },
+    cover: {
+      mode: coverMode,
+      hasQuad: !!options.coverQuad,
+    },
     subtitleWindow: {
       subtitleEndSec: prep.duration,
       trimApplied,
@@ -621,19 +680,7 @@ export async function renderHardsubPortraitVideo(
   const prep = await prepareSubtitleAndDurationPortrait(renderOptions, portraitCanvas);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
 
-  let hwaccelArgs: string[] = [];
-  let videoCodec = 'libx264';
-  let codecParams = ['-preset', 'medium', '-crf', '23'];
-  if (options.hardwareAcceleration === 'qsv') {
-    // Portrait filter graph (split/blur/overlay/ass) ổn định hơn khi decode software.
-    // Giữ QSV encode để vẫn có tăng tốc xuất file.
-    // Có thể bật lại full QSV decode+encode để benchmark bằng env:
-    //   CAPTION_PORTRAIT_QSV_DECODE=1
-    const enableQsvDecode = process.env.CAPTION_PORTRAIT_QSV_DECODE === '1';
-    hwaccelArgs = enableQsvDecode ? ['-hwaccel', 'auto'] : [];
-    videoCodec = 'h264_qsv';
-    codecParams = ['-preset', 'fast', '-global_quality', '25'];
-  }
+  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode);
 
   const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
     ? prep.originalVideoDuration / prep.videoSpeedMultiplier
@@ -648,7 +695,7 @@ export async function renderHardsubPortraitVideo(
     `audioForSync=${prep.newAudioDuration.toFixed(3)}s, outputDuration=${mainOutputDuration.toFixed(3)}s`
   );
 
-  const inputArgs = [...hwaccelArgs, '-i', renderOptions.videoPath!];
+  const inputArgs = [...encoderProfile.hwaccelArgs, '-i', renderOptions.videoPath!];
   let hasTtsAudio = false;
   if (renderOptions.audioPath && existsSync(renderOptions.audioPath)) {
     inputArgs.push('-i', renderOptions.audioPath);
@@ -737,6 +784,7 @@ export async function renderHardsubPortraitVideo(
   );
 
   const portraitVideo = buildPortraitVideoFilter({
+    inputLabel: '[0:v]',
     outputWidth: portraitCanvas.width,
     outputHeight: portraitCanvas.height,
     subtitleFilter,
@@ -745,6 +793,8 @@ export async function renderHardsubPortraitVideo(
     foregroundCropPercent,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     blackoutTop: options.blackoutTop,
+    coverMode: options.coverMode || 'blackout_bottom',
+    coverQuad: options.coverQuad,
     bgDownscaleWidth,
     bgDownscaleHeight,
     bgBlurLumaRadius,
@@ -762,11 +812,7 @@ export async function renderHardsubPortraitVideo(
   });
   filterComplexParts.push(...audioMix.filterParts);
 
-  const portraitFilterParts = [...portraitVideo.filterParts];
-  if (portraitFilterParts.length > 0) {
-    portraitFilterParts[0] = `[0:v]${portraitFilterParts[0]}`;
-  }
-  filterComplexParts.push(...portraitFilterParts);
+  filterComplexParts.push(...portraitVideo.filterParts);
 
   if (hasLogo && logoInputIndex > 0) {
     const userLogoScale = renderOptions.logoScale ?? 1.0;
@@ -783,7 +829,7 @@ export async function renderHardsubPortraitVideo(
     filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
     filterComplexParts.push(`[${portraitVideo.outputLabel}][logo_scaled]overlay=x=${logoXAxis}:y=${logoYAxis}[v_out]`);
   } else {
-    filterComplexParts.push(`[${portraitVideo.outputLabel}]copy[v_out]`);
+    filterComplexParts.push(`[${portraitVideo.outputLabel}]null[v_out]`);
   }
 
   const fps = 24;
@@ -821,11 +867,11 @@ export async function renderHardsubPortraitVideo(
     ...inputArgs,
     '-filter_complex', filterComplexParts.join(';'),
     ...mapArgs,
-    '-c:v', videoCodec,
-    ...codecParams,
+    '-c:v', encoderProfile.videoCodec,
+    ...encoderProfile.codecParams,
     '-c:a', 'aac',
     '-b:a', '192k',
-    '-pix_fmt', 'yuv420p',
+    '-pix_fmt', encoderProfile.pixelFormat,
     '-r', fps.toString(),
     '-t', finalDurationStr,
     '-y',
@@ -904,11 +950,8 @@ export async function renderHardsubPortraitVideo(
     layoutStrategy,
     foregroundCropPercent,
     ratioNormalize: 'setsar=1,setdar=9/16',
-    decodePath: options.hardwareAcceleration === 'qsv'
-      ? ((process.env.CAPTION_PORTRAIT_QSV_DECODE === '1')
-        ? 'qsv_decode + qsv_encode'
-        : 'software_decode + qsv_encode')
-      : 'software',
+    decodePath: encoderProfile.decodePath,
+    encoder: encoderProfile.videoCodec,
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
     audioMergeWindowInVideo: hasTtsAudio
@@ -948,6 +991,10 @@ export async function renderHardsubPortraitVideo(
     dataSource: {
       subtitleSource: options.step7SubtitleSource || 'unknown',
       audioSource: options.step7AudioSource || 'unknown',
+    },
+    cover: {
+      mode: options.coverMode || 'blackout_bottom',
+      hasQuad: !!options.coverQuad,
     },
   });
   console.log('[VideoRenderer][HardsubPortrait][TimingPayload]', hardsubTimingDebug);

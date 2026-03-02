@@ -1,4 +1,4 @@
-import { RenderProgress, RenderVideoOptions, VideoMetadata } from '../../../../shared/types/caption';
+import { CaptionCoverMode, CoverQuad, RenderProgress, RenderVideoOptions, VideoMetadata } from '../../../../shared/types/caption';
 
 export interface MediaProbeResult {
   success: boolean;
@@ -39,15 +39,24 @@ export interface HardsubAudioMixBuildOutput {
 }
 
 export interface VideoFilterBuildInput {
+  inputLabel: string;
   needsScale: boolean;
   renderWidth: number;
   renderHeight: number;
   blackoutTop?: number | null; // 0-1 từ trên xuống; dùng cho nhánh landscape (tô đen đáy)
+  coverMode?: CaptionCoverMode;
+  coverQuad?: CoverQuad | null;
   videoSpeedMultiplier: number;
   subtitleFilter: string;
 }
 
+export interface VideoFilterBuildOutput {
+  filterParts: string[];
+  outputLabel: string;
+}
+
 export interface PortraitVideoFilterBuildInput {
+  inputLabel: string;
   outputWidth: number;
   outputHeight: number;
   subtitleFilter: string;
@@ -56,6 +65,8 @@ export interface PortraitVideoFilterBuildInput {
   layoutStrategy: 'blur_composite' | 'direct_fit_no_blur';
   foregroundCropPercent: number;
   blackoutTop?: number | null; // 0-1 theo output; với portrait: mốc bắt đầu blur vùng đáy của foreground
+  coverMode?: CaptionCoverMode;
+  coverQuad?: CoverQuad | null;
   bgDownscaleWidth: number;
   bgDownscaleHeight: number;
   bgBlurLumaRadius: number;

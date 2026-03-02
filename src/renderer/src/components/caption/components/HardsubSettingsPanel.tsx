@@ -74,6 +74,19 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             >
               <option value="none">CPU</option>
               <option value="qsv">QSV</option>
+              <option value="nvenc">NVENC</option>
+            </select>
+          </div>
+          <div className={`${styles.inputGroup} ${styles.step7Row}`}>
+            <span className={styles.label}>Mask mode</span>
+            <select
+              className={styles.select}
+              value={settings.coverMode || 'blackout_bottom'}
+              onChange={(e) => settings.setCoverMode?.(e.target.value as 'blackout_bottom' | 'copy_from_above')}
+              disabled={settings.renderMode === 'black_bg'}
+            >
+              <option value="blackout_bottom">Che đen đáy</option>
+              <option value="copy_from_above">Copy vùng trên (hình chữ nhật)</option>
             </select>
           </div>
 
