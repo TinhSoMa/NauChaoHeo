@@ -15,6 +15,9 @@ interface HardsubSettingsPanelProps {
 
 export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
   const { visible, settings, metrics } = props;
+  const subtitleFontSelected = settings.style?.fontName || 'ZYVNA Fairy';
+  const text1FontSelected = settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal';
+  const text2FontSelected = settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal';
 
   if (!visible) {
     return null;
@@ -121,11 +124,12 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             <span className={styles.label}>Font Sub</span>
             <select
               className={styles.select}
-              value={settings.style?.fontName || 'ZYVNA Fairy'}
+              value={subtitleFontSelected}
               onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontName: e.target.value }))}
+              style={{ fontFamily: `"${subtitleFontSelected}", sans-serif` }}
             >
               {props.availableFonts.map((font) => (
-                <option key={font} value={font}>
+                <option key={font} value={font} style={{ fontFamily: `"${font}", sans-serif` }}>
                   {font}
                 </option>
               ))}
@@ -207,11 +211,12 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             <span className={styles.label}>Font Text1</span>
             <select
               className={styles.select}
-              value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+              value={text1FontSelected}
               onChange={(e) => settings.setThumbnailTextPrimaryFontName?.(e.target.value)}
+              style={{ fontFamily: `"${text1FontSelected}", sans-serif` }}
             >
               {props.availableFonts.map((font) => (
-                <option key={`thumb-${font}`} value={font}>
+                <option key={`thumb-${font}`} value={font} style={{ fontFamily: `"${font}", sans-serif` }}>
                   {font}
                 </option>
               ))}
@@ -228,15 +233,58 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
               onChange={(e) => settings.setThumbnailTextPrimaryFontSize?.(Number(e.target.value))}
             />
           </div>
+          <div className={`${styles.step7FullRow} ${styles.inputGroup}`}>
+            <span className={styles.label}>Màu Text1</span>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                cursor: 'pointer',
+                marginTop: 6,
+                position: 'relative',
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: settings.thumbnailTextPrimaryColor || '#FFFF00',
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: 13 }}>
+                {(settings.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}
+              </span>
+              <input
+                type="color"
+                value={settings.thumbnailTextPrimaryColor || '#FFFF00'}
+                onChange={(e) => settings.setThumbnailTextPrimaryColor?.(e.target.value)}
+                style={{
+                  position: 'absolute',
+                  opacity: 0,
+                  width: '100%',
+                  height: '100%',
+                  cursor: 'pointer',
+                  top: 0,
+                  left: 0,
+                }}
+              />
+            </label>
+          </div>
           <div className={`${styles.inputGroup} ${styles.step7Row}`}>
             <span className={styles.label}>Font Text2</span>
             <select
               className={styles.select}
-              value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+              value={text2FontSelected}
               onChange={(e) => settings.setThumbnailTextSecondaryFontName?.(e.target.value)}
+              style={{ fontFamily: `"${text2FontSelected}", sans-serif` }}
             >
               {props.availableFonts.map((font) => (
-                <option key={`thumb2-${font}`} value={font}>
+                <option key={`thumb2-${font}`} value={font} style={{ fontFamily: `"${font}", sans-serif` }}>
                   {font}
                 </option>
               ))}
@@ -252,6 +300,48 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
               value={settings.thumbnailTextSecondaryFontSize ?? settings.thumbnailFontSize ?? 145}
               onChange={(e) => settings.setThumbnailTextSecondaryFontSize?.(Number(e.target.value))}
             />
+          </div>
+          <div className={`${styles.step7FullRow} ${styles.inputGroup}`}>
+            <span className={styles.label}>Màu Text2</span>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                cursor: 'pointer',
+                marginTop: 6,
+                position: 'relative',
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: settings.thumbnailTextSecondaryColor || '#FFFF00',
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', fontSize: 13 }}>
+                {(settings.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()}
+              </span>
+              <input
+                type="color"
+                value={settings.thumbnailTextSecondaryColor || '#FFFF00'}
+                onChange={(e) => settings.setThumbnailTextSecondaryColor?.(e.target.value)}
+                style={{
+                  position: 'absolute',
+                  opacity: 0,
+                  width: '100%',
+                  height: '100%',
+                  cursor: 'pointer',
+                  top: 0,
+                  left: 0,
+                }}
+              />
+            </label>
           </div>
           <div className={`${styles.step7FullRow} ${styles.inputGroup}`}>
             <span className={styles.label}>Line height ratio (Enter)</span>

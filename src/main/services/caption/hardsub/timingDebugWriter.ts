@@ -62,8 +62,10 @@ export function buildHardsubTimingPayload(input: {
     durationSec?: number;
     fontName?: string;
     fontSize?: number;
+    fontColor?: string;
     secondaryFontName?: string;
     secondaryFontSize?: number;
+    secondaryFontColor?: string;
     lineHeightRatio?: number;
     pipeline?: 'inline_single_stream' | 'post_concat_copy';
     audio?: 'silent_prefix' | 'none';

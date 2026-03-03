@@ -216,6 +216,13 @@ export interface CaptionVideoAPI {
     thumbnailTextSecondary?: string;
     thumbnailFontName?: string;
     thumbnailFontSize?: number;
+    thumbnailTextPrimaryFontName?: string;
+    thumbnailTextPrimaryFontSize?: number;
+    thumbnailTextPrimaryColor?: string;
+    thumbnailTextSecondaryFontName?: string;
+    thumbnailTextSecondaryFontSize?: number;
+    thumbnailTextSecondaryColor?: string;
+    thumbnailLineHeightRatio?: number;
     thumbnailTextPrimaryPosition?: { x: number; y: number };
     thumbnailTextSecondaryPosition?: { x: number; y: number };
     step7SubtitleSource?: 'session_translated_entries';

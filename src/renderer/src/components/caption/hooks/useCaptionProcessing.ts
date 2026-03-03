@@ -181,8 +181,10 @@ interface UseCaptionProcessingProps {
     thumbnailFontSize?: number;
     thumbnailTextPrimaryFontName?: string;
     thumbnailTextPrimaryFontSize?: number;
+    thumbnailTextPrimaryColor?: string;
     thumbnailTextSecondaryFontName?: string;
     thumbnailTextSecondaryFontSize?: number;
+    thumbnailTextSecondaryColor?: string;
     thumbnailLineHeightRatio?: number;
     thumbnailTextPrimaryPosition?: { x: number; y: number };
     thumbnailTextSecondaryPosition?: { x: number; y: number };
@@ -520,8 +522,10 @@ export function useCaptionProcessing({
         thumbnailFontSize: cfg.thumbnailFontSize,
         thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
         thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+        thumbnailTextPrimaryColor: cfg.thumbnailTextPrimaryColor,
         thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
         thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+        thumbnailTextSecondaryColor: cfg.thumbnailTextSecondaryColor,
         thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
         thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
         thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
@@ -566,8 +570,10 @@ export function useCaptionProcessing({
       thumbnailFontSize: cfg.thumbnailFontSize,
       thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
       thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor: cfg.thumbnailTextPrimaryColor,
       thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
       thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor: cfg.thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
       thumbnailTextSecondary: cfg.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
@@ -1357,7 +1363,9 @@ export function useCaptionProcessing({
         console.log(
           `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, ` +
           `font1=${cfg.thumbnailTextPrimaryFontName || cfg.thumbnailFontName || 'BrightwallPersonal'} size1=${cfg.thumbnailTextPrimaryFontSize ?? cfg.thumbnailFontSize ?? 145}, ` +
+          `color1=${(cfg.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}, ` +
           `font2=${cfg.thumbnailTextSecondaryFontName || cfg.thumbnailFontName || 'BrightwallPersonal'} size2=${cfg.thumbnailTextSecondaryFontSize ?? cfg.thumbnailFontSize ?? 145}, ` +
+          `color2=${(cfg.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()}, ` +
           `lineHeight=${Number(cfg.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x, ` +
           `text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
         );
@@ -1404,8 +1412,10 @@ export function useCaptionProcessing({
           thumbnailFontSize: cfg.thumbnailFontSize,
           thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
           thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+          thumbnailTextPrimaryColor: cfg.thumbnailTextPrimaryColor,
           thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
           thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+          thumbnailTextSecondaryColor: cfg.thumbnailTextSecondaryColor,
           thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
           thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,

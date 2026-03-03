@@ -32,8 +32,10 @@ interface ThumbnailClipOptions {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
@@ -55,6 +57,8 @@ interface ThumbnailLayoutBuildResult {
 const DEFAULT_THUMBNAIL_DURATION_SEC = 0.5;
 const DEFAULT_THUMBNAIL_FONT_NAME = 'BrightwallPersonal';
 const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
+const DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR = '#FFFF00';
+const DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR = '#FFFF00';
 const DEFAULT_THUMBNAIL_TEXT1_POSITION = { x: 0.5, y: 0.5 };
 const DEFAULT_THUMBNAIL_TEXT2_POSITION = { x: 0.5, y: 0.64 };
 const MIN_THUMBNAIL_FONT_SIZE = 24;
@@ -84,6 +88,21 @@ function normalizeThumbnailLineHeightRatio(value?: number): number {
     return THUMBNAIL_TEXT_LINE_HEIGHT_RATIO;
   }
   return Math.min(MAX_THUMBNAIL_LINE_HEIGHT_RATIO, Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, value as number));
+}
+
+function normalizeThumbnailTextColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+  return fallback;
+}
+
+function toFfmpegDrawTextColor(hexColor: string): string {
+  return `0x${hexColor.replace('#', '')}`;
 }
 
 function ensureEven(value: number): number {
@@ -295,8 +314,10 @@ async function buildThumbnailDrawTextFilter(options: {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
@@ -328,6 +349,16 @@ async function buildThumbnailDrawTextFilter(options: {
 }> {
   const primaryFontName = options.thumbnailTextPrimaryFontName || options.thumbnailFontName;
   const secondaryFontName = options.thumbnailTextSecondaryFontName || options.thumbnailFontName;
+  const primaryTextColorHex = normalizeThumbnailTextColor(
+    options.thumbnailTextPrimaryColor,
+    DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR
+  );
+  const secondaryTextColorHex = normalizeThumbnailTextColor(
+    options.thumbnailTextSecondaryColor,
+    DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR
+  );
+  const primaryTextColor = toFfmpegDrawTextColor(primaryTextColorHex);
+  const secondaryTextColor = toFfmpegDrawTextColor(secondaryTextColorHex);
   const primaryFontSize = normalizeThumbnailFontSize(
     options.thumbnailTextPrimaryFontSize ?? options.thumbnailFontSize
   );
@@ -410,6 +441,7 @@ async function buildThumbnailDrawTextFilter(options: {
     layout: ThumbnailTextLayoutResult;
     lineBasePath: string;
     fontParam: string;
+    fontColor: string;
     fontSize: number;
     position: { x: number; y: number };
     xExpr: string;
@@ -428,7 +460,7 @@ async function buildThumbnailDrawTextFilter(options: {
       const lineOffsetExpr = fmtExprNumber(index * input.layout.lineHeightPx);
       drawTextFilters.push(
         `drawtext=textfile='${escapeFilterPath(lineFilePath)}':reload=0:` +
-        `${input.fontParam}fontcolor=yellow:fontsize=${input.fontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
+        `${input.fontParam}fontcolor=${input.fontColor}:fontsize=${input.fontSize}:borderw=${THUMBNAIL_TEXT_BORDER_WIDTH}:bordercolor=black:` +
         `text_shaping=1:fix_bounds=1:y_align=text:x='${input.xExpr}':y='${blockTopExpr}+${lineOffsetExpr}'`
       );
     }
@@ -438,6 +470,7 @@ async function buildThumbnailDrawTextFilter(options: {
       layout: primaryLayout,
       lineBasePath: options.textFilePath,
       fontParam: primaryFontParam,
+      fontColor: primaryTextColor,
       fontSize: primaryFontSize,
       position: primaryPosition,
       xExpr: primaryPosExpr.x,
@@ -448,6 +481,7 @@ async function buildThumbnailDrawTextFilter(options: {
       layout: secondaryLayout,
       lineBasePath: options.secondaryTextFilePath,
       fontParam: secondaryFontParam,
+      fontColor: secondaryTextColor,
       fontSize: secondaryFontSize,
       position: secondaryPosition,
       xExpr: secondaryPosExpr.x,
@@ -852,8 +886,10 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     thumbnailFontSize: opts.thumbnailFontSize,
     thumbnailTextPrimaryFontName: opts.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: opts.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor: opts.thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: opts.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: opts.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor: opts.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: opts.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: opts.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: opts.thumbnailTextSecondaryPosition,
@@ -884,7 +920,9 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     `font2Name=${opts.thumbnailTextSecondaryFontName || opts.thumbnailFontName || DEFAULT_THUMBNAIL_FONT_NAME}, font2File=${drawTextContext.secondaryFontPath || 'system-default'}, ` +
     `font2Size=${drawTextContext.secondaryFontSize}, lineSpacing2=${drawTextContext.secondaryLineSpacing}, ` +
     `lineHeightRatio=${normalizeThumbnailLineHeightRatio(opts.thumbnailLineHeightRatio).toFixed(2)}, ` +
-    `fontColor=yellow, border=${THUMBNAIL_TEXT_BORDER_WIDTH}, ` +
+    `fontColor1=${normalizeThumbnailTextColor(opts.thumbnailTextPrimaryColor, DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR)}, ` +
+    `fontColor2=${normalizeThumbnailTextColor(opts.thumbnailTextSecondaryColor, DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR)}, ` +
+    `border=${THUMBNAIL_TEXT_BORDER_WIDTH}, ` +
     `textRegion=${JSON.stringify(drawTextContext.textRegion)}, textPos1=${JSON.stringify(drawTextContext.primaryPosition)}, ` +
     `textPos2=${JSON.stringify(drawTextContext.secondaryPosition)}, textLayout1=${JSON.stringify(summarizeLayoutForLog(drawTextContext.primaryLayout))}, ` +
     `textLayout2=${JSON.stringify(summarizeLayoutForLog(drawTextContext.secondaryLayout))}, ` +
@@ -1075,8 +1113,10 @@ export async function renderThumbnailPreviewFrame(
       thumbnailFontSize: options.thumbnailFontSize,
       thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
       thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor: options.thumbnailTextPrimaryColor,
       thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
       thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor: options.thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
       thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
@@ -1262,8 +1302,10 @@ export async function applyThumbnailPostProcess(
     thumbnailFontSize: options.thumbnailFontSize,
     thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor: options.thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor: options.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,

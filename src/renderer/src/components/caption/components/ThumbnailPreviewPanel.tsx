@@ -25,8 +25,10 @@ interface ThumbnailPreviewPanelProps {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
@@ -165,8 +167,10 @@ export function ThumbnailPreviewPanel({
   thumbnailFontSize,
   thumbnailTextPrimaryFontName,
   thumbnailTextPrimaryFontSize,
+  thumbnailTextPrimaryColor,
   thumbnailTextSecondaryFontName,
   thumbnailTextSecondaryFontSize,
+  thumbnailTextSecondaryColor,
   thumbnailLineHeightRatio,
   thumbnailTextPrimaryPosition,
   thumbnailTextSecondaryPosition,
@@ -201,8 +205,10 @@ export function ThumbnailPreviewPanel({
     thumbnailFontSize,
     thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
@@ -321,7 +327,8 @@ export function ThumbnailPreviewPanel({
       pos: { x: number; y: number },
       layer: ThumbnailPreviewLayer,
       fontName: string,
-      fontPx: number
+      fontPx: number,
+      fillColor: string
     ): { rect: DrawRect | null; truncated: boolean } => {
       ctx.font = `bold ${fontPx}px "${fontName}", sans-serif`;
       const layout = layoutThumbnailText({
@@ -360,7 +367,7 @@ export function ThumbnailPreviewPanel({
       ctx.strokeStyle = '#000';
       ctx.lineWidth = Math.max(1, fontPx * 0.06);
       ctx.lineJoin = 'round';
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = fillColor;
 
       const startY = y + padY + layout.lineHeightPx / 2;
       for (let index = 0; index < layout.lines.length; index++) {
@@ -380,14 +387,16 @@ export function ThumbnailPreviewPanel({
       previewState.draftPrimaryPosition,
       'primary',
       primaryFontName,
-      primaryFontPx
+      primaryFontPx,
+      thumbnailTextPrimaryColor || '#FFFF00'
     );
     const secondaryResult = drawTextBox(
       thumbnailTextSecondary,
       previewState.draftSecondaryPosition,
       'secondary',
       secondaryFontName,
-      secondaryFontPx
+      secondaryFontPx,
+      thumbnailTextSecondaryColor || '#FFFF00'
     );
     const nextTruncation: TruncationState = {
       primary: primaryResult.truncated,
@@ -421,8 +430,10 @@ export function ThumbnailPreviewPanel({
     thumbnailFontSize,
     thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
     thumbnailText,
     thumbnailTextSecondary,
@@ -534,8 +545,10 @@ export function ThumbnailPreviewPanel({
         thumbnailFontSize,
         thumbnailTextPrimaryFontName,
         thumbnailTextPrimaryFontSize,
+        thumbnailTextPrimaryColor,
         thumbnailTextSecondaryFontName,
         thumbnailTextSecondaryFontSize,
+        thumbnailTextSecondaryColor,
         thumbnailLineHeightRatio,
         thumbnailTextPrimaryPosition: previewState.draftPrimaryPosition,
         thumbnailTextSecondaryPosition: previewState.draftSecondaryPosition,
@@ -585,9 +598,11 @@ export function ThumbnailPreviewPanel({
     thumbnailText,
     thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor,
     thumbnailTextSecondary,
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor,
     videoPath,
   ]);
 
@@ -773,11 +788,13 @@ export function ThumbnailPreviewPanel({
               {' '}
               {thumbnailTextPrimaryFontSize ?? thumbnailFontSize ?? 145}px
             </span>
+            <span>Text1 color: {(thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}</span>
             <span>
               Text2 font: {(thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal')}
               {' '}
               {thumbnailTextSecondaryFontSize ?? thumbnailFontSize ?? 145}px
             </span>
+            <span>Text2 color: {(thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()}</span>
             <span>Line: {Number(thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x</span>
             <span>Text1: ({previewState.draftPrimaryPosition.x.toFixed(3)}, {previewState.draftPrimaryPosition.y.toFixed(3)})</span>
             <span>Text2: ({previewState.draftSecondaryPosition.x.toFixed(3)}, {previewState.draftSecondaryPosition.y.toFixed(3)})</span>

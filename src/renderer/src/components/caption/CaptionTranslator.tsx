@@ -93,8 +93,10 @@ export function CaptionTranslator() {
     thumbnailFontSize: settings.thumbnailFontSize,
     thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
     thumbnailTextSecondary: settings.thumbnailTextSecondary,
     thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
@@ -135,8 +137,10 @@ export function CaptionTranslator() {
     settings.thumbnailFontSize,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextPrimaryColor,
     settings.thumbnailTextSecondaryFontName,
     settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     settings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryPosition,
@@ -290,8 +294,10 @@ export function CaptionTranslator() {
                   thumbnailTextSecondarySource: secondarySource,
                   thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
                   thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+                  thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
                   thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
                   thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+                  thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
                   thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
                   thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
                   thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
@@ -324,8 +330,10 @@ export function CaptionTranslator() {
               thumbnailTextSecondarySource: 'single',
               thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
               thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+              thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
               thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
               thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+              thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
               thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
               thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
               thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
@@ -354,8 +362,10 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextPrimaryColor,
     settings.thumbnailTextSecondaryFontName,
     settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
@@ -908,6 +918,7 @@ export function CaptionTranslator() {
           `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s | ` +
           `T1 ${settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextPrimaryFontSize ?? settings.thumbnailFontSize ?? 145}px | ` +
           `T2 ${settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextSecondaryFontSize ?? settings.thumbnailFontSize ?? 145}px | ` +
+          `C1 ${(settings.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()} | C2 ${(settings.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()} | ` +
           `line ${Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x`,
       },
       { key: 'Preview', value: `${effectivePreviewMode === 'render' ? 'Render snapshot' : 'Live'} (${previewSourceLabel})` },
@@ -934,8 +945,10 @@ export function CaptionTranslator() {
     settings.thumbnailFontSize,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextPrimaryColor,
     settings.thumbnailTextSecondaryFontName,
     settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     autoVideoSpeed,
     effectivePreviewMode,
@@ -1570,8 +1583,10 @@ export function CaptionTranslator() {
               thumbnailFontSize={settings.thumbnailFontSize}
               thumbnailTextPrimaryFontName={settings.thumbnailTextPrimaryFontName}
               thumbnailTextPrimaryFontSize={settings.thumbnailTextPrimaryFontSize}
+              thumbnailTextPrimaryColor={settings.thumbnailTextPrimaryColor}
               thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
               thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
+              thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
               thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
               thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
               thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}

@@ -361,8 +361,10 @@ export interface RenderVideoOptions {
   thumbnailFontSize?: number; // Legacy: size chung cho cả text1/text2
   thumbnailTextPrimaryFontName?: string; // Font riêng cho text1
   thumbnailTextPrimaryFontSize?: number; // Cỡ chữ riêng cho text1
+  thumbnailTextPrimaryColor?: string; // Màu riêng cho text1 (hex #RRGGBB)
   thumbnailTextSecondaryFontName?: string; // Font riêng cho text2
   thumbnailTextSecondaryFontSize?: number; // Cỡ chữ riêng cho text2
+  thumbnailTextSecondaryColor?: string; // Màu riêng cho text2 (hex #RRGGBB)
   thumbnailLineHeightRatio?: number; // Khoảng cách dòng cho text thumbnail (áp dụng cho Enter + wrap)
   thumbnailTextPrimaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text1 trong vùng hợp lệ
   thumbnailTextSecondaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text2 trong vùng hợp lệ
@@ -415,8 +417,10 @@ export interface RenderThumbnailPreviewFrameOptions {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
@@ -575,8 +579,10 @@ export interface CaptionProjectSettingsValues {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextSecondary?: string;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
@@ -604,8 +610,10 @@ export interface CaptionProjectSettingsValues {
       thumbnailFontSize?: number;
       thumbnailTextPrimaryFontName?: string;
       thumbnailTextPrimaryFontSize?: number;
+      thumbnailTextPrimaryColor?: string;
       thumbnailTextSecondaryFontName?: string;
       thumbnailTextSecondaryFontSize?: number;
+      thumbnailTextSecondaryColor?: string;
       thumbnailLineHeightRatio?: number;
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };
@@ -629,8 +637,10 @@ export interface CaptionProjectSettingsValues {
       thumbnailFontSize?: number;
       thumbnailTextPrimaryFontName?: string;
       thumbnailTextPrimaryFontSize?: number;
+      thumbnailTextPrimaryColor?: string;
       thumbnailTextSecondaryFontName?: string;
       thumbnailTextSecondaryFontSize?: number;
+      thumbnailTextSecondaryColor?: string;
       thumbnailLineHeightRatio?: number;
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };

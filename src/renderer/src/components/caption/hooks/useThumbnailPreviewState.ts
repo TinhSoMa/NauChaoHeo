@@ -42,8 +42,10 @@ interface UseThumbnailPreviewStateOptions {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
@@ -124,8 +126,10 @@ export function useThumbnailPreviewState(
     thumbnailFontSize,
     thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
@@ -520,8 +524,10 @@ export function useThumbnailPreviewState(
       thumbnailFontSize,
       thumbnailTextPrimaryFontName,
       thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor,
       thumbnailTextSecondaryFontName,
       thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
@@ -534,8 +540,10 @@ export function useThumbnailPreviewState(
     thumbnailFontSize,
     thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
     thumbnailText,
     thumbnailTextPrimaryPosition,
@@ -588,8 +596,10 @@ export function useThumbnailPreviewState(
           thumbnailFontSize,
           thumbnailTextPrimaryFontName,
           thumbnailTextPrimaryFontSize,
+          thumbnailTextPrimaryColor,
           thumbnailTextSecondaryFontName,
           thumbnailTextSecondaryFontSize,
+          thumbnailTextSecondaryColor,
           thumbnailLineHeightRatio,
           thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition,
@@ -657,8 +667,10 @@ export function useThumbnailPreviewState(
     thumbnailFontSize,
     thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
     thumbnailText,
     thumbnailTextPrimaryPosition,

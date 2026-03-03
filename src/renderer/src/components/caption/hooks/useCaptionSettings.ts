@@ -49,8 +49,10 @@ interface LayoutProfile {
   // Font riêng cho từng text
   thumbnailTextPrimaryFontName: string;
   thumbnailTextPrimaryFontSize: number;
+  thumbnailTextPrimaryColor: string;
   thumbnailTextSecondaryFontName: string;
   thumbnailTextSecondaryFontSize: number;
+  thumbnailTextSecondaryColor: string;
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
@@ -66,8 +68,10 @@ interface CaptionTypographyLayoutDefaults {
   subtitlePosition: { x: number; y: number } | null;
   thumbnailTextPrimaryFontName: string;
   thumbnailTextPrimaryFontSize: number;
+  thumbnailTextPrimaryColor: string;
   thumbnailTextSecondaryFontName: string;
   thumbnailTextSecondaryFontSize: number;
+  thumbnailTextSecondaryColor: string;
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
@@ -95,6 +99,8 @@ const MAX_SUBTITLE_SHADOW = 20;
 
 const DEFAULT_THUMBNAIL_FONT_NAME = 'BrightwallPersonal';
 const DEFAULT_THUMBNAIL_FONT_SIZE = 145;
+const DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR = '#FFFF00';
+const DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR = '#FFFF00';
 const DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO = 1.16;
 const MIN_THUMBNAIL_FONT_SIZE = 24;
 const MAX_THUMBNAIL_FONT_SIZE = 400;
@@ -110,6 +116,17 @@ function clampPercent(value: number, min: number, max: number, fallback: number)
     return fallback;
   }
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizeHexColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+  return fallback;
 }
 
 function normalizeAssStyle(style: ASSStyleConfig, fallback: ASSStyleConfig = DEFAULT_STYLE): ASSStyleConfig {
@@ -157,8 +174,10 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   thumbnailFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
   thumbnailTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
   thumbnailTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextPrimaryColor: DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR,
   thumbnailTextSecondaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
   thumbnailTextSecondaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextSecondaryColor: DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR,
   thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
@@ -183,8 +202,10 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   thumbnailFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
   thumbnailTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
   thumbnailTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextPrimaryColor: DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR,
   thumbnailTextSecondaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
   thumbnailTextSecondaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  thumbnailTextSecondaryColor: DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR,
   thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
@@ -300,6 +321,10 @@ function normalizeProfile(
       Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(patch.thumbnailTextPrimaryFontSize))
     );
   }
+  next.thumbnailTextPrimaryColor = normalizeHexColor(
+    patch.thumbnailTextPrimaryColor,
+    fallback.thumbnailTextPrimaryColor
+  );
   if (typeof patch.thumbnailTextSecondaryFontName === 'string' && patch.thumbnailTextSecondaryFontName.trim().length > 0) {
     next.thumbnailTextSecondaryFontName = patch.thumbnailTextSecondaryFontName.trim();
   }
@@ -309,6 +334,10 @@ function normalizeProfile(
       Math.max(MIN_THUMBNAIL_FONT_SIZE, Math.round(patch.thumbnailTextSecondaryFontSize))
     );
   }
+  next.thumbnailTextSecondaryColor = normalizeHexColor(
+    patch.thumbnailTextSecondaryColor,
+    fallback.thumbnailTextSecondaryColor
+  );
   if (typeof patch.thumbnailLineHeightRatio === 'number' && Number.isFinite(patch.thumbnailLineHeightRatio)) {
     next.thumbnailLineHeightRatio = Math.min(
       MAX_THUMBNAIL_LINE_HEIGHT_RATIO,
@@ -357,8 +386,10 @@ function toTypographyLayoutDefaults(profile: LayoutProfile): CaptionTypographyLa
     subtitlePosition: profile.subtitlePosition ? { ...profile.subtitlePosition } : null,
     thumbnailTextPrimaryFontName: profile.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: profile.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor: profile.thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: profile.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: profile.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor: profile.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: profile.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
     thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
@@ -579,6 +610,24 @@ export function useCaptionSettings() {
     }));
   }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
+  const setThumbnailTextPrimaryColor = useCallback((value: string) => {
+    const normalized = normalizeHexColor(value, DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR);
+    markTypographyDefaultsDirty();
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextPrimaryColor: normalized,
+    }));
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
+
+  const setThumbnailTextSecondaryColor = useCallback((value: string) => {
+    const normalized = normalizeHexColor(value, DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR);
+    markTypographyDefaultsDirty();
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextSecondaryColor: normalized,
+    }));
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
+
   const setThumbnailLineHeightRatio = useCallback((value: number) => {
     const normalized = Math.min(
       MAX_THUMBNAIL_LINE_HEIGHT_RATIO,
@@ -707,8 +756,10 @@ export function useCaptionSettings() {
       thumbnailFontSize: activeProfile.thumbnailTextPrimaryFontSize,
       thumbnailTextPrimaryFontName: activeProfile.thumbnailTextPrimaryFontName,
       thumbnailTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor: activeProfile.thumbnailTextPrimaryColor,
       thumbnailTextSecondaryFontName: activeProfile.thumbnailTextSecondaryFontName,
       thumbnailTextSecondaryFontSize: activeProfile.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor: activeProfile.thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio: activeProfile.thumbnailLineHeightRatio,
       thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
@@ -821,8 +872,10 @@ export function useCaptionSettings() {
       thumbnailFontSize: saved.thumbnailFontSize,
       thumbnailTextPrimaryFontName: saved.thumbnailTextPrimaryFontName,
       thumbnailTextPrimaryFontSize: saved.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor: saved.thumbnailTextPrimaryColor,
       thumbnailTextSecondaryFontName: saved.thumbnailTextSecondaryFontName,
       thumbnailTextSecondaryFontSize: saved.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor: saved.thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio: saved.thumbnailLineHeightRatio,
       thumbnailTextSecondary: saved.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: saved.thumbnailTextPrimaryPosition,
@@ -1033,10 +1086,14 @@ export function useCaptionSettings() {
     setThumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
     setThumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor: activeProfile.thumbnailTextPrimaryColor,
+    setThumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: activeProfile.thumbnailTextSecondaryFontName,
     setThumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: activeProfile.thumbnailTextSecondaryFontSize,
     setThumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor: activeProfile.thumbnailTextSecondaryColor,
+    setThumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: activeProfile.thumbnailLineHeightRatio,
     setThumbnailLineHeightRatio,
     thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
