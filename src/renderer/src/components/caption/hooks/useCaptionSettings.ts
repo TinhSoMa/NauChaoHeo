@@ -100,6 +100,17 @@ const MIN_THUMBNAIL_FONT_SIZE = 24;
 const MAX_THUMBNAIL_FONT_SIZE = 400;
 const MIN_THUMBNAIL_LINE_HEIGHT_RATIO = 0;
 const MAX_THUMBNAIL_LINE_HEIGHT_RATIO = 4;
+const MIN_VIDEO_VOLUME_PERCENT = 0;
+const MAX_VIDEO_VOLUME_PERCENT = 200;
+const MIN_TTS_VOLUME_PERCENT = 0;
+const MAX_TTS_VOLUME_PERCENT = 400;
+
+function clampPercent(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
 
 function normalizeAssStyle(style: ASSStyleConfig, fallback: ASSStyleConfig = DEFAULT_STYLE): ASSStyleConfig {
   const fontName = typeof style.fontName === 'string' && style.fontName.trim().length > 0
@@ -411,8 +422,8 @@ export function useCaptionSettings() {
   const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
   const [audioSpeed, setAudioSpeed] = useState<number>(1.0);
   const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0);
-  const [videoVolume, setVideoVolume] = useState<number>(100);
-  const [audioVolume, setAudioVolume] = useState<number>(100);
+  const [videoVolume, setVideoVolumeState] = useState<number>(100);
+  const [audioVolume, setAudioVolumeState] = useState<number>(100);
 
   const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>(createDefaultLayoutProfiles);
 
@@ -458,6 +469,18 @@ export function useCaptionSettings() {
     },
     [activeLayoutKey]
   );
+
+  const setVideoVolume = useCallback((value: number) => {
+    setVideoVolumeState((prev) =>
+      clampPercent(value, MIN_VIDEO_VOLUME_PERCENT, MAX_VIDEO_VOLUME_PERCENT, prev)
+    );
+  }, []);
+
+  const setAudioVolume = useCallback((value: number) => {
+    setAudioVolumeState((prev) =>
+      clampPercent(value, MIN_TTS_VOLUME_PERCENT, MAX_TTS_VOLUME_PERCENT, prev)
+    );
+  }, []);
 
   const setStyle = useCallback(
     (value: ASSStyleConfig | ((prev: ASSStyleConfig) => ASSStyleConfig)) => {
@@ -749,8 +772,16 @@ export function useCaptionSettings() {
     if (saved.renderMode) setRenderMode(saved.renderMode as RenderMode);
     if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
     if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
-    if (typeof saved.videoVolume === 'number') setVideoVolume(saved.videoVolume);
-    if (typeof saved.audioVolume === 'number') setAudioVolume(saved.audioVolume);
+    if (typeof saved.videoVolume === 'number') {
+      setVideoVolume(
+        clampPercent(saved.videoVolume, MIN_VIDEO_VOLUME_PERCENT, MAX_VIDEO_VOLUME_PERCENT, 100)
+      );
+    }
+    if (typeof saved.audioVolume === 'number') {
+      setAudioVolume(
+        clampPercent(saved.audioVolume, MIN_TTS_VOLUME_PERCENT, MAX_TTS_VOLUME_PERCENT, 100)
+      );
+    }
     if (saved.processingMode === 'folder-first' || saved.processingMode === 'step-first') {
       setProcessingMode(saved.processingMode);
     }

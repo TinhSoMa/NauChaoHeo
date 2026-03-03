@@ -71,6 +71,11 @@ function normalizeSpeedLabel(speed: number): string {
   return fixed.replace(/\.?0+$/, '');
 }
 
+const PROCESS_STOP_SIGNAL = '__CAPTION_PROCESS_STOPPED__';
+function isProcessStopSignal(error: unknown): boolean {
+  return error instanceof Error && error.message === PROCESS_STOP_SIGNAL;
+}
+
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
@@ -211,6 +216,31 @@ function resolveProcessOutputDir(inputType: string, currentPath: string): string
     : currentPath.replace(/[^/\\]+$/, 'caption_output');
 }
 
+function resolveParentDir(pathValue: string): string {
+  const trimmed = (pathValue || '').trim().replace(/[\\/]+$/, '');
+  if (!trimmed) {
+    return '';
+  }
+  const slashIndex = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return slashIndex >= 0 ? trimmed.slice(0, slashIndex) : trimmed;
+}
+
+function joinFilePath(baseDir: string, fileName: string): string {
+  const normalizedBase = (baseDir || '').trim().replace(/[\\/]+$/, '');
+  if (!normalizedBase) {
+    return fileName;
+  }
+  const separator = normalizedBase.includes('\\') ? '\\' : '/';
+  return `${normalizedBase}${separator}${fileName}`;
+}
+
+function resolveRenderOutputDir(inputType: string, currentPath: string, sourceVideoPath?: string): string {
+  if (sourceVideoPath && sourceVideoPath.trim()) {
+    return resolveParentDir(sourceVideoPath);
+  }
+  return inputType === 'draft' ? currentPath.trim().replace(/[\\/]+$/, '') : resolveParentDir(currentPath);
+}
+
 function pushArtifact(
   artifacts: CaptionArtifactFile[],
   role: string,
@@ -264,8 +294,14 @@ export function useCaptionProcessing({
     });
   }, [setEnabledSteps]);
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     abortRef.current = true;
+    try {
+      // @ts-ignore
+      await window.electronAPI.captionVideo?.stopRender?.();
+    } catch (error) {
+      console.warn('[CaptionProcessing] Không thể gửi stop render:', error);
+    }
     setStatus('idle');
     setCurrentFolder(null);
     setCurrentStep(null);
@@ -603,6 +639,10 @@ export function useCaptionProcessing({
         }
         return `[${folderIdx + 1}/${totalFolders}] ${folderName}: ${base}`;
       };
+
+      if (abortRef.current) {
+        throw new Error(PROCESS_STOP_SIGNAL);
+      }
 
       try {
         const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
@@ -1175,6 +1215,9 @@ export function useCaptionProcessing({
 
       // ========== STEP 7: RENDER VIDEO ==========
       if (step === 7) {
+        if (abortRef.current) {
+          throw new Error(PROCESS_STOP_SIGNAL);
+        }
         const sessionPathForStep7 = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
         const sessionFallback = {
           projectId,
@@ -1277,8 +1320,11 @@ export function useCaptionProcessing({
           cfg.renderContainer || 'mp4',
           thumbnailTextForRender
         );
-        const finalVideoPath = `${processOutputDir}/${finalVideoFileName}`;
-        console.log(`[CaptionProcessing][Step7] Output filename: ${finalVideoFileName}`);
+        const renderOutputDir = resolveRenderOutputDir(inputType, currentPath, finalVideoInputPath);
+        const finalVideoPath = joinFilePath(renderOutputDir, finalVideoFileName);
+        console.log(
+          `[CaptionProcessing][Step7] Output filename: ${finalVideoFileName}, outputDir: ${renderOutputDir || '(empty)'}`
+        );
         const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
         const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
           ? cfg.renderAudioSpeed : 1.0;
@@ -1458,6 +1504,11 @@ export function useCaptionProcessing({
           });
           console.log(`[CaptionProcessing][Step7] Đã lưu timing payload vào caption_session.json cho ${folderName}.`);
         } else {
+          const stopByUser = abortRef.current
+            || (typeof renderRes.error === 'string' && renderRes.error.toLowerCase().includes('đã dừng render'));
+          if (stopByUser) {
+            throw new Error(PROCESS_STOP_SIGNAL);
+          }
           throw new Error(`[${folderName}] Lỗi render video: ${renderRes.error}`);
         }
       }
@@ -1467,6 +1518,9 @@ export function useCaptionProcessing({
         ctx.audioFiles = currentAudioFiles;
         ctx.srtFileForVideo = srtFileForVideo;
       } catch (error) {
+        if (isProcessStopSignal(error)) {
+          throw error;
+        }
         await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
           ...session,
           steps: {
@@ -1511,6 +1565,10 @@ export function useCaptionProcessing({
               await processStep(step, currentPath, i);
               setProgress({ current: i + 1, total: totalFolders, message: `Bước ${step} [${i + 1}/${totalFolders}] ✓ ${ctx.name}` });
             } catch (err) {
+              if (isProcessStopSignal(err)) {
+                abortRef.current = true;
+                break;
+              }
               failedFolders.add(currentPath);
               console.error(`[Step-first] Bước ${step} lỗi tại ${ctx.name}:`, err);
               setProgress({ current: i + 1, total: totalFolders, message: `Bước ${step} [${i + 1}/${totalFolders}] ✗ ${ctx.name}: ${err}` });
@@ -1523,7 +1581,11 @@ export function useCaptionProcessing({
         const failMsg = failedFolders.size > 0
           ? ` (${failedFolders.size} lỗi: ${Array.from(failedFolders).map(p => p.split(/[/\\]/).pop()).join(', ')})`
           : '';
-        setStatus(failedFolders.size === totalFolders ? 'error' : 'success');
+        setStatus(
+          abortRef.current
+            ? 'idle'
+            : (failedFolders.size === totalFolders ? 'error' : 'success')
+        );
         setStepDependencyIssues([]);
         setProgress({
           current: successCount,
@@ -1545,15 +1607,24 @@ export function useCaptionProcessing({
           for (const step of steps) {
             if (abortRef.current) break;
             setCurrentStep(step);
-            await processStep(step, currentPath, i);
+            try {
+              await processStep(step, currentPath, i);
+            } catch (err) {
+              if (isProcessStopSignal(err)) {
+                abortRef.current = true;
+                break;
+              }
+              throw err;
+            }
           }
 
+          if (abortRef.current) break;
           if (isMulti) {
             setProgress({ current: i + 1, total: totalFolders, message: `[${i + 1}/${totalFolders}] ✓ Hoàn thành: ${ctx.name}` });
           }
         }
 
-        setStatus('success');
+        setStatus(abortRef.current ? 'idle' : 'success');
         setStepDependencyIssues([]);
         setProgress({
           current: totalFolders,
@@ -1566,9 +1637,14 @@ export function useCaptionProcessing({
         });
       }
     } catch (err) {
-      setStatus('error');
-      setProgress(p => ({ ...p, message: `Lỗi: ${err}` }));
-      console.error(err);
+      if (isProcessStopSignal(err) || abortRef.current) {
+        setStatus('idle');
+        setProgress(p => ({ ...p, message: 'Đã dừng.' }));
+      } else {
+        setStatus('error');
+        setProgress(p => ({ ...p, message: `Lỗi: ${err}` }));
+        console.error(err);
+      }
     }
 
     setCurrentStep(null);

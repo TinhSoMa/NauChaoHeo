@@ -222,6 +222,9 @@ export interface CaptionVideoAPI {
     step7AudioSource?: 'session_merged_audio';
   }) => Promise<IpcApiResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>>;
 
+  // Stop current render process immediately
+  stopRender: () => Promise<IpcApiResponse<{ stopped: boolean; message: string }>>;
+
   // Listen to render progress
   onRenderProgress: (callback: (progress: RenderProgress) => void) => void;
 
@@ -263,6 +266,9 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
   return {
     renderVideo: (options) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO, options),
+
+    stopRender: () =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.STOP_RENDER),
 
     onRenderProgress: (callback: (progress: RenderProgress) => void) => {
       ipcRenderer.on(CAPTION_VIDEO_IPC_CHANNELS.RENDER_PROGRESS, (_event, progress) => {

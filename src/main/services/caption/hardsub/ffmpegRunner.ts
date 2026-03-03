@@ -1,9 +1,32 @@
-import { spawn } from 'child_process';
+import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import { RenderResult } from '../../../../shared/types/caption';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { unregisterTempFile } from '../garbageCollector';
 import { RunFFmpegProcessOptions } from './types';
+
+const RENDER_STOPPED_MESSAGE = 'Đã dừng render theo yêu cầu.';
+let activeRenderProcess: ChildProcessWithoutNullStreams | null = null;
+let stopRequested = false;
+
+export function requestStopCurrentRender(): { requested: boolean; hadActiveProcess: boolean } {
+  stopRequested = true;
+  const hadActiveProcess = !!activeRenderProcess && !activeRenderProcess.killed;
+  if (hadActiveProcess) {
+    try {
+      activeRenderProcess!.kill('SIGKILL');
+    } catch {}
+  }
+  return { requested: true, hadActiveProcess };
+}
+
+export function clearRenderStopRequest(): void {
+  stopRequested = false;
+}
+
+export function isRenderInProgress(): boolean {
+  return !!activeRenderProcess && !activeRenderProcess.killed;
+}
 
 export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<RenderResult> {
   const ffmpegPath = getFFmpegPath();
@@ -26,6 +49,7 @@ export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<Rend
 
   return new Promise((resolve) => {
     const process = spawn(ffmpegPath, options.args);
+    activeRenderProcess = process;
     let stderr = '';
 
     process.stderr.on('data', (data) => {
@@ -48,7 +72,23 @@ export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<Rend
     });
 
     process.on('close', async (code) => {
+      const wasStoppedByUser = stopRequested;
+      activeRenderProcess = null;
+      stopRequested = false;
       await cleanupTempFiles();
+
+      if (wasStoppedByUser) {
+        options.progressCallback?.({
+          currentFrame: 0,
+          totalFrames: options.totalFrames,
+          fps: 0,
+          percent: 0,
+          status: 'stopped',
+          message: RENDER_STOPPED_MESSAGE,
+        });
+        resolve({ success: false, error: RENDER_STOPPED_MESSAGE });
+        return;
+      }
 
       if (code === 0) {
         options.progressCallback?.({
@@ -75,7 +115,14 @@ export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<Rend
     });
 
     process.on('error', async (error) => {
+      const wasStoppedByUser = stopRequested;
+      activeRenderProcess = null;
+      stopRequested = false;
       await cleanupTempFiles();
+      if (wasStoppedByUser) {
+        resolve({ success: false, error: RENDER_STOPPED_MESSAGE });
+        return;
+      }
       resolve({ success: false, error: `Lỗi FFmpeg: ${error.message}` });
     });
   });

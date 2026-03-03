@@ -31,7 +31,12 @@ import { buildVideoFilter } from './hardsub/filterBuilder';
 import { buildPortraitVideoFilter } from './hardsub/portraitFilterBuilder';
 import { buildSpeedAdjustedAudioFile, buildAtempoFilter } from './hardsub/audioSpeedAdjuster';
 import { buildHardsubAudioMix } from './hardsub/audioMixBuilder';
-import { runFFmpegProcess } from './hardsub/ffmpegRunner';
+import {
+  clearRenderStopRequest,
+  isRenderInProgress,
+  requestStopCurrentRender,
+  runFFmpegProcess,
+} from './hardsub/ffmpegRunner';
 import {
   buildHardsubTimingPayload,
 } from './hardsub/timingDebugWriter';
@@ -110,6 +115,13 @@ function resolveEncoderProfile(
     pixelFormat: 'yuv420p',
     decodePath: 'software',
   };
+}
+
+function clampVolumePercent(value: number | undefined, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value as number));
 }
 
 async function probeOutputAspectForLog(videoPath: string): Promise<{
@@ -441,11 +453,23 @@ export async function renderHardsubVideo(
   }
 
   const filterComplexParts: string[] = [];
+  const videoVolumeInput = renderOptions.videoVolume;
+  const audioVolumeInput = renderOptions.audioVolume;
+  const safeVideoVolume = clampVolumePercent(videoVolumeInput, 0, 200, 100);
+  const safeAudioVolume = clampVolumePercent(audioVolumeInput, 0, 400, 100);
+  console.log('[VideoRenderer][Hardsub][AudioGain]', {
+    videoVolumeInput,
+    videoVolumeApplied: safeVideoVolume,
+    videoGainApplied: safeVideoVolume / 100,
+    audioVolumeInput,
+    audioVolumeApplied: safeAudioVolume,
+    audioGainApplied: safeAudioVolume / 100,
+  });
   const audioMix = buildHardsubAudioMix({
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
-    videoVolume: renderOptions.videoVolume !== undefined ? renderOptions.videoVolume : 100,
-    audioVolume: renderOptions.audioVolume !== undefined ? renderOptions.audioVolume : 100,
+    videoVolume: safeVideoVolume,
+    audioVolume: safeAudioVolume,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     audioSpeed: prep.audioSpeed,
   });
@@ -802,11 +826,23 @@ export async function renderHardsubPortraitVideo(
   });
 
   const filterComplexParts: string[] = [];
+  const videoVolumeInput = renderOptions.videoVolume;
+  const audioVolumeInput = renderOptions.audioVolume;
+  const safeVideoVolume = clampVolumePercent(videoVolumeInput, 0, 200, 100);
+  const safeAudioVolume = clampVolumePercent(audioVolumeInput, 0, 400, 100);
+  console.log('[VideoRenderer][HardsubPortrait][AudioGain]', {
+    videoVolumeInput,
+    videoVolumeApplied: safeVideoVolume,
+    videoGainApplied: safeVideoVolume / 100,
+    audioVolumeInput,
+    audioVolumeApplied: safeAudioVolume,
+    audioGainApplied: safeAudioVolume / 100,
+  });
   const audioMix = buildHardsubAudioMix({
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
-    videoVolume: renderOptions.videoVolume !== undefined ? renderOptions.videoVolume : 100,
-    audioVolume: renderOptions.audioVolume !== undefined ? renderOptions.audioVolume : 100,
+    videoVolume: safeVideoVolume,
+    audioVolume: safeAudioVolume,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     audioSpeed: prep.audioSpeed,
   });
@@ -1074,7 +1110,14 @@ export async function renderBlackBackgroundVideo(
   }
 
   const filterComplexParts: string[] = [];
-  const volAud = (renderOptions.audioVolume !== undefined) ? renderOptions.audioVolume / 100 : 1.0;
+  const audioVolumeInput = renderOptions.audioVolume;
+  const safeAudioVolume = clampVolumePercent(audioVolumeInput, 0, 400, 100);
+  const volAud = safeAudioVolume / 100;
+  console.log('[VideoRenderer][BlackBg][AudioGain]', {
+    audioVolumeInput,
+    audioVolumeApplied: safeAudioVolume,
+    audioGainApplied: volAud,
+  });
   const audAtempo = (prep.audioSpeed !== 1.0) ? `,${buildAtempoFilter(prep.audioSpeed)}` : '';
   if (hasTtsAudio && (volAud !== 1.0 || !!audAtempo)) {
     filterComplexParts.push(`[1:a]volume=${volAud}${audAtempo}[a_out]`);
@@ -1120,6 +1163,7 @@ export async function renderVideo(
   options: RenderVideoOptions,
   progressCallback?: (progress: RenderProgress) => void
 ): Promise<RenderResult> {
+  clearRenderStopRequest();
   console.log(`[VideoRenderer] Route to ${options.renderMode || 'black_bg'} mode`);
   if (!isFFmpegAvailable()) {
     return { success: false, error: 'FFmpeg không được cài đặt' };
@@ -1160,6 +1204,15 @@ export async function renderVideo(
     result = await applyThumbnailPostProcess(options, result);
   }
   return result;
+}
+
+export function stopActiveRender(): { success: boolean; stopped: boolean; message: string } {
+  const inProgress = isRenderInProgress();
+  const stopResult = requestStopCurrentRender();
+  if (inProgress || stopResult.hadActiveProcess) {
+    return { success: true, stopped: true, message: 'Đã gửi tín hiệu dừng render.' };
+  }
+  return { success: true, stopped: false, message: 'Không có tiến trình render đang chạy.' };
 }
 
 export async function renderThumbnailPreviewFrame(

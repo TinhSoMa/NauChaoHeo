@@ -2,6 +2,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { capcutProjectIndexStore } from './capcutProjectIndexStore';
+import { checkPycapcutAvailability, type PythonRuntimeResolution } from '../../utils/pythonRuntime';
 
 export const DEFAULT_CAPCUT_DRAFTS_PATH = 'D:\\User\\CongTinh\\Videos\\CapCut Drafts';
 
@@ -82,12 +83,6 @@ interface CommandResult {
   stdout: string;
   stderr: string;
   error?: string;
-}
-
-interface PythonRuntime {
-  command: string;
-  baseArgs: string[];
-  installHint: string;
 }
 
 const SUPPORTED_VIDEO_EXTS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.webm']);
@@ -192,7 +187,7 @@ function buildPythonAttachAudioScript(): string {
 class CapcutProjectBatchService {
   private stopRequested = false;
   private activeProcess: ChildProcessWithoutNullStreams | null = null;
-  private cachedPythonRuntime: PythonRuntime | null = null;
+  private cachedPythonRuntime: PythonRuntimeResolution | null = null;
 
   stop(): void {
     this.stopRequested = true;
@@ -290,6 +285,11 @@ class CapcutProjectBatchService {
       return { success: false, error: runtimeResult.error || 'Không chuẩn bị được runtime Python.' };
     }
     const runtime = runtimeResult.runtime;
+    emitLog({
+      time: nowIso(),
+      status: 'info',
+      message: `Python runtime: mode=${runtime.mode}, path=${runtime.pythonPath}`,
+    });
 
     const scan = await this.scanVideos(sourceFolderPath);
     if (!scan.success || !scan.data) {
@@ -358,7 +358,7 @@ class CapcutProjectBatchService {
         pythonScript,
         capcutDraftsPath,
         projectName,
-      ]);
+      ], runtime.mode);
 
       if (this.stopRequested) {
         emitProgress({
@@ -619,7 +619,7 @@ class CapcutProjectBatchService {
       draftsPath,
       projectName,
       directAudioPath,
-    ]);
+    ], runtime.mode);
 
     if (run.code !== 0) {
       const errText = (run.stderr || run.error || run.stdout || 'Unknown error').trim();
@@ -673,51 +673,44 @@ class CapcutProjectBatchService {
     return finalName;
   }
 
-  private async getPythonRuntime(): Promise<{ runtime?: PythonRuntime; error?: string }> {
+  private async getPythonRuntime(): Promise<{ runtime?: PythonRuntimeResolution; error?: string }> {
     if (this.cachedPythonRuntime) {
-      return { runtime: this.cachedPythonRuntime };
-    }
-
-    const launcherCheck = await this.runCommand('py', ['-3', '--version']);
-    let runtime: PythonRuntime | null = null;
-    if (launcherCheck.code === 0) {
-      runtime = {
-        command: 'py',
-        baseArgs: ['-3'],
-        installHint: 'py -3 -m pip install pycapcut',
-      };
-    } else {
-      const pythonCheck = await this.runCommand('python', ['--version']);
-      if (pythonCheck.code === 0) {
-        runtime = {
-          command: 'python',
-          baseArgs: [],
-          installHint: 'python -m pip install pycapcut',
-        };
+      if (this.cachedPythonRuntime.mode === 'embedded' && !fs.existsSync(this.cachedPythonRuntime.command)) {
+        this.cachedPythonRuntime = null;
+      } else {
+        return { runtime: this.cachedPythonRuntime };
       }
     }
 
-    if (!runtime) {
-      return { error: 'Không tìm thấy Python (py -3 hoặc python) trong PATH.' };
+    const checkResult = await checkPycapcutAvailability();
+    if (!checkResult.success || !checkResult.runtime) {
+      return { error: checkResult.error || 'Không thể chuẩn bị runtime Python.' };
     }
 
-    const pycapcutCheck = await this.runCommand(runtime.command, [...runtime.baseArgs, '-c', 'import pycapcut']);
-    if (pycapcutCheck.code !== 0) {
-      return { error: `Thiếu pycapcut. Cài bằng lệnh: ${runtime.installHint}` };
-    }
-
-    this.cachedPythonRuntime = runtime;
-    return { runtime };
+    this.cachedPythonRuntime = checkResult.runtime;
+    return { runtime: checkResult.runtime };
   }
 
-  private runCommand(command: string, args: string[]): Promise<CommandResult> {
+  private runCommand(
+    command: string,
+    args: string[],
+    mode: 'embedded' | 'system' = 'system',
+  ): Promise<CommandResult> {
     return new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
       let settled = false;
+      const env =
+        mode === 'embedded'
+          ? {
+              ...process.env,
+              PYTHONDONTWRITEBYTECODE: '1',
+              PYTHONUTF8: '1',
+            }
+          : process.env;
 
       try {
-        const proc = spawn(command, args, { windowsHide: true });
+        const proc = spawn(command, args, { windowsHide: true, env });
         this.activeProcess = proc;
 
         proc.stdout.on('data', (data) => {

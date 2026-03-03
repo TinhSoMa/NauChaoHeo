@@ -47,6 +47,7 @@ export {
   getVideoMetadata,
   extractVideoFrame,
   renderVideo,
+  stopActiveRender,
   renderThumbnailPreviewFrame,
   findBestVideoInFolders,
 } from './videoRenderer';

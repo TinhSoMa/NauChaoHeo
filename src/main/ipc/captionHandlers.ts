@@ -423,6 +423,26 @@ export function registerCaptionHandlers(): void {
     }
   );
 
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.STOP_RENDER,
+    async (): Promise<IpcResponse<{ stopped: boolean; message: string }>> => {
+      try {
+        const stopResult = CaptionService.stopActiveRender();
+        return {
+          success: stopResult.success,
+          data: {
+            stopped: stopResult.stopped,
+            message: stopResult.message,
+          },
+          error: stopResult.success ? undefined : stopResult.message,
+        };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi stop render video:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // ============================================
   // CAPTION VIDEO - GET VIDEO METADATA
   // ============================================

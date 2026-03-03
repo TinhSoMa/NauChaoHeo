@@ -376,7 +376,7 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
               value={settings.audioVolume}
               onChange={(e) => settings.setAudioVolume(Number(e.target.value))}
               min={0}
-              max={200}
+              max={400}
               step={10}
               style={{ width: '100%', cursor: 'pointer' }}
             />

@@ -345,8 +345,8 @@ export interface RenderVideoOptions {
   audioSpeedModel?: 'step4_minus_step7_delta'; // Công thức tốc độ audio thực
   ttsRate?: string;       // Tốc độ đọc TTS dùng lúc tạo audio (vd: "+20%"), để debug/sync trace
   audioPath?: string;     // Đường dẫn file audio (TTS) để mix vào video
-  videoVolume?: number;   // Âm lượng video gốc (%)
-  audioVolume?: number;   // Âm lượng file audio TTS (%)
+  videoVolume?: number;   // Âm lượng video gốc (%), hỗ trợ 0..200, mapping tuyến tính 100=x1
+  audioVolume?: number;   // Âm lượng file audio TTS (%), hỗ trợ 0..400, mapping tuyến tính 100=x1
   logoPath?: string;      // Đường dẫn file logo để watermark
   logoPosition?: { x: number; y: number }; // Toạ độ (tâm) chèn logo
   logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
@@ -378,7 +378,7 @@ export interface RenderProgress {
   totalFrames: number;
   fps: number;
   percent: number;
-  status: 'rendering' | 'completed' | 'error';
+  status: 'rendering' | 'completed' | 'stopped' | 'error';
   message: string;
 }
 
@@ -569,8 +569,8 @@ export interface CaptionProjectSettingsValues {
   audioSpeed?: number;
   renderAudioSpeed?: number;
   portraitForegroundCropPercent?: number;
-  videoVolume?: number;
-  audioVolume?: number;
+  videoVolume?: number; // 0..200, mapping tuyến tính 100=x1
+  audioVolume?: number; // 0..400, mapping tuyến tính 100=x1
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
@@ -675,6 +675,7 @@ export interface CaptionSessionV1 {
 // Thêm vào CAPTION_IPC_CHANNELS
 export const CAPTION_VIDEO_IPC_CHANNELS = {
   RENDER_VIDEO: 'captionVideo:renderVideo',
+  STOP_RENDER: 'captionVideo:stopRender',
   RENDER_PROGRESS: 'captionVideo:renderProgress',
   GET_VIDEO_METADATA: 'captionVideo:getVideoMetadata',
   EXTRACT_FRAME: 'captionVideo:extractFrame',

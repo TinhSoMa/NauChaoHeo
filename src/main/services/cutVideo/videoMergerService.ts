@@ -148,12 +148,8 @@ class VideoMergerService {
   }
 
   private resolveScanDir(inputFolderPath: string): string {
-    const normalized = inputFolderPath.replace(/[\\/]+$/, '');
-    const baseName = path.basename(normalized).toLowerCase();
-    if (baseName === 'caption_output') {
-      return normalized;
-    }
-    return path.join(normalized, 'caption_output');
+    // Quét trực tiếp trong folder người dùng chọn.
+    return inputFolderPath.replace(/[\\/]+$/, '');
   }
 
   private fileMatchesMode(fileName: string, mode: MergeAspectMode): boolean {
@@ -261,7 +257,7 @@ class VideoMergerService {
           inputFolder,
           scanDir,
           status: 'missing',
-          message: 'Không tìm thấy thư mục caption_output',
+          message: 'Không tìm thấy thư mục đã chọn',
         });
         continue;
       }

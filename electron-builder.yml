@@ -32,6 +32,14 @@ extraResources:
     to: fonts
     filter:
       - "**/*"
+  - from: resources/python/win32-x64/runtime
+    to: python
+    filter:
+      - "**/*"
+  - from: resources/licenses/python
+    to: licenses/python
+    filter:
+      - "**/*"
 
 # Cấu hình Windows
 win:

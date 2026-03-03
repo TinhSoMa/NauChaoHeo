@@ -122,7 +122,7 @@ export const VideoMerger: React.FC = () => {
 
   const handleScan = async () => {
     if (!folders.length) {
-      alert('Vui lòng thêm ít nhất 1 folder CapCut.');
+      alert('Vui lòng thêm ít nhất 1 folder chứa video.');
       return;
     }
     setIsScanning(true);
@@ -216,7 +216,7 @@ export const VideoMerger: React.FC = () => {
 
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Folder CapCut</h3>
+          <h3 className={styles.sectionTitle}>Folder chứa video</h3>
           <Button variant="secondary" onClick={handleAddFolders} disabled={isMerging}>
             <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm folder
           </Button>

@@ -1,0 +1,7 @@
+pycapcut==0.0.3
+imageio==2.37.2
+pymediainfo==7.0.1
+uiautomation==2.0.29
+comtypes==1.4.15
+numpy==2.3.4
+pillow==11.3.0

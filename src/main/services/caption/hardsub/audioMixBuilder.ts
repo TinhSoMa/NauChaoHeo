@@ -1,11 +1,20 @@
 import { buildAtempoFilter } from './audioSpeedAdjuster';
 import { HardsubAudioMixBuildInput, HardsubAudioMixBuildOutput } from './types';
 
+function clampVolumePercent(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
 export function buildHardsubAudioMix(input: HardsubAudioMixBuildInput): HardsubAudioMixBuildOutput {
   const filterParts: string[] = [];
 
-  const volVid = input.videoVolume / 100;
-  const volAud = input.audioVolume / 100;
+  const safeVideoVolume = clampVolumePercent(input.videoVolume, 0, 200, 100);
+  const safeAudioVolume = clampVolumePercent(input.audioVolume, 0, 400, 100);
+  const volVid = safeVideoVolume / 100;
+  const volAud = safeAudioVolume / 100;
   const vidAtempo = (input.videoSpeedMultiplier !== 1.0) ? `,${buildAtempoFilter(input.videoSpeedMultiplier)}` : '';
   const audAtempo = (input.audioSpeed !== 1.0) ? `,${buildAtempoFilter(input.audioSpeed)}` : '';
 
@@ -35,4 +44,3 @@ export function buildHardsubAudioMix(input: HardsubAudioMixBuildInput): HardsubA
 
   return { filterParts, mapAudioArg: null };
 }
-
