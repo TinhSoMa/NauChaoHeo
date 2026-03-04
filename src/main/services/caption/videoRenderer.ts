@@ -6,8 +6,11 @@
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import {
+  RenderAudioPreviewOptions,
+  RenderAudioPreviewProgress,
+  RenderAudioPreviewResult,
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
   RenderVideoOptions,
@@ -15,7 +18,7 @@ import {
   RenderResult,
   VideoMetadata,
 } from '../../../shared/types/caption';
-import { getFFprobePath, isFFmpegAvailable } from '../../utils/ffmpegPath';
+import { getFFmpegPath, getFFprobePath, isFFmpegAvailable } from '../../utils/ffmpegPath';
 import {
   prepareSubtitleAndDuration,
   prepareSubtitleAndDurationPortrait,
@@ -46,9 +49,14 @@ import {
   normalizeThumbnailDurationSec,
   renderThumbnailPreviewFrame as renderThumbnailPreviewFramePipeline,
 } from './hardsub/thumbnailPipeline';
+import { unregisterTempFile } from './garbageCollector';
 
 export const getVideoMetadata = probeGetVideoMetadata;
 export const extractVideoFrame = probeExtractVideoFrame;
+
+const AUDIO_PREVIEW_STOPPED_MESSAGE = 'Đã dừng test audio theo yêu cầu.';
+let activeAudioPreviewProcess: ChildProcessWithoutNullStreams | null = null;
+let audioPreviewStopRequested = false;
 
 function resolvePortraitCanvasByPreset(
   renderResolution?: RenderVideoOptions['renderResolution']
@@ -217,6 +225,20 @@ function ensureAudioLabelForConcat(
     `${sourceLabel}aformat=channel_layouts=stereo,aresample=44100[${outputLabelName}]`
   );
   return `[${outputLabelName}]`;
+}
+
+function parseFfmpegTimestampToSec(raw: string): number | null {
+  const match = raw.match(/(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+  if (!match) {
+    return null;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+    return null;
+  }
+  return (hours * 3600) + (minutes * 60) + seconds;
 }
 
 async function injectInlineThumbnailAtEnd(input: {
@@ -1212,6 +1234,281 @@ export async function renderVideo(
     result = await applyThumbnailPostProcess(options, result);
   }
   return result;
+}
+
+export async function renderStep7AudioPreview(
+  options: RenderAudioPreviewOptions,
+  progressCallback?: (progress: RenderAudioPreviewProgress) => void
+): Promise<RenderAudioPreviewResult> {
+  if (!isFFmpegAvailable()) {
+    return { success: false, error: 'FFmpeg không được cài đặt' };
+  }
+  if (activeAudioPreviewProcess && !activeAudioPreviewProcess.killed) {
+    return { success: false, error: 'Đang có tiến trình test audio khác đang chạy.' };
+  }
+  if (!existsSync(options.videoPath)) {
+    return { success: false, error: `Video không tồn tại: ${options.videoPath}` };
+  }
+  if (!existsSync(options.audioPath)) {
+    return { success: false, error: `Audio không tồn tại: ${options.audioPath}` };
+  }
+  if (!existsSync(options.srtPath)) {
+    return { success: false, error: `SRT không tồn tại: ${options.srtPath}` };
+  }
+
+  const ffmpegPath = getFFmpegPath();
+  if (!existsSync(ffmpegPath)) {
+    return { success: false, error: `ffmpeg không tìm thấy: ${ffmpegPath}` };
+  }
+
+  const previewDurationSec = Number.isFinite(options.previewDurationSec)
+    ? Math.max(1, options.previewDurationSec as number)
+    : 20;
+  const previewWindowMode = options.previewWindowMode || 'marker_centered';
+  const outputPath = options.outputPath;
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  audioPreviewStopRequested = false;
+  const step7SpeedInput = options.step7AudioSpeedInput && options.step7AudioSpeedInput > 0
+    ? options.step7AudioSpeedInput
+    : 1.0;
+  const adjustedAudio = await buildSpeedAdjustedAudioFile(options.audioPath, step7SpeedInput);
+  if (!adjustedAudio.success || !adjustedAudio.audioPath || !existsSync(adjustedAudio.audioPath)) {
+    return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted cho preview.' };
+  }
+
+  const renderOptions: RenderVideoOptions = {
+    srtPath: options.srtPath,
+    outputPath,
+    width: 1920,
+    height: 1080,
+    videoPath: options.videoPath,
+    renderMode: 'hardsub',
+    audioPath: adjustedAudio.audioPath,
+    audioSpeed: 1.0,
+    step7AudioSpeedInput: step7SpeedInput,
+    srtTimeScale: options.srtTimeScale,
+    step4SrtScale: options.step4SrtScale,
+    timingContextPath: options.timingContextPath,
+    audioSpeedModel: options.audioSpeedModel,
+    ttsRate: options.ttsRate,
+    step7SubtitleSource: options.step7SubtitleSource,
+    step7AudioSource: options.step7AudioSource,
+  };
+
+  let prepTempAssPath: string | null = null;
+  const cleanupPreviewTemps = async () => {
+    if (prepTempAssPath) {
+      unregisterTempFile(prepTempAssPath);
+      try {
+        await fs.unlink(prepTempAssPath);
+      } catch {}
+    }
+    if (adjustedAudio.generated && adjustedAudio.audioPath) {
+      try {
+        await fs.unlink(adjustedAudio.audioPath);
+      } catch {}
+    }
+  };
+
+  try {
+    const prep = await prepareSubtitleAndDuration(renderOptions);
+    prepTempAssPath = prep.tempAssPath;
+    const hasTtsAudio = existsSync(adjustedAudio.audioPath);
+    if (!hasTtsAudio) {
+      await cleanupPreviewTemps();
+      return { success: false, error: 'Không tìm thấy file audio preview đã speed-adjust.' };
+    }
+
+    const safeVideoVolume = clampVolumePercent(options.videoVolume, 0, 200, 100);
+    const safeAudioVolume = clampVolumePercent(options.audioVolume, 0, 400, 100);
+    const audioMix = buildHardsubAudioMix({
+      hasVideoAudio: prep.hasVideoAudio,
+      hasTtsAudio: true,
+      videoVolume: safeVideoVolume,
+      audioVolume: safeAudioVolume,
+      videoSpeedMultiplier: prep.videoSpeedMultiplier,
+      audioSpeed: prep.audioSpeed,
+    });
+
+    const filterComplexParts = [...audioMix.filterParts];
+    const previewSourceLabel = ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_preview_src');
+    if (!previewSourceLabel) {
+      await cleanupPreviewTemps();
+      return { success: false, error: 'Không thể xác định audio stream để mix preview.' };
+    }
+
+    const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
+      ? prep.originalVideoDuration / prep.videoSpeedMultiplier
+      : prep.originalVideoDuration;
+    const totalDuration = Math.max(
+      previewDurationSec,
+      prep.newAudioDuration > 0 ? prep.newAudioDuration : 0,
+      stretchedVideoDuration > 0 ? stretchedVideoDuration : 0
+    );
+    const markerSec = prep.videoMarkerSec > 0 ? prep.videoMarkerSec : previewDurationSec / 2;
+    const maxStart = Math.max(0, totalDuration - previewDurationSec);
+    const rawStartSec = previewWindowMode === 'marker_centered'
+      ? markerSec - (previewDurationSec / 2)
+      : 0;
+    const startSec = Math.max(0, Math.min(maxStart, rawStartSec));
+    let endSec = Math.min(totalDuration, startSec + previewDurationSec);
+    if (endSec <= startSec) {
+      endSec = startSec + previewDurationSec;
+    }
+    const effectiveDuration = Math.max(0.1, endSec - startSec);
+
+    filterComplexParts.push(
+      `${previewSourceLabel}atrim=start=${startSec.toFixed(3)}:end=${endSec.toFixed(3)},asetpts=PTS-STARTPTS[a_preview_out]`
+    );
+
+    const args = [
+      '-i', options.videoPath,
+      '-i', adjustedAudio.audioPath,
+      '-filter_complex', filterComplexParts.join(';'),
+      '-map', '[a_preview_out]',
+      '-vn',
+      '-ac', '2',
+      '-ar', '44100',
+      '-c:a', 'pcm_s16le',
+      '-t', effectiveDuration.toFixed(3),
+      '-y',
+      outputPath,
+    ];
+
+    progressCallback?.({
+      percent: 0,
+      status: 'mixing',
+      message: 'Đang mix audio preview 20s...',
+    });
+
+    return await new Promise<RenderAudioPreviewResult>((resolve) => {
+      const process = spawn(ffmpegPath, args);
+      activeAudioPreviewProcess = process;
+      let stderr = '';
+
+      process.stderr.on('data', (data) => {
+        const line = data.toString();
+        stderr += line;
+        const timeMatches = [...line.matchAll(/time=(\d+:\d{2}:\d{2}(?:\.\d+)?)/g)];
+        const lastMatch = timeMatches.length > 0 ? timeMatches[timeMatches.length - 1] : null;
+        if (!lastMatch?.[1]) {
+          return;
+        }
+        const currentTimeSec = parseFfmpegTimestampToSec(lastMatch[1]);
+        if (currentTimeSec == null) {
+          return;
+        }
+        const percent = Math.min(99, Math.max(0, Math.round((currentTimeSec / effectiveDuration) * 100)));
+        progressCallback?.({
+          percent,
+          status: 'mixing',
+          message: `Đang mix audio preview: ${percent}%`,
+        });
+      });
+
+      process.on('close', async (code) => {
+        const stoppedByUser = audioPreviewStopRequested;
+        activeAudioPreviewProcess = null;
+        audioPreviewStopRequested = false;
+        await cleanupPreviewTemps();
+
+        if (stoppedByUser) {
+          progressCallback?.({
+            percent: 0,
+            status: 'stopped',
+            message: AUDIO_PREVIEW_STOPPED_MESSAGE,
+          });
+          resolve({
+            success: false,
+            error: AUDIO_PREVIEW_STOPPED_MESSAGE,
+            outputPath,
+            previewDurationSec: effectiveDuration,
+            startSec,
+            endSec,
+            markerSec,
+          });
+          return;
+        }
+
+        if (code === 0) {
+          try {
+            const audioBuffer = await fs.readFile(outputPath);
+            const audioDataUri = `data:audio/wav;base64,${audioBuffer.toString('base64')}`;
+            progressCallback?.({
+              percent: 100,
+              status: 'completed',
+              message: 'Mix audio preview hoàn tất.',
+            });
+            resolve({
+              success: true,
+              outputPath,
+              previewDurationSec: effectiveDuration,
+              startSec,
+              endSec,
+              markerSec,
+              audioDataUri,
+            });
+          } catch (error) {
+            progressCallback?.({
+              percent: 0,
+              status: 'error',
+              message: `Không thể đọc file preview: ${String(error)}`,
+            });
+            resolve({ success: false, error: `Không thể đọc file preview: ${String(error)}` });
+          }
+          return;
+        }
+
+        progressCallback?.({
+          percent: 0,
+          status: 'error',
+          message: 'Mix audio preview thất bại.',
+        });
+        resolve({
+          success: false,
+          error: stderr || `FFmpeg exit code: ${code}`,
+          outputPath,
+          previewDurationSec: effectiveDuration,
+          startSec,
+          endSec,
+          markerSec,
+        });
+      });
+
+      process.on('error', async (error) => {
+        const stoppedByUser = audioPreviewStopRequested;
+        activeAudioPreviewProcess = null;
+        audioPreviewStopRequested = false;
+        await cleanupPreviewTemps();
+        if (stoppedByUser) {
+          resolve({ success: false, error: AUDIO_PREVIEW_STOPPED_MESSAGE });
+          return;
+        }
+        progressCallback?.({
+          percent: 0,
+          status: 'error',
+          message: `Lỗi FFmpeg khi mix preview: ${error.message}`,
+        });
+        resolve({ success: false, error: `Lỗi FFmpeg khi mix preview: ${error.message}` });
+      });
+    });
+  } catch (error) {
+    await cleanupPreviewTemps();
+    return { success: false, error: String(error) };
+  }
+}
+
+export function stopActiveAudioPreview(): { success: boolean; stopped: boolean; message: string } {
+  audioPreviewStopRequested = true;
+  const hadActiveProcess = !!activeAudioPreviewProcess && !activeAudioPreviewProcess.killed;
+  if (hadActiveProcess) {
+    try {
+      activeAudioPreviewProcess!.kill('SIGKILL');
+    } catch {}
+    return { success: true, stopped: true, message: AUDIO_PREVIEW_STOPPED_MESSAGE };
+  }
+  return { success: true, stopped: false, message: 'Không có tiến trình test audio đang chạy.' };
 }
 
 export function stopActiveRender(): { success: boolean; stopped: boolean; message: string } {

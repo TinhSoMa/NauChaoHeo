@@ -7,6 +7,9 @@ import {
   CAPTION_IPC_CHANNELS,
   CAPTION_SESSION_IPC_CHANNELS,
   ParseSrtResult,
+  RenderAudioPreviewOptions,
+  RenderAudioPreviewProgress,
+  RenderAudioPreviewResult,
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
   TranslationOptions,
@@ -467,6 +470,53 @@ export function registerCaptionHandlers(): void {
         };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi stop render video:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.MIX_AUDIO_PREVIEW,
+    async (
+      event: IpcMainInvokeEvent,
+      options: RenderAudioPreviewOptions
+    ): Promise<IpcResponse<RenderAudioPreviewResult>> => {
+      console.log(`[CaptionHandlers] Mix audio preview: ${options.outputPath}`);
+      try {
+        const progressCallback = (progress: RenderAudioPreviewProgress) => {
+          const window = BrowserWindow.fromWebContents(event.sender);
+          if (window) {
+            window.webContents.send(CAPTION_VIDEO_IPC_CHANNELS.AUDIO_PREVIEW_PROGRESS, progress);
+          }
+        };
+
+        const result = await CaptionService.renderStep7AudioPreview(options, progressCallback);
+        if (result.success) {
+          return { success: true, data: result };
+        }
+        return { success: false, error: result.error || 'Không thể mix audio preview.' };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi mix audio preview:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.STOP_AUDIO_PREVIEW,
+    async (): Promise<IpcResponse<{ stopped: boolean; message: string }>> => {
+      try {
+        const stopResult = CaptionService.stopActiveAudioPreview();
+        return {
+          success: stopResult.success,
+          data: {
+            stopped: stopResult.stopped,
+            message: stopResult.message,
+          },
+          error: stopResult.success ? undefined : stopResult.message,
+        };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi stop audio preview:', error);
         return { success: false, error: String(error) };
       }
     }

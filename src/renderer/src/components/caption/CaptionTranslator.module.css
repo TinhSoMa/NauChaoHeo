@@ -380,6 +380,53 @@
   margin: 4px 0 12px;
 }
 
+.audioPreviewBox {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audioPreviewActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.audioPreviewProgressText {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.audioPreviewPlayerWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.audioPreviewPlayer {
+  width: 100%;
+}
+
+.audioPreviewMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.audioPreviewPath {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 
 
 /* Step Checkboxes */

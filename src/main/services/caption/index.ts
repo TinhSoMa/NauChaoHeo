@@ -48,6 +48,8 @@ export {
   extractVideoFrame,
   renderVideo,
   stopActiveRender,
+  renderStep7AudioPreview,
+  stopActiveAudioPreview,
   renderThumbnailPreviewFrame,
   findBestVideoInFolders,
 } from './videoRenderer';

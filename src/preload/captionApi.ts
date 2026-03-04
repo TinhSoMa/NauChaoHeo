@@ -165,6 +165,9 @@ export function createTTSAPI(): TTSAPI {
 // ============================================
 
 import {
+  RenderAudioPreviewOptions,
+  RenderAudioPreviewProgress,
+  RenderAudioPreviewResult,
   VideoMetadata,
   RenderProgress,
   CAPTION_VIDEO_IPC_CHANNELS,
@@ -234,8 +237,19 @@ export interface CaptionVideoAPI {
   // Stop current render process immediately
   stopRender: () => Promise<IpcApiResponse<{ stopped: boolean; message: string }>>;
 
+  // Mix audio preview for Step 7 without rendering full video
+  mixAudioPreview: (
+    options: RenderAudioPreviewOptions
+  ) => Promise<IpcApiResponse<RenderAudioPreviewResult>>;
+
+  // Stop current audio preview process
+  stopAudioPreview: () => Promise<IpcApiResponse<{ stopped: boolean; message: string }>>;
+
   // Listen to render progress
   onRenderProgress: (callback: (progress: RenderProgress) => void) => void;
+
+  // Listen to audio preview progress
+  onAudioPreviewProgress: (callback: (progress: RenderAudioPreviewProgress) => void) => void;
 
   // Get video metadata
   getVideoMetadata: (videoPath: string) => Promise<IpcApiResponse<VideoMetadata>>;
@@ -279,8 +293,21 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
     stopRender: () =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.STOP_RENDER),
 
+    mixAudioPreview: (options: RenderAudioPreviewOptions) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.MIX_AUDIO_PREVIEW, options),
+
+    stopAudioPreview: () =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.STOP_AUDIO_PREVIEW),
+
     onRenderProgress: (callback: (progress: RenderProgress) => void) => {
       ipcRenderer.on(CAPTION_VIDEO_IPC_CHANNELS.RENDER_PROGRESS, (_event, progress) => {
+        callback(progress);
+      });
+    },
+
+    onAudioPreviewProgress: (callback: (progress: RenderAudioPreviewProgress) => void) => {
+      ipcRenderer.removeAllListeners(CAPTION_VIDEO_IPC_CHANNELS.AUDIO_PREVIEW_PROGRESS);
+      ipcRenderer.on(CAPTION_VIDEO_IPC_CHANNELS.AUDIO_PREVIEW_PROGRESS, (_event, progress) => {
         callback(progress);
       });
     },

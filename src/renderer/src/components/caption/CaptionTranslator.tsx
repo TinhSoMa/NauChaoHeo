@@ -1503,6 +1503,25 @@ export function CaptionTranslator() {
                   autoVideoSpeed,
                   formatDuration,
                 } as HardsubTimingMetrics}
+                audioPreview={{
+                  status: processing.audioPreviewStatus,
+                  progressText: processing.audioPreviewProgressText,
+                  dataUri: processing.audioPreviewDataUri,
+                  meta: processing.audioPreviewMeta
+                    ? {
+                        folderName: processing.audioPreviewMeta.folderName,
+                        startSec: processing.audioPreviewMeta.startSec,
+                        endSec: processing.audioPreviewMeta.endSec,
+                        markerSec: processing.audioPreviewMeta.markerSec,
+                        outputPath: processing.audioPreviewMeta.outputPath,
+                      }
+                    : null,
+                  disabled: processing.status === 'running',
+                  onTest: () => processing.handleStep7AudioPreview(displayPath || undefined),
+                  onStop: () => {
+                    void processing.stopStep7AudioPreview();
+                  },
+                }}
                 thumbnailListPanel={(
                   <ThumbnailListPanel
                     visible={

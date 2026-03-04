@@ -525,6 +525,42 @@ export interface RenderResult {
   error?: string;
 }
 
+export interface RenderAudioPreviewOptions {
+  videoPath: string;
+  audioPath: string;
+  srtPath: string;
+  outputPath: string;
+  previewDurationSec?: number;
+  previewWindowMode?: 'marker_centered';
+  srtTimeScale?: number;
+  step4SrtScale?: number;
+  step7AudioSpeedInput?: number;
+  timingContextPath?: string;
+  audioSpeedModel?: 'step4_minus_step7_delta';
+  videoVolume?: number;
+  audioVolume?: number;
+  ttsRate?: string;
+  step7SubtitleSource?: 'session_translated_entries';
+  step7AudioSource?: 'session_merged_audio';
+}
+
+export interface RenderAudioPreviewProgress {
+  percent: number;
+  status: 'mixing' | 'completed' | 'stopped' | 'error';
+  message: string;
+}
+
+export interface RenderAudioPreviewResult {
+  success: boolean;
+  outputPath?: string;
+  previewDurationSec?: number;
+  startSec?: number;
+  endSec?: number;
+  markerSec?: number;
+  audioDataUri?: string;
+  error?: string;
+}
+
 /**
  * Kết quả extract frame từ video
  */
@@ -847,6 +883,9 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   RENDER_VIDEO: 'captionVideo:renderVideo',
   STOP_RENDER: 'captionVideo:stopRender',
   RENDER_PROGRESS: 'captionVideo:renderProgress',
+  MIX_AUDIO_PREVIEW: 'captionVideo:mixAudioPreview',
+  STOP_AUDIO_PREVIEW: 'captionVideo:stopAudioPreview',
+  AUDIO_PREVIEW_PROGRESS: 'captionVideo:audioPreviewProgress',
   GET_VIDEO_METADATA: 'captionVideo:getVideoMetadata',
   EXTRACT_FRAME: 'captionVideo:extractFrame',
   RENDER_THUMBNAIL_PREVIEW_FRAME: 'captionVideo:renderThumbnailPreviewFrame',

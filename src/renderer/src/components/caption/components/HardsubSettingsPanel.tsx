@@ -10,14 +10,32 @@ interface HardsubSettingsPanelProps {
   settings: any;
   availableFonts: string[];
   metrics: HardsubTimingMetrics;
+  audioPreview: {
+    status: 'idle' | 'mixing' | 'ready' | 'error';
+    progressText: string;
+    dataUri: string;
+    meta?: {
+      folderName: string;
+      startSec: number;
+      endSec: number;
+      markerSec: number;
+      outputPath: string;
+    } | null;
+    disabled?: boolean;
+    onTest: () => void;
+    onStop: () => void;
+  };
   thumbnailListPanel?: ReactNode;
 }
 
 export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
-  const { visible, settings, metrics } = props;
+  const { visible, settings, metrics, audioPreview } = props;
   const subtitleFontSelected = settings.style?.fontName || 'ZYVNA Fairy';
   const text1FontSelected = settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal';
   const text2FontSelected = settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal';
+  const isPreviewMixing = audioPreview.status === 'mixing';
+  const canPreviewAudio = !audioPreview.disabled && visible;
+  const formatSeconds = (value: number) => (Number.isFinite(value) ? `${value.toFixed(2)}s` : '--');
 
   if (!visible) {
     return null;
@@ -472,6 +490,42 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
             />
             <div style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
               Tăng để audio lồng tiếng to hơn
+            </div>
+          </div>
+
+          <div className={`${styles.step7FullRow} ${styles.inputGroup}`}>
+            <span className={styles.label}>Test âm thanh</span>
+            <div className={styles.audioPreviewBox}>
+              <div className={styles.audioPreviewActions}>
+                <button
+                  type="button"
+                  className={styles.resetBtnLike}
+                  onClick={isPreviewMixing ? audioPreview.onStop : audioPreview.onTest}
+                  disabled={!canPreviewAudio}
+                >
+                  {isPreviewMixing ? '⏹ Dừng test' : '🎧 Test mix 20s'}
+                </button>
+                {audioPreview.progressText && (
+                  <span className={styles.audioPreviewProgressText}>{audioPreview.progressText}</span>
+                )}
+              </div>
+              {audioPreview.dataUri && audioPreview.status === 'ready' && (
+                <div className={styles.audioPreviewPlayerWrap}>
+                  <audio className={styles.audioPreviewPlayer} controls autoPlay src={audioPreview.dataUri} />
+                  {audioPreview.meta && (
+                    <div className={styles.audioPreviewMeta}>
+                      <span>{audioPreview.meta.folderName}</span>
+                      <span>
+                        {formatSeconds(audioPreview.meta.startSec)} - {formatSeconds(audioPreview.meta.endSec)}
+                      </span>
+                      <span>marker {formatSeconds(audioPreview.meta.markerSec)}</span>
+                      <span className={styles.audioPreviewPath} title={audioPreview.meta.outputPath}>
+                        {audioPreview.meta.outputPath}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

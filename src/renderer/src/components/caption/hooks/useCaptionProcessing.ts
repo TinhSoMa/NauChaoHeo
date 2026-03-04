@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Step,
   ProcessStatus,
@@ -15,6 +15,7 @@ import {
   CaptionStepNumber,
   CaptionProjectSettingsValues,
   CoverQuad,
+  RenderAudioPreviewProgress,
   TranslationBatchReport as SharedTranslationBatchReport,
 } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
@@ -53,6 +54,17 @@ type ProcessingAudioFile = {
 type PartialProcessingAudioFile = Partial<ProcessingAudioFile> & {
   path?: string;
   startMs?: number;
+};
+
+type AudioPreviewStatus = 'idle' | 'mixing' | 'ready' | 'error';
+
+type AudioPreviewMeta = {
+  startSec: number;
+  endSec: number;
+  markerSec: number;
+  outputPath: string;
+  folderName: string;
+  folderPath: string;
 };
 
 function normalizeAudioFiles(files: PartialProcessingAudioFile[] = []): ProcessingAudioFile[] {
@@ -493,10 +505,15 @@ export function useCaptionProcessing({
   
   // State for intermediate data
   const [audioFiles, setAudioFiles] = useState<ProcessingAudioFile[]>([]);
+  const [audioPreviewStatus, setAudioPreviewStatus] = useState<AudioPreviewStatus>('idle');
+  const [audioPreviewProgressText, setAudioPreviewProgressText] = useState<string>('');
+  const [audioPreviewDataUri, setAudioPreviewDataUri] = useState<string>('');
+  const [audioPreviewMeta, setAudioPreviewMeta] = useState<AudioPreviewMeta | null>(null);
 
   // Ref cho abort flag — cho phép handleStop() dừng vòng lặp đang chạy
   const abortRef = useRef(false);
   const translateBatchProgressHandlerRef = useRef<((progress: TranslationProgress) => void | Promise<void>) | null>(null);
+  const audioPreviewStopRequestedRef = useRef(false);
 
   const toggleStep = useCallback((step: Step) => {
     setEnabledSteps(prev => {
@@ -509,6 +526,188 @@ export function useCaptionProcessing({
       return next;
     });
   }, [setEnabledSteps]);
+
+  const stopStep7AudioPreview = useCallback(async (silent = false) => {
+    audioPreviewStopRequestedRef.current = true;
+    try {
+      // @ts-ignore
+      await window.electronAPI.captionVideo?.stopAudioPreview?.();
+    } catch (error) {
+      if (!silent) {
+        console.warn('[CaptionProcessing] Không thể gửi stop audio preview:', error);
+      }
+    }
+    if (!silent) {
+      setAudioPreviewStatus('idle');
+      setAudioPreviewProgressText('Đã dừng test audio.');
+    }
+  }, []);
+
+  const handleStep7AudioPreview = useCallback(async (folderPath?: string) => {
+    if (status === 'running') {
+      setAudioPreviewStatus('error');
+      setAudioPreviewProgressText('Không thể test audio khi pipeline đang chạy.');
+      return;
+    }
+    if (audioPreviewStatus === 'mixing') {
+      return;
+    }
+
+    const inputPaths = getInputPaths(inputType as 'srt' | 'draft', filePath);
+    if (inputPaths.length === 0) {
+      setAudioPreviewStatus('error');
+      setAudioPreviewProgressText('Chưa có input để test audio.');
+      return;
+    }
+
+    const normalizePath = (value: string) => value.trim().replace(/[\\/]+$/, '').toLowerCase();
+    const requested = folderPath ? normalizePath(folderPath) : '';
+    const targetPath = requested
+      ? (inputPaths.find((candidatePath) => {
+          const folderCandidate = inputType === 'draft'
+            ? candidatePath
+            : candidatePath.replace(/[^/\\]+$/, '');
+          return normalizePath(candidatePath) === requested || normalizePath(folderCandidate) === requested;
+        }) || currentFolder?.path || inputPaths[0])
+      : (currentFolder?.path || inputPaths[0]);
+    const folderName = (targetPath.split(/[/\\]/).pop() || targetPath || 'folder').trim();
+
+    const processOutputDir = resolveProcessOutputDir(inputType, targetPath);
+    const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', targetPath);
+    const sessionFallback = {
+      projectId,
+      inputType: inputType as 'srt' | 'draft',
+      sourcePath: targetPath,
+      folderPath: inputType === 'draft' ? targetPath : targetPath.replace(/[^/\\]+$/, ''),
+    };
+
+    try {
+      audioPreviewStopRequestedRef.current = false;
+      setAudioPreviewStatus('mixing');
+      setAudioPreviewProgressText(`[${folderName}] Đang chuẩn bị test mix 20s...`);
+      setAudioPreviewDataUri('');
+      setAudioPreviewMeta(null);
+
+      const session = await readCaptionSession(sessionPath, sessionFallback);
+      const step7Inputs = resolveStepInputsFromSession(session, 7);
+      const translatedEntries = compactEntries(step7Inputs.translatedEntries);
+      const mergedAudioPath = step7Inputs.mergedAudioPath;
+      if (translatedEntries.length === 0) {
+        throw new Error('Hãy chạy Step 3 trước (thiếu translated entries trong session).');
+      }
+      if (!mergedAudioPath) {
+        throw new Error('Hãy chạy Step 6 trước (thiếu merged audio path trong session).');
+      }
+
+      const srtScale = settings.srtSpeed > 0 ? settings.srtSpeed : 1.0;
+      const scaleLabel = normalizeSpeedLabel(srtScale);
+      const scaledSrtPath = `${processOutputDir}/srt/subtitle_${scaleLabel}x.srt`;
+      const scaledEntries = buildScaledSubtitleEntries(translatedEntries, srtScale);
+      // @ts-ignore
+      const scaledSrtResult = await window.electronAPI.caption.exportSrt(scaledEntries, scaledSrtPath);
+      if (!scaledSrtResult?.success) {
+        throw new Error('Không thể tạo subtitle scaled cho audio preview.');
+      }
+
+      const folderPathsToSearch = inputType === 'draft'
+        ? [targetPath]
+        : [targetPath.replace(/[^/\\]+$/, '')];
+      // @ts-ignore
+      const findBestRes = await window.electronAPI.captionVideo.findBestVideoInFolders(folderPathsToSearch);
+      if (!findBestRes?.success || !findBestRes.data?.videoPath) {
+        throw new Error(`Không tìm thấy video nguồn để test (${folderName}).`);
+      }
+
+      const previewOutputPath = `${processOutputDir}/step7_audio_preview_20s.wav`;
+      const step7AudioSpeed = settings.renderAudioSpeed && settings.renderAudioSpeed > 0
+        ? settings.renderAudioSpeed
+        : 1.0;
+      const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
+
+      // @ts-ignore
+      window.electronAPI.captionVideo?.onAudioPreviewProgress?.((previewProgress: RenderAudioPreviewProgress) => {
+        const progressMessage = previewProgress.message || 'Đang mix audio preview...';
+        setAudioPreviewProgressText(`[${folderName}] ${progressMessage}`);
+      });
+
+      // @ts-ignore
+      const previewRes = await window.electronAPI.captionVideo.mixAudioPreview({
+        videoPath: findBestRes.data.videoPath,
+        audioPath: mergedAudioPath,
+        srtPath: scaledSrtPath,
+        outputPath: previewOutputPath,
+        previewDurationSec: 20,
+        previewWindowMode: 'marker_centered',
+        srtTimeScale: srtScale,
+        step4SrtScale: srtScale,
+        step7AudioSpeedInput: step7AudioSpeed,
+        timingContextPath,
+        audioSpeedModel: 'step4_minus_step7_delta',
+        videoVolume: settings.videoVolume,
+        audioVolume: settings.audioVolume,
+        ttsRate: settings.rate,
+        step7SubtitleSource: 'session_translated_entries',
+        step7AudioSource: 'session_merged_audio',
+      });
+
+      if (!previewRes?.success || !previewRes.data) {
+        const errorMessage = previewRes?.error || 'Không thể mix audio preview.';
+        const stoppedByUser = audioPreviewStopRequestedRef.current
+          || errorMessage.toLowerCase().includes('đã dừng');
+        if (stoppedByUser) {
+          setAudioPreviewStatus('idle');
+          setAudioPreviewProgressText(`[${folderName}] Đã dừng test audio.`);
+          return;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const previewData = previewRes.data;
+      if (!previewData.audioDataUri) {
+        throw new Error('Mix audio preview thành công nhưng thiếu audioDataUri.');
+      }
+
+      setAudioPreviewDataUri(previewData.audioDataUri);
+      setAudioPreviewMeta({
+        startSec: typeof previewData.startSec === 'number' ? previewData.startSec : 0,
+        endSec: typeof previewData.endSec === 'number' ? previewData.endSec : 0,
+        markerSec: typeof previewData.markerSec === 'number' ? previewData.markerSec : 0,
+        outputPath: previewData.outputPath || previewOutputPath,
+        folderName,
+        folderPath: targetPath,
+      });
+      setAudioPreviewStatus('ready');
+      setAudioPreviewProgressText(`[${folderName}] Đã mix xong preview 20s.`);
+    } catch (error) {
+      if (audioPreviewStopRequestedRef.current) {
+        setAudioPreviewStatus('idle');
+        setAudioPreviewProgressText(`[${folderName}] Đã dừng test audio.`);
+      } else {
+        setAudioPreviewStatus('error');
+        setAudioPreviewProgressText(`[${folderName}] ${String(error)}`);
+      }
+    } finally {
+      audioPreviewStopRequestedRef.current = false;
+    }
+  }, [
+    status,
+    audioPreviewStatus,
+    inputType,
+    filePath,
+    currentFolder?.path,
+    projectId,
+    settings.srtSpeed,
+    settings.renderAudioSpeed,
+    settings.videoVolume,
+    settings.audioVolume,
+    settings.rate,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      void stopStep7AudioPreview(true);
+    };
+  }, [stopStep7AudioPreview]);
 
   const handleStop = useCallback(async () => {
     abortRef.current = true;
@@ -569,11 +768,12 @@ export function useCaptionProcessing({
     } catch (error) {
       console.warn('[CaptionProcessing] Không thể gửi stop render:', error);
     }
+    await stopStep7AudioPreview(true);
     setStatus('idle');
     setCurrentFolder(null);
     setCurrentStep(null);
     setProgress(p => ({ ...p, message: 'Đã dừng.' }));
-  }, [currentFolder?.index, currentFolder?.path, currentStep, filePath, inputType, projectId, settings.processingMode]);
+  }, [currentFolder?.index, currentFolder?.path, currentStep, filePath, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
@@ -616,6 +816,7 @@ export function useCaptionProcessing({
     }
 
     abortRef.current = false;
+    await stopStep7AudioPreview(true);
     setStatus('running');
 
     // Listen for progress — đăng ký 1 lần với replace (ghi đè listener cũ)
@@ -2370,7 +2571,7 @@ export function useCaptionProcessing({
     setCurrentFolder(null);
   }, [
     projectId, enabledSteps, entries, filePath, inputType, captionFolder,
-    settings, audioFiles,
+    settings, audioFiles, stopStep7AudioPreview,
   ]);
 
   return {
@@ -2378,10 +2579,16 @@ export function useCaptionProcessing({
     toggleStep,
     handleStart,
     handleStop,
+    handleStep7AudioPreview,
+    stopStep7AudioPreview,
     status,
     progress,
     currentStep,
     audioFiles,
+    audioPreviewStatus,
+    audioPreviewProgressText,
+    audioPreviewDataUri,
+    audioPreviewMeta,
     currentFolder,
     stepDependencyIssues,
   };
