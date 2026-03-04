@@ -14,6 +14,29 @@ export interface TranslationProgress {
   current: number;
   total: number;
   message: string;
+  batchIndex?: number;
+  totalBatches?: number;
+  status?: 'translating' | 'completed' | 'error';
+  eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
+  batchReport?: TranslationBatchReport;
+  translatedChunk?: {
+    startIndex: number;
+    texts: string[];
+  };
+  folderHint?: string;
+}
+
+export interface TranslationBatchReport {
+  batchIndex: number;
+  startIndex: number;
+  endIndex: number;
+  expectedLines: number;
+  translatedLines: number;
+  missingLinesInBatch: number[];
+  missingGlobalLineIndexes: number[];
+  attempts: number;
+  status: 'success' | 'failed';
+  error?: string;
 }
 
 export interface TTSProgress {

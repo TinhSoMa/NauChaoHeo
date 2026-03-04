@@ -8,6 +8,7 @@ import {
   TranslationOptions,
   TranslationResult,
   TranslationProgress,
+  TranslationBatchReport,
 } from '../../../shared/types/caption';
 import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type GeminiModel } from '../gemini';
 import { type KeyInfo } from '../../../shared/types/gemini';
@@ -141,13 +142,51 @@ export async function translateAll(
   const batches = splitForTranslation(entries, linesPerBatch);
   const allTranslatedTexts: string[] = new Array(entries.length).fill('');
   const errors: string[] = [];
+  const batchReports: TranslationBatchReport[] = [];
 
   let translatedCount = 0;
   let failedCount = 0;
   let completedBatches = 0;
+  let processedLines = 0;
 
   const useImpit = options.translateMethod === 'impit';
   const MAX_CONCURRENT = useImpit ? 3 : 5;
+
+  const buildBatchReport = (
+    batch: TextBatch,
+    translatedTexts: string[],
+    attempts: number,
+    status: 'success' | 'failed',
+    error?: string
+  ): TranslationBatchReport => {
+    const expectedLines = batch.texts.length;
+    const normalized = Array.from({ length: expectedLines }, (_, index) => translatedTexts[index] ?? '');
+    const missingLinesInBatch: number[] = [];
+    const missingGlobalLineIndexes: number[] = [];
+    let translatedLines = 0;
+
+    for (let i = 0; i < expectedLines; i++) {
+      if (normalized[i] && normalized[i].trim().length > 0) {
+        translatedLines++;
+      } else {
+        missingLinesInBatch.push(i + 1);
+        missingGlobalLineIndexes.push(batch.startIndex + i + 1);
+      }
+    }
+
+    return {
+      batchIndex: batch.batchIndex + 1,
+      startIndex: batch.startIndex,
+      endIndex: Math.max(batch.startIndex, batch.startIndex + expectedLines - 1),
+      expectedLines,
+      translatedLines,
+      missingLinesInBatch,
+      missingGlobalLineIndexes,
+      attempts,
+      status,
+      error,
+    };
+  };
 
   // Dịch song song tối đa MAX_CONCURRENT batch cùng lúc
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
@@ -161,6 +200,7 @@ export async function translateAll(
         totalBatches: batches.length,
         status: 'translating',
         message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] (${MAX_CONCURRENT} song song)...`,
+        eventType: 'batch_started',
       });
     }
 
@@ -184,6 +224,7 @@ export async function translateAll(
           totalBatches: batches.length,
           status: 'translating',
           message: `Batch ${i + 1}: Thiếu ${missingCount} dòng — đang thử lại lần ${attemptCount - 1}/${maxAttempts - 1}...`,
+          eventType: 'batch_retry',
         });
       }
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -193,41 +234,49 @@ export async function translateAll(
         : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate);
     }
 
-    // Xử lý kết quả
-    if (batchResult.success && batchResult.translatedTexts?.length) {
-      // 100% đầy đủ — ghi kết quả
-      for (let j = 0; j < batchResult.translatedTexts.length; j++) {
-        allTranslatedTexts[batch.startIndex + j] = batchResult.translatedTexts[j];
-        translatedCount++;
-      }
-    } else {
-      // Hết ${maxAttempts} lần thử vẫn thiếu dòng — KHÔNG dùng partial, báo lỗi cho người dùng
-      const missingCount = batch.texts.length - (batchResult.translatedTexts?.filter(t => t.trim()).length ?? 0);
-      const errorMsg = `Batch ${i + 1} (dòng ${batch.startIndex + 1}–${batch.startIndex + batch.texts.length}): Thiếu ${missingCount}/${batch.texts.length} dòng sau ${maxAttempts} lần thử — cần xử lý thủ công`;
+    const normalizedTexts = Array.from({ length: batch.texts.length }, (_, idx) => batchResult.translatedTexts?.[idx] ?? '');
+    const isFullSuccess = !!batchResult.success;
+    const report = buildBatchReport(
+      batch,
+      normalizedTexts,
+      attemptCount,
+      isFullSuccess ? 'success' : 'failed',
+      isFullSuccess ? undefined : (batchResult.error || 'BATCH_TRANSLATION_FAILED')
+    );
+
+    batchReports.push(report);
+
+    // Luôn giữ partial đã dịch được để renderer có thể lưu dần vào session
+    for (let j = 0; j < normalizedTexts.length; j++) {
+      allTranslatedTexts[batch.startIndex + j] = normalizedTexts[j];
+    }
+
+    translatedCount += report.translatedLines;
+    failedCount += report.missingGlobalLineIndexes.length;
+
+    if (!isFullSuccess) {
+      const globalMissing = report.missingGlobalLineIndexes.join(', ');
+      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau ${maxAttempts} lần thử${globalMissing ? ` (global: ${globalMissing})` : ''}`;
       console.error(`[CaptionTranslator] ${errorMsg}`);
       errors.push(errorMsg);
-      failedCount += batch.texts.length;
-      if (progressCallback) {
-        progressCallback({
-          current: batch.startIndex,
-          total: entries.length,
-          batchIndex: i,
-          totalBatches: batches.length,
-          status: 'error',
-          message: `❌ Batch ${i + 1}: Thiếu ${missingCount} dòng sau ${maxAttempts} lần thử — cần xử lý thủ công!`,
-        });
-      }
     }
 
     completedBatches++;
+    processedLines += batch.texts.length;
     if (progressCallback) {
       progressCallback({
-        current: completedBatches * (linesPerBatch || 50),
+        current: Math.min(processedLines, entries.length),
         total: entries.length,
         batchIndex: completedBatches,
         totalBatches: batches.length,
-        status: 'translating',
+        status: report.status === 'success' ? 'translating' : 'error',
         message: `Hoàn thành ${completedBatches}/${batches.length} batch...`,
+        eventType: report.status === 'success' ? 'batch_completed' : 'batch_failed',
+        batchReport: report,
+        translatedChunk: {
+          startIndex: batch.startIndex,
+          texts: normalizedTexts,
+        },
       });
     }
   };
@@ -252,7 +301,13 @@ export async function translateAll(
     await Promise.all(
       chunk.map((batch, offset) =>
         new Promise<void>((resolve) =>
-          setTimeout(() => processBatch(batch, i + offset, assignedKeys[offset]).then(resolve), offset * 300)
+          setTimeout(() => {
+            processBatch(batch, i + offset, assignedKeys[offset])
+              .catch((error) => {
+                console.error('[CaptionTranslator] Lỗi processBatch không mong muốn:', error);
+              })
+              .finally(resolve);
+          }, offset * 300)
         )
       )
     );
@@ -270,12 +325,24 @@ export async function translateAll(
       totalBatches: batches.length,
       status: 'completed',
       message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
+      eventType: 'summary',
     });
   }
 
   console.log(
     `[CaptionTranslator] Hoàn thành: ${translatedCount} dịch, ${failedCount} lỗi`
   );
+
+  const missingBatchIndexes = batchReports
+    .filter((report) => report.status === 'failed')
+    .map((report) => report.batchIndex);
+  const missingGlobalLineIndexes = Array.from(
+    new Set(
+      batchReports
+        .filter((report) => report.status === 'failed')
+        .flatMap((report) => report.missingGlobalLineIndexes)
+    )
+  ).sort((a, b) => a - b);
 
   return {
     success: failedCount === 0,
@@ -284,6 +351,9 @@ export async function translateAll(
     translatedLines: translatedCount,
     failedLines: failedCount,
     errors: errors.length > 0 ? errors : undefined,
+    batchReports,
+    missingBatchIndexes,
+    missingGlobalLineIndexes,
   };
 }
 

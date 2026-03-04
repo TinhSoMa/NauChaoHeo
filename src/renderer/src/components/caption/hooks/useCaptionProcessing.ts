@@ -1,5 +1,13 @@
 import { useState, useCallback, useRef } from 'react';
-import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode, StepDependencyIssue } from '../CaptionTypes';
+import {
+  Step,
+  ProcessStatus,
+  SubtitleEntry,
+  TranslationProgress,
+  TTSProgress,
+  ProcessingMode,
+  StepDependencyIssue,
+} from '../CaptionTypes';
 import {
   CaptionArtifactFile,
   CaptionSessionStopCheckpoint,
@@ -7,6 +15,7 @@ import {
   CaptionStepNumber,
   CaptionProjectSettingsValues,
   CoverQuad,
+  TranslationBatchReport as SharedTranslationBatchReport,
 } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
@@ -246,6 +255,178 @@ function joinFilePath(baseDir: string, fileName: string): string {
   return `${normalizedBase}${separator}${fileName}`;
 }
 
+type StepBatchPlanItem = {
+  batchIndex: number;
+  startIndex: number;
+  endIndex: number;
+  lineCount: number;
+  partPath?: string;
+};
+
+type Step3BatchState = NonNullable<CaptionSessionV1['data']['step3BatchState']>;
+
+function buildChunkBatchPlan(
+  entriesCount: number,
+  linesPerBatch: number,
+  partPaths: string[] = []
+): StepBatchPlanItem[] {
+  if (!Number.isFinite(entriesCount) || entriesCount <= 0) {
+    return [];
+  }
+  const safeLinesPerBatch = Math.max(1, Math.floor(linesPerBatch));
+  const plans: StepBatchPlanItem[] = [];
+  let cursor = 0;
+  let batchIndex = 1;
+  while (cursor < entriesCount) {
+    const startIndex = cursor;
+    const endExclusive = Math.min(entriesCount, startIndex + safeLinesPerBatch);
+    plans.push({
+      batchIndex,
+      startIndex,
+      endIndex: endExclusive - 1,
+      lineCount: endExclusive - startIndex,
+      partPath: partPaths[batchIndex - 1],
+    });
+    cursor = endExclusive;
+    batchIndex++;
+  }
+  return plans;
+}
+
+function buildPartCountBatchPlan(
+  entriesCount: number,
+  partsCount: number,
+  partPaths: string[] = []
+): StepBatchPlanItem[] {
+  if (!Number.isFinite(entriesCount) || entriesCount <= 0) {
+    return [];
+  }
+  const safePartsCount = Math.max(1, Math.min(Math.floor(partsCount), entriesCount));
+  const entriesPerPart = Math.ceil(entriesCount / safePartsCount);
+  return buildChunkBatchPlan(entriesCount, entriesPerPart, partPaths);
+}
+
+function buildStep3BatchState(
+  totalBatches: number,
+  reports: SharedTranslationBatchReport[]
+): Step3BatchState {
+  const sortedReports = [...reports].sort((a, b) => a.batchIndex - b.batchIndex);
+  const successReports = sortedReports.filter((report) => report.status === 'success');
+  const failedReports = sortedReports.filter((report) => report.status === 'failed');
+  const missingBatchIndexes = failedReports.map((report) => report.batchIndex);
+  const missingGlobalLineIndexes = Array.from(
+    new Set(failedReports.flatMap((report) => report.missingGlobalLineIndexes))
+  ).sort((a, b) => a - b);
+
+  return {
+    totalBatches,
+    completedBatches: successReports.length,
+    failedBatches: failedReports.length,
+    missingBatchIndexes,
+    missingGlobalLineIndexes,
+    batches: sortedReports,
+    updatedAt: nowIso(),
+  };
+}
+
+function mergeTranslatedChunkIntoEntries(
+  entries: SubtitleEntry[],
+  chunk: { startIndex: number; texts: string[] }
+): SubtitleEntry[] {
+  const nextEntries = entries.map((entry) => ({ ...entry }));
+  const startIndex = Math.max(0, Math.floor(chunk.startIndex));
+  const texts = Array.isArray(chunk.texts) ? chunk.texts : [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const targetIndex = startIndex + i;
+    if (targetIndex < 0 || targetIndex >= nextEntries.length) {
+      continue;
+    }
+    const rawText = typeof texts[i] === 'string' ? texts[i] : '';
+    const hasTranslated = rawText.trim().length > 0;
+    const current = nextEntries[targetIndex];
+    const fallbackText = (current.translatedText && current.translatedText.trim().length > 0)
+      ? current.translatedText
+      : current.text;
+    nextEntries[targetIndex] = {
+      ...current,
+      translatedText: hasTranslated ? rawText : fallbackText,
+    };
+  }
+
+  return nextEntries;
+}
+
+function normalizeEntriesForSession(entries: SubtitleEntry[]): SubtitleEntry[] {
+  return entries.map((entry) => ({
+    ...entry,
+    translatedText: entry.translatedText && entry.translatedText.trim().length > 0
+      ? entry.translatedText
+      : entry.text,
+  }));
+}
+
+function formatMissingBatchMessage(
+  folderName: string,
+  reports: SharedTranslationBatchReport[]
+): string {
+  const failedReports = reports
+    .filter((report) => report.status === 'failed')
+    .sort((a, b) => a.batchIndex - b.batchIndex);
+
+  const details = failedReports
+    .map((report) => {
+      const missingLines = report.missingGlobalLineIndexes.length > 0
+        ? report.missingGlobalLineIndexes.join(',')
+        : 'không rõ';
+      return `#${report.batchIndex} (thiếu dòng global: ${missingLines})`;
+    })
+    .join(', ');
+
+  return `[${folderName}] Step 3 thiếu batch: ${details}`;
+}
+
+function deriveBatchReportFromProgress(
+  progress: TranslationProgress
+): SharedTranslationBatchReport | null {
+  if (!progress.translatedChunk || !Array.isArray(progress.translatedChunk.texts)) {
+    return null;
+  }
+
+  const startIndex = Math.max(0, Math.floor(progress.translatedChunk.startIndex || 0));
+  const texts = progress.translatedChunk.texts;
+  const expectedLines = texts.length;
+  const missingLinesInBatch: number[] = [];
+  const missingGlobalLineIndexes: number[] = [];
+  let translatedLines = 0;
+
+  for (let i = 0; i < expectedLines; i++) {
+    if (typeof texts[i] === 'string' && texts[i].trim().length > 0) {
+      translatedLines++;
+    } else {
+      missingLinesInBatch.push(i + 1);
+      missingGlobalLineIndexes.push(startIndex + i + 1);
+    }
+  }
+
+  const fallbackBatchIndex = typeof progress.batchIndex === 'number'
+    ? progress.batchIndex + 1
+    : 1;
+
+  return {
+    batchIndex: fallbackBatchIndex,
+    startIndex,
+    endIndex: Math.max(startIndex, startIndex + expectedLines - 1),
+    expectedLines,
+    translatedLines,
+    missingLinesInBatch,
+    missingGlobalLineIndexes,
+    attempts: 1,
+    status: progress.eventType === 'batch_failed' ? 'failed' : 'success',
+    error: progress.eventType === 'batch_failed' ? 'BATCH_INCOMPLETE' : undefined,
+  };
+}
+
 function resolveRenderOutputDir(inputType: string, currentPath: string, sourceVideoPath?: string): string {
   if (sourceVideoPath && sourceVideoPath.trim()) {
     return resolveParentDir(sourceVideoPath);
@@ -315,6 +496,7 @@ export function useCaptionProcessing({
 
   // Ref cho abort flag — cho phép handleStop() dừng vòng lặp đang chạy
   const abortRef = useRef(false);
+  const translateBatchProgressHandlerRef = useRef<((progress: TranslationProgress) => void | Promise<void>) | null>(null);
 
   const toggleStep = useCallback((step: Step) => {
     setEnabledSteps(prev => {
@@ -440,6 +622,12 @@ export function useCaptionProcessing({
     // @ts-ignore
     window.electronAPI.caption.onTranslateProgress((p: TranslationProgress) => {
       setProgress({ current: p.current, total: p.total, message: p.message });
+      const batchHandler = translateBatchProgressHandlerRef.current;
+      if (batchHandler) {
+        Promise.resolve(batchHandler(p)).catch((error) => {
+          console.warn('[CaptionProcessing] Lỗi cập nhật batch progress Step 3:', error);
+        });
+      }
     });
     // @ts-ignore
     window.electronAPI.tts.onProgress((p: TTSProgress) => {
@@ -663,6 +851,15 @@ export function useCaptionProcessing({
 
     // failedFolders: các folder đã có lỗi (step-first: bỏ qua bước tiếp theo của folder đó)
     const failedFolders = new Set<string>();
+    const failedFolderDetails: Array<{ folderPath: string; folderName: string; error: string }> = [];
+    const recordFolderFailure = (folderPath: string, folderName: string, error: unknown) => {
+      const errorText = String(error);
+      if (!failedFolders.has(folderPath)) {
+        failedFolderDetails.push({ folderPath, folderName, error: errorText });
+      }
+      failedFolders.add(folderPath);
+      return errorText;
+    };
 
     const buildSettingsSnapshot = (folderIdx: number): Record<string, unknown> => ({
       step2Split: {
@@ -1014,26 +1211,36 @@ export function useCaptionProcessing({
         });
         if (result.success && result.data) {
           const splitData = result.data;
+          const splitFiles = Array.isArray(splitData.files) ? splitData.files : [];
+          const step2BatchPlan = cfg.splitByLines
+            ? buildChunkBatchPlan(currentEntries.length, splitValue, splitFiles)
+            : buildPartCountBatchPlan(currentEntries.length, splitValue, splitFiles);
           setProgress({ current: 1, total: 1, message: msgCtx(`Bước 2: Đã tạo ${splitData.partsCount} phần`) });
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
             const stepArtifacts: CaptionArtifactFile[] = [];
             pushArtifact(stepArtifacts, 'split_output_dir', textOutputDir, 'dir');
-            for (const file of splitData.files || []) {
+            for (const file of splitFiles) {
               pushArtifact(stepArtifacts, 'split_part', file, 'file');
             }
             let nextSession: CaptionSessionV1 = {
               ...session,
+              data: {
+                ...session.data,
+                step2BatchPlan,
+              },
               steps: {
                 ...session.steps,
                 [stepKey]: {
                   ...makeStepSuccess(session.steps[stepKey], {
                     partsCount: splitData.partsCount,
-                    files: splitData.files,
+                    files: splitFiles,
+                    batchPlanCount: step2BatchPlan.length,
                   }),
                   inputFingerprint: buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]),
                   outputFingerprint: buildObjectFingerprint({
                     partsCount: splitData.partsCount,
-                    files: splitData.files,
+                    files: splitFiles,
+                    step2BatchPlan,
                   }),
                   dependsOn: [1],
                 },
@@ -1052,69 +1259,212 @@ export function useCaptionProcessing({
         if (currentEntries.length === 0) {
           throw new Error(`[${folderName}] Chưa có dữ liệu Step 1 trong caption_session.json. Hãy chạy Step 1 trước.`);
         }
+        const linesPerBatch = 50;
+        const totalBatches = Math.max(1, Math.ceil(currentEntries.length / linesPerBatch));
+        let liveTranslatedEntries = normalizeEntriesForSession(compactEntries(currentEntries));
+        const batchReportsMap = new Map<number, SharedTranslationBatchReport>();
+
         setProgress({ current: 0, total: currentEntries.length, message: msgCtx('Bước 3: Đang dịch...') });
-        // @ts-ignore
-        const result = await window.electronAPI.caption.translate({
-          entries: currentEntries,
-          targetLanguage: 'Vietnamese',
-          model: cfg.geminiModel,
-          linesPerBatch: 50,
-          translateMethod: cfg.translateMethod,
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+          const existingPlan = Array.isArray(session.data.step2BatchPlan) ? session.data.step2BatchPlan : [];
+          const fallbackPlan = existingPlan.length > 0
+            ? existingPlan
+            : buildChunkBatchPlan(currentEntries.length, linesPerBatch);
+          return {
+            ...session,
+            data: {
+              ...session.data,
+              step2BatchPlan: fallbackPlan,
+              translatedEntries: liveTranslatedEntries,
+              translatedSrtContent: entriesToSrtText(liveTranslatedEntries),
+              step3BatchState: buildStep3BatchState(totalBatches, []),
+            },
+            runtime: {
+              ...session.runtime,
+              lastMessage: msgCtx('Bước 3: Khởi tạo trạng thái batch...'),
+            },
+          };
         });
-        if (result.success && result.data) {
-          const translateData = result.data;
-          currentEntries = translateData.entries;
-          if (!isMulti) setEntries(currentEntries);
-          srtFileForVideo = `${processOutputDir}/srt/translated.srt`;
-          const translatedSrtContent = entriesToSrtText(currentEntries);
+
+        translateBatchProgressHandlerRef.current = async (progressEvent: TranslationProgress) => {
+          if (progressEvent.eventType !== 'batch_completed' && progressEvent.eventType !== 'batch_failed') {
+            return;
+          }
+          if (progressEvent.translatedChunk) {
+            liveTranslatedEntries = mergeTranslatedChunkIntoEntries(liveTranslatedEntries, progressEvent.translatedChunk);
+          }
+          const incomingBatchReport = progressEvent.batchReport
+            ? ({ ...progressEvent.batchReport } as SharedTranslationBatchReport)
+            : deriveBatchReportFromProgress(progressEvent);
+          if (incomingBatchReport) {
+            batchReportsMap.set(incomingBatchReport.batchIndex, incomingBatchReport);
+          }
+          const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
+          const step3BatchState = buildStep3BatchState(totalBatches, batchReports);
+          const translatedSnapshot = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
+          const translatedSrtContent = entriesToSrtText(translatedSnapshot);
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            data: {
+              ...session.data,
+              translatedEntries: translatedSnapshot,
+              translatedSrtContent,
+              step3BatchState,
+            },
+            runtime: {
+              ...session.runtime,
+              lastMessage: msgCtx(progressEvent.message || `Bước 3: Cập nhật batch #${incomingBatchReport?.batchIndex || '?'}`),
+            },
+          }));
+        };
+
+        let result: any;
+        try {
           // @ts-ignore
-          await window.electronAPI.caption.exportSrt(currentEntries, srtFileForVideo);
-          setProgress({ current: translateData.translatedLines, total: translateData.totalLines, message: msgCtx(`Bước 3: Đã dịch ${translateData.translatedLines} dòng`) });
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
-            const stepArtifacts: CaptionArtifactFile[] = [];
-            pushArtifact(stepArtifacts, 'translated_srt', srtFileForVideo, 'file');
-            const translatedEntries = compactEntries(currentEntries);
-            const inputFingerprint = buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]);
-            const outputFingerprint = buildEntriesFingerprint(translatedEntries);
-            const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
-            let nextSession: CaptionSessionV1 = {
-              ...session,
-              data: {
-                ...session.data,
-                translatedEntries,
-                translatedSrtContent,
-              },
-              artifacts: {
-                ...session.artifacts,
-                translatedSrtPath: srtFileForVideo,
-              },
-              steps: {
-                ...session.steps,
-                [stepKey]: {
-                  ...makeStepSuccess(session.steps[stepKey], {
-                    totalLines: translateData.totalLines,
-                    translatedLines: translateData.translatedLines,
-                    failedLines: translateData.failedLines,
-                  }),
-                  inputFingerprint,
-                  outputFingerprint,
-                  dependsOn: [1],
-                },
-              },
-            };
-            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
-            if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
-              nextSession = markFollowingStepsStale(
-                nextSession,
-                step,
-                'STEP3_OUTPUT_CHANGED',
-                steps as CaptionStepNumber[]
-              );
-            }
-            return nextSession;
+          result = await window.electronAPI.caption.translate({
+            entries: currentEntries,
+            targetLanguage: 'Vietnamese',
+            model: cfg.geminiModel,
+            linesPerBatch,
+            translateMethod: cfg.translateMethod,
           });
-        } else {
-          throw new Error(`[${folderName}] Lỗi dịch: ${result.error}`);
+        } finally {
+          translateBatchProgressHandlerRef.current = null;
+        }
+
+        const translateData = result?.data;
+        if (!translateData) {
+          throw new Error(`[${folderName}] Lỗi dịch: ${result?.error || 'Không nhận được dữ liệu dịch'}`);
+        }
+
+        if (Array.isArray(translateData.entries) && translateData.entries.length === currentEntries.length) {
+          liveTranslatedEntries = normalizeEntriesForSession(compactEntries(translateData.entries));
+        }
+
+        const backendReports = Array.isArray(translateData.batchReports)
+          ? (translateData.batchReports as SharedTranslationBatchReport[])
+          : [];
+        for (const report of backendReports) {
+          batchReportsMap.set(report.batchIndex, report);
+        }
+        const finalBatchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
+        const generatedStep3BatchState = buildStep3BatchState(totalBatches, finalBatchReports);
+        const backendMissingBatchIndexes = Array.isArray(translateData.missingBatchIndexes)
+          ? (translateData.missingBatchIndexes as number[])
+          : [];
+        const backendMissingGlobalLineIndexes = Array.isArray(translateData.missingGlobalLineIndexes)
+          ? (translateData.missingGlobalLineIndexes as number[])
+          : [];
+        const missingBatchIndexes: number[] = generatedStep3BatchState.missingBatchIndexes.length > 0
+          ? generatedStep3BatchState.missingBatchIndexes
+          : Array.from(new Set(backendMissingBatchIndexes)).sort((a, b) => a - b);
+        const missingGlobalLineIndexes: number[] = generatedStep3BatchState.missingGlobalLineIndexes.length > 0
+          ? generatedStep3BatchState.missingGlobalLineIndexes
+          : Array.from(new Set(backendMissingGlobalLineIndexes)).sort((a, b) => a - b);
+        const finalStep3BatchState: Step3BatchState = {
+          ...generatedStep3BatchState,
+          failedBatches: Math.max(generatedStep3BatchState.failedBatches, missingBatchIndexes.length),
+          missingBatchIndexes,
+          missingGlobalLineIndexes,
+          updatedAt: nowIso(),
+        };
+        const failedLines = missingGlobalLineIndexes.length;
+        const translatedLines = finalBatchReports.length > 0
+          ? finalBatchReports.reduce((sum, report) => sum + report.translatedLines, 0)
+          : (typeof translateData.translatedLines === 'number' ? translateData.translatedLines : 0);
+
+        currentEntries = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
+        if (!isMulti) setEntries(currentEntries);
+        srtFileForVideo = `${processOutputDir}/srt/translated.srt`;
+        const translatedSrtContent = entriesToSrtText(currentEntries);
+        // @ts-ignore
+        await window.electronAPI.caption.exportSrt(currentEntries, srtFileForVideo);
+
+        const isStep3Complete = missingBatchIndexes.length === 0 && failedLines === 0;
+        setProgress({
+          current: translatedLines,
+          total: currentEntries.length,
+          message: isStep3Complete
+            ? msgCtx(`Bước 3: Đã dịch ${translatedLines} dòng`)
+            : msgCtx(`Bước 3: Thiếu ${failedLines} dòng (batch lỗi: ${missingBatchIndexes.map((v) => `#${v}`).join(', ')})`),
+        });
+
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
+          const stepArtifacts: CaptionArtifactFile[] = [];
+          pushArtifact(stepArtifacts, 'translated_srt', srtFileForVideo, 'file');
+          const translatedEntries = compactEntries(currentEntries);
+          const inputFingerprint = buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]);
+          const outputFingerprint = buildEntriesFingerprint(translatedEntries);
+          const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
+          const stepMetrics = {
+            totalLines: currentEntries.length,
+            translatedLines,
+            failedLines,
+            failedBatches: finalStep3BatchState.failedBatches,
+            missingBatchIndexes,
+            missingGlobalLineIndexes,
+          };
+          const nextStepState = isStep3Complete
+            ? {
+                ...makeStepSuccess(session.steps[stepKey], stepMetrics),
+                inputFingerprint,
+                outputFingerprint,
+                dependsOn: [1] as CaptionStepNumber[],
+              }
+            : {
+                ...makeStepError(
+                  session.steps[stepKey],
+                  `STEP3_MISSING_BATCHES: ${missingBatchIndexes.map((idx) => `#${idx}`).join(', ') || 'unknown'}`
+                ),
+                metrics: stepMetrics,
+                inputFingerprint,
+                outputFingerprint,
+                dependsOn: [1] as CaptionStepNumber[],
+              };
+
+          let nextSession: CaptionSessionV1 = {
+            ...session,
+            data: {
+              ...session.data,
+              translatedEntries,
+              translatedSrtContent,
+              step3BatchState: finalStep3BatchState,
+            },
+            artifacts: {
+              ...session.artifacts,
+              translatedSrtPath: srtFileForVideo,
+            },
+            runtime: {
+              ...session.runtime,
+              lastMessage: isStep3Complete
+                ? msgCtx('Bước 3: Hoàn tất.')
+                : msgCtx(`Bước 3: Thiếu batch ${missingBatchIndexes.map((idx) => `#${idx}`).join(', ')}`),
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: nextStepState,
+            },
+          };
+          nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
+          if (isStep3Complete && prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+            nextSession = markFollowingStepsStale(
+              nextSession,
+              step,
+              'STEP3_OUTPUT_CHANGED',
+              steps as CaptionStepNumber[]
+            );
+          }
+          return nextSession;
+        });
+
+        if (!isStep3Complete) {
+          const fallbackMissingDetails = missingBatchIndexes
+            .map((batchIndex) => `#${batchIndex}`)
+            .join(', ');
+          const missingMessage = finalBatchReports.length > 0
+            ? formatMissingBatchMessage(folderName, finalBatchReports)
+            : `[${folderName}] Step 3 thiếu batch: ${fallbackMissingDetails || 'không rõ'}`;
+          throw new Error(missingMessage);
         }
       }
 
@@ -1808,9 +2158,9 @@ export function useCaptionProcessing({
                 abortRef.current = true;
                 break;
               }
-              failedFolders.add(currentPath);
+              const errMessage = recordFolderFailure(currentPath, ctx.name, err);
               console.error(`[Step-first] Bước ${step} lỗi tại ${ctx.name}:`, err);
-              setProgress({ current: i + 1, total: totalFolders, message: `Bước ${step} [${i + 1}/${totalFolders}] ✗ ${ctx.name}: ${err}` });
+              setProgress({ current: i + 1, total: totalFolders, message: `Bước ${step} [${i + 1}/${totalFolders}] ✗ ${ctx.name}: ${errMessage}` });
             }
           }
         }
@@ -1865,6 +2215,7 @@ export function useCaptionProcessing({
           if (abortRef.current) break;
           const currentPath = inputPaths[i];
           const ctx = folderCtxMap.get(currentPath)!;
+          let folderFailed = false;
 
           setCurrentFolder({ index: i + 1, total: totalFolders, name: ctx.name, path: currentPath });
 
@@ -1881,15 +2232,35 @@ export function useCaptionProcessing({
                 abortRef.current = true;
                 break;
               }
-              throw err;
+              const errMessage = recordFolderFailure(currentPath, ctx.name, err);
+              console.error(`[Folder-first] Bước ${step} lỗi tại ${ctx.name}:`, err);
+              setProgress({
+                current: i + 1,
+                total: totalFolders,
+                message: `[${i + 1}/${totalFolders}] ✗ ${ctx.name}: ${errMessage}`,
+              });
+              folderFailed = true;
+              break;
             }
           }
 
           if (abortRef.current) break;
+          if (folderFailed) {
+            continue;
+          }
           if (isMulti) {
             setProgress({ current: i + 1, total: totalFolders, message: `[${i + 1}/${totalFolders}] ✓ Hoàn thành: ${ctx.name}` });
           }
         }
+
+        const successCount = totalFolders - failedFolders.size;
+        const warningDetails = failedFolderDetails
+          .slice(0, 5)
+          .map((detail) => `${detail.folderName}: ${detail.error}`)
+          .join(' | ');
+        const warningTail = failedFolderDetails.length > 5
+          ? ` | +${failedFolderDetails.length - 5} lỗi khác`
+          : '';
 
         if (abortRef.current) {
           const stoppedAt = nowIso();
@@ -1903,7 +2274,21 @@ export function useCaptionProcessing({
             reason: 'user_stop',
             resumable: true,
           });
-          await setRunStateForAllSessions('stopped', 'Đã dừng.', stopCheckpoint);
+          await setRunStateForAllSessions(
+            'stopped',
+            `Đã dừng. ${successCount}/${totalFolders} folder hoàn thành.`,
+            stopCheckpoint
+          );
+        } else if (failedFolders.size === totalFolders) {
+          await setRunStateForAllSessions(
+            'error',
+            `Tất cả folder đều lỗi.${warningDetails ? ` ${warningDetails}${warningTail}` : ''}`
+          );
+        } else if (failedFolders.size > 0) {
+          await setRunStateForAllSessions(
+            'completed',
+            `Hoàn thành ${successCount}/${totalFolders} folder, có cảnh báo.${warningDetails ? ` ${warningDetails}${warningTail}` : ''}`
+          );
         } else {
           await setRunStateForAllSessions(
             'completed',
@@ -1912,13 +2297,21 @@ export function useCaptionProcessing({
               : `Hoàn thành các bước: ${steps.join(', ')}`
           );
         }
-        setStatus(abortRef.current ? 'idle' : 'success');
+        setStatus(
+          abortRef.current
+            ? 'idle'
+            : (failedFolders.size === totalFolders ? 'error' : 'success')
+        );
         setStepDependencyIssues([]);
         setProgress({
-          current: totalFolders,
+          current: successCount,
           total: totalFolders,
           message: abortRef.current
-            ? `Đã dừng.`
+            ? `Đã dừng. ${successCount}/${totalFolders} folder hoàn thành.`
+            : failedFolders.size === totalFolders
+              ? `✗ Tất cả ${totalFolders} folder đều lỗi.${warningDetails ? ` ${warningDetails}${warningTail}` : ''}`
+              : failedFolders.size > 0
+                ? `✓ Hoàn thành ${successCount}/${totalFolders} folder (có cảnh báo).${warningDetails ? ` ${warningDetails}${warningTail}` : ''}`
             : isMulti
               ? `✓ Hoàn thành tất cả ${totalFolders} project! (Các bước: ${steps.join(', ')})`
               : `✓ Hoàn thành các bước: ${steps.join(', ')}`,
@@ -1948,6 +2341,7 @@ export function useCaptionProcessing({
       }
     }
 
+    translateBatchProgressHandlerRef.current = null;
     setCurrentStep(null);
     setCurrentFolder(null);
   }, [

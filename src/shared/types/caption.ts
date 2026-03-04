@@ -48,6 +48,19 @@ export interface TranslationOptions {
   translateMethod?: 'api' | 'impit'; // Phương thức dịch (default: 'api')
 }
 
+export interface TranslationBatchReport {
+  batchIndex: number; // 1-based
+  startIndex: number; // 0-based
+  endIndex: number; // 0-based
+  expectedLines: number;
+  translatedLines: number;
+  missingLinesInBatch: number[]; // 1-based in batch
+  missingGlobalLineIndexes: number[]; // 1-based global
+  attempts: number;
+  status: 'success' | 'failed';
+  error?: string;
+}
+
 /**
  * Kết quả dịch
  */
@@ -58,6 +71,9 @@ export interface TranslationResult {
   translatedLines: number;
   failedLines: number;
   errors?: string[];
+  batchReports?: TranslationBatchReport[];
+  missingBatchIndexes?: number[];
+  missingGlobalLineIndexes?: number[];
 }
 
 /**
@@ -70,6 +86,13 @@ export interface TranslationProgress {
   totalBatches: number;
   status: 'translating' | 'completed' | 'error';
   message: string;
+  eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
+  batchReport?: TranslationBatchReport;
+  translatedChunk?: {
+    startIndex: number;
+    texts: string[];
+  };
+  folderHint?: string;
 }
 
 // ============================================
@@ -468,6 +491,22 @@ export interface CaptionSessionData {
   extractedEntries?: SubtitleEntry[];
   translatedEntries?: SubtitleEntry[];
   translatedSrtContent?: string;
+  step2BatchPlan?: Array<{
+    batchIndex: number;
+    startIndex: number;
+    endIndex: number;
+    lineCount: number;
+    partPath?: string;
+  }>;
+  step3BatchState?: {
+    totalBatches: number;
+    completedBatches: number;
+    failedBatches: number;
+    missingBatchIndexes: number[];
+    missingGlobalLineIndexes: number[];
+    batches: TranslationBatchReport[];
+    updatedAt: string;
+  };
   ttsAudioFiles?: AudioFile[];
   trimResults?: Record<string, unknown>;
   mergeResult?: Record<string, unknown>;

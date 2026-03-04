@@ -118,6 +118,22 @@ interface TranslationResult {
   translatedLines: number;
   failedLines: number;
   errors?: string[];
+  batchReports?: TranslationBatchReport[];
+  missingBatchIndexes?: number[];
+  missingGlobalLineIndexes?: number[];
+}
+
+interface TranslationBatchReport {
+  batchIndex: number;
+  startIndex: number;
+  endIndex: number;
+  expectedLines: number;
+  translatedLines: number;
+  missingLinesInBatch: number[];
+  missingGlobalLineIndexes: number[];
+  attempts: number;
+  status: 'success' | 'failed';
+  error?: string;
 }
 
 interface TranslationProgress {
@@ -127,6 +143,13 @@ interface TranslationProgress {
   totalBatches: number;
   status: 'translating' | 'completed' | 'error';
   message: string;
+  eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
+  batchReport?: TranslationBatchReport;
+  translatedChunk?: {
+    startIndex: number;
+    texts: string[];
+  };
+  folderHint?: string;
 }
 
 interface SplitOptions {

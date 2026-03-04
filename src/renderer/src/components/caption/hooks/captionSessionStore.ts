@@ -436,6 +436,14 @@ export function validateStepOutputForSkip(
     const translated = Array.isArray(data.translatedEntries) ? data.translatedEntries : [];
     if (translated.length === 0) return { ok: false, reason: 'missing_translated_entries' };
     if (!hasNonEmptyString(data.translatedSrtContent)) return { ok: false, reason: 'missing_translated_srt_content' };
+    const metrics = toRecord(stepState?.metrics);
+    if (typeof metrics.failedLines === 'number' && metrics.failedLines > 0) {
+      return { ok: false, reason: 'step3_has_failed_lines' };
+    }
+    const step3BatchState = toRecord(data.step3BatchState);
+    if (typeof step3BatchState.failedBatches === 'number' && step3BatchState.failedBatches > 0) {
+      return { ok: false, reason: 'step3_has_failed_batches' };
+    }
     return { ok: true };
   }
 

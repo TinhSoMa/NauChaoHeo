@@ -106,6 +106,7 @@ export function createCaptionAPI(): CaptionAPI {
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE, options),
 
     onTranslateProgress: (callback: (progress: TranslationProgress) => void) => {
+      ipcRenderer.removeAllListeners(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS);
       ipcRenderer.on(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS, (_event, progress) => {
         callback(progress);
       });
