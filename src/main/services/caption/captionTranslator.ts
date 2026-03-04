@@ -55,6 +55,29 @@ function formatIndexRanges(indexes: number[]): string {
   return ranges.join(',');
 }
 
+function collectMissingIndexes(batch: TextBatch, translatedTexts: string[] = []): {
+  missingLinesInBatch: number[];
+  missingGlobalLineIndexes: number[];
+} {
+  const missingLinesInBatch: number[] = [];
+  const missingGlobalLineIndexes: number[] = [];
+  const expected = batch.texts.length;
+
+  for (let i = 0; i < expected; i++) {
+    const text = translatedTexts[i] ?? '';
+    if (typeof text === 'string' && text.trim().length > 0) {
+      continue;
+    }
+    missingLinesInBatch.push(i + 1);
+    missingGlobalLineIndexes.push(batch.startIndex + i + 1);
+  }
+
+  return {
+    missingLinesInBatch,
+    missingGlobalLineIndexes,
+  };
+}
+
 /**
  * Dịch một batch text
  */
@@ -247,7 +270,10 @@ export async function translateAll(
 
     while (!batchResult.success && attemptCount < maxAttempts) {
       attemptCount++;
-      const missingCount = batch.texts.length - (batchResult.translatedTexts?.filter(t => t.trim()).length ?? 0);
+      const missingInfo = collectMissingIndexes(batch, batchResult.translatedTexts || []);
+      const missingCount = missingInfo.missingGlobalLineIndexes.length;
+      const missingBatchRanges = formatIndexRanges(missingInfo.missingLinesInBatch);
+      const missingGlobalRanges = formatIndexRanges(missingInfo.missingGlobalLineIndexes);
       console.log(`[CaptionTranslator] Retry ${attemptCount - 1}/${maxAttempts - 1} cho batch ${i + 1} (thiếu ${missingCount} dòng)`);
       progressTokenLabel = useImpit ? 'impit_cookie' : 'rotation';
       if (progressCallback) {
@@ -257,7 +283,7 @@ export async function translateAll(
           batchIndex: i,
           totalBatches: batches.length,
           status: 'translating',
-          message: `Batch ${i + 1}: Thiếu ${missingCount} dòng — đang thử lại lần ${attemptCount - 1}/${maxAttempts - 1} [${methodLabel}] [token:${progressTokenLabel}]...`,
+          message: `Batch ${i + 1}: Thiếu ${missingCount} dòng (batch: ${missingBatchRanges}; global: ${missingGlobalRanges}) — đang thử lại lần ${attemptCount - 1}/${maxAttempts - 1} [${methodLabel}] [token:${progressTokenLabel}]...`,
           eventType: 'batch_retry',
         });
       }
@@ -298,13 +324,17 @@ export async function translateAll(
     completedBatches++;
     processedLines += batch.texts.length;
     if (progressCallback) {
+      const reportMissingGlobalRanges = formatIndexRanges(report.missingGlobalLineIndexes);
+      const completionMessage = report.status === 'success'
+        ? `Batch #${report.batchIndex} hoàn tất ${report.translatedLines}/${report.expectedLines} dòng, đã lưu partial. (${completedBatches}/${batches.length}) [${methodLabel}] [token:${progressTokenLabel}]`
+        : `Batch #${report.batchIndex} còn thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng (global: ${reportMissingGlobalRanges}), đã lưu partial. (${completedBatches}/${batches.length}) [${methodLabel}] [token:${progressTokenLabel}]`;
       progressCallback({
         current: Math.min(processedLines, entries.length),
         total: entries.length,
         batchIndex: completedBatches,
         totalBatches: batches.length,
         status: report.status === 'success' ? 'translating' : 'error',
-        message: `Hoàn thành ${completedBatches}/${batches.length} batch [${methodLabel}] [token:${progressTokenLabel}]...`,
+        message: completionMessage,
         eventType: report.status === 'success' ? 'batch_completed' : 'batch_failed',
         batchReport: report,
         translatedChunk: {

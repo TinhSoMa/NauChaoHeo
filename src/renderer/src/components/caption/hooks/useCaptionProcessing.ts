@@ -1503,6 +1503,7 @@ export function useCaptionProcessing({
         const totalBatches = Math.max(1, Math.ceil(currentEntries.length / linesPerBatch));
         let liveTranslatedEntries = normalizeEntriesForSession(compactEntries(currentEntries));
         const batchReportsMap = new Map<number, SharedTranslationBatchReport>();
+        let step3PersistQueue: Promise<void> = Promise.resolve();
 
         setProgress({ current: 0, total: currentEntries.length, message: msgCtx('Bước 3: Đang dịch...') });
         await updateSessionForStep(currentPath, step, folderIdx, (session) => {
@@ -1530,32 +1531,37 @@ export function useCaptionProcessing({
           if (progressEvent.eventType !== 'batch_completed' && progressEvent.eventType !== 'batch_failed') {
             return;
           }
-          if (progressEvent.translatedChunk) {
-            liveTranslatedEntries = mergeTranslatedChunkIntoEntries(liveTranslatedEntries, progressEvent.translatedChunk);
-          }
-          const incomingBatchReport = progressEvent.batchReport
-            ? ({ ...progressEvent.batchReport } as SharedTranslationBatchReport)
-            : deriveBatchReportFromProgress(progressEvent);
-          if (incomingBatchReport) {
-            batchReportsMap.set(incomingBatchReport.batchIndex, incomingBatchReport);
-          }
-          const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
-          const step3BatchState = buildStep3BatchState(totalBatches, batchReports);
-          const translatedSnapshot = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
-          const translatedSrtContent = entriesToSrtText(translatedSnapshot);
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-            ...session,
-            data: {
-              ...session.data,
-              translatedEntries: translatedSnapshot,
-              translatedSrtContent,
-              step3BatchState,
-            },
-            runtime: {
-              ...session.runtime,
-              lastMessage: msgCtx(progressEvent.message || `Bước 3: Cập nhật batch #${incomingBatchReport?.batchIndex || '?'}`),
-            },
-          }));
+          step3PersistQueue = step3PersistQueue
+            .catch(() => undefined)
+            .then(async () => {
+              if (progressEvent.translatedChunk) {
+                liveTranslatedEntries = mergeTranslatedChunkIntoEntries(liveTranslatedEntries, progressEvent.translatedChunk);
+              }
+              const incomingBatchReport = progressEvent.batchReport
+                ? ({ ...progressEvent.batchReport } as SharedTranslationBatchReport)
+                : deriveBatchReportFromProgress(progressEvent);
+              if (incomingBatchReport) {
+                batchReportsMap.set(incomingBatchReport.batchIndex, incomingBatchReport);
+              }
+              const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
+              const step3BatchState = buildStep3BatchState(totalBatches, batchReports);
+              const translatedSnapshot = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
+              const translatedSrtContent = entriesToSrtText(translatedSnapshot);
+              await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+                ...session,
+                data: {
+                  ...session.data,
+                  translatedEntries: translatedSnapshot,
+                  translatedSrtContent,
+                  step3BatchState,
+                },
+                runtime: {
+                  ...session.runtime,
+                  lastMessage: msgCtx(progressEvent.message || `Bước 3: Cập nhật batch #${incomingBatchReport?.batchIndex || '?'}`),
+                },
+              }));
+            });
+          await step3PersistQueue;
         };
 
         let result: any;
@@ -1571,6 +1577,7 @@ export function useCaptionProcessing({
         } finally {
           translateBatchProgressHandlerRef.current = null;
         }
+        await step3PersistQueue;
 
         const translateData = result?.data;
         if (!translateData) {

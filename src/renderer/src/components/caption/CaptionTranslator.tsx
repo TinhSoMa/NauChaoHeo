@@ -88,6 +88,137 @@ type Step3RuntimeTimer = {
   tokenEndedAtMs: number | null;
 };
 
+type StepInspectionViewMode = 'summary' | 'json';
+type StepInspectionTone = 'default' | 'warning' | 'error' | 'muted';
+
+type StepInspectionSummaryItem = {
+  label: string;
+  value: string;
+  tone?: StepInspectionTone;
+  mono?: boolean;
+};
+
+type StepInspectionViewModel = {
+  step: Step;
+  stepKey: `step${Step}`;
+  summaryItems: StepInspectionSummaryItem[];
+  stepItems: StepInspectionSummaryItem[];
+  artifacts: Array<{
+    role: string;
+    path: string;
+    kind: string;
+    note?: string;
+  }>;
+  maskedJsonPayload: Record<string, unknown>;
+};
+
+type StepInspectionCache = {
+  sessionPath: string;
+  updatedAt: string;
+  session: CaptionSessionV1;
+};
+
+const SENSITIVE_KEY_PATTERN = /(token|api[_-]?key|secret|password|authorization|cookie)/i;
+
+function getPathBaseName(pathValue: string): string {
+  const clean = (pathValue || '').trim();
+  if (!clean) {
+    return '';
+  }
+  const parts = clean.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || clean;
+}
+
+function shortenMiddle(value: string, maxLength = 56): string {
+  const text = (value || '').trim();
+  if (!text || text.length <= maxLength) {
+    return text || '--';
+  }
+  const keep = Math.max(8, Math.floor((maxLength - 3) / 2));
+  return `${text.slice(0, keep)}...${text.slice(text.length - keep)}`;
+}
+
+function formatIsoDisplay(value: string | undefined): string {
+  if (!value) {
+    return '--';
+  }
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) {
+    return value;
+  }
+  try {
+    return new Date(ms).toLocaleString('vi-VN', { hour12: false });
+  } catch {
+    return value;
+  }
+}
+
+function formatStepDuration(startedAt: string | undefined, endedAt: string | undefined, status: string | undefined, nowMs: number): string {
+  const startMs = parseIsoToMs(startedAt);
+  if (startMs === null) {
+    return '--';
+  }
+  const endMs = parseIsoToMs(endedAt);
+  if (endMs !== null && endMs >= startMs) {
+    return formatElapsedMs(endMs - startMs);
+  }
+  if (status === 'running') {
+    return formatElapsedMs(Math.max(0, nowMs - startMs));
+  }
+  return '--';
+}
+
+function formatNumberList(values: number[], limit = 40): string {
+  if (!Array.isArray(values) || values.length === 0) {
+    return '--';
+  }
+  const normalized = values
+    .filter((item): item is number => Number.isFinite(item))
+    .map((item) => Math.trunc(item));
+  if (normalized.length === 0) {
+    return '--';
+  }
+  if (normalized.length <= limit) {
+    return normalized.join(', ');
+  }
+  const head = normalized.slice(0, limit).join(', ');
+  return `${head} ... (+${normalized.length - limit})`;
+}
+
+function maskSensitiveString(value: string): string {
+  const text = (value || '').trim();
+  if (!text) {
+    return text;
+  }
+  if (text.length <= 8) {
+    return '***';
+  }
+  return `${text.slice(0, 4)}***${text.slice(-4)}`;
+}
+
+function maskSensitive(value: unknown, keyHint = ''): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return SENSITIVE_KEY_PATTERN.test(keyHint) ? maskSensitiveString(value) : value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return SENSITIVE_KEY_PATTERN.test(keyHint) ? '***' : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => maskSensitive(item, keyHint));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+      out[key] = maskSensitive(item, key);
+    });
+    return out;
+  }
+  return value;
+}
+
 function toFiniteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
@@ -1799,6 +1930,7 @@ export function CaptionTranslator() {
     6: 'Ghép',
     7: 'Render',
   };
+  const STEP_INSPECTOR_LIST: Step[] = [1, 2, 3, 4, 5, 6, 7];
 
   const configSummaryRows = useMemo(() => {
     const subtitlePos = settings.subtitlePosition
@@ -1893,6 +2025,16 @@ export function CaptionTranslator() {
   const [activePreviewTab, setActivePreviewTab] = useState<'subtitle' | 'thumbnail'>('subtitle');
   const [commonConfigTab, setCommonConfigTab] = useState<CommonConfigTab>('render');
   const [inspectorPane, setInspectorPane] = useState<InspectorPane>('step');
+  const [isStepInspectorOpen, setIsStepInspectorOpen] = useState(false);
+  const [inspectorSelectedStep, setInspectorSelectedStep] = useState<Step>(1);
+  const [inspectorViewMode, setInspectorViewMode] = useState<StepInspectionViewMode>('summary');
+  const [inspectorSessionData, setInspectorSessionData] = useState<CaptionSessionV1 | null>(null);
+  const [inspectorSessionPath, setInspectorSessionPath] = useState('');
+  const [inspectorLoading, setInspectorLoading] = useState(false);
+  const [inspectorError, setInspectorError] = useState('');
+  const [inspectorCopyNotice, setInspectorCopyNotice] = useState('');
+  const inspectorCacheRef = useRef<StepInspectionCache | null>(null);
+  const inspectorRequestSeqRef = useRef(0);
   const [preferredLandscapeRenderMode, setPreferredLandscapeRenderMode] = useState<'hardsub' | 'black_bg'>(
     settings.renderMode === 'black_bg' ? 'black_bg' : 'hardsub'
   );
@@ -1944,6 +2086,403 @@ export function CaptionTranslator() {
     () => getInputPaths('draft', fileManager.filePath),
     [fileManager.filePath]
   );
+
+  const stepInspectorInputPaths = useMemo(
+    () => getInputPaths(settings.inputType, fileManager.filePath),
+    [settings.inputType, fileManager.filePath]
+  );
+  const stepInspectorActiveInputPath = processing.currentFolder?.path ?? stepInspectorInputPaths[0] ?? '';
+  const stepInspectorFolderLabel = useMemo(() => {
+    const currentFolderName = (processing.currentFolder?.name || '').trim();
+    if (currentFolderName) {
+      return currentFolderName;
+    }
+    if (!stepInspectorActiveInputPath) {
+      return '--';
+    }
+    return getPathBaseName(stepInspectorActiveInputPath);
+  }, [processing.currentFolder?.name, stepInspectorActiveInputPath]);
+
+  const stepInspectorSessionResolvedPath = useMemo(() => {
+    if (!stepInspectorActiveInputPath) {
+      return '';
+    }
+    return getSessionPathForInputPath(settings.inputType, stepInspectorActiveInputPath);
+  }, [settings.inputType, stepInspectorActiveInputPath]);
+
+  const readStepInspectorSession = useCallback(async (force = false) => {
+    if (!stepInspectorActiveInputPath || !stepInspectorSessionResolvedPath) {
+      setInspectorSessionData(null);
+      setInspectorSessionPath('');
+      setInspectorError('Chưa có nguồn input để đọc caption_session.json.');
+      setInspectorLoading(false);
+      return;
+    }
+
+    const requestId = inspectorRequestSeqRef.current + 1;
+    inspectorRequestSeqRef.current = requestId;
+    setInspectorLoading(true);
+    setInspectorError('');
+    setInspectorSessionPath(stepInspectorSessionResolvedPath);
+
+    try {
+      const session = await readCaptionSession(stepInspectorSessionResolvedPath, {
+        projectId,
+        inputType: settings.inputType,
+        sourcePath: stepInspectorActiveInputPath,
+        folderPath: settings.inputType === 'draft'
+          ? stepInspectorActiveInputPath
+          : stepInspectorActiveInputPath.replace(/[^/\\]+$/, ''),
+      });
+      if (requestId !== inspectorRequestSeqRef.current) {
+        return;
+      }
+
+      const updatedAt = typeof session.updatedAt === 'string' ? session.updatedAt : '';
+      const cached = inspectorCacheRef.current;
+      const canReuseCached = !force
+        && !!cached
+        && cached.sessionPath === stepInspectorSessionResolvedPath
+        && cached.updatedAt === updatedAt;
+      if (canReuseCached && cached) {
+        setInspectorSessionData(cached.session);
+      } else {
+        inspectorCacheRef.current = {
+          sessionPath: stepInspectorSessionResolvedPath,
+          updatedAt,
+          session,
+        };
+        setInspectorSessionData(session);
+      }
+    } catch (error) {
+      if (requestId !== inspectorRequestSeqRef.current) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+      setInspectorSessionData(null);
+      setInspectorError(`Không đọc được session: ${message}`);
+    } finally {
+      if (requestId === inspectorRequestSeqRef.current) {
+        setInspectorLoading(false);
+      }
+    }
+  }, [
+    projectId,
+    settings.inputType,
+    stepInspectorActiveInputPath,
+    stepInspectorSessionResolvedPath,
+  ]);
+
+  useEffect(() => {
+    if (!isStepInspectorOpen) {
+      return;
+    }
+    void readStepInspectorSession(false);
+  }, [
+    isStepInspectorOpen,
+    readStepInspectorSession,
+    processing.currentFolder?.path,
+    processing.currentStep,
+    processing.status,
+  ]);
+
+  useEffect(() => {
+    if (!isStepInspectorOpen) {
+      return;
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsStepInspectorOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isStepInspectorOpen]);
+
+  useEffect(() => {
+    if (!inspectorCopyNotice) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setInspectorCopyNotice('');
+    }, 1800);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [inspectorCopyNotice]);
+
+  const copyToClipboard = useCallback(async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fallthrough
+    }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return copied;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const stepInspectionViewModel = useMemo<StepInspectionViewModel | null>(() => {
+    if (!inspectorSessionData) {
+      return null;
+    }
+    const step = inspectorSelectedStep;
+    const stepKey = `step${step}` as `step${Step}`;
+    const stepState = inspectorSessionData.steps[stepKey];
+    const stepData = inspectorSessionData.data || {};
+    const runtime = inspectorSessionData.runtime || {};
+    const status = typeof stepState?.status === 'string' ? stepState.status : 'idle';
+    const dependsOn = Array.isArray(stepState?.dependsOn) ? (stepState.dependsOn as number[]) : [];
+    const metrics = (stepState?.metrics && typeof stepState.metrics === 'object')
+      ? stepState.metrics as Record<string, unknown>
+      : {};
+    const artifactsRaw = (stepData.stepArtifacts && typeof stepData.stepArtifacts === 'object')
+      ? (stepData.stepArtifacts as Record<string, unknown>)[stepKey]
+      : undefined;
+    const stepArtifacts = Array.isArray(artifactsRaw)
+      ? (artifactsRaw as Array<Record<string, unknown>>).map((item) => ({
+          role: typeof item.role === 'string' ? item.role : 'unknown',
+          path: typeof item.path === 'string' ? item.path : '',
+          kind: typeof item.kind === 'string' ? item.kind : 'file',
+          note: typeof item.note === 'string' ? item.note : undefined,
+        }))
+      : [];
+
+    const summaryItems: StepInspectionSummaryItem[] = [
+      { label: 'Status', value: status, tone: status === 'error' ? 'error' : status === 'stopped' ? 'warning' : 'default' },
+      { label: 'Started At', value: formatIsoDisplay(stepState?.startedAt), mono: true },
+      { label: 'Ended At', value: formatIsoDisplay(stepState?.endedAt), mono: true },
+      { label: 'Duration', value: formatStepDuration(stepState?.startedAt, stepState?.endedAt, stepState?.status, uiNowMs), mono: true },
+      { label: 'Error', value: stepState?.error || '--', tone: stepState?.error ? 'error' : 'muted' },
+      { label: 'Blocked Reason', value: stepState?.blockedReason || '--', tone: stepState?.blockedReason ? 'warning' : 'muted' },
+      { label: 'Depends On', value: dependsOn.length > 0 ? dependsOn.map((item) => `B${item}`).join(', ') : '--' },
+      { label: 'Input FP', value: shortenMiddle(stepState?.inputFingerprint || '--'), mono: true },
+      { label: 'Output FP', value: shortenMiddle(stepState?.outputFingerprint || '--'), mono: true },
+    ];
+
+    const stepItems: StepInspectionSummaryItem[] = [];
+    switch (step) {
+      case 1: {
+        const extracted = Array.isArray(stepData.extractedEntries) ? stepData.extractedEntries : [];
+        stepItems.push({ label: 'Extracted Entries', value: `${extracted.length}` });
+        break;
+      }
+      case 2: {
+        const plan = Array.isArray(stepData.step2BatchPlan) ? stepData.step2BatchPlan as Array<Record<string, unknown>> : [];
+        const first = plan[0];
+        const last = plan[plan.length - 1];
+        const startIndex = typeof first?.startIndex === 'number' ? first.startIndex : null;
+        const endIndex = typeof last?.endIndex === 'number' ? last.endIndex : null;
+        stepItems.push({ label: 'Total Batches', value: `${plan.length}` });
+        stepItems.push({
+          label: 'Range',
+          value: startIndex !== null && endIndex !== null ? `${startIndex}-${endIndex}` : '--',
+          mono: true,
+        });
+        break;
+      }
+      case 3: {
+        const batchState = (stepData.step3BatchState && typeof stepData.step3BatchState === 'object')
+          ? stepData.step3BatchState as Record<string, unknown>
+          : {};
+        const missingBatches = Array.isArray(batchState.missingBatchIndexes)
+          ? batchState.missingBatchIndexes as number[]
+          : [];
+        const missingLines = Array.isArray(batchState.missingGlobalLineIndexes)
+          ? batchState.missingGlobalLineIndexes as number[]
+          : [];
+        const failedBatches = typeof batchState.failedBatches === 'number' ? batchState.failedBatches : 0;
+        stepItems.push({ label: 'Failed Batches', value: `${failedBatches}`, tone: failedBatches > 0 ? 'error' : 'default' });
+        stepItems.push({ label: 'Missing Batches', value: formatNumberList(missingBatches), tone: missingBatches.length > 0 ? 'warning' : 'muted', mono: true });
+        stepItems.push({ label: 'Missing Global Lines', value: formatNumberList(missingLines), tone: missingLines.length > 0 ? 'warning' : 'muted', mono: true });
+        break;
+      }
+      case 4: {
+        const audioFiles = Array.isArray(stepData.ttsAudioFiles) ? stepData.ttsAudioFiles as Array<Record<string, unknown>> : [];
+        const failedCount = audioFiles.filter((item) => item?.success === false).length;
+        stepItems.push({ label: 'Audio Files', value: `${audioFiles.length}` });
+        stepItems.push({ label: 'Failed Files', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
+        break;
+      }
+      case 5: {
+        const trimResults = (stepData.trimResults && typeof stepData.trimResults === 'object')
+          ? stepData.trimResults as Record<string, unknown>
+          : null;
+        const trimKeys = trimResults ? Object.keys(trimResults) : [];
+        stepItems.push({ label: 'Trim Result Keys', value: trimKeys.length > 0 ? trimKeys.join(', ') : '--' });
+        const failedCount = typeof trimResults?.failedCount === 'number'
+          ? trimResults.failedCount
+          : (Array.isArray(trimResults?.errors) ? trimResults.errors.length : 0);
+        stepItems.push({ label: 'Failed Count', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
+        break;
+      }
+      case 6: {
+        const mergeResult = (stepData.mergeResult && typeof stepData.mergeResult === 'object')
+          ? stepData.mergeResult as Record<string, unknown>
+          : {};
+        const mergedAudioPath = typeof inspectorSessionData.artifacts.mergedAudioPath === 'string'
+          ? inspectorSessionData.artifacts.mergedAudioPath
+          : '';
+        const mergeOutputPath = typeof mergeResult.outputPath === 'string' ? mergeResult.outputPath : '';
+        stepItems.push({ label: 'Merge Success', value: mergeResult.success === true ? 'true' : mergeResult.success === false ? 'false' : '--' });
+        stepItems.push({ label: 'Merged Audio Path', value: mergedAudioPath || mergeOutputPath || '--', mono: true });
+        break;
+      }
+      case 7: {
+        const renderResult = (stepData.renderResult && typeof stepData.renderResult === 'object')
+          ? stepData.renderResult as Record<string, unknown>
+          : {};
+        const timingPayload = (stepData.renderTimingPayload && typeof stepData.renderTimingPayload === 'object')
+          ? stepData.renderTimingPayload as Record<string, unknown>
+          : {};
+        const finalVideoPath = typeof inspectorSessionData.artifacts.finalVideoPath === 'string'
+          ? inspectorSessionData.artifacts.finalVideoPath
+          : '';
+        const markerSec = typeof timingPayload.videoMarkerSec === 'number'
+          ? timingPayload.videoMarkerSec
+          : undefined;
+        stepItems.push({ label: 'Render Success', value: renderResult.success === true ? 'true' : renderResult.success === false ? 'false' : '--' });
+        stepItems.push({ label: 'Final Video Path', value: finalVideoPath || (typeof renderResult.outputPath === 'string' ? renderResult.outputPath : '--'), mono: true });
+        stepItems.push({ label: 'Marker Sec', value: typeof markerSec === 'number' ? markerSec.toFixed(3) : '--', mono: true });
+        break;
+      }
+      default:
+        break;
+    }
+
+    const stepRelatedData = (() => {
+      switch (step) {
+        case 1:
+          return {
+            extractedEntries: stepData.extractedEntries || [],
+          };
+        case 2:
+          return {
+            step2BatchPlan: stepData.step2BatchPlan || [],
+          };
+        case 3:
+          return {
+            step3BatchState: stepData.step3BatchState || null,
+            translatedEntries: stepData.translatedEntries || [],
+            translatedSrtContent: stepData.translatedSrtContent || '',
+          };
+        case 4:
+          return {
+            ttsAudioFiles: stepData.ttsAudioFiles || [],
+          };
+        case 5:
+          return {
+            trimResults: stepData.trimResults || null,
+          };
+        case 6:
+          return {
+            mergeResult: stepData.mergeResult || null,
+            mergedAudioPath: inspectorSessionData.artifacts.mergedAudioPath || null,
+          };
+        case 7:
+          return {
+            renderResult: stepData.renderResult || null,
+            renderTimingPayload: stepData.renderTimingPayload || null,
+            finalVideoPath: inspectorSessionData.artifacts.finalVideoPath || null,
+            step7SubtitleSource: stepData.step7SubtitleSource || null,
+            step7AudioSource: stepData.step7AudioSource || null,
+          };
+        default:
+          return {};
+      }
+    })();
+
+    const runtimeReduced = {
+      runState: runtime.runState,
+      currentStep: runtime.currentStep,
+      lastMessage: runtime.lastMessage,
+      progress: runtime.progress,
+      lastGuardError: runtime.lastGuardError,
+      stopRequestAt: runtime.stopRequestAt,
+      lastStopCheckpoint: runtime.lastStopCheckpoint,
+    };
+
+    const payload = {
+      step,
+      stepKey,
+      folderPath: inspectorSessionData.projectContext?.folderPath || stepInspectorActiveInputPath || '',
+      stepState,
+      stepData: stepRelatedData,
+      stepArtifacts,
+      sessionArtifacts: inspectorSessionData.artifacts || {},
+      runtime: runtimeReduced,
+      updatedAt: inspectorSessionData.updatedAt,
+      metrics,
+    };
+
+    return {
+      step,
+      stepKey,
+      summaryItems,
+      stepItems,
+      artifacts: stepArtifacts,
+      maskedJsonPayload: maskSensitive(payload) as Record<string, unknown>,
+    };
+  }, [inspectorSessionData, inspectorSelectedStep, stepInspectorActiveInputPath, uiNowMs]);
+
+  const stepInspectorJsonText = useMemo(() => {
+    if (!stepInspectionViewModel) {
+      return '';
+    }
+    return JSON.stringify(stepInspectionViewModel.maskedJsonPayload, null, 2);
+  }, [stepInspectionViewModel]);
+
+  const handleCopyStepInspectorJson = useCallback(async () => {
+    if (!stepInspectorJsonText) {
+      return;
+    }
+    const copied = await copyToClipboard(stepInspectorJsonText);
+    setInspectorCopyNotice(copied ? 'Đã copy JSON step.' : 'Không thể copy JSON step.');
+  }, [copyToClipboard, stepInspectorJsonText]);
+
+  const handleCopyStepInspectorPath = useCallback(async () => {
+    if (!inspectorSessionPath) {
+      return;
+    }
+    const copied = await copyToClipboard(inspectorSessionPath);
+    setInspectorCopyNotice(copied ? 'Đã copy session path.' : 'Không thể copy session path.');
+  }, [copyToClipboard, inspectorSessionPath]);
+
+  const openStepInspector = useCallback(() => {
+    setInspectorSelectedStep(activeStep);
+    setInspectorViewMode('summary');
+    setInspectorCopyNotice('');
+    setIsStepInspectorOpen(true);
+  }, [activeStep]);
+
+  const getStepInspectorToneClass = useCallback((tone?: StepInspectionTone): string => {
+    if (tone === 'error') {
+      return styles.stepDataValueError;
+    }
+    if (tone === 'warning') {
+      return styles.stepDataValueWarning;
+    }
+    if (tone === 'muted') {
+      return styles.stepDataValueMuted;
+    }
+    return '';
+  }, []);
 
   const commonConfigBar = (
     <div className={styles.commonConfigBar}>
@@ -2971,8 +3510,21 @@ export function CaptionTranslator() {
         </section>
         <aside className={styles.inspector}>
           <div className={styles.inspectorHeader}>
-            <div className={styles.inspectorTitle}>B{activeStep} {STEP_SHORT_LABELS[activeStep]}</div>
-            <div className={styles.inspectorHint}>{STEP_DESCRIPTION[activeStep]}</div>
+            <div className={styles.inspectorHeaderTop}>
+              <div>
+                <div className={styles.inspectorTitle}>B{activeStep} {STEP_SHORT_LABELS[activeStep]}</div>
+                <div className={styles.inspectorHint}>{STEP_DESCRIPTION[activeStep]}</div>
+              </div>
+              <button
+                type="button"
+                className={`${styles.resetBtnLike} ${styles.inspectorStepDataBtn}`}
+                onClick={openStepInspector}
+                disabled={!fileManager.filePath}
+                title="Mở drawer kiểm tra dữ liệu step từ caption_session.json"
+              >
+                Kiểm tra Step Data
+              </button>
+            </div>
           </div>
           <div className={styles.inspectorTabs}>
             <button
@@ -3025,6 +3577,191 @@ export function CaptionTranslator() {
           </div>
         </aside>
       </div>
+
+      {isStepInspectorOpen && (
+        <>
+          <button
+            type="button"
+            className={styles.stepDataDrawerBackdrop}
+            onClick={() => setIsStepInspectorOpen(false)}
+            aria-label="Đóng Step Data Inspector"
+          />
+          <aside className={styles.stepDataDrawer}>
+            <div className={styles.stepDataDrawerHeader}>
+              <div className={styles.stepDataDrawerTitle}>Step Data Inspector</div>
+              <div className={styles.stepDataDrawerHint} title={stepInspectorActiveInputPath || undefined}>
+                Folder hiện tại: <span className={styles.stepDataMono}>{stepInspectorFolderLabel}</span>
+              </div>
+              <div className={styles.stepDataDrawerHint} title={inspectorSessionPath || undefined}>
+                Session: <span className={styles.stepDataMono}>{shortenMiddle(inspectorSessionPath || '--', 96)}</span>
+              </div>
+            </div>
+
+            <div className={styles.stepDataDrawerActions}>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => {
+                  void readStepInspectorSession(true);
+                }}
+              >
+                Làm mới
+              </button>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => setIsStepInspectorOpen(false)}
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className={styles.stepDataStepSwitcher}>
+              {STEP_INSPECTOR_LIST.map((step) => (
+                <button
+                  key={`inspect-step-${step}`}
+                  type="button"
+                  className={`${styles.stepDataStepChip} ${inspectorSelectedStep === step ? styles.stepDataStepChipActive : ''}`}
+                  onClick={() => setInspectorSelectedStep(step)}
+                >
+                  B{step}
+                </button>
+              ))}
+            </div>
+
+            <div className={styles.stepDataModeSwitch}>
+              <button
+                type="button"
+                className={`${styles.stepDataModeBtn} ${inspectorViewMode === 'summary' ? styles.stepDataModeBtnActive : ''}`}
+                onClick={() => setInspectorViewMode('summary')}
+              >
+                Summary
+              </button>
+              <button
+                type="button"
+                className={`${styles.stepDataModeBtn} ${inspectorViewMode === 'json' ? styles.stepDataModeBtnActive : ''}`}
+                onClick={() => setInspectorViewMode('json')}
+              >
+                Xem JSON
+              </button>
+            </div>
+
+            <div className={styles.stepDataDrawerBody}>
+              {inspectorLoading && !stepInspectionViewModel && (
+                <div className={styles.stepDataState}>Đang đọc caption_session.json...</div>
+              )}
+              {!inspectorLoading && inspectorError && (
+                <div className={`${styles.stepDataState} ${styles.stepDataStateError}`}>{inspectorError}</div>
+              )}
+              {!inspectorLoading && !inspectorError && !stepInspectionViewModel && (
+                <div className={styles.stepDataState}>Chưa có dữ liệu step để hiển thị.</div>
+              )}
+
+              {!inspectorError && stepInspectionViewModel && inspectorViewMode === 'summary' && (
+                <div className={styles.stepDataSummaryGrid}>
+                  <section className={styles.stepDataSection}>
+                    <div className={styles.stepDataSectionTitle}>Summary</div>
+                    {stepInspectionViewModel.summaryItems.map((item) => (
+                      <div key={`summary-${item.label}`} className={styles.stepDataSummaryRow}>
+                        <span className={styles.stepDataSummaryLabel}>{item.label}</span>
+                        <span
+                          className={[
+                            styles.stepDataSummaryValue,
+                            item.mono ? styles.stepDataMono : '',
+                            getStepInspectorToneClass(item.tone),
+                          ].join(' ').trim()}
+                          title={item.value}
+                        >
+                          {item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </section>
+
+                  <section className={styles.stepDataSection}>
+                    <div className={styles.stepDataSectionTitle}>
+                      B{stepInspectionViewModel.step} {STEP_SHORT_LABELS[stepInspectionViewModel.step]}
+                    </div>
+                    {stepInspectionViewModel.stepItems.length === 0 ? (
+                      <div className={styles.stepDataEmptyText}>Chưa có dữ liệu output cho step này.</div>
+                    ) : (
+                      stepInspectionViewModel.stepItems.map((item) => (
+                        <div key={`step-item-${item.label}`} className={styles.stepDataSummaryRow}>
+                          <span className={styles.stepDataSummaryLabel}>{item.label}</span>
+                          <span
+                            className={[
+                              styles.stepDataSummaryValue,
+                              item.mono ? styles.stepDataMono : '',
+                              getStepInspectorToneClass(item.tone),
+                            ].join(' ').trim()}
+                            title={item.value}
+                          >
+                            {item.value}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </section>
+
+                  <section className={styles.stepDataSection}>
+                    <div className={styles.stepDataSectionTitle}>Artifacts</div>
+                    {stepInspectionViewModel.artifacts.length === 0 ? (
+                      <div className={styles.stepDataEmptyText}>Không có artifact cho step này.</div>
+                    ) : (
+                      <div className={styles.stepDataArtifactList}>
+                        {stepInspectionViewModel.artifacts.map((artifact, index) => (
+                          <div key={`artifact-${artifact.role}-${index}`} className={styles.stepDataArtifactItem}>
+                            <div className={styles.stepDataArtifactMeta}>
+                              <span>{artifact.role}</span>
+                              <span className={styles.stepDataMono}>{artifact.kind}</span>
+                            </div>
+                            <div className={`${styles.stepDataArtifactPath} ${styles.stepDataMono}`} title={artifact.path}>
+                              {artifact.path || '--'}
+                            </div>
+                            {artifact.note && (
+                              <div className={styles.stepDataArtifactNote}>{artifact.note}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
+
+              {!inspectorError && stepInspectionViewModel && inspectorViewMode === 'json' && (
+                <div className={styles.stepDataJsonWrap}>
+                  <pre className={styles.stepDataJsonBlock}>{stepInspectorJsonText}</pre>
+                </div>
+              )}
+            </div>
+
+            <div className={styles.stepDataDrawerFooter}>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => {
+                  void handleCopyStepInspectorJson();
+                }}
+                disabled={!stepInspectionViewModel}
+              >
+                Copy JSON step
+              </button>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => {
+                  void handleCopyStepInspectorPath();
+                }}
+                disabled={!inspectorSessionPath}
+              >
+                Copy session path
+              </button>
+              <span className={styles.stepDataCopyNotice}>{inspectorCopyNotice || ' '}</span>
+            </div>
+          </aside>
+        </>
+      )}
 
       <div className={styles.runBar}>
         <div className={styles.runBarHeader}>

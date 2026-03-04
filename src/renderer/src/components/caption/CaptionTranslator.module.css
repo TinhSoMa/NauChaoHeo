@@ -1626,6 +1626,13 @@
   background: var(--color-card);
 }
 
+.inspectorHeaderTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .inspectorTitle {
   font-size: 13px;
   font-weight: 700;
@@ -1636,6 +1643,12 @@
 .inspectorHint {
   font-size: 11px;
   color: var(--color-text-secondary);
+}
+
+.inspectorStepDataBtn {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 4px 9px;
 }
 
 .inspectorTabs {
@@ -1674,6 +1687,266 @@
   border-radius: 10px;
   padding: 10px;
   background: var(--color-card);
+}
+
+.stepDataDrawerBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 8, 20, 0.42);
+  border: none;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  z-index: 120;
+}
+
+.stepDataDrawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(540px, 94vw);
+  height: 100vh;
+  background: var(--color-card);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -16px 0 34px rgba(0, 0, 0, 0.28);
+  z-index: 121;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.stepDataDrawerHeader {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--color-border);
+  display: grid;
+  gap: 4px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent, #4a9eff) 11%, transparent), transparent);
+}
+
+.stepDataDrawerTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.stepDataDrawerHint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.stepDataDrawerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 12px;
+  background: var(--color-surface);
+}
+
+.stepDataStepSwitcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  background: var(--color-card);
+}
+
+.stepDataStepChip {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  min-width: 38px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stepDataStepChipActive {
+  border-color: var(--color-accent, #4a9eff);
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 24%, transparent);
+  color: var(--color-text-primary);
+}
+
+.stepDataModeSwitch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.stepDataModeBtn {
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-secondary);
+  border-radius: 7px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stepDataModeBtnActive {
+  border-color: var(--color-accent, #4a9eff);
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 18%, transparent);
+}
+
+.stepDataDrawerBody {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px 12px;
+}
+
+.stepDataState {
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+}
+
+.stepDataStateError {
+  border-color: color-mix(in srgb, var(--color-error, #ef4444) 42%, var(--color-border));
+  color: var(--color-error, #ef4444);
+}
+
+.stepDataSummaryGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.stepDataSection {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 7px;
+}
+
+.stepDataSectionTitle {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.stepDataSummaryRow {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.stepDataSummaryLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.stepDataSummaryValue {
+  font-size: 11px;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.stepDataValueMuted {
+  color: var(--color-text-secondary);
+}
+
+.stepDataValueWarning {
+  color: var(--color-warning, #f59e0b);
+}
+
+.stepDataValueError {
+  color: var(--color-error, #ef4444);
+}
+
+.stepDataMono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.stepDataEmptyText {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.stepDataArtifactList {
+  display: grid;
+  gap: 8px;
+}
+
+.stepDataArtifactItem {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card);
+  padding: 7px 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.stepDataArtifactMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stepDataArtifactPath {
+  font-size: 11px;
+  color: var(--color-text-primary);
+  word-break: break-all;
+}
+
+.stepDataArtifactNote {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.stepDataJsonWrap {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.stepDataJsonBlock {
+  margin: 0;
+  padding: 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  max-height: min(68vh, 760px);
+  overflow: auto;
+  white-space: pre;
+}
+
+.stepDataDrawerFooter {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-card);
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stepDataCopyNotice {
+  font-size: 11px;
+  color: var(--color-text-secondary);
 }
 
 .stepInspectorStack {
@@ -1896,4 +2169,15 @@
     min-height: 380px;
   }
 
+}
+
+@media (max-width: 760px) {
+  .stepDataDrawer {
+    width: 100vw;
+  }
+
+  .stepDataSummaryRow {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
