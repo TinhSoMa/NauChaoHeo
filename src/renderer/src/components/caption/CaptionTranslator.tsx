@@ -2245,8 +2245,8 @@ export function CaptionTranslator() {
     const step = inspectorSelectedStep;
     const stepKey = `step${step}` as `step${Step}`;
     const stepState = inspectorSessionData.steps[stepKey];
-    const stepData = inspectorSessionData.data || {};
-    const runtime = inspectorSessionData.runtime || {};
+    const stepData = inspectorSessionData.data;
+    const runtime = inspectorSessionData.runtime;
     const status = typeof stepState?.status === 'string' ? stepState.status : 'idle';
     const dependsOn = Array.isArray(stepState?.dependsOn) ? (stepState.dependsOn as number[]) : [];
     const metrics = (stepState?.metrics && typeof stepState.metrics === 'object')
@@ -2314,8 +2314,8 @@ export function CaptionTranslator() {
         break;
       }
       case 4: {
-        const audioFiles = Array.isArray(stepData.ttsAudioFiles) ? stepData.ttsAudioFiles as Array<Record<string, unknown>> : [];
-        const failedCount = audioFiles.filter((item) => item?.success === false).length;
+        const audioFiles = stepData.ttsAudioFiles || [];
+        const failedCount = audioFiles.filter((item: { success?: boolean }) => item?.success === false).length;
         stepItems.push({ label: 'Audio Files', value: `${audioFiles.length}` });
         stepItems.push({ label: 'Failed Files', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
         break;
