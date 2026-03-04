@@ -1,5 +1,4 @@
 import { ReactNode } from 'react';
-import { Settings } from 'lucide-react';
 import styles from '../CaptionTranslator.module.css';
 import { HardsubTimingMetrics } from '../CaptionTypes';
 
@@ -32,95 +31,56 @@ interface HardsubSettingsPanelProps {
 }
 
 export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
-  const { visible, renderSummary, metrics, audioPreview } = props;
-  const isPreviewMixing = audioPreview.status === 'mixing';
-  const canPreviewAudio = !audioPreview.disabled && visible;
+  const { visible, audioPreview, thumbnailListPanel } = props;
   const formatSeconds = (value: number) => (Number.isFinite(value) ? `${value.toFixed(2)}s` : '--');
+  const audioStatusLabel = audioPreview.status === 'mixing'
+    ? 'Mixing'
+    : audioPreview.status === 'ready'
+      ? 'Ready'
+      : audioPreview.status === 'error'
+        ? 'Error'
+        : 'Idle';
+  const audioStatusClass = audioPreview.status === 'mixing'
+    ? styles.step7AudioStatusMixing
+    : audioPreview.status === 'ready'
+      ? styles.step7AudioStatusReady
+      : audioPreview.status === 'error'
+        ? styles.step7AudioStatusError
+        : styles.step7AudioStatusIdle;
 
   if (!visible) {
     return null;
   }
 
   return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>
-        <Settings size={16} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }} />
-        B7 Utility
-      </div>
-
-      <div className={styles.step7Group}>
-        <div className={styles.step7GroupTitle}>Runtime summary</div>
-        <div className={styles.step7GroupBody}>
-          <div className={`${styles.inputGroup} ${styles.step7Row}`}>
-            <span className={styles.label}>Render</span>
-            <div className={styles.textMuted} style={{ fontSize: 12 }}>
-              {renderSummary.renderMode} / {renderSummary.renderResolution} / {renderSummary.renderContainer.toUpperCase()}
-            </div>
-          </div>
-          <div className={`${styles.inputGroup} ${styles.step7Row}`}>
-            <span className={styles.label}>Thumbnail</span>
-            <div className={styles.textMuted} style={{ fontSize: 12 }}>
-              {renderSummary.thumbnailDurationSec.toFixed(2)}s @ {renderSummary.thumbnailFrameTimeSec ?? 0}s
-            </div>
-          </div>
-          <div className={`${styles.inputGroup} ${styles.step7Row}`}>
-            <span className={styles.label}>Video marker</span>
-            <div className={styles.textMuted} style={{ fontSize: 12 }}>
-              {metrics.formatDuration(metrics.videoMarkerSec)}
-            </div>
-          </div>
-          <div className={`${styles.inputGroup} ${styles.step7Row}`}>
-            <span className={styles.label}>Auto speed</span>
-            <div className={styles.textMuted} style={{ fontSize: 12 }}>
-              {metrics.autoVideoSpeed.toFixed(2)}x
-            </div>
-          </div>
+    <div className={styles.step7Panel}>
+      <div className={styles.step7AudioCard}>
+        <div className={styles.step7AudioActions}>
+          <span className={`${styles.step7AudioStatusBadge} ${audioStatusClass}`}>{audioStatusLabel}</span>
+          {audioPreview.progressText && (
+            <span className={styles.audioPreviewProgressText}>{audioPreview.progressText}</span>
+          )}
         </div>
-      </div>
 
-      <div className={styles.step7Divider} />
-
-      <div className={styles.step7Group}>
-        <div className={styles.step7GroupTitle}>Audio Preview</div>
-        <div className={styles.step7GroupBody}>
-          <div className={`${styles.step7FullRow} ${styles.inputGroup}`}>
-            <div className={styles.audioPreviewBox}>
-              <div className={styles.audioPreviewActions}>
-                <button
-                  type="button"
-                  className={styles.resetBtnLike}
-                  onClick={isPreviewMixing ? audioPreview.onStop : audioPreview.onTest}
-                  disabled={!canPreviewAudio}
-                >
-                  {isPreviewMixing ? '⏹ Dừng test' : '🎧 Test mix 20s'}
-                </button>
-                {audioPreview.progressText && (
-                  <span className={styles.audioPreviewProgressText}>{audioPreview.progressText}</span>
-                )}
-              </div>
-              {audioPreview.dataUri && audioPreview.status === 'ready' && (
-                <div className={styles.audioPreviewPlayerWrap}>
-                  <audio className={styles.audioPreviewPlayer} controls autoPlay src={audioPreview.dataUri} />
-                  {audioPreview.meta && (
-                    <div className={styles.audioPreviewMeta}>
-                      <span>{audioPreview.meta.folderName}</span>
-                      <span>
-                        {formatSeconds(audioPreview.meta.startSec)} - {formatSeconds(audioPreview.meta.endSec)}
-                      </span>
-                      <span>marker {formatSeconds(audioPreview.meta.markerSec)}</span>
-                      <span className={styles.audioPreviewPath} title={audioPreview.meta.outputPath}>
-                        {audioPreview.meta.outputPath}
-                      </span>
-                    </div>
-                  )}
+        {audioPreview.dataUri && audioPreview.status === 'ready' && (
+          <div className={styles.audioPreviewBox}>
+            <div className={styles.audioPreviewPlayerWrap}>
+              <audio className={styles.audioPreviewPlayer} controls src={audioPreview.dataUri} />
+              {audioPreview.meta && (
+                <div className={styles.audioPreviewProgressText}>
+                  {audioPreview.meta.folderName} | {formatSeconds(audioPreview.meta.startSec)} - {formatSeconds(audioPreview.meta.endSec)} | marker {formatSeconds(audioPreview.meta.markerSec)}
                 </div>
               )}
             </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {props.thumbnailListPanel}
+      {thumbnailListPanel && (
+        <div className={styles.step7ThumbnailWrap}>
+          {thumbnailListPanel}
+        </div>
+      )}
     </div>
   );
 }

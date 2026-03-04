@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import folderIconUrl from '../../../../../resources/icons/folder.svg';
@@ -39,7 +39,7 @@ import { ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { Download, Eye } from 'lucide-react';
+import { AlertCircle, Download, Eye } from 'lucide-react';
 import { CaptionProjectSettingsValues, CoverQuad, VoiceInfo } from '@shared/types/caption';
 
 type TtsVoiceProvider = 'edge' | 'capcut';
@@ -47,6 +47,8 @@ type TtsVoiceTier = 'free' | 'pro';
 type CommonConfigTab = 'render' | 'typography' | 'audio';
 type LayoutSwitchValue = 'landscape' | 'portrait';
 type InspectorPane = 'step' | 'common' | 'snapshot';
+const COMMON_COLOR_HISTORY_LIMIT = 12;
+const COMMON_COLOR_HISTORY_STORAGE_PREFIX = 'caption.common.colorHistory.v1';
 
 const DEFAULT_COVER_QUAD: CoverQuad = {
   tl: { x: 0, y: 0 },
@@ -112,6 +114,35 @@ function ensureVoiceOptionExists(
   ];
 }
 
+function normalizeHexColor(value: string): string | null {
+  const raw = (value || '').trim().toUpperCase();
+  if (/^#[0-9A-F]{6}$/.test(raw)) {
+    return raw;
+  }
+  if (/^#[0-9A-F]{3}$/.test(raw)) {
+    const r = raw[1];
+    const g = raw[2];
+    const b = raw[3];
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return null;
+}
+
+function mergeRecentColors(colors: string[], nextColor: string): string[] {
+  const normalized = normalizeHexColor(nextColor);
+  if (!normalized) {
+    return colors;
+  }
+  const next = [normalized, ...colors.filter((item) => item !== normalized)];
+  return next.slice(0, COMMON_COLOR_HISTORY_LIMIT);
+}
+
+function formatPercentDisplay(value: number | undefined, fallback = 0): string {
+  const safe = Number.isFinite(value) ? (value as number) : fallback;
+  const rounded = Math.round(safe * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+}
+
 export function CaptionTranslator() {
   // Project output paths
   const { paths, projectId } = useProjectContext();
@@ -122,6 +153,144 @@ export function CaptionTranslator() {
   const [ttsVoiceOptions, setTtsVoiceOptions] = useState<TtsUiVoiceOption[]>(() =>
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
   );
+  const [commonColorHistory, setCommonColorHistory] = useState<string[]>([]);
+  const commonColorHistoryStorageKey = useMemo(
+    () => `${COMMON_COLOR_HISTORY_STORAGE_PREFIX}:${projectId || 'global'}`,
+    [projectId]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem(commonColorHistoryStorageKey);
+      if (!raw) {
+        setCommonColorHistory([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      const source = Array.isArray(parsed) ? parsed : [];
+      const normalized = source
+        .map((item) => normalizeHexColor(String(item)))
+        .filter((item): item is string => Boolean(item));
+      const deduped: string[] = [];
+      for (const color of normalized) {
+        if (!deduped.includes(color)) {
+          deduped.push(color);
+        }
+      }
+      setCommonColorHistory(deduped.slice(0, COMMON_COLOR_HISTORY_LIMIT));
+    } catch {
+      setCommonColorHistory([]);
+    }
+  }, [commonColorHistoryStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(commonColorHistoryStorageKey, JSON.stringify(commonColorHistory));
+    } catch {
+      // Ignore persistence errors in renderer.
+    }
+  }, [commonColorHistoryStorageKey, commonColorHistory]);
+
+  useEffect(() => {
+    const candidates = [
+      settings.style?.fontColor,
+      settings.thumbnailTextPrimaryColor,
+      settings.thumbnailTextSecondaryColor,
+    ];
+    setCommonColorHistory((prev) => {
+      if (prev.length > 0) {
+        return prev;
+      }
+      let next: string[] = [];
+      for (const candidate of candidates) {
+        const normalized = normalizeHexColor(candidate || '');
+        if (normalized) {
+          next = mergeRecentColors(next, normalized);
+        }
+      }
+      return next;
+    });
+  }, [
+    settings.style?.fontColor,
+    settings.thumbnailTextPrimaryColor,
+    settings.thumbnailTextSecondaryColor,
+  ]);
+
+  const rememberCommonColor = useCallback((rawColor: string): string | null => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) {
+      return null;
+    }
+    setCommonColorHistory((prev) => mergeRecentColors(prev, normalized));
+    return normalized;
+  }, []);
+
+  const applySubtitleFontColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setStyle((s: any) => ({ ...s, fontColor: normalized }));
+  }, [settings.setStyle]);
+
+  const commitSubtitleFontColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setStyle((s: any) => ({ ...s, fontColor: normalized }));
+    rememberCommonColor(normalized);
+  }, [rememberCommonColor, settings.setStyle]);
+
+  const applyThumbnailTextPrimaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setThumbnailTextPrimaryColor(normalized);
+  }, [settings.setThumbnailTextPrimaryColor]);
+
+  const commitThumbnailTextPrimaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setThumbnailTextPrimaryColor(normalized);
+    rememberCommonColor(normalized);
+  }, [rememberCommonColor, settings.setThumbnailTextPrimaryColor]);
+
+  const applyThumbnailTextSecondaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setThumbnailTextSecondaryColor(normalized);
+  }, [settings.setThumbnailTextSecondaryColor]);
+
+  const commitThumbnailTextSecondaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setThumbnailTextSecondaryColor(normalized);
+    rememberCommonColor(normalized);
+  }, [rememberCommonColor, settings.setThumbnailTextSecondaryColor]);
+
+  const renderColorHistory = useCallback((
+    currentColor: string,
+    onPick: (color: string) => void
+  ) => {
+    if (commonColorHistory.length === 0) return null;
+    const activeColor = normalizeHexColor(currentColor);
+    return (
+      <div className={styles.colorHistoryBlock}>
+        <div className={styles.colorHistoryLabel}>Màu đã dùng gần đây</div>
+        <div className={styles.colorHistoryRow}>
+          {commonColorHistory.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`${styles.colorSwatchBtn} ${activeColor === color ? styles.colorSwatchBtnActive : ''}`}
+              style={{ backgroundColor: color }}
+              title={`Dùng màu ${color}`}
+              aria-label={`Dùng màu ${color}`}
+              onClick={() => onPick(color)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }, [commonColorHistory]);
 
   useEffect(() => {
     const normalizedVoice = normalizeVoiceValue(settings.voice);
@@ -530,6 +699,108 @@ export function CaptionTranslator() {
   });
 
   const audioFiles = processing.audioFiles;
+  const step7AudioElementRef = useRef<HTMLAudioElement | null>(null);
+  const step7AudioAutoPlayAfterMixRef = useRef(false);
+  const step7AudioLastMixedSignatureRef = useRef<string>('');
+  const step7AudioLastDataUriRef = useRef<string>('');
+  const [isStep7AudioPlaying, setIsStep7AudioPlaying] = useState(false);
+  const [step7AudioButtonError, setStep7AudioButtonError] = useState<string>('');
+
+  const stopStep7AudioPlayback = useCallback(() => {
+    const audio = step7AudioElementRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    setIsStep7AudioPlaying(false);
+  }, []);
+
+  const playStep7AudioPreview = useCallback(async (audioDataUri: string) => {
+    if (!audioDataUri) return;
+    const audio = step7AudioElementRef.current;
+    if (!audio) {
+      setIsStep7AudioPlaying(false);
+      setStep7AudioButtonError('Không thể phát audio preview.');
+      return;
+    }
+    try {
+      if (audio.src !== audioDataUri) {
+        audio.src = audioDataUri;
+      }
+      audio.currentTime = 0;
+      await audio.play();
+      setIsStep7AudioPlaying(true);
+      setStep7AudioButtonError('');
+    } catch {
+      setIsStep7AudioPlaying(false);
+      setStep7AudioButtonError('Không thể phát audio preview.');
+    }
+  }, []);
+
+  useEffect(() => {
+    const audio = new Audio();
+    const handlePlay = () => setIsStep7AudioPlaying(true);
+    const handlePause = () => setIsStep7AudioPlaying(false);
+    const handleEnded = () => setIsStep7AudioPlaying(false);
+    const handleError = () => {
+      setIsStep7AudioPlaying(false);
+      setStep7AudioButtonError('Không thể phát audio preview.');
+    };
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+    step7AudioElementRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      step7AudioElementRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (processing.audioPreviewStatus === 'mixing') {
+      setStep7AudioButtonError('');
+      return;
+    }
+
+    if (processing.audioPreviewStatus === 'error') {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      stopStep7AudioPlayback();
+      setStep7AudioButtonError(processing.audioPreviewProgressText || 'Test mix audio thất bại.');
+      return;
+    }
+
+    if (processing.audioPreviewStatus === 'idle') {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      stopStep7AudioPlayback();
+      return;
+    }
+
+    if (
+      processing.audioPreviewStatus === 'ready'
+      && processing.audioPreviewDataUri
+      && step7AudioAutoPlayAfterMixRef.current
+    ) {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      void playStep7AudioPreview(processing.audioPreviewDataUri);
+    }
+  }, [
+    processing.audioPreviewStatus,
+    processing.audioPreviewDataUri,
+    processing.audioPreviewProgressText,
+    playStep7AudioPreview,
+    stopStep7AudioPlayback,
+  ]);
+
+  useEffect(() => {
+    if (processing.status === 'running') {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      stopStep7AudioPlayback();
+    }
+  }, [processing.status, stopStep7AudioPlayback]);
 
   // --- Download prompt preview ---
   const handleDownloadPromptPreview = async () => {
@@ -616,6 +887,29 @@ export function CaptionTranslator() {
   const videoInfo = displayPath ? fileManager.folderVideos[displayPath] : null;
   const originalVideoDuration = videoInfo?.duration || 0;
   const livePreviewVideoPath = videoInfo?.fullPath || fileManager.firstVideoPath || null;
+  const buildStep7AudioPreviewSignature = useCallback(() => {
+    const targetPath = (displayPath || '').trim().toLowerCase();
+    const renderAudioSpeed = Number(settings.renderAudioSpeed ?? 1).toFixed(3);
+    const srtSpeed = Number(settings.srtSpeed ?? 1).toFixed(3);
+    const videoVolume = Number(settings.videoVolume ?? 100).toFixed(3);
+    const audioVolume = Number(settings.audioVolume ?? 100).toFixed(3);
+    const ttsRate = (settings.rate || '').trim().toLowerCase();
+    return [
+      targetPath,
+      `renderAudioSpeed:${renderAudioSpeed}`,
+      `srtSpeed:${srtSpeed}`,
+      `videoVolume:${videoVolume}`,
+      `audioVolume:${audioVolume}`,
+      `rate:${ttsRate}`,
+    ].join('|');
+  }, [
+    displayPath,
+    settings.renderAudioSpeed,
+    settings.srtSpeed,
+    settings.videoVolume,
+    settings.audioVolume,
+    settings.rate,
+  ]);
 
   const [sessionStepStatus, setSessionStepStatus] = useState<Partial<Record<Step, string>>>({});
   const [sessionStepSkipped, setSessionStepSkipped] = useState<Partial<Record<Step, boolean>>>({});
@@ -1046,6 +1340,81 @@ export function CaptionTranslator() {
     if (!issue) return undefined;
     return `Step 7 đang bị chặn: ${issue.reason}`;
   })();
+  const isStep7AudioMixing = processing.audioPreviewStatus === 'mixing';
+  const hasStep7AudioPreview = Boolean(processing.audioPreviewDataUri);
+  const isStep7AudioError = processing.audioPreviewStatus === 'error' || Boolean(step7AudioButtonError);
+  const isStep7AudioActionActive = isStep7AudioMixing || isStep7AudioPlaying;
+  const canQuickStep7Audio = isStep7AudioActionActive || hasStep7AudioPreview || (
+    processing.enabledSteps.has(7) &&
+    processing.status !== 'running' &&
+    Boolean(displayPath || fileManager.filePath)
+  );
+  const step7QuickAudioLabel = isStep7AudioMixing
+    ? 'Đang mix...'
+    : isStep7AudioPlaying
+      ? 'Đang phát'
+      : 'Test mix 20s';
+  const step7QuickAudioTitle = isStep7AudioMixing
+    ? 'Bấm để dừng mix audio preview'
+    : isStep7AudioPlaying
+      ? 'Bấm để dừng phát audio preview'
+      : 'Test mix 20s cho Step 7';
+
+  const handleQuickStep7AudioToggle = useCallback(() => {
+    if (isStep7AudioPlaying) {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      stopStep7AudioPlayback();
+      return;
+    }
+    if (isStep7AudioMixing) {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      void processing.stopStep7AudioPreview();
+      stopStep7AudioPlayback();
+      return;
+    }
+
+    setStep7AudioButtonError('');
+    const currentSignature = buildStep7AudioPreviewSignature();
+    const canReuseCurrentPreview = (
+      processing.audioPreviewStatus === 'ready'
+      && Boolean(processing.audioPreviewDataUri)
+      && step7AudioLastMixedSignatureRef.current === currentSignature
+    );
+    if (canReuseCurrentPreview && processing.audioPreviewDataUri) {
+      step7AudioAutoPlayAfterMixRef.current = false;
+      void playStep7AudioPreview(processing.audioPreviewDataUri);
+      return;
+    }
+
+    step7AudioAutoPlayAfterMixRef.current = true;
+    void processing.handleStep7AudioPreview(displayPath || undefined);
+  }, [
+    isStep7AudioPlaying,
+    isStep7AudioMixing,
+    stopStep7AudioPlayback,
+    processing,
+    playStep7AudioPreview,
+    displayPath,
+    buildStep7AudioPreviewSignature,
+  ]);
+
+  useEffect(() => {
+    if (processing.audioPreviewStatus === 'ready' && processing.audioPreviewDataUri) {
+      if (step7AudioLastDataUriRef.current !== processing.audioPreviewDataUri) {
+        step7AudioLastDataUriRef.current = processing.audioPreviewDataUri;
+        step7AudioLastMixedSignatureRef.current = buildStep7AudioPreviewSignature();
+      }
+      return;
+    }
+    if (!processing.audioPreviewDataUri) {
+      step7AudioLastDataUriRef.current = '';
+      step7AudioLastMixedSignatureRef.current = '';
+    }
+  }, [
+    processing.audioPreviewStatus,
+    processing.audioPreviewDataUri,
+    buildStep7AudioPreviewSignature,
+  ]);
 
   const getStepBadge = (step: Step): { label: string; className: string } => {
     const hasIssue = processing.stepDependencyIssues.some((item) => item.step === step);
@@ -1093,6 +1462,18 @@ export function CaptionTranslator() {
     return styles.stepToneIdle;
   };
 
+  const getStepStatusCompactLabel = (label: string): string => {
+    if (label === 'Running') return 'RUN';
+    if (label === 'Done') return 'DONE';
+    if (label === 'Skipped') return 'SKIP';
+    if (label === 'Error') return 'ERR';
+    if (label === 'Blocked') return 'LOCK';
+    if (label === 'Stale') return 'OLD';
+    if (label === 'Stopped') return 'STOP';
+    if (label === 'Off') return 'OFF';
+    return 'IDLE';
+  };
+
   const STEP_SHORT_LABELS: Record<Step, string> = {
     1: 'Input',
     2: 'Tách',
@@ -1121,7 +1502,10 @@ export function CaptionTranslator() {
       },
       { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution} / ${settings.renderContainer?.toUpperCase() || 'MP4'}` },
       { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x` },
-      { key: 'Âm lượng', value: `video ${settings.videoVolume}% | TTS ${settings.audioVolume}%` },
+      {
+        key: 'Âm lượng',
+        value: `video ${formatPercentDisplay(settings.videoVolume)}% | TTS ${formatPercentDisplay(settings.audioVolume)}%`,
+      },
       { key: 'Sub pos', value: subtitlePos },
       { key: 'Logo', value: `${logoPos} | scale ${Math.round((settings.logoScale || 1) * 100)}%` },
       {
@@ -1210,20 +1594,24 @@ export function CaptionTranslator() {
     ? 'portrait'
     : 'landscape';
 
-  const applyLayoutSwitch = (layout: LayoutSwitchValue) => {
+  const applyLayoutSwitch = useCallback((layout: LayoutSwitchValue) => {
     if (layout === 'portrait') {
       settings.setRenderMode('hardsub_portrait_9_16');
       return;
     }
     settings.setRenderMode(preferredLandscapeRenderMode || 'hardsub');
-  };
+  }, [preferredLandscapeRenderMode, settings.setRenderMode]);
 
-  const applyLandscapeRenderMode = (mode: 'hardsub' | 'black_bg') => {
+  const applyLandscapeRenderMode = useCallback((mode: 'hardsub' | 'black_bg') => {
     setPreferredLandscapeRenderMode(mode);
     if (activeLayoutSwitch === 'landscape') {
       settings.setRenderMode(mode);
     }
-  };
+  }, [activeLayoutSwitch, settings.setRenderMode]);
+
+  const handlePreviewLayoutChange = useCallback((value: LayoutSwitchValue) => {
+    applyLayoutSwitch(value);
+  }, [applyLayoutSwitch]);
 
   const STEP_DESCRIPTION: Record<Step, string> = {
     1: 'Chọn nguồn SRT/Draft và nạp dữ liệu caption.',
@@ -1244,22 +1632,6 @@ export function CaptionTranslator() {
     <div className={styles.commonConfigBar}>
       <div className={styles.commonConfigTop}>
         <div className={styles.commonConfigTitle}>Common Config</div>
-        <div className={styles.commonLayoutSwitch}>
-          <button
-            type="button"
-            className={`${styles.commonLayoutBtn} ${activeLayoutSwitch === 'landscape' ? styles.commonLayoutBtnActive : ''}`}
-            onClick={() => applyLayoutSwitch('landscape')}
-          >
-            16:9
-          </button>
-          <button
-            type="button"
-            className={`${styles.commonLayoutBtn} ${activeLayoutSwitch === 'portrait' ? styles.commonLayoutBtnActive : ''}`}
-            onClick={() => applyLayoutSwitch('portrait')}
-          >
-            9:16
-          </button>
-        </div>
       </div>
 
       <div className={styles.commonConfigTabs}>
@@ -1418,29 +1790,16 @@ export function CaptionTranslator() {
               </div>
             )}
 
-            <div className={styles.grid2}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Thumb duration (s)</label>
-                <Input
-                  type="number"
-                  min={0.1}
-                  max={10}
-                  step={0.1}
-                  value={settings.thumbnailDurationSec ?? 0.5}
-                  onChange={(e) => settings.setThumbnailDurationSec(Number(e.target.value))}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Thumb frame (s)</label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={3600}
-                  step={0.1}
-                  value={settings.thumbnailFrameTimeSec ?? 0}
-                  onChange={(e) => settings.setThumbnailFrameTimeSec(Number(e.target.value))}
-                />
-              </div>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Thumb duration (s)</label>
+              <Input
+                type="number"
+                min={0.1}
+                max={10}
+                step={0.1}
+                value={settings.thumbnailDurationSec ?? 0.5}
+                onChange={(e) => settings.setThumbnailDurationSec(Number(e.target.value))}
+              />
             </div>
 
             <div className={styles.commonInlineSection}>
@@ -1517,8 +1876,11 @@ export function CaptionTranslator() {
                   className={styles.colorInput}
                   type="color"
                   value={settings.style?.fontColor || '#FFFF00'}
-                  onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontColor: e.target.value }))}
+                  onInput={(e) => applySubtitleFontColor((e.target as HTMLInputElement).value)}
+                  onChange={(e) => applySubtitleFontColor(e.target.value)}
+                  onBlur={(e) => commitSubtitleFontColor(e.target.value)}
                 />
+                {renderColorHistory(settings.style?.fontColor || '#FFFF00', commitSubtitleFontColor)}
               </div>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Shadow subtitle</label>
@@ -1530,22 +1892,6 @@ export function CaptionTranslator() {
                   value={settings.style?.shadow ?? 4}
                   onChange={(e) => settings.setStyle((s: any) => ({ ...s, shadow: Number(e.target.value) }))}
                 />
-              </div>
-            </div>
-
-            <div className={styles.commonInlineSection}>
-              <div className={styles.commonInlineHeader}>
-                <span className={styles.label}>Subtitle position</span>
-                <span className={styles.commonInlineValue}>
-                  {settings.subtitlePosition
-                    ? `${settings.subtitlePosition.x.toFixed(3)}, ${settings.subtitlePosition.y.toFixed(3)}`
-                    : 'Auto'}
-                </span>
-              </div>
-              <div className={styles.commonInlineActions}>
-                <button type="button" className={styles.resetBtnLike} onClick={() => settings.setSubtitlePosition(null)}>
-                  Dùng auto
-                </button>
               </div>
             </div>
 
@@ -1584,8 +1930,11 @@ export function CaptionTranslator() {
                   className={styles.colorInput}
                   type="color"
                   value={settings.thumbnailTextPrimaryColor || '#FFFF00'}
-                  onChange={(e) => settings.setThumbnailTextPrimaryColor(e.target.value)}
+                  onInput={(e) => applyThumbnailTextPrimaryColor((e.target as HTMLInputElement).value)}
+                  onChange={(e) => applyThumbnailTextPrimaryColor(e.target.value)}
+                  onBlur={(e) => commitThumbnailTextPrimaryColor(e.target.value)}
                 />
+                {renderColorHistory(settings.thumbnailTextPrimaryColor || '#FFFF00', commitThumbnailTextPrimaryColor)}
               </div>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Line height</label>
@@ -1635,38 +1984,12 @@ export function CaptionTranslator() {
                   className={styles.colorInput}
                   type="color"
                   value={settings.thumbnailTextSecondaryColor || '#FFFF00'}
-                  onChange={(e) => settings.setThumbnailTextSecondaryColor(e.target.value)}
+                  onInput={(e) => applyThumbnailTextSecondaryColor((e.target as HTMLInputElement).value)}
+                  onChange={(e) => applyThumbnailTextSecondaryColor(e.target.value)}
+                  onBlur={(e) => commitThumbnailTextSecondaryColor(e.target.value)}
                 />
+                {renderColorHistory(settings.thumbnailTextSecondaryColor || '#FFFF00', commitThumbnailTextSecondaryColor)}
               </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Text1 pos</label>
-                <div className={styles.commonHint}>
-                  {settings.thumbnailTextPrimaryPosition.x.toFixed(3)}, {settings.thumbnailTextPrimaryPosition.y.toFixed(3)}
-                </div>
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Text2 pos</label>
-                <div className={styles.commonHint}>
-                  {settings.thumbnailTextSecondaryPosition.x.toFixed(3)}, {settings.thumbnailTextSecondaryPosition.y.toFixed(3)}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.commonInlineActions}>
-              <button
-                type="button"
-                className={styles.resetBtnLike}
-                onClick={() => settings.setThumbnailTextPrimaryPosition({ x: 0.5, y: 0.5 })}
-              >
-                Reset Text1 pos
-              </button>
-              <button
-                type="button"
-                className={styles.resetBtnLike}
-                onClick={() => settings.setThumbnailTextSecondaryPosition({ x: 0.5, y: 0.64 })}
-              >
-                Reset Text2 pos
-              </button>
             </div>
           </div>
         )}
@@ -1709,7 +2032,7 @@ export function CaptionTranslator() {
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
                 <span className={styles.label}>Âm lượng video</span>
-                <span className={styles.commonInlineValue}>{settings.videoVolume}%</span>
+                <span className={styles.commonInlineValue}>{formatPercentDisplay(settings.videoVolume)}%</span>
               </div>
               <input
                 type="range"
@@ -1717,14 +2040,22 @@ export function CaptionTranslator() {
                 onChange={(e) => settings.setVideoVolume(Number(e.target.value))}
                 min={0}
                 max={200}
-                step={10}
+                step={0.1}
+              />
+              <Input
+                type="number"
+                value={settings.videoVolume}
+                onChange={(e) => settings.setVideoVolume(Number(e.target.value))}
+                min={0}
+                max={200}
+                step={0.1}
               />
             </div>
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
                 <span className={styles.label}>Âm lượng TTS render</span>
-                <span className={styles.commonInlineValue}>{settings.audioVolume}%</span>
+                <span className={styles.commonInlineValue}>{formatPercentDisplay(settings.audioVolume)}%</span>
               </div>
               <input
                 type="range"
@@ -1732,7 +2063,15 @@ export function CaptionTranslator() {
                 onChange={(e) => settings.setAudioVolume(Number(e.target.value))}
                 min={0}
                 max={400}
-                step={10}
+                step={0.1}
+              />
+              <Input
+                type="number"
+                value={settings.audioVolume}
+                onChange={(e) => settings.setAudioVolume(Number(e.target.value))}
+                min={0}
+                max={400}
+                step={0.1}
               />
             </div>
 
@@ -1748,124 +2087,149 @@ export function CaptionTranslator() {
   const activeStepContent = (() => {
     if (activeStep === 1) {
       return (
-        <div className={styles.panelSection}>
-          <div className={styles.fileTypeSelection}>
-            <RadioButton
-              label="SRT"
-              checked={settings.inputType === 'srt'}
-              onChange={() => settings.setInputType('srt')}
-              name="inputType"
-            />
-            <RadioButton
-              label="Draft"
-              description="CapCut"
-              checked={settings.inputType === 'draft'}
-              onChange={() => settings.setInputType('draft')}
-              name="inputType"
-            />
+        <div className={styles.stepInspectorStack}>
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Nguồn caption</div>
+            </div>
+            <div className={styles.fileTypeSelection}>
+              <RadioButton
+                label="SRT"
+                checked={settings.inputType === 'srt'}
+                onChange={() => settings.setInputType('srt')}
+                name="inputType"
+              />
+              <RadioButton
+                label="Draft"
+                description="CapCut"
+                checked={settings.inputType === 'draft'}
+                onChange={() => settings.setInputType('draft')}
+                name="inputType"
+              />
+            </div>
+            <div className={styles.stepCardHint}>
+              {settings.inputType === 'draft'
+                ? 'Draft cho phép chọn nhiều folder trong cùng một lần duyệt.'
+                : 'SRT dùng một file phụ đề làm nguồn.'}
+            </div>
           </div>
 
-          <div className={styles.flexRow} style={settings.inputType === 'draft' ? { alignItems: 'stretch' } : {}}>
-            {settings.inputType === 'srt' ? (
-              <Input
-                value={fileManager.filePath}
-                onChange={(e) => fileManager.setFilePath(e.target.value)}
-                placeholder="Đường dẫn .srt"
-              />
-            ) : (
-              <div
-                className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
-                onClick={() => {
-                  void fileManager.handleBrowseFile();
-                }}
-              >
-                {!fileManager.filePath ? (
-                  <span className={styles.placeholderText}>Chưa chọn folder...</span>
-                ) : (
-                  <div className={styles.folderGrid}>
-                    {selectedInputPaths.map((path, idx) => {
-                      const folderName = path.split(/[/\\]/).pop() || path;
-                      const vInfo = fileManager.folderVideos[path];
-                      return (
-                        <div key={`${path}-${idx}`} className={styles.folderBox} title={path}>
-                          <div className={styles.folderBoxHeader}>
-                            <img src={folderIconUrl} alt="folder" className={styles.folderIcon} style={{ width: '16px', height: '16px', marginRight: '6px' }} />
-                            <span className={styles.folderName}>{folderName}</span>
-                          </div>
-                          {vInfo && (
-                            <div className={styles.folderBoxSubText}>
-                              <img src={videoIconUrl} alt="video" style={{ width: '14px', height: '14px', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
-                              {vInfo.name}
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Đường dẫn đầu vào</div>
+            </div>
+            <div className={styles.stepBrowseRow}>
+              {settings.inputType === 'srt' ? (
+                <Input
+                  value={fileManager.filePath}
+                  onChange={(e) => fileManager.setFilePath(e.target.value)}
+                  placeholder="Đường dẫn .srt"
+                />
+              ) : (
+                <div
+                  className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
+                  onClick={() => {
+                    void fileManager.handleBrowseFile();
+                  }}
+                >
+                  {!fileManager.filePath ? (
+                    <span className={styles.placeholderText}>Chưa chọn folder...</span>
+                  ) : (
+                    <div className={styles.folderGrid}>
+                      {selectedInputPaths.map((path, idx) => {
+                        const folderName = path.split(/[/\\]/).pop() || path;
+                        const vInfo = fileManager.folderVideos[path];
+                        return (
+                          <div key={`${path}-${idx}`} className={styles.folderBox} title={path}>
+                            <div className={styles.folderBoxHeader}>
+                              <img src={folderIconUrl} alt="folder" className={`${styles.folderIcon} ${styles.folderIconCompact}`} />
+                              <span className={styles.folderName}>{folderName}</span>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                            {vInfo && (
+                              <div className={styles.folderBoxSubText}>
+                                <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
+                                {vInfo.name}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
+            </div>
+            {settings.inputType === 'draft' && (
+              <div className={styles.stepCardHint}>
+                Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
               </div>
             )}
-            <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
-          </div>
-          {settings.inputType === 'draft' && (
-            <div className={styles.textMuted} style={{ fontSize: 11, marginTop: '8px' }}>
-              Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
+            <div className={styles.stepMetaPills}>
+              {settings.inputType === 'draft' && (
+                <span className={styles.stepMetaPill}>Folders: {selectedInputPaths.length}</span>
+              )}
+              <span className={styles.stepMetaPill}>Dòng đã load: {fileManager.entries.length}</span>
             </div>
-          )}
-          {fileManager.entries.length > 0 && (
-            <p className={styles.textMuted} style={{ marginTop: '8px' }}>
-              Đã load: {fileManager.entries.length} dòng
-            </p>
-          )}
+          </div>
         </div>
       );
     }
 
     if (activeStep === 2) {
       return (
-        <div className={styles.panelSection}>
-          <div className={styles.splitConfig}>
-            <RadioButton
-              label="Dòng/file"
-              checked={settings.splitByLines}
-              onChange={() => settings.setSplitByLines(true)}
-              name="splitConfig"
-            >
-              <select
-                value={settings.linesPerFile}
-                onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
-                className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
-                disabled={!settings.splitByLines}
-                onClick={(e) => e.stopPropagation()}
-                style={{ marginTop: '8px' }}
+        <div className={styles.stepInspectorStack}>
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Chiến lược tách</div>
+              <span className={styles.stepMetaPill}>
+                {settings.splitByLines ? `${settings.linesPerFile} dòng / file` : `${settings.numberOfParts} phần`}
+              </span>
+            </div>
+            <div className={styles.splitConfig}>
+              <RadioButton
+                label="Dòng/file"
+                checked={settings.splitByLines}
+                onChange={() => settings.setSplitByLines(true)}
+                name="splitConfig"
               >
-                {LINES_PER_FILE_OPTIONS.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </RadioButton>
+                <select
+                  value={settings.linesPerFile}
+                  onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
+                  className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
+                  disabled={!settings.splitByLines}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {LINES_PER_FILE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </RadioButton>
 
-            <RadioButton
-              label="Số phần"
-              checked={!settings.splitByLines}
-              onChange={() => settings.setSplitByLines(false)}
-              name="splitConfig"
-            >
-              <Input
-                type="number"
-                value={settings.numberOfParts}
-                onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
-                min={2}
-                max={20}
-                variant="small"
-                disabled={settings.splitByLines}
-                onClick={(e) => e.stopPropagation()}
-                containerClassName={settings.splitByLines ? styles.disabled : ''}
-                style={{ marginTop: '8px' }}
-              />
-            </RadioButton>
+              <RadioButton
+                label="Số phần"
+                checked={!settings.splitByLines}
+                onChange={() => settings.setSplitByLines(false)}
+                name="splitConfig"
+              >
+                <Input
+                  type="number"
+                  value={settings.numberOfParts}
+                  onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
+                  min={2}
+                  max={20}
+                  variant="small"
+                  disabled={settings.splitByLines}
+                  onClick={(e) => e.stopPropagation()}
+                  containerClassName={settings.splitByLines ? styles.disabled : ''}
+                />
+              </RadioButton>
+            </div>
+            <div className={styles.stepCardHint}>
+              Chọn một cách tách để tối ưu batch dịch và xử lý audio.
+            </div>
           </div>
         </div>
       );
@@ -1873,107 +2237,128 @@ export function CaptionTranslator() {
 
     if (activeStep === 3) {
       return (
-        <div className={styles.panelSection}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <div className={styles.sectionTitleCompact}>Model dịch</div>
-            <Button
-              variant="secondary"
-              onClick={handleDownloadPromptPreview}
-              disabled={fileManager.entries.length === 0}
-              title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải prompt preview (batch 1)'}
-              style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
-            >
-              <Download size={13} />
-              Prompt
-            </Button>
+        <div className={styles.stepInspectorStack}>
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Model dịch</div>
+              <Button
+                variant="secondary"
+                onClick={handleDownloadPromptPreview}
+                disabled={fileManager.entries.length === 0}
+                title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải prompt preview (batch 1)'}
+                className={styles.stepCompactBtn}
+              >
+                <Download size={13} />
+                Prompt
+              </Button>
+            </div>
+            <div className={styles.stepOptionRow}>
+              <RadioButton
+                label="API"
+                checked={settings.translateMethod === 'api'}
+                onChange={() => settings.setTranslateMethod('api')}
+                name="translateMethod"
+              />
+              <RadioButton
+                label="Impit"
+                checked={settings.translateMethod === 'impit'}
+                onChange={() => settings.setTranslateMethod('impit')}
+                name="translateMethod"
+              />
+            </div>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Gemini model</label>
+              <select
+                value={settings.geminiModel}
+                onChange={(e) => settings.setGeminiModel(e.target.value)}
+                className={styles.select}
+                disabled={settings.translateMethod === 'impit'}
+                style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
+              >
+                {GEMINI_MODELS.map((m: { value: string; label: string }) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.stepCardHint}>
+              {settings.translateMethod === 'impit'
+                ? 'Impit bỏ qua model API.'
+                : 'API sẽ dùng model đã chọn để dịch batch.'}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '10px', flexWrap: 'wrap' }}>
-            <RadioButton
-              label="API"
-              checked={settings.translateMethod === 'api'}
-              onChange={() => settings.setTranslateMethod('api')}
-              name="translateMethod"
-            />
-            <RadioButton
-              label="Impit"
-              checked={settings.translateMethod === 'impit'}
-              onChange={() => settings.setTranslateMethod('impit')}
-              name="translateMethod"
-            />
-          </div>
-          <select
-            value={settings.geminiModel}
-            onChange={(e) => settings.setGeminiModel(e.target.value)}
-            className={styles.select}
-            disabled={settings.translateMethod === 'impit'}
-            style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
-          >
-            {GEMINI_MODELS.map((m: { value: string; label: string }) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
         </div>
       );
     }
 
     if (activeStep === 4) {
       return (
-        <div className={styles.panelSection}>
-          <div>
-            <label className={styles.label}>Giọng</label>
-            <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
-              {edgeVoiceOptions.length > 0 && (
-                <optgroup label="Edge">
-                  {edgeVoiceOptions.map((v) => (
-                    <option key={v.value} value={v.value}>
-                      {v.label}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {capCutVoiceOptions.length > 0 && (
-                <optgroup label="CapCut">
-                  {capCutVoiceOptions.map((v) => (
-                    <option key={v.value} value={v.value}>
-                      {v.label}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+        <div className={styles.stepInspectorStack}>
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Giọng đọc</div>
+              <span className={styles.stepMetaPill}>{selectedVoiceLabel}</span>
+            </div>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Voice</label>
+              <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
+                {edgeVoiceOptions.length > 0 && (
+                  <optgroup label="Edge">
+                    {edgeVoiceOptions.map((v) => (
+                      <option key={v.value} value={v.value}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {capCutVoiceOptions.length > 0 && (
+                  <optgroup label="CapCut">
+                    {capCutVoiceOptions.map((v) => (
+                      <option key={v.value} value={v.value}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
           </div>
           {!isCapCutVoiceSelected && (
-            <div className={styles.grid2} style={{ marginTop: '12px' }}>
-              <div>
-                <label className={styles.label}>Rate</label>
-                <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
-                  {RATE_OPTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+            <div className={styles.stepCard}>
+              <div className={styles.stepCardHeader}>
+                <div className={styles.stepCardTitle}>Edge TTS tuning</div>
               </div>
-              <div>
-                <label className={styles.label}>Volume</label>
-                <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
-                  {VOLUME_OPTIONS.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
+              <div className={styles.grid2Compact}>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>Rate</label>
+                  <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
+                    {RATE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>Volume</label>
+                  <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
+                    {VOLUME_OPTIONS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           )}
           {isCapCutVoiceSelected && (
-            <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
+            <div className={styles.stepInfoCard}>
               Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge.
             </div>
           )}
-          <div className={styles.textMuted} style={{ marginTop: '12px', fontSize: 11 }}>
+          <div className={styles.stepInfoNote}>
             Các tham số đồng bộ render/audio đã chuyển sang Common Config &gt; Audio.
           </div>
         </div>
@@ -1982,9 +2367,12 @@ export function CaptionTranslator() {
 
     if (activeStep === 5) {
       return (
-        <div className={styles.panelSection}>
-          <div className={styles.textMuted} style={{ fontSize: 12 }}>
+        <div className={styles.stepInspectorStack}>
+          <div className={styles.stepInfoCard}>
             Step 5 hiện không có cấu hình riêng.
+          </div>
+          <div className={styles.stepInfoNote}>
+            Dùng Common Config để chỉnh Typography/Render/Audio trước khi chạy.
           </div>
         </div>
       );
@@ -1992,16 +2380,19 @@ export function CaptionTranslator() {
 
     if (activeStep === 6) {
       return (
-        <div className={styles.panelSection}>
-          <div className={styles.textMuted} style={{ fontSize: 12 }}>
+        <div className={styles.stepInspectorStack}>
+          <div className={styles.stepInfoCard}>
             Step 6 dùng cấu hình audio ở các bước trước.
+          </div>
+          <div className={styles.stepInfoNote}>
+            Tốc độ/volume render đang lấy từ Common Config &gt; Audio.
           </div>
         </div>
       );
     }
 
     return (
-      <div className={styles.panelSection}>
+      <div className={styles.stepInspectorStack}>
         <HardsubSettingsPanel
           visible={processing.enabledSteps.has(7)}
           renderSummary={{
@@ -2052,7 +2443,6 @@ export function CaptionTranslator() {
               items={hardsubSettings.thumbnailFolderItems}
               autoStartValue={hardsubSettings.thumbnailAutoStartValue}
               onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
-              onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
               secondaryGlobalText={hardsubSettings.thumbnailTextSecondary}
               onSecondaryGlobalTextChange={(value) => {
                 hardsubSettings.setThumbnailTextSecondaryGlobal(value);
@@ -2067,7 +2457,7 @@ export function CaptionTranslator() {
           )}
         />
         {!processing.enabledSteps.has(7) && (
-          <div className={styles.textMuted} style={{ fontSize: 12 }}>
+          <div className={styles.stepInfoCard}>
             Bật Step 7 ở phần Điều khiển để chỉnh render.
           </div>
         )}
@@ -2079,11 +2469,15 @@ export function CaptionTranslator() {
     <div className={styles.container}>
       <div className={styles.workspace}>
         <aside className={styles.stepRail}>
-          <div className={styles.stepRailTitle}>Pipeline</div>
+          <div className={styles.stepRailHeader}>
+            <div className={styles.stepRailTitle}>Steps</div>
+            <div className={styles.stepRailCurrent}>B{activeStep}</div>
+          </div>
           <div className={styles.stepStatusList}>
             {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => {
               const badge = getStepBadge(step);
               const toneClass = getStepToneClass(badge.label);
+              const compactStatus = getStepStatusCompactLabel(badge.label);
               const isActive = activeStep === step;
               const isCurrent = processing.currentStep === step && processing.status === 'running';
               return (
@@ -2102,7 +2496,7 @@ export function CaptionTranslator() {
                     <span className={styles.stepStatusCode}>B{step}</span>
                     <span className={styles.stepStatusName}>{STEP_SHORT_LABELS[step]}</span>
                   </span>
-                  <span className={`${styles.stepStatusState} ${toneClass}`}>{badge.label}</span>
+                  <span className={`${styles.stepStatusState} ${toneClass}`}>{compactStatus}</span>
                 </button>
               );
             })}
@@ -2111,18 +2505,17 @@ export function CaptionTranslator() {
           <div className={styles.stepRailQuick}>
             <button
               type="button"
-              className={styles.resetBtnLike}
-              onClick={() => {
-                setActiveStep(1);
-                setInspectorPane('step');
-              }}
-              title="Mở cấu hình nguồn vào"
+              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${isStep7AudioActionActive ? styles.stepRailQuickBtnActive : ''} ${isStep7AudioError ? styles.stepRailQuickBtnError : ''}`}
+              onClick={handleQuickStep7AudioToggle}
+              disabled={!canQuickStep7Audio}
+              title={isStep7AudioError ? (step7AudioButtonError || step7QuickAudioTitle) : step7QuickAudioTitle}
             >
-              B1 Input
+              <span className={styles.stepRailQuickBtnLabel}>{step7QuickAudioLabel}</span>
+              {isStep7AudioError && !isStep7AudioMixing && <AlertCircle size={13} className={`${styles.stepRailQuickBtnIcon} ${styles.stepRailQuickBtnIconError}`} />}
             </button>
             <button
               type="button"
-              className={styles.resetBtnLike}
+              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn}`}
               onClick={() => {
                 setActiveStep(1);
                 setInspectorPane('step');
@@ -2130,7 +2523,7 @@ export function CaptionTranslator() {
               }}
               title={settings.inputType === 'draft' ? 'Chọn lại/ thêm nhiều folder' : 'Chọn file SRT'}
             >
-              Chọn nguồn
+              Nguồn vào
             </button>
           </div>
         </aside>
@@ -2172,6 +2565,8 @@ export function CaptionTranslator() {
                   coverQuad={settings.coverQuad}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
+                  previewLayoutValue={activeLayoutSwitch}
+                  onPreviewLayoutChange={handlePreviewLayoutChange}
                   logoPath={settings.logoPath}
                   logoPosition={settings.logoPosition}
                   logoScale={settings.logoScale}

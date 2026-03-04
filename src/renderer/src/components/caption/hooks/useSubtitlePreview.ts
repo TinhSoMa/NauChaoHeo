@@ -287,7 +287,14 @@ export function useSubtitlePreview({
   const [isPanning, setIsPanning] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [viewPan, setViewPan] = useState({ x: 0, y: 0 });
   const [canvasCursor, setCanvasCursor] = useState<string>('crosshair');
+  const panDragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startPanX: number;
+    startPanY: number;
+  } | null>(null);
   const previewRectRef = useRef({ x: 0, y: 0, width: 1, height: 1 });
   const subtitleHitRectRef = useRef<CanvasRect | null>(null);
   const markHitRectRef = useRef<CanvasRect | null>(null);
@@ -350,9 +357,42 @@ export function useSubtitlePreview({
     };
   }, []);
 
+  const clampViewPanOffset = useCallback((
+    pan: { x: number; y: number },
+    zoom: number,
+    width: number,
+    height: number
+  ) => {
+    if (zoom <= 1) {
+      return { x: 0, y: 0 };
+    }
+    const maxX = Math.max(0, (width * zoom - width) / 2);
+    const maxY = Math.max(0, (height * zoom - height) / 2);
+    return {
+      x: clampNumber(pan.x, -maxX, maxX),
+      y: clampNumber(pan.y, -maxY, maxY),
+    };
+  }, []);
+
+  const resolveViewOffsetWithPan = useCallback((
+    zoom: number,
+    width: number,
+    height: number,
+    pan: { x: number; y: number }
+  ) => {
+    const base = resolveViewOffset(zoom, width, height);
+    const boundedPan = clampViewPanOffset(pan, zoom, width, height);
+    return {
+      x: base.x + boundedPan.x,
+      y: base.y + boundedPan.y,
+    };
+  }, [clampViewPanOffset, resolveViewOffset]);
+
   const resetViewTransform = useCallback(() => {
     setPreviewZoom(1);
+    setViewPan({ x: 0, y: 0 });
     setIsPanning(false);
+    panDragRef.current = null;
   }, []);
 
   const setZoom = useCallback((value: number) => {
@@ -504,6 +544,22 @@ export function useSubtitlePreview({
   useEffect(() => {
     resetViewTransform();
   }, [renderMode, renderResolution, resetViewTransform]);
+
+  useEffect(() => {
+    const cw = containerSize.width || 400;
+    const ch = containerSize.height || 225;
+    setViewPan((prev) => {
+      const next = clampViewPanOffset(prev, previewZoom, cw, ch);
+      if (next.x === prev.x && next.y === prev.y) {
+        return prev;
+      }
+      return next;
+    });
+    if (previewZoom <= 1) {
+      setIsPanning(false);
+      panDragRef.current = null;
+    }
+  }, [clampViewPanOffset, containerSize.height, containerSize.width, previewZoom]);
 
   // ---------------------------------------------------------
   // Resize observer
@@ -683,7 +739,7 @@ export function useSubtitlePreview({
       hostCtx.fillStyle = '#111827';
       hostCtx.fillRect(0, 0, pixelW, pixelH);
       hostCtx.save();
-      const viewOffset = resolveViewOffset(previewZoom, cw, ch);
+      const viewOffset = resolveViewOffsetWithPan(previewZoom, cw, ch, viewPan);
       hostCtx.setTransform(
         dpr * previewZoom,
         0,
@@ -1153,7 +1209,7 @@ export function useSubtitlePreview({
     }
 
     presentWorldCanvas();
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffset]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan]);
 
   // Load video frame image
   useEffect(() => {
@@ -1267,12 +1323,12 @@ export function useSubtitlePreview({
   const screenToWorldPoint = useCallback((sx: number, sy: number) => {
     const cw = containerSize.width || 400;
     const ch = containerSize.height || 225;
-    const viewOffset = resolveViewOffset(previewZoom, cw, ch);
+    const viewOffset = resolveViewOffsetWithPan(previewZoom, cw, ch, viewPan);
     return {
       x: (sx - viewOffset.x) / previewZoom,
       y: (sy - viewOffset.y) / previewZoom,
     };
-  }, [containerSize.height, containerSize.width, previewZoom, resolveViewOffset]);
+  }, [containerSize.height, containerSize.width, previewZoom, resolveViewOffsetWithPan, viewPan]);
 
   const canvasToPreviewNormalized = useCallback((cx: number, cy: number) => {
     const rect = previewRectRef.current;
@@ -1356,6 +1412,19 @@ export function useSubtitlePreview({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!state.frameData) return;
+    const canPan = previewZoom > 1 && (spacePressed || e.altKey);
+    if (canPan) {
+      panDragRef.current = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startPanX: viewPan.x,
+        startPanY: viewPan.y,
+      };
+      setIsPanning(true);
+      setIsDragging(false);
+      setCanvasCursor('grabbing');
+      return;
+    }
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -1364,11 +1433,6 @@ export function useSubtitlePreview({
     const worldPoint = screenToWorldPoint(cx, cy);
     const wx = worldPoint.x;
     const wy = worldPoint.y;
-
-    if (spacePressed) {
-      setCanvasCursor('crosshair');
-      return;
-    }
 
     let activeMode: PreviewMode = mode;
     const logoBounds = logoBoundsRef.current;
@@ -1453,10 +1517,32 @@ export function useSubtitlePreview({
     previewZoom,
     screenToWorldPoint,
     spacePressed,
+    viewPan,
     mode,
   ]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning && panDragRef.current) {
+      const cw = containerSize.width || 400;
+      const ch = containerSize.height || 225;
+      const dx = e.clientX - panDragRef.current.startClientX;
+      const dy = e.clientY - panDragRef.current.startClientY;
+      const nextPan = clampViewPanOffset(
+        {
+          x: panDragRef.current.startPanX + dx,
+          y: panDragRef.current.startPanY + dy,
+        },
+        previewZoom,
+        cw,
+        ch
+      );
+      setViewPan((prev) => (
+        prev.x === nextPan.x && prev.y === nextPan.y ? prev : nextPan
+      ));
+      setCanvasCursor('grabbing');
+      return;
+    }
+
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const cx = e.clientX - rect.left;
@@ -1465,8 +1551,8 @@ export function useSubtitlePreview({
     const wx = worldPoint.x;
     const wy = worldPoint.y;
 
-    if (spacePressed && !isDragging) {
-      setCanvasCursor('crosshair');
+    if (previewZoom > 1 && !isDragging && (spacePressed || e.altKey)) {
+      setCanvasCursor('grab');
       return;
     }
 
@@ -1564,10 +1650,15 @@ export function useSubtitlePreview({
     isNearCorner,
     isPointInsideCoverQuad,
     isDragging,
+    isPanning,
     localCoverMode,
     mode,
+    clampViewPanOffset,
+    containerSize.height,
+    containerSize.width,
     resizeCoverRectByEdge,
     screenToWorldPoint,
+    previewZoom,
     spacePressed,
     state.frameData,
   ]);
@@ -1684,7 +1775,13 @@ export function useSubtitlePreview({
   }, [nudgeActiveObject]);
 
   const handleMouseUp = useCallback(() => {
+    const wasPanning = isPanning;
     setIsPanning(false);
+    panDragRef.current = null;
+    if (wasPanning) {
+      setCanvasCursor(previewZoom > 1 ? 'grab' : 'crosshair');
+      return;
+    }
     setIsDragging(false);
     if (mode === 'subtitle') {
       if (state.frameData) {
@@ -1724,6 +1821,8 @@ export function useSubtitlePreview({
     onBlackoutChange,
     localCoverMode,
     onCoverQuadChange,
+    isPanning,
+    previewZoom,
   ]);
 
   const resetToCenter = useCallback(() => {

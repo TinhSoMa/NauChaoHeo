@@ -348,36 +348,193 @@
   min-width: 0;
 }
 
-.step7Group {
-  margin-bottom: 12px;
+.step7Panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
-.step7GroupTitle {
+.step7SummaryShell {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-primary) 8%, transparent),
+      transparent 68%
+    ),
+    var(--color-card);
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+}
+
+.step7SummaryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step7SummaryTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
+}
+
+.step7SummaryHint {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: var(--color-surface);
+}
+
+.step7SummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.step7SummaryItem {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-card));
+  padding: 7px 8px;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.step7SummaryItemLabel {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.step7SummaryItemValue {
   font-size: 12px;
   font-weight: 700;
-  color: var(--color-primary);
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  color: var(--color-text-primary);
+  line-height: 1.25;
+  word-break: break-word;
 }
 
-.step7GroupBody {
+.step7SummaryItemDetail {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  word-break: break-word;
+}
+
+.step7AudioCard {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-card);
+  padding: 10px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 16px;
-}
-
-.step7Row {
+  gap: 8px;
   min-width: 0;
+  overflow-x: hidden;
 }
 
-.step7FullRow {
-  grid-column: 1 / -1;
+.step7AudioHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.step7Divider {
-  border-top: 1px solid var(--color-border);
-  margin: 4px 0 12px;
+.step7AudioTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.step7AudioSubtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.step7AudioStatusBadge {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.step7AudioStatusIdle {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.step7AudioStatusMixing {
+  color: var(--color-accent, #4a9eff);
+  border-color: color-mix(in srgb, var(--color-accent, #4a9eff) 60%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 14%, transparent);
+}
+
+.step7AudioStatusReady {
+  color: var(--color-success, #10b981);
+  border-color: color-mix(in srgb, var(--color-success, #10b981) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success, #10b981) 14%, transparent);
+}
+
+.step7AudioStatusError {
+  color: var(--color-error, #ef4444);
+  border-color: color-mix(in srgb, var(--color-error, #ef4444) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-error, #ef4444) 14%, transparent);
+}
+
+.step7AudioActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step7AudioMetaGrid {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+}
+
+.step7AudioMetaRow {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.step7AudioMetaLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.step7AudioMetaValue {
+  font-size: 11px;
+  color: var(--color-text-primary);
+  min-width: 0;
+  word-break: break-word;
+}
+
+.step7ThumbnailWrap {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-card);
+  padding: 8px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .audioPreviewBox {
@@ -422,9 +579,10 @@
 
 .audioPreviewPath {
   max-width: 100%;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 }
 
 
@@ -655,6 +813,8 @@
   border-radius: 10px;
   padding: 10px;
   background: var(--color-surface);
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .thumbnailListHeader {
@@ -666,6 +826,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
+  flex-wrap: wrap;
 }
 
 .thumbnailListTitleWrap {
@@ -688,7 +849,8 @@
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
   background: var(--color-card);
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .thumbnailListToolbar {
@@ -697,32 +859,41 @@
   background: var(--color-card);
   padding: 8px;
   margin-bottom: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.thumbnailToolbarBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.thumbnailToolbarLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
 }
 
 .thumbnailListTable {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
 }
 
 .thumbnailAutoFillRow {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
   gap: 8px;
-  margin-bottom: 8px;
 }
 
 .thumbnailSecondaryGlobalRow {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
-}
-
-.thumbnailSecondaryGlobalLabel {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  min-width: 88px;
-  padding-top: 8px;
 }
 
 .thumbnailAutoFillInput {
@@ -772,8 +943,18 @@
 
 .thumbnailListCardHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.thumbnailListHeaderLead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .thumbnailListOrderBadge {
@@ -800,9 +981,10 @@
 .thumbnailListVideo {
   font-size: 12px;
   color: var(--color-text-primary);
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 }
 
 .thumbnailListVideo {
@@ -816,14 +998,15 @@
   border: 1px dashed var(--color-border);
   border-radius: 6px;
   padding: 5px 8px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 }
 
 .thumbnailListCardBody {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -877,7 +1060,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .thumbnailOverrideBadge,
@@ -936,23 +1119,26 @@
     grid-template-columns: 1fr;
   }
 
-  .step7GroupBody {
+  .step7SummaryGrid {
     grid-template-columns: 1fr;
   }
 
-  .thumbnailAutoFillRow {
+  .step7AudioHeader {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .thumbnailSecondaryGlobalRow {
-    flex-direction: column;
-    gap: 4px;
+  .step7AudioMetaRow {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
-  .thumbnailSecondaryGlobalLabel {
-    min-width: 0;
-    padding-top: 0;
+  .thumbnailAutoFillRow {
+    grid-template-columns: 1fr;
+  }
+
+  .thumbnailSecondaryGlobalRow {
+    gap: 4px;
   }
 
   .thumbnailListCardHeader {
@@ -1016,7 +1202,7 @@
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr) 404px;
+  grid-template-columns: 152px minmax(0, 1fr) 404px;
   gap: 12px;
 }
 
@@ -1032,38 +1218,59 @@
 .stepRail {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-  overflow: auto;
+  gap: 6px;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.stepRailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
 
 .stepRailTitle {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--color-text-secondary);
-  padding: 2px 4px;
+  padding: 2px 3px;
+}
+
+.stepRailCurrent {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: var(--color-surface);
 }
 
 .stepStatusList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .stepStatusBtn {
   width: 100%;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
-  border-radius: 8px;
-  padding: 7px 8px;
+  border-radius: 7px;
+  padding: 5px 6px;
   display: flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
   text-align: left;
-  min-height: 34px;
+  min-height: 30px;
 }
 
 .stepStatusBtn:hover {
@@ -1080,11 +1287,11 @@
 }
 
 .stepStatusDot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
   flex-shrink: 0;
-  background: var(--color-text-muted);
+  background: var(--step-tone, var(--color-text-muted));
 }
 
 .stepStatusMain {
@@ -1096,13 +1303,13 @@
 }
 
 .stepStatusCode {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .stepStatusName {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1110,45 +1317,88 @@
 }
 
 .stepStatusState {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.01em;
+  border-radius: 999px;
+  color: var(--step-tone, var(--color-text-muted));
+  border: 1px solid color-mix(in srgb, var(--step-tone, var(--color-text-muted)) 60%, var(--color-border));
+  background: color-mix(in srgb, var(--step-tone, var(--color-text-muted)) 14%, transparent);
+  padding: 2px 5px;
+  min-width: 34px;
+  text-align: center;
 }
 
 .stepToneIdle {
-  color: var(--color-text-muted);
-  background: color-mix(in srgb, var(--color-text-muted) 50%, transparent);
+  --step-tone: var(--color-text-muted);
 }
 
 .stepToneRunning {
-  color: var(--color-accent, #4a9eff);
-  background: var(--color-accent, #4a9eff);
+  --step-tone: var(--color-accent, #4a9eff);
 }
 
 .stepToneDone {
-  color: var(--color-success, #10b981);
-  background: var(--color-success, #10b981);
+  --step-tone: var(--color-success, #10b981);
 }
 
 .stepToneWarning {
-  color: var(--color-warning, #f59e0b);
-  background: var(--color-warning, #f59e0b);
+  --step-tone: var(--color-warning, #f59e0b);
 }
 
 .stepToneError {
-  color: var(--color-error, #ef4444);
-  background: var(--color-error, #ef4444);
+  --step-tone: var(--color-error, #ef4444);
 }
 
 .stepToneMuted {
-  color: var(--color-text-muted);
-  background: var(--color-border);
+  --step-tone: color-mix(in srgb, var(--color-text-muted) 70%, var(--color-border));
 }
 
 .stepRailQuick {
   display: grid;
   gap: 6px;
-  margin-top: auto;
+  margin-top: 2px;
+}
+
+.stepRailQuickBtn {
+  width: 100%;
+  justify-content: center;
+  min-height: 28px;
+  position: relative;
+}
+
+.stepRailQuickBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stepRailQuickBtnActive {
+  border-color: var(--color-accent, #4a9eff);
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 16%, transparent);
+  color: var(--color-text-primary);
+}
+
+.stepRailQuickBtnError {
+  border-color: color-mix(in srgb, var(--color-error, #ef4444) 65%, var(--color-border));
+}
+
+.stepRailQuickBtnLabel {
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepRailQuickBtnIcon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.stepRailQuickBtnIconError {
+  color: var(--color-error, #ef4444);
 }
 
 .stepTabLabel {
@@ -1314,6 +1564,43 @@
   cursor: pointer;
 }
 
+.colorHistoryBlock {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.colorHistoryLabel {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.colorHistoryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.colorSwatchBtn {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.colorSwatchBtn:hover {
+  transform: translateY(-1px);
+}
+
+.colorSwatchBtnActive {
+  border-color: var(--color-accent, #4a9eff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent, #4a9eff) 35%, transparent);
+}
+
 .inspector {
   min-height: 0;
   display: grid;
@@ -1365,7 +1652,8 @@
 
 .inspectorBody {
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px;
 }
 
@@ -1374,6 +1662,111 @@
   border-radius: 10px;
   padding: 10px;
   background: var(--color-card);
+}
+
+.stepInspectorStack {
+  display: grid;
+  gap: 10px;
+}
+
+.stepCard {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-card);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.stepCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stepCardTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.stepCardHint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.stepMetaPills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stepMetaPill {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--color-surface);
+}
+
+.stepBrowseRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.stepCompactBtn {
+  padding: 4px 10px;
+  font-size: 12px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepOptionRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.grid2Compact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stepInfoCard {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+}
+
+.stepInfoNote {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.folderIconCompact {
+  width: 16px;
+  height: 16px;
+}
+
+.folderVideoIcon {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
 }
 
 .inspectorFooter {
@@ -1429,17 +1822,22 @@
 
 @media (max-width: 1520px) {
   .workspace {
-    grid-template-columns: 160px minmax(0, 1fr) 360px;
+    grid-template-columns: 144px minmax(0, 1fr) 360px;
   }
 
   .runBarControls {
+    grid-template-columns: 1fr;
+  }
+
+  .stepBrowseRow,
+  .grid2Compact {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 1240px) {
   .workspace {
-    grid-template-columns: 160px minmax(0, 1fr);
+    grid-template-columns: 144px minmax(0, 1fr);
   }
 
   .inspector {

@@ -21,7 +21,7 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const [thumbnailTextsSecondaryByOrder, setThumbnailTextsSecondaryByOrder] = useState<string[]>([]);
   const [thumbnailTextSecondaryOverrideFlags, setThumbnailTextSecondaryOverrideFlags] = useState<boolean[]>([]);
   const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
-  const [thumbnailAutoStartValue, setThumbnailAutoStartValue] = useState('');
+  const [thumbnailAutoStartValue, setThumbnailAutoStartValueState] = useState('');
 
   const selectedDraftPaths = useMemo(
     () => getInputPaths(options.inputType, options.filePath),
@@ -175,8 +175,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     setThumbnailTextSecondaryOverrideFlags(resolvedFlags);
   };
 
-  const handleAutoFillThumbnailByEpisode = () => {
-    const normalized = thumbnailAutoStartValue.trim();
+  const autoFillThumbnailByEpisode = (rawValue: string) => {
+    const normalized = rawValue.trim();
     const match = normalized.match(/-?\d+/);
     if (!match) {
       return;
@@ -187,6 +187,11 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     }
     const generated = selectedDraftPaths.map((_, idx) => `Tập ${startEpisode + idx}`);
     setThumbnailTextsByOrder(generated);
+  };
+
+  const handleThumbnailAutoStartValueChange = (value: string) => {
+    setThumbnailAutoStartValueState(value);
+    autoFillThumbnailByEpisode(value);
   };
 
   const thumbnailFolderItems: ThumbnailFolderItem[] = isMultiFolder
@@ -224,7 +229,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     thumbnailTextSecondaryOverrideFlags,
     setThumbnailTextSecondaryOverrideFlags,
     thumbnailAutoStartValue,
-    setThumbnailAutoStartValue,
+    setThumbnailAutoStartValue: handleThumbnailAutoStartValueChange,
+    handleThumbnailAutoStartValueChange,
     selectedDraftPaths,
     isMultiFolder,
     firstFolderPath,
@@ -234,6 +240,6 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     updateThumbnailTextByOrder,
     setThumbnailTextSecondaryByOrder,
     resetThumbnailTextSecondaryOverride,
-    handleAutoFillThumbnailByEpisode,
+    handleAutoFillThumbnailByEpisode: () => autoFillThumbnailByEpisode(thumbnailAutoStartValue),
   };
 }

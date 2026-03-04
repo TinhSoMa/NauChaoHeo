@@ -30,6 +30,8 @@ interface SubtitlePreviewProps {
   onCoverModeChange?: (value: 'blackout_bottom' | 'copy_from_above') => void;
   onCoverQuadChange?: (value: CoverQuad) => void;
   onRenderResolutionChange?: (value: 'original' | '1080p' | '720p' | '540p' | '360p') => void;
+  previewLayoutValue?: 'landscape' | 'portrait';
+  onPreviewLayoutChange?: (value: 'landscape' | 'portrait') => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
   onSelectLogo?: () => void;
@@ -38,7 +40,7 @@ interface SubtitlePreviewProps {
   interactiveDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, renderMode, renderResolution, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, renderMode, renderResolution, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -190,7 +192,6 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           onWheel={isInteractionDisabled ? undefined : preview.handleWheel}
           onKeyDown={isInteractionDisabled ? undefined : preview.handleKeyDown}
           tabIndex={isInteractionDisabled ? -1 : 0}
-          title="Frame cố định ở giữa. Giữ Space + cuộn để zoom, dùng phím mũi tên để tinh chỉnh vị trí"
           style={{ cursor: isInteractionDisabled ? 'not-allowed' : preview.canvasCursor }}
         />
         {preview.isLoading && (
@@ -270,15 +271,20 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               <button className={styles.resetBtn} onClick={preview.resetToCenter}>
                 <RotateCcw size={12} /> Căn giữa
               </button>
-              <button
-                className={styles.resetBtn}
-                onClick={() => onPositionChange(null)}
-                title="Xóa position, dùng alignment mặc định"
-                disabled={isInteractionDisabled}
-              >
-                Tự động
-              </button>
             </>
+          )}
+
+          {onPreviewLayoutChange && (
+            <select
+              className={styles.resolutionSelect}
+              value={previewLayoutValue || (isPortraitMode ? 'portrait' : 'landscape')}
+              onChange={(e) => onPreviewLayoutChange(e.target.value as 'landscape' | 'portrait')}
+              title="Tỷ lệ khung preview"
+              disabled={isInteractionDisabled}
+            >
+              <option value="landscape">16:9</option>
+              <option value="portrait">9:16</option>
+            </select>
           )}
           
           <select
@@ -293,7 +299,18 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
                  {item.label}
                </option>
              ))}
-          </select>
+           </select>
+
+          {preview.mode === 'subtitle' && (
+            <button
+              className={styles.resetBtn}
+              onClick={() => onPositionChange(null)}
+              title="Xóa position, dùng alignment mặc định"
+              disabled={isInteractionDisabled}
+            >
+              Vị trí auto
+            </button>
+          )}
 
           {preview.mode === 'blackout' && (
             <select

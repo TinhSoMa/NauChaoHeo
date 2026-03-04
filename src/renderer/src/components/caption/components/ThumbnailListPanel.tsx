@@ -6,7 +6,6 @@ interface ThumbnailListPanelProps {
   items: ThumbnailFolderItem[];
   autoStartValue: string;
   onAutoStartValueChange: (value: string) => void;
-  onAutoFill: () => void;
   secondaryGlobalText: string;
   onSecondaryGlobalTextChange: (value: string) => void;
   onItemTextChange: (indexZeroBased: number, value: string) => void;
@@ -32,33 +31,30 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
       </div>
 
       <div className={styles.thumbnailListToolbar}>
-        <div className={styles.thumbnailAutoFillRow}>
-          <input
-            type="text"
-            className={styles.thumbnailAutoFillInput}
-            value={props.autoStartValue}
-            onChange={(e) => props.onAutoStartValueChange(e.target.value)}
-            placeholder="Nhập số bắt đầu (vd: 4 hoặc 1.)"
-          />
-          <button
-            type="button"
-            className={styles.thumbnailAutoFillBtn}
-            onClick={props.onAutoFill}
-            title="Tự động điền theo mẫu Tập N, Tập N+1..."
-          >
-            Tự động điền Tập
-          </button>
+        <div className={styles.thumbnailToolbarBlock}>
+          <div className={styles.thumbnailToolbarLabel}>Auto text1 by episode</div>
+          <div className={styles.thumbnailAutoFillRow}>
+            <input
+              type="text"
+              className={styles.thumbnailAutoFillInput}
+              value={props.autoStartValue}
+              onChange={(e) => props.onAutoStartValueChange(e.target.value)}
+              placeholder="Nhập số bắt đầu (vd: 4 hoặc 1.)"
+            />
+          </div>
         </div>
 
-        <div className={styles.thumbnailSecondaryGlobalRow}>
-          <span className={styles.thumbnailSecondaryGlobalLabel}>Text2 global</span>
-          <textarea
-            className={`${styles.thumbnailAutoFillInput} ${styles.thumbnailGlobalTextarea}`}
-            value={props.secondaryGlobalText}
-            onChange={(e) => props.onSecondaryGlobalTextChange(e.target.value)}
-            rows={2}
-            placeholder="Tên phim (áp dụng cho folder chưa override)..."
-          />
+        <div className={styles.thumbnailToolbarBlock}>
+          <div className={styles.thumbnailToolbarLabel}>Text2 global</div>
+          <div className={styles.thumbnailSecondaryGlobalRow}>
+            <textarea
+              className={`${styles.thumbnailAutoFillInput} ${styles.thumbnailGlobalTextarea}`}
+              value={props.secondaryGlobalText}
+              onChange={(e) => props.onSecondaryGlobalTextChange(e.target.value)}
+              rows={2}
+              placeholder="Tên phim (áp dụng cho folder chưa override)..."
+            />
+          </div>
         </div>
       </div>
 
@@ -69,13 +65,15 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
             className={`${styles.thumbnailListCard} ${item.hasError ? styles.thumbnailListRowError : ''}`}
           >
             <div className={styles.thumbnailListCardHeader}>
-              <span className={styles.thumbnailListOrderBadge}>#{item.index}</span>
-              <div className={styles.thumbnailListCardHeaderInfo}>
-                <div className={styles.thumbnailListFolder} title={item.folderPath}>
-                  {item.folderName}
-                </div>
-                <div className={styles.thumbnailListVideo} title={item.videoName}>
-                  {item.videoName}
+              <div className={styles.thumbnailListHeaderLead}>
+                <span className={styles.thumbnailListOrderBadge}>#{item.index}</span>
+                <div className={styles.thumbnailListCardHeaderInfo}>
+                  <div className={styles.thumbnailListFolder} title={item.folderPath}>
+                    {item.folderName}
+                  </div>
+                  <div className={styles.thumbnailListVideo} title={item.videoName}>
+                    {item.videoName}
+                  </div>
                 </div>
               </div>
               <div className={styles.thumbnailSecondarySyncCell}>

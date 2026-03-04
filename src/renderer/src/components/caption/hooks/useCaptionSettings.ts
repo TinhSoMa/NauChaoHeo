@@ -116,7 +116,8 @@ function clampPercent(value: number, min: number, max: number, fallback: number)
   if (!Number.isFinite(value)) {
     return fallback;
   }
-  return Math.min(max, Math.max(min, Math.round(value)));
+  const clamped = Math.min(max, Math.max(min, value));
+  return Math.round(clamped * 10) / 10;
 }
 
 function normalizeHexColor(value: unknown, fallback: string): string {
