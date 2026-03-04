@@ -9,6 +9,7 @@ import {
   DEFAULT_SPLIT_BY_LINES,
   DEFAULT_LINES_PER_FILE,
   DEFAULT_NUMBER_OF_PARTS,
+  normalizeVoiceValue,
   InputType,
 } from '../../../config/captionConfig';
 import { Step, ProcessingMode } from '../CaptionTypes';
@@ -437,7 +438,7 @@ export function useCaptionSettings() {
 
   const [inputType, setInputType] = useState<InputType>(DEFAULT_INPUT_TYPE);
   const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
-  const [voice, setVoice] = useState(DEFAULT_VOICE);
+  const [voice, setVoiceState] = useState(DEFAULT_VOICE);
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
   const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
@@ -511,6 +512,10 @@ export function useCaptionSettings() {
     setAudioVolumeState((prev) =>
       clampPercent(value, MIN_TTS_VOLUME_PERCENT, MAX_TTS_VOLUME_PERCENT, prev)
     );
+  }, []);
+
+  const setVoice = useCallback((value: string) => {
+    setVoiceState(normalizeVoiceValue(value));
   }, []);
 
   const setStyle = useCallback(
@@ -888,7 +893,7 @@ export function useCaptionSettings() {
       landscape: mergedLegacyLandscape,
       portrait: mergedLegacyPortrait,
     });
-  }, []);
+  }, [setAudioVolume, setVideoVolume, setVoice]);
 
   useEffect(() => {
     if (!projectId || !paths) {

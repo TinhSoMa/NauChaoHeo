@@ -127,7 +127,8 @@ export interface SplitResult {
  * Options cho TTS
  */
 export interface TTSOptions {
-  voice: string;          // "vi-VN-HoaiMyNeural"
+  voice: string;          // "edge:vi-VN-HoaiMyNeural" | "capcut:BV074_streaming"
+  provider?: TTSProvider; // Optional hint, fallback parse từ voice
   rate: string;           // "+0%" đến "+50%"
   volume: string;         // "+0%" đến "+50%"
   pitch: string;          // "+0Hz"
@@ -264,27 +265,133 @@ export const CAPTION_IPC_CHANNELS = {
 // ============================================
 
 /**
- * Thông tin giọng đọc Edge TTS
+ * Provider TTS
+ */
+export type TTSProvider = 'edge' | 'capcut';
+export type TTSTier = 'free' | 'pro';
+
+/**
+ * Thông tin giọng đọc TTS
  */
 export interface VoiceInfo {
   name: string;           // "vi-VN-HoaiMyNeural"
+  provider: TTSProvider;  // edge | capcut
+  voiceId: string;        // provider-specific id
   displayName: string;    // "Hoài My (Nữ)"
   language: string;       // "vi-VN"
   gender: 'Male' | 'Female';
+  tier?: TTSTier;         // free | pro
+  value?: string;         // canonical value: "edge:vi-VN-HoaiMyNeural"
 }
 
 /**
- * Danh sách giọng Việt Nam có sẵn
+ * Danh sách giọng Edge Việt Nam có sẵn
  */
 export const VIETNAMESE_VOICES: VoiceInfo[] = [
-  { name: 'vi-VN-HoaiMyNeural', displayName: 'Hoài My (Nữ)', language: 'vi-VN', gender: 'Female' },
-  { name: 'vi-VN-NamMinhNeural', displayName: 'Nam Minh (Nam)', language: 'vi-VN', gender: 'Male' },
+  {
+    name: 'vi-VN-HoaiMyNeural',
+    provider: 'edge',
+    voiceId: 'vi-VN-HoaiMyNeural',
+    displayName: 'Hoài My (Nữ)',
+    language: 'vi-VN',
+    gender: 'Female',
+    tier: 'free',
+    value: 'edge:vi-VN-HoaiMyNeural',
+  },
+  {
+    name: 'vi-VN-NamMinhNeural',
+    provider: 'edge',
+    voiceId: 'vi-VN-NamMinhNeural',
+    displayName: 'Nam Minh (Nam)',
+    language: 'vi-VN',
+    gender: 'Male',
+    tier: 'free',
+    value: 'edge:vi-VN-NamMinhNeural',
+  },
 ];
+
+/**
+ * Danh sách giọng CapCut tĩnh (catalog)
+ */
+export const CAPCUT_VOICES: VoiceInfo[] = [
+  {
+    name: 'BV074_streaming',
+    provider: 'capcut',
+    voiceId: 'BV074_streaming',
+    displayName: 'Cute Female (Ngôn)',
+    language: 'vi-VN',
+    gender: 'Female',
+    tier: 'free',
+    value: 'capcut:BV074_streaming',
+  },
+  {
+    name: 'BV074_streaming_dsp',
+    provider: 'capcut',
+    voiceId: 'BV074_streaming_dsp',
+    displayName: 'Giọng bé (DSP)',
+    language: 'vi-VN',
+    gender: 'Female',
+    tier: 'free',
+    value: 'capcut:BV074_streaming_dsp',
+  },
+  {
+    name: 'BV075_streaming',
+    provider: 'capcut',
+    voiceId: 'BV075_streaming',
+    displayName: 'Confident Male (Tín)',
+    language: 'vi-VN',
+    gender: 'Male',
+    tier: 'free',
+    value: 'capcut:BV075_streaming',
+  },
+  {
+    name: 'BV560_streaming',
+    provider: 'capcut',
+    voiceId: 'BV560_streaming',
+    displayName: 'Anh Dũng',
+    language: 'vi-VN',
+    gender: 'Male',
+    tier: 'pro',
+    value: 'capcut:BV560_streaming',
+  },
+  {
+    name: 'BV562_streaming',
+    provider: 'capcut',
+    voiceId: 'BV562_streaming',
+    displayName: 'Chí Mai',
+    language: 'vi-VN',
+    gender: 'Female',
+    tier: 'pro',
+    value: 'capcut:BV562_streaming',
+  },
+  {
+    name: 'vi_female_huong',
+    provider: 'capcut',
+    voiceId: 'vi_female_huong',
+    displayName: 'Giọng nữ phổ thông',
+    language: 'vi-VN',
+    gender: 'Female',
+    tier: 'pro',
+    value: 'capcut:vi_female_huong',
+  },
+  {
+    name: 'BV421_vivn_streaming',
+    provider: 'capcut',
+    voiceId: 'BV421_vivn_streaming',
+    displayName: 'Sweet Little Girl',
+    language: 'vi-VN',
+    gender: 'Female',
+    tier: 'pro',
+    value: 'capcut:BV421_vivn_streaming',
+  },
+];
+
+export const TTS_VOICE_CATALOG: VoiceInfo[] = [...VIETNAMESE_VOICES, ...CAPCUT_VOICES];
 
 /**
  * Giọng mặc định
  */
-export const DEFAULT_VOICE = 'vi-VN-HoaiMyNeural';
+export const DEFAULT_VOICE = 'edge:vi-VN-HoaiMyNeural';
 export const DEFAULT_RATE = '+0%';
 export const DEFAULT_VOLUME = '+0%';
 

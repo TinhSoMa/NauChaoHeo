@@ -27,14 +27,39 @@ export const DEFAULT_GEMINI_MODEL = SHARED_DEFAULT_MODEL;
 export interface VoiceOption {
   value: string;
   label: string;
+  provider?: 'edge' | 'capcut';
+  tier?: 'free' | 'pro';
 }
 
 export const VOICES: VoiceOption[] = [
-  { value: 'vi-VN-HoaiMyNeural', label: 'Hoài My (Nữ)' },
-  { value: 'vi-VN-NamMinhNeural', label: 'Nam Minh (Nam)' },
+  { value: 'edge:vi-VN-HoaiMyNeural', label: 'Hoài My (Nữ)', provider: 'edge', tier: 'free' },
+  { value: 'edge:vi-VN-NamMinhNeural', label: 'Nam Minh (Nam)', provider: 'edge', tier: 'free' },
 ];
 
 export const DEFAULT_VOICE = VOICES[0].value;
+
+export function normalizeVoiceValue(value?: string | null): string {
+  if (typeof value !== 'string') {
+    return DEFAULT_VOICE;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_VOICE;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('edge:')) {
+    const voiceId = trimmed.slice(5).trim();
+    return voiceId ? `edge:${voiceId}` : DEFAULT_VOICE;
+  }
+  if (lower.startsWith('capcut:')) {
+    const voiceId = trimmed.slice(7).trim();
+    return voiceId ? `capcut:${voiceId}` : DEFAULT_VOICE;
+  }
+
+  return `edge:${trimmed}`;
+}
 
 // ============================================
 // TTS OPTIONS

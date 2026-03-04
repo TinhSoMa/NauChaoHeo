@@ -363,6 +363,7 @@ interface CaptionAPI {
 // ============================================
 
 interface TTSOptions {
+  provider?: 'edge' | 'capcut';
   voice?: string;
   rate?: string;
   volume?: string;
@@ -413,9 +414,13 @@ interface TrimSilenceResult {
 
 interface VoiceInfo {
   name: string;
+  provider: 'edge' | 'capcut';
+  voiceId: string;
   displayName: string;
   language: string;
   gender: 'Male' | 'Female';
+  tier?: 'free' | 'pro';
+  value?: string;
 }
 
 /**
@@ -493,6 +498,14 @@ interface AppSettings {
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
+  capcutTtsSecrets: {
+    appKey: string | null;
+    token: string | null;
+    wsUrl: string | null;
+    userAgent: string | null;
+    xSsDp: string | null;
+    extraHeaders: Record<string, string> | null;
+  };
 }
 
 interface CaptionTypographyLayoutDefaults {
@@ -519,7 +532,7 @@ interface CaptionTypographyDefaults {
 interface AppSettingsAPI {
   getAll: () => Promise<IpcApiResponse<AppSettings>>;
   update: (partial: Partial<AppSettings>) => Promise<IpcApiResponse<AppSettings>>;
-  getProjectsBasePath: () => Promise<IpcApiResponse<string>>;
+  getProjectsBasePath: () => Promise<IpcApiResponse<string | null>>;
   setProjectsBasePath: (basePath: string | null) => Promise<IpcApiResponse<void>>;
   addRecentProject: (projectId: string) => Promise<IpcApiResponse<void>>;
   getRecentProjectIds: () => Promise<IpcApiResponse<string[]>>;

@@ -32,3 +32,4 @@ HARDSUB_RENDER_LOGIC.md
 resources/python/win32-x64/runtime/
 resources/python/cache/
 resources/licenses/python/
+test/*

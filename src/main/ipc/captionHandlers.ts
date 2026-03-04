@@ -28,6 +28,28 @@ interface IpcResponse<T = unknown> {
   error?: string;
 }
 
+const SUPPORTED_CAPTION_FONT_EXTENSIONS = new Set(['.ttf', '.otf']);
+
+function getFileExtension(fileName: string): string {
+  const idx = fileName.lastIndexOf('.');
+  if (idx < 0) {
+    return '';
+  }
+  return fileName.slice(idx).toLowerCase();
+}
+
+function getFileBaseName(fileName: string): string {
+  const idx = fileName.lastIndexOf('.');
+  if (idx <= 0) {
+    return fileName;
+  }
+  return fileName.slice(0, idx);
+}
+
+function isSupportedCaptionFontFile(fileName: string): boolean {
+  return SUPPORTED_CAPTION_FONT_EXTENSIONS.has(getFileExtension(fileName));
+}
+
 function decodeUtf16Be(input: Buffer): string {
   if (input.length < 2) {
     return '';
@@ -493,22 +515,18 @@ export function registerCaptionHandlers(): void {
         const fontsDir = resolveCaptionFontsDir(path, fs);
         
         if (!fontsDir || !fs.existsSync(fontsDir)) {
-          return { success: true, data: ['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto'] }; // fallback
+          return { success: true, data: [] };
         }
 
         const files = await fs.promises.readdir(fontsDir);
-        const fontFiles = files.filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'));
+        const fontFiles = files.filter((f) => isSupportedCaptionFontFile(f));
         const fonts: string[] = [];
         for (const file of fontFiles) {
           const familyName = await extractFontFamilyName(path.join(fontsDir, file));
-          const fallbackName = file.substring(0, file.lastIndexOf('.'));
+          const fallbackName = getFileBaseName(file);
           fonts.push((familyName || fallbackName).trim());
         }
         const deduped = Array.from(new Set(fonts)).filter(Boolean);
-        
-        // Add defaults if missing
-        if (!deduped.includes('Be Vietnam Pro')) deduped.push('Be Vietnam Pro');
-        if (!deduped.includes('Roboto')) deduped.push('Roboto');
 
         console.log('[CaptionHandlers][Font] getAvailableFonts', {
           fontsDir,
@@ -537,16 +555,19 @@ export function registerCaptionHandlers(): void {
         }
 
         const files = await fs.promises.readdir(fontsDir);
-        const fontFiles = files.filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'));
+        const fontFiles = files.filter((f) => isSupportedCaptionFontFile(f));
+        const normalizedRequest = fontName.toLowerCase().trim();
 
         let matchedPath: string | null = null;
         for (const file of fontFiles) {
           const fullPath = path.join(fontsDir, file);
           const familyName = await extractFontFamilyName(fullPath);
-          const fallbackName = file.substring(0, file.lastIndexOf('.'));
+          const fallbackName = getFileBaseName(file);
+          const lowerFile = file.toLowerCase();
           if (
-            (familyName && familyName.toLowerCase() === fontName.toLowerCase()) ||
-            fallbackName.toLowerCase() === fontName.toLowerCase()
+            (familyName && familyName.toLowerCase() === normalizedRequest) ||
+            fallbackName.toLowerCase() === normalizedRequest ||
+            lowerFile === normalizedRequest
           ) {
             matchedPath = fullPath;
             break;
@@ -558,7 +579,7 @@ export function registerCaptionHandlers(): void {
         }
 
         const ext = path.extname(matchedPath).toLowerCase();
-        const mime = ext === '.otf' ? 'font/otf' : 'font/truetype';
+        const mime = ext === '.otf' ? 'font/otf' : 'font/ttf';
         const buffer = await fs.promises.readFile(matchedPath);
         const base64 = buffer.toString('base64');
         return { success: true, data: `data:${mime};charset=utf-8;base64,${base64}` };

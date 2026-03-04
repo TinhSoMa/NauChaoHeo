@@ -13,6 +13,7 @@ import {
   RATE_OPTIONS,
   VOLUME_OPTIONS,
   LINES_PER_FILE_OPTIONS,
+  normalizeVoiceValue,
 } from '../../config/captionConfig';
 import {
   CaptionStepPanelKey,
@@ -26,6 +27,7 @@ import { useCaptionSettings } from './hooks/useCaptionSettings';
 import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 import { useHardsubSettings } from './hooks/useHardsubSettings';
+import { ensureCaptionFontLoaded } from './hooks/captionFontLoader';
 import {
   getInputPaths,
   getSessionPathForInputPath,
@@ -40,7 +42,67 @@ import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { ChevronDown, ChevronUp, Download, Eye } from 'lucide-react';
-import { CaptionProjectSettingsValues } from '@shared/types/caption';
+import { CaptionProjectSettingsValues, VoiceInfo } from '@shared/types/caption';
+
+type TtsVoiceProvider = 'edge' | 'capcut';
+type TtsVoiceTier = 'free' | 'pro';
+
+interface TtsUiVoiceOption {
+  value: string;
+  label: string;
+  provider: TtsVoiceProvider;
+  tier: TtsVoiceTier;
+}
+
+const FALLBACK_TTS_VOICES: TtsUiVoiceOption[] = VOICES.map((voice) => ({
+  value: normalizeVoiceValue(voice.value),
+  label: voice.label,
+  provider: 'edge',
+  tier: 'free',
+}));
+
+function parseProviderFromVoiceValue(value: string): TtsVoiceProvider {
+  if (value.toLowerCase().startsWith('capcut:')) {
+    return 'capcut';
+  }
+  return 'edge';
+}
+
+function toUiVoiceOption(voice: VoiceInfo): TtsUiVoiceOption {
+  const provider = voice.provider === 'capcut' ? 'capcut' : 'edge';
+  const voiceId = (voice.voiceId || voice.name || '').trim();
+  const canonical = normalizeVoiceValue(voice.value || `${provider}:${voiceId}`);
+  const tier: TtsVoiceTier = voice.tier === 'pro' ? 'pro' : 'free';
+  const providerLabel = provider === 'capcut' ? 'CapCut' : 'Edge';
+  const tierSuffix = provider === 'capcut' && tier === 'pro' ? ' [PRO]' : '';
+  const displayName = (voice.displayName || voice.name || canonical).trim();
+  return {
+    value: canonical,
+    label: `${displayName} (${providerLabel})${tierSuffix}`,
+    provider,
+    tier,
+  };
+}
+
+function ensureVoiceOptionExists(
+  options: TtsUiVoiceOption[],
+  selectedVoice: string
+): TtsUiVoiceOption[] {
+  const normalized = normalizeVoiceValue(selectedVoice);
+  if (options.some((option) => option.value === normalized)) {
+    return options;
+  }
+  const provider = parseProviderFromVoiceValue(normalized);
+  return [
+    ...options,
+    {
+      value: normalized,
+      label: `${normalized} (Saved)`,
+      provider,
+      tier: 'free',
+    },
+  ];
+}
 
 export function CaptionTranslator() {
   // Project output paths
@@ -49,6 +111,74 @@ export function CaptionTranslator() {
 
   // 1. Settings Hook
   const settings = useCaptionSettings();
+  const [ttsVoiceOptions, setTtsVoiceOptions] = useState<TtsUiVoiceOption[]>(() =>
+    ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
+  );
+
+  useEffect(() => {
+    const normalizedVoice = normalizeVoiceValue(settings.voice);
+    if (normalizedVoice !== settings.voice) {
+      settings.setVoice(normalizedVoice);
+      return;
+    }
+    setTtsVoiceOptions((current) => ensureVoiceOptionExists(current, normalizedVoice));
+  }, [settings.voice, settings.setVoice]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTtsVoices = async () => {
+      try {
+        const response = await window.electronAPI.tts.getVoices();
+        if (!response?.success || !Array.isArray(response.data) || response.data.length === 0) {
+          if (!cancelled) {
+            setTtsVoiceOptions(ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice));
+          }
+          return;
+        }
+
+        const deduped = new Map<string, TtsUiVoiceOption>();
+        for (const voice of response.data) {
+          const mapped = toUiVoiceOption(voice);
+          if (!deduped.has(mapped.value)) {
+            deduped.set(mapped.value, mapped);
+          }
+        }
+
+        const nextOptions = Array.from(deduped.values());
+        if (!cancelled) {
+          setTtsVoiceOptions(ensureVoiceOptionExists(nextOptions, settings.voice));
+        }
+      } catch (error) {
+        console.warn('[CaptionTranslator] Không thể tải voice list từ main process', error);
+        if (!cancelled) {
+          setTtsVoiceOptions(ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice));
+        }
+      }
+    };
+
+    loadTtsVoices();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const edgeVoiceOptions = useMemo(
+    () => ttsVoiceOptions.filter((voice) => voice.provider === 'edge'),
+    [ttsVoiceOptions]
+  );
+  const capCutVoiceOptions = useMemo(
+    () => ttsVoiceOptions.filter((voice) => voice.provider === 'capcut'),
+    [ttsVoiceOptions]
+  );
+  const isCapCutVoiceSelected = useMemo(
+    () => normalizeVoiceValue(settings.voice).startsWith('capcut:'),
+    [settings.voice]
+  );
+  const selectedVoiceLabel = useMemo(
+    () => ttsVoiceOptions.find((voice) => voice.value === settings.voice)?.label || settings.voice,
+    [settings.voice, ttsVoiceOptions]
+  );
 
   // 2. File Management Hook
   const fileManager = useCaptionFileManagement({
@@ -462,7 +592,7 @@ export function CaptionTranslator() {
   };
 
   // 5. Available Fonts State
-  const [availableFonts, setAvailableFonts] = useState<string[]>(['ZYVNA Fairy', 'Be Vietnam Pro', 'Roboto']);
+  const [availableFonts, setAvailableFonts] = useState<string[]>([]);
 
   const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
   const [diskSubtitleDuration, setDiskSubtitleDuration] = useState<number | null>(null);
@@ -874,6 +1004,28 @@ export function CaptionTranslator() {
     };
     fetchFonts();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const preloadFontsForUi = async () => {
+      for (const fontName of availableFonts) {
+        if (cancelled) {
+          return;
+        }
+        try {
+          await ensureCaptionFontLoaded(fontName);
+        } catch (error) {
+          console.warn(`[CaptionTranslator] Không preload được font: ${fontName}`, error);
+        }
+      }
+    };
+
+    preloadFontsForUi();
+    return () => {
+      cancelled = true;
+    };
+  }, [availableFonts]);
   
   const getProgressColor = () => {
     if (processing.status === 'error') return 'var(--color-error)';
@@ -964,7 +1116,12 @@ export function CaptionTranslator() {
     return [
       { key: 'Input', value: settings.inputType === 'draft' ? 'Draft' : 'SRT' },
       { key: 'Dịch', value: `${settings.translateMethod?.toUpperCase() || 'API'} / ${settings.geminiModel}` },
-      { key: 'TTS', value: `${settings.voice} | rate ${settings.rate} | vol ${settings.volume}` },
+      {
+        key: 'TTS',
+        value: isCapCutVoiceSelected
+          ? `${selectedVoiceLabel} | Rate/Volume: fixed (CapCut)`
+          : `${selectedVoiceLabel} | rate ${settings.rate} | vol ${settings.volume}`,
+      },
       { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution} / ${settings.renderContainer?.toUpperCase() || 'MP4'}` },
       { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x` },
       { key: 'Âm lượng', value: `video ${settings.videoVolume}% | TTS ${settings.audioVolume}%` },
@@ -985,7 +1142,8 @@ export function CaptionTranslator() {
     settings.inputType,
     settings.translateMethod,
     settings.geminiModel,
-    settings.voice,
+    isCapCutVoiceSelected,
+    selectedVoiceLabel,
     settings.rate,
     settings.volume,
     settings.renderMode,
@@ -1244,11 +1402,24 @@ export function CaptionTranslator() {
                 <div>
                   <label className={styles.label}>Giọng</label>
                   <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
-                    {VOICES.map((v) => (
-                      <option key={v.value} value={v.value}>
-                        {v.label}
-                      </option>
-                    ))}
+                    {edgeVoiceOptions.length > 0 && (
+                      <optgroup label="Edge">
+                        {edgeVoiceOptions.map((v) => (
+                          <option key={v.value} value={v.value}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {capCutVoiceOptions.length > 0 && (
+                      <optgroup label="CapCut">
+                        {capCutVoiceOptions.map((v) => (
+                          <option key={v.value} value={v.value}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -1263,28 +1434,35 @@ export function CaptionTranslator() {
                   />
                 </div>
               </div>
-              <div className={styles.grid2} style={{ marginTop: '12px' }}>
-                <div>
-                  <label className={styles.label}>Rate</label>
-                  <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
-                    {RATE_OPTIONS.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+              {!isCapCutVoiceSelected && (
+                <div className={styles.grid2} style={{ marginTop: '12px' }}>
+                  <div>
+                    <label className={styles.label}>Rate</label>
+                    <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
+                      {RATE_OPTIONS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={styles.label}>Volume</label>
+                    <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
+                      {VOLUME_OPTIONS.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className={styles.label}>Volume</label>
-                  <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
-                    {VOLUME_OPTIONS.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
+              )}
+              {isCapCutVoiceSelected && (
+                <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
+                  Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge.
                 </div>
-              </div>
+              )}
               <div style={{ marginTop: '12px' }}>
                 <Checkbox
                   label="Auto fit audio"

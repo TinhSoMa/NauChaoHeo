@@ -18,6 +18,7 @@ import {
   resolveCoverRectPixels,
 } from '@shared/utils/maskCoverGeometry';
 import { buildSubtitleShadowLayers } from '@shared/utils/subtitleShadowProfile';
+import { ensureCaptionFontsLoaded } from './captionFontLoader';
 
 interface SubtitlePreviewState {
   frameData: string | null;
@@ -1134,41 +1135,10 @@ export function useSubtitlePreview({
 
   // Load custom font for preview subtitle
   useEffect(() => {
-    const loadFontByName = async (fontName: string) => {
-      const normalized = fontName?.trim();
-      if (!normalized) return;
-
-      const styleId = `preview-font-${normalized.replace(/\s+/g, '-')}`;
-      if (document.getElementById(styleId)) {
-        await document.fonts.load(`12px "${normalized}"`);
-        return;
-      }
-
-      const res = await (window.electronAPI as any).captionVideo.getFontData(normalized);
-      if (!res?.success || !res.data) {
-        return;
-      }
-
-      const styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      const fontFormat = String(res.data).includes('font/otf') ? 'opentype' : 'truetype';
-      styleEl.innerHTML = `
-        @font-face {
-          font-family: '${normalized}';
-          src: url('${res.data}') format('${fontFormat}');
-        }
-      `;
-      document.head.appendChild(styleEl);
-      await document.fonts.load(`12px "${normalized}"`);
-    };
-
     const run = async () => {
       try {
-        const fontsToLoad = Array.from(new Set([style.fontName].map(f => f?.trim()).filter(Boolean))) as string[];
-
-        for (const fontName of fontsToLoad) {
-          await loadFontByName(fontName);
-        }
+        const fontsToLoad = Array.from(new Set([style.fontName].map((f) => f?.trim()).filter(Boolean))) as string[];
+        await ensureCaptionFontsLoaded(fontsToLoad);
       } catch (e) {
         console.error('Lỗi tải font base64:', e);
       } finally {

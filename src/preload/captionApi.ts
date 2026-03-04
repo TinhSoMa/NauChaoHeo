@@ -137,6 +137,7 @@ export function createTTSAPI(): TTSAPI {
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_GENERATE, entries, options),
 
     onProgress: (callback: (progress: TTSProgress) => void) => {
+      ipcRenderer.removeAllListeners(CAPTION_IPC_CHANNELS.TTS_PROGRESS);
       ipcRenderer.on(CAPTION_IPC_CHANNELS.TTS_PROGRESS, (_event, progress) => {
         callback(progress);
       });

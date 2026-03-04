@@ -68,6 +68,7 @@ const THUMBNAIL_TEXT_MAX_LINES = 3;
 const THUMBNAIL_TEXT_LINE_HEIGHT_RATIO = 1.16;
 const MIN_THUMBNAIL_LINE_HEIGHT_RATIO = 0;
 const MAX_THUMBNAIL_LINE_HEIGHT_RATIO = 4;
+const SUPPORTED_FONT_EXTENSIONS = new Set(['.ttf', '.otf']);
 
 export function normalizeThumbnailDurationSec(value?: number): number {
   if (!Number.isFinite(value)) {
@@ -228,6 +229,10 @@ function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function isSupportedFontFile(fileName: string): boolean {
+  return SUPPORTED_FONT_EXTENSIONS.has(path.extname(fileName).toLowerCase());
+}
+
 function resolveFontsDir(): string | null {
   const candidates = [
     path.join(process.resourcesPath || '', 'fonts'),
@@ -255,7 +260,7 @@ async function resolveThumbnailFontPath(fontName?: string): Promise<string | nul
 
   try {
     const files = await fs.readdir(fontsDir);
-    const fontFiles = files.filter((file) => file.toLowerCase().endsWith('.ttf') || file.toLowerCase().endsWith('.otf'));
+    const fontFiles = files.filter((file) => isSupportedFontFile(file));
 
     const exact = fontFiles.find((file) => normalizeName(path.parse(file).name) === requestedNormalized);
     if (exact) {

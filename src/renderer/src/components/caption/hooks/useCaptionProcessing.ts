@@ -1474,16 +1474,20 @@ export function useCaptionProcessing({
           throw new Error(`[${folderName}] Chưa có dữ liệu dịch trong caption_session.json. Hãy chạy Step 3 trước.`);
         }
         const audioDir = `${processOutputDir}/audio`;
+        const isCapCutVoice = typeof cfg.voice === 'string' && cfg.voice.toLowerCase().startsWith('capcut:');
         if (!isMulti) cfg.setAudioDir(audioDir);
         setProgress({ current: 0, total: currentEntries.length, message: msgCtx('Bước 4: Đang tạo audio...') });
-        // @ts-ignore
-        const result = await window.electronAPI.tts.generate(currentEntries, {
+        const ttsGenerateOptions: Record<string, unknown> = {
           voice: cfg.voice,
-          rate: cfg.rate,
-          volume: cfg.volume,
           outputDir: audioDir,
           outputFormat: 'wav',
-        });
+        };
+        if (!isCapCutVoice) {
+          ttsGenerateOptions.rate = cfg.rate;
+          ttsGenerateOptions.volume = cfg.volume;
+        }
+        // @ts-ignore
+        const result = await window.electronAPI.tts.generate(currentEntries, ttsGenerateOptions);
         if (result.success && result.data) {
           const ttsData = result.data;
           currentAudioFiles = normalizeAudioFiles(ttsData.audioFiles as PartialProcessingAudioFile[]);

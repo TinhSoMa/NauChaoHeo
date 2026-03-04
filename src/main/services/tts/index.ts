@@ -6,6 +6,11 @@
 export {
   generateSingleAudio,
   generateBatchAudio,
+  generateBatchAudioEdge,
+  generateBatchAudioCapCut,
+  getAvailableVoices,
+  normalizeVoiceSelection,
+  resolveVoiceSelection,
   getSafeFilename,
   getAudioDuration,
 } from './ttsService';

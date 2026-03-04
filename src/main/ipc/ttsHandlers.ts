@@ -8,10 +8,8 @@ import {
   SubtitleEntry,
   TTSOptions,
   TTSResult,
-  MergeOptions,
   MergeResult,
   TrimSilenceResult,
-  VIETNAMESE_VOICES,
   VoiceInfo,
 } from '../../shared/types/caption';
 import * as TTSService from '../services/tts';
@@ -38,7 +36,7 @@ export function registerTTSHandlers(): void {
     CAPTION_IPC_CHANNELS.TTS_GET_VOICES,
     async (): Promise<IpcResponse<VoiceInfo[]>> => {
       console.log('[TTSHandlers] Get voices');
-      return { success: true, data: VIETNAMESE_VOICES };
+      return { success: true, data: TTSService.getAvailableVoices() };
     }
   );
 

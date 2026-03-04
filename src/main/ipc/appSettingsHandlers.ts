@@ -62,7 +62,7 @@ export function registerAppSettingsHandlers(): void {
   });
 
   // Get projects base path
-  ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.GET_PROJECTS_BASE_PATH, async (): Promise<IpcApiResponse<string>> => {
+  ipcMain.handle(APP_SETTINGS_IPC_CHANNELS.GET_PROJECTS_BASE_PATH, async (): Promise<IpcApiResponse<string | null>> => {
     try {
       const basePath = AppSettingsService.getProjectsBasePath();
       return { success: true, data: basePath };

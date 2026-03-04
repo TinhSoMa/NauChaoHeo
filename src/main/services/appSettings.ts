@@ -29,6 +29,16 @@ export interface AppSettings {
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
+  capcutTtsSecrets: CapcutTtsSecrets;
+}
+
+export interface CapcutTtsSecrets {
+  appKey: string | null;
+  token: string | null;
+  wsUrl: string | null;
+  userAgent: string | null;
+  xSsDp: string | null;
+  extraHeaders: Record<string, string> | null;
 }
 
 export interface CaptionTypographyLayoutDefaults {
@@ -189,6 +199,46 @@ function normalizeCaptionTypographyDefaults(value: unknown): CaptionTypographyDe
   };
 }
 
+function normalizeStringOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeCapcutExtraHeaders(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const headers = value as Record<string, unknown>;
+  const normalized: Record<string, string> = {};
+  for (const [key, rawVal] of Object.entries(headers)) {
+    const cleanKey = key.trim();
+    if (!cleanKey || typeof rawVal !== 'string') {
+      continue;
+    }
+    const cleanVal = rawVal.trim();
+    if (!cleanVal) {
+      continue;
+    }
+    normalized[cleanKey] = cleanVal;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
+function normalizeCapcutTtsSecrets(value: unknown): CapcutTtsSecrets {
+  const src = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    appKey: normalizeStringOrNull(src.appKey),
+    token: normalizeStringOrNull(src.token),
+    wsUrl: normalizeStringOrNull(src.wsUrl),
+    userAgent: normalizeStringOrNull(src.userAgent),
+    xSsDp: normalizeStringOrNull(src.xSsDp),
+    extraHeaders: normalizeCapcutExtraHeaders(src.extraHeaders),
+  };
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
@@ -205,6 +255,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   captionLogoPosition: null,
   captionLogoScale: 1.0,
   captionTypographyDefaults: null,
+  capcutTtsSecrets: {
+    appKey: null,
+    token: null,
+    wsUrl: null,
+    userAgent: null,
+    xSsDp: null,
+    extraHeaders: null,
+  },
 };
 
 // ============================================
@@ -241,6 +299,7 @@ class AppSettingsServiceClass {
           ...DEFAULT_SETTINGS,
           ...loaded,
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
+          capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
         };
         console.log('[AppSettings] Loaded settings successfully');
       } else {
@@ -288,6 +347,9 @@ class AppSettingsServiceClass {
     const nextPartial: Partial<AppSettings> = { ...partial };
     if (Object.prototype.hasOwnProperty.call(partial, 'captionTypographyDefaults')) {
       nextPartial.captionTypographyDefaults = normalizeCaptionTypographyDefaults(partial.captionTypographyDefaults);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'capcutTtsSecrets')) {
+      nextPartial.capcutTtsSecrets = normalizeCapcutTtsSecrets(partial.capcutTtsSecrets);
     }
     this.settings = { ...this.settings, ...nextPartial };
     this.save();
