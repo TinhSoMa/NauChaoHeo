@@ -439,7 +439,7 @@ export interface RenderThumbnailPreviewFrameResult {
 // CAPTION SESSION (Single JSON Per Folder)
 // ============================================
 
-export type CaptionStepStatus = 'idle' | 'running' | 'success' | 'error' | 'stale';
+export type CaptionStepStatus = 'idle' | 'running' | 'success' | 'error' | 'stale' | 'stopped';
 export type CaptionStepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface CaptionStepState {
@@ -531,7 +531,21 @@ export interface CaptionThumbnailPreviewRuntimeState {
   lastSyncAt?: string;
 }
 
+export interface CaptionSessionStopCheckpoint {
+  at: string;
+  step: number;
+  folderPath: string;
+  folderIndex: number;
+  totalFolders: number;
+  processingMode: 'folder-first' | 'step-first';
+  reason: 'user_stop' | 'recovered_interrupted_run';
+  resumable: boolean;
+}
+
 export interface CaptionSessionRuntime {
+  runState?: 'idle' | 'running' | 'stopping' | 'stopped' | 'completed' | 'error';
+  stopRequestAt?: string;
+  lastStopCheckpoint?: CaptionSessionStopCheckpoint;
   enabledSteps?: number[];
   processingMode?: 'folder-first' | 'step-first';
   currentStep?: number | null;

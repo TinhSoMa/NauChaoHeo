@@ -877,6 +877,9 @@ export function CaptionTranslator() {
     if (persistedStatus === 'error') {
       return { label: 'Error', className: `${styles.statusBadge} ${styles.statusError}` };
     }
+    if (persistedStatus === 'stopped') {
+      return { label: 'Stopped', className: `${styles.statusBadge} ${styles.statusStopped}` };
+    }
     if (persistedStatus === 'stale') {
       return { label: 'Stale', className: `${styles.statusBadge} ${styles.statusError}` };
     }

@@ -1,15 +1,24 @@
 import { useState, useCallback, useRef } from 'react';
 import { Step, ProcessStatus, SubtitleEntry, TranslationProgress, TTSProgress, ProcessingMode, StepDependencyIssue } from '../CaptionTypes';
-import { CaptionArtifactFile, CaptionSessionV1, CaptionStepNumber, CaptionProjectSettingsValues, CoverQuad } from '@shared/types/caption';
+import {
+  CaptionArtifactFile,
+  CaptionSessionStopCheckpoint,
+  CaptionSessionV1,
+  CaptionStepNumber,
+  CaptionProjectSettingsValues,
+  CoverQuad,
+} from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
   buildEntriesFingerprint,
   buildObjectFingerprint,
   canRunStep,
   compactEntries,
+  getInputPaths,
   getSessionPathForInputPath,
   makeStepError,
   makeStepRunning,
+  makeStepStopped,
   makeStepSuccess,
   markFollowingStepsStale,
   recordStepSkipped,
@@ -20,6 +29,7 @@ import {
   syncSessionWithProjectSettings,
   toStepKey,
   updateCaptionSession,
+  validateStepOutputForSkip,
 } from './captionSessionStore';
 
 type ProcessingAudioFile = {
@@ -243,6 +253,28 @@ function resolveRenderOutputDir(inputType: string, currentPath: string, sourceVi
   return inputType === 'draft' ? currentPath.trim().replace(/[\\/]+$/, '') : resolveParentDir(currentPath);
 }
 
+function buildStopCheckpoint(params: {
+  at: string;
+  step: number;
+  folderPath: string;
+  folderIndex: number;
+  totalFolders: number;
+  processingMode: ProcessingMode;
+  reason: 'user_stop' | 'recovered_interrupted_run';
+  resumable?: boolean;
+}): CaptionSessionStopCheckpoint {
+  return {
+    at: params.at,
+    step: params.step,
+    folderPath: params.folderPath,
+    folderIndex: params.folderIndex,
+    totalFolders: params.totalFolders,
+    processingMode: params.processingMode,
+    reason: params.reason,
+    resumable: params.resumable !== false,
+  };
+}
+
 function pushArtifact(
   artifacts: CaptionArtifactFile[],
   role: string,
@@ -298,6 +330,57 @@ export function useCaptionProcessing({
 
   const handleStop = useCallback(async () => {
     abortRef.current = true;
+    const stopAt = nowIso();
+    const paths = getInputPaths(inputType as 'srt' | 'draft', filePath);
+    const totalFolders = paths.length;
+    const activeFolderPath = currentFolder?.path || paths[0] || '';
+    const activeFolderIndex = currentFolder?.index || (activeFolderPath ? Math.max(1, paths.findIndex((p) => p === activeFolderPath) + 1) : 1);
+    const activeStep = currentStep || 0;
+    const processingMode = settings.processingMode ?? 'folder-first';
+
+    try {
+      await Promise.all(paths.map(async (currentPath, idx) => {
+        const folderPath = inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '');
+        const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+        await updateCaptionSession(
+          sessionPath,
+          (session) => {
+            const checkpointStep = typeof session.runtime?.currentStep === 'number'
+              ? session.runtime.currentStep
+              : activeStep;
+            const lastStopCheckpoint = buildStopCheckpoint({
+              at: stopAt,
+              step: checkpointStep > 0 ? checkpointStep : 1,
+              folderPath: activeFolderPath || currentPath,
+              folderIndex: activeFolderIndex > 0 ? activeFolderIndex : (idx + 1),
+              totalFolders: totalFolders > 0 ? totalFolders : 1,
+              processingMode,
+              reason: 'user_stop',
+              resumable: true,
+            });
+            return {
+              ...session,
+              runtime: {
+                ...session.runtime,
+                runState: 'stopping',
+                stopRequestAt: stopAt,
+                lastMessage: 'Đã nhận yêu cầu dừng từ người dùng.',
+                lastStopCheckpoint,
+              },
+            };
+          },
+          {
+            projectId,
+            inputType: inputType as 'srt' | 'draft',
+            sourcePath: currentPath,
+            folderPath,
+          }
+        );
+      }));
+    } catch (error) {
+      console.warn('[CaptionProcessing] Không thể ghi trạng thái stopping vào session:', error);
+    }
+
     try {
       // @ts-ignore
       await window.electronAPI.captionVideo?.stopRender?.();
@@ -308,7 +391,7 @@ export function useCaptionProcessing({
     setCurrentFolder(null);
     setCurrentStep(null);
     setProgress(p => ({ ...p, message: 'Đã dừng.' }));
-  }, []);
+  }, [currentFolder?.index, currentFolder?.path, currentStep, filePath, inputType, projectId, settings.processingMode]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
@@ -367,9 +450,7 @@ export function useCaptionProcessing({
       setProgress({ current: Math.floor(p.percent || 0), total: 100, message: p.message || 'Đang render video...' });
     });
 
-    const inputPaths = filePath
-      ? (inputType === 'draft' ? filePath.split('; ') : [filePath])
-      : [];
+    const inputPaths = getInputPaths(inputType as 'srt' | 'draft', filePath);
     const totalFolders = inputPaths.length;
     if (totalFolders === 0) {
       setStatus('error');
@@ -379,6 +460,111 @@ export function useCaptionProcessing({
     const isMulti = totalFolders > 1;
     const step7Enabled = steps.includes(7);
     const thumbnailEnabled = cfg.thumbnailFrameTimeSec !== null && cfg.thumbnailFrameTimeSec !== undefined;
+
+    const getFolderPath = (currentPath: string) => (
+      inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '')
+    );
+    const getSessionFallback = (currentPath: string) => ({
+      projectId,
+      inputType: inputType as 'srt' | 'draft',
+      sourcePath: currentPath,
+      folderPath: getFolderPath(currentPath),
+    });
+    const setRunStateForAllSessions = async (
+      runState: 'running' | 'stopping' | 'stopped' | 'completed' | 'error',
+      message: string,
+      checkpoint?: CaptionSessionStopCheckpoint
+    ) => {
+      const results = await Promise.allSettled(inputPaths.map(async (currentPath) => {
+        const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+        await updateCaptionSession(
+          sessionPath,
+          (session) => ({
+            ...session,
+            runtime: {
+              ...session.runtime,
+              runState,
+              currentStep: runState === 'running' ? session.runtime.currentStep : null,
+              lastMessage: message,
+              lastGuardError: runState === 'error' ? message : undefined,
+              lastStopCheckpoint: checkpoint || session.runtime.lastStopCheckpoint,
+            },
+          }),
+          getSessionFallback(currentPath)
+        );
+      }));
+      const failedCount = results.filter((result) => result.status === 'rejected').length;
+      if (failedCount > 0) {
+        console.warn(`[CaptionProcessing] Không thể cập nhật runState cho ${failedCount}/${inputPaths.length} session.`);
+      }
+    };
+    const normalizeInterruptedSession = async (currentPath: string, folderIdx: number): Promise<CaptionSessionV1> => {
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+      const fallback = getSessionFallback(currentPath);
+      const session = await readCaptionSession(sessionPath, fallback);
+      const runningSteps = ([1, 2, 3, 4, 5, 6, 7] as CaptionStepNumber[]).filter((stepNo) => {
+        const key = toStepKey(stepNo);
+        return session.steps[key]?.status === 'running';
+      });
+      if (runningSteps.length === 0) {
+        return session;
+      }
+
+      const recoveredAt = nowIso();
+      const recoveredStep = runningSteps[0];
+      const recoveredCheckpoint = buildStopCheckpoint({
+        at: recoveredAt,
+        step: recoveredStep,
+        folderPath: currentPath,
+        folderIndex: folderIdx + 1,
+        totalFolders,
+        processingMode,
+        reason: 'recovered_interrupted_run',
+        resumable: true,
+      });
+
+      return updateCaptionSession(
+        sessionPath,
+        (current) => {
+          const nextSteps = { ...current.steps };
+          for (const stepNo of runningSteps) {
+            const stepKey = toStepKey(stepNo);
+            const prev = current.steps[stepKey];
+            const outputCheck = validateStepOutputForSkip(current, stepNo);
+            const oldMetrics = prev?.metrics && typeof prev.metrics === 'object'
+              ? prev.metrics
+              : {};
+            nextSteps[stepKey] = outputCheck.ok
+              ? makeStepSuccess(prev, {
+                  ...oldMetrics,
+                  recoveredFromInterruptedRun: true,
+                  recoveredAt,
+                  recoveredReason: 'output_valid',
+                })
+              : makeStepStopped(prev, 'STOPPED_RECOVERED_INTERRUPTED_RUN', {
+                  ...oldMetrics,
+                  stopReason: 'recovered_interrupted_run',
+                  recoveredAt,
+                  outputCheck: outputCheck.reason || 'invalid_output',
+                });
+          }
+
+          return {
+            ...current,
+            steps: nextSteps,
+            runtime: {
+              ...current.runtime,
+              runState: 'stopped',
+              currentStep: null,
+              lastMessage: `Đã tự phục hồi session bị gián đoạn (${runningSteps.length} step running cũ).`,
+              lastGuardError: undefined,
+              lastStopCheckpoint: recoveredCheckpoint,
+            },
+          };
+        },
+        fallback
+      );
+    };
 
     // Xóa audioFiles cũ khi chạy multi-folder để tránh dùng nhầm dữ liệu cũ
     if (isMulti) {
@@ -414,16 +600,10 @@ export function useCaptionProcessing({
     }
 
     const preflightIssues: StepDependencyIssue[] = [];
-    for (const currentPath of inputPaths) {
+    for (let i = 0; i < inputPaths.length; i++) {
+      const currentPath = inputPaths[i];
       const folderName = currentPath.split(/[/\\]/).pop() || 'Unknown';
-      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
-      const sessionFallback = {
-        projectId,
-        inputType: inputType as 'srt' | 'draft',
-        sourcePath: currentPath,
-        folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
-      };
-      const session = await readCaptionSession(sessionPath, sessionFallback);
+      const session = await normalizeInterruptedSession(currentPath, i);
       for (const step of steps) {
         const plannedEnabled = steps.filter((s) => s <= step) as CaptionStepNumber[];
         const guard = canRunStep(session, step as CaptionStepNumber, plannedEnabled);
@@ -446,6 +626,7 @@ export function useCaptionProcessing({
         .slice(0, 5)
         .map((issue) => `[${issue.folderName}] Step ${issue.step}: ${issue.reason}`)
         .join(' | ');
+      await setRunStateForAllSessions('error', `Preflight fail: ${topIssue.reason}`);
       setStepDependencyIssues(preflightIssues);
       setStatus('error');
       setCurrentStep(null);
@@ -458,6 +639,7 @@ export function useCaptionProcessing({
       return;
     }
     setStepDependencyIssues([]);
+    await setRunStateForAllSessions('running', 'Đang xử lý caption...');
 
     // ========== PER-FOLDER STATE MAP (dùng cho step-first mode) ==========
     // Key = folder path, Value = { entries, audioFiles, srtFileForVideo }
@@ -595,7 +777,7 @@ export function useCaptionProcessing({
       updater: (session: CaptionSessionV1) => CaptionSessionV1
     ) => {
       const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
-      const folderPath = inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '');
+      const folderPath = getFolderPath(currentPath);
       await updateCaptionSession(
         sessionPath,
         (session) => updater({
@@ -610,6 +792,7 @@ export function useCaptionProcessing({
           },
           runtime: {
             ...session.runtime,
+            runState: 'running',
             enabledSteps: steps,
             processingMode,
             currentStep: step,
@@ -620,12 +803,7 @@ export function useCaptionProcessing({
             ...buildSettingsSnapshot(folderIdx),
           },
         }),
-        {
-          projectId,
-          inputType: inputType as 'srt' | 'draft',
-          sourcePath: currentPath,
-          folderPath,
-        }
+        getSessionFallback(currentPath)
       );
     };
 
@@ -637,6 +815,7 @@ export function useCaptionProcessing({
       const { name: folderName, outputDir: processOutputDir } = ctx;
       let { entries: currentEntries, audioFiles: currentAudioFiles, srtFileForVideo } = ctx;
       const stepKey = toStepKey(step);
+      let previousStepStateBeforeRun: CaptionSessionV1['steps'][typeof stepKey] | undefined;
 
       const msgCtx = (base: string) => {
         if (!isMulti) return base;
@@ -652,13 +831,9 @@ export function useCaptionProcessing({
 
       try {
         const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
-        const sessionFallback = {
-          projectId,
-          inputType: inputType as 'srt' | 'draft',
-          sourcePath: currentPath,
-          folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
-        };
+        const sessionFallback = getSessionFallback(currentPath);
         const sessionBeforeStep = await readCaptionSession(sessionPath, sessionFallback);
+        previousStepStateBeforeRun = sessionBeforeStep.steps[stepKey];
         const guard = canRunStep(sessionBeforeStep, step as CaptionStepNumber);
         if (!guard.ok) {
           throw new Error(`[${folderName}] ${guard.reason || `Chưa chạy các bước phụ thuộc cho Step ${step}.`} (${guard.code || 'STEP_BLOCKED'})`);
@@ -1480,16 +1655,11 @@ export function useCaptionProcessing({
               steps: {
                 ...session.steps,
                 [stepKey]: {
-                  ...session.steps[stepKey],
-                  status: 'idle',
-                  endedAt: nowIso(),
-                  error: undefined,
-                  blockedReason: undefined,
-                  metrics: {
+                  ...makeStepSuccess(session.steps[stepKey], {
                     lastRenderAt: nowIso(),
                     duration: renderRes.data?.duration || 0,
                     outputPath: renderedPath,
-                  },
+                  }),
                   inputFingerprint: buildObjectFingerprint({
                     translatedEntries: translatedEntriesForRender.map((entry) => ({
                       index: entry.index,
@@ -1529,6 +1699,57 @@ export function useCaptionProcessing({
         ctx.srtFileForVideo = srtFileForVideo;
       } catch (error) {
         if (isProcessStopSignal(error)) {
+          const stoppedAt = nowIso();
+          const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
+          const stepStopCheckpoint = buildStopCheckpoint({
+            at: stoppedAt,
+            step,
+            folderPath: currentPath,
+            folderIndex: folderIdx + 1,
+            totalFolders,
+            processingMode,
+            reason: 'user_stop',
+            resumable: true,
+          });
+          await updateCaptionSession(
+            sessionPath,
+            (session) => {
+              const outputCheck = validateStepOutputForSkip(session, step as CaptionStepNumber);
+              const canRestorePreviousSuccess = previousStepStateBeforeRun?.status === 'success' && outputCheck.ok;
+              const oldMetrics = (previousStepStateBeforeRun?.metrics && typeof previousStepStateBeforeRun.metrics === 'object')
+                ? previousStepStateBeforeRun.metrics
+                : {};
+              const nextStepState = canRestorePreviousSuccess
+                ? makeStepSuccess(previousStepStateBeforeRun, {
+                    ...oldMetrics,
+                    recoveredFromStop: true,
+                    recoveredAt: stoppedAt,
+                    recoveredReason: 'output_valid',
+                  })
+                : makeStepStopped(session.steps[stepKey], 'STOPPED_BY_USER', {
+                    ...(session.steps[stepKey]?.metrics || {}),
+                    stopReason: 'user_stop',
+                    stoppedAt,
+                  });
+
+              return {
+                ...session,
+                steps: {
+                  ...session.steps,
+                  [stepKey]: nextStepState,
+                },
+                runtime: {
+                  ...session.runtime,
+                  runState: 'stopped',
+                  currentStep: null,
+                  lastMessage: msgCtx(`Bước ${step}: Đã dừng.`),
+                  lastGuardError: undefined,
+                  lastStopCheckpoint: stepStopCheckpoint,
+                },
+              };
+            },
+            getSessionFallback(currentPath)
+          );
           throw error;
         }
         await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
@@ -1539,6 +1760,7 @@ export function useCaptionProcessing({
           },
           runtime: {
             ...session.runtime,
+            runState: 'error',
             lastMessage: String(error),
             lastGuardError: String(error),
           },
@@ -1549,6 +1771,10 @@ export function useCaptionProcessing({
     // =========================================================
     // END helper processStep
     // =========================================================
+
+    let lastAttemptedStep: Step | null = null;
+    let lastAttemptedFolderPath = inputPaths[0] || '';
+    let lastAttemptedFolderIndex = inputPaths.length > 0 ? 1 : 0;
 
     try {
       if (processingMode === 'step-first' && isMulti) {
@@ -1570,6 +1796,9 @@ export function useCaptionProcessing({
             }
 
             setCurrentFolder({ index: i + 1, total: totalFolders, name: ctx.name, path: currentPath });
+            lastAttemptedStep = step;
+            lastAttemptedFolderPath = currentPath;
+            lastAttemptedFolderIndex = i + 1;
 
             try {
               await processStep(step, currentPath, i);
@@ -1591,6 +1820,31 @@ export function useCaptionProcessing({
         const failMsg = failedFolders.size > 0
           ? ` (${failedFolders.size} lỗi: ${Array.from(failedFolders).map(p => p.split(/[/\\]/).pop()).join(', ')})`
           : '';
+        if (abortRef.current) {
+          const stoppedAt = nowIso();
+          const stopCheckpoint = buildStopCheckpoint({
+            at: stoppedAt,
+            step: lastAttemptedStep || 1,
+            folderPath: lastAttemptedFolderPath || inputPaths[0] || '',
+            folderIndex: lastAttemptedFolderIndex > 0 ? lastAttemptedFolderIndex : 1,
+            totalFolders,
+            processingMode,
+            reason: 'user_stop',
+            resumable: true,
+          });
+          await setRunStateForAllSessions(
+            'stopped',
+            `Đã dừng. ${successCount}/${totalFolders} folder hoàn thành.`,
+            stopCheckpoint
+          );
+        } else if (failedFolders.size === totalFolders) {
+          await setRunStateForAllSessions('error', `Tất cả folder đều lỗi${failMsg}`);
+        } else {
+          await setRunStateForAllSessions(
+            'completed',
+            `Hoàn thành ${successCount}/${totalFolders} folder (Bước: ${steps.join(', ')})${failMsg}`
+          );
+        }
         setStatus(
           abortRef.current
             ? 'idle'
@@ -1617,6 +1871,9 @@ export function useCaptionProcessing({
           for (const step of steps) {
             if (abortRef.current) break;
             setCurrentStep(step);
+            lastAttemptedStep = step;
+            lastAttemptedFolderPath = currentPath;
+            lastAttemptedFolderIndex = i + 1;
             try {
               await processStep(step, currentPath, i);
             } catch (err) {
@@ -1634,6 +1891,27 @@ export function useCaptionProcessing({
           }
         }
 
+        if (abortRef.current) {
+          const stoppedAt = nowIso();
+          const stopCheckpoint = buildStopCheckpoint({
+            at: stoppedAt,
+            step: lastAttemptedStep || 1,
+            folderPath: lastAttemptedFolderPath || inputPaths[0] || '',
+            folderIndex: lastAttemptedFolderIndex > 0 ? lastAttemptedFolderIndex : 1,
+            totalFolders,
+            processingMode,
+            reason: 'user_stop',
+            resumable: true,
+          });
+          await setRunStateForAllSessions('stopped', 'Đã dừng.', stopCheckpoint);
+        } else {
+          await setRunStateForAllSessions(
+            'completed',
+            isMulti
+              ? `Hoàn thành tất cả ${totalFolders} project! (Các bước: ${steps.join(', ')})`
+              : `Hoàn thành các bước: ${steps.join(', ')}`
+          );
+        }
         setStatus(abortRef.current ? 'idle' : 'success');
         setStepDependencyIssues([]);
         setProgress({
@@ -1648,9 +1926,22 @@ export function useCaptionProcessing({
       }
     } catch (err) {
       if (isProcessStopSignal(err) || abortRef.current) {
+        const stoppedAt = nowIso();
+        const stopCheckpoint = buildStopCheckpoint({
+          at: stoppedAt,
+          step: lastAttemptedStep || 1,
+          folderPath: lastAttemptedFolderPath || inputPaths[0] || '',
+          folderIndex: lastAttemptedFolderIndex > 0 ? lastAttemptedFolderIndex : 1,
+          totalFolders: totalFolders > 0 ? totalFolders : 1,
+          processingMode,
+          reason: 'user_stop',
+          resumable: true,
+        });
+        await setRunStateForAllSessions('stopped', 'Đã dừng.', stopCheckpoint);
         setStatus('idle');
         setProgress(p => ({ ...p, message: 'Đã dừng.' }));
       } else {
+        await setRunStateForAllSessions('error', `Lỗi: ${String(err)}`);
         setStatus('error');
         setProgress(p => ({ ...p, message: `Lỗi: ${err}` }));
         console.error(err);

@@ -255,6 +255,11 @@
   border-color: #f59e0b;
 }
 
+.statusStopped {
+  color: #f97316;
+  border-color: #f97316;
+}
+
 .statusError {
   color: var(--color-error, #ef4444);
   border-color: var(--color-error, #ef4444);

@@ -60,6 +60,8 @@ export function createDefaultCaptionSession(input?: {
     effectiveSettingsUpdatedAt: now,
     effectiveSettingsSource: 'project_default',
     syncState: 'synced',
-    runtime: {},
+    runtime: {
+      runState: 'idle',
+    },
   };
 }

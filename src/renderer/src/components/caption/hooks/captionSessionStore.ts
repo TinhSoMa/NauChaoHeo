@@ -111,6 +111,7 @@ export async function readCaptionSession(
         ...(parsed.timing || {}),
       },
       runtime: {
+        ...createDefaultCaptionSession(fallback).runtime,
         ...(parsed.runtime || {}),
       },
     };
@@ -225,6 +226,21 @@ export function makeStepError(prev: CaptionStepState | undefined, error: string)
     status: 'error',
     endedAt: nowIso(),
     error,
+  };
+}
+
+export function makeStepStopped(
+  prev: CaptionStepState | undefined,
+  reason = 'STOPPED_BY_USER',
+  metrics?: Record<string, unknown>
+): CaptionStepState {
+  return {
+    ...prev,
+    status: 'stopped',
+    endedAt: nowIso(),
+    error: reason,
+    blockedReason: undefined,
+    metrics: metrics || prev?.metrics,
   };
 }
 
