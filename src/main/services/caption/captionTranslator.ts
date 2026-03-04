@@ -23,6 +23,38 @@ import {
   TextBatch,
 } from './textSplitter';
 
+function formatIndexRanges(indexes: number[]): string {
+  const normalized = Array.from(
+    new Set(
+      indexes
+        .map((value) => Math.floor(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  ).sort((a, b) => a - b);
+
+  if (normalized.length === 0) {
+    return 'không rõ';
+  }
+
+  const ranges: string[] = [];
+  let start = normalized[0];
+  let prev = normalized[0];
+
+  for (let i = 1; i < normalized.length; i++) {
+    const current = normalized[i];
+    if (current === prev + 1) {
+      prev = current;
+      continue;
+    }
+    ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = current;
+    prev = current;
+  }
+
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+  return ranges.join(',');
+}
+
 /**
  * Dịch một batch text
  */
@@ -191,6 +223,7 @@ export async function translateAll(
   // Dịch song song tối đa MAX_CONCURRENT batch cùng lúc
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
     const methodLabel = useImpit ? 'impit' : 'api';
+    let progressTokenLabel = useImpit ? 'impit_cookie' : (assignedKey?.keyInfo.name || 'rotation');
     // Report progress khi bắt đầu batch
     if (progressCallback) {
       progressCallback({
@@ -199,7 +232,7 @@ export async function translateAll(
         batchIndex: i,
         totalBatches: batches.length,
         status: 'translating',
-        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] (${MAX_CONCURRENT} song song)...`,
+        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${MAX_CONCURRENT} song song)...`,
         eventType: 'batch_started',
       });
     }
@@ -216,6 +249,7 @@ export async function translateAll(
       attemptCount++;
       const missingCount = batch.texts.length - (batchResult.translatedTexts?.filter(t => t.trim()).length ?? 0);
       console.log(`[CaptionTranslator] Retry ${attemptCount - 1}/${maxAttempts - 1} cho batch ${i + 1} (thiếu ${missingCount} dòng)`);
+      progressTokenLabel = useImpit ? 'impit_cookie' : 'rotation';
       if (progressCallback) {
         progressCallback({
           current: batch.startIndex,
@@ -223,7 +257,7 @@ export async function translateAll(
           batchIndex: i,
           totalBatches: batches.length,
           status: 'translating',
-          message: `Batch ${i + 1}: Thiếu ${missingCount} dòng — đang thử lại lần ${attemptCount - 1}/${maxAttempts - 1}...`,
+          message: `Batch ${i + 1}: Thiếu ${missingCount} dòng — đang thử lại lần ${attemptCount - 1}/${maxAttempts - 1} [${methodLabel}] [token:${progressTokenLabel}]...`,
           eventType: 'batch_retry',
         });
       }
@@ -255,8 +289,8 @@ export async function translateAll(
     failedCount += report.missingGlobalLineIndexes.length;
 
     if (!isFullSuccess) {
-      const globalMissing = report.missingGlobalLineIndexes.join(', ');
-      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau ${maxAttempts} lần thử${globalMissing ? ` (global: ${globalMissing})` : ''}`;
+      const globalMissing = formatIndexRanges(report.missingGlobalLineIndexes);
+      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau ${maxAttempts} lần thử (global: ${globalMissing})`;
       console.error(`[CaptionTranslator] ${errorMsg}`);
       errors.push(errorMsg);
     }
@@ -270,7 +304,7 @@ export async function translateAll(
         batchIndex: completedBatches,
         totalBatches: batches.length,
         status: report.status === 'success' ? 'translating' : 'error',
-        message: `Hoàn thành ${completedBatches}/${batches.length} batch...`,
+        message: `Hoàn thành ${completedBatches}/${batches.length} batch [${methodLabel}] [token:${progressTokenLabel}]...`,
         eventType: report.status === 'success' ? 'batch_completed' : 'batch_failed',
         batchReport: report,
         translatedChunk: {

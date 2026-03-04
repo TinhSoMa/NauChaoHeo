@@ -378,6 +378,38 @@ function normalizeEntriesForSession(entries: SubtitleEntry[]): SubtitleEntry[] {
   }));
 }
 
+function formatIndexRanges(indexes: number[]): string {
+  const normalized = Array.from(
+    new Set(
+      indexes
+        .map((value) => Math.floor(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  ).sort((a, b) => a - b);
+
+  if (normalized.length === 0) {
+    return 'không rõ';
+  }
+
+  const ranges: string[] = [];
+  let start = normalized[0];
+  let prev = normalized[0];
+
+  for (let i = 1; i < normalized.length; i++) {
+    const current = normalized[i];
+    if (current === prev + 1) {
+      prev = current;
+      continue;
+    }
+    ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = current;
+    prev = current;
+  }
+
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+  return ranges.join(',');
+}
+
 function formatMissingBatchMessage(
   folderName: string,
   reports: SharedTranslationBatchReport[]
@@ -386,16 +418,23 @@ function formatMissingBatchMessage(
     .filter((report) => report.status === 'failed')
     .sort((a, b) => a.batchIndex - b.batchIndex);
 
+  if (failedReports.length === 0) {
+    return `[${folderName}] Step 3 thiếu batch nhưng chưa có đủ batch report để xác định dòng thiếu.`;
+  }
+
   const details = failedReports
     .map((report) => {
-      const missingLines = report.missingGlobalLineIndexes.length > 0
-        ? report.missingGlobalLineIndexes.join(',')
-        : 'không rõ';
-      return `#${report.batchIndex} (thiếu dòng global: ${missingLines})`;
+      const missingCount = report.missingGlobalLineIndexes.length;
+      const missingRanges = formatIndexRanges(report.missingGlobalLineIndexes);
+      return `#${report.batchIndex} (thiếu ${missingCount}/${report.expectedLines} dòng global: ${missingRanges})`;
     })
     .join(', ');
 
-  return `[${folderName}] Step 3 thiếu batch: ${details}`;
+  const mergedGlobalRanges = formatIndexRanges(
+    failedReports.flatMap((report) => report.missingGlobalLineIndexes)
+  );
+  const mergedGlobalCount = Array.from(new Set(failedReports.flatMap((report) => report.missingGlobalLineIndexes))).length;
+  return `[${folderName}] Step 3 thiếu batch: ${details} | tổng thiếu ${mergedGlobalCount} dòng global: ${mergedGlobalRanges}`;
 }
 
 function deriveBatchReportFromProgress(
@@ -1662,9 +1701,10 @@ export function useCaptionProcessing({
           const fallbackMissingDetails = missingBatchIndexes
             .map((batchIndex) => `#${batchIndex}`)
             .join(', ');
+          const fallbackMissingRanges = formatIndexRanges(missingGlobalLineIndexes);
           const missingMessage = finalBatchReports.length > 0
             ? formatMissingBatchMessage(folderName, finalBatchReports)
-            : `[${folderName}] Step 3 thiếu batch: ${fallbackMissingDetails || 'không rõ'}`;
+            : `[${folderName}] Step 3 thiếu batch: ${fallbackMissingDetails || 'không rõ'} | tổng thiếu ${failedLines} dòng global: ${fallbackMissingRanges}`;
           throw new Error(missingMessage);
         }
       }

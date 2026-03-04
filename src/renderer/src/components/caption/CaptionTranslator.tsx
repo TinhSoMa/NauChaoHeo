@@ -40,7 +40,7 @@ import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { AlertCircle, Download, Eye } from 'lucide-react';
-import { CaptionProjectSettingsValues, CoverQuad, VoiceInfo } from '@shared/types/caption';
+import { CaptionProjectSettingsValues, CaptionSessionV1, CoverQuad, VoiceInfo } from '@shared/types/caption';
 
 type TtsVoiceProvider = 'edge' | 'capcut';
 type TtsVoiceTier = 'free' | 'pro';
@@ -62,6 +62,100 @@ interface TtsUiVoiceOption {
   label: string;
   provider: TtsVoiceProvider;
   tier: TtsVoiceTier;
+}
+
+type SessionTimingSnapshot = {
+  step4SrtScale?: number;
+  step7AudioSpeed?: number;
+  audioEffectiveSpeed?: number;
+  videoSubBaseDuration?: number;
+  videoSpeedMultiplier?: number;
+  videoMarkerSec?: number;
+};
+
+type SessionStepTimingMeta = {
+  status?: string;
+  startedAt?: string;
+  endedAt?: string;
+};
+
+type Step3RuntimeTimer = {
+  apiLabel: string;
+  tokenLabel: string;
+  apiStartedAtMs: number | null;
+  apiEndedAtMs: number | null;
+  tokenStartedAtMs: number | null;
+  tokenEndedAtMs: number | null;
+};
+
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function nearlyEqual(a: number | undefined, b: number | undefined, epsilon = 0.005): boolean {
+  if (typeof a !== 'number' || typeof b !== 'number') {
+    return false;
+  }
+  return Math.abs(a - b) <= epsilon;
+}
+
+function readTimingSnapshotFromSession(session: Pick<CaptionSessionV1, 'timing' | 'data'>): SessionTimingSnapshot | null {
+  const timing = (session.timing && typeof session.timing === 'object')
+    ? session.timing as Record<string, unknown>
+    : {};
+  const data = (session.data && typeof session.data === 'object')
+    ? session.data as Record<string, unknown>
+    : {};
+  const renderTimingPayload = (data.renderTimingPayload && typeof data.renderTimingPayload === 'object')
+    ? data.renderTimingPayload as Record<string, unknown>
+    : null;
+  const afterScale = (renderTimingPayload?.afterScale && typeof renderTimingPayload.afterScale === 'object')
+    ? renderTimingPayload.afterScale as Record<string, unknown>
+    : null;
+
+  const snapshot: SessionTimingSnapshot = {
+    step4SrtScale: toFiniteNumber(timing.step4SrtScale) ?? toFiniteNumber(afterScale?.step4SrtScale),
+    step7AudioSpeed: toFiniteNumber(timing.step7AudioSpeed) ?? toFiniteNumber(afterScale?.step7AudioSpeedInput),
+    audioEffectiveSpeed: toFiniteNumber(timing.audioEffectiveSpeed) ?? toFiniteNumber(afterScale?.audioEffectiveSpeed),
+    videoSubBaseDuration: toFiniteNumber(timing.videoSubBaseDuration) ?? toFiniteNumber(afterScale?.videoWithSubtitleDurationAfterStep4ScaleSec),
+    videoSpeedMultiplier: toFiniteNumber(timing.videoSpeedMultiplier) ?? toFiniteNumber(afterScale?.videoSpeedNeeded),
+    videoMarkerSec: toFiniteNumber(timing.videoMarkerSec) ?? toFiniteNumber(afterScale?.videoMarkerSec),
+  };
+
+  const hasAnyValue = Object.values(snapshot).some((value) => typeof value === 'number');
+  return hasAnyValue ? snapshot : null;
+}
+
+function parseIsoToMs(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function formatElapsedMs(elapsedMs: number): string {
+  const safeSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function parseStep3RuntimeHints(message: string): { apiLabel?: string; tokenLabel?: string } {
+  const text = (message || '').trim();
+  if (!text) {
+    return {};
+  }
+  const apiMatch = text.match(/\[(api|impit)\]/i);
+  const tokenMatch = text.match(/\[token:([^\]]+)\]/i);
+  return {
+    apiLabel: apiMatch?.[1]?.toLowerCase(),
+    tokenLabel: tokenMatch?.[1]?.trim(),
+  };
 }
 
 const FALLBACK_TTS_VOICES: TtsUiVoiceOption[] = VOICES.map((voice) => ({
@@ -875,6 +969,8 @@ export function CaptionTranslator() {
 
   const [diskAudioDuration, setDiskAudioDuration] = useState<number | null>(null);
   const [diskSubtitleDuration, setDiskSubtitleDuration] = useState<number | null>(null);
+  const [diskSubtitleAlreadyScaled, setDiskSubtitleAlreadyScaled] = useState(false);
+  const [sessionTimingSnapshot, setSessionTimingSnapshot] = useState<SessionTimingSnapshot | null>(null);
 
   // Section 6 (Cấu hình) luôn dùng folder đầu tiên làm tham chiếu cấu hình.
   // Folder đang xử lý (processing.currentFolder) chỉ dùng cho progress badge ở Section 7.
@@ -913,6 +1009,17 @@ export function CaptionTranslator() {
 
   const [sessionStepStatus, setSessionStepStatus] = useState<Partial<Record<Step, string>>>({});
   const [sessionStepSkipped, setSessionStepSkipped] = useState<Partial<Record<Step, boolean>>>({});
+  const [sessionStepTimingMeta, setSessionStepTimingMeta] = useState<Partial<Record<Step, SessionStepTimingMeta>>>({});
+  const [uiNowMs, setUiNowMs] = useState<number>(() => Date.now());
+  const [stepLiveStartMs, setStepLiveStartMs] = useState<Partial<Record<Step, number>>>({});
+  const [step3RuntimeTimer, setStep3RuntimeTimer] = useState<Step3RuntimeTimer>({
+    apiLabel: '',
+    tokenLabel: '',
+    apiStartedAtMs: null,
+    apiEndedAtMs: null,
+    tokenStartedAtMs: null,
+    tokenEndedAtMs: null,
+  });
   const [sessionPreviewEntries, setSessionPreviewEntries] = useState<SubtitleEntry[]>([]);
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
@@ -927,15 +1034,18 @@ export function CaptionTranslator() {
     if (!fileManager.filePath) {
       setSessionStepStatus({});
       setSessionStepSkipped({});
+      setSessionStepTimingMeta({});
       setSessionPreviewEntries(fileManager.entries);
       setRenderedPreviewVideoPath(null);
       setPreviewSourceLabel('live_video');
+      setSessionTimingSnapshot(null);
       return;
     }
 
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
     const activeInputPath = processing.currentFolder?.path ?? inputPaths[0];
     if (!activeInputPath) {
+      setSessionTimingSnapshot(null);
       return;
     }
 
@@ -981,8 +1091,47 @@ export function CaptionTranslator() {
           6: isSkipped(session.steps.step6),
           7: isSkipped(session.steps.step7),
         };
+        const nextStepTimingMeta: Partial<Record<Step, SessionStepTimingMeta>> = {
+          1: {
+            status: session.steps.step1?.status,
+            startedAt: session.steps.step1?.startedAt,
+            endedAt: session.steps.step1?.endedAt,
+          },
+          2: {
+            status: session.steps.step2?.status,
+            startedAt: session.steps.step2?.startedAt,
+            endedAt: session.steps.step2?.endedAt,
+          },
+          3: {
+            status: session.steps.step3?.status,
+            startedAt: session.steps.step3?.startedAt,
+            endedAt: session.steps.step3?.endedAt,
+          },
+          4: {
+            status: session.steps.step4?.status,
+            startedAt: session.steps.step4?.startedAt,
+            endedAt: session.steps.step4?.endedAt,
+          },
+          5: {
+            status: session.steps.step5?.status,
+            startedAt: session.steps.step5?.startedAt,
+            endedAt: session.steps.step5?.endedAt,
+          },
+          6: {
+            status: session.steps.step6?.status,
+            startedAt: session.steps.step6?.startedAt,
+            endedAt: session.steps.step6?.endedAt,
+          },
+          7: {
+            status: session.steps.step7?.status,
+            startedAt: session.steps.step7?.startedAt,
+            endedAt: session.steps.step7?.endedAt,
+          },
+        };
         setSessionStepStatus(nextStepStatus);
         setSessionStepSkipped(nextStepSkipped);
+        setSessionStepTimingMeta(nextStepTimingMeta);
+        setSessionTimingSnapshot(readTimingSnapshotFromSession(session));
 
         const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
         const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
@@ -1017,9 +1166,12 @@ export function CaptionTranslator() {
       } catch (error) {
         if (!cancelled) {
           console.warn('[CaptionTranslator] Không thể hydrate preview từ caption_session.json', error);
+          setSessionStepStatus({});
           setSessionStepSkipped({});
+          setSessionStepTimingMeta({});
           setSessionPreviewEntries(fileManager.entries);
           setRenderedPreviewVideoPath(null);
+          setSessionTimingSnapshot(null);
         }
       }
     };
@@ -1028,7 +1180,7 @@ export function CaptionTranslator() {
     return () => {
       cancelled = true;
     };
-  }, [fileManager.filePath, fileManager.entries, processing.currentFolder?.path, processing.status, projectId, settings.inputType]);
+  }, [fileManager.filePath, fileManager.entries, processing.currentFolder?.path, processing.currentStep, processing.status, projectId, settings.inputType]);
 
   useEffect(() => {
     if (previewMode === 'render' && !renderedPreviewVideoPath) {
@@ -1068,6 +1220,7 @@ export function CaptionTranslator() {
   useEffect(() => {
     setDiskAudioDuration(null);
     setDiskSubtitleDuration(null);
+    setDiskSubtitleAlreadyScaled(false);
   }, [firstFolderPath]);
 
   useEffect(() => {
@@ -1176,7 +1329,10 @@ export function CaptionTranslator() {
     let mounted = true;
     const fetchDiskSubtitleDuration = async () => {
       if (!displayOutputDir) {
-        if (mounted) setDiskSubtitleDuration(null);
+        if (mounted) {
+          setDiskSubtitleDuration(null);
+          setDiskSubtitleAlreadyScaled(false);
+        }
         return;
       }
 
@@ -1197,12 +1353,15 @@ export function CaptionTranslator() {
       const translatedSrtPath = `${displayOutputDir}/srt/translated.srt`;
 
       let durationSec = await getDurationFromSrt(scaledSrtPath, 1.0);
+      let alreadyScaled = durationSec != null;
       if (durationSec == null) {
         durationSec = await getDurationFromSrt(translatedSrtPath, srtTimeScale);
+        alreadyScaled = false;
       }
 
       if (mounted) {
         setDiskSubtitleDuration(durationSec);
+        setDiskSubtitleAlreadyScaled(alreadyScaled);
       }
     };
 
@@ -1214,9 +1373,9 @@ export function CaptionTranslator() {
   }, [displayOutputDir, srtTimeScale, processing.status]);
 
   const scaledSrtDurationSec = srtDurationMs > 0 ? (srtDurationMs / 1000) * srtTimeScale : 0;
-  const subtitleSyncDurationSec = scaledSrtDurationSec > 0
-    ? scaledSrtDurationSec
-    : (diskSubtitleDuration || 0);
+  const subtitleSyncDurationSec = (diskSubtitleDuration && diskSubtitleDuration > 0)
+    ? diskSubtitleDuration
+    : scaledSrtDurationSec;
 
   // Multi-folder: entries không được load (guarded by !isMulti) nên srtDurationMs = 0.
   // Fallback: dùng videoInfo.duration của folder hiện tại làm ước tính duration audio
@@ -1240,10 +1399,10 @@ export function CaptionTranslator() {
   // Dùng diskAudioDuration (file thực trên đĩa) nếu có, cả single và multi-folder
   const baseAudioDuration = (diskAudioDuration !== null && diskAudioDuration > 0)
     ? diskAudioDuration
-    : (fallbackBaseAudioDurationMs / 1000);
+    : (subtitleSyncDurationSec > 0 ? subtitleSyncDurationSec : (fallbackBaseAudioDurationMs / 1000));
 
   // isEstimated: true khi không có audio file thực và dùng video duration fallback
-  const isEstimated = diskAudioDuration === null && srtDurationMs === 0 && originalVideoDuration > 0;
+  const isEstimated = diskAudioDuration === null && subtitleSyncDurationSec === 0 && srtDurationMs === 0 && originalVideoDuration > 0;
 
   const audioExpectedDuration = settings.renderAudioSpeed > 0 
     ? baseAudioDuration / settings.renderAudioSpeed 
@@ -1258,12 +1417,26 @@ export function CaptionTranslator() {
     subRenderDuration,
     audioScaledDuration: audioExpectedDuration,
     configuredSrtTimeScale: srtTimeScale,
-    srtAlreadyScaled: false,
+    srtAlreadyScaled: diskSubtitleAlreadyScaled,
   });
-  const audioEffectiveSpeed = timingCalc.audioEffectiveSpeed;
-  const videoSubBaseDuration = timingCalc.videoSubBaseDuration;
-  const autoVideoSpeed = timingCalc.videoSpeedMultiplier;
-  const videoMarkerSec = timingCalc.videoMarkerSec;
+  const hasBackendTimingForCurrentSettings = Boolean(
+    sessionTimingSnapshot
+      && nearlyEqual(sessionTimingSnapshot.step4SrtScale, step4Scale)
+      && nearlyEqual(sessionTimingSnapshot.step7AudioSpeed, step7Speed)
+  );
+  const audioEffectiveSpeed = hasBackendTimingForCurrentSettings && typeof sessionTimingSnapshot?.audioEffectiveSpeed === 'number'
+    ? sessionTimingSnapshot.audioEffectiveSpeed
+    : timingCalc.audioEffectiveSpeed;
+  const videoSubBaseDuration = hasBackendTimingForCurrentSettings && typeof sessionTimingSnapshot?.videoSubBaseDuration === 'number'
+    ? sessionTimingSnapshot.videoSubBaseDuration
+    : timingCalc.videoSubBaseDuration;
+  const autoVideoSpeed = hasBackendTimingForCurrentSettings && typeof sessionTimingSnapshot?.videoSpeedMultiplier === 'number'
+    ? sessionTimingSnapshot.videoSpeedMultiplier
+    : timingCalc.videoSpeedMultiplier;
+  const videoMarkerSec = hasBackendTimingForCurrentSettings && typeof sessionTimingSnapshot?.videoMarkerSec === 'number'
+    ? sessionTimingSnapshot.videoMarkerSec
+    : timingCalc.videoMarkerSec;
+  const timingDisplaySource = hasBackendTimingForCurrentSettings ? 'backend' : 'ui_fallback';
 
   const formatDuration = (seconds: number) => {
     if (seconds <= 0) return '--';
@@ -1278,6 +1451,7 @@ export function CaptionTranslator() {
 - Thời gian gốc dự phòng (fallbackBaseAudioDurationMs): ${(fallbackBaseAudioDurationMs / 1000).toFixed(2)}s
 - Mốc subtitle cuối (scaled theo srtSpeed): ${scaledSrtDurationSec.toFixed(2)}s
 - Mốc subtitle từ file SRT trên đĩa: ${diskSubtitleDuration ? diskSubtitleDuration.toFixed(2) + 's' : 'null'}
+- SRT đã scale sẵn (backend-style): ${diskSubtitleAlreadyScaled ? 'yes' : 'no'}
 - Step4 scale: ${step4Scale.toFixed(3)}x
 - Step7 speed: ${step7Speed.toFixed(3)}x
 - Audio hiệu dụng (step4 - delta step7): ${audioEffectiveSpeed.toFixed(3)}x
@@ -1289,8 +1463,9 @@ export function CaptionTranslator() {
 - Duration Video dùng để sync (videoSubBaseDuration): ${videoSubBaseDuration.toFixed(2)}s
 - 👉 Tốc độ Video tự động chỉnh (autoVideoSpeed): ${autoVideoSpeed.toFixed(3)}x
 - 🎯 Mốc video chuẩn (gốc): ${videoMarkerSec.toFixed(2)}s
+- Timing source: ${timingDisplaySource}
     `);
-  }, [diskAudioDuration, diskSubtitleDuration, fallbackBaseAudioDurationMs, scaledSrtDurationSec, baseAudioDuration, settings.renderAudioSpeed, audioExpectedDuration, step4Scale, step7Speed, audioEffectiveSpeed, subRenderDuration, videoSubBaseDuration, autoVideoSpeed, videoMarkerSec]);
+  }, [diskAudioDuration, diskSubtitleDuration, diskSubtitleAlreadyScaled, fallbackBaseAudioDurationMs, scaledSrtDurationSec, baseAudioDuration, settings.renderAudioSpeed, audioExpectedDuration, step4Scale, step7Speed, audioEffectiveSpeed, subRenderDuration, videoSubBaseDuration, autoVideoSpeed, videoMarkerSec, timingDisplaySource]);
 
   useEffect(() => {
     // Lấy danh sách font thực tế từ resources/fonts
@@ -1416,6 +1591,147 @@ export function CaptionTranslator() {
     buildStep7AudioPreviewSignature,
   ]);
 
+  const isStep3Running = processing.status === 'running' && processing.currentStep === 3;
+
+  useEffect(() => {
+    if (processing.status !== 'running' || !processing.currentStep) {
+      return;
+    }
+    const step = processing.currentStep as Step;
+    setStepLiveStartMs((prev) => {
+      if (prev[step]) {
+        return prev;
+      }
+      const sessionStartMs = parseIsoToMs(sessionStepTimingMeta[step]?.startedAt);
+      return {
+        ...prev,
+        [step]: sessionStartMs ?? Date.now(),
+      };
+    });
+  }, [processing.status, processing.currentStep, sessionStepTimingMeta]);
+
+  useEffect(() => {
+    if (processing.status === 'running') {
+      return;
+    }
+    setStepLiveStartMs({});
+  }, [processing.status]);
+
+  useEffect(() => {
+    setStepLiveStartMs({});
+    setStep3RuntimeTimer({
+      apiLabel: '',
+      tokenLabel: '',
+      apiStartedAtMs: null,
+      apiEndedAtMs: null,
+      tokenStartedAtMs: null,
+      tokenEndedAtMs: null,
+    });
+  }, [processing.currentFolder?.path]);
+
+  useEffect(() => {
+    if (!isStep3Running) {
+      setStep3RuntimeTimer((prev) => {
+        if (!prev.apiStartedAtMs && !prev.tokenStartedAtMs) {
+          return prev;
+        }
+        const now = Date.now();
+        return {
+          ...prev,
+          apiEndedAtMs: prev.apiEndedAtMs ?? now,
+          tokenEndedAtMs: prev.tokenEndedAtMs ?? now,
+        };
+      });
+      return;
+    }
+
+    const now = Date.now();
+    const hints = parseStep3RuntimeHints(processing.progress.message || '');
+    const fallbackApi = settings.translateMethod === 'impit' ? 'impit' : 'api';
+    const nextApiLabel = (hints.apiLabel || fallbackApi).toLowerCase();
+    const fallbackToken = nextApiLabel === 'impit' ? 'impit_cookie' : 'rotation';
+    const nextTokenLabel = (hints.tokenLabel || fallbackToken).trim();
+
+    setStep3RuntimeTimer((prev) => {
+      let apiStartedAtMs = prev.apiStartedAtMs;
+      let apiEndedAtMs = prev.apiEndedAtMs;
+      if (prev.apiLabel !== nextApiLabel || !apiStartedAtMs || apiEndedAtMs) {
+        apiStartedAtMs = now;
+        apiEndedAtMs = null;
+      }
+
+      let tokenStartedAtMs = prev.tokenStartedAtMs;
+      let tokenEndedAtMs = prev.tokenEndedAtMs;
+      if (prev.tokenLabel !== nextTokenLabel || !tokenStartedAtMs || tokenEndedAtMs) {
+        tokenStartedAtMs = now;
+        tokenEndedAtMs = null;
+      }
+
+      return {
+        apiLabel: nextApiLabel,
+        tokenLabel: nextTokenLabel,
+        apiStartedAtMs,
+        apiEndedAtMs,
+        tokenStartedAtMs,
+        tokenEndedAtMs,
+      };
+    });
+  }, [isStep3Running, processing.progress.message, settings.translateMethod]);
+
+  useEffect(() => {
+    const shouldTick = processing.status === 'running'
+      || isStep3Running
+      || Object.values(sessionStepTimingMeta).some((meta) => meta?.status === 'running');
+    if (!shouldTick) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setUiNowMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [processing.status, isStep3Running, sessionStepTimingMeta]);
+
+  const getStepElapsedLabel = useCallback((step: Step): string => {
+    const meta = sessionStepTimingMeta[step];
+    const sessionStartMs = parseIsoToMs(meta?.startedAt);
+    const sessionEndMs = parseIsoToMs(meta?.endedAt);
+    const isCurrentRunningStep = processing.status === 'running' && processing.currentStep === step;
+
+    let elapsedMs: number | null = null;
+    if (isCurrentRunningStep) {
+      const liveStartMs = stepLiveStartMs[step];
+      const effectiveStartMs = sessionStartMs ?? liveStartMs ?? Date.now();
+      elapsedMs = Math.max(0, uiNowMs - effectiveStartMs);
+    } else if (sessionStartMs !== null && sessionEndMs !== null && sessionEndMs >= sessionStartMs) {
+      elapsedMs = sessionEndMs - sessionStartMs;
+    } else if (sessionStartMs !== null && meta?.status === 'running') {
+      elapsedMs = Math.max(0, uiNowMs - sessionStartMs);
+    }
+
+    if (elapsedMs === null) {
+      return '--';
+    }
+    return formatElapsedMs(elapsedMs);
+  }, [processing.status, processing.currentStep, sessionStepTimingMeta, stepLiveStartMs, uiNowMs]);
+
+  const step3ApiRuntimeLabel = useMemo(() => {
+    if (!step3RuntimeTimer.apiStartedAtMs) {
+      return '--';
+    }
+    const endMs = step3RuntimeTimer.apiEndedAtMs ?? uiNowMs;
+    return formatElapsedMs(Math.max(0, endMs - step3RuntimeTimer.apiStartedAtMs));
+  }, [step3RuntimeTimer.apiStartedAtMs, step3RuntimeTimer.apiEndedAtMs, uiNowMs]);
+
+  const step3TokenRuntimeLabel = useMemo(() => {
+    if (!step3RuntimeTimer.tokenStartedAtMs) {
+      return '--';
+    }
+    const endMs = step3RuntimeTimer.tokenEndedAtMs ?? uiNowMs;
+    return formatElapsedMs(Math.max(0, endMs - step3RuntimeTimer.tokenStartedAtMs));
+  }, [step3RuntimeTimer.tokenStartedAtMs, step3RuntimeTimer.tokenEndedAtMs, uiNowMs]);
+
   const getStepBadge = (step: Step): { label: string; className: string } => {
     const hasIssue = processing.stepDependencyIssues.some((item) => item.step === step);
     if (processing.status === 'running' && processing.currentStep === step) {
@@ -1501,7 +1817,7 @@ export function CaptionTranslator() {
           : `${selectedVoiceLabel} | rate ${settings.rate} | vol ${settings.volume}`,
       },
       { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution} / ${settings.renderContainer?.toUpperCase() || 'MP4'}` },
-      { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x` },
+      { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x (${timingDisplaySource})` },
       {
         key: 'Âm lượng',
         value: `video ${formatPercentDisplay(settings.videoVolume)}% | TTS ${formatPercentDisplay(settings.audioVolume)}%`,
@@ -1553,6 +1869,7 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     autoVideoSpeed,
+    timingDisplaySource,
     previewSourceLabel,
   ]);
 
@@ -2288,6 +2605,33 @@ export function CaptionTranslator() {
                 : 'API sẽ dùng model đã chọn để dịch batch.'}
             </div>
           </div>
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Runtime theo kênh dịch</div>
+              <span className={styles.stepMetaPill}>
+                {isStep3Running ? 'Live' : 'Idle'}
+              </span>
+            </div>
+            <div className={styles.stepRuntimeGrid}>
+              <div className={styles.stepRuntimeItem}>
+                <span className={styles.stepRuntimeLabel}>API</span>
+                <span className={styles.stepRuntimeValue}>
+                  {(step3RuntimeTimer.apiLabel || (settings.translateMethod === 'impit' ? 'impit' : 'api')).toUpperCase()}
+                </span>
+                <span className={styles.stepRuntimeTimer}>{step3ApiRuntimeLabel}</span>
+              </div>
+              <div className={styles.stepRuntimeItem}>
+                <span className={styles.stepRuntimeLabel}>Token</span>
+                <span className={styles.stepRuntimeValue}>
+                  {step3RuntimeTimer.tokenLabel || (settings.translateMethod === 'impit' ? 'impit_cookie' : 'rotation')}
+                </span>
+                <span className={styles.stepRuntimeTimer}>{step3TokenRuntimeLabel}</span>
+              </div>
+            </div>
+            <div className={styles.stepCardHint}>
+              Runtime lấy từ progress Step 3 hiện tại. Nếu backend chưa gửi token cụ thể, UI dùng giá trị dự phòng.
+            </div>
+          </div>
         </div>
       );
     }
@@ -2478,6 +2822,7 @@ export function CaptionTranslator() {
               const badge = getStepBadge(step);
               const toneClass = getStepToneClass(badge.label);
               const compactStatus = getStepStatusCompactLabel(badge.label);
+              const elapsedLabel = getStepElapsedLabel(step);
               const isActive = activeStep === step;
               const isCurrent = processing.currentStep === step && processing.status === 'running';
               return (
@@ -2495,6 +2840,7 @@ export function CaptionTranslator() {
                   <span className={styles.stepStatusMain}>
                     <span className={styles.stepStatusCode}>B{step}</span>
                     <span className={styles.stepStatusName}>{STEP_SHORT_LABELS[step]}</span>
+                    <span className={styles.stepStatusElapsed}>{elapsedLabel}</span>
                   </span>
                   <span className={`${styles.stepStatusState} ${toneClass}`}>{compactStatus}</span>
                 </button>
