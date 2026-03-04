@@ -1672,29 +1672,46 @@ export function useCaptionProcessing({
           }
         }
 
-        const mergedPath = `${processOutputDir}/merged_audio.wav`;
+        const safeSrtSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
+        const speedLabel = normalizeSpeedLabel(safeSrtSpeed);
+        const mergedPath = `${processOutputDir}/merged_audio_${speedLabel}x.wav`;
         setProgress({ current: 0, total: 1, message: msgCtx('Bước 6: Đang ghép audio...') });
         // @ts-ignore
-        const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, cfg.srtSpeed);
+        const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, safeSrtSpeed);
         if (result.success) {
           setProgress({ current: 1, total: 1, message: msgCtx('Bước 6: Đã ghép audio thành công') });
+          const actualMergedOutputPath = (
+            result.data?.outputPath && typeof result.data.outputPath === 'string'
+              ? result.data.outputPath.trim()
+              : mergedPath
+          ) || mergedPath;
           const mergeResultPayload: Record<string, unknown> = result.data
             ? {
                 success: !!result.data.success,
-                outputPath: result.data.outputPath,
+                outputPath: actualMergedOutputPath,
                 error: result.data.error,
+                requestedOutputPath: mergedPath,
+                srtSpeed: safeSrtSpeed,
+                speedLabel,
               }
-            : { success: true, outputPath: mergedPath };
+            : {
+                success: true,
+                outputPath: actualMergedOutputPath,
+                requestedOutputPath: mergedPath,
+                srtSpeed: safeSrtSpeed,
+                speedLabel,
+              };
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
             const stepArtifacts: CaptionArtifactFile[] = [];
-            pushArtifact(stepArtifacts, 'merged_audio', mergedPath, 'file');
+            pushArtifact(stepArtifacts, 'merged_audio', actualMergedOutputPath, 'file');
             for (const file of filesToMerge) {
               pushArtifact(stepArtifacts, 'merge_input_audio', file.path, 'file');
             }
             const outputFingerprint = buildObjectFingerprint({
-              mergedPath,
+              mergedPath: actualMergedOutputPath,
               filesCount: filesToMerge.length,
-              srtSpeed: cfg.srtSpeed,
+              srtSpeed: safeSrtSpeed,
+              speedLabel,
             });
             const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
             let nextSession: CaptionSessionV1 = {
@@ -1705,18 +1722,21 @@ export function useCaptionProcessing({
               },
               artifacts: {
                 ...session.artifacts,
-                mergedAudioPath: mergedPath,
+                mergedAudioPath: actualMergedOutputPath,
               },
               timing: {
                 ...session.timing,
-                step4SrtScale: cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0,
+                step4SrtScale: safeSrtSpeed,
               },
               steps: {
                 ...session.steps,
                 [stepKey]: {
                   ...makeStepSuccess(session.steps[stepKey], {
-                    mergedPath,
+                    mergedPath: actualMergedOutputPath,
+                    requestedMergedPath: mergedPath,
                     filesCount: filesToMerge.length,
+                    srtSpeed: safeSrtSpeed,
+                    speedLabel,
                   }),
                   inputFingerprint: buildObjectFingerprint(filesToMerge.map((file) => ({
                     path: file.path,

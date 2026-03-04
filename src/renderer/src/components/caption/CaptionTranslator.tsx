@@ -646,21 +646,67 @@ export function CaptionTranslator() {
         return;
       }
       try {
-        const audioPath = `${displayOutputDir}/merged_audio.wav`;
-        console.log("Fetching metadata for audio path:", audioPath);
-        const res = await (window.electronAPI as any).captionVideo.getVideoMetadata(audioPath);
-        console.log("Metadata response:", res);
-        if (mounted && res?.success && res.data?.duration) {
-          const audioDuration: number = res.data.duration;
-          // Sanity check: nếu audio > 2× video duration → stale file từ run cũ, bỏ qua
-          if (originalVideoDuration > 0 && audioDuration > originalVideoDuration * 2) {
-            console.warn(`diskAudioDuration ${audioDuration}s > 2× video ${originalVideoDuration}s — stale file, ignoring`);
-            if (mounted) setDiskAudioDuration(null);
-          } else {
-            if (mounted) setDiskAudioDuration(audioDuration);
+        const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
+        const activeInputPath = processing.currentFolder?.path ?? inputPaths[0];
+        const safeScale = settings.srtSpeed > 0 ? settings.srtSpeed : 1.0;
+        const speedLabel = safeScale.toFixed(2).replace(/\.?0+$/, '');
+        const candidateAudioPaths: string[] = [];
+
+        if (activeInputPath) {
+          const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
+          const session = await readCaptionSession(sessionPath, {
+            projectId,
+            inputType: settings.inputType,
+            sourcePath: activeInputPath,
+            folderPath: settings.inputType === 'draft'
+              ? activeInputPath
+              : activeInputPath.replace(/[^/\\]+$/, ''),
+          });
+          const artifactMergedPath = typeof session.artifacts.mergedAudioPath === 'string'
+            ? session.artifacts.mergedAudioPath.trim()
+            : '';
+          const mergeResult = (session.data.mergeResult && typeof session.data.mergeResult === 'object')
+            ? (session.data.mergeResult as Record<string, unknown>)
+            : {};
+          const mergeResultPath = typeof mergeResult.outputPath === 'string'
+            ? mergeResult.outputPath.trim()
+            : '';
+
+          if (artifactMergedPath) {
+            candidateAudioPaths.push(artifactMergedPath);
           }
-        } else if (mounted) {
-          setDiskAudioDuration(null);
+          if (mergeResultPath) {
+            candidateAudioPaths.push(mergeResultPath);
+          }
+        }
+
+        candidateAudioPaths.push(`${displayOutputDir}/merged_audio_${speedLabel}x.wav`);
+        candidateAudioPaths.push(`${displayOutputDir}/merged_audio.wav`);
+
+        const uniqueAudioPaths = Array.from(new Set(candidateAudioPaths.filter((p) => !!p)));
+        let resolvedDuration: number | null = null;
+
+        for (const audioPath of uniqueAudioPaths) {
+          console.log('Fetching metadata for audio path:', audioPath);
+          const res = await (window.electronAPI as any).captionVideo.getVideoMetadata(audioPath);
+          console.log('Metadata response:', res);
+          if (!res?.success || !res.data?.duration) {
+            continue;
+          }
+
+          const audioDuration: number = res.data.duration;
+          // Sanity check: nếu audio > 2× video duration → stale file từ run cũ, thử candidate khác
+          if (originalVideoDuration > 0 && audioDuration > originalVideoDuration * 2) {
+            console.warn(`diskAudioDuration ${audioDuration}s > 2× video ${originalVideoDuration}s — stale candidate, continue`);
+            continue;
+          }
+
+          resolvedDuration = audioDuration;
+          break;
+        }
+
+        if (mounted) {
+          setDiskAudioDuration(resolvedDuration);
         }
       } catch (err) {
         console.error("Error fetching disk duration:", err);
@@ -673,7 +719,16 @@ export function CaptionTranslator() {
       fetchDiskDuration();
     }
     return () => { mounted = false; };
-  }, [displayOutputDir, originalVideoDuration, processing.status]);
+  }, [
+    displayOutputDir,
+    fileManager.filePath,
+    originalVideoDuration,
+    processing.currentFolder?.path,
+    processing.status,
+    projectId,
+    settings.inputType,
+    settings.srtSpeed,
+  ]);
 
   const srtDurationMs = fileManager.entries.length > 0 
     ? Math.max(...fileManager.entries.map(e => e.endMs || 0)) 
