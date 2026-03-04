@@ -20,7 +20,10 @@ const sessionSyncRetryTimers = new Map<string, number>();
 export function getInputPaths(inputType: CaptionInputType, filePath: string): string[] {
   if (!filePath) return [];
   if (inputType === 'draft') {
-    return filePath.split('; ').map((p) => p.trim()).filter(Boolean);
+    return filePath
+      .split(/\s*;\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean);
   }
   return [filePath];
 }

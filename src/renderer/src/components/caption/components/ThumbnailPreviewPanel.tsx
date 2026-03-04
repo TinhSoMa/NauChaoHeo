@@ -125,14 +125,6 @@ function hitRect(rect: DrawRect | null, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
-function statusClass(status: string): string {
-  if (status === 'error') return styles.badgeError;
-  if (status === 'updating' || status === 'loading') return styles.badgeUpdating;
-  if (status === 'pending') return styles.badgePending;
-  if (status === 'ready') return styles.badgeReady;
-  return styles.badgeIdle;
-}
-
 function sanitizeFileName(value: string): string {
   const cleaned = value
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
@@ -608,213 +600,217 @@ export function ThumbnailPreviewPanel({
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <span className={styles.title}>Thumbnail Preview</span>
-        <span className={styles.source}>{sourceLabel}</span>
-      </div>
-
-      <div className={styles.statusRows}>
-        <div className={styles.statusLine}>
-          <span className={styles.statusLabel}>Source:</span>
-          <span className={`${styles.statusBadge} ${statusClass(previewState.sourceStatus)}`}>{previewState.sourceStatus}</span>
-          <span className={styles.statusText}>{previewState.sourceMessage}</span>
+      <div className={styles.toolbar}>
+        <div className={styles.titleCluster}>
+          <span className={styles.title}>Thumbnail Preview</span>
         </div>
-        <div className={styles.statusLine}>
-          <span className={styles.statusLabel}>Render thật:</span>
-          <span className={`${styles.statusBadge} ${statusClass(previewState.realStatus)}`}>{previewState.realStatus}</span>
-          <span className={styles.statusText}>{previewState.realMessage}</span>
-        </div>
-        <div className={`${styles.syncBadge} ${previewState.hasDraft ? styles.syncDraft : (previewState.isSynced ? styles.syncReady : styles.syncPending)}`}>
-          {previewState.syncLabel}
-        </div>
-      </div>
-
-      <div className={styles.tabRow}>
-        <button
-          type="button"
-          className={`${styles.tabBtn} ${previewState.tab === 'edit' ? styles.tabBtnActive : ''}`}
-          onClick={() => previewState.setTab('edit')}
-        >
-          Chỉnh vị trí
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabBtn} ${previewState.tab === 'real' ? styles.tabBtnActive : ''}`}
-          onClick={() => previewState.setTab('real')}
-        >
-          Preview thật
-        </button>
-      </div>
-
-      <div className={styles.downloadRow}>
-        <button
-          type="button"
-          className={styles.downloadBtn}
-          onClick={handleDownloadThumbnail}
-          disabled={!videoPath || isDownloading}
-          title={!videoPath ? 'Chưa có video nguồn để tải thumbnail' : 'Lưu thumbnail PNG'}
-        >
-          {isDownloading ? 'Đang tải...' : 'Tải thumbnail PNG'}
-        </button>
-        {downloadStatus.message && (
-          <span
-            className={`${styles.downloadStatus} ${
-              downloadStatus.tone === 'error'
-                ? styles.downloadStatusError
-                : (downloadStatus.tone === 'ok' ? styles.downloadStatusOk : styles.downloadStatusMuted)
-            }`}
-            title={downloadStatus.message}
+        <div className={styles.toolbarActions}>
+          <div className={styles.tabRow}>
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${previewState.tab === 'edit' ? styles.tabBtnActive : ''}`}
+              onClick={() => previewState.setTab('edit')}
+            >
+              Chỉnh vị trí
+            </button>
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${previewState.tab === 'real' ? styles.tabBtnActive : ''}`}
+              onClick={() => previewState.setTab('real')}
+            >
+              Preview thật
+            </button>
+          </div>
+          <button
+            type="button"
+            className={styles.downloadBtn}
+            onClick={handleDownloadThumbnail}
+            disabled={!videoPath || isDownloading}
+            title={!videoPath ? 'Chưa có video nguồn để tải thumbnail' : 'Lưu thumbnail PNG'}
           >
-            {downloadStatus.message}
-          </span>
-        )}
+            {isDownloading ? 'Đang tải...' : 'Tải thumbnail PNG'}
+          </button>
+        </div>
       </div>
+
+      {downloadStatus.message && (
+        <div
+          className={`${styles.downloadStatus} ${
+            downloadStatus.tone === 'error'
+              ? styles.downloadStatusError
+              : (downloadStatus.tone === 'ok' ? styles.downloadStatusOk : styles.downloadStatusMuted)
+          }`}
+          title={downloadStatus.message}
+        >
+          {downloadStatus.message}
+        </div>
+      )}
 
       {previewState.tab === 'edit' && (
-        <>
-          <div className={styles.controls}>
-            <div className={styles.fullRow}>
-              <span className={styles.label}>Text1</span>
-              <textarea
-                className={`${styles.input} ${styles.textareaInput}`}
-                value={thumbnailText}
-                onChange={(e) => onThumbnailTextChange?.(e.target.value)}
-                readOnly={!!thumbnailTextReadOnly}
-                rows={2}
-                placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh Text1 ở danh sách bên trái' : 'Tiêu đề video...'}
-              />
-            </div>
-            <div className={styles.fullRow}>
-              <span className={styles.label}>Text2</span>
-              <textarea
-                className={`${styles.input} ${styles.textareaInput}`}
-                value={thumbnailTextSecondary}
-                onChange={(e) => onThumbnailTextSecondaryChange?.(e.target.value)}
-                readOnly={!!thumbnailTextReadOnly}
-                rows={2}
-                placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh Text2 ở danh sách bên trái' : 'Tên phim...'}
-              />
-            </div>
-            <div className={styles.fullRow}>
-              <span className={styles.label}>
-                Frame thumbnail: {previewState.draftFrameTimeSec.toFixed(3)}s
-                {' '}
-                (#{previewState.draftFrameIndex}/{Math.max(0, previewState.totalFrames - 1)} @ {previewState.fps.toFixed(2)}fps)
-              </span>
-              <input
-                className={styles.range}
-                type="range"
-                min={0}
-                max={previewState.duration}
-                step={previewState.frameStepSec}
-                value={previewState.draftFrameTimeSec}
-                onChange={(e) => previewState.setDraftFrameTimeSec(Number(e.target.value))}
-                onMouseUp={previewState.commitDraft}
-                onTouchEnd={previewState.commitDraft}
-                onBlur={previewState.commitDraft}
-              />
-              <div className={styles.frameTools}>
+        <div className={styles.editorShell}>
+          <section className={styles.stageColumn}>
+            <div className={styles.stageTop}>
+              <div className={styles.layerSwitch}>
                 <button
                   type="button"
-                  className={styles.frameBtn}
-                  onClick={() => {
-                    previewState.stepFrame(-1);
-                    window.setTimeout(() => previewState.commitDraft(), 0);
-                  }}
-                  disabled={!videoPath}
-                  title="Lùi 1 frame"
+                  className={`${styles.layerBtn} ${previewState.activeLayer === 'primary' ? styles.layerBtnActive : ''}`}
+                  onClick={() => previewState.setActiveLayer('primary')}
+                  disabled={!hasPrimaryText}
                 >
-                  -1f
+                  Text1
                 </button>
                 <button
                   type="button"
-                  className={styles.frameBtn}
-                  onClick={() => {
-                    previewState.stepFrame(1);
-                    window.setTimeout(() => previewState.commitDraft(), 0);
-                  }}
-                  disabled={!videoPath}
-                  title="Tiến 1 frame"
+                  className={`${styles.layerBtn} ${previewState.activeLayer === 'secondary' ? styles.layerBtnActive : ''}`}
+                  onClick={() => previewState.setActiveLayer('secondary')}
+                  disabled={!hasSecondaryText}
                 >
-                  +1f
+                  Text2
                 </button>
-                <input
-                  className={`${styles.input} ${styles.frameTimeInput}`}
-                  type="number"
-                  min={0}
-                  max={previewState.duration}
-                  step={previewState.frameStepSec}
-                  value={previewState.draftFrameTimeSec}
-                  onChange={(e) => previewState.setDraftFrameTimeSec(Number(e.target.value))}
-                  onBlur={previewState.commitDraft}
-                />
               </div>
             </div>
-          </div>
 
-          <div className={styles.layerSwitch}>
-            <button
-              type="button"
-              className={`${styles.layerBtn} ${previewState.activeLayer === 'primary' ? styles.layerBtnActive : ''}`}
-              onClick={() => previewState.setActiveLayer('primary')}
-              disabled={!hasPrimaryText}
-            >
-              Text1
-            </button>
-            <button
-              type="button"
-              className={`${styles.layerBtn} ${previewState.activeLayer === 'secondary' ? styles.layerBtnActive : ''}`}
-              onClick={() => previewState.setActiveLayer('secondary')}
-              disabled={!hasSecondaryText}
-            >
-              Text2
-            </button>
-          </div>
-
-          <div className={styles.box} ref={containerRef}>
-            <canvas
-              ref={canvasRef}
-              className={styles.canvas}
-              onMouseDown={onCanvasMouseDown}
-              onMouseMove={onCanvasMouseMove}
-              onMouseUp={endDrag}
-              onMouseLeave={endDrag}
-            />
-          </div>
-
-          <div className={styles.metaRow}>
-            <span>
-              Text1 font: {(thumbnailTextPrimaryFontName || thumbnailFontName || 'BrightwallPersonal')}
-              {' '}
-              {thumbnailTextPrimaryFontSize ?? thumbnailFontSize ?? 145}px
-            </span>
-            <span>Text1 color: {(thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}</span>
-            <span>
-              Text2 font: {(thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal')}
-              {' '}
-              {thumbnailTextSecondaryFontSize ?? thumbnailFontSize ?? 145}px
-            </span>
-            <span>Text2 color: {(thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()}</span>
-            <span>Line: {Number(thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x</span>
-            <span>Text1: ({previewState.draftPrimaryPosition.x.toFixed(3)}, {previewState.draftPrimaryPosition.y.toFixed(3)})</span>
-            <span>Text2: ({previewState.draftSecondaryPosition.x.toFixed(3)}, {previewState.draftSecondaryPosition.y.toFixed(3)})</span>
-          </div>
-          <div className={styles.hint}>Enter để xuống dòng thủ công. Text tràn sẽ không tự xuống dòng.</div>
-          {(truncationState.primary || truncationState.secondary) && (
-            <div className={styles.truncateBadges}>
-              {truncationState.primary && <span className={styles.truncateBadge}>Text1 bị cắt</span>}
-              {truncationState.secondary && <span className={styles.truncateBadge}>Text2 bị cắt</span>}
+            <div className={styles.box} ref={containerRef}>
+              <canvas
+                ref={canvasRef}
+                className={styles.canvas}
+                onMouseDown={onCanvasMouseDown}
+                onMouseMove={onCanvasMouseMove}
+                onMouseUp={endDrag}
+                onMouseLeave={endDrag}
+              />
             </div>
-          )}
-          {thumbnailTextHelper && <div className={styles.hint}>{thumbnailTextHelper}</div>}
-          {renderMode === 'hardsub_portrait_9_16' && (
-            <div className={styles.hint}>Mode 9:16: Text được clamp trong vùng foreground 3:4.</div>
-          )}
-        </>
+
+            <div className={styles.stageFooter}>
+              <div className={styles.hint}>Enter để xuống dòng thủ công. Text tràn sẽ không tự xuống dòng.</div>
+              {(truncationState.primary || truncationState.secondary) && (
+                <div className={styles.truncateBadges}>
+                  {truncationState.primary && <span className={styles.truncateBadge}>Text1 bị cắt</span>}
+                  {truncationState.secondary && <span className={styles.truncateBadge}>Text2 bị cắt</span>}
+                </div>
+              )}
+              {thumbnailTextHelper && <div className={styles.hint}>{thumbnailTextHelper}</div>}
+              {renderMode === 'hardsub_portrait_9_16' && (
+                <div className={styles.hint}>Mode 9:16: Text được clamp trong vùng foreground 3:4.</div>
+              )}
+            </div>
+          </section>
+
+          <aside className={styles.controlColumn}>
+            <div className={styles.controlsCard}>
+              <div className={styles.controls}>
+                <div className={styles.fullRow}>
+                  <span className={styles.label}>Text1</span>
+                  <textarea
+                    className={`${styles.input} ${styles.textareaInput}`}
+                    value={thumbnailText}
+                    onChange={(e) => onThumbnailTextChange?.(e.target.value)}
+                    readOnly={!!thumbnailTextReadOnly}
+                    rows={2}
+                    placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh Text1 ở danh sách bên trái' : 'Tiêu đề video...'}
+                  />
+                </div>
+                <div className={styles.fullRow}>
+                  <span className={styles.label}>Text2</span>
+                  <textarea
+                    className={`${styles.input} ${styles.textareaInput}`}
+                    value={thumbnailTextSecondary}
+                    onChange={(e) => onThumbnailTextSecondaryChange?.(e.target.value)}
+                    readOnly={!!thumbnailTextReadOnly}
+                    rows={2}
+                    placeholder={thumbnailTextReadOnly ? 'Multi-folder: chỉnh Text2 ở danh sách bên trái' : 'Tên phim...'}
+                  />
+                </div>
+                <div className={styles.fullRow}>
+                  <span className={styles.label}>Frame thumbnail</span>
+                  <input
+                    className={styles.range}
+                    type="range"
+                    min={0}
+                    max={previewState.duration}
+                    step={previewState.frameStepSec}
+                    value={previewState.draftFrameTimeSec}
+                    onChange={(e) => previewState.setDraftFrameTimeSec(Number(e.target.value))}
+                    onMouseUp={previewState.commitDraft}
+                    onTouchEnd={previewState.commitDraft}
+                    onBlur={previewState.commitDraft}
+                  />
+                  <div className={styles.frameTools}>
+                    <button
+                      type="button"
+                      className={styles.frameBtn}
+                      onClick={() => {
+                        previewState.stepFrame(-1);
+                        window.setTimeout(() => previewState.commitDraft(), 0);
+                      }}
+                      disabled={!videoPath}
+                      title="Lùi 1 frame"
+                    >
+                      -1f
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.frameBtn}
+                      onClick={() => {
+                        previewState.stepFrame(1);
+                        window.setTimeout(() => previewState.commitDraft(), 0);
+                      }}
+                      disabled={!videoPath}
+                      title="Tiến 1 frame"
+                    >
+                      +1f
+                    </button>
+                    <input
+                      className={`${styles.input} ${styles.frameTimeInput}`}
+                      type="number"
+                      min={0}
+                      max={previewState.duration}
+                      step={previewState.frameStepSec}
+                      value={previewState.draftFrameTimeSec}
+                      onChange={(e) => previewState.setDraftFrameTimeSec(Number(e.target.value))}
+                      onBlur={previewState.commitDraft}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.metaCard}>
+              <div className={styles.metaRow}>
+                <span className={styles.metaKey}>Text1 Font</span>
+                <span className={styles.metaValue}>
+                  {(thumbnailTextPrimaryFontName || thumbnailFontName || 'BrightwallPersonal')}
+                  {' '}
+                  {thumbnailTextPrimaryFontSize ?? thumbnailFontSize ?? 145}px
+                </span>
+                <span className={styles.metaKey}>Text1 Color</span>
+                <span className={styles.metaValue}>{(thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}</span>
+                <span className={styles.metaKey}>Text2 Font</span>
+                <span className={styles.metaValue}>
+                  {(thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal')}
+                  {' '}
+                  {thumbnailTextSecondaryFontSize ?? thumbnailFontSize ?? 145}px
+                </span>
+                <span className={styles.metaKey}>Text2 Color</span>
+                <span className={styles.metaValue}>{(thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()}</span>
+                <span className={styles.metaKey}>Line</span>
+                <span className={styles.metaValue}>{Number(thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x</span>
+                <span className={styles.metaKey}>Text1 Pos</span>
+                <span className={styles.metaValue}>
+                  ({previewState.draftPrimaryPosition.x.toFixed(3)}, {previewState.draftPrimaryPosition.y.toFixed(3)})
+                </span>
+                <span className={styles.metaKey}>Text2 Pos</span>
+                <span className={styles.metaValue}>
+                  ({previewState.draftSecondaryPosition.x.toFixed(3)}, {previewState.draftSecondaryPosition.y.toFixed(3)})
+                </span>
+              </div>
+            </div>
+          </aside>
+        </div>
       )}
 
       {previewState.tab === 'real' && (
-        <>
+        <div className={styles.realShell}>
           <div className={styles.box}>
             {previewState.realFrameData ? (
               <img src={previewState.realFrameData} className={styles.realImage} alt="Thumbnail preview thật" />
@@ -822,12 +818,7 @@ export function ThumbnailPreviewPanel({
               <div className={styles.placeholder}>Chưa có preview thật.</div>
             )}
           </div>
-          <div className={styles.status} title={previewState.realMessage}>
-            {previewState.realStatus === 'ready' && previewState.realSize
-              ? `Ready ${previewState.realSize.width}x${previewState.realSize.height}`
-              : previewState.realMessage}
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

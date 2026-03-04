@@ -101,6 +101,14 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
   const blackoutPct = preview.blackoutTop !== null
     ? Math.round((1 - preview.blackoutTop) * 100)
     : 0;
+  const mainInfo = preview.mode === 'subtitle'
+    ? `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`
+    : (preview.mode === 'logo'
+      ? `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`
+      : (preview.coverMode === 'copy_from_above'
+        ? `Copy mode · offset ${preview.copyOffsetPx}px · ${preview.coverQuadValid ? 'Quad OK' : 'Quad lỗi'}`
+        : `${isPortraitMode ? 'Blur' : 'Mask'} ${blackoutPct}%`));
+  const resolutionInfo = `${preview.videoSize.width}×${preview.videoSize.height} · ${isPortraitMode ? '9:16' : '16:9'} ${displayRenderResolution}`;
 
   return (
     <div className={styles.previewSection}>
@@ -172,10 +180,17 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
         <canvas
           ref={preview.canvasRef}
           className={styles.canvas}
-          onMouseDown={isInteractionDisabled ? undefined : preview.handleMouseDown}
+          onMouseDown={isInteractionDisabled ? undefined : (event) => {
+            event.currentTarget.focus();
+            preview.handleMouseDown(event);
+          }}
           onMouseMove={isInteractionDisabled ? undefined : preview.handleMouseMove}
           onMouseUp={isInteractionDisabled ? undefined : preview.handleMouseUp}
           onMouseLeave={isInteractionDisabled ? undefined : preview.handleMouseUp}
+          onWheel={isInteractionDisabled ? undefined : preview.handleWheel}
+          onKeyDown={isInteractionDisabled ? undefined : preview.handleKeyDown}
+          tabIndex={isInteractionDisabled ? -1 : 0}
+          title="Frame cố định ở giữa. Giữ Space + cuộn để zoom, dùng phím mũi tên để tinh chỉnh vị trí"
           style={{ cursor: isInteractionDisabled ? 'not-allowed' : preview.canvasCursor }}
         />
         {preview.isLoading && (
@@ -241,50 +256,15 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           >
             <RotateCcw size={12} /> Zoom {Math.round(preview.zoom * 100)}%
           </button>
-          <span className={styles.zoomHint}>Giữ Space + kéo để pan</span>
         </div>
       )}
 
       <div className={styles.infoBar}>
-        <span className={styles.positionInfo}>
-          {preview.mode === 'subtitle' ? (
-            <>
-              rel({preview.subtitlePositionRel.x.toFixed(3)}, {preview.subtitlePositionRel.y.toFixed(3)})
-              {' | '}
-              px({preview.subtitlePositionPx.x}, {preview.subtitlePositionPx.y})
-              {' | '}
-              {preview.videoSize.width}×{preview.videoSize.height}
-              {' | '}
-              {isPortraitMode ? '9:16' : '16:9'} {displayRenderResolution}
-            </>
-          ) : preview.mode === 'logo' ? (
-            <>
-              pos({preview.subtitlePosition.x}, {preview.subtitlePosition.y})
-              {' | '}
-              scale {Math.round(preview.logoScale * 100)}%
-              {' | '}
-              kéo góc để resize
-              {' | '}
-              {isPortraitMode ? '9:16' : '16:9'} {displayRenderResolution}
-            </>
-          ) : (
-            <>
-              {preview.coverMode === 'copy_from_above'
-                ? `Copy vùng trên | offset ${preview.copyOffsetPx}px | rect px ${preview.copyRectDebug ? `${preview.copyRectDebug.x},${preview.copyRectDebug.y},${preview.copyRectDebug.w},${preview.copyRectDebug.h}` : 'n/a'} | sourceY ${preview.copyRectDebug ? preview.copyRectDebug.sourceY : 'n/a'} | ${preview.coverQuadValid ? 'quad hợp lệ' : 'quad không hợp lệ'}`
-                : (preview.blackoutTop !== null
-                  ? (isPortraitMode ? `Blur ${blackoutPct}% đáy video chính` : `Che ${blackoutPct}% dưới video`)
-                  : (isPortraitMode ? 'Kéo để đặt vùng blur đáy' : 'Kéo để đặt vùng tô đen'))}
-              {' | '}
-              {preview.videoSize.width}×{preview.videoSize.height}
-              {' | '}
-              {isPortraitMode ? '9:16' : '16:9'} {displayRenderResolution}
-              {isPortraitMode && (
-                <> {' | '}crop ngang {Math.round(portraitForegroundCropPercent ?? 0)}%</>
-              )}
-            </>
-          )}
-        </span>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div className={styles.infoPills}>
+          <span className={`${styles.positionInfo} ${styles.positionInfoPrimary}`}>{mainInfo}</span>
+          <span className={styles.positionInfo}>{resolutionInfo}</span>
+        </div>
+        <div className={styles.actionRow}>
           {preview.mode === 'subtitle' && (
             <>
               <button className={styles.resetBtn} onClick={preview.resetToCenter}>

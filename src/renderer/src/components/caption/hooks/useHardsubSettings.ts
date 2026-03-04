@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ThumbnailFolderItem } from '../CaptionTypes';
+import { getInputPaths } from './captionSessionStore';
 
 interface UseHardsubSettingsOptions {
   inputType: 'srt' | 'draft';
@@ -23,7 +24,7 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const [thumbnailAutoStartValue, setThumbnailAutoStartValue] = useState('');
 
   const selectedDraftPaths = useMemo(
-    () => (options.inputType === 'draft' && options.filePath ? options.filePath.split('; ') : []),
+    () => getInputPaths(options.inputType, options.filePath),
     [options.inputType, options.filePath]
   );
   const isMultiFolder = selectedDraftPaths.length > 1;

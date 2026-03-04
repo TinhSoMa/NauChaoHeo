@@ -198,7 +198,7 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
       return;
     }
 
-    const paths = filePath.split('; ');
+    const paths = getInputPaths(inputType, filePath);
     const fetchVideos = async () => {
       const newFolderVideos: Record<string, { name: string; fullPath: string; duration: number }> = {};
       for (const p of paths) {

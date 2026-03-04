@@ -16,10 +16,8 @@ import {
   normalizeVoiceValue,
 } from '../../config/captionConfig';
 import {
-  CaptionStepPanelKey,
   HardsubTimingMetrics,
   Step,
-  StepPanelState,
   SubtitleEntry,
   ThumbnailPreviewContextKey,
 } from './CaptionTypes';
@@ -41,11 +39,21 @@ import { ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { ChevronDown, ChevronUp, Download, Eye } from 'lucide-react';
-import { CaptionProjectSettingsValues, VoiceInfo } from '@shared/types/caption';
+import { Download, Eye } from 'lucide-react';
+import { CaptionProjectSettingsValues, CoverQuad, VoiceInfo } from '@shared/types/caption';
 
 type TtsVoiceProvider = 'edge' | 'capcut';
 type TtsVoiceTier = 'free' | 'pro';
+type CommonConfigTab = 'render' | 'typography' | 'audio';
+type LayoutSwitchValue = 'landscape' | 'portrait';
+type InspectorPane = 'step' | 'common' | 'snapshot';
+
+const DEFAULT_COVER_QUAD: CoverQuad = {
+  tl: { x: 0, y: 0 },
+  tr: { x: 1, y: 0 },
+  br: { x: 1, y: 1 },
+  bl: { x: 0, y: 1 },
+};
 
 interface TtsUiVoiceOption {
   value: string;
@@ -614,7 +622,7 @@ export function CaptionTranslator() {
   const [sessionPreviewEntries, setSessionPreviewEntries] = useState<SubtitleEntry[]>([]);
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
-  const [previewMode, setPreviewMode] = useState<'render' | 'live'>('render');
+  const [previewMode, setPreviewMode] = useState<'render' | 'live'>('live');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
@@ -745,7 +753,7 @@ export function CaptionTranslator() {
   const firstFolderVideoInfo = firstFolderPath ? fileManager.folderVideos[firstFolderPath] : null;
   const thumbnailPreviewVideoPath = firstFolderVideoInfo?.fullPath || fileManager.firstVideoPath || null;
   const thumbnailPreviewInputPath = settings.inputType === 'draft'
-    ? (firstFolderPath || (fileManager.filePath ? fileManager.filePath.split('; ')[0] : ''))
+    ? (firstFolderPath || getInputPaths('draft', fileManager.filePath)[0] || '')
     : fileManager.filePath;
   const thumbnailPreviewContextKey: ThumbnailPreviewContextKey | null = (projectId && thumbnailPreviewInputPath)
     ? {
@@ -1039,27 +1047,6 @@ export function CaptionTranslator() {
     return `Step 7 đang bị chặn: ${issue.reason}`;
   })();
 
-  const [stepPanels, setStepPanels] = useState<Record<CaptionStepPanelKey, StepPanelState>>({
-    b1: { expanded: true, advanced: false },
-    b2: { expanded: false, advanced: false },
-    b3: { expanded: true, advanced: false },
-    b4: { expanded: true, advanced: false },
-    b5: { expanded: false, advanced: false },
-    b6: { expanded: false, advanced: false },
-    b7: { expanded: true, advanced: false },
-    run: { expanded: true, advanced: false },
-  });
-
-  const togglePanel = (key: CaptionStepPanelKey) => {
-    setStepPanels((prev) => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        expanded: !prev[key].expanded,
-      },
-    }));
-  };
-
   const getStepBadge = (step: Step): { label: string; className: string } => {
     const hasIssue = processing.stepDependencyIssues.some((item) => item.step === step);
     if (processing.status === 'running' && processing.currentStep === step) {
@@ -1094,6 +1081,16 @@ export function CaptionTranslator() {
       return { label: 'Done', className: `${styles.statusBadge} ${styles.statusDone}` };
     }
     return { label: processing.enabledSteps.has(step) ? 'Idle' : 'Off', className: `${styles.statusBadge} ${styles.statusIdle}` };
+  };
+
+  const getStepToneClass = (label: string): string => {
+    if (label === 'Running') return styles.stepToneRunning;
+    if (label === 'Done') return styles.stepToneDone;
+    if (label === 'Skipped') return styles.stepToneWarning;
+    if (label === 'Error' || label === 'Blocked' || label === 'Stale') return styles.stepToneError;
+    if (label === 'Stopped') return styles.stepToneWarning;
+    if (label === 'Off') return styles.stepToneMuted;
+    return styles.stepToneIdle;
   };
 
   const STEP_SHORT_LABELS: Record<Step, string> = {
@@ -1136,7 +1133,12 @@ export function CaptionTranslator() {
           `C1 ${(settings.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()} | C2 ${(settings.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()} | ` +
           `line ${Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x`,
       },
-      { key: 'Preview', value: `${effectivePreviewMode === 'render' ? 'Render snapshot' : 'Live'} (${previewSourceLabel})` },
+      {
+        key: 'Preview',
+        value: previewSourceLabel === 'session_translated_entries'
+          ? 'Session translated'
+          : 'Session data',
+      },
     ];
   }, [
     settings.inputType,
@@ -1167,7 +1169,6 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     autoVideoSpeed,
-    effectivePreviewMode,
     previewSourceLabel,
   ]);
 
@@ -1187,441 +1188,1080 @@ export function CaptionTranslator() {
     settings.setLogoPosition(undefined);
   };
 
-  return (
-    <div className={styles.container}>
-      <div className={styles.leftColumn}>
-        <div className={styles.accordion}>
+  const [activeStep, setActiveStep] = useState<Step>(1);
+  const [activePreviewTab, setActivePreviewTab] = useState<'subtitle' | 'thumbnail'>('subtitle');
+  const [commonConfigTab, setCommonConfigTab] = useState<CommonConfigTab>('render');
+  const [inspectorPane, setInspectorPane] = useState<InspectorPane>('step');
+  const [preferredLandscapeRenderMode, setPreferredLandscapeRenderMode] = useState<'hardsub' | 'black_bg'>(
+    settings.renderMode === 'black_bg' ? 'black_bg' : 'hardsub'
+  );
+
+  useEffect(() => {
+    if (settings.renderMode === 'hardsub' || settings.renderMode === 'black_bg') {
+      setPreferredLandscapeRenderMode(settings.renderMode);
+    }
+  }, [settings.renderMode]);
+
+  useEffect(() => {
+    setInspectorPane('step');
+  }, [activeStep]);
+
+  const activeLayoutSwitch: LayoutSwitchValue = settings.renderMode === 'hardsub_portrait_9_16'
+    ? 'portrait'
+    : 'landscape';
+
+  const applyLayoutSwitch = (layout: LayoutSwitchValue) => {
+    if (layout === 'portrait') {
+      settings.setRenderMode('hardsub_portrait_9_16');
+      return;
+    }
+    settings.setRenderMode(preferredLandscapeRenderMode || 'hardsub');
+  };
+
+  const applyLandscapeRenderMode = (mode: 'hardsub' | 'black_bg') => {
+    setPreferredLandscapeRenderMode(mode);
+    if (activeLayoutSwitch === 'landscape') {
+      settings.setRenderMode(mode);
+    }
+  };
+
+  const STEP_DESCRIPTION: Record<Step, string> = {
+    1: 'Chọn nguồn SRT/Draft và nạp dữ liệu caption.',
+    2: 'Tách subtitle theo dòng hoặc theo số phần.',
+    3: 'Thiết lập phương thức dịch và model.',
+    4: 'Thiết lập voice TTS (tham số render/audio ở Common).',
+    5: 'Step 5 chưa có cấu hình riêng.',
+    6: 'Step 6 dùng cấu hình audio ở các bước trước.',
+    7: 'Tiện ích Step 7 + thumbnail theo folder.',
+  };
+
+  const selectedInputPaths = useMemo(
+    () => getInputPaths('draft', fileManager.filePath),
+    [fileManager.filePath]
+  );
+
+  const commonConfigBar = (
+    <div className={styles.commonConfigBar}>
+      <div className={styles.commonConfigTop}>
+        <div className={styles.commonConfigTitle}>Common Config</div>
+        <div className={styles.commonLayoutSwitch}>
           <button
-            className={`${styles.accordionHeader} ${stepPanels.b1.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b1')}
+            type="button"
+            className={`${styles.commonLayoutBtn} ${activeLayoutSwitch === 'landscape' ? styles.commonLayoutBtnActive : ''}`}
+            onClick={() => applyLayoutSwitch('landscape')}
           >
-            <div className={styles.accordionTitle}>B1 Input</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(1).className}>{getStepBadge(1).label}</span>
-              {stepPanels.b1.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
+            16:9
           </button>
-          {stepPanels.b1.expanded && (
-            <div className={styles.accordionBody}>
-              <div className={styles.fileTypeSelection}>
-                <RadioButton
-                  label="SRT"
-                  checked={settings.inputType === 'srt'}
-                  onChange={() => settings.setInputType('srt')}
-                  name="inputType"
-                />
-                <RadioButton
-                  label="Draft"
-                  description="CapCut"
-                  checked={settings.inputType === 'draft'}
-                  onChange={() => settings.setInputType('draft')}
-                  name="inputType"
+          <button
+            type="button"
+            className={`${styles.commonLayoutBtn} ${activeLayoutSwitch === 'portrait' ? styles.commonLayoutBtnActive : ''}`}
+            onClick={() => applyLayoutSwitch('portrait')}
+          >
+            9:16
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.commonConfigTabs}>
+        <button
+          type="button"
+          className={`${styles.commonConfigTabBtn} ${commonConfigTab === 'render' ? styles.commonConfigTabBtnActive : ''}`}
+          onClick={() => setCommonConfigTab('render')}
+        >
+          Render
+        </button>
+        <button
+          type="button"
+          className={`${styles.commonConfigTabBtn} ${commonConfigTab === 'typography' ? styles.commonConfigTabBtnActive : ''}`}
+          onClick={() => setCommonConfigTab('typography')}
+        >
+          Typography
+        </button>
+        <button
+          type="button"
+          className={`${styles.commonConfigTabBtn} ${commonConfigTab === 'audio' ? styles.commonConfigTabBtnActive : ''}`}
+          onClick={() => setCommonConfigTab('audio')}
+        >
+          Audio
+        </button>
+      </div>
+
+      <div className={styles.commonConfigBody}>
+        {commonConfigTab === 'render' && (
+          <div className={styles.commonConfigSection}>
+            <div className={styles.commonInlineSection}>
+              <span className={styles.label}>Landscape mode</span>
+              <div className={styles.commonPillRow}>
+                <button
+                  type="button"
+                  className={`${styles.commonPillBtn} ${preferredLandscapeRenderMode === 'hardsub' ? styles.commonPillBtnActive : ''}`}
+                  onClick={() => applyLandscapeRenderMode('hardsub')}
+                >
+                  Hardsub
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.commonPillBtn} ${preferredLandscapeRenderMode === 'black_bg' ? styles.commonPillBtnActive : ''}`}
+                  onClick={() => applyLandscapeRenderMode('black_bg')}
+                >
+                  Nền đen
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Render resolution</label>
+                <select
+                  value={settings.renderResolution}
+                  onChange={(e) => settings.setRenderResolution(e.target.value as any)}
+                  className={styles.select}
+                >
+                  {settings.renderMode === 'hardsub_portrait_9_16' ? (
+                    <>
+                      <option value="1080p">1080p</option>
+                      <option value="720p">720p</option>
+                      <option value="540p">540p</option>
+                      <option value="360p">360p</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="original">Gốc</option>
+                      <option value="1080p">1080p</option>
+                      <option value="720p">720p</option>
+                      <option value="540p">540p</option>
+                      <option value="360p">360p</option>
+                    </>
+                  )}
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Container</label>
+                <select
+                  value={settings.renderContainer || 'mp4'}
+                  onChange={(e) => settings.setRenderContainer(e.target.value as 'mp4' | 'mov')}
+                  className={styles.select}
+                >
+                  <option value="mp4">MP4</option>
+                  <option value="mov">MOV</option>
+                </select>
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Hardware</label>
+                <select
+                  className={styles.select}
+                  value={settings.hardwareAcceleration}
+                  onChange={(e) => settings.setHardwareAcceleration(e.target.value as 'none' | 'qsv' | 'nvenc')}
+                >
+                  <option value="none">CPU</option>
+                  <option value="qsv">QSV</option>
+                  <option value="nvenc">NVENC</option>
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Mask mode</label>
+                <select
+                  className={styles.select}
+                  value={settings.coverMode || 'blackout_bottom'}
+                  onChange={(e) => settings.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above')}
+                  disabled={settings.renderMode === 'black_bg'}
+                >
+                  <option value="blackout_bottom">Che đen đáy</option>
+                  <option value="copy_from_above">Copy vùng trên</option>
+                </select>
+              </div>
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Mức che đáy</span>
+                <span className={styles.commonInlineValue}>
+                  {Math.round((1 - (settings.blackoutTop ?? 0.9)) * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.05}
+                max={0.99}
+                step={0.01}
+                value={settings.blackoutTop ?? 0.9}
+                onChange={(e) => settings.setBlackoutTop(Number(e.target.value))}
+                disabled={settings.renderMode === 'black_bg'}
+              />
+              <div className={styles.commonInlineActions}>
+                <button type="button" className={styles.resetBtnLike} onClick={() => settings.setBlackoutTop(null)}>
+                  Auto
+                </button>
+                <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverQuad(DEFAULT_COVER_QUAD)}>
+                  Reset cover quad
+                </button>
+              </div>
+            </div>
+
+            {settings.renderMode === 'hardsub_portrait_9_16' && (
+              <div className={styles.commonInlineSection}>
+                <div className={styles.commonInlineHeader}>
+                  <span className={styles.label}>Crop ngang foreground</span>
+                  <span className={styles.commonInlineValue}>{Math.round(settings.portraitForegroundCropPercent ?? 0)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  step={1}
+                  value={settings.portraitForegroundCropPercent ?? 0}
+                  onChange={(e) => settings.setPortraitForegroundCropPercent(Number(e.target.value))}
                 />
               </div>
+            )}
 
-              <div className={styles.flexRow} style={settings.inputType === 'draft' ? { alignItems: 'stretch' } : {}}>
-                {settings.inputType === 'srt' ? (
-                  <Input
-                    value={fileManager.filePath}
-                    onChange={(e) => fileManager.setFilePath(e.target.value)}
-                    placeholder="Đường dẫn .srt"
-                  />
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Thumb duration (s)</label>
+                <Input
+                  type="number"
+                  min={0.1}
+                  max={10}
+                  step={0.1}
+                  value={settings.thumbnailDurationSec ?? 0.5}
+                  onChange={(e) => settings.setThumbnailDurationSec(Number(e.target.value))}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Thumb frame (s)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  step={0.1}
+                  value={settings.thumbnailFrameTimeSec ?? 0}
+                  onChange={(e) => settings.setThumbnailFrameTimeSec(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Logo</span>
+                <span className={styles.commonInlineValue}>
+                  {settings.logoPath ? `${Math.round((settings.logoScale || 1) * 100)}%` : 'Off'}
+                </span>
+              </div>
+              <div className={styles.commonInlineActions}>
+                <button type="button" className={styles.resetBtnLike} onClick={handleSelectLogo}>
+                  Chọn logo
+                </button>
+                <button
+                  type="button"
+                  className={styles.resetBtnLike}
+                  onClick={handleRemoveLogo}
+                  disabled={!settings.logoPath}
+                >
+                  Xóa logo
+                </button>
+                <button
+                  type="button"
+                  className={styles.resetBtnLike}
+                  onClick={() => settings.setLogoPosition(undefined)}
+                  disabled={!settings.logoPath}
+                >
+                  Reset vị trí
+                </button>
+              </div>
+              <div className={styles.commonHint}>
+                {settings.logoPath
+                  ? `Logo: ${(settings.logoPath.split(/[/\\]/).pop() || settings.logoPath)}`
+                  : 'Chưa chọn logo'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {commonConfigTab === 'typography' && (
+          <div className={styles.commonConfigSection}>
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Font subtitle</label>
+                <select
+                  className={styles.select}
+                  value={settings.style?.fontName || 'ZYVNA Fairy'}
+                  onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontName: e.target.value }))}
+                >
+                  {availableFonts.map((font) => (
+                    <option key={`sub-${font}`} value={font}>
+                      {font}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Size subtitle</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  step={1}
+                  value={settings.style?.fontSize}
+                  onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontSize: Number(e.target.value) }))}
+                />
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Màu subtitle</label>
+                <input
+                  className={styles.colorInput}
+                  type="color"
+                  value={settings.style?.fontColor || '#FFFF00'}
+                  onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontColor: e.target.value }))}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Shadow subtitle</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={20}
+                  step={1}
+                  value={settings.style?.shadow ?? 4}
+                  onChange={(e) => settings.setStyle((s: any) => ({ ...s, shadow: Number(e.target.value) }))}
+                />
+              </div>
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Subtitle position</span>
+                <span className={styles.commonInlineValue}>
+                  {settings.subtitlePosition
+                    ? `${settings.subtitlePosition.x.toFixed(3)}, ${settings.subtitlePosition.y.toFixed(3)}`
+                    : 'Auto'}
+                </span>
+              </div>
+              <div className={styles.commonInlineActions}>
+                <button type="button" className={styles.resetBtnLike} onClick={() => settings.setSubtitlePosition(null)}>
+                  Dùng auto
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Font Text1</label>
+                <select
+                  className={styles.select}
+                  value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+                  onChange={(e) => settings.setThumbnailTextPrimaryFontName(e.target.value)}
+                >
+                  {availableFonts.map((font) => (
+                    <option key={`t1-${font}`} value={font}>
+                      {font}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Size Text1</label>
+                <Input
+                  type="number"
+                  min={24}
+                  max={400}
+                  step={1}
+                  value={settings.thumbnailTextPrimaryFontSize ?? 145}
+                  onChange={(e) => settings.setThumbnailTextPrimaryFontSize(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Màu Text1</label>
+                <input
+                  className={styles.colorInput}
+                  type="color"
+                  value={settings.thumbnailTextPrimaryColor || '#FFFF00'}
+                  onChange={(e) => settings.setThumbnailTextPrimaryColor(e.target.value)}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Line height</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={4}
+                  step={0.02}
+                  value={Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
+                  onChange={(e) => settings.setThumbnailLineHeightRatio(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Font Text2</label>
+                <select
+                  className={styles.select}
+                  value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+                  onChange={(e) => settings.setThumbnailTextSecondaryFontName(e.target.value)}
+                >
+                  {availableFonts.map((font) => (
+                    <option key={`t2-${font}`} value={font}>
+                      {font}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Size Text2</label>
+                <Input
+                  type="number"
+                  min={24}
+                  max={400}
+                  step={1}
+                  value={settings.thumbnailTextSecondaryFontSize ?? 145}
+                  onChange={(e) => settings.setThumbnailTextSecondaryFontSize(Number(e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Màu Text2</label>
+                <input
+                  className={styles.colorInput}
+                  type="color"
+                  value={settings.thumbnailTextSecondaryColor || '#FFFF00'}
+                  onChange={(e) => settings.setThumbnailTextSecondaryColor(e.target.value)}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Text1 pos</label>
+                <div className={styles.commonHint}>
+                  {settings.thumbnailTextPrimaryPosition.x.toFixed(3)}, {settings.thumbnailTextPrimaryPosition.y.toFixed(3)}
+                </div>
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Text2 pos</label>
+                <div className={styles.commonHint}>
+                  {settings.thumbnailTextSecondaryPosition.x.toFixed(3)}, {settings.thumbnailTextSecondaryPosition.y.toFixed(3)}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.commonInlineActions}>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => settings.setThumbnailTextPrimaryPosition({ x: 0.5, y: 0.5 })}
+              >
+                Reset Text1 pos
+              </button>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => settings.setThumbnailTextSecondaryPosition({ x: 0.5, y: 0.64 })}
+              >
+                Reset Text2 pos
+              </button>
+            </div>
+          </div>
+        )}
+
+        {commonConfigTab === 'audio' && (
+          <div className={styles.commonConfigSection}>
+            <div className={styles.grid2}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Scale SRT (step4/6/7)</label>
+                <Input
+                  type="number"
+                  value={settings.srtSpeed}
+                  onChange={(e) => settings.setSrtSpeed(Number(e.target.value))}
+                  min={1}
+                  max={2}
+                  step={0.1}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Render audio speed</label>
+                <Input
+                  type="number"
+                  value={settings.renderAudioSpeed}
+                  onChange={(e) => settings.setRenderAudioSpeed(Number(e.target.value))}
+                  min={0.5}
+                  max={5}
+                  step={0.1}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginTop: '8px' }}>
+              <Checkbox
+                label="Auto fit audio"
+                checked={settings.autoFitAudio}
+                onChange={() => settings.setAutoFitAudio(!settings.autoFitAudio)}
+              />
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Âm lượng video</span>
+                <span className={styles.commonInlineValue}>{settings.videoVolume}%</span>
+              </div>
+              <input
+                type="range"
+                value={settings.videoVolume}
+                onChange={(e) => settings.setVideoVolume(Number(e.target.value))}
+                min={0}
+                max={200}
+                step={10}
+              />
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Âm lượng TTS render</span>
+                <span className={styles.commonInlineValue}>{settings.audioVolume}%</span>
+              </div>
+              <input
+                type="range"
+                value={settings.audioVolume}
+                onChange={(e) => settings.setAudioVolume(Number(e.target.value))}
+                min={0}
+                max={400}
+                step={10}
+              />
+            </div>
+
+            <div className={styles.commonHint}>
+              Video {formatDuration(originalVideoDuration)} | Sync {formatDuration(videoSubBaseDuration)} | Audio {formatDuration(audioExpectedDuration)} | Marker {formatDuration(videoMarkerSec)}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const activeStepContent = (() => {
+    if (activeStep === 1) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.fileTypeSelection}>
+            <RadioButton
+              label="SRT"
+              checked={settings.inputType === 'srt'}
+              onChange={() => settings.setInputType('srt')}
+              name="inputType"
+            />
+            <RadioButton
+              label="Draft"
+              description="CapCut"
+              checked={settings.inputType === 'draft'}
+              onChange={() => settings.setInputType('draft')}
+              name="inputType"
+            />
+          </div>
+
+          <div className={styles.flexRow} style={settings.inputType === 'draft' ? { alignItems: 'stretch' } : {}}>
+            {settings.inputType === 'srt' ? (
+              <Input
+                value={fileManager.filePath}
+                onChange={(e) => fileManager.setFilePath(e.target.value)}
+                placeholder="Đường dẫn .srt"
+              />
+            ) : (
+              <div
+                className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
+                onClick={() => {
+                  void fileManager.handleBrowseFile();
+                }}
+              >
+                {!fileManager.filePath ? (
+                  <span className={styles.placeholderText}>Chưa chọn folder...</span>
                 ) : (
-                  <div
-                    className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
-                    onClick={!fileManager.filePath ? fileManager.handleBrowseFile : undefined}
-                  >
-                    {!fileManager.filePath ? (
-                      <span className={styles.placeholderText}>Chưa chọn folder...</span>
-                    ) : (
-                      <div className={styles.folderGrid}>
-                        {fileManager.filePath.split('; ').map((path, idx) => {
-                          const folderName = path.split(/[/\\]/).pop() || path;
-                          const vInfo = fileManager.folderVideos[path];
-                          return (
-                            <div key={idx} className={styles.folderBox} title={path}>
-                              <div className={styles.folderBoxHeader}>
-                                <img src={folderIconUrl} alt="folder" className={styles.folderIcon} style={{ width: '16px', height: '16px', marginRight: '6px' }} />
-                                <span className={styles.folderName}>{folderName}</span>
-                              </div>
-                              {vInfo && (
-                                <div className={styles.folderBoxSubText}>
-                                  <img src={videoIconUrl} alt="video" style={{ width: '14px', height: '14px', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
-                                  {vInfo.name}
-                                </div>
-                              )}
+                  <div className={styles.folderGrid}>
+                    {selectedInputPaths.map((path, idx) => {
+                      const folderName = path.split(/[/\\]/).pop() || path;
+                      const vInfo = fileManager.folderVideos[path];
+                      return (
+                        <div key={`${path}-${idx}`} className={styles.folderBox} title={path}>
+                          <div className={styles.folderBoxHeader}>
+                            <img src={folderIconUrl} alt="folder" className={styles.folderIcon} style={{ width: '16px', height: '16px', marginRight: '6px' }} />
+                            <span className={styles.folderName}>{folderName}</span>
+                          </div>
+                          {vInfo && (
+                            <div className={styles.folderBoxSubText}>
+                              <img src={videoIconUrl} alt="video" style={{ width: '14px', height: '14px', display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
+                              {vInfo.name}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-                <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
               </div>
-              {fileManager.entries.length > 0 && (
-                <p className={styles.textMuted} style={{ marginTop: '8px' }}>
-                  Đã load: {fileManager.entries.length} dòng
-                </p>
-              )}
+            )}
+            <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
+          </div>
+          {settings.inputType === 'draft' && (
+            <div className={styles.textMuted} style={{ fontSize: 11, marginTop: '8px' }}>
+              Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
             </div>
           )}
-        </div>
-
-        <div className={styles.accordion}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.b2.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b2')}
-          >
-            <div className={styles.accordionTitle}>B2 Tách</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(2).className}>{getStepBadge(2).label}</span>
-              {stepPanels.b2.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-          </button>
-          {stepPanels.b2.expanded && (
-            <div className={styles.accordionBody}>
-              <div className={styles.splitConfig}>
-                <RadioButton
-                  label="Dòng/file"
-                  checked={settings.splitByLines}
-                  onChange={() => settings.setSplitByLines(true)}
-                  name="splitConfig"
-                >
-                  <select
-                    value={settings.linesPerFile}
-                    onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
-                    className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
-                    disabled={!settings.splitByLines}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ marginTop: '8px' }}
-                  >
-                    {LINES_PER_FILE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </RadioButton>
-
-                <RadioButton
-                  label="Số phần"
-                  checked={!settings.splitByLines}
-                  onChange={() => settings.setSplitByLines(false)}
-                  name="splitConfig"
-                >
-                  <Input
-                    type="number"
-                    value={settings.numberOfParts}
-                    onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
-                    min={2}
-                    max={20}
-                    variant="small"
-                    disabled={settings.splitByLines}
-                    onClick={(e) => e.stopPropagation()}
-                    containerClassName={settings.splitByLines ? styles.disabled : ''}
-                    style={{ marginTop: '8px' }}
-                  />
-                </RadioButton>
-              </div>
-            </div>
+          {fileManager.entries.length > 0 && (
+            <p className={styles.textMuted} style={{ marginTop: '8px' }}>
+              Đã load: {fileManager.entries.length} dòng
+            </p>
           )}
         </div>
+      );
+    }
 
-        <div className={styles.accordion}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.b3.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b3')}
-          >
-            <div className={styles.accordionTitle}>B3 Dịch</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(3).className}>{getStepBadge(3).label}</span>
-              {stepPanels.b3.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-          </button>
-          {stepPanels.b3.expanded && (
-            <div className={styles.accordionBody}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <div className={styles.sectionTitleCompact}>Model dịch</div>
-                <Button
-                  variant="secondary"
-                  onClick={handleDownloadPromptPreview}
-                  disabled={fileManager.entries.length === 0}
-                  title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải prompt preview (batch 1)'}
-                  style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                >
-                  <Download size={13} />
-                  Prompt
-                </Button>
-              </div>
-              <div style={{ display: 'flex', gap: '16px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                <RadioButton
-                  label="API"
-                  checked={settings.translateMethod === 'api'}
-                  onChange={() => settings.setTranslateMethod('api')}
-                  name="translateMethod"
-                />
-                <RadioButton
-                  label="Impit"
-                  checked={settings.translateMethod === 'impit'}
-                  onChange={() => settings.setTranslateMethod('impit')}
-                  name="translateMethod"
-                />
-              </div>
+    if (activeStep === 2) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.splitConfig}>
+            <RadioButton
+              label="Dòng/file"
+              checked={settings.splitByLines}
+              onChange={() => settings.setSplitByLines(true)}
+              name="splitConfig"
+            >
               <select
-                value={settings.geminiModel}
-                onChange={(e) => settings.setGeminiModel(e.target.value)}
-                className={styles.select}
-                disabled={settings.translateMethod === 'impit'}
-                style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
+                value={settings.linesPerFile}
+                onChange={(e) => settings.setLinesPerFile(Number(e.target.value))}
+                className={`${styles.select} ${styles.selectSmall} ${!settings.splitByLines ? styles.disabled : ''}`}
+                disabled={!settings.splitByLines}
+                onClick={(e) => e.stopPropagation()}
+                style={{ marginTop: '8px' }}
               >
-                {GEMINI_MODELS.map((m: { value: string; label: string }) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
+                {LINES_PER_FILE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
                   </option>
                 ))}
               </select>
+            </RadioButton>
+
+            <RadioButton
+              label="Số phần"
+              checked={!settings.splitByLines}
+              onChange={() => settings.setSplitByLines(false)}
+              name="splitConfig"
+            >
+              <Input
+                type="number"
+                value={settings.numberOfParts}
+                onChange={(e) => settings.setNumberOfParts(Number(e.target.value))}
+                min={2}
+                max={20}
+                variant="small"
+                disabled={settings.splitByLines}
+                onClick={(e) => e.stopPropagation()}
+                containerClassName={settings.splitByLines ? styles.disabled : ''}
+                style={{ marginTop: '8px' }}
+              />
+            </RadioButton>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStep === 3) {
+      return (
+        <div className={styles.panelSection}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <div className={styles.sectionTitleCompact}>Model dịch</div>
+            <Button
+              variant="secondary"
+              onClick={handleDownloadPromptPreview}
+              disabled={fileManager.entries.length === 0}
+              title={fileManager.entries.length === 0 ? 'Load SRT trước để xem prompt' : 'Tải prompt preview (batch 1)'}
+              style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              <Download size={13} />
+              Prompt
+            </Button>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <RadioButton
+              label="API"
+              checked={settings.translateMethod === 'api'}
+              onChange={() => settings.setTranslateMethod('api')}
+              name="translateMethod"
+            />
+            <RadioButton
+              label="Impit"
+              checked={settings.translateMethod === 'impit'}
+              onChange={() => settings.setTranslateMethod('impit')}
+              name="translateMethod"
+            />
+          </div>
+          <select
+            value={settings.geminiModel}
+            onChange={(e) => settings.setGeminiModel(e.target.value)}
+            className={styles.select}
+            disabled={settings.translateMethod === 'impit'}
+            style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
+          >
+            {GEMINI_MODELS.map((m: { value: string; label: string }) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    if (activeStep === 4) {
+      return (
+        <div className={styles.panelSection}>
+          <div>
+            <label className={styles.label}>Giọng</label>
+            <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
+              {edgeVoiceOptions.length > 0 && (
+                <optgroup label="Edge">
+                  {edgeVoiceOptions.map((v) => (
+                    <option key={v.value} value={v.value}>
+                      {v.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {capCutVoiceOptions.length > 0 && (
+                <optgroup label="CapCut">
+                  {capCutVoiceOptions.map((v) => (
+                    <option key={v.value} value={v.value}>
+                      {v.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          {!isCapCutVoiceSelected && (
+            <div className={styles.grid2} style={{ marginTop: '12px' }}>
+              <div>
+                <label className={styles.label}>Rate</label>
+                <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
+                  {RATE_OPTIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={styles.label}>Volume</label>
+                <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
+                  {VOLUME_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
-        </div>
-
-        <div className={styles.accordion}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.b4.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b4')}
-          >
-            <div className={styles.accordionTitle}>B4 TTS</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(4).className}>{getStepBadge(4).label}</span>
-              {stepPanels.b4.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {isCapCutVoiceSelected && (
+            <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
+              Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge.
             </div>
-          </button>
-          {stepPanels.b4.expanded && (
-            <div className={styles.accordionBody}>
-              <div className={styles.grid2}>
-                <div>
-                  <label className={styles.label}>Giọng</label>
-                  <select value={settings.voice} onChange={(e) => settings.setVoice(e.target.value)} className={styles.select}>
-                    {edgeVoiceOptions.length > 0 && (
-                      <optgroup label="Edge">
-                        {edgeVoiceOptions.map((v) => (
-                          <option key={v.value} value={v.value}>
-                            {v.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {capCutVoiceOptions.length > 0 && (
-                      <optgroup label="CapCut">
-                        {capCutVoiceOptions.map((v) => (
-                          <option key={v.value} value={v.value}>
-                            {v.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className={styles.label}>Scale SRT</label>
-                  <Input
-                    type="number"
-                    value={settings.srtSpeed}
-                    onChange={(e) => settings.setSrtSpeed(Number(e.target.value))}
-                    min={1}
-                    max={2}
-                    step={0.1}
-                  />
-                </div>
-              </div>
-              {!isCapCutVoiceSelected && (
-                <div className={styles.grid2} style={{ marginTop: '12px' }}>
-                  <div>
-                    <label className={styles.label}>Rate</label>
-                    <select value={settings.rate} onChange={(e) => settings.setRate(e.target.value)} className={styles.select}>
-                      {RATE_OPTIONS.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={styles.label}>Volume</label>
-                    <select value={settings.volume} onChange={(e) => settings.setVolume(e.target.value)} className={styles.select}>
-                      {VOLUME_OPTIONS.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-              {isCapCutVoiceSelected && (
-                <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
-                  Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge.
-                </div>
-              )}
-              <div style={{ marginTop: '12px' }}>
-                <Checkbox
-                  label="Auto fit audio"
-                  checked={settings.autoFitAudio}
-                  onChange={() => settings.setAutoFitAudio(!settings.autoFitAudio)}
+          )}
+          <div className={styles.textMuted} style={{ marginTop: '12px', fontSize: 11 }}>
+            Các tham số đồng bộ render/audio đã chuyển sang Common Config &gt; Audio.
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStep === 5) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.textMuted} style={{ fontSize: 12 }}>
+            Step 5 hiện không có cấu hình riêng.
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStep === 6) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.textMuted} style={{ fontSize: 12 }}>
+            Step 6 dùng cấu hình audio ở các bước trước.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={styles.panelSection}>
+        <HardsubSettingsPanel
+          visible={processing.enabledSteps.has(7)}
+          renderSummary={{
+            renderMode: settings.renderMode,
+            renderResolution: settings.renderResolution,
+            renderContainer: settings.renderContainer || 'mp4',
+            thumbnailDurationSec: settings.thumbnailDurationSec ?? 0.5,
+            thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec ?? null,
+          }}
+          metrics={{
+            isMultiFolder,
+            isEstimated,
+            displayPath,
+            videoName: videoInfo?.name,
+            baseAudioDuration,
+            audioExpectedDuration,
+            videoSubBaseDuration,
+            videoMarkerSec,
+            autoVideoSpeed,
+            formatDuration,
+          } as HardsubTimingMetrics}
+          audioPreview={{
+            status: processing.audioPreviewStatus,
+            progressText: processing.audioPreviewProgressText,
+            dataUri: processing.audioPreviewDataUri,
+            meta: processing.audioPreviewMeta
+              ? {
+                  folderName: processing.audioPreviewMeta.folderName,
+                  startSec: processing.audioPreviewMeta.startSec,
+                  endSec: processing.audioPreviewMeta.endSec,
+                  markerSec: processing.audioPreviewMeta.markerSec,
+                  outputPath: processing.audioPreviewMeta.outputPath,
+                }
+              : null,
+            disabled: processing.status === 'running',
+            onTest: () => processing.handleStep7AudioPreview(displayPath || undefined),
+            onStop: () => {
+              void processing.stopStep7AudioPreview();
+            },
+          }}
+          thumbnailListPanel={(
+            <ThumbnailListPanel
+              visible={
+                (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') &&
+                settings.inputType === 'draft' &&
+                isMultiFolder
+              }
+              items={hardsubSettings.thumbnailFolderItems}
+              autoStartValue={hardsubSettings.thumbnailAutoStartValue}
+              onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
+              onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
+              secondaryGlobalText={hardsubSettings.thumbnailTextSecondary}
+              onSecondaryGlobalTextChange={(value) => {
+                hardsubSettings.setThumbnailTextSecondaryGlobal(value);
+                settings.setThumbnailTextSecondary(value);
+              }}
+              onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
+              onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
+              onResetSecondaryOverride={hardsubSettings.resetThumbnailTextSecondaryOverride}
+              showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
+              dependencyWarning={step7DependencyWarning}
+            />
+          )}
+        />
+        {!processing.enabledSteps.has(7) && (
+          <div className={styles.textMuted} style={{ fontSize: 12 }}>
+            Bật Step 7 ở phần Điều khiển để chỉnh render.
+          </div>
+        )}
+      </div>
+    );
+  })();
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.workspace}>
+        <aside className={styles.stepRail}>
+          <div className={styles.stepRailTitle}>Pipeline</div>
+          <div className={styles.stepStatusList}>
+            {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => {
+              const badge = getStepBadge(step);
+              const toneClass = getStepToneClass(badge.label);
+              const isActive = activeStep === step;
+              const isCurrent = processing.currentStep === step && processing.status === 'running';
+              return (
+                <button
+                  key={step}
+                  type="button"
+                  className={`${styles.stepStatusBtn} ${isActive ? styles.stepStatusBtnActive : ''} ${isCurrent ? styles.stepStatusBtnCurrent : ''}`}
+                  onClick={() => {
+                    setActiveStep(step);
+                    setInspectorPane('step');
+                  }}
+                  title={`B${step} ${STEP_SHORT_LABELS[step]} - ${badge.label}`}
+                >
+                  <span className={`${styles.stepStatusDot} ${toneClass}`} />
+                  <span className={styles.stepStatusMain}>
+                    <span className={styles.stepStatusCode}>B{step}</span>
+                    <span className={styles.stepStatusName}>{STEP_SHORT_LABELS[step]}</span>
+                  </span>
+                  <span className={`${styles.stepStatusState} ${toneClass}`}>{badge.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className={styles.stepRailQuick}>
+            <button
+              type="button"
+              className={styles.resetBtnLike}
+              onClick={() => {
+                setActiveStep(1);
+                setInspectorPane('step');
+              }}
+              title="Mở cấu hình nguồn vào"
+            >
+              B1 Input
+            </button>
+            <button
+              type="button"
+              className={styles.resetBtnLike}
+              onClick={() => {
+                setActiveStep(1);
+                setInspectorPane('step');
+                void fileManager.handleBrowseFile();
+              }}
+              title={settings.inputType === 'draft' ? 'Chọn lại/ thêm nhiều folder' : 'Chọn file SRT'}
+            >
+              Chọn nguồn
+            </button>
+          </div>
+        </aside>
+
+        <section className={styles.workspaceStage}>
+          <div className={styles.stageHeader}>
+            <div className={styles.stageTitle}>
+              <Eye size={14} />
+              Preview
+            </div>
+            <div className={styles.previewTabGroup}>
+              <button
+                type="button"
+                className={`${styles.resetBtnLike} ${activePreviewTab === 'subtitle' ? styles.previewModeBtnActive : ''}`}
+                onClick={() => setActivePreviewTab('subtitle')}
+              >
+                Subtitle
+              </button>
+              <button
+                type="button"
+                className={`${styles.resetBtnLike} ${activePreviewTab === 'thumbnail' ? styles.previewModeBtnActive : ''}`}
+                onClick={() => setActivePreviewTab('thumbnail')}
+              >
+                Thumbnail
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.stageBody}>
+            {activePreviewTab === 'subtitle' ? (
+              <div className={styles.previewSurface}>
+                <SubtitlePreview
+                  videoPath={previewVideoPath}
+                  style={settings.style}
+                  entries={previewEntries}
+                  subtitlePosition={settings.subtitlePosition}
+                  blackoutTop={settings.blackoutTop}
+                  coverMode={settings.coverMode}
+                  coverQuad={settings.coverQuad}
+                  renderMode={settings.renderMode}
+                  renderResolution={settings.renderResolution}
+                  logoPath={settings.logoPath}
+                  logoPosition={settings.logoPosition}
+                  logoScale={settings.logoScale}
+                  portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
+                  onPositionChange={settings.setSubtitlePosition}
+                  onBlackoutChange={settings.setBlackoutTop}
+                  onCoverModeChange={settings.setCoverMode}
+                  onCoverQuadChange={settings.setCoverQuad}
+                  onRenderResolutionChange={settings.setRenderResolution}
+                  onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
+                  onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+                  renderSnapshotMode={effectivePreviewMode === 'render'}
+                  onSelectLogo={handleSelectLogo}
+                  onRemoveLogo={handleRemoveLogo}
+                  interactiveDisabledReason={
+                    effectivePreviewMode === 'render'
+                      ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
+                      : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
+                  }
                 />
               </div>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.accordion}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.b7.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b7')}
-          >
-            <div className={styles.accordionTitle}>B7 Render</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(7).className}>{getStepBadge(7).label}</span>
-              {stepPanels.b7.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-          </button>
-          {stepPanels.b7.expanded && (
-            <div className={styles.accordionBody}>
-              <HardsubSettingsPanel
-                visible={processing.enabledSteps.has(7)}
-                settings={settings}
-                availableFonts={availableFonts}
-                metrics={{
-                  isMultiFolder,
-                  isEstimated,
-                  displayPath,
-                  videoName: videoInfo?.name,
-                  baseAudioDuration,
-                  audioExpectedDuration,
-                  videoSubBaseDuration,
-                  videoMarkerSec,
-                  autoVideoSpeed,
-                  formatDuration,
-                } as HardsubTimingMetrics}
-                audioPreview={{
-                  status: processing.audioPreviewStatus,
-                  progressText: processing.audioPreviewProgressText,
-                  dataUri: processing.audioPreviewDataUri,
-                  meta: processing.audioPreviewMeta
-                    ? {
-                        folderName: processing.audioPreviewMeta.folderName,
-                        startSec: processing.audioPreviewMeta.startSec,
-                        endSec: processing.audioPreviewMeta.endSec,
-                        markerSec: processing.audioPreviewMeta.markerSec,
-                        outputPath: processing.audioPreviewMeta.outputPath,
-                      }
-                    : null,
-                  disabled: processing.status === 'running',
-                  onTest: () => processing.handleStep7AudioPreview(displayPath || undefined),
-                  onStop: () => {
-                    void processing.stopStep7AudioPreview();
-                  },
-                }}
-                thumbnailListPanel={(
-                  <ThumbnailListPanel
-                    visible={
-                      (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') &&
-                      settings.inputType === 'draft' &&
-                      isMultiFolder
-                    }
-                    items={hardsubSettings.thumbnailFolderItems}
-                    autoStartValue={hardsubSettings.thumbnailAutoStartValue}
-                    onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
-                    onAutoFill={hardsubSettings.handleAutoFillThumbnailByEpisode}
-                    secondaryGlobalText={hardsubSettings.thumbnailTextSecondary}
-                    onSecondaryGlobalTextChange={(value) => {
-                      hardsubSettings.setThumbnailTextSecondaryGlobal(value);
-                      settings.setThumbnailTextSecondary(value);
-                    }}
-                    onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
-                    onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
-                    onResetSecondaryOverride={hardsubSettings.resetThumbnailTextSecondaryOverride}
-                    showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
-                    dependencyWarning={step7DependencyWarning}
-                  />
-                )}
-              />
-              {!processing.enabledSteps.has(7) && (
-                <div className={styles.textMuted} style={{ fontSize: 12 }}>
-                  Bật Step 7 ở phần Điều khiển để chỉnh render.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className={styles.accordion}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.b5.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b5')}
-          >
-            <div className={styles.accordionTitle}>B5 Trim</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(5).className}>{getStepBadge(5).label}</span>
-              {stepPanels.b5.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-          </button>
-          {stepPanels.b5.expanded && (
-            <div className={styles.accordionBody}>
-              <div className={styles.textMuted} style={{ fontSize: 12 }}>
-                Step 5 hiện không có cấu hình riêng.
+            ) : (
+              <div className={styles.previewSurface}>
+                <ThumbnailPreviewPanel
+                  videoPath={thumbnailPreviewVideoPath}
+                  sourceLabel={isMultiFolder ? 'Nguồn: folder đầu tiên' : 'Nguồn: folder hiện tại'}
+                  renderMode={settings.renderMode}
+                  renderResolution={settings.renderResolution}
+                  thumbnailText={thumbnailPreviewText}
+                  thumbnailTextSecondary={thumbnailPreviewSecondaryText}
+                  thumbnailTextReadOnly={isMultiFolder}
+                  thumbnailTextHelper={isMultiFolder ? 'Multi-folder: chỉnh text ở danh sách bên trái.' : undefined}
+                  onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
+                  onThumbnailTextSecondaryChange={isMultiFolder ? undefined : settings.setThumbnailTextSecondary}
+                  thumbnailFrameTimeSec={settings.thumbnailFrameTimeSec}
+                  onThumbnailFrameTimeSecChange={settings.setThumbnailFrameTimeSec}
+                  thumbnailFontName={settings.thumbnailFontName}
+                  thumbnailFontSize={settings.thumbnailFontSize}
+                  thumbnailTextPrimaryFontName={settings.thumbnailTextPrimaryFontName}
+                  thumbnailTextPrimaryFontSize={settings.thumbnailTextPrimaryFontSize}
+                  thumbnailTextPrimaryColor={settings.thumbnailTextPrimaryColor}
+                  thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
+                  thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
+                  thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
+                  thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
+                  thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
+                  thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
+                  onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}
+                  onThumbnailTextSecondaryPositionChange={settings.setThumbnailTextSecondaryPosition}
+                  contextKey={thumbnailPreviewContextKey}
+                  inputType={settings.inputType}
+                />
               </div>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.accordion}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.b6.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('b6')}
-          >
-            <div className={styles.accordionTitle}>B6 Ghép</div>
-            <div className={styles.accordionAction}>
-              <span className={getStepBadge(6).className}>{getStepBadge(6).label}</span>
-              {stepPanels.b6.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-          </button>
-          {stepPanels.b6.expanded && (
-            <div className={styles.accordionBody}>
-              <div className={styles.textMuted} style={{ fontSize: 12 }}>
-                Step 6 dùng cấu hình audio ở các bước trước.
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className={`${styles.accordion} ${styles.runAccordionTop}`}>
-          <button
-            className={`${styles.accordionHeader} ${stepPanels.run.expanded ? styles.accordionHeaderOpen : ''}`}
-            onClick={() => togglePanel('run')}
-          >
-            <div className={styles.accordionTitle}>Chạy & Tiến độ</div>
-            <div className={styles.accordionAction}>
-              <span className={`${styles.statusBadge} ${styles.statusIdle}`}>{processing.status}</span>
-              {stepPanels.run.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-          </button>
-          {stepPanels.run.expanded && (
-            <div className={styles.accordionBody}>
-              <div className={styles.stepCheckboxes}>
-                {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => (
-                  <Checkbox
-                    key={step}
-                    label={`B${step} ${STEP_SHORT_LABELS[step]}`}
-                    checked={processing.enabledSteps.has(step)}
-                    onChange={() => processing.toggleStep(step)}
-                    highlight={processing.currentStep === step}
-                  />
-                ))}
-              </div>
-
-              <div className={styles.configSummaryBox}>
-                <div className={styles.configSummaryTitle}>Tóm tắt cấu hình hiện tại</div>
+            )}
+          </div>
+        </section>
+        <aside className={styles.inspector}>
+          <div className={styles.inspectorHeader}>
+            <div className={styles.inspectorTitle}>B{activeStep} {STEP_SHORT_LABELS[activeStep]}</div>
+            <div className={styles.inspectorHint}>{STEP_DESCRIPTION[activeStep]}</div>
+          </div>
+          <div className={styles.inspectorTabs}>
+            <button
+              type="button"
+              className={`${styles.inspectorTabBtn} ${inspectorPane === 'step' ? styles.inspectorTabBtnActive : ''}`}
+              onClick={() => setInspectorPane('step')}
+            >
+              Step
+            </button>
+            <button
+              type="button"
+              className={`${styles.inspectorTabBtn} ${inspectorPane === 'common' ? styles.inspectorTabBtnActive : ''}`}
+              onClick={() => setInspectorPane('common')}
+            >
+              Common
+            </button>
+            <button
+              type="button"
+              className={`${styles.inspectorTabBtn} ${inspectorPane === 'snapshot' ? styles.inspectorTabBtnActive : ''}`}
+              onClick={() => setInspectorPane('snapshot')}
+            >
+              Snapshot
+            </button>
+          </div>
+          <div className={styles.inspectorBody}>
+            {inspectorPane === 'step' && activeStepContent}
+            {inspectorPane === 'common' && commonConfigBar}
+            {inspectorPane === 'snapshot' && (
+              <div className={styles.panelSection}>
+                <div className={styles.configSummaryTitle}>Session Snapshot</div>
                 <div className={styles.configSummaryGrid}>
                   {configSummaryRows.map((row) => (
                     <div key={row.key} className={styles.configSummaryRow}>
@@ -1631,226 +2271,165 @@ export function CaptionTranslator() {
                   ))}
                 </div>
               </div>
-
-              {processing.stepDependencyIssues.length > 0 && (
-                <div className={styles.stepGuardBox}>
-                  <div className={styles.stepGuardTitle}>Step bị chặn:</div>
-                  {processing.stepDependencyIssues.slice(0, 6).map((issue, idx) => (
-                    <div key={`${issue.folderPath}-${issue.step}-${idx}`} className={styles.stepGuardItem}>
-                      [{issue.folderName}] Step {issue.step}: {issue.reason}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {isMultiFolder && (
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                  <button
-                    className={styles.resetBtnLike}
-                    style={{
-                      flex: 1,
-                      background: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
-                      color: settings.processingMode !== 'step-first' ? '#fff' : 'var(--color-text-muted)',
-                      borderColor: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
-                      cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
-                      opacity: processing.status === 'running' ? 0.5 : 1,
-                    }}
-                    disabled={processing.status === 'running'}
-                    onClick={() => settings.setProcessingMode('folder-first')}
-                    title="Xong từng folder"
-                  >
-                    Folder-first
-                  </button>
-                  <button
-                    className={styles.resetBtnLike}
-                    style={{
-                      flex: 1,
-                      background: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
-                      color: settings.processingMode === 'step-first' ? '#fff' : 'var(--color-text-muted)',
-                      borderColor: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
-                      cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
-                      opacity: processing.status === 'running' ? 0.5 : 1,
-                    }}
-                    disabled={processing.status === 'running'}
-                    onClick={() => settings.setProcessingMode('step-first')}
-                    title="Xong từng step"
-                  >
-                    Step-first
-                  </button>
-                </div>
-              )}
-
-              <div className={styles.buttonsRow}>
-                <Button
-                  onClick={processing.handleStart}
-                  disabled={processing.status === 'running'}
-                  variant="success"
-                  fullWidth
-                >
-                  ▶ Chạy
-                </Button>
-                <Button
-                  onClick={processing.handleStop}
-                  disabled={processing.status !== 'running'}
-                  variant="danger"
-                  fullWidth
-                >
-                  ⏹ Dừng
-                </Button>
-              </div>
-
-              <div className={styles.progressSection} style={{ marginTop: 12 }}>
-                {processing.currentFolder && processing.currentFolder.total > 1 && (
-                  <div className={styles.progressHeader} style={{ marginBottom: '4px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
-                      Project {processing.currentFolder.index}/{processing.currentFolder.total}: {processing.currentFolder.name}
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                      {processing.currentFolder.index}/{processing.currentFolder.total}
-                    </span>
-                  </div>
-                )}
-                {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
-                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <span>{videoInfo?.name ?? 'Video'}</span>
-                    <span>{formatDuration(originalVideoDuration)}</span>
-                    <span>Sync: {formatDuration(videoSubBaseDuration)}</span>
-                    <span>Audio: {formatDuration(audioExpectedDuration)}</span>
-                    <span>Marker: {formatDuration(videoMarkerSec)}</span>
-                    <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
-                      Speed: {autoVideoSpeed.toFixed(2)}x
-                    </span>
-                  </div>
-                )}
-                <div className={styles.progressHeader}>
-                  <span className={styles.textMuted}>{processing.progress.message}</span>
-                  {processing.progress.total > 0 && (
-                    <span className={styles.textMuted}>
-                      {processing.progress.current}/{processing.progress.total}
-                    </span>
-                  )}
-                </div>
-                {processing.currentFolder && processing.currentFolder.total > 1 && (
-                  <div className={styles.progressBar} style={{ marginBottom: '4px' }}>
-                    <div
-                      className={styles.progressFill}
-                      style={{
-                        width: `${((processing.currentFolder.index - 1) / processing.currentFolder.total) * 100}%`,
-                        backgroundColor: 'var(--color-accent, #4a9eff)',
-                        opacity: 0.5,
-                      }}
-                    />
-                  </div>
-                )}
-                {processing.progress.total > 0 && (
-                  <div className={styles.progressBar}>
-                    <div
-                      className={styles.progressFill}
-                      style={{
-                        width: `${(processing.progress.current / processing.progress.total) * 100}%`,
-                        backgroundColor: getProgressColor(),
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
+            )}
+            <div className={styles.commonHint} style={{ marginTop: 8 }} title={fileManager.filePath || undefined}>
+              {inspectorPane === 'step'
+                ? (settings.inputType === 'draft'
+                  ? `Input: Draft ${selectedInputPaths.length} folder | ${fileManager.entries.length} dòng`
+                  : `Input: SRT | ${fileManager.entries.length} dòng`)
+                : inspectorPane === 'common'
+                  ? 'Common: Render / Typography / Audio dùng lại nhiều step. Voice giữ ở B4.'
+                  : `Snapshot: trạng thái ${processing.status}, rà nhanh trước khi chạy.`}
             </div>
-          )}
-        </div>
+          </div>
+        </aside>
       </div>
 
-      <div className={styles.rightColumn}>
-        <div className={styles.previewSticky}>
-          <div className={styles.previewDock}>
-            <div className={styles.previewDockTitle}>
-              <Eye size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-              Preview
-            </div>
-            <div className={styles.previewDockHint}>
-              Khung cố định. Có thể chuyển Live hoặc Snapshot render từ session.
-            </div>
-            <div className={styles.previewModeSwitch}>
+      <div className={styles.runBar}>
+        <div className={styles.runBarHeader}>
+          <div className={styles.runBarTitle}>Chạy & Tiến độ</div>
+          <span className={`${styles.statusBadge} ${styles.statusIdle}`}>{processing.status}</span>
+        </div>
+
+        <div className={styles.runBarControls}>
+          <div className={styles.stepCheckboxes}>
+            {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => (
+              <Checkbox
+                key={step}
+                label={`B${step} ${STEP_SHORT_LABELS[step]}`}
+                checked={processing.enabledSteps.has(step)}
+                onChange={() => processing.toggleStep(step)}
+                highlight={processing.currentStep === step}
+              />
+            ))}
+          </div>
+
+          {isMultiFolder && (
+            <div className={styles.runBarModeSwitch}>
               <button
-                className={`${styles.resetBtnLike} ${effectivePreviewMode === 'live' ? styles.previewModeBtnActive : ''}`}
-                onClick={() => setPreviewMode('live')}
-                title="Preview live để chỉnh layer"
+                className={styles.resetBtnLike}
+                style={{
+                  flex: 1,
+                  background: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
+                  color: settings.processingMode !== 'step-first' ? '#fff' : 'var(--color-text-muted)',
+                  borderColor: settings.processingMode !== 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
+                  cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
+                  opacity: processing.status === 'running' ? 0.5 : 1,
+                }}
+                disabled={processing.status === 'running'}
+                onClick={() => settings.setProcessingMode('folder-first')}
+                title="Xong từng folder"
               >
-                Live
+                Folder-first
               </button>
               <button
-                className={`${styles.resetBtnLike} ${effectivePreviewMode === 'render' ? styles.previewModeBtnActive : ''}`}
-                onClick={() => setPreviewMode('render')}
-                disabled={!renderedPreviewVideoPath}
-                title={renderedPreviewVideoPath ? 'Preview từ video đã render (giống output)' : 'Chưa có final video trong session'}
+                className={styles.resetBtnLike}
+                style={{
+                  flex: 1,
+                  background: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'transparent',
+                  color: settings.processingMode === 'step-first' ? '#fff' : 'var(--color-text-muted)',
+                  borderColor: settings.processingMode === 'step-first' ? 'var(--color-accent, #4a9eff)' : 'var(--color-border)',
+                  cursor: processing.status === 'running' ? 'not-allowed' : 'pointer',
+                  opacity: processing.status === 'running' ? 0.5 : 1,
+                }}
+                disabled={processing.status === 'running'}
+                onClick={() => settings.setProcessingMode('step-first')}
+                title="Xong từng step"
               >
-                Render
+                Step-first
               </button>
-              <span className={styles.previewSourceTag}>
-                {effectivePreviewMode === 'render'
-                  ? 'source: session.finalVideoPath'
-                  : `source: ${previewSourceLabel}`}
+            </div>
+          )}
+
+          <div className={styles.buttonsRow}>
+            <Button
+              onClick={processing.handleStart}
+              disabled={processing.status === 'running'}
+              variant="success"
+              fullWidth
+            >
+              ▶ Chạy
+            </Button>
+            <Button
+              onClick={processing.handleStop}
+              disabled={processing.status !== 'running'}
+              variant="danger"
+              fullWidth
+            >
+              ⏹ Dừng
+            </Button>
+          </div>
+        </div>
+
+        {processing.stepDependencyIssues.length > 0 && (
+          <div className={styles.stepGuardBox}>
+            <div className={styles.stepGuardTitle}>Step bị chặn:</div>
+            {processing.stepDependencyIssues.slice(0, 2).map((issue, idx) => (
+              <div
+                key={`${issue.folderPath}-${issue.step}-${idx}`}
+                className={styles.stepGuardItem}
+                title={`[${issue.folderName}] Step ${issue.step}: ${issue.reason}`}
+              >
+                [{issue.folderName}] Step {issue.step}: {issue.reason}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className={styles.progressSection}>
+          {processing.currentFolder && processing.currentFolder.total > 1 && (
+            <div className={styles.progressHeader} style={{ marginBottom: '4px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
+                Project {processing.currentFolder.index}/{processing.currentFolder.total}: {processing.currentFolder.name}
+              </span>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                {processing.currentFolder.index}/{processing.currentFolder.total}
               </span>
             </div>
-            <SubtitlePreview
-              videoPath={previewVideoPath}
-              style={settings.style}
-              entries={previewEntries}
-              subtitlePosition={settings.subtitlePosition}
-              blackoutTop={settings.blackoutTop}
-              coverMode={settings.coverMode}
-              coverQuad={settings.coverQuad}
-              renderMode={settings.renderMode}
-              renderResolution={settings.renderResolution}
-              logoPath={settings.logoPath}
-              logoPosition={settings.logoPosition}
-              logoScale={settings.logoScale}
-              portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
-              onPositionChange={settings.setSubtitlePosition}
-              onBlackoutChange={settings.setBlackoutTop}
-              onCoverModeChange={settings.setCoverMode}
-              onCoverQuadChange={settings.setCoverQuad}
-              onRenderResolutionChange={settings.setRenderResolution}
-              onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
-              onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
-              renderSnapshotMode={effectivePreviewMode === 'render'}
-              onSelectLogo={handleSelectLogo}
-              onRemoveLogo={handleRemoveLogo}
-              interactiveDisabledReason={
-                effectivePreviewMode === 'render'
-                  ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
-                  : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
-              }
-            />
-            <ThumbnailPreviewPanel
-              videoPath={thumbnailPreviewVideoPath}
-              sourceLabel={isMultiFolder ? 'Nguồn: folder đầu tiên' : 'Nguồn: folder hiện tại'}
-              renderMode={settings.renderMode}
-              renderResolution={settings.renderResolution}
-              thumbnailText={thumbnailPreviewText}
-              thumbnailTextSecondary={thumbnailPreviewSecondaryText}
-              thumbnailTextReadOnly={isMultiFolder}
-              thumbnailTextHelper={isMultiFolder ? 'Multi-folder: chỉnh text ở danh sách bên trái.' : undefined}
-              onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
-              onThumbnailTextSecondaryChange={isMultiFolder ? undefined : settings.setThumbnailTextSecondary}
-              thumbnailFrameTimeSec={settings.thumbnailFrameTimeSec}
-              onThumbnailFrameTimeSecChange={settings.setThumbnailFrameTimeSec}
-              thumbnailFontName={settings.thumbnailFontName}
-              thumbnailFontSize={settings.thumbnailFontSize}
-              thumbnailTextPrimaryFontName={settings.thumbnailTextPrimaryFontName}
-              thumbnailTextPrimaryFontSize={settings.thumbnailTextPrimaryFontSize}
-              thumbnailTextPrimaryColor={settings.thumbnailTextPrimaryColor}
-              thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
-              thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
-              thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
-              thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
-              thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
-              thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
-              onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}
-              onThumbnailTextSecondaryPositionChange={settings.setThumbnailTextSecondaryPosition}
-              contextKey={thumbnailPreviewContextKey}
-              inputType={settings.inputType}
-            />
+          )}
+          {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <span>{videoInfo?.name ?? 'Video'}</span>
+              <span>{formatDuration(originalVideoDuration)}</span>
+              <span>Sync: {formatDuration(videoSubBaseDuration)}</span>
+              <span>Audio: {formatDuration(audioExpectedDuration)}</span>
+              <span>Marker: {formatDuration(videoMarkerSec)}</span>
+              <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
+                Speed: {autoVideoSpeed.toFixed(2)}x
+              </span>
+            </div>
+          )}
+          <div className={styles.progressHeader}>
+            <span className={styles.textMuted}>{processing.progress.message}</span>
+            {processing.progress.total > 0 && (
+              <span className={styles.textMuted}>
+                {processing.progress.current}/{processing.progress.total}
+              </span>
+            )}
           </div>
+          {processing.currentFolder && processing.currentFolder.total > 1 && (
+            <div className={styles.progressBar} style={{ marginBottom: '4px' }}>
+              <div
+                className={styles.progressFill}
+                style={{
+                  width: `${((processing.currentFolder.index - 1) / processing.currentFolder.total) * 100}%`,
+                  backgroundColor: 'var(--color-accent, #4a9eff)',
+                  opacity: 0.5,
+                }}
+              />
+            </div>
+          )}
+          {processing.progress.total > 0 && (
+            <div className={styles.progressBar}>
+              <div
+                className={styles.progressFill}
+                style={{
+                  width: `${(processing.progress.current / processing.progress.total) * 100}%`,
+                  backgroundColor: getProgressColor(),
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
