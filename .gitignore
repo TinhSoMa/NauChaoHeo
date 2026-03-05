@@ -34,3 +34,5 @@ resources/python/cache/
 resources/licenses/python/
 test/*
 .agents/*
+dist/*
+build/*

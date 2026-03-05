@@ -12,6 +12,7 @@ import { registerAppSettingsHandlers } from './appSettingsHandlers';
 import { registerGeminiChatHandlers } from './geminiChatHandlers';
 import { registerProxyHandlers } from './proxyHandlers'; // Thêm import cho proxy handlers
 import { registerCutVideoHandlers } from './cutVideoHandlers';
+import { registerRotationQueueHandlers } from './rotationQueueHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -49,6 +50,9 @@ export function registerAllHandlers(): void {
   // Đăng ký Cut Video handlers
   registerCutVideoHandlers();
 
+  // Đăng ký Rotation Queue inspector handlers (feature-flagged)
+  registerRotationQueueHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -63,4 +67,5 @@ export { registerAppSettingsHandlers } from './appSettingsHandlers';
 export { registerGeminiChatHandlers } from './geminiChatHandlers';
 export { registerProxyHandlers } from './proxyHandlers';
 export { registerCutVideoHandlers } from './cutVideoHandlers';
+export { registerRotationQueueHandlers } from './rotationQueueHandlers';
 

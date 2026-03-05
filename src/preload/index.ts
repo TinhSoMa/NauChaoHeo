@@ -7,6 +7,7 @@ import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
 import { proxyApi, ProxyAPI } from './proxyApi'
 import { promptApi, PromptAPI } from './promptApi'
 import { cutVideoApi, CutVideoAPI } from './cutVideoApi'
+import { createRotationQueueApi, RotationQueueAPI } from './rotationQueueApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -59,6 +60,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Cut Video API
   cutVideo: cutVideoApi,
+
+  // Rotation Queue Inspector API
+  rotationQueue: createRotationQueueApi(),
 })
 
 // Declare types for the exposed API
@@ -81,6 +85,7 @@ declare global {
       prompt: PromptAPI
       captionVideo: CaptionVideoAPI
       cutVideo: CutVideoAPI
+      rotationQueue: RotationQueueAPI
     }
   }
 }

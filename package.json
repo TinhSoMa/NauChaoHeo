@@ -12,6 +12,7 @@
     "build:win": "npm run prepare:python-runtime && npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
+    "bench:rotation-queue": "npx tsc -p tsconfig.main.json && node dist/main/src/main/services/shared/universalRotationQueue/benchmarks/queueBenchmark.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

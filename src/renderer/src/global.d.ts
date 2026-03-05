@@ -691,6 +691,53 @@ interface PromptAPI {
   setDefault: (id: string) => Promise<any>;
 }
 
+interface RotationQueueViewOptions {
+  includePayload?: boolean;
+  poolId?: string;
+  serviceId?: string;
+  feature?: string;
+  state?: 'queued' | 'retry_wait' | 'running' | 'all';
+  limit?: number;
+}
+
+interface RotationQueueDispatchEvent {
+  type: string;
+  timestamp: number;
+  poolId?: string;
+  serviceId?: string;
+  jobId?: string;
+  feature?: string;
+  jobType?: string;
+  resourceId?: string;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface RotationQueueEventRecord {
+  seq: number;
+  timestamp: number;
+  event: RotationQueueDispatchEvent;
+}
+
+interface RotationQueueInspectorSnapshot {
+  timestamp: number;
+  scheduler: Record<string, unknown>;
+  jobs: Array<Record<string, unknown>>;
+  runningByResource: Record<string, Record<string, string | null>>;
+  historySize: number;
+  droppedHistoryCount: number;
+}
+
+interface RotationQueueAPI {
+  getSnapshot: (options?: RotationQueueViewOptions, runtimeKey?: string) => Promise<IpcApiResponse<RotationQueueInspectorSnapshot>>;
+  getHistory: (limit?: number, runtimeKey?: string) => Promise<IpcApiResponse<RotationQueueEventRecord[]>>;
+  clearHistory: (options?: { runtimeKey?: string; resetDroppedCounter?: boolean }) => Promise<IpcApiResponse<void>>;
+  startStream: (options?: RotationQueueViewOptions, runtimeKey?: string) => Promise<IpcApiResponse<void>>;
+  stopStream: () => Promise<IpcApiResponse<void>>;
+  onEvent: (callback: (event: RotationQueueEventRecord) => void) => () => void;
+  onSnapshot: (callback: (snapshot: RotationQueueInspectorSnapshot) => void) => () => void;
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -732,6 +779,9 @@ declare global {
 
       // Cut Video API
       cutVideo: CutVideoAPI;
+
+      // Rotation Queue Inspector API
+      rotationQueue: RotationQueueAPI;
     };
   }
 }
