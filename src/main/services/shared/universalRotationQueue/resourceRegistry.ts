@@ -26,10 +26,16 @@ export interface ResourceSelectionResult {
   nextWakeAt: number | null;
 }
 
+export interface ResourceAvailabilityResult {
+  hasAvailableResource: boolean;
+  nextWakeAt: number | null;
+}
+
 interface PoolRuntime {
   poolId: string;
   label: string;
   selector: 'round_robin' | 'weighted_round_robin';
+  dispatchSpacingMs: number;
   defaultCooldownMinMs: number;
   defaultCooldownMaxMs: number;
   defaultMaxConcurrencyPerResource: number;
@@ -74,6 +80,8 @@ export interface ResourceRegistryOptions {
   defaultCooldownMinMs: number;
   defaultCooldownMaxMs: number;
   defaultMaxConcurrencyPerResource: number;
+  defaultDispatchSpacingMs: number;
+  enforceSingleFlightPerResource: boolean;
 }
 
 export class ResourceRegistry {
@@ -100,6 +108,9 @@ export class ResourceRegistry {
       poolId,
       label: poolDef.label?.trim() || poolId,
       selector: poolDef.selector ?? previous?.selector ?? 'round_robin',
+      dispatchSpacingMs: this.normalizeMs(
+        poolDef.dispatchSpacingMs ?? previous?.dispatchSpacingMs ?? this.options.defaultDispatchSpacingMs
+      ),
       defaultCooldownMinMs: this.normalizeMs(
         poolDef.defaultCooldownMinMs ?? previous?.defaultCooldownMinMs ?? this.options.defaultCooldownMinMs
       ),
@@ -133,6 +144,11 @@ export class ResourceRegistry {
     }
 
     const existing = pool.resources.get(resourceId);
+    const normalizedMaxConcurrency = this.normalizeConcurrency(
+      resourceDef.maxConcurrency ??
+        existing?.maxConcurrency ??
+        pool.defaultMaxConcurrencyPerResource
+    );
     const nextResource: ResourceRuntime = {
       poolId: pool.poolId,
       resourceId,
@@ -140,11 +156,7 @@ export class ResourceRegistry {
       capabilities: this.normalizeCapabilities(resourceDef.capabilities ?? existing?.capabilities),
       enabled: resourceDef.enabled ?? existing?.enabled ?? true,
       weight: this.normalizeWeight(resourceDef.weight ?? existing?.weight ?? 1),
-      maxConcurrency: this.normalizeConcurrency(
-        resourceDef.maxConcurrency ??
-          existing?.maxConcurrency ??
-          pool.defaultMaxConcurrencyPerResource
-      ),
+      maxConcurrency: this.options.enforceSingleFlightPerResource ? 1 : normalizedMaxConcurrency,
       cooldownMinMs: this.normalizeMs(
         resourceDef.cooldownMinMs ?? existing?.cooldownMinMs ?? pool.defaultCooldownMinMs
       ),
@@ -203,6 +215,11 @@ export class ResourceRegistry {
 
   getResource(poolId: string, resourceId: string): ResourceRuntime {
     return this.getResourceOrThrow(poolId, resourceId);
+  }
+
+  getPoolDispatchSpacingMs(poolId: string): number {
+    const pool = this.getPoolOrThrow(poolId);
+    return pool.dispatchSpacingMs;
   }
 
   listPoolResources(poolId: string): ResourceRuntime[] {
@@ -283,6 +300,21 @@ export class ResourceRegistry {
   }
 
   selectResource(criteria: SelectionCriteria): ResourceSelectionResult {
+    return this.computeResourceSelection(criteria, true);
+  }
+
+  peekResourceAvailability(criteria: SelectionCriteria): ResourceAvailabilityResult {
+    const result = this.computeResourceSelection(criteria, false);
+    return {
+      hasAvailableResource: result.resource !== null,
+      nextWakeAt: result.nextWakeAt
+    };
+  }
+
+  private computeResourceSelection(
+    criteria: SelectionCriteria,
+    mutateState: boolean
+  ): ResourceSelectionResult {
     const pool = this.getPoolOrThrow(criteria.poolId);
     const nowMs = criteria.nowMs;
     const serviceId = criteria.serviceId?.trim() || undefined;
@@ -319,7 +351,9 @@ export class ResourceRegistry {
         }
 
         if (this.isEligible(resource, nowMs, requiredCaps, serviceId)) {
-          pool.roundRobinCursor = (orderIndex + 1) % Math.max(1, pool.roundRobinOrder.length);
+          if (mutateState) {
+            pool.roundRobinCursor = (orderIndex + 1) % Math.max(1, pool.roundRobinOrder.length);
+          }
           return { resource, nextWakeAt };
         }
 
@@ -362,7 +396,9 @@ export class ResourceRegistry {
       const weight = this.normalizeWeight(candidate.weight);
       totalWeight += weight;
       const currentWeight = (pool.smoothCurrentWeightByResourceId.get(candidate.resourceId) ?? 0) + weight;
-      pool.smoothCurrentWeightByResourceId.set(candidate.resourceId, currentWeight);
+      if (mutateState) {
+        pool.smoothCurrentWeightByResourceId.set(candidate.resourceId, currentWeight);
+      }
 
       if (
         selected === null ||
@@ -378,9 +414,11 @@ export class ResourceRegistry {
       return { resource: null, nextWakeAt };
     }
 
-    const finalWeight =
-      (pool.smoothCurrentWeightByResourceId.get(selected.resourceId) ?? 0) - Math.max(1, totalWeight);
-    pool.smoothCurrentWeightByResourceId.set(selected.resourceId, finalWeight);
+    if (mutateState) {
+      const finalWeight =
+        (pool.smoothCurrentWeightByResourceId.get(selected.resourceId) ?? 0) - Math.max(1, totalWeight);
+      pool.smoothCurrentWeightByResourceId.set(selected.resourceId, finalWeight);
+    }
     return { resource: selected, nextWakeAt };
   }
 

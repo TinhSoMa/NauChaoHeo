@@ -28,6 +28,7 @@ export interface PoolDefinition {
   poolId: string;
   label?: string;
   selector?: PoolSelector;
+  dispatchSpacingMs?: number;
   defaultCooldownMinMs?: number;
   defaultCooldownMaxMs?: number;
   defaultMaxConcurrencyPerResource?: number;
@@ -287,6 +288,16 @@ export interface SchedulerSnapshot {
   resources: ResourceRuntimeSnapshot[];
   serviceStatsByPool: Record<string, ServiceRuntimeSnapshot[]>;
   resourceAssignmentsByPool: Record<string, Record<string, string | null>>;
+  dispatchThrottleByPool?: Record<string, DispatchThrottleSnapshot>;
+}
+
+export type DispatchThrottleState = 'open' | 'spacing' | 'waiting_resource' | 'rearm_delay';
+
+export interface DispatchThrottleSnapshot {
+  spacingMs: number;
+  state: DispatchThrottleState;
+  nextDispatchAt: number | null;
+  waitingSince: number | null;
 }
 
 export interface ShutdownOptions {
@@ -313,6 +324,8 @@ export interface UniversalRotationQueueServiceOptions {
   enableRotationQueueInspector?: boolean;
   inspectorHistoryCapacity?: number;
   allowInspectorPayloadRaw?: boolean;
+  defaultDispatchSpacingMs?: number;
+  enforceSingleFlightPerResource?: boolean;
   label?: string;
 }
 

@@ -24,6 +24,8 @@ const queue = new UniversalRotationQueueService({
   defaultMaxAttempts: 3,
   defaultCooldownMinMs: 10000,
   defaultCooldownMaxMs: 20000,
+  defaultDispatchSpacingMs: 10000,
+  enforceSingleFlightPerResource: true,
   antiStarvationStepMs: 15000,
   enableServiceAllocator: true,
   enableRotationQueueInspector: true
@@ -93,7 +95,8 @@ Policy clear history:
 ```ts
 queue.registerPool({
   poolId: 'caption-api-keys',
-  selector: 'weighted_round_robin'
+  selector: 'weighted_round_robin',
+  dispatchSpacingMs: 10000
 });
 
 queue.upsertResource({
@@ -207,6 +210,7 @@ Snapshot gom:
 - `nextWakeAt`
 - `serviceStatsByPool`
 - `resourceAssignmentsByPool`
+- `dispatchThrottleByPool` (state throttle dispatch theo pool)
 - `jobs` (queued/retry/running, task-level)
 - `runningByResource` (resource -> running jobId)
 - `historySize`, `droppedHistoryCount`
@@ -259,6 +263,15 @@ Snapshot gui kem callback event duoc danh dau `coalesced_emit` theo tick `500ms`
 - Backoff retry: `2s * attempt`, toi da `30s`, cong jitter `0..500ms`.
 - Neu loi co `retryAfterMs`, resource duoc set cooldown theo gia tri do.
 - Vuot `maxAttempts` => job `failed` (terminal).
+
+## Dispatch Spacing 10s
+
+- Scheduler dispatch theo pool, mac dinh `defaultDispatchSpacingMs = 10000`.
+- Sau moi `job_started`, pool vao state `spacing` va chan dispatch tiep theo cho toi khi het 10s.
+- Neu het 10s ma tat ca account con ban, pool vao `waiting_resource`.
+- Khi co account ranh tro lai, pool vao `rearm_delay` va dem lai 10s roi moi dispatch.
+- State machine: `open -> spacing -> waiting_resource -> rearm_delay -> open`.
+- `enforceSingleFlightPerResource = true` se khoa cung `maxConcurrency = 1` cho moi account/resource.
 
 ## Error code contract
 

@@ -353,6 +353,12 @@
   align-items: center;
 }
 
+.poolHeadRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .poolName {
   font-size: 12px;
   font-weight: 600;
@@ -362,6 +368,10 @@
 .poolStats {
   font-size: 11px;
   color: var(--color-text-secondary);
+}
+
+.poolHealthBadge {
+  font-size: 10px;
 }
 
 .metricRow {
@@ -439,8 +449,50 @@
   word-break: break-all;
 }
 
+.resourceName {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.resourceDebugId {
+  margin-top: 2px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+  word-break: break-all;
+}
+
 .resourceMeta {
   font-size: 11px;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resourceTaskBlock {
+  margin-top: 2px;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.resourceTaskPrimary {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resourceTaskSecondary {
+  font-size: 10px;
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -544,6 +596,34 @@
 .subCell {
   color: var(--color-text-secondary);
   font-size: 10px;
+}
+
+.taskPrimary {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.accountName {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountIdDebug {
+  margin-top: 1px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .payloadCell {

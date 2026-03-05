@@ -10,6 +10,8 @@ import { ResourceRegistry, ResourceRuntime } from './resourceRegistry';
 import { ServiceAllocator } from './serviceAllocator';
 import {
   ClearEventHistoryOptions,
+  DispatchThrottleSnapshot,
+  DispatchThrottleState,
   DispatchEvent,
   JobExecutionContext,
   QueueEventRecord,
@@ -68,6 +70,13 @@ interface DispatchCandidate {
   resource: ResourceRuntime;
 }
 
+interface DispatchThrottleRuntime {
+  spacingMs: number;
+  state: DispatchThrottleState;
+  nextDispatchAt: number | null;
+  waitingSince: number | null;
+}
+
 export class SchedulerCore {
   private readonly queue = new PriorityJobQueue();
   private readonly runningJobs = new Map<string, RunningJob>();
@@ -85,6 +94,7 @@ export class SchedulerCore {
   private readonly serviceAllocator: ServiceAllocator;
   private readonly queueInspector: QueueInspector;
   private readonly options: SchedulerCoreOptions;
+  private readonly dispatchThrottleByPool = new Map<string, DispatchThrottleRuntime>();
 
   private acceptingJobs = true;
   private shuttingDown = false;
@@ -115,6 +125,7 @@ export class SchedulerCore {
 
   registerPool(poolDef: Parameters<ResourceRegistry['registerPool']>[0]): void {
     this.registry.registerPool(poolDef);
+    this.ensureDispatchThrottleState(poolDef.poolId);
     this.markStateChanged();
     this.runServiceRebalance(poolDef.poolId);
     this.requestDispatch();
@@ -441,10 +452,12 @@ export class SchedulerCore {
     const serviceWakeAt = this.options.enableServiceAllocator
       ? this.serviceAllocator.getNextWakeAt(nowMs)
       : null;
+    const dispatchThrottleWakeAt = this.getDispatchThrottleNextWakeAt(nowMs);
     const nextWakeAt = this.minWakeAt(
       pendingDispatch.nextWakeAt,
       resourceWakeAt,
       serviceWakeAt,
+      dispatchThrottleWakeAt,
       this.nextWakeAtHint
     );
 
@@ -464,7 +477,8 @@ export class SchedulerCore {
       serviceStatsByPool: this.options.enableServiceAllocator
         ? this.serviceAllocator.getServiceStatsByPool()
         : {},
-      resourceAssignmentsByPool: this.registry.getResourceAssignmentsByPool()
+      resourceAssignmentsByPool: this.registry.getResourceAssignmentsByPool(),
+      dispatchThrottleByPool: this.buildDispatchThrottleSnapshot()
     };
 
     this.cachedSnapshot = snapshot;
@@ -537,6 +551,169 @@ export class SchedulerCore {
       });
     }
     this.flushSnapshotNow();
+  }
+
+  private ensureDispatchThrottleState(poolId: string): DispatchThrottleRuntime {
+    const existing = this.dispatchThrottleByPool.get(poolId);
+    const spacingMs = this.registry.getPoolDispatchSpacingMs(poolId);
+    if (existing) {
+      if (existing.spacingMs !== spacingMs) {
+        existing.spacingMs = spacingMs;
+        if (spacingMs <= 0 && existing.state !== 'open') {
+          existing.state = 'open';
+          existing.nextDispatchAt = null;
+          existing.waitingSince = null;
+          this.markStateChanged();
+        } else {
+          this.markStateChanged();
+        }
+      }
+      return existing;
+    }
+
+    const created: DispatchThrottleRuntime = {
+      spacingMs,
+      state: 'open',
+      nextDispatchAt: null,
+      waitingSince: null
+    };
+    this.dispatchThrottleByPool.set(poolId, created);
+    this.markStateChanged();
+    return created;
+  }
+
+  private evaluatePoolDispatchGate(
+    record: QueuedJobRecord<unknown, unknown>,
+    nowMs: number
+  ): { allowed: boolean; nextWakeAt: number | null } {
+    const poolId = record.request.poolId;
+    const throttle = this.ensureDispatchThrottleState(poolId);
+    if (throttle.spacingMs <= 0) {
+      if (throttle.state !== 'open' || throttle.nextDispatchAt !== null || throttle.waitingSince !== null) {
+        throttle.state = 'open';
+        throttle.nextDispatchAt = null;
+        throttle.waitingSince = null;
+        this.markStateChanged();
+      }
+      return { allowed: true, nextWakeAt: null };
+    }
+
+    if (throttle.state === 'spacing' || throttle.state === 'rearm_delay') {
+      if (throttle.nextDispatchAt !== null && nowMs < throttle.nextDispatchAt) {
+        return { allowed: false, nextWakeAt: throttle.nextDispatchAt };
+      }
+      throttle.state = 'open';
+      throttle.nextDispatchAt = null;
+      throttle.waitingSince = null;
+      this.markStateChanged();
+    }
+
+    if (throttle.state === 'waiting_resource') {
+      const availability = this.registry.peekResourceAvailability({
+        poolId,
+        serviceId: record.request.serviceId ?? record.request.feature,
+        requiredCapabilities: record.request.requiredCapabilities,
+        preferredResourceId: record.request.preferredResourceId,
+        nowMs
+      });
+
+      if (availability.hasAvailableResource) {
+        this.markPoolRearmDelay(poolId, nowMs);
+        return {
+          allowed: false,
+          nextWakeAt: this.dispatchThrottleByPool.get(poolId)?.nextDispatchAt ?? null
+        };
+      }
+
+      return {
+        allowed: false,
+        nextWakeAt: availability.nextWakeAt
+      };
+    }
+
+    return { allowed: true, nextWakeAt: null };
+  }
+
+  private markPoolSpacingAfterStart(poolId: string, nowMs: number): void {
+    const throttle = this.ensureDispatchThrottleState(poolId);
+    if (throttle.spacingMs <= 0) return;
+
+    const nextDispatchAt = nowMs + throttle.spacingMs;
+    if (
+      throttle.state === 'spacing' &&
+      throttle.nextDispatchAt === nextDispatchAt &&
+      throttle.waitingSince === null
+    ) {
+      return;
+    }
+
+    throttle.state = 'spacing';
+    throttle.nextDispatchAt = nextDispatchAt;
+    throttle.waitingSince = null;
+    this.markStateChanged();
+    this.requestDispatch(nextDispatchAt);
+  }
+
+  private markPoolWaitingForResource(poolId: string, nowMs: number): void {
+    const throttle = this.ensureDispatchThrottleState(poolId);
+    if (throttle.spacingMs <= 0) return;
+
+    if (throttle.state === 'waiting_resource') return;
+    throttle.state = 'waiting_resource';
+    throttle.nextDispatchAt = null;
+    throttle.waitingSince = nowMs;
+    this.markStateChanged();
+  }
+
+  private markPoolRearmDelay(poolId: string, nowMs: number): void {
+    const throttle = this.ensureDispatchThrottleState(poolId);
+    if (throttle.spacingMs <= 0) return;
+    const nextDispatchAt = nowMs + throttle.spacingMs;
+
+    if (
+      throttle.state === 'rearm_delay' &&
+      throttle.nextDispatchAt === nextDispatchAt &&
+      throttle.waitingSince === null
+    ) {
+      return;
+    }
+
+    throttle.state = 'rearm_delay';
+    throttle.nextDispatchAt = nextDispatchAt;
+    throttle.waitingSince = null;
+    this.markStateChanged();
+    this.requestDispatch(nextDispatchAt);
+  }
+
+  private getDispatchThrottleNextWakeAt(nowMs: number): number | null {
+    let nextWakeAt: number | null = null;
+    for (const [poolId, throttle] of this.dispatchThrottleByPool.entries()) {
+      this.ensureDispatchThrottleState(poolId);
+      if (throttle.spacingMs <= 0) continue;
+
+      if (
+        (throttle.state === 'spacing' || throttle.state === 'rearm_delay') &&
+        throttle.nextDispatchAt !== null &&
+        throttle.nextDispatchAt > nowMs
+      ) {
+        nextWakeAt = this.minWakeAt(nextWakeAt, throttle.nextDispatchAt);
+      }
+    }
+    return nextWakeAt;
+  }
+
+  private buildDispatchThrottleSnapshot(): Record<string, DispatchThrottleSnapshot> {
+    const snapshot: Record<string, DispatchThrottleSnapshot> = {};
+    for (const poolId of this.registry.getAllPoolIds()) {
+      const throttle = this.ensureDispatchThrottleState(poolId);
+      snapshot[poolId] = {
+        spacingMs: throttle.spacingMs,
+        state: throttle.state,
+        nextDispatchAt: throttle.nextDispatchAt,
+        waitingSince: throttle.waitingSince
+      };
+    }
+    return snapshot;
   }
 
   private validateJobRequest<TPayload, TResult>(request: JobRequest<TPayload, TResult>): void {
@@ -620,6 +797,12 @@ export class SchedulerCore {
         continue;
       }
 
+      const poolThrottle = this.evaluatePoolDispatchGate(record, nowMs);
+      if (!poolThrottle.allowed) {
+        nextWakeAt = this.minWakeAt(nextWakeAt, poolThrottle.nextWakeAt);
+        continue;
+      }
+
       const featureRunning = this.runningCountByFeature.get(record.request.feature) ?? 0;
       if (featureRunning >= this.options.maxConcurrentPerFeature) {
         continue;
@@ -637,7 +820,14 @@ export class SchedulerCore {
         return { record, resource: selection.resource };
       }
 
+      this.markPoolWaitingForResource(record.request.poolId, nowMs);
+      const poolWakeAt = this.registry.getPoolNextWakeAt(
+        record.request.poolId,
+        nowMs,
+        record.request.requiredCapabilities
+      );
       nextWakeAt = this.minWakeAt(nextWakeAt, selection.nextWakeAt);
+      nextWakeAt = this.minWakeAt(nextWakeAt, poolWakeAt);
     }
 
     const serviceWakeAt = this.options.enableServiceAllocator
@@ -684,6 +874,7 @@ export class SchedulerCore {
       attempt,
       maxAttempts
     });
+    this.markPoolSpacingAfterStart(resource.poolId, nowMs);
 
     const abortController = new AbortController();
     const runningEntry: RunningJob = {

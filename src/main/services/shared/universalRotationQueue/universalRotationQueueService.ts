@@ -28,7 +28,8 @@ const DEFAULT_OPTIONS = {
   defaultCooldownMinMs: 10_000,
   defaultCooldownMaxMs: 20_000,
   antiStarvationStepMs: 15_000,
-  inspectorHistoryCapacity: 1_000
+  inspectorHistoryCapacity: 1_000,
+  defaultDispatchSpacingMs: 10_000
 };
 
 export class UniversalRotationQueueService {
@@ -49,13 +50,18 @@ export class UniversalRotationQueueService {
       enableRotationQueueInspector: options.enableRotationQueueInspector ?? false,
       inspectorHistoryCapacity:
         options.inspectorHistoryCapacity ?? DEFAULT_OPTIONS.inspectorHistoryCapacity,
-      allowInspectorPayloadRaw: options.allowInspectorPayloadRaw ?? false
+      allowInspectorPayloadRaw: options.allowInspectorPayloadRaw ?? false,
+      defaultDispatchSpacingMs:
+        options.defaultDispatchSpacingMs ?? DEFAULT_OPTIONS.defaultDispatchSpacingMs,
+      enforceSingleFlightPerResource: options.enforceSingleFlightPerResource ?? true
     };
 
     const registry = new ResourceRegistry({
       defaultCooldownMinMs: normalized.defaultCooldownMinMs,
       defaultCooldownMaxMs: normalized.defaultCooldownMaxMs,
-      defaultMaxConcurrencyPerResource: 1
+      defaultMaxConcurrencyPerResource: 1,
+      defaultDispatchSpacingMs: normalized.defaultDispatchSpacingMs,
+      enforceSingleFlightPerResource: normalized.enforceSingleFlightPerResource
     });
 
     this.scheduler = new SchedulerCore(registry, {
