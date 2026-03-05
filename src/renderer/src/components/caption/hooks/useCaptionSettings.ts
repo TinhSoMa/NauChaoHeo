@@ -461,7 +461,7 @@ export function useCaptionSettings() {
   const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>(createDefaultLayoutProfiles);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
-  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit'>('api');
+  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue'>('api');
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
 
   const [settingsRevision, setSettingsRevision] = useState<number>(0);
@@ -812,7 +812,7 @@ export function useCaptionSettings() {
     const fallback = fallbackProfiles ?? createDefaultLayoutProfiles();
     if (saved.inputType) setInputType(saved.inputType);
     if (saved.geminiModel) setGeminiModel(saved.geminiModel);
-    if (saved.translateMethod) setTranslateMethod(saved.translateMethod as 'api' | 'impit');
+    if (saved.translateMethod) setTranslateMethod(saved.translateMethod as 'api' | 'impit' | 'gemini_webapi_queue');
     if (saved.voice) setVoice(saved.voice);
     if (saved.rate) setRate(String(saved.rate));
     if (saved.volume) setVolume(String(saved.volume));

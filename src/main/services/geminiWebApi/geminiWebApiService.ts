@@ -198,14 +198,17 @@ export class GeminiWebApiService {
 
     const timeoutMs = request.timeoutMs ?? 90000;
     const conversationStoreKey = this.buildConversationStoreKey(request);
-    const useChatSession = request.useChatSession || !!conversationStoreKey;
+    let inputConversationMetadata = this.toConversationMetadata(request.conversationMetadata);
+    const useChatSession = request.useChatSession || !!conversationStoreKey || !!inputConversationMetadata;
     if (conversationStoreKey && request.resetConversation) {
       this.conversationMetadataByKey.delete(conversationStoreKey);
+      if (!request.conversationMetadata) {
+        inputConversationMetadata = null;
+      }
     }
 
-    let inputConversationMetadata: GeminiConversationMetadata | null = null;
-    let conversationContinued = false;
-    if (conversationStoreKey) {
+    let conversationContinued = !!inputConversationMetadata;
+    if (!inputConversationMetadata && conversationStoreKey) {
       inputConversationMetadata = this.conversationMetadataByKey.get(conversationStoreKey) || null;
       conversationContinued = !!inputConversationMetadata;
     }

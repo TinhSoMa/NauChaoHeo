@@ -19,6 +19,7 @@ export interface GeminiGenerateRequest {
   forceCookieRefresh?: boolean;
   browserPriority?: GeminiBrowserType[];
   accountConfigId?: string;
+  conversationMetadata?: GeminiConversationMetadata | null;
   conversationKey?: string;
   resetConversation?: boolean;
   temporary?: boolean;

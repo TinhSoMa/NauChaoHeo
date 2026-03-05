@@ -33,6 +33,20 @@ export {
   translateSingleText,
 } from './captionTranslator';
 
+export {
+  CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+  CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
+  CAPTION_GEMINI_WEB_QUEUE_FEATURE,
+  CAPTION_GEMINI_WEB_QUEUE_SERVICE_ID,
+  ensureCaptionGeminiWebQueueRuntime,
+} from './captionGeminiWebQueueRuntime';
+
+export {
+  getConversation as getCaptionGeminiConversation,
+  upsertConversation as upsertCaptionGeminiConversation,
+  clearConversation as clearCaptionGeminiConversation,
+} from './captionGeminiConversationStore';
+
 // ASS Converter (SRT -> ASS)
 export {
   srtTimeToAss,

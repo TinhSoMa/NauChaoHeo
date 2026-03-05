@@ -559,5 +559,23 @@ export function initDatabase(): void {
     console.error('[Database] Backfill secure cookie columns failed:', e);
   }
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies)');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS caption_gemini_web_conversation (
+      project_id TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      source_path_hash TEXT NOT NULL,
+      account_config_id TEXT NOT NULL,
+      conversation_metadata_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (project_id, source_path_hash, account_config_id),
+      FOREIGN KEY (account_config_id) REFERENCES gemini_chat_config(id) ON DELETE CASCADE
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_caption_gemini_web_conversation_updated_at
+    ON caption_gemini_web_conversation(updated_at);
+  `);
+
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation)');
 }

@@ -203,7 +203,7 @@ interface UseCaptionProcessingProps {
     logoScale?: number;
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
-    translateMethod?: 'api' | 'impit';
+    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
     thumbnailText?: string;
@@ -1573,6 +1573,8 @@ export function useCaptionProcessing({
             model: cfg.geminiModel,
             linesPerBatch,
             translateMethod: cfg.translateMethod,
+            projectId: projectId || undefined,
+            sourcePath: currentPath,
           });
         } finally {
           translateBatchProgressHandlerRef.current = null;

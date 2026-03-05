@@ -108,7 +108,9 @@ interface TranslationOptions {
   model: string;
   linesPerBatch: number;
   promptTemplate?: string;
-  translateMethod?: 'api' | 'impit';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
+  projectId?: string;
+  sourcePath?: string;
 }
 
 interface TranslationResult {
@@ -150,6 +152,10 @@ interface TranslationProgress {
     texts: string[];
   };
   folderHint?: string;
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue';
+  resourceId?: string;
+  resourceLabel?: string;
+  queueRuntimeKey?: string;
 }
 
 interface SplitOptions {

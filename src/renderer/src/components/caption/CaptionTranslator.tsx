@@ -281,7 +281,7 @@ function parseStep3RuntimeHints(message: string): { apiLabel?: string; tokenLabe
   if (!text) {
     return {};
   }
-  const apiMatch = text.match(/\[(api|impit)\]/i);
+  const apiMatch = text.match(/\[(api|impit|gemini_webapi_queue)\]/i);
   const tokenMatch = text.match(/\[token:([^\]]+)\]/i);
   return {
     apiLabel: apiMatch?.[1]?.toLowerCase(),
@@ -1778,9 +1778,17 @@ export function CaptionTranslator() {
 
     const now = Date.now();
     const hints = parseStep3RuntimeHints(processing.progress.message || '');
-    const fallbackApi = settings.translateMethod === 'impit' ? 'impit' : 'api';
+    const fallbackApi = settings.translateMethod === 'impit'
+      ? 'impit'
+      : settings.translateMethod === 'gemini_webapi_queue'
+        ? 'gemini_webapi_queue'
+        : 'api';
     const nextApiLabel = (hints.apiLabel || fallbackApi).toLowerCase();
-    const fallbackToken = nextApiLabel === 'impit' ? 'impit_cookie' : 'rotation';
+    const fallbackToken = nextApiLabel === 'impit'
+      ? 'impit_cookie'
+      : nextApiLabel === 'gemini_webapi_queue'
+        ? 'queue_rr'
+        : 'rotation';
     const nextTokenLabel = (hints.tokenLabel || fallbackToken).trim();
 
     setStep3RuntimeTimer((prev) => {
@@ -3121,6 +3129,12 @@ export function CaptionTranslator() {
                 onChange={() => settings.setTranslateMethod('impit')}
                 name="translateMethod"
               />
+              <RadioButton
+                label="GeminiWebApi Queue"
+                checked={settings.translateMethod === 'gemini_webapi_queue'}
+                onChange={() => settings.setTranslateMethod('gemini_webapi_queue')}
+                name="translateMethod"
+              />
             </div>
             <div className={styles.inputGroup}>
               <label className={styles.label}>Gemini model</label>
@@ -3128,8 +3142,8 @@ export function CaptionTranslator() {
                 value={settings.geminiModel}
                 onChange={(e) => settings.setGeminiModel(e.target.value)}
                 className={styles.select}
-                disabled={settings.translateMethod === 'impit'}
-                style={settings.translateMethod === 'impit' ? { opacity: 0.4 } : undefined}
+                disabled={settings.translateMethod !== 'api'}
+                style={settings.translateMethod !== 'api' ? { opacity: 0.4 } : undefined}
               >
                 {GEMINI_MODELS.map((m: { value: string; label: string }) => (
                   <option key={m.value} value={m.value}>
@@ -3141,7 +3155,9 @@ export function CaptionTranslator() {
             <div className={styles.stepCardHint}>
               {settings.translateMethod === 'impit'
                 ? 'Impit bỏ qua model API.'
-                : 'API sẽ dùng model đã chọn để dịch batch.'}
+                : settings.translateMethod === 'gemini_webapi_queue'
+                  ? 'GeminiWebApi Queue dùng account từ gemini_chat_config và xoay vòng qua queue.'
+                  : 'API sẽ dùng model đã chọn để dịch batch.'}
             </div>
           </div>
           <div className={styles.stepCard}>
@@ -3155,14 +3171,26 @@ export function CaptionTranslator() {
               <div className={styles.stepRuntimeItem}>
                 <span className={styles.stepRuntimeLabel}>API</span>
                 <span className={styles.stepRuntimeValue}>
-                  {(step3RuntimeTimer.apiLabel || (settings.translateMethod === 'impit' ? 'impit' : 'api')).toUpperCase()}
+                  {(step3RuntimeTimer.apiLabel || (
+                    settings.translateMethod === 'impit'
+                      ? 'impit'
+                      : settings.translateMethod === 'gemini_webapi_queue'
+                        ? 'gemini_webapi_queue'
+                        : 'api'
+                  )).toUpperCase()}
                 </span>
                 <span className={styles.stepRuntimeTimer}>{step3ApiRuntimeLabel}</span>
               </div>
               <div className={styles.stepRuntimeItem}>
                 <span className={styles.stepRuntimeLabel}>Token</span>
                 <span className={styles.stepRuntimeValue}>
-                  {step3RuntimeTimer.tokenLabel || (settings.translateMethod === 'impit' ? 'impit_cookie' : 'rotation')}
+                  {step3RuntimeTimer.tokenLabel || (
+                    settings.translateMethod === 'impit'
+                      ? 'impit_cookie'
+                      : settings.translateMethod === 'gemini_webapi_queue'
+                        ? 'queue_rr'
+                        : 'rotation'
+                  )}
                 </span>
                 <span className={styles.stepRuntimeTimer}>{step3TokenRuntimeLabel}</span>
               </div>

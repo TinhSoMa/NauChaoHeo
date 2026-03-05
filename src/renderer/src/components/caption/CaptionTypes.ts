@@ -24,6 +24,10 @@ export interface TranslationProgress {
     texts: string[];
   };
   folderHint?: string;
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue';
+  resourceId?: string;
+  resourceLabel?: string;
+  queueRuntimeKey?: string;
 }
 
 export interface TranslationBatchReport {

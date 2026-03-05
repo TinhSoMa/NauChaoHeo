@@ -45,7 +45,9 @@ export interface TranslationOptions {
   model: string;                 // "gemini-2.5-flash"
   linesPerBatch: number;         // Số dòng mỗi batch (default: 50)
   promptTemplate?: string;       // Custom prompt template
-  translateMethod?: 'api' | 'impit'; // Phương thức dịch (default: 'api')
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue'; // Phương thức dịch (default: 'api')
+  projectId?: string;
+  sourcePath?: string;
 }
 
 export interface TranslationBatchReport {
@@ -93,6 +95,10 @@ export interface TranslationProgress {
     texts: string[];
   };
   folderHint?: string;
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue';
+  resourceId?: string;
+  resourceLabel?: string;
+  queueRuntimeKey?: string;
 }
 
 // ============================================
@@ -747,7 +753,7 @@ export type CaptionSettingsSyncState = 'synced' | 'pending' | 'error';
 export interface CaptionProjectSettingsValues {
   inputType?: 'srt' | 'draft';
   geminiModel?: string;
-  translateMethod?: 'api' | 'impit';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
   voice?: string;
   rate?: string;
   volume?: string;
