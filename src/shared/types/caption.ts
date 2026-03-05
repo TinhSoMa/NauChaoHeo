@@ -567,6 +567,32 @@ export interface RenderAudioPreviewResult {
   error?: string;
 }
 
+export interface RenderVideoPreviewFrameOptions {
+  videoPath: string;
+  entries: SubtitleEntry[];
+  previewTimeSec: number;
+  style?: ASSStyleConfig;
+  renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
+  renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  position?: { x: number; y: number };
+  blackoutTop?: number;
+  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverQuad?: CoverQuad;
+  logoPath?: string;
+  logoPosition?: { x: number; y: number };
+  logoScale?: number;
+  portraitForegroundCropPercent?: number;
+}
+
+export interface RenderVideoPreviewFrameResult {
+  success: boolean;
+  frameData?: string; // Base64 PNG (không kèm data-uri prefix)
+  width?: number;
+  height?: number;
+  previewTimeSec?: number;
+  error?: string;
+}
+
 /**
  * Kết quả extract frame từ video
  */
@@ -889,6 +915,7 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   RENDER_VIDEO: 'captionVideo:renderVideo',
   STOP_RENDER: 'captionVideo:stopRender',
   RENDER_PROGRESS: 'captionVideo:renderProgress',
+  RENDER_VIDEO_PREVIEW_FRAME: 'captionVideo:renderVideoPreviewFrame',
   MIX_AUDIO_PREVIEW: 'captionVideo:mixAudioPreview',
   STOP_AUDIO_PREVIEW: 'captionVideo:stopAudioPreview',
   AUDIO_PREVIEW_PROGRESS: 'captionVideo:audioPreviewProgress',

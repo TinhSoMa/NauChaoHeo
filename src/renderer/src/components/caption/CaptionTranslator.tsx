@@ -3982,6 +3982,11 @@ export function CaptionTranslator() {
                       ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
                       : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
                   }
+                  realPreviewDisabledReason={
+                    processing.status === 'running'
+                      ? 'Pipeline đang chạy. Tạm khóa preview thật để tránh tranh chấp FFmpeg.'
+                      : undefined
+                  }
                 />
               </div>
             ) : (

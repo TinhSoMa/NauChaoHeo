@@ -6,6 +6,7 @@
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
+import os from 'os';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import {
   RenderAudioPreviewOptions,
@@ -13,9 +14,12 @@ import {
   RenderAudioPreviewResult,
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
+  RenderVideoPreviewFrameOptions,
+  RenderVideoPreviewFrameResult,
   RenderVideoOptions,
   RenderProgress,
   RenderResult,
+  SubtitleEntry,
   VideoMetadata,
 } from '../../../shared/types/caption';
 import { getFFmpegPath, getFFprobePath, isFFmpegAvailable } from '../../utils/ffmpegPath';
@@ -49,7 +53,8 @@ import {
   normalizeThumbnailDurationSec,
   renderThumbnailPreviewFrame as renderThumbnailPreviewFramePipeline,
 } from './hardsub/thumbnailPipeline';
-import { unregisterTempFile } from './garbageCollector';
+import { registerTempFile, unregisterTempFile } from './garbageCollector';
+import { exportToSrt, msToSrtTime } from './srtParser';
 
 export const getVideoMetadata = probeGetVideoMetadata;
 export const extractVideoFrame = probeExtractVideoFrame;
@@ -239,6 +244,103 @@ function parseFfmpegTimestampToSec(raw: string): number | null {
     return null;
   }
   return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function normalizePreviewEntries(entries: SubtitleEntry[]): SubtitleEntry[] {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const normalized = entries
+    .map((entry, idx) => {
+      const startMs = Number.isFinite(entry?.startMs) ? Math.max(0, Math.floor(entry.startMs)) : 0;
+      const endMsRaw = Number.isFinite(entry?.endMs) ? Math.floor(entry.endMs) : startMs;
+      const endMs = Math.max(startMs + 10, endMsRaw);
+      const originalText = typeof entry?.text === 'string' ? entry.text : '';
+      const translatedText = typeof entry?.translatedText === 'string' ? entry.translatedText : undefined;
+      const startTime = typeof entry?.startTime === 'string' && entry.startTime.trim().length > 0
+        ? entry.startTime
+        : msToSrtTime(startMs);
+      const endTime = typeof entry?.endTime === 'string' && entry.endTime.trim().length > 0
+        ? entry.endTime
+        : msToSrtTime(endMs);
+
+      return {
+        index: idx + 1,
+        startTime,
+        endTime,
+        startMs,
+        endMs,
+        durationMs: Math.max(0, endMs - startMs),
+        text: originalText,
+        translatedText,
+      } as SubtitleEntry;
+    })
+    .filter((entry) => {
+      const visibleText = (entry.translatedText || entry.text || '').trim();
+      return visibleText.length > 0 && entry.endMs > entry.startMs;
+    })
+    .sort((a, b) => a.startMs - b.startMs);
+
+  return normalized;
+}
+
+function withReindexedEntries(entries: SubtitleEntry[]): SubtitleEntry[] {
+  return entries
+    .sort((a, b) => a.startMs - b.startMs)
+    .map((entry, idx) => ({
+      ...entry,
+      index: idx + 1,
+      startTime: msToSrtTime(entry.startMs),
+      endTime: msToSrtTime(entry.endMs),
+      durationMs: Math.max(0, entry.endMs - entry.startMs),
+    }));
+}
+
+function selectPreviewEntriesAtTime(entries: SubtitleEntry[], previewTimeSec: number): SubtitleEntry[] {
+  if (!entries.length) {
+    return [];
+  }
+  const previewMs = Math.max(0, Math.round(previewTimeSec * 1000));
+  const active = entries.filter((entry) => entry.startMs <= previewMs && previewMs < entry.endMs);
+  if (active.length > 0) {
+    return withReindexedEntries(active);
+  }
+
+  let nearest: SubtitleEntry | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const entry of entries) {
+    const distance = previewMs < entry.startMs
+      ? (entry.startMs - previewMs)
+      : (previewMs > entry.endMs ? (previewMs - entry.endMs) : 0);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = entry;
+    }
+  }
+
+  if (!nearest) {
+    return [];
+  }
+
+  const nearestText = (nearest.translatedText || nearest.text || '').trim();
+  if (!nearestText) {
+    return [];
+  }
+
+  const syntheticStart = Math.max(0, previewMs - 350);
+  const syntheticEnd = Math.max(syntheticStart + 1200, previewMs + 1200);
+  return withReindexedEntries([{
+    ...nearest,
+    index: 1,
+    startMs: syntheticStart,
+    endMs: syntheticEnd,
+    startTime: msToSrtTime(syntheticStart),
+    endTime: msToSrtTime(syntheticEnd),
+    durationMs: syntheticEnd - syntheticStart,
+    text: nearest.text,
+    translatedText: nearest.translatedText,
+  }]);
 }
 
 async function injectInlineThumbnailAtEnd(input: {
@@ -1234,6 +1336,290 @@ export async function renderVideo(
     result = await applyThumbnailPostProcess(options, result);
   }
   return result;
+}
+
+export async function renderVideoPreviewFrame(
+  options: RenderVideoPreviewFrameOptions
+): Promise<RenderVideoPreviewFrameResult> {
+  if (!isFFmpegAvailable()) {
+    return { success: false, error: 'FFmpeg không được cài đặt' };
+  }
+  if (!options.videoPath || !existsSync(options.videoPath)) {
+    return { success: false, error: `Video không tồn tại: ${options.videoPath}` };
+  }
+
+  const normalizedEntries = normalizePreviewEntries(options.entries || []);
+  if (normalizedEntries.length === 0) {
+    return { success: false, error: 'Không có subtitle để render preview.' };
+  }
+
+  const ffmpegPath = getFFmpegPath();
+  if (!existsSync(ffmpegPath)) {
+    return { success: false, error: `ffmpeg không tìm thấy: ${ffmpegPath}` };
+  }
+
+  const probeResult = await probeGetVideoMetadata(options.videoPath);
+  const sourceMeta = probeResult.success && probeResult.metadata ? probeResult.metadata : null;
+  const sourceWidth = sourceMeta?.width || 1920;
+  const sourceHeight = sourceMeta?.actualHeight || sourceMeta?.height || 1080;
+  const sourceDuration = sourceMeta?.duration || 0;
+  const requestedTime = Number.isFinite(options.previewTimeSec) ? Number(options.previewTimeSec) : 0;
+  const safePreviewTimeSec = Math.max(0, Math.min(sourceDuration > 0 ? sourceDuration : requestedTime, requestedTime));
+  const previewEntries = selectPreviewEntriesAtTime(normalizedEntries, safePreviewTimeSec);
+  if (previewEntries.length === 0) {
+    return { success: false, error: 'Không tìm được subtitle hợp lệ để render preview.' };
+  }
+
+  let tempDirPath = '';
+  let tempSrtPath = '';
+  let tempFramePath = '';
+  let prepTempAssPath: string | null = null;
+
+  const cleanupPreviewTemps = async () => {
+    if (prepTempAssPath) {
+      unregisterTempFile(prepTempAssPath);
+      try {
+        await fs.unlink(prepTempAssPath);
+      } catch {}
+      prepTempAssPath = null;
+    }
+    if (tempSrtPath) {
+      unregisterTempFile(tempSrtPath);
+    }
+    if (tempFramePath) {
+      unregisterTempFile(tempFramePath);
+    }
+    if (tempDirPath) {
+      try {
+        await fs.rm(tempDirPath, { recursive: true, force: true });
+      } catch {}
+    }
+  };
+
+  try {
+    tempDirPath = await fs.mkdtemp(path.join(os.tmpdir(), 'caption_video_preview_'));
+    tempSrtPath = path.join(tempDirPath, 'preview_input.srt');
+    tempFramePath = path.join(tempDirPath, 'preview_frame.png');
+    registerTempFile(tempSrtPath);
+    registerTempFile(tempFramePath);
+
+    const srtExport = await exportToSrt(previewEntries, tempSrtPath, true);
+    if (!srtExport.success) {
+      await cleanupPreviewTemps();
+      return { success: false, error: srtExport.error || 'Không thể tạo SRT tạm cho preview.' };
+    }
+
+    const renderMode = options.renderMode || 'hardsub';
+    const renderOptionsBase: RenderVideoOptions = {
+      srtPath: tempSrtPath,
+      outputPath: path.join(tempDirPath, 'preview_dummy.mp4'),
+      width: sourceWidth,
+      height: sourceHeight,
+      videoPath: renderMode === 'black_bg' ? undefined : options.videoPath,
+      style: options.style,
+      renderMode,
+      renderResolution: options.renderResolution,
+      position: options.position,
+      blackoutTop: options.blackoutTop,
+      coverMode: options.coverMode,
+      coverQuad: options.coverQuad,
+      logoPath: options.logoPath,
+      logoPosition: options.logoPosition,
+      logoScale: options.logoScale,
+      portraitForegroundCropPercent: options.portraitForegroundCropPercent,
+      audioSpeed: 1.0,
+      step7AudioSpeedInput: 1.0,
+      srtTimeScale: 1.0,
+      step4SrtScale: 1.0,
+    };
+
+    let outputWidth = sourceWidth;
+    let outputHeight = sourceHeight;
+    const filterComplexParts: string[] = [];
+    const finalVideoLabel = '[v_preview_out]';
+    let inputArgs: string[] = [];
+
+    if (renderMode === 'black_bg') {
+      const prep = await prepareSubtitleAndDuration({
+        ...renderOptionsBase,
+        renderMode: 'black_bg',
+        videoPath: undefined,
+      });
+      prepTempAssPath = prep.tempAssPath;
+      outputWidth = prep.finalWidth;
+      outputHeight = prep.finalHeight;
+      const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+      inputArgs = [
+        '-f', 'lavfi',
+        '-i', `color=black:s=${prep.finalWidth}x${prep.finalHeight}:r=24`,
+      ];
+      filterComplexParts.push(`[0:v]${subtitleFilter}${finalVideoLabel}`);
+    } else if (renderMode === 'hardsub_portrait_9_16') {
+      const portraitCanvas = resolvePortraitCanvasByPreset(options.renderResolution);
+      const prep = await prepareSubtitleAndDurationPortrait({
+        ...renderOptionsBase,
+        renderMode: 'hardsub_portrait_9_16',
+        videoPath: options.videoPath,
+      }, portraitCanvas);
+      prepTempAssPath = prep.tempAssPath;
+      outputWidth = prep.renderWidth;
+      outputHeight = prep.renderHeight;
+      const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+      const even = (value: number) => {
+        const rounded = Math.max(2, Math.round(value));
+        return rounded % 2 === 0 ? rounded : rounded + 1;
+      };
+      const sourceAspect = sourceWidth / Math.max(1, sourceHeight);
+      const outputAspect = portraitCanvas.width / portraitCanvas.height;
+      const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
+      const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
+        aspectDiffRatio <= 0.05 ? 'direct_fit_no_blur' : 'blur_composite';
+      const foregroundCropPercent = Math.min(
+        20,
+        Math.max(
+          0,
+          Number.isFinite(options.portraitForegroundCropPercent ?? 0)
+            ? (options.portraitForegroundCropPercent as number)
+            : 0
+        )
+      );
+      const portraitVideo = buildPortraitVideoFilter({
+        inputLabel: '[0:v]',
+        outputWidth: portraitCanvas.width,
+        outputHeight: portraitCanvas.height,
+        subtitleFilter,
+        sourceAspect,
+        layoutStrategy,
+        foregroundCropPercent,
+        videoSpeedMultiplier: 1.0,
+        blackoutTop: options.blackoutTop,
+        coverMode: options.coverMode || 'blackout_bottom',
+        coverQuad: options.coverQuad,
+        bgDownscaleWidth: even(portraitCanvas.width / 8),
+        bgDownscaleHeight: even(portraitCanvas.height / 8),
+        bgBlurLumaRadius: 8,
+        bgBlurLumaPower: 1,
+      });
+      inputArgs = ['-i', options.videoPath];
+      filterComplexParts.push(...portraitVideo.filterParts);
+      const portraitOutputLabel = `[${portraitVideo.outputLabel}]`;
+      if (options.logoPath && existsSync(options.logoPath)) {
+        inputArgs.push('-i', options.logoPath);
+        const userLogoScale = options.logoScale ?? 1.0;
+        const totalLogoScale = prep.scaleFactor * userLogoScale;
+        const logoScaleFilter = totalLogoScale !== 1
+          ? `scale=iw*${totalLogoScale}:ih*${totalLogoScale}`
+          : 'copy';
+        let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
+        let logoYAxis = `50*${prep.scaleFactor}`;
+        if (options.logoPosition) {
+          logoXAxis = `${Math.round(options.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
+          logoYAxis = `${Math.round(options.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+        }
+        filterComplexParts.push('[1:v]' + logoScaleFilter + '[logo_scaled_preview]');
+        filterComplexParts.push(`${portraitOutputLabel}[logo_scaled_preview]overlay=x=${logoXAxis}:y=${logoYAxis}${finalVideoLabel}`);
+      } else {
+        filterComplexParts.push(`${portraitOutputLabel}null${finalVideoLabel}`);
+      }
+    } else {
+      const prep = await prepareSubtitleAndDuration({
+        ...renderOptionsBase,
+        renderMode: 'hardsub',
+        videoPath: options.videoPath,
+      });
+      prepTempAssPath = prep.tempAssPath;
+      outputWidth = prep.renderWidth;
+      outputHeight = prep.renderHeight;
+      const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+      const videoFilter = buildVideoFilter({
+        inputLabel: '[0:v]',
+        needsScale: prep.needsScale,
+        renderWidth: prep.renderWidth,
+        renderHeight: prep.renderHeight,
+        blackoutTop: options.blackoutTop,
+        coverMode: options.coverMode || 'blackout_bottom',
+        coverQuad: options.coverQuad,
+        videoSpeedMultiplier: 1.0,
+        subtitleFilter,
+      });
+      inputArgs = ['-i', options.videoPath];
+      filterComplexParts.push(...videoFilter.filterParts);
+      if (options.logoPath && existsSync(options.logoPath)) {
+        inputArgs.push('-i', options.logoPath);
+        const userLogoScale = options.logoScale ?? 1.0;
+        const totalLogoScale = prep.scaleFactor * userLogoScale;
+        const logoScaleFilter = totalLogoScale !== 1
+          ? `scale=iw*${totalLogoScale}:ih*${totalLogoScale}`
+          : 'copy';
+        let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
+        let logoYAxis = `50*${prep.scaleFactor}`;
+        if (options.logoPosition) {
+          logoXAxis = `${Math.round(options.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
+          logoYAxis = `${Math.round(options.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+        }
+        filterComplexParts.push('[1:v]' + logoScaleFilter + '[logo_scaled_preview]');
+        filterComplexParts.push(`${videoFilter.outputLabel}[logo_scaled_preview]overlay=x=${logoXAxis}:y=${logoYAxis}${finalVideoLabel}`);
+      } else {
+        filterComplexParts.push(`${videoFilter.outputLabel}null${finalVideoLabel}`);
+      }
+    }
+
+    const args = [
+      ...inputArgs,
+      '-filter_complex', filterComplexParts.join(';'),
+      '-map', finalVideoLabel,
+      '-ss', safePreviewTimeSec.toFixed(3),
+      '-frames:v', '1',
+      '-c:v', 'png',
+      '-an',
+      '-sn',
+      '-y',
+      tempFramePath,
+    ];
+
+    return await new Promise<RenderVideoPreviewFrameResult>((resolve) => {
+      const process = spawn(ffmpegPath, args);
+      let stderr = '';
+
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      process.on('close', async (code) => {
+        if (code === 0) {
+          try {
+            const frameBuffer = await fs.readFile(tempFramePath);
+            await cleanupPreviewTemps();
+            resolve({
+              success: true,
+              frameData: frameBuffer.toString('base64'),
+              width: outputWidth,
+              height: outputHeight,
+              previewTimeSec: safePreviewTimeSec,
+            });
+          } catch (error) {
+            await cleanupPreviewTemps();
+            resolve({ success: false, error: `Không thể đọc frame preview: ${String(error)}` });
+          }
+          return;
+        }
+
+        await cleanupPreviewTemps();
+        resolve({
+          success: false,
+          error: stderr || `FFmpeg exit code: ${code}`,
+        });
+      });
+
+      process.on('error', async (error) => {
+        await cleanupPreviewTemps();
+        resolve({ success: false, error: `Lỗi FFmpeg: ${error.message}` });
+      });
+    });
+  } catch (error) {
+    await cleanupPreviewTemps();
+    return { success: false, error: String(error) };
+  }
 }
 
 export async function renderStep7AudioPreview(

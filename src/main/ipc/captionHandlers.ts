@@ -10,6 +10,8 @@ import {
   RenderAudioPreviewOptions,
   RenderAudioPreviewProgress,
   RenderAudioPreviewResult,
+  RenderVideoPreviewFrameOptions,
+  RenderVideoPreviewFrameResult,
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
   TranslationOptions,
@@ -470,6 +472,27 @@ export function registerCaptionHandlers(): void {
         };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi stop render video:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO_PREVIEW_FRAME,
+    async (
+      _event: IpcMainInvokeEvent,
+      options: RenderVideoPreviewFrameOptions
+    ): Promise<IpcResponse<RenderVideoPreviewFrameResult>> => {
+      const safeVideoPath = typeof options?.videoPath === 'string' ? options.videoPath : '';
+      console.log(`[CaptionHandlers] Render video preview frame: ${safeVideoPath || '(empty)'}`);
+      try {
+        const result = await CaptionService.renderVideoPreviewFrame(options);
+        if (result.success) {
+          return { success: true, data: result };
+        }
+        return { success: false, error: result.error || 'Không thể render video preview frame.' };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi render video preview frame:', error);
         return { success: false, error: String(error) };
       }
     }

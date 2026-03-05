@@ -168,6 +168,8 @@ import {
   RenderAudioPreviewOptions,
   RenderAudioPreviewProgress,
   RenderAudioPreviewResult,
+  RenderVideoPreviewFrameOptions,
+  RenderVideoPreviewFrameResult,
   VideoMetadata,
   RenderProgress,
   CAPTION_VIDEO_IPC_CHANNELS,
@@ -248,6 +250,11 @@ export interface CaptionVideoAPI {
   // Listen to render progress
   onRenderProgress: (callback: (progress: RenderProgress) => void) => void;
 
+  // Render one real preview frame using Step 7 visual pipeline (no audio)
+  renderVideoPreviewFrame: (
+    options: RenderVideoPreviewFrameOptions
+  ) => Promise<IpcApiResponse<RenderVideoPreviewFrameResult>>;
+
   // Listen to audio preview progress
   onAudioPreviewProgress: (callback: (progress: RenderAudioPreviewProgress) => void) => void;
 
@@ -304,6 +311,9 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
         callback(progress);
       });
     },
+
+    renderVideoPreviewFrame: (options: RenderVideoPreviewFrameOptions) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO_PREVIEW_FRAME, options),
 
     onAudioPreviewProgress: (callback: (progress: RenderAudioPreviewProgress) => void) => {
       ipcRenderer.removeAllListeners(CAPTION_VIDEO_IPC_CHANNELS.AUDIO_PREVIEW_PROGRESS);
