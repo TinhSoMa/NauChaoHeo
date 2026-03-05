@@ -2,6 +2,38 @@ import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
 import { GeminiChatService } from '../chatGemini/geminiChatService';
 import { AppSettingsService } from '../appSettings';
+import { getDatabase } from '../../database/schema';
+import { getGeminiWebApiRuntime } from '../geminiWebApi';
+import {
+  getQueueRuntimeOrCreate,
+  RotationJobExecutionError,
+  type RotationJobErrorCode
+} from '../shared/universalRotationQueue';
+
+const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
+const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
+const STORY_GEMINI_WEB_QUEUE_FEATURE = 'story.translate.geminiWeb';
+const STORY_GEMINI_WEB_QUEUE_SERVICE_ID = 'story-translator-ui';
+
+interface StoryTranslateChapterWithGeminiWebQueueOptions {
+  prompt: any;
+  model?: string;
+  timeoutMs?: number;
+  metadata?: Record<string, unknown>;
+  priority?: 'high' | 'normal' | 'low';
+  conversationKey?: string;
+  resetConversation?: boolean;
+}
+
+interface StoryTranslateChapterWithGeminiWebQueueResult {
+  success: boolean;
+  data?: string;
+  error?: string;
+  errorCode?: RotationJobErrorCode;
+  resourceId?: string;
+  queueRuntimeKey: string;
+  metadata?: Record<string, unknown>;
+}
 
 /**
  * Story Service - Handles story translation logic
@@ -17,43 +49,7 @@ export class StoryService {
       
       if (options.method === 'IMPIT') {
            // WEB METHOD (Gemini Protocol)
-           // Extract text from prompt (assuming preparedPrompt results in structured object/array)
-           
-           // Extract text from prompt (assuming preparedPrompt results in structured object/array)
-           let promptText = "";
-           const preparedPrompt = options.prompt;
-           
-           if (typeof preparedPrompt === 'string') {
-               promptText = preparedPrompt;
-           } else if (Array.isArray(preparedPrompt)) {
-               // Chat history format: find the last user message
-               const lastUserMsg = [...preparedPrompt].reverse().find(m => m.role === 'user');
-               if (lastUserMsg) promptText = lastUserMsg.content;
-           } else if (typeof preparedPrompt === 'object') {
-               // Fallback: stringify? Or specific field?
-               // Based on current promptService, it returns array or object.
-               // Let's assume we want the full structured instruction. 
-               // BUT Gemini Web Chat usually takes a single string message. 
-               // We might need to flatten it or just take the content.
-                promptText = JSON.stringify(preparedPrompt); 
-               // Logic refinement: Web Interface is "Chat", so we send the "Prompt" as the message.
-               // If preparedPrompt is chat history (Role/Content), we might lose history if we just send last message?
-               // NO, Gemini Web *maintains* history via Context IDs. We just send the NEW message.
-               
-               // So if preparedPrompt contains the FULL history including system instructions, we are kinda double-dipping?
-               // Ideally for Web Chat updates: We just want the NEW chapter content + instruction.
-               // However, `prepareTranslationPrompt` returns a full constructed prompt.
-               
-               // Quick Fix: Convert the whole structure to a string representation if complex, 
-               // OR better: Just extract the actual chapter content if we can, but `prepareTranslationPrompt` has already merged it.
-               
-               // Let's use the Last User Message Content if array, else Stringify.
-                if (Array.isArray(preparedPrompt)) {
-                    const lastMsg = preparedPrompt[preparedPrompt.length - 1];
-                     if (lastMsg && lastMsg.role === 'user') promptText = lastMsg.content;
-                     else promptText = JSON.stringify(preparedPrompt);
-                }
-           }
+           const promptText = this.extractPromptText(options.prompt);
             
             console.log('[StoryService] Extracted promptText length:', promptText.length);
             if (!promptText) console.warn('[StoryService] promptText is empty!');
@@ -104,6 +100,99 @@ export class StoryService {
     } catch (error) {
       console.error('[StoryService] Error translating chapter:', error);
       return { success: false, error: String(error), metadata: options.metadata };
+    }
+  }
+
+  static async translateChapterWithGeminiWebQueue(
+    options: StoryTranslateChapterWithGeminiWebQueueOptions
+  ): Promise<StoryTranslateChapterWithGeminiWebQueueResult> {
+    try {
+      if (!this.isStoryGeminiWebQueueEnabled()) {
+        return {
+          success: false,
+          error: 'Story Gemini Web Queue is disabled by feature flag.',
+          errorCode: 'EXECUTION_ERROR',
+          queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+          metadata: options.metadata
+        };
+      }
+
+      const promptText = this.extractPromptText(options.prompt);
+      if (!promptText.trim()) {
+        return {
+          success: false,
+          error: 'Prompt text is empty.',
+          errorCode: 'EXECUTION_ERROR',
+          queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+          metadata: options.metadata
+        };
+      }
+
+      this.ensureStoryGeminiWebQueueResources();
+      const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+
+      const queued = await queue.enqueue<{ promptText: string }, string>({
+        poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
+        feature: STORY_GEMINI_WEB_QUEUE_FEATURE,
+        serviceId: STORY_GEMINI_WEB_QUEUE_SERVICE_ID,
+        jobType: 'translate-chapter',
+        priority: options.priority ?? 'normal',
+        requiredCapabilities: ['story_translate', 'gemini_webapi'],
+        maxAttempts: 3,
+        timeoutMs: options.timeoutMs ?? 120_000,
+        metadata: options.metadata,
+        payload: { promptText },
+        execute: async (ctx) => {
+          const response = await getGeminiWebApiRuntime().generateContent({
+            prompt: ctx.payload.promptText,
+            timeoutMs: options.timeoutMs ?? 120_000,
+            accountConfigId: ctx.resource.resourceId,
+            conversationKey: options.conversationKey,
+            resetConversation: options.resetConversation,
+            useChatSession: !!options.conversationKey,
+          });
+
+          if (!response.success) {
+            const errorMessage = response.error || 'GeminiWebApi execution failed';
+            if (response.errorCode === 'GEMINI_TIMEOUT') {
+              throw new RotationJobExecutionError('TIMEOUT', errorMessage);
+            }
+            if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+              throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
+            }
+            throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
+          }
+
+          return response.text || '';
+        }
+      });
+
+      if (!queued.success) {
+        return {
+          success: false,
+          error: queued.error || 'Queue job failed',
+          errorCode: queued.errorCode,
+          resourceId: queued.resourceId,
+          queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+          metadata: options.metadata
+        };
+      }
+
+      return {
+        success: true,
+        data: queued.result || '',
+        resourceId: queued.resourceId,
+        queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+        metadata: options.metadata
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+        errorCode: 'EXECUTION_ERROR',
+        queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+        metadata: options.metadata
+      };
     }
   }
 
@@ -281,6 +370,97 @@ export class StoryService {
     } catch (error) {
       console.error('Error injecting content into prompt:', error);
       return { success: false, error: String(error) };
+    }
+  }
+
+  static isStoryGeminiWebQueueEnabled(): boolean {
+    return process.env.ENABLE_STORY_GEMINI_WEB_QUEUE !== '0';
+  }
+
+  private static extractPromptText(preparedPrompt: any): string {
+    let promptText = '';
+
+    if (typeof preparedPrompt === 'string') {
+      promptText = preparedPrompt;
+    } else if (Array.isArray(preparedPrompt)) {
+      const lastUserMsg = [...preparedPrompt]
+        .reverse()
+        .find((msg) => msg?.role === 'user' && typeof msg?.content === 'string');
+      if (lastUserMsg?.content) {
+        promptText = lastUserMsg.content;
+      } else {
+        promptText = JSON.stringify(preparedPrompt);
+      }
+    } else if (preparedPrompt && typeof preparedPrompt === 'object') {
+      promptText = JSON.stringify(preparedPrompt);
+    }
+
+    return promptText;
+  }
+
+  private static ensureStoryGeminiWebQueueResources(): void {
+    const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+    queue.registerPool({
+      poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
+      label: 'Story GeminiWeb Accounts',
+      selector: 'round_robin'
+    });
+
+    const db = getDatabase();
+    const rows = db
+      .prepare(
+        `
+          SELECT
+            id,
+            name,
+            is_active,
+            "__Secure-1PSID" AS secure_1psid,
+            "__Secure-1PSIDTS" AS secure_1psidts
+          FROM gemini_chat_config
+          ORDER BY updated_at DESC
+        `
+      )
+      .all() as Array<{
+      id: string;
+      name: string;
+      is_active: number;
+      secure_1psid: string | null;
+      secure_1psidts: string | null;
+    }>;
+
+    const eligibleResourceIds = new Set<string>();
+
+    for (const row of rows) {
+      const isActive = row.is_active === 1;
+      const hasSecureCookies = !!row.secure_1psid?.trim() && !!row.secure_1psidts?.trim();
+      const enabled = isActive && hasSecureCookies;
+
+      queue.upsertResource({
+        poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
+        resourceId: row.id,
+        label: row.name?.trim() || row.id,
+        capabilities: ['story_translate', 'gemini_webapi'],
+        enabled,
+        maxConcurrency: 1,
+        metadata: {
+          accountName: row.name?.trim() || row.id
+        }
+      });
+
+      if (enabled) {
+        eligibleResourceIds.add(row.id);
+      }
+    }
+
+    const snapshot = queue.getSnapshot();
+    const existingResourceIds = snapshot.resources
+      .filter((item) => item.poolId === STORY_GEMINI_WEB_QUEUE_POOL_ID)
+      .map((item) => item.resourceId);
+
+    for (const resourceId of existingResourceIds) {
+      if (!eligibleResourceIds.has(resourceId)) {
+        queue.setResourceEnabled(STORY_GEMINI_WEB_QUEUE_POOL_ID, resourceId, false);
+      }
     }
   }
 

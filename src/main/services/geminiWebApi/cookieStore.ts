@@ -71,10 +71,9 @@ export function maskSecret(value: string | null | undefined): string {
 }
 
 export class GeminiWebApiCookieStore {
-  resolveStoredCookie(): ResolvedStoredCookie {
+  resolveStoredCookie(accountConfigId?: string): ResolvedStoredCookie {
     try {
-      const db = getDatabase();
-      const row = this.getPreferredGeminiChatConfigRow();
+      const row = this.getPreferredGeminiChatConfigRow(accountConfigId);
       if (row) {
         const cookie = row.cookie?.trim() || null;
         const secure1psid = row.secure_1psid?.trim() || null;
@@ -123,7 +122,11 @@ export class GeminiWebApiCookieStore {
     };
   }
 
-  persistRefreshedCookie(cookie: string, browser: GeminiBrowserType): PersistCookieResult {
+  persistRefreshedCookie(
+    cookie: string,
+    browser: GeminiBrowserType,
+    accountConfigId?: string
+  ): PersistCookieResult {
     const warnings: string[] = [];
     let updatedPrimary = false;
     let updatedFallback = false;
@@ -133,7 +136,7 @@ export class GeminiWebApiCookieStore {
     try {
       if (parsed.secure1psid && parsed.secure1psidts) {
         const db = getDatabase();
-        const targetRow = this.getPreferredGeminiChatConfigRow();
+        const targetRow = this.getPreferredGeminiChatConfigRow(accountConfigId);
         if (!targetRow?.id) {
           warnings.push('Primary store update skipped: no row in gemini_chat_config');
         } else {
@@ -182,8 +185,21 @@ export class GeminiWebApiCookieStore {
     return 'none';
   }
 
-  private getPreferredGeminiChatConfigRow(): GeminiChatCookieRow | null {
+  private getPreferredGeminiChatConfigRow(accountConfigId?: string): GeminiChatCookieRow | null {
     const db = getDatabase();
+    const normalizedConfigId = accountConfigId?.trim();
+
+    if (normalizedConfigId) {
+      const byId = db
+        .prepare(
+          'SELECT id, cookie, "__Secure-1PSID" as secure_1psid, "__Secure-1PSIDTS" as secure_1psidts FROM gemini_chat_config WHERE id = ? LIMIT 1',
+        )
+        .get(normalizedConfigId) as GeminiChatCookieRow | undefined;
+      if (byId) {
+        return byId;
+      }
+    }
+
     const activeRow = db
       .prepare(
         'SELECT id, cookie, "__Secure-1PSID" as secure_1psid, "__Secure-1PSIDTS" as secure_1psidts FROM gemini_chat_config WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1',

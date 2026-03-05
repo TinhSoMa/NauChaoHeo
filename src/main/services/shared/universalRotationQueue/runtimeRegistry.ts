@@ -11,7 +11,7 @@ function normalizeRuntimeKey(featureKey: string): string {
 }
 
 export function isRotationQueueInspectorEnabled(): boolean {
-  return process.env.ENABLE_ROTATION_QUEUE_INSPECTOR === '1';
+  return process.env.ENABLE_ROTATION_QUEUE_INSPECTOR !== '0';
 }
 
 export function isRotationQueuePayloadDebugEnabled(): boolean {

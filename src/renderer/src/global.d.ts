@@ -728,7 +728,25 @@ interface RotationQueueInspectorSnapshot {
   droppedHistoryCount: number;
 }
 
+interface RotationQueueRuntimeInfo {
+  key: string;
+  jobCounts?: {
+    queued: number;
+    running: number;
+  };
+}
+
+interface RotationQueueInspectorStatus {
+  enabled: boolean;
+  reason?: string;
+  snapshotThrottleMs: number;
+  historyCapacity: number;
+  payloadDebugEnabled?: boolean;
+}
+
 interface RotationQueueAPI {
+  getStatus: () => Promise<IpcApiResponse<RotationQueueInspectorStatus>>;
+  listRuntimes: () => Promise<IpcApiResponse<RotationQueueRuntimeInfo[]>>;
   getSnapshot: (options?: RotationQueueViewOptions, runtimeKey?: string) => Promise<IpcApiResponse<RotationQueueInspectorSnapshot>>;
   getHistory: (limit?: number, runtimeKey?: string) => Promise<IpcApiResponse<RotationQueueEventRecord[]>>;
   clearHistory: (options?: { runtimeKey?: string; resetDroppedCounter?: boolean }) => Promise<IpcApiResponse<void>>;

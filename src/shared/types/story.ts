@@ -17,12 +17,33 @@ export interface PreparePromptResult {
   error?: string;
 }
 
+export interface StoryTranslateGeminiWebQueuePayload {
+  prompt: any;
+  model?: string;
+  timeoutMs?: number;
+  metadata?: Record<string, unknown>;
+  conversationKey?: string;
+  resetConversation?: boolean;
+}
+
+export interface StoryTranslateGeminiWebQueueResult {
+  success: boolean;
+  data?: string;
+  error?: string;
+  resourceId?: string;
+  queueRuntimeKey: string;
+  errorCode?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export const STORY_IPC_CHANNELS = {
   PARSE: 'story:parse',
   PREPARE_PROMPT: 'story:preparePrompt',
   PREPARE_SUMMARY_PROMPT: 'story:prepareSummaryPrompt',
   SAVE_PROMPT: 'story:savePrompt',
   TRANSLATE_CHAPTER: 'story:translateChapter',
+  TRANSLATE_CHAPTER_GEMINI_WEB_QUEUE: 'story:translateChapterGeminiWebQueue',
+  IS_GEMINI_WEB_QUEUE_ENABLED: 'story:isGeminiWebQueueEnabled',
   TRANSLATE_CHAPTER_RESULT: 'story:translate-chapter-result',
   TRANSLATION_PROGRESS: 'story:translation-progress',
   TRANSLATE_CHAPTER_STREAM_REPLY: 'story:translateChapterStreamReply',

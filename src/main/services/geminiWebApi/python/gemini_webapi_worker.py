@@ -120,6 +120,11 @@ async def _cmd_generate(payload: Dict[str, Any]) -> Dict[str, Any]:
     prompt = str(payload.get("prompt") or "").strip()
     timeout_ms = int(payload.get("timeoutMs") or 90000)
     proxy = payload.get("proxy")
+    temporary = bool(payload.get("temporary"))
+    use_chat_session = bool(payload.get("useChatSession"))
+    conversation_metadata = payload.get("conversationMetadata")
+    if not isinstance(conversation_metadata, dict):
+        conversation_metadata = None
 
     if not secure_1psid or not secure_1psidts:
         return {
@@ -146,12 +151,35 @@ async def _cmd_generate(payload: Dict[str, Any]) -> Dict[str, Any]:
     client = GeminiClient(secure_1psid, secure_1psidts, proxy=proxy)
     try:
         await client.init(timeout=30, auto_close=False, auto_refresh=True)
-        result = await asyncio.wait_for(client.generate_content(prompt), timeout=max(1, timeout_ms) / 1000)
+        if use_chat_session or conversation_metadata is not None:
+            if conversation_metadata is not None:
+                chat = client.start_chat(metadata=conversation_metadata)
+            else:
+                chat = client.start_chat()
+
+            try:
+                message_result = chat.send_message(prompt, temporary=temporary)
+            except TypeError:
+                message_result = chat.send_message(prompt)
+            result = await asyncio.wait_for(message_result, timeout=max(1, timeout_ms) / 1000)
+        else:
+            try:
+                content_result = client.generate_content(prompt, temporary=temporary)
+            except TypeError:
+                content_result = client.generate_content(prompt)
+            result = await asyncio.wait_for(content_result, timeout=max(1, timeout_ms) / 1000)
+
         text = (getattr(result, "text", "") or "").strip()
+        chat_metadata = None
+        if use_chat_session or conversation_metadata is not None:
+            metadata_obj = getattr(chat, "metadata", None)
+            if isinstance(metadata_obj, dict):
+                chat_metadata = metadata_obj
         return {
             "success": True,
             "data": {
                 "text": text,
+                "conversationMetadata": chat_metadata,
             },
         }
     except asyncio.TimeoutError:

@@ -2,6 +2,7 @@ import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import { GeminiWebApiCookieStore, maskSecret, parseGeminiCookieTokens } from './cookieStore';
 import { GeminiWebApiPythonBridge } from './pythonBridge';
 import {
+  GeminiConversationMetadata,
   GeminiCookieRefreshResult,
   GeminiCookieStatus,
   GeminiErrorCode,
@@ -14,6 +15,7 @@ import {
 interface RefreshCookieOptions {
   browserPriority?: GeminiBrowserType[];
   timeoutMs?: number;
+  accountConfigId?: string;
 }
 
 interface WorkerRefreshPayload {
@@ -23,11 +25,13 @@ interface WorkerRefreshPayload {
 
 interface WorkerGeneratePayload {
   text: string | null;
+  conversationMetadata?: GeminiConversationMetadata | null;
 }
 
 export class GeminiWebApiService {
   private readonly cookieStore = new GeminiWebApiCookieStore();
   private readonly bridge = new GeminiWebApiPythonBridge();
+  private readonly conversationMetadataByKey = new Map<string, GeminiConversationMetadata>();
 
   async healthCheck(): Promise<GeminiWebApiHealth> {
     const moduleCheck = await checkPythonModuleAvailability(['gemini_webapi', 'browser_cookie3'], {
@@ -84,8 +88,8 @@ export class GeminiWebApiService {
     };
   }
 
-  async getCookieStatus(): Promise<GeminiCookieStatus> {
-    const resolved = this.cookieStore.resolveStoredCookie();
+  async getCookieStatus(accountConfigId?: string): Promise<GeminiCookieStatus> {
+    const resolved = this.cookieStore.resolveStoredCookie(accountConfigId);
 
     return {
       hasStoredCookie: !!(resolved.cookie || resolved.secure1psid || resolved.secure1psidts),
@@ -146,7 +150,11 @@ export class GeminiWebApiService {
       };
     }
 
-    const persist = this.cookieStore.persistRefreshedCookie(response.data.cookie, response.data.sourceBrowser);
+    const persist = this.cookieStore.persistRefreshedCookie(
+      response.data.cookie,
+      response.data.sourceBrowser,
+      options.accountConfigId
+    );
     const cookieSource = this.cookieStore.getCookieSourceAfterRefresh(persist.updatedPrimary, persist.updatedFallback);
 
     if (!persist.updatedPrimary && !persist.updatedFallback) {
@@ -189,7 +197,20 @@ export class GeminiWebApiService {
     }
 
     const timeoutMs = request.timeoutMs ?? 90000;
-    let resolved = this.cookieStore.resolveStoredCookie();
+    const conversationStoreKey = this.buildConversationStoreKey(request);
+    const useChatSession = request.useChatSession || !!conversationStoreKey;
+    if (conversationStoreKey && request.resetConversation) {
+      this.conversationMetadataByKey.delete(conversationStoreKey);
+    }
+
+    let inputConversationMetadata: GeminiConversationMetadata | null = null;
+    let conversationContinued = false;
+    if (conversationStoreKey) {
+      inputConversationMetadata = this.conversationMetadataByKey.get(conversationStoreKey) || null;
+      conversationContinued = !!inputConversationMetadata;
+    }
+
+    let resolved = this.cookieStore.resolveStoredCookie(request.accountConfigId);
     let secure1psid = resolved.secure1psid || null;
     let secure1psidts = resolved.secure1psidts || null;
     let refreshed = false;
@@ -197,6 +218,7 @@ export class GeminiWebApiService {
     if (request.forceCookieRefresh || !secure1psid || !secure1psidts) {
       const refresh = await this.refreshCookieFromBrowser({
         browserPriority: request.browserPriority,
+        accountConfigId: request.accountConfigId,
       });
 
       if (!refresh.success) {
@@ -210,7 +232,7 @@ export class GeminiWebApiService {
       }
 
       refreshed = true;
-      resolved = this.cookieStore.resolveStoredCookie();
+      resolved = this.cookieStore.resolveStoredCookie(request.accountConfigId);
       secure1psid = resolved.secure1psid || null;
       secure1psidts = resolved.secure1psidts || null;
     }
@@ -235,6 +257,9 @@ export class GeminiWebApiService {
           secure1psidts,
           proxy: request.proxy ?? null,
           timeoutMs,
+          temporary: !!request.temporary,
+          useChatSession,
+          conversationMetadata: inputConversationMetadata,
         },
         timeoutMs,
       );
@@ -259,11 +284,19 @@ export class GeminiWebApiService {
       };
     }
 
+    const outputConversationMetadata = this.toConversationMetadata(response.data?.conversationMetadata);
+    if (conversationStoreKey && outputConversationMetadata && useChatSession) {
+      this.conversationMetadataByKey.set(conversationStoreKey, outputConversationMetadata);
+    }
+
     return {
       success: true,
       text: response.data?.text || '',
       cookieSource: resolved.source,
       refreshed,
+      conversationKey: request.conversationKey,
+      conversationMetadata: outputConversationMetadata,
+      conversationContinued,
     };
   }
 
@@ -285,5 +318,21 @@ export class GeminiWebApiService {
     }
 
     return { errorCode: 'GEMINI_REQUEST_FAILED', error: text };
+  }
+
+  private buildConversationStoreKey(request: GeminiGenerateRequest): string | null {
+    const conversationKey = request.conversationKey?.trim();
+    if (!conversationKey) {
+      return null;
+    }
+    const accountConfigId = request.accountConfigId?.trim() || 'default';
+    return `${accountConfigId}::${conversationKey}`;
+  }
+
+  private toConversationMetadata(value: unknown): GeminiConversationMetadata | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    return value as GeminiConversationMetadata;
   }
 }

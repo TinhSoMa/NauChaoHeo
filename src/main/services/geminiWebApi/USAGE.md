@@ -45,3 +45,23 @@ await service.shutdown();
 - Secrets are masked in logs.
 - The service does not expose raw cookie values in API result payloads.
 - Worker protocol is JSON-over-stdio with one JSON object per line.
+
+## Continue Previous Conversation
+Use `conversationKey` to reuse chat context. The service stores metadata in-memory per key and account.
+
+```ts
+const first = await service.generateContent({
+  prompt: 'Tóm tắt chương 1',
+  accountConfigId: 'acc-a',
+  conversationKey: 'story-batch-001',
+  resetConversation: true,
+  useChatSession: true,
+});
+
+const second = await service.generateContent({
+  prompt: 'Dịch tiếp chương 2 theo cùng văn phong',
+  accountConfigId: 'acc-a',
+  conversationKey: 'story-batch-001',
+  useChatSession: true,
+});
+```

@@ -7,15 +7,22 @@ import {
 } from '../services/shared/universalRotationQueue/rotationTypes';
 import {
   getQueueRuntimeOrCreate,
-  isRotationQueueInspectorEnabled
+  isRotationQueueInspectorEnabled,
+  isRotationQueuePayloadDebugEnabled,
+  listQueueRuntimeKeys
 } from '../services/shared/universalRotationQueue/runtimeRegistry';
 import { UniversalRotationQueueService } from '../services/shared/universalRotationQueue/universalRotationQueueService';
-import { ROTATION_QUEUE_IPC_CHANNELS } from '../../shared/types/rotationQueue';
+import {
+  ROTATION_QUEUE_IPC_CHANNELS,
+  RotationQueueInspectorStatus,
+  RotationQueueRuntimeInfo
+} from '../../shared/types/rotationQueue';
 
 interface IpcResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  errorCode?: string;
 }
 
 interface SnapshotRequestPayload {
@@ -49,6 +56,10 @@ interface StreamSession {
 
 const sessions = new Map<number, StreamSession>();
 const SNAPSHOT_PUSH_THROTTLE_MS = 500;
+const DEFAULT_HISTORY_CAPACITY = 1000;
+const INSPECTOR_DISABLED_ERROR_CODE = 'INSPECTOR_DISABLED';
+const INSPECTOR_DISABLED_MESSAGE =
+  'Rotation queue inspector is disabled. Set ENABLE_ROTATION_QUEUE_INSPECTOR=1.';
 
 function normalizeRuntimeKey(runtimeKey?: string): string {
   const normalized = runtimeKey?.trim();
@@ -107,14 +118,63 @@ function markSnapshotDirty(webContents: WebContents, session: StreamSession): vo
   scheduleSnapshotFlush(webContents, session);
 }
 
-export function registerRotationQueueHandlers(): void {
+function getInspectorStatus(): RotationQueueInspectorStatus {
   const enabled = isRotationQueueInspectorEnabled();
-  if (!enabled) {
-    console.log('[RotationQueueHandlers] Inspector disabled by feature flag.');
-    return;
-  }
+  return {
+    enabled,
+    reason: enabled ? undefined : INSPECTOR_DISABLED_MESSAGE,
+    snapshotThrottleMs: SNAPSHOT_PUSH_THROTTLE_MS,
+    historyCapacity: DEFAULT_HISTORY_CAPACITY,
+    payloadDebugEnabled: isRotationQueuePayloadDebugEnabled()
+  };
+}
 
+function inspectorDisabledResponse<T>(): IpcResponse<T> {
+  return {
+    success: false,
+    error: INSPECTOR_DISABLED_MESSAGE,
+    errorCode: INSPECTOR_DISABLED_ERROR_CODE
+  };
+}
+
+export function registerRotationQueueHandlers(): void {
   console.log('[RotationQueueHandlers] Registering rotation queue inspector handlers...');
+
+  ipcMain.handle(
+    ROTATION_QUEUE_IPC_CHANNELS.GET_STATUS,
+    async (): Promise<IpcResponse<RotationQueueInspectorStatus>> => {
+      return {
+        success: true,
+        data: getInspectorStatus()
+      };
+    }
+  );
+
+  ipcMain.handle(
+    ROTATION_QUEUE_IPC_CHANNELS.LIST_RUNTIMES,
+    async (): Promise<IpcResponse<RotationQueueRuntimeInfo[]>> => {
+      const keys = listQueueRuntimeKeys();
+      const runtimeInfos: RotationQueueRuntimeInfo[] = keys.map((key) => {
+        try {
+          const queue = getQueueRuntimeOrCreate(key);
+          const snapshot = queue.getSnapshot();
+          return {
+            key,
+            jobCounts: {
+              queued: snapshot.totalQueued,
+              running: snapshot.totalRunning
+            }
+          };
+        } catch {
+          return { key };
+        }
+      });
+      return {
+        success: true,
+        data: runtimeInfos
+      };
+    }
+  );
 
   ipcMain.handle(
     ROTATION_QUEUE_IPC_CHANNELS.GET_SNAPSHOT,
@@ -123,6 +183,9 @@ export function registerRotationQueueHandlers(): void {
       payload?: QueueInspectorViewOptions | SnapshotRequestPayload
     ): Promise<IpcResponse<QueueInspectorSnapshot>> => {
       try {
+        if (!isRotationQueueInspectorEnabled()) {
+          return inspectorDisabledResponse<QueueInspectorSnapshot>();
+        }
         const parsed = parseSnapshotPayload(payload);
         const queue = getQueueRuntimeOrCreate(normalizeRuntimeKey(parsed.runtimeKey));
         const snapshot = queue.getInspectorSnapshot(parsed.viewOptions);
@@ -140,6 +203,9 @@ export function registerRotationQueueHandlers(): void {
       payload?: number | HistoryRequestPayload
     ): Promise<IpcResponse<QueueEventRecord[]>> => {
       try {
+        if (!isRotationQueueInspectorEnabled()) {
+          return inspectorDisabledResponse<QueueEventRecord[]>();
+        }
         const parsed = parseHistoryPayload(payload);
         const queue = getQueueRuntimeOrCreate(normalizeRuntimeKey(parsed.runtimeKey));
         const events = queue.getEventHistory(parsed.limit);
@@ -157,6 +223,9 @@ export function registerRotationQueueHandlers(): void {
       payload?: ClearHistoryRequestPayload
     ): Promise<IpcResponse<void>> => {
       try {
+        if (!isRotationQueueInspectorEnabled()) {
+          return inspectorDisabledResponse<void>();
+        }
         const runtimeKey = normalizeRuntimeKey(payload?.runtimeKey);
         const queue = getQueueRuntimeOrCreate(runtimeKey);
         queue.clearEventHistory({ resetDroppedCounter: payload?.resetDroppedCounter ?? true });
@@ -174,6 +243,9 @@ export function registerRotationQueueHandlers(): void {
       payload?: StreamStartPayload
     ): Promise<IpcResponse<void>> => {
       try {
+        if (!isRotationQueueInspectorEnabled()) {
+          return inspectorDisabledResponse<void>();
+        }
         const webContents = event.sender;
         stopSession(webContents.id);
 

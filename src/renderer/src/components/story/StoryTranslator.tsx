@@ -16,6 +16,7 @@ import { useStoryTranslation } from './hooks/useStoryTranslation';
 import { useStoryBatchTranslation } from './hooks/useStoryBatchTranslation';
 import { useStoryExport } from './hooks/useStoryExport';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
+import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 
 export function StoryTranslator() {
   const [filePath, setFilePath] = useState('');
@@ -34,6 +35,7 @@ export function StoryTranslator() {
   const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
   const [summaryTitles, setSummaryTitles] = useState<Map<string, string>>(new Map());
   const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
+  const [isGeminiWebQueueEnabled, setIsGeminiWebQueueEnabled] = useState(false);
   
   // Token management (using custom hook)
   const {
@@ -108,6 +110,28 @@ export function StoryTranslator() {
     setChapterModels,
     setChapterMethods,
     setTokenContexts
+  });
+
+  const {
+    isTranslating: isWebQueueTranslating,
+    batchProgress: webQueueBatchProgress,
+    handleTranslateAll: handleTranslateAllWebQueue,
+    handleStopTranslation: handleStopWebQueueTranslation,
+    eligibleChapterCount: webQueueEligibleChapterCount
+  } = useStoryGeminiWebQueueTranslation({
+    chapters,
+    sourceLang,
+    targetLang,
+    model,
+    retranslateExisting,
+    isChapterIncluded,
+    translatedChapters,
+    setStatus,
+    setProcessingChapters,
+    setTranslatedChapters,
+    setTranslatedTitles,
+    setChapterModels,
+    setChapterMethods
   });
 
   // Single translation hook (using processingChapters from batch hook)
@@ -236,6 +260,29 @@ export function StoryTranslator() {
       }
     }
   }, [translateMode, tokenConfigId]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const result = await window.electronAPI.invoke(
+          STORY_IPC_CHANNELS.IS_GEMINI_WEB_QUEUE_ENABLED
+        ) as { success?: boolean; data?: boolean };
+        if (mounted) {
+          setIsGeminiWebQueueEnabled(result?.success ? !!result.data : false);
+        }
+      } catch (error) {
+        console.warn('[StoryTranslator] Failed to load Gemini Web Queue flag:', error);
+        if (mounted) {
+          setIsGeminiWebQueueEnabled(false);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Listen for progress/retry events
   useEffect(() => {
@@ -404,6 +451,16 @@ export function StoryTranslator() {
               <StopCircle size={16} />
               Dừng ({batchSummaryProgress?.current}/{batchSummaryProgress?.total})
             </Button>
+          ) : status === 'running' && isWebQueueTranslating && webQueueBatchProgress ? (
+            <Button
+              onClick={handleStopWebQueueTranslation}
+              variant="secondary"
+              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng dịch Web Queue hiện tại"
+            >
+              <StopCircle size={16} />
+              Dừng Web Queue ({webQueueBatchProgress.current}/{webQueueBatchProgress.total})
+            </Button>
           ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
             <Button 
               onClick={handleStopBatchTranslation}
@@ -426,11 +483,31 @@ export function StoryTranslator() {
                 {isBatchTranslating ? 'Dừng dịch' : 'Dịch'}
               </Button>
 
+              {isGeminiWebQueueEnabled && (
+                <Button
+                  variant="secondary"
+                  onClick={isWebQueueTranslating ? handleStopWebQueueTranslation : handleTranslateAllWebQueue}
+                  className="flex items-center gap-2 h-9 px-6"
+                  disabled={
+                    !filePath ||
+                    isGeneratingSummary ||
+                    (status !== 'idle' && !isWebQueueTranslating) ||
+                    (!isWebQueueTranslating && webQueueEligibleChapterCount <= 0)
+                  }
+                  title="Dịch batch bằng Gemini Web API + Universal Queue"
+                >
+                  {isWebQueueTranslating ? <StopCircle size={16} /> : <Sparkles size={16} />}
+                  {isWebQueueTranslating
+                    ? `Dừng Web Queue (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
+                    : 'Dịch Web Queue'}
+                </Button>
+              )}
+
               <Button
                   variant="secondary"
                   onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
                   className="flex items-center gap-2 h-9 px-6"
-                  disabled={isBatchTranslating || (status !== 'idle' && !isGeneratingSummary)}
+                  disabled={isBatchTranslating || isWebQueueTranslating || (status !== 'idle' && !isGeneratingSummary)}
                   title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
               >
                   {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}

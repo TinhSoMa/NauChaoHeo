@@ -1,4 +1,6 @@
 export const ROTATION_QUEUE_IPC_CHANNELS = {
+  GET_STATUS: 'rotationQueue:getStatus',
+  LIST_RUNTIMES: 'rotationQueue:listRuntimes',
   GET_SNAPSHOT: 'rotationQueue:getSnapshot',
   GET_HISTORY: 'rotationQueue:getHistory',
   CLEAR_HISTORY: 'rotationQueue:clearHistory',
@@ -17,6 +19,22 @@ export interface RotationQueueViewOptions {
   feature?: string;
   state?: RotationQueueJobState | 'all';
   limit?: number;
+}
+
+export interface RotationQueueRuntimeInfo {
+  key: string;
+  jobCounts?: {
+    queued: number;
+    running: number;
+  };
+}
+
+export interface RotationQueueInspectorStatus {
+  enabled: boolean;
+  reason?: string;
+  snapshotThrottleMs: number;
+  historyCapacity: number;
+  payloadDebugEnabled?: boolean;
 }
 
 export interface RotationQueueSnapshotRequest {

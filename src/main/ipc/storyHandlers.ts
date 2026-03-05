@@ -1,7 +1,11 @@
 import { ipcMain, IpcMainInvokeEvent, dialog } from 'electron';
 import * as fs from 'fs/promises';
 import * as StoryService from '../services/story';
-import { STORY_IPC_CHANNELS } from '../../shared/types';
+import {
+  STORY_IPC_CHANNELS,
+  StoryTranslateGeminiWebQueuePayload,
+  StoryTranslateGeminiWebQueueResult
+} from '../../shared/types';
 
 export function registerStoryHandlers(): void {
   console.log('[StoryHandlers] Đăng ký handlers...');
@@ -99,6 +103,26 @@ export function registerStoryHandlers(): void {
       };
       
       return await StoryService.StoryService.translateChapter(options);
+    }
+  );
+
+  ipcMain.handle(
+    STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_GEMINI_WEB_QUEUE,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: StoryTranslateGeminiWebQueuePayload
+    ): Promise<StoryTranslateGeminiWebQueueResult> => {
+      return await StoryService.StoryService.translateChapterWithGeminiWebQueue(payload);
+    }
+  );
+
+  ipcMain.handle(
+    STORY_IPC_CHANNELS.IS_GEMINI_WEB_QUEUE_ENABLED,
+    async (): Promise<{ success: boolean; data: boolean }> => {
+      return {
+        success: true,
+        data: StoryService.StoryService.isStoryGeminiWebQueueEnabled()
+      };
     }
   );
 

@@ -4,7 +4,9 @@ import {
   RotationQueueClearHistoryRequest,
   RotationQueueEventRecord,
   RotationQueueHistoryRequest,
+  RotationQueueInspectorStatus,
   RotationQueueInspectorSnapshot,
+  RotationQueueRuntimeInfo,
   RotationQueueSnapshotRequest,
   RotationQueueStreamRequest,
   RotationQueueViewOptions
@@ -17,6 +19,8 @@ interface IpcApiResponse<T = unknown> {
 }
 
 export interface RotationQueueAPI {
+  getStatus: () => Promise<IpcApiResponse<RotationQueueInspectorStatus>>;
+  listRuntimes: () => Promise<IpcApiResponse<RotationQueueRuntimeInfo[]>>;
   getSnapshot: (
     options?: RotationQueueViewOptions,
     runtimeKey?: string
@@ -31,6 +35,10 @@ export interface RotationQueueAPI {
 
 export function createRotationQueueApi(): RotationQueueAPI {
   return {
+    getStatus: () => ipcRenderer.invoke(ROTATION_QUEUE_IPC_CHANNELS.GET_STATUS),
+
+    listRuntimes: () => ipcRenderer.invoke(ROTATION_QUEUE_IPC_CHANNELS.LIST_RUNTIMES),
+
     getSnapshot: (options?: RotationQueueViewOptions, runtimeKey?: string) => {
       const payload: RotationQueueSnapshotRequest = {
         runtimeKey,

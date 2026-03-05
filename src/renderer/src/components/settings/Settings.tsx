@@ -12,7 +12,8 @@ import {
   Key,
   MessageCircle,
   Network,
-  FileText
+  FileText,
+  ListOrdered
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -27,6 +28,7 @@ import { ApiKeysSettings } from './ApiKeysSettings';
 import { GeminiChatSettings } from './GeminiChatSettings';
 import { ProxySettings } from './ProxySettings';
 import { PromptSettings } from './PromptSettings';
+import { QueueMonitorSettings } from './QueueMonitorSettings';
 
 // Menu items configuration
 const menuItems: SettingsMenuItem[] = [
@@ -78,6 +80,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Quản lý proxy rotation để tránh rate limit',
     icon: Network 
   },
+  {
+    id: 'queueMonitor',
+    label: 'Queue Monitor',
+    desc: 'Quan sát hàng đợi, tài nguyên và luồng xử lý realtime',
+    icon: ListOrdered
+  },
 ];
 
 export function Settings() {
@@ -110,6 +118,7 @@ export function Settings() {
       {activeTab === 'apikeys' && <ApiKeysSettings onBack={handleBack} />}
       {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
       {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}
+      {activeTab === 'queueMonitor' && <QueueMonitorSettings onBack={handleBack} />}
     </div>
   );
 }
