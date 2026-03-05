@@ -10,6 +10,12 @@ interface UseHardsubSettingsOptions {
   thumbnailTextSecondaryGlobal: string;
 }
 
+type BulkThumbnailRow = {
+  indexZeroBased: number;
+  text1: string;
+  text2?: string;
+};
+
 function normalizeTextForCompare(value: string): string {
   return (value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
 }
@@ -194,6 +200,65 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     autoFillThumbnailByEpisode(value);
   };
 
+  const applyBulkThumbnailByOrder = (rows: BulkThumbnailRow[]): { appliedText1: number; appliedText2: number } => {
+    if (!selectedDraftPaths.length || !rows.length) {
+      return { appliedText1: 0, appliedText2: 0 };
+    }
+    const maxItems = selectedDraftPaths.length;
+    const normalizedRows = rows
+      .map((row) => ({
+        indexZeroBased: row.indexZeroBased,
+        text1: (row.text1 || '').trim(),
+        hasText2: Object.prototype.hasOwnProperty.call(row, 'text2'),
+        text2: typeof row.text2 === 'string' ? row.text2.trim() : '',
+      }))
+      .filter((row) => (
+        Number.isInteger(row.indexZeroBased)
+        && row.indexZeroBased >= 0
+        && row.indexZeroBased < maxItems
+        && row.text1.length > 0
+      ));
+
+    if (!normalizedRows.length) {
+      return { appliedText1: 0, appliedText2: 0 };
+    }
+
+    const text2Rows = normalizedRows.filter((row) => row.hasText2);
+
+    setThumbnailTextsByOrder((prev) => {
+      const next = prev.length === maxItems
+        ? [...prev]
+        : new Array(maxItems).fill('');
+      normalizedRows.forEach((row) => {
+        next[row.indexZeroBased] = row.text1;
+      });
+      return next;
+    });
+
+    if (text2Rows.length > 0) {
+      setThumbnailTextsSecondaryByOrder((prev) => {
+        const next = prev.length === maxItems
+          ? [...prev]
+          : new Array(maxItems).fill(options.thumbnailTextSecondaryGlobal || '');
+        text2Rows.forEach((row) => {
+          next[row.indexZeroBased] = row.text2;
+        });
+        return next;
+      });
+      setThumbnailTextSecondaryOverrideFlags((prev) => {
+        const next = prev.length === maxItems
+          ? [...prev]
+          : new Array(maxItems).fill(false);
+        text2Rows.forEach((row) => {
+          next[row.indexZeroBased] = true;
+        });
+        return next;
+      });
+    }
+
+    return { appliedText1: normalizedRows.length, appliedText2: text2Rows.length };
+  };
+
   const thumbnailFolderItems: ThumbnailFolderItem[] = isMultiFolder
     ? selectedDraftPaths.map((folderPath, idx) => {
         const folderName = folderPath.split(/[/\\]/).pop() || folderPath;
@@ -239,6 +304,7 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     hasMissingThumbnailText,
     updateThumbnailTextByOrder,
     setThumbnailTextSecondaryByOrder,
+    applyBulkThumbnailByOrder,
     resetThumbnailTextSecondaryOverride,
     handleAutoFillThumbnailByEpisode: () => autoFillThumbnailByEpisode(thumbnailAutoStartValue),
   };

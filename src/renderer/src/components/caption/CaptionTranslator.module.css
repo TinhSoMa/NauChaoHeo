@@ -841,6 +841,14 @@
   color: var(--color-text-secondary);
 }
 
+.thumbnailListHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .thumbnailListCountBadge {
   font-size: 10px;
   line-height: 1;
@@ -924,6 +932,98 @@
 
 .thumbnailAutoFillBtn:hover {
   border-color: var(--color-accent, #4a9eff);
+}
+
+.thumbnailListCopyBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.thumbnailListCopyStatus {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.thumbnailListCopyStatusSuccess {
+  border-color: rgba(16, 185, 129, 0.45);
+  color: var(--color-success, #10b981);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.thumbnailListCopyStatusError {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: var(--color-error, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.thumbnailBulkSection {
+  display: grid;
+  gap: 8px;
+}
+
+.thumbnailBulkTextarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 108px;
+  outline: none;
+}
+
+.thumbnailBulkTextarea:focus {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.thumbnailBulkActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.thumbnailBulkHint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.thumbnailBulkStatus {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.thumbnailBulkSuccess {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.thumbnailBulkWarning {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.thumbnailBulkError {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.thumbnailBulkDetail {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
 }
 
 .thumbnailListCard {

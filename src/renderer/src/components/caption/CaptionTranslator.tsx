@@ -19,6 +19,7 @@ import {
   HardsubTimingMetrics,
   Step,
   SubtitleEntry,
+  ThumbnailFolderItem,
   ThumbnailPreviewContextKey,
 } from './CaptionTypes';
 import { useCaptionSettings } from './hooks/useCaptionSettings';
@@ -35,7 +36,7 @@ import {
   updateCaptionSession,
 } from './hooks/captionSessionStore';
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
-import { ThumbnailListPanel } from './components/ThumbnailListPanel';
+import { BulkApplyResult, ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
@@ -117,6 +118,29 @@ type StepInspectionCache = {
   updatedAt: string;
   session: CaptionSessionV1;
 };
+
+type ParsedThumbnailBulkApplyRow = {
+  indexZeroBased: number;
+  text1: string;
+  text2?: string;
+  hasText2: boolean;
+};
+
+type ThumbnailBulkParseMode = 'json_lines' | 'json_plan';
+
+type ThumbnailBulkParseResult =
+  | {
+      ok: true;
+      mode: ThumbnailBulkParseMode;
+      sourceCount: number;
+      rows: ParsedThumbnailBulkApplyRow[];
+      notes: string[];
+    }
+  | {
+      ok: false;
+      errorLine: number;
+      errorMessage: string;
+    };
 
 const SENSITIVE_KEY_PATTERN = /(token|api[_-]?key|secret|password|authorization|cookie)/i;
 
@@ -366,6 +390,292 @@ function formatPercentDisplay(value: number | undefined, fallback = 0): string {
   const safe = Number.isFinite(value) ? (value as number) : fallback;
   const rounded = Math.round(safe * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const wildcard = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${wildcard}$`, 'i');
+}
+
+function parseIndexTarget(input: string): { ok: true; indexes: number[] } | { ok: false; error: string } {
+  const segments = input.split(',').map((part) => part.trim()).filter(Boolean);
+  if (!segments.length) {
+    return { ok: false, error: 'target rỗng.' };
+  }
+  const out = new Set<number>();
+  for (const segment of segments) {
+    const match = segment.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+    if (!match) {
+      return { ok: false, error: `target "${segment}" không hợp lệ.` };
+    }
+    const start = Number.parseInt(match[1], 10);
+    const end = match[2] ? Number.parseInt(match[2], 10) : start;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 1 || end < 1) {
+      return { ok: false, error: `target "${segment}" phải >= 1.` };
+    }
+    if (end < start) {
+      return { ok: false, error: `target "${segment}" có range ngược.` };
+    }
+    for (let idx = start; idx <= end; idx++) {
+      out.add(idx - 1);
+    }
+  }
+  return { ok: true, indexes: Array.from(out).sort((a, b) => a - b) };
+}
+
+function parseThumbnailBulkJsonLines(raw: string): ThumbnailBulkParseResult {
+  const lines = raw.split(/\r?\n/);
+  const rows: ParsedThumbnailBulkApplyRow[] = [];
+  let nonEmptyLineCount = 0;
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const lineNumber = idx + 1;
+    const sourceLine = lines[idx];
+    const trimmed = sourceLine.trim();
+    if (!trimmed) {
+      continue;
+    }
+    nonEmptyLineCount += 1;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'JSON không hợp lệ.';
+      return {
+        ok: false,
+        errorLine: lineNumber,
+        errorMessage: message,
+      };
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        errorLine: lineNumber,
+        errorMessage: 'Mỗi dòng phải là object JSON dạng {"text1":"...","text2":"..."}',
+      };
+    }
+
+    const row = parsed as Record<string, unknown>;
+    if (typeof row.text1 !== 'string' || !row.text1.trim()) {
+      return {
+        ok: false,
+        errorLine: lineNumber,
+        errorMessage: 'Thiếu text1 hoặc text1 không phải string.',
+      };
+    }
+
+    if (Object.prototype.hasOwnProperty.call(row, 'text2') && typeof row.text2 !== 'string') {
+      return {
+        ok: false,
+        errorLine: lineNumber,
+        errorMessage: 'text2 phải là string khi có khai báo.',
+      };
+    }
+
+    const parsedLine: ParsedThumbnailBulkApplyRow = {
+      indexZeroBased: rows.length,
+      text1: row.text1.trim(),
+      hasText2: Object.prototype.hasOwnProperty.call(row, 'text2'),
+    };
+    if (parsedLine.hasText2) {
+      parsedLine.text2 = (row.text2 as string).trim();
+    }
+    rows.push(parsedLine);
+  }
+
+  return {
+    ok: true,
+    mode: 'json_lines',
+    sourceCount: nonEmptyLineCount,
+    rows,
+    notes: [],
+  };
+}
+
+function isJsonPlanPayload(parsed: unknown): boolean {
+  if (Array.isArray(parsed)) {
+    return true;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return false;
+  }
+  const payload = parsed as Record<string, unknown>;
+  return Array.isArray(payload.blocks) || Array.isArray(payload.items) || Array.isArray(payload.rows) || Object.prototype.hasOwnProperty.call(payload, 'defaultText2');
+}
+
+function parseThumbnailBulkJsonPlan(
+  payload: unknown,
+  folderItems: ThumbnailFolderItem[]
+): ThumbnailBulkParseResult {
+  const root = (payload && typeof payload === 'object' && !Array.isArray(payload))
+    ? payload as Record<string, unknown>
+    : {};
+  const blocks = Array.isArray(payload)
+    ? payload as unknown[]
+    : Array.isArray(root.blocks)
+      ? root.blocks as unknown[]
+      : Array.isArray(root.items)
+        ? root.items as unknown[]
+        : Array.isArray(root.rows)
+          ? root.rows as unknown[]
+          : null;
+
+  if (!blocks) {
+    return {
+      ok: false,
+      errorLine: 1,
+      errorMessage: 'JSON plan cần mảng "blocks" (hoặc "items"/"rows").',
+    };
+  }
+
+  const defaultText2 = typeof root.defaultText2 === 'string' ? root.defaultText2.trim() : undefined;
+  const rowsByIndex = new Map<number, ParsedThumbnailBulkApplyRow>();
+  const notes: string[] = [];
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const blockLabel = `Block #${i + 1}`;
+    if (!block || typeof block !== 'object' || Array.isArray(block)) {
+      return {
+        ok: false,
+        errorLine: i + 1,
+        errorMessage: `${blockLabel} phải là object JSON.`,
+      };
+    }
+    const row = block as Record<string, unknown>;
+
+    let indexes: number[] = [];
+    if (typeof row.index === 'number' && Number.isFinite(row.index)) {
+      const indexZero = Math.trunc(row.index) - 1;
+      if (indexZero < 0) {
+        return {
+          ok: false,
+          errorLine: i + 1,
+          errorMessage: `${blockLabel}: index phải >= 1.`,
+        };
+      }
+      indexes = [indexZero];
+    } else if (typeof row.target === 'string' && row.target.trim()) {
+      const parsedTarget = parseIndexTarget(row.target.trim());
+      if (!parsedTarget.ok) {
+        return {
+          ok: false,
+          errorLine: i + 1,
+          errorMessage: `${blockLabel}: ${parsedTarget.error}`,
+        };
+      }
+      indexes = parsedTarget.indexes;
+    } else if (typeof row.match === 'string' && row.match.trim()) {
+      const matcher = wildcardToRegExp(row.match.trim());
+      indexes = folderItems
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item }) => matcher.test(item.folderName) || matcher.test(item.folderPath))
+        .map(({ idx }) => idx);
+      if (!indexes.length) {
+        notes.push(`${blockLabel}: không match folder nào (${row.match}).`);
+      }
+    } else {
+      return {
+        ok: false,
+        errorLine: i + 1,
+        errorMessage: `${blockLabel}: thiếu target/index/match để map video.`,
+      };
+    }
+
+    const hasText2 = Object.prototype.hasOwnProperty.call(row, 'text2');
+    if (hasText2 && typeof row.text2 !== 'string') {
+      return {
+        ok: false,
+        errorLine: i + 1,
+        errorMessage: `${blockLabel}: text2 phải là string khi có khai báo.`,
+      };
+    }
+    const text2Value = hasText2 ? (row.text2 as string).trim() : undefined;
+
+    const hasTemplate = typeof row.text1Template === 'string' && row.text1Template.trim().length > 0;
+    const hasText1 = typeof row.text1 === 'string' && row.text1.trim().length > 0;
+    const hasEpisodeStart = typeof row.episodeStart === 'number' && Number.isFinite(row.episodeStart);
+    const episodeStart = hasEpisodeStart ? Math.trunc(row.episodeStart as number) : 1;
+
+    if (!hasTemplate && !hasText1 && !hasEpisodeStart) {
+      return {
+        ok: false,
+        errorLine: i + 1,
+        errorMessage: `${blockLabel}: cần text1 hoặc text1Template hoặc episodeStart.`,
+      };
+    }
+
+    const orderedIndexes = Array.from(new Set(indexes)).sort((a, b) => a - b);
+    orderedIndexes.forEach((indexZeroBased, localPos) => {
+      if (indexZeroBased < 0 || indexZeroBased >= folderItems.length) {
+        return;
+      }
+      let text1 = '';
+      if (hasText1) {
+        text1 = (row.text1 as string).trim();
+      } else {
+        const template = hasTemplate ? (row.text1Template as string) : 'Tập {n}';
+        const valueN = episodeStart + localPos;
+        text1 = template.replace(/\{n\}/g, String(valueN)).trim();
+      }
+      if (!text1) {
+        return;
+      }
+      rowsByIndex.set(indexZeroBased, {
+        indexZeroBased,
+        text1,
+        hasText2,
+        ...(hasText2 ? { text2: text2Value } : {}),
+      });
+    });
+  }
+
+  if (typeof defaultText2 === 'string') {
+    rowsByIndex.forEach((value, key) => {
+      if (!value.hasText2) {
+        rowsByIndex.set(key, {
+          ...value,
+          hasText2: true,
+          text2: defaultText2,
+        });
+      }
+    });
+  }
+
+  return {
+    ok: true,
+    mode: 'json_plan',
+    sourceCount: blocks.length,
+    rows: Array.from(rowsByIndex.values()).sort((a, b) => a.indexZeroBased - b.indexZeroBased),
+    notes,
+  };
+}
+
+function parseThumbnailBulkInput(raw: string, folderItems: ThumbnailFolderItem[]): ThumbnailBulkParseResult {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) {
+    return {
+      ok: true,
+      mode: 'json_lines',
+      sourceCount: 0,
+      rows: [],
+      notes: [],
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (isJsonPlanPayload(parsed)) {
+      return parseThumbnailBulkJsonPlan(parsed, folderItems);
+    }
+  } catch {
+    // Fallback to JSON lines parser below.
+  }
+
+  return parseThumbnailBulkJsonLines(raw);
 }
 
 export function CaptionTranslator() {
@@ -1396,6 +1706,13 @@ export function CaptionTranslator() {
           : (hardsubSettings.thumbnailTextSecondary || '')
       )
     : (settings.thumbnailTextSecondary || '');
+  const videoNameByFolderPath = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    Object.entries(fileManager.folderVideos || {}).forEach(([folderPath, info]) => {
+      map[folderPath] = info?.name || '';
+    });
+    return map;
+  }, [fileManager.folderVideos]);
   const thumbnailPreviewSourceLabel = settings.inputType === 'draft'
     ? (thumbnailPreviewFolderPathResolved
       ? `Nguồn: ${getPathBaseName(thumbnailPreviewFolderPathResolved)}`
@@ -1423,6 +1740,76 @@ export function CaptionTranslator() {
     }
     settings.setThumbnailTextSecondary(value);
   }, [hardsubSettings, isMultiFolder, settings, thumbnailPreviewFolderIndex]);
+
+  const handleBulkApplyJsonLines = useCallback((raw: string): BulkApplyResult => {
+    const folderCount = hardsubSettings.thumbnailFolderItems.length;
+    if (!folderCount) {
+      return {
+        status: 'warning',
+        summary: 'Chưa có folder để áp dụng.',
+      };
+    }
+
+    const parsed = parseThumbnailBulkInput(raw || '', hardsubSettings.thumbnailFolderItems);
+    if (!parsed.ok) {
+      return {
+        status: 'error',
+        summary: `Lỗi dòng ${parsed.errorLine}.`,
+        detail: parsed.errorMessage,
+      };
+    }
+
+    if (parsed.rows.length === 0) {
+      return {
+        status: 'warning',
+        summary: 'Không có dòng JSON hợp lệ để áp dụng.',
+        detail: 'Dùng JSON Lines hoặc JSON plan có blocks.',
+      };
+    }
+
+    const rowsForApply = parsed.rows
+      .filter((row) => row.indexZeroBased >= 0 && row.indexZeroBased < folderCount)
+      .map((row) => ({
+      indexZeroBased: row.indexZeroBased,
+      text1: row.text1,
+      ...(row.hasText2 ? { text2: row.text2 || '' } : {}),
+    }));
+
+    if (!rowsForApply.length) {
+      return {
+        status: 'warning',
+        summary: 'Không có mapping hợp lệ với danh sách folder hiện tại.',
+      };
+    }
+
+    const applyResult = hardsubSettings.applyBulkThumbnailByOrder(rowsForApply);
+
+    const notes: string[] = [...parsed.notes];
+    if (parsed.mode === 'json_lines') {
+      const missing = Math.max(0, folderCount - parsed.sourceCount);
+      const overflow = Math.max(0, parsed.sourceCount - folderCount);
+      if (missing > 0) {
+        notes.push(`Thiếu ${missing} dòng so với số folder.`);
+      }
+      if (overflow > 0) {
+        notes.push(`Dư ${overflow} dòng đã bỏ qua.`);
+      }
+    } else {
+      const covered = new Set(rowsForApply.map((row) => row.indexZeroBased)).size;
+      if (covered < folderCount) {
+        notes.push(`Đã map ${covered}/${folderCount} folder.`);
+      }
+    }
+
+    const status: BulkApplyResult['status'] = notes.length > 0 ? 'warning' : 'success';
+    const modeLabel = parsed.mode === 'json_plan' ? 'JSON plan' : 'JSON lines';
+
+    return {
+      status,
+      summary: `[${modeLabel}] Đã áp dụng ${applyResult.appliedText1}/${folderCount} dòng (Text2: ${applyResult.appliedText2}).`,
+      detail: notes.join(' '),
+    };
+  }, [hardsubSettings]);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -3430,6 +3817,7 @@ export function CaptionTranslator() {
                 isMultiFolder
               }
               items={hardsubSettings.thumbnailFolderItems}
+              videoNameByFolderPath={videoNameByFolderPath}
               autoStartValue={hardsubSettings.thumbnailAutoStartValue}
               onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
               secondaryGlobalText={hardsubSettings.thumbnailTextSecondary}
@@ -3440,6 +3828,7 @@ export function CaptionTranslator() {
               onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
               onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
               onResetSecondaryOverride={hardsubSettings.resetThumbnailTextSecondaryOverride}
+              onBulkApplyJsonLines={handleBulkApplyJsonLines}
               showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
               dependencyWarning={step7DependencyWarning}
             />
