@@ -1155,6 +1155,7 @@ export function CaptionTranslator() {
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('live');
+  const [thumbnailPreviewFolderPath, setThumbnailPreviewFolderPath] = useState('');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
@@ -1319,6 +1320,38 @@ export function CaptionTranslator() {
     }
   }, [previewMode, renderedPreviewVideoPath]);
 
+  useEffect(() => {
+    if (settings.inputType !== 'draft') {
+      if (thumbnailPreviewFolderPath) {
+        setThumbnailPreviewFolderPath('');
+      }
+      return;
+    }
+    const selectedPaths = hardsubSettings.selectedDraftPaths;
+    if (!selectedPaths.length) {
+      if (thumbnailPreviewFolderPath) {
+        setThumbnailPreviewFolderPath('');
+      }
+      return;
+    }
+    if (thumbnailPreviewFolderPath && selectedPaths.includes(thumbnailPreviewFolderPath)) {
+      return;
+    }
+    const fallbackPath = (
+      (processing.currentFolder?.path && selectedPaths.includes(processing.currentFolder.path))
+        ? processing.currentFolder.path
+        : selectedPaths[0]
+    ) || '';
+    if (fallbackPath !== thumbnailPreviewFolderPath) {
+      setThumbnailPreviewFolderPath(fallbackPath);
+    }
+  }, [
+    hardsubSettings.selectedDraftPaths,
+    processing.currentFolder?.path,
+    settings.inputType,
+    thumbnailPreviewFolderPath,
+  ]);
+
   const effectivePreviewMode: 'render' | 'live' =
     previewMode === 'render' && renderedPreviewVideoPath ? 'render' : 'live';
   const previewVideoPath = effectivePreviewMode === 'render'
@@ -1328,9 +1361,23 @@ export function CaptionTranslator() {
     ? []
     : (sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries);
   const firstFolderVideoInfo = firstFolderPath ? fileManager.folderVideos[firstFolderPath] : null;
-  const thumbnailPreviewVideoPath = firstFolderVideoInfo?.fullPath || fileManager.firstVideoPath || null;
+  const thumbnailPreviewFolderPathResolved = settings.inputType === 'draft'
+    ? (
+        (isMultiFolder
+          ? (thumbnailPreviewFolderPath || processing.currentFolder?.path || firstFolderPath)
+          : (processing.currentFolder?.path || firstFolderPath)
+        ) || ''
+      )
+    : '';
+  const thumbnailPreviewFolderIndex = settings.inputType === 'draft'
+    ? hardsubSettings.selectedDraftPaths.findIndex((path) => path === thumbnailPreviewFolderPathResolved)
+    : -1;
+  const thumbnailPreviewVideoInfo = thumbnailPreviewFolderPathResolved
+    ? fileManager.folderVideos[thumbnailPreviewFolderPathResolved]
+    : null;
+  const thumbnailPreviewVideoPath = thumbnailPreviewVideoInfo?.fullPath || firstFolderVideoInfo?.fullPath || fileManager.firstVideoPath || null;
   const thumbnailPreviewInputPath = settings.inputType === 'draft'
-    ? (firstFolderPath || getInputPaths('draft', fileManager.filePath)[0] || '')
+    ? (thumbnailPreviewFolderPathResolved || firstFolderPath || '')
     : fileManager.filePath;
   const thumbnailPreviewContextKey: ThumbnailPreviewContextKey | null = (projectId && thumbnailPreviewInputPath)
     ? {
@@ -1340,11 +1387,42 @@ export function CaptionTranslator() {
       }
     : null;
   const thumbnailPreviewText = isMultiFolder
-    ? (hardsubSettings.thumbnailTextsByOrder[0] || '')
+    ? (thumbnailPreviewFolderIndex >= 0 ? (hardsubSettings.thumbnailTextsByOrder[thumbnailPreviewFolderIndex] || '') : '')
     : hardsubSettings.thumbnailText;
   const thumbnailPreviewSecondaryText = isMultiFolder
-    ? (hardsubSettings.thumbnailTextsSecondaryByOrder[0] || '')
+    ? (
+        thumbnailPreviewFolderIndex >= 0
+          ? (hardsubSettings.thumbnailTextsSecondaryByOrder[thumbnailPreviewFolderIndex] || '')
+          : (hardsubSettings.thumbnailTextSecondary || '')
+      )
     : (settings.thumbnailTextSecondary || '');
+  const thumbnailPreviewSourceLabel = settings.inputType === 'draft'
+    ? (thumbnailPreviewFolderPathResolved
+      ? `Nguồn: ${getPathBaseName(thumbnailPreviewFolderPathResolved)}`
+      : 'Nguồn: folder hiện tại')
+    : 'Nguồn: file hiện tại';
+
+  const handleThumbnailPreviewTextChange = useCallback((value: string) => {
+    if (isMultiFolder) {
+      if (thumbnailPreviewFolderIndex < 0) {
+        return;
+      }
+      hardsubSettings.updateThumbnailTextByOrder(thumbnailPreviewFolderIndex, value);
+      return;
+    }
+    hardsubSettings.setThumbnailText(value);
+  }, [hardsubSettings, isMultiFolder, thumbnailPreviewFolderIndex]);
+
+  const handleThumbnailPreviewSecondaryTextChange = useCallback((value: string) => {
+    if (isMultiFolder) {
+      if (thumbnailPreviewFolderIndex < 0) {
+        return;
+      }
+      hardsubSettings.setThumbnailTextSecondaryByOrder(thumbnailPreviewFolderIndex, value);
+      return;
+    }
+    settings.setThumbnailTextSecondary(value);
+  }, [hardsubSettings, isMultiFolder, settings, thumbnailPreviewFolderIndex]);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -3463,6 +3541,22 @@ export function CaptionTranslator() {
                 Thumbnail
               </button>
             </div>
+            {activePreviewTab === 'thumbnail' && settings.inputType === 'draft' && isMultiFolder && (
+              <div className={styles.thumbnailFolderPicker}>
+                <select
+                  className={styles.thumbnailFolderSelect}
+                  value={thumbnailPreviewFolderPathResolved}
+                  onChange={(e) => setThumbnailPreviewFolderPath(e.target.value)}
+                  title="Chọn folder để chỉnh text thumbnail trực tiếp trên preview"
+                >
+                  {hardsubSettings.selectedDraftPaths.map((path, index) => (
+                    <option key={path} value={path}>
+                      {index + 1}. {getPathBaseName(path)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div className={styles.stageBody}>
@@ -3505,15 +3599,15 @@ export function CaptionTranslator() {
               <div className={styles.previewSurface}>
                 <ThumbnailPreviewPanel
                   videoPath={thumbnailPreviewVideoPath}
-                  sourceLabel={isMultiFolder ? 'Nguồn: folder đầu tiên' : 'Nguồn: folder hiện tại'}
+                  sourceLabel={thumbnailPreviewSourceLabel}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
                   thumbnailText={thumbnailPreviewText}
                   thumbnailTextSecondary={thumbnailPreviewSecondaryText}
-                  thumbnailTextReadOnly={isMultiFolder}
-                  thumbnailTextHelper={isMultiFolder ? 'Multi-folder: chỉnh text ở danh sách bên trái.' : undefined}
-                  onThumbnailTextChange={isMultiFolder ? undefined : hardsubSettings.setThumbnailText}
-                  onThumbnailTextSecondaryChange={isMultiFolder ? undefined : settings.setThumbnailTextSecondary}
+                  thumbnailTextReadOnly={false}
+                  thumbnailTextHelper={undefined}
+                  onThumbnailTextChange={handleThumbnailPreviewTextChange}
+                  onThumbnailTextSecondaryChange={handleThumbnailPreviewSecondaryTextChange}
                   thumbnailFrameTimeSec={settings.thumbnailFrameTimeSec}
                   onThumbnailFrameTimeSecChange={settings.setThumbnailFrameTimeSec}
                   thumbnailFontName={settings.thumbnailFontName}
