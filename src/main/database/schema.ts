@@ -181,6 +181,8 @@ export function initDatabase(): void {
       user_agent TEXT,
       accept_language TEXT,
       platform TEXT,
+      "__Secure-1PSID" TEXT,
+      "__Secure-1PSIDTS" TEXT,
       is_active INTEGER DEFAULT 1,
       is_error INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
@@ -456,6 +458,14 @@ export function initDatabase(): void {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN is_error INTEGER DEFAULT 0');
         console.log('[Database] Added missing column: is_error');
     }
+    if (!columnNames.includes('__Secure-1PSID')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN "__Secure-1PSID" TEXT');
+        console.log('[Database] Added missing column: __Secure-1PSID');
+    }
+    if (!columnNames.includes('__Secure-1PSIDTS')) {
+        db.exec('ALTER TABLE gemini_chat_config ADD COLUMN "__Secure-1PSIDTS" TEXT');
+        console.log('[Database] Added missing column: __Secure-1PSIDTS');
+    }
   } catch (e) {
       console.error('[Database] Migration error:', e);
   }
@@ -512,5 +522,42 @@ export function initDatabase(): void {
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
   }
+
+  // Migration: backfill __Secure-1PSID / __Secure-1PSIDTS from legacy cookie column
+  try {
+    const rows = db
+      .prepare('SELECT id, cookie, "__Secure-1PSID" as secure_1psid, "__Secure-1PSIDTS" as secure_1psidts FROM gemini_chat_config')
+      .all() as any[];
+    const updateSecureColumns = db.prepare(
+      'UPDATE gemini_chat_config SET "__Secure-1PSID" = ?, "__Secure-1PSIDTS" = ?, updated_at = ? WHERE id = ?',
+    );
+    const now = Date.now();
+    let updatedCount = 0;
+
+    for (const row of rows) {
+      if (row.secure_1psid && row.secure_1psidts) {
+        continue;
+      }
+      const cookie = String(row.cookie || '').trim();
+      if (!cookie) {
+        continue;
+      }
+      const parsed1psid = cookie.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || null;
+      const parsed1psidts = cookie.match(/__Secure-1PSIDTS=([^;\s]+)/)?.[1] || null;
+      if (!parsed1psid || !parsed1psidts) {
+        continue;
+      }
+
+      updateSecureColumns.run(parsed1psid, parsed1psidts, now, row.id);
+      updatedCount += 1;
+    }
+
+    if (updatedCount > 0) {
+      console.log(`[Database] Backfilled secure cookie columns for ${updatedCount} gemini_chat_config rows`);
+    }
+  } catch (e) {
+    console.error('[Database] Backfill secure cookie columns failed:', e);
+  }
+
   console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies)');
 }

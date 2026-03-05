@@ -18,6 +18,19 @@ export interface PythonRuntimeCheckResult {
   mode?: 'embedded' | 'system';
 }
 
+export interface PythonModuleAvailabilityOptions {
+  preferredVersion?: string;
+}
+
+export interface PythonModuleAvailabilityResult {
+  success: boolean;
+  runtime?: PythonRuntimeResolution;
+  error?: string;
+  mode?: 'embedded' | 'system';
+  modules?: Record<string, boolean>;
+  errorCode?: 'PYTHON_RUNTIME_MISSING' | 'PYTHON_MODULE_MISSING';
+}
+
 interface CommandResult {
   code: number | null;
   stdout: string;
@@ -134,6 +147,124 @@ export async function checkPycapcutAvailability(): Promise<PythonRuntimeCheckRes
     return { success: false, mode: 'embedded', error: 'Runtime Python nhúng bị thiếu/hỏng, cần cài lại app.' };
   }
   return { success: false, mode: 'system', error: 'Không tìm thấy Python (py -3 hoặc python) trong PATH.' };
+}
+
+export async function checkPythonModuleAvailability(
+  modules: string[],
+  options: PythonModuleAvailabilityOptions = {},
+): Promise<PythonModuleAvailabilityResult> {
+  const normalizedModules = Array.from(new Set(modules.map((value) => value.trim()).filter(Boolean)));
+  if (normalizedModules.length === 0) {
+    return {
+      success: false,
+      errorCode: 'PYTHON_MODULE_MISSING',
+      error: 'No Python modules were provided for availability check.',
+    };
+  }
+
+  const runtimes = await resolvePythonRuntimeCandidates(options.preferredVersion ?? '3.12');
+  if (runtimes.length === 0) {
+    return {
+      success: false,
+      mode: app.isPackaged ? 'embedded' : 'system',
+      errorCode: 'PYTHON_RUNTIME_MISSING',
+      error: app.isPackaged
+        ? 'Runtime Python nhúng bị thiếu/hỏng, cần cài lại app.'
+        : 'Không tìm thấy Python runtime phù hợp (ưu tiên py -3.12).',
+    };
+  }
+
+  const importScript = normalizedModules.map((name) => `import ${name}`).join('; ');
+  let lastModuleFailure: { runtime: PythonRuntimeResolution; modules: Record<string, boolean>; detail: string } | null = null;
+
+  for (const runtime of runtimes) {
+    const result = await runCommand(runtime.command, [...runtime.baseArgs, '-c', importScript], runtime.mode);
+    if (result.code === 0) {
+      const okModules: Record<string, boolean> = {};
+      for (const name of normalizedModules) {
+        okModules[name] = true;
+      }
+      return {
+        success: true,
+        runtime,
+        mode: runtime.mode,
+        modules: okModules,
+      };
+    }
+
+    const moduleFlags: Record<string, boolean> = {};
+    const detailText = `${result.stderr || result.error || result.stdout || ''}`.toLowerCase();
+    for (const name of normalizedModules) {
+      moduleFlags[name] = !detailText.includes(`no module named '${name.toLowerCase()}'`);
+    }
+    lastModuleFailure = {
+      runtime,
+      modules: moduleFlags,
+      detail: (result.stderr || result.error || result.stdout || '').trim(),
+    };
+  }
+
+  return {
+    success: false,
+    runtime: lastModuleFailure?.runtime,
+    mode: lastModuleFailure?.runtime.mode ?? 'system',
+    modules: lastModuleFailure?.modules,
+    errorCode: 'PYTHON_MODULE_MISSING',
+    error:
+      lastModuleFailure?.detail ||
+      `Thiếu module Python: ${normalizedModules.join(', ')}. Hãy cài lại bằng pip theo runtime đang dùng.`,
+  };
+}
+
+async function resolvePythonRuntimeCandidates(preferredVersion: string): Promise<PythonRuntimeResolution[]> {
+  const candidates: PythonRuntimeResolution[] = [];
+  const embeddedPath = getEmbeddedPythonPath();
+
+  if (existsSync(embeddedPath)) {
+    candidates.push({
+      command: embeddedPath,
+      baseArgs: [],
+      mode: 'embedded',
+      pythonPath: embeddedPath,
+      installHint: `${embeddedPath} -m pip install`,
+    });
+  } else if (app.isPackaged) {
+    return [];
+  }
+
+  const preferred = preferredVersion.trim() || '3.12';
+  const systemCandidates: PythonRuntimeResolution[] = [
+    {
+      command: 'py',
+      baseArgs: [`-${preferred}`],
+      mode: 'system',
+      pythonPath: `py -${preferred}`,
+      installHint: `py -${preferred} -m pip install`,
+    },
+    {
+      command: 'py',
+      baseArgs: ['-3'],
+      mode: 'system',
+      pythonPath: 'py -3',
+      installHint: 'py -3 -m pip install',
+    },
+    {
+      command: 'python',
+      baseArgs: [],
+      mode: 'system',
+      pythonPath: 'python',
+      installHint: 'python -m pip install',
+    },
+  ];
+
+  for (const candidate of systemCandidates) {
+    const check = await runCommand(candidate.command, [...candidate.baseArgs, '--version'], 'system');
+    if (check.code === 0) {
+      candidates.push(candidate);
+    }
+  }
+
+  return candidates;
 }
 
 function runCommand(command: string, args: string[], mode: 'embedded' | 'system'): Promise<CommandResult> {

@@ -21,6 +21,11 @@ export interface ValidationResult {
   errors: string[];
 }
 
+export interface SaveRefreshedCookieResult {
+  success: boolean;
+  error?: string;
+}
+
 export class ConfigurationService {
   private db: Database.Database;
   private cachedConfig: GeminiCookieConfig | null = null;
@@ -173,6 +178,37 @@ export class ConfigurationService {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  }
+
+  /**
+   * Save refreshed cookie while preserving required metadata from current row.
+   * This avoids changing public saveConfig behavior used by existing features.
+   */
+  saveRefreshedCookieSafely(cookie: string): SaveRefreshedCookieResult {
+    const normalizedCookie = (cookie || '').trim();
+    if (!normalizedCookie) {
+      return { success: false, error: 'Cookie is empty' };
+    }
+
+    const existing = this.getActiveConfig();
+    if (!existing) {
+      return {
+        success: false,
+        error: 'Cannot update SQLite cookie because no existing gemini_cookie metadata is available',
+      };
+    }
+
+    const saveResult = this.saveConfig({
+      cookie: normalizedCookie,
+      blLabel: existing.blLabel,
+      fSid: existing.fSid,
+      atToken: existing.atToken,
+      reqId: existing.reqId,
+    });
+
+    return saveResult.success
+      ? { success: true }
+      : { success: false, error: saveResult.error || 'Unknown error while saving refreshed cookie' };
   }
 
   /**

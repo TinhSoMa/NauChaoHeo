@@ -30,6 +30,7 @@ export interface AppSettings {
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
   capcutTtsSecrets: CapcutTtsSecrets;
+  geminiWebApiCookieFallback: GeminiWebApiCookieFallback;
 }
 
 export interface CapcutTtsSecrets {
@@ -39,6 +40,12 @@ export interface CapcutTtsSecrets {
   userAgent: string | null;
   xSsDp: string | null;
   extraHeaders: Record<string, string> | null;
+}
+
+export interface GeminiWebApiCookieFallback {
+  cookie: string | null;
+  sourceBrowser: 'chrome' | 'edge' | null;
+  updatedAt: number | null;
 }
 
 export interface CaptionTypographyLayoutDefaults {
@@ -239,6 +246,15 @@ function normalizeCapcutTtsSecrets(value: unknown): CapcutTtsSecrets {
   };
 }
 
+function normalizeGeminiWebApiCookieFallback(value: unknown): GeminiWebApiCookieFallback {
+  const src = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    cookie: normalizeStringOrNull(src.cookie),
+    sourceBrowser: src.sourceBrowser === 'chrome' || src.sourceBrowser === 'edge' ? src.sourceBrowser : null,
+    updatedAt: isFiniteNumber(src.updatedAt) ? src.updatedAt : null,
+  };
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
@@ -262,6 +278,11 @@ const DEFAULT_SETTINGS: AppSettings = {
     userAgent: null,
     xSsDp: null,
     extraHeaders: null,
+  },
+  geminiWebApiCookieFallback: {
+    cookie: null,
+    sourceBrowser: null,
+    updatedAt: null,
   },
 };
 
@@ -300,6 +321,7 @@ class AppSettingsServiceClass {
           ...loaded,
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
+          geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
         };
         console.log('[AppSettings] Loaded settings successfully');
       } else {
@@ -350,6 +372,9 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'capcutTtsSecrets')) {
       nextPartial.capcutTtsSecrets = normalizeCapcutTtsSecrets(partial.capcutTtsSecrets);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'geminiWebApiCookieFallback')) {
+      nextPartial.geminiWebApiCookieFallback = normalizeGeminiWebApiCookieFallback(partial.geminiWebApiCookieFallback);
     }
     this.settings = { ...this.settings, ...nextPartial };
     this.save();
