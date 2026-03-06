@@ -1024,6 +1024,12 @@ export function CaptionTranslator() {
     thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
     thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary || '',
   });
+  const thumbnailSessionHydrationKey = useMemo(
+    () => `${projectId || ''}::${settings.inputType}::${fileManager.filePath || ''}`,
+    [projectId, settings.inputType, fileManager.filePath]
+  );
+  const thumbnailSessionHydratedKeyRef = useRef<string | null>(null);
+  const [thumbnailSessionHydrationRevision, setThumbnailSessionHydrationRevision] = useState(0);
 
   const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
     fontSizeScaleVersion: settings.fontSizeScaleVersion,
@@ -1138,10 +1144,12 @@ export function CaptionTranslator() {
   // Chỉ hydrate field theo folder từ session: thumbnail text/list.
   useEffect(() => {
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
+    thumbnailSessionHydratedKeyRef.current = null;
     if (!inputPaths.length) {
       return;
     }
     let cancelled = false;
+    const currentHydrationKey = thumbnailSessionHydrationKey;
     const hydrateFolderFields = async () => {
       if (inputPaths.length > 1) {
         const texts: string[] = [];
@@ -1182,13 +1190,19 @@ export function CaptionTranslator() {
       }
     };
 
-    hydrateFolderFields().catch((error) => {
-      console.warn('[CaptionTranslator] Không thể hydrate field theo folder từ session', error);
-    });
+    hydrateFolderFields()
+      .catch((error) => {
+        console.warn('[CaptionTranslator] Không thể hydrate field theo folder từ session', error);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        thumbnailSessionHydratedKeyRef.current = currentHydrationKey;
+        setThumbnailSessionHydrationRevision((prev) => prev + 1);
+      });
     return () => {
       cancelled = true;
     };
-  }, [fileManager.filePath, projectId, settings.inputType]);
+  }, [fileManager.filePath, projectId, settings.inputType, thumbnailSessionHydrationKey]);
 
   // Đồng bộ mirror settings revision từ project-default vào từng session folder.
   useEffect(() => {
@@ -1255,6 +1269,7 @@ export function CaptionTranslator() {
   useEffect(() => {
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
     if (!inputPaths.length) return;
+    if (thumbnailSessionHydratedKeyRef.current !== thumbnailSessionHydrationKey) return;
     const persistThumbnailText = async () => {
       if (inputPaths.length > 1) {
         for (let i = 0; i < inputPaths.length; i++) {
@@ -1351,6 +1366,8 @@ export function CaptionTranslator() {
     settings.thumbnailLineHeightRatio,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
+    thumbnailSessionHydrationKey,
+    thumbnailSessionHydrationRevision,
   ]);
 
   // 4. Processing Hook
