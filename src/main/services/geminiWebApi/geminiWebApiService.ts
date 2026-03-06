@@ -119,7 +119,7 @@ export class GeminiWebApiService {
       );
     } catch (error) {
       const classified = this.classifyBridgeError(error);
-      const failed = {
+      const failed: GeminiCookieRefreshResult = {
         success: false,
         cookieSource: 'none',
         updatedPrimary: false,
@@ -133,13 +133,13 @@ export class GeminiWebApiService {
     }
 
     if (!response.success || !response.data?.cookie) {
-      const failed = {
+      const failed: GeminiCookieRefreshResult = {
         success: false,
         cookieSource: 'none',
         updatedPrimary: false,
         updatedFallback: false,
         warnings: [],
-        errorCode: response.errorCode || 'COOKIE_NOT_FOUND',
+        errorCode: this.normalizeGeminiErrorCode(response.errorCode, 'COOKIE_NOT_FOUND'),
         error: response.error || 'No cookie returned by browser refresh',
       };
       getGeminiWebApiOpsMonitor().recordCookieRefreshResult(options.accountConfigId, failed);
@@ -148,7 +148,7 @@ export class GeminiWebApiService {
 
     const parsed = parseGeminiCookieTokens(response.data.cookie);
     if (!parsed.secure1psid || !parsed.secure1psidts) {
-      const failed = {
+      const failed: GeminiCookieRefreshResult = {
         success: false,
         cookieSource: 'none',
         sourceBrowser: response.data.sourceBrowser,
@@ -170,7 +170,7 @@ export class GeminiWebApiService {
     const cookieSource = this.cookieStore.getCookieSourceAfterRefresh(persist.updatedPrimary, persist.updatedFallback);
 
     if (!persist.updatedPrimary && !persist.updatedFallback) {
-      const failed = {
+      const failed: GeminiCookieRefreshResult = {
         success: false,
         cookieSource,
         sourceBrowser: response.data.sourceBrowser,
@@ -188,7 +188,7 @@ export class GeminiWebApiService {
       `[GeminiWebApiService] Refreshed cookie (${response.data.sourceBrowser}) 1PSID=${maskSecret(parsed.secure1psid)} 1PSIDTS=${maskSecret(parsed.secure1psidts)}`,
     );
 
-    const successResult = {
+    const successResult: GeminiCookieRefreshResult = {
       success: true,
       cookieSource,
       sourceBrowser: response.data.sourceBrowser,
@@ -241,9 +241,9 @@ export class GeminiWebApiService {
       });
 
       if (!refresh.success) {
-        const failed = {
+        const failed: GeminiGenerateResult = {
           success: false,
-          errorCode: refresh.errorCode || 'COOKIE_NOT_FOUND',
+          errorCode: this.normalizeGeminiErrorCode(refresh.errorCode, 'COOKIE_NOT_FOUND'),
           error: refresh.error || 'Unable to refresh browser cookie',
           cookieSource: refresh.cookieSource,
           refreshed: false,
@@ -266,7 +266,7 @@ export class GeminiWebApiService {
     }
 
     if (!secure1psid || !secure1psidts) {
-      const failed = {
+      const failed: GeminiGenerateResult = {
         success: false,
         errorCode: 'COOKIE_INVALID',
         error: 'Cookie is missing __Secure-1PSID or __Secure-1PSIDTS',
@@ -302,7 +302,7 @@ export class GeminiWebApiService {
       );
     } catch (error) {
       const classified = this.classifyBridgeError(error);
-      const failed = {
+      const failed: GeminiGenerateResult = {
         success: false,
         errorCode: classified.errorCode,
         error: classified.error,
@@ -321,9 +321,9 @@ export class GeminiWebApiService {
     }
 
     if (!response.success) {
-      const failed = {
+      const failed: GeminiGenerateResult = {
         success: false,
-        errorCode: response.errorCode || 'GEMINI_REQUEST_FAILED',
+        errorCode: this.normalizeGeminiErrorCode(response.errorCode, 'GEMINI_REQUEST_FAILED'),
         error: response.error || 'Gemini request failed',
         cookieSource: resolved.source,
         refreshed,
@@ -344,7 +344,7 @@ export class GeminiWebApiService {
       this.conversationMetadataByKey.set(conversationStoreKey, outputConversationMetadata);
     }
 
-    const successResult = {
+    const successResult: GeminiGenerateResult = {
       success: true,
       text: response.data?.text || '',
       cookieSource: resolved.source,
@@ -380,6 +380,23 @@ export class GeminiWebApiService {
     }
 
     return { errorCode: 'GEMINI_REQUEST_FAILED', error: text };
+  }
+
+  private normalizeGeminiErrorCode(
+    value: string | undefined,
+    fallback: GeminiErrorCode
+  ): GeminiErrorCode {
+    switch (value) {
+      case 'PYTHON_RUNTIME_MISSING':
+      case 'PYTHON_MODULE_MISSING':
+      case 'COOKIE_NOT_FOUND':
+      case 'COOKIE_INVALID':
+      case 'GEMINI_REQUEST_FAILED':
+      case 'GEMINI_TIMEOUT':
+        return value;
+      default:
+        return fallback;
+    }
   }
 
   private buildConversationStoreKey(request: GeminiGenerateRequest): string | null {
