@@ -1,7 +1,11 @@
-import { Dispatch, SetStateAction, useRef, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import {
   Chapter,
+  StoryCancelGeminiWebQueueBatchResult,
   PreparePromptResult,
+  StoryGeminiWebQueueCapacity,
+  StoryGeminiWebQueueSnapshot,
+  StoryGeminiWebQueueStreamEvent,
   STORY_IPC_CHANNELS,
   StoryTranslateGeminiWebQueueResult
 } from '@shared/types';
@@ -27,30 +31,79 @@ interface UseStoryGeminiWebQueueTranslationParams {
   setChapterMethods: Dispatch<SetStateAction<Map<string, 'api' | 'token'>>>;
 }
 
-const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
-const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
-const STORY_GEMINI_WEB_QUEUE_SERVICE_ID = 'story-translator-ui';
-const AUTO_WORKERS_FALLBACK = 3;
 const AUTO_WORKERS_MAX = 8;
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function asNumber(value: unknown, fallback = 0): number {
-  return Number.isFinite(value) ? Number(value) : fallback;
-}
 
 function clampWorkers(value: number): number {
   return Math.max(1, Math.min(AUTO_WORKERS_MAX, Math.round(value)));
+}
+
+function applyStoryQueueEventToProcessingMap(
+  prev: Map<string, ProcessingChapterInfo>,
+  event: StoryGeminiWebQueueStreamEvent
+): Map<string, ProcessingChapterInfo> {
+  if (!event.chapterId) {
+    return prev;
+  }
+
+  const next = new Map(prev);
+  const current = next.get(event.chapterId);
+
+  if (event.state === 'succeeded' || event.state === 'failed' || event.state === 'cancelled') {
+    if (current?.source === 'story_web_queue') {
+      next.delete(event.chapterId);
+    }
+    return next;
+  }
+
+  const phase = event.state === 'running' ? 'running' : 'queued';
+  const queuedAt = event.queuedAt ?? current?.queuedAt ?? event.timestamp;
+  const startedAt = event.startedAt ?? current?.startTime ?? queuedAt;
+  next.set(event.chapterId, {
+    startTime: phase === 'running' ? startedAt : queuedAt,
+    queuedAt,
+    workerId: event.workerId ?? current?.workerId ?? 1,
+    channel: 'token',
+    source: 'story_web_queue',
+    phase,
+    resourceId: event.resourceId ?? current?.resourceId ?? null,
+    resourceLabel: event.resourceLabel ?? current?.resourceLabel ?? null,
+    retryCount: current?.retryCount,
+    maxRetries: current?.maxRetries
+  });
+  return next;
+}
+
+function applyStoryQueueSnapshotToProcessingMap(
+  prev: Map<string, ProcessingChapterInfo>,
+  snapshot: StoryGeminiWebQueueSnapshot
+): Map<string, ProcessingChapterInfo> {
+  const next = new Map(prev);
+
+  for (const [chapterId, info] of next.entries()) {
+    if (info.source === 'story_web_queue') {
+      next.delete(chapterId);
+    }
+  }
+
+  for (const job of snapshot.jobs) {
+    if (!job.chapterId) {
+      continue;
+    }
+    next.set(job.chapterId, {
+      startTime: job.state === 'running'
+        ? (job.startedAt ?? job.queuedAt ?? snapshot.timestamp)
+        : (job.queuedAt ?? snapshot.timestamp),
+      queuedAt: job.queuedAt ?? snapshot.timestamp,
+      workerId: job.workerId ?? 1,
+      channel: 'token',
+      source: 'story_web_queue',
+      phase: job.state === 'running' ? 'running' : 'queued',
+      resourceId: job.resourceId ?? null,
+      resourceLabel: job.resourceLabel ?? null
+    });
+  }
+
+  return next;
 }
 
 function toQueuePacingDebug(metadata: StoryTranslateGeminiWebQueueResult['metadata']) {
@@ -95,7 +148,9 @@ export function useStoryGeminiWebQueueTranslation(
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const shouldStopRef = useRef(false);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [resolvedWorkerCount, setResolvedWorkerCount] = useState<number | null>(null);
+  const currentBatchIdRef = useRef<string | null>(null);
 
   const getEligibleChapters = (): Chapter[] => {
     return chapters.filter((chapter) => {
@@ -109,63 +164,73 @@ export function useStoryGeminiWebQueueTranslation(
     });
   };
 
-  const handleStopTranslation = () => {
+  const handleStopTranslation = async () => {
     shouldStopRef.current = true;
+    setIsStopping(true);
+    const batchId = currentBatchIdRef.current;
+    if (!batchId) {
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.invoke(
+        STORY_IPC_CHANNELS.CANCEL_GEMINI_WEB_QUEUE_BATCH,
+        { batchId }
+      ) as StoryCancelGeminiWebQueueBatchResult;
+      if (!result.success) {
+        console.warn('[StoryGeminiWebQueue] Cancel batch failed:', result.error);
+      }
+    } catch (error) {
+      console.warn('[StoryGeminiWebQueue] Cancel batch failed:', error);
+    }
   };
+
+  useEffect(() => {
+    const unsubEvent = window.electronAPI.onMessage(
+      STORY_IPC_CHANNELS.GEMINI_WEB_QUEUE_STREAM_EVENT,
+      (payload: unknown) => {
+        const event = payload as StoryGeminiWebQueueStreamEvent;
+        setProcessingChapters((prev) => applyStoryQueueEventToProcessingMap(prev, event));
+      }
+    );
+    const unsubSnapshot = window.electronAPI.onMessage(
+      STORY_IPC_CHANNELS.GEMINI_WEB_QUEUE_STREAM_SNAPSHOT,
+      (payload: unknown) => {
+        const snapshot = payload as StoryGeminiWebQueueSnapshot;
+        setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, snapshot));
+      }
+    );
+
+    void window.electronAPI.invoke(STORY_IPC_CHANNELS.START_GEMINI_WEB_QUEUE_STREAM);
+    void window.electronAPI.invoke(STORY_IPC_CHANNELS.GET_GEMINI_WEB_QUEUE_SNAPSHOT).then((result) => {
+      const snapshotResult = result as { success?: boolean; data?: StoryGeminiWebQueueSnapshot };
+      if (snapshotResult?.success && snapshotResult.data) {
+        setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, snapshotResult.data!));
+      }
+    });
+
+    return () => {
+      unsubEvent();
+      unsubSnapshot();
+      void window.electronAPI.invoke(STORY_IPC_CHANNELS.STOP_GEMINI_WEB_QUEUE_STREAM);
+    };
+  }, [setProcessingChapters]);
 
   const resolveAutoWorkerCount = async (): Promise<number> => {
     try {
-      const snapshotResult = await window.electronAPI.rotationQueue.getSnapshot(
-        undefined,
-        STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY
-      );
-      if (!snapshotResult.success || !snapshotResult.data) {
-        return AUTO_WORKERS_FALLBACK;
+      const capacityResult = await window.electronAPI.invoke(
+        STORY_IPC_CHANNELS.GET_GEMINI_WEB_QUEUE_CAPACITY
+      ) as { success?: boolean; data?: StoryGeminiWebQueueCapacity; error?: string };
+
+      if (capacityResult?.success && capacityResult.data) {
+        const workerCount = Math.max(1, capacityResult.data.workerCount || capacityResult.data.resourceCount || 1);
+        console.log('[StoryGeminiWebQueue][Capacity]', capacityResult.data);
+        return clampWorkers(workerCount);
       }
-
-      const scheduler = asRecord(snapshotResult.data.scheduler);
-      const resources = asArray(scheduler.resources).map((item) => asRecord(item));
-      let capacity = 0;
-
-      for (const resource of resources) {
-        const poolId = asString(resource.poolId);
-        if (poolId !== STORY_GEMINI_WEB_QUEUE_POOL_ID) {
-          continue;
-        }
-        const state = asString(resource.state).toLowerCase();
-        if (state !== 'ready' && state !== 'busy') {
-          continue;
-        }
-        const assignedServiceId = asString(resource.assignedServiceId);
-        if (
-          assignedServiceId &&
-          assignedServiceId !== '-' &&
-          assignedServiceId !== STORY_GEMINI_WEB_QUEUE_SERVICE_ID
-        ) {
-          continue;
-        }
-        const maxConcurrency = Math.max(1, asNumber(resource.maxConcurrency, 1));
-        const inFlight = Math.max(0, asNumber(resource.inFlight, 0));
-        capacity += Math.max(0, maxConcurrency - inFlight);
-      }
-
-      if (capacity > 0) {
-        return clampWorkers(capacity);
-      }
-
-      const byPool = asRecord(scheduler.resourceStateCountsByPool);
-      const poolState = asRecord(byPool[STORY_GEMINI_WEB_QUEUE_POOL_ID]);
-      const ready = asNumber(poolState.ready, 0);
-      const busy = asNumber(poolState.busy, 0);
-      const fallbackFromState = ready + busy;
-      if (fallbackFromState > 0) {
-        return clampWorkers(fallbackFromState);
-      }
-
-      return AUTO_WORKERS_FALLBACK;
+      return 1;
     } catch (error) {
       console.warn('[StoryGeminiWebQueue] Resolve auto workers failed:', error);
-      return AUTO_WORKERS_FALLBACK;
+      return 1;
     }
   };
 
@@ -178,12 +243,18 @@ export function useStoryGeminiWebQueueTranslation(
       batchId?: string;
     }
   ): Promise<void> => {
+    const queuedAt = Date.now();
     setProcessingChapters((prev) => {
       const next = new Map(prev);
       next.set(chapter.id, {
-        startTime: Date.now(),
+        startTime: queuedAt,
         workerId,
-        channel: 'token'
+        channel: 'token',
+        source: 'story_web_queue',
+        phase: 'queued',
+        queuedAt,
+        resourceId: null,
+        resourceLabel: null
       });
       return next;
     });
@@ -201,6 +272,10 @@ export function useStoryGeminiWebQueueTranslation(
 
       if (!prepareResult.success || !prepareResult.prompt) {
         console.error(`[StoryGeminiWebQueue] Prepare prompt failed for chapter ${chapter.id}:`, prepareResult.error);
+        return;
+      }
+
+      if (shouldStopRef.current) {
         return;
       }
 
@@ -249,13 +324,18 @@ export function useStoryGeminiWebQueueTranslation(
           translateResult.errorCode,
           translateResult.error
         );
+        if (shouldStopRef.current && translateResult.errorCode === 'CANCELLED_BY_USER') {
+          return;
+        }
       }
     } catch (error) {
       console.error(`[StoryGeminiWebQueue] Unexpected error at chapter ${chapter.id}:`, error);
     } finally {
       setProcessingChapters((prev) => {
         const next = new Map(prev);
-        next.delete(chapter.id);
+        if (next.get(chapter.id)?.source === 'story_web_queue') {
+          next.delete(chapter.id);
+        }
         return next;
       });
     }
@@ -270,6 +350,7 @@ export function useStoryGeminiWebQueueTranslation(
 
     shouldStopRef.current = false;
     setIsTranslating(true);
+    setIsStopping(false);
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     const resolvedWorkers =
@@ -283,6 +364,7 @@ export function useStoryGeminiWebQueueTranslation(
     try {
       if (webQueueMode === 'multi_auto') {
         const batchId = `story-webqueue-${Date.now()}`;
+        currentBatchIdRef.current = batchId;
         let currentIndex = 0;
         const runWorker = async (workerId: number) => {
           while (!shouldStopRef.current) {
@@ -297,6 +379,9 @@ export function useStoryGeminiWebQueueTranslation(
               conversationKey: `${batchId}-${chapter.id}`,
               resetConversation: true
             });
+            if (shouldStopRef.current) {
+              break;
+            }
             processed += 1;
             setBatchProgress({
               current: processed,
@@ -309,6 +394,7 @@ export function useStoryGeminiWebQueueTranslation(
         await Promise.all(workers);
       } else {
         const batchConversationKey = `story-webqueue-${Date.now()}`;
+        currentBatchIdRef.current = batchConversationKey;
         let isFirstTurn = true;
         for (const chapter of chaptersToTranslate) {
           if (shouldStopRef.current) {
@@ -316,8 +402,12 @@ export function useStoryGeminiWebQueueTranslation(
           }
           await processChapter(chapter, 1, {
             conversationKey: batchConversationKey,
-            resetConversation: isFirstTurn
+            resetConversation: isFirstTurn,
+            batchId: batchConversationKey
           });
+          if (shouldStopRef.current) {
+            break;
+          }
           isFirstTurn = false;
           processed += 1;
           setBatchProgress({
@@ -328,14 +418,17 @@ export function useStoryGeminiWebQueueTranslation(
       }
     } finally {
       setIsTranslating(false);
+      setIsStopping(false);
       setStatus('idle');
       setBatchProgress(null);
       setResolvedWorkerCount(null);
+      currentBatchIdRef.current = null;
     }
   };
 
   return {
     isTranslating,
+    isStopping,
     batchProgress,
     resolvedWorkerCount,
     handleTranslateAll,

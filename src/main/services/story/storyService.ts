@@ -9,6 +9,8 @@ import {
   RotationJobExecutionError,
   type RotationJobErrorCode
 } from '../shared/universalRotationQueue';
+import type { StoryGeminiWebQueueCapacity } from '../../../shared/types/story';
+import type { StoryCancelGeminiWebQueueBatchResult } from '../../../shared/types/story';
 
 const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
@@ -37,7 +39,7 @@ interface StoryTranslateChapterWithGeminiWebQueueResult {
 }
 
 interface StoryWebQueueTimingPayload {
-  queuePacingMode: 'after_finish_per_resource';
+  queuePacingMode: 'dispatch_spacing_global';
   queueGapMs: number;
   startedAt?: number;
   endedAt?: number;
@@ -48,9 +50,6 @@ interface StoryWebQueueTimingPayload {
  * Story Service - Handles story translation logic
  */
 export class StoryService {
-  private static storyWebQueueEnqueueLock: Promise<void> = Promise.resolve();
-  private static storyWebQueueNextEnqueueAtMs = 0;
-
   /**
    * Translates a chapter using prepared prompt and Gemini API
    * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
@@ -143,7 +142,6 @@ export class StoryService {
       this.ensureStoryGeminiWebQueueResources();
       const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
       const queueGapMs = this.getStoryWebQueueGapMs(queue);
-      await this.waitForStoryWebQueueDispatchSlot(queueGapMs);
 
       const queued = await queue.enqueue<{ promptText: string }, string>({
         poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
@@ -183,7 +181,6 @@ export class StoryService {
 
       const timingPayload = this.buildStoryWebQueueTimingPayload(queued, queueGapMs);
       const metadataWithTiming = this.mergeStoryWebQueueMetadata(options.metadata, timingPayload);
-      this.applyStoryWebQueuePostRequestGap(queue, queued.resourceId, timingPayload);
 
       if (!queued.success) {
         return {
@@ -395,6 +392,102 @@ export class StoryService {
     return process.env.ENABLE_STORY_GEMINI_WEB_QUEUE !== '0';
   }
 
+  static getStoryGeminiWebQueueCapacity(): StoryGeminiWebQueueCapacity {
+    this.ensureStoryGeminiWebQueueResources();
+    const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+    const snapshot = queue.getSnapshot();
+
+    let resourceCount = 0;
+    let readyCount = 0;
+    let busyCount = 0;
+    let cooldownCount = 0;
+
+    for (const resource of snapshot.resources) {
+      if (resource.poolId !== STORY_GEMINI_WEB_QUEUE_POOL_ID) {
+        continue;
+      }
+
+      const assignedServiceId = String(resource.assignedServiceId || '');
+      if (
+        assignedServiceId &&
+        assignedServiceId !== '-' &&
+        assignedServiceId !== STORY_GEMINI_WEB_QUEUE_SERVICE_ID
+      ) {
+        continue;
+      }
+
+      const state = String(resource.state || '').toLowerCase();
+      if (state === 'disabled' || state === 'error') {
+        continue;
+      }
+
+      resourceCount += 1;
+      if (state === 'ready') {
+        readyCount += 1;
+      } else if (state === 'busy') {
+        busyCount += 1;
+      } else if (state === 'cooldown') {
+        cooldownCount += 1;
+      }
+    }
+
+    return {
+      workerCount: Math.max(1, resourceCount),
+      resourceCount,
+      readyCount,
+      busyCount,
+      cooldownCount
+    };
+  }
+
+  static cancelStoryGeminiWebQueueBatch(batchId: string): StoryCancelGeminiWebQueueBatchResult {
+    const normalizedBatchId = batchId.trim();
+    if (!normalizedBatchId) {
+      return {
+        success: false,
+        cancelledJobIds: [],
+        requestedJobCount: 0,
+        error: 'Batch ID is required.'
+      };
+    }
+
+    this.ensureStoryGeminiWebQueueResources();
+    const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+    const snapshot = queue.getInspectorSnapshot({
+      poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
+      serviceId: STORY_GEMINI_WEB_QUEUE_SERVICE_ID,
+      state: 'all',
+      limit: 1000
+    });
+
+    const matchingJobs = snapshot.jobs.filter((job) => {
+      const metadata =
+        job && typeof job === 'object' && 'metadata' in job
+          ? ((job as { metadata?: Record<string, unknown> }).metadata ?? {})
+          : {};
+      return metadata.batchId === normalizedBatchId;
+    });
+
+    const cancelledJobIds: string[] = [];
+    for (const job of matchingJobs) {
+      if (queue.cancel(job.jobId)) {
+        cancelledJobIds.push(job.jobId);
+      }
+    }
+
+    console.log('[StoryGeminiWebQueue][CancelBatch]', {
+      batchId: normalizedBatchId,
+      requestedJobCount: matchingJobs.length,
+      cancelledJobIds
+    });
+
+    return {
+      success: true,
+      cancelledJobIds,
+      requestedJobCount: matchingJobs.length
+    };
+  }
+
   private static extractPromptText(preparedPrompt: any): string {
     let promptText = '';
 
@@ -424,8 +517,8 @@ export class StoryService {
       label: 'Story GeminiWeb Accounts',
       selector: 'round_robin',
       dispatchSpacingMs: queueGapMs,
-      defaultCooldownMinMs: queueGapMs,
-      defaultCooldownMaxMs: queueGapMs
+      defaultCooldownMinMs: 0,
+      defaultCooldownMaxMs: 0
     });
 
     const db = getDatabase();
@@ -464,8 +557,8 @@ export class StoryService {
         capabilities: ['story_translate', 'gemini_webapi'],
         enabled,
         maxConcurrency: 1,
-        cooldownMinMs: queueGapMs,
-        cooldownMaxMs: queueGapMs,
+        cooldownMinMs: 0,
+        cooldownMaxMs: 0,
         metadata: {
           accountName: row.name?.trim() || row.id
         }
@@ -508,11 +601,12 @@ export class StoryService {
     queueGapMs: number
   ): StoryWebQueueTimingPayload {
     const endedAt = Number.isFinite(queued.endedAt) ? queued.endedAt : Date.now();
-    const nextAllowedAt = queued.resourceId ? endedAt + queueGapMs : undefined;
+    const startedAt = Number.isFinite(queued.startedAt) ? queued.startedAt : undefined;
+    const nextAllowedAt = startedAt !== undefined ? startedAt + queueGapMs : undefined;
     return {
-      queuePacingMode: 'after_finish_per_resource',
+      queuePacingMode: 'dispatch_spacing_global',
       queueGapMs,
-      startedAt: queued.startedAt,
+      startedAt,
       endedAt,
       nextAllowedAt
     };
@@ -526,70 +620,6 @@ export class StoryService {
       ...(inputMetadata ?? {}),
       ...timingPayload
     };
-  }
-
-  private static applyStoryWebQueuePostRequestGap(
-    queue: ReturnType<typeof getQueueRuntimeOrCreate>,
-    resourceId: string | undefined,
-    timingPayload: StoryWebQueueTimingPayload
-  ): void {
-    if (!resourceId || !Number.isFinite(timingPayload.endedAt) || timingPayload.queueGapMs < 0) {
-      return;
-    }
-    const nextAllowedAt = timingPayload.endedAt + timingPayload.queueGapMs;
-    try {
-      queue.setResourceCooldown(STORY_GEMINI_WEB_QUEUE_POOL_ID, resourceId, nextAllowedAt);
-      console.log('[StoryGeminiWebQueue][Pacing]', {
-        runtimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-        poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
-        resourceId,
-        mode: timingPayload.queuePacingMode,
-        gapMs: timingPayload.queueGapMs,
-        startedAt: timingPayload.startedAt,
-        endedAt: timingPayload.endedAt,
-        nextAllowedAt
-      });
-    } catch (error) {
-      console.warn('[StoryGeminiWebQueue][Pacing] Failed to set post-request cooldown:', {
-        resourceId,
-        error: String(error)
-      });
-    }
-  }
-
-  private static async waitForStoryWebQueueDispatchSlot(queueGapMs: number): Promise<void> {
-    const normalizedGapMs = Math.max(0, Math.floor(queueGapMs));
-    const previousLock = this.storyWebQueueEnqueueLock.catch(() => undefined);
-    let releaseCurrentLock: (() => void) | null = null;
-    this.storyWebQueueEnqueueLock = new Promise<void>((resolve) => {
-      releaseCurrentLock = resolve;
-    });
-
-    await previousLock;
-
-    try {
-      const nowMs = Date.now();
-      const waitMs = Math.max(0, this.storyWebQueueNextEnqueueAtMs - nowMs);
-      if (waitMs > 0) {
-        await this.sleep(waitMs);
-      }
-
-      const dispatchAt = Date.now();
-      this.storyWebQueueNextEnqueueAtMs = dispatchAt + normalizedGapMs;
-      console.log('[StoryGeminiWebQueue][DispatchGate]', {
-        runtimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-        poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
-        dispatchAt,
-        nextAllowedDispatchAt: this.storyWebQueueNextEnqueueAtMs,
-        gapMs: normalizedGapMs
-      });
-    } finally {
-      releaseCurrentLock?.();
-    }
-  }
-
-  private static sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   static async createEbook(options: { 

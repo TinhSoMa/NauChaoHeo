@@ -157,7 +157,8 @@ export class QueueInspector {
       availableAt: record.availableAt,
       requiredCapabilities: record.request.requiredCapabilities,
       payloadPreview: this.buildPayloadPreview(record.request.payload, options.includePayload === true),
-      lastError: record.lastError
+      lastError: record.lastError,
+      metadata: record.request.metadata
     };
 
     return this.matchesFilters(item, options) ? item : null;
@@ -184,7 +185,8 @@ export class QueueInspector {
       payloadPreview: this.buildPayloadPreview(
         running.request.payload as unknown,
         options.includePayload === true
-      )
+      ),
+      metadata: running.request.metadata
     };
 
     return this.matchesFilters(item, options) ? item : null;

@@ -1,6 +1,7 @@
 import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import { GeminiWebApiCookieStore, maskSecret, parseGeminiCookieTokens } from './cookieStore';
 import { GeminiWebApiPythonBridge } from './pythonBridge';
+import { getGeminiWebApiOpsMonitor } from './opsMonitor';
 import {
   GeminiConversationMetadata,
   GeminiCookieRefreshResult,
@@ -41,7 +42,7 @@ export class GeminiWebApiService {
     const cookieStatus = await this.getCookieStatus();
 
     if (!moduleCheck.success || !moduleCheck.runtime) {
-      return {
+      const failed = {
         pythonOk: false,
         modulesOk: false,
         cookieReady: cookieStatus.hasSecure1PSID && cookieStatus.hasSecure1PSIDTS,
@@ -50,6 +51,8 @@ export class GeminiWebApiService {
           modules: moduleCheck.modules,
         },
       };
+      getGeminiWebApiOpsMonitor().recordHealthCheck(failed);
+      return failed;
     }
 
     let worker:
@@ -74,7 +77,7 @@ export class GeminiWebApiService {
       worker = { success: false, error: String(error) };
     }
 
-    return {
+    const health = {
       pythonOk: true,
       modulesOk: !!worker.success,
       cookieReady: cookieStatus.hasSecure1PSID && cookieStatus.hasSecure1PSIDTS,
@@ -86,6 +89,8 @@ export class GeminiWebApiService {
         error: worker.success ? undefined : worker.error || 'Worker health check failed',
       },
     };
+    getGeminiWebApiOpsMonitor().recordHealthCheck(health);
+    return health;
   }
 
   async getCookieStatus(accountConfigId?: string): Promise<GeminiCookieStatus> {
@@ -101,6 +106,7 @@ export class GeminiWebApiService {
 
   async refreshCookieFromBrowser(options: RefreshCookieOptions = {}): Promise<GeminiCookieRefreshResult> {
     const timeoutMs = options.timeoutMs ?? 30000;
+    getGeminiWebApiOpsMonitor().recordCookieRefreshStarted(options.accountConfigId);
 
     let response;
     try {
@@ -113,7 +119,7 @@ export class GeminiWebApiService {
       );
     } catch (error) {
       const classified = this.classifyBridgeError(error);
-      return {
+      const failed = {
         success: false,
         cookieSource: 'none',
         updatedPrimary: false,
@@ -122,10 +128,12 @@ export class GeminiWebApiService {
         errorCode: classified.errorCode,
         error: classified.error,
       };
+      getGeminiWebApiOpsMonitor().recordCookieRefreshResult(options.accountConfigId, failed);
+      return failed;
     }
 
     if (!response.success || !response.data?.cookie) {
-      return {
+      const failed = {
         success: false,
         cookieSource: 'none',
         updatedPrimary: false,
@@ -134,11 +142,13 @@ export class GeminiWebApiService {
         errorCode: response.errorCode || 'COOKIE_NOT_FOUND',
         error: response.error || 'No cookie returned by browser refresh',
       };
+      getGeminiWebApiOpsMonitor().recordCookieRefreshResult(options.accountConfigId, failed);
+      return failed;
     }
 
     const parsed = parseGeminiCookieTokens(response.data.cookie);
     if (!parsed.secure1psid || !parsed.secure1psidts) {
-      return {
+      const failed = {
         success: false,
         cookieSource: 'none',
         sourceBrowser: response.data.sourceBrowser,
@@ -148,6 +158,8 @@ export class GeminiWebApiService {
         errorCode: 'COOKIE_INVALID',
         error: 'Refreshed cookie is missing __Secure-1PSID or __Secure-1PSIDTS',
       };
+      getGeminiWebApiOpsMonitor().recordCookieRefreshResult(options.accountConfigId, failed);
+      return failed;
     }
 
     const persist = this.cookieStore.persistRefreshedCookie(
@@ -158,7 +170,7 @@ export class GeminiWebApiService {
     const cookieSource = this.cookieStore.getCookieSourceAfterRefresh(persist.updatedPrimary, persist.updatedFallback);
 
     if (!persist.updatedPrimary && !persist.updatedFallback) {
-      return {
+      const failed = {
         success: false,
         cookieSource,
         sourceBrowser: response.data.sourceBrowser,
@@ -168,13 +180,15 @@ export class GeminiWebApiService {
         errorCode: 'COOKIE_INVALID',
         error: 'Cookie refreshed but failed to persist in both primary and fallback stores',
       };
+      getGeminiWebApiOpsMonitor().recordCookieRefreshResult(options.accountConfigId, failed);
+      return failed;
     }
 
     console.log(
       `[GeminiWebApiService] Refreshed cookie (${response.data.sourceBrowser}) 1PSID=${maskSecret(parsed.secure1psid)} 1PSIDTS=${maskSecret(parsed.secure1psidts)}`,
     );
 
-    return {
+    const successResult = {
       success: true,
       cookieSource,
       sourceBrowser: response.data.sourceBrowser,
@@ -182,6 +196,8 @@ export class GeminiWebApiService {
       updatedFallback: persist.updatedFallback,
       warnings: persist.warnings,
     };
+    getGeminiWebApiOpsMonitor().recordCookieRefreshResult(options.accountConfigId, successResult);
+    return successResult;
   }
 
   async generateContent(request: GeminiGenerateRequest): Promise<GeminiGenerateResult> {
@@ -225,13 +241,22 @@ export class GeminiWebApiService {
       });
 
       if (!refresh.success) {
-        return {
+        const failed = {
           success: false,
           errorCode: refresh.errorCode || 'COOKIE_NOT_FOUND',
           error: refresh.error || 'Unable to refresh browser cookie',
           cookieSource: refresh.cookieSource,
           refreshed: false,
         };
+        getGeminiWebApiOpsMonitor().recordRequestResult({
+          success: false,
+          accountConfigId: request.accountConfigId,
+          cookieSource: failed.cookieSource,
+          refreshed: failed.refreshed,
+          errorCode: failed.errorCode,
+          error: failed.error
+        });
+        return failed;
       }
 
       refreshed = true;
@@ -241,13 +266,22 @@ export class GeminiWebApiService {
     }
 
     if (!secure1psid || !secure1psidts) {
-      return {
+      const failed = {
         success: false,
         errorCode: 'COOKIE_INVALID',
         error: 'Cookie is missing __Secure-1PSID or __Secure-1PSIDTS',
         cookieSource: resolved.source,
         refreshed,
       };
+      getGeminiWebApiOpsMonitor().recordRequestResult({
+        success: false,
+        accountConfigId: request.accountConfigId,
+        cookieSource: failed.cookieSource,
+        refreshed: failed.refreshed,
+        errorCode: failed.errorCode,
+        error: failed.error
+      });
+      return failed;
     }
 
     let response;
@@ -268,23 +302,41 @@ export class GeminiWebApiService {
       );
     } catch (error) {
       const classified = this.classifyBridgeError(error);
-      return {
+      const failed = {
         success: false,
         errorCode: classified.errorCode,
         error: classified.error,
         cookieSource: resolved.source,
         refreshed,
       };
+      getGeminiWebApiOpsMonitor().recordRequestResult({
+        success: false,
+        accountConfigId: request.accountConfigId,
+        cookieSource: failed.cookieSource,
+        refreshed: failed.refreshed,
+        errorCode: failed.errorCode,
+        error: failed.error
+      });
+      return failed;
     }
 
     if (!response.success) {
-      return {
+      const failed = {
         success: false,
         errorCode: response.errorCode || 'GEMINI_REQUEST_FAILED',
         error: response.error || 'Gemini request failed',
         cookieSource: resolved.source,
         refreshed,
       };
+      getGeminiWebApiOpsMonitor().recordRequestResult({
+        success: false,
+        accountConfigId: request.accountConfigId,
+        cookieSource: failed.cookieSource,
+        refreshed: failed.refreshed,
+        errorCode: failed.errorCode,
+        error: failed.error
+      });
+      return failed;
     }
 
     const outputConversationMetadata = this.toConversationMetadata(response.data?.conversationMetadata);
@@ -292,7 +344,7 @@ export class GeminiWebApiService {
       this.conversationMetadataByKey.set(conversationStoreKey, outputConversationMetadata);
     }
 
-    return {
+    const successResult = {
       success: true,
       text: response.data?.text || '',
       cookieSource: resolved.source,
@@ -301,6 +353,13 @@ export class GeminiWebApiService {
       conversationMetadata: outputConversationMetadata,
       conversationContinued,
     };
+    getGeminiWebApiOpsMonitor().recordRequestResult({
+      success: true,
+      accountConfigId: request.accountConfigId,
+      cookieSource: successResult.cookieSource,
+      refreshed: successResult.refreshed
+    });
+    return successResult;
   }
 
   async shutdown(): Promise<void> {

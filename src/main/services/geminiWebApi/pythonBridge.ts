@@ -9,6 +9,7 @@ import {
   type PythonRuntimeResolution,
 } from '../../utils/pythonRuntime';
 import { GeminiErrorCode } from './types';
+import { getGeminiWebApiOpsMonitor } from './opsMonitor';
 
 interface WorkerRequestEnvelope {
   requestId: string;
@@ -80,21 +81,53 @@ export class GeminiWebApiPythonBridge {
 
     this.proc = spawn(availability.runtime.command, args, { windowsHide: true, env });
     this.lineReader = readline.createInterface({ input: this.proc.stdout });
+    getGeminiWebApiOpsMonitor().recordWorkerStarted({
+      pythonPath: availability.runtime.pythonPath,
+      runtimeMode: availability.runtime.mode,
+      workerPath,
+    });
 
     this.lineReader.on('line', (line) => this.onStdoutLine(line));
     this.proc.stderr.on('data', (chunk) => {
-      const text = String(chunk || '').trim();
-      if (text) {
-        console.warn('[GeminiWebApiPythonBridge][stderr]', this.sanitize(text));
+      const text = String(chunk || '');
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      for (const line of lines) {
+        const sanitized = this.sanitize(line);
+        const parsed = this.parseWorkerStderrLine(sanitized);
+        console.warn('[GeminiWebApiPythonBridge][stderr]', sanitized);
+        if (parsed.level === 'error') {
+          getGeminiWebApiOpsMonitor().recordWorkerError({
+            error: parsed.text,
+            metadata: { source: 'stderr', workerLogLevel: parsed.workerLogLevel }
+          });
+        } else {
+          getGeminiWebApiOpsMonitor().recordWorkerLog({
+            level: parsed.level,
+            message: parsed.text,
+            metadata: { source: 'stderr', workerLogLevel: parsed.workerLogLevel }
+          });
+        }
       }
     });
 
     this.proc.on('error', (error) => {
+      getGeminiWebApiOpsMonitor().recordWorkerError({
+        error: String(error),
+        metadata: { source: 'process_error' }
+      });
       this.failAllPending(`Worker process error: ${String(error)}`);
       this.cleanupProcess();
     });
 
     this.proc.on('close', (code) => {
+      getGeminiWebApiOpsMonitor().recordWorkerError({
+        error: `Worker process closed unexpectedly (code=${code ?? 'null'})`,
+        metadata: { source: 'process_close', code: code ?? null }
+      });
       this.failAllPending(`Worker process closed unexpectedly (code=${code ?? 'null'})`);
       this.cleanupProcess();
     });
@@ -239,5 +272,33 @@ export class GeminiWebApiPythonBridge {
     return text
       .replace(/__Secure-1PSID=[^;\s]+/gi, '__Secure-1PSID=<masked>')
       .replace(/__Secure-1PSIDTS=[^;\s]+/gi, '__Secure-1PSIDTS=<masked>');
+  }
+
+  private parseWorkerStderrLine(text: string): {
+    level: 'info' | 'success' | 'warning' | 'error';
+    workerLogLevel?: string;
+    text: string;
+  } {
+    const match = text.match(/\|\s*(DEBUG|INFO|SUCCESS|WARNING|ERROR|CRITICAL)\s*\|/i);
+    const workerLogLevel = match?.[1]?.toUpperCase();
+
+    if (workerLogLevel === 'SUCCESS') {
+      return { level: 'success', workerLogLevel, text };
+    }
+    if (workerLogLevel === 'WARNING') {
+      return { level: 'warning', workerLogLevel, text };
+    }
+    if (workerLogLevel === 'ERROR' || workerLogLevel === 'CRITICAL') {
+      return { level: 'error', workerLogLevel, text };
+    }
+    if (workerLogLevel === 'DEBUG' || workerLogLevel === 'INFO') {
+      return { level: 'info', workerLogLevel, text };
+    }
+
+    if (/traceback|exception|permission denied|failed|error/i.test(text)) {
+      return { level: 'error', text };
+    }
+
+    return { level: 'info', text };
   }
 }

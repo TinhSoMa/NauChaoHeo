@@ -66,6 +66,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     Map<string, ProcessingChapterInfo>
   >(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
+  const [isStopping, setIsStopping] = useState(false);
   
   // Stop control
   const [, setShouldStop] = useState(false);
@@ -83,6 +84,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   
   // Ref to track if batch is currently running (for hot-add workers)
   const isBatchRunningRef = useRef(false);
+  const activeWorkerCountRef = useRef(0);
+  const spawnTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // Ref to latest startWorker function for use in effects
   const startWorkerRef = useRef<((channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => Promise<void>) | null>(null);
 
@@ -102,6 +105,11 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     shouldStopRef.current = true;
     setShouldStop(true);
     isBatchRunningRef.current = false;
+    setIsStopping(true);
+    for (const timeout of spawnTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    spawnTimeoutsRef.current = [];
   };
 
 
@@ -217,6 +225,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   // Worker function - processes chapters from the queue
   const startWorker = async (channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
     const workerId = ++workerIdRef.current;
+    activeWorkerCountRef.current += 1;
     console.log(`[useStoryBatchTranslation] 🚀 Worker ${workerId} started (${channel})`);
 
     if (channel === 'token' && tokenConfig) {
@@ -253,6 +262,9 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
                 result = await processChapter(chapter, index, workerId, channel, tokenConfig || null);
 
                 if (result && 'retryable' in result && result.retryable) {
+                    if (shouldStopRef.current) {
+                        break;
+                    }
                     retryCount++;
                     if (retryCount > MAX_RETRIES) {
                         console.error(`[useStoryBatchTranslation] ❌ Worker ${workerId} Failed chapter ${index + 1} after ${MAX_RETRIES} retries.`);
@@ -264,21 +276,31 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             }
 
             if (result && !('retryable' in result) && result !== null) {
+                 if (shouldStopRef.current) {
+                    break;
+                 }
                  batchStateRef.current.completed++;
                  setBatchProgress({ current: batchStateRef.current.completed, total: batchStateRef.current.chapters.length });
             }
         }
     } finally {
+        activeWorkerCountRef.current = Math.max(0, activeWorkerCountRef.current - 1);
         if (channel === 'token' && tokenConfig) {
             batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
         }
         console.log(`[useStoryBatchTranslation] ✓ Worker ${workerId} finished`);
         
         // Check if all workers are done
-        if (batchStateRef.current.completed >= batchStateRef.current.chapters.length || 
-            (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length && 
-             batchStateRef.current.activeWorkerConfigIds.size === 0)) {
+        if (
+          activeWorkerCountRef.current === 0 &&
+          (
+            shouldStopRef.current ||
+            batchStateRef.current.completed >= batchStateRef.current.chapters.length ||
+            batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length
+          )
+        ) {
           isBatchRunningRef.current = false;
+          setIsStopping(false);
           setStatus('idle');
           setBatchProgress(null);
         }
@@ -345,12 +367,18 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         isFirstChapterTaken: false
     };
     workerIdRef.current = 0;
+    activeWorkerCountRef.current = 0;
+    for (const timeout of spawnTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    spawnTimeoutsRef.current = [];
 
     // 4. Set Status
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     shouldStopRef.current = false;
     setShouldStop(false);
+    setIsStopping(false);
     isBatchRunningRef.current = true;
 
     // 5. Async Checks (Max Browsers)
@@ -403,13 +431,12 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         const spawnDelay = getRandomInt(MIN_SPAWN_DELAY, MAX_SPAWN_DELAY);
         cumulativeDelay += spawnDelay;
         console.log(`[useStoryBatchTranslation] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
-        
-        setTimeout(() => {
+        spawnTimeoutsRef.current.push(setTimeout(() => {
           if (!shouldStopRef.current) {
             console.log(`[useStoryBatchTranslation] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`);
             startWorker('token', config);
           }
-        }, cumulativeDelay);
+        }, cumulativeDelay));
       }
     }
   };
@@ -419,6 +446,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     processingChapters,
     handleTranslateAll,
     handleStopTranslation,
+    isStopping,
     isTranslating: batchProgress !== null,
     setProcessingChapters
   };

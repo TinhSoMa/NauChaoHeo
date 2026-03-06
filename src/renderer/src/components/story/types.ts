@@ -17,8 +17,13 @@ export interface ProcessingChapterInfo {
   startTime: number;
   workerId: number;
   channel: 'api' | 'token';
+  source?: 'story_web_queue';
   retryCount?: number;
   maxRetries?: number;
+  phase?: 'queued' | 'running';
+  queuedAt?: number;
+  resourceId?: string | null;
+  resourceLabel?: string | null;
 }
 
 export type StoryStatus = 'idle' | 'running' | 'paused' | 'error' | 'stopped';

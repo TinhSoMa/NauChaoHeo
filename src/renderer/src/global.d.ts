@@ -750,6 +750,78 @@ interface RotationQueueInspectorStatus {
   payloadDebugEnabled?: boolean;
 }
 
+interface GeminiWebApiHealthSnapshot {
+  checkedAt: number;
+  pythonOk: boolean;
+  modulesOk: boolean;
+  cookieReady: boolean;
+  runtimeMode?: 'embedded' | 'system';
+  pythonPath?: string;
+  pythonVersion?: string;
+  modules?: Record<string, boolean>;
+  error?: string;
+}
+
+interface GeminiWebApiAccountStatus {
+  accountConfigId: string;
+  accountName: string;
+  isActive: boolean;
+  hasStoredCookie: boolean;
+  hasSecure1PSID: boolean;
+  hasSecure1PSIDTS: boolean;
+  cookieSource: 'sqlite' | 'app_settings' | 'browser_refresh' | 'none';
+  lastRefreshStatus: 'idle' | 'running' | 'success' | 'failed';
+  lastRefreshAt: number | null;
+  lastRefreshBrowser?: 'chrome' | 'edge';
+  updatedPrimary?: boolean;
+  updatedFallback?: boolean;
+  lastError?: string;
+}
+
+interface GeminiWebApiAccountSummary {
+  totalAccounts: number;
+  activeAccounts: number;
+  refreshSuccessCount: number;
+  refreshFailCount: number;
+  refreshRunningCount: number;
+  cookieReadyCount: number;
+}
+
+interface GeminiWebApiOpsSnapshot {
+  summary: GeminiWebApiAccountSummary;
+  accounts: GeminiWebApiAccountStatus[];
+}
+
+interface GeminiWebApiLogEntry {
+  seq: number;
+  timestamp: number;
+  level: 'info' | 'success' | 'warning' | 'error';
+  type:
+    | 'health_checked'
+    | 'cookie_refresh_started'
+    | 'cookie_refresh_succeeded'
+    | 'cookie_refresh_failed'
+    | 'request_succeeded'
+    | 'request_failed'
+    | 'worker_started'
+    | 'worker_log'
+    | 'worker_error';
+  message: string;
+  accountConfigId?: string;
+  accountName?: string;
+  sourceBrowser?: 'chrome' | 'edge';
+  errorCode?: string;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface GeminiWebApiAPI {
+  getHealth: () => Promise<IpcApiResponse<GeminiWebApiHealthSnapshot>>;
+  getAccountStatuses: () => Promise<IpcApiResponse<GeminiWebApiOpsSnapshot>>;
+  getLogs: (limit?: number) => Promise<IpcApiResponse<GeminiWebApiLogEntry[]>>;
+  clearLogs: () => Promise<IpcApiResponse<void>>;
+}
+
 interface RotationQueueAPI {
   getStatus: () => Promise<IpcApiResponse<RotationQueueInspectorStatus>>;
   listRuntimes: () => Promise<IpcApiResponse<RotationQueueRuntimeInfo[]>>;
@@ -791,6 +863,9 @@ declare global {
 
       // Gemini Chat API (cau hinh Gemini web)
       geminiChat: GeminiChatAPI;
+
+      // Gemini WebAPI Ops API
+      geminiWebApi: GeminiWebApiAPI;
 
       // Proxy API (quan ly proxy rotation)
       proxy: ProxyAPI;

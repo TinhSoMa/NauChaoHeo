@@ -3,7 +3,7 @@
  * Hỗ trợ nhiều tài khoản và cấu hình trình duyệt (Browser Profile)
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, type MouseEvent } from 'react';
 import {
   Cookie,
   Globe,
@@ -25,125 +25,22 @@ import {
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import styles from './Settings.module.css';
-
-// Type definitions matching backend DTOs
-interface GeminiChatConfig {
-  id: string;
-  name: string;
-  cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
-  proxyId?: string;
-  convId: string;
-  respId: string;
-  candId: string;
-  reqId?: string;
-  userAgent?: string;
-  acceptLanguage?: string;
-  platform?: string;
-  isActive: boolean;
-  isError?: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-interface GeminiChatSettingsProps {
-  onBack: () => void;
-}
-
-interface TokenStats {
-  distinctActiveCount: number;
-  activeCount: number;
-  duplicateIds: Set<string>;
-}
-
-interface LiveTokenStats {
-  total: number;
-  active: number;
-  ready: number;
-  busy: number;
-  accounts: Array<{
-    id: string;
-    name: string;
-    status: 'ready' | 'busy' | 'cooldown' | 'error';
-    waitTimeMs: number;
-    impitBrowser: string | null;
-    proxyId: string | null;
-  }>;
-}
-
-interface ProxyInfo {
-  id: string;
-  host: string;
-  port: number;
-}
-
-// Default constants
-const DEFAULT_UA = "";
-const DEFAULT_LANG = "vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4";
-
-// Browser Presets (matching geminiChatService.ts BROWSER_PROFILES)
-const BROWSER_PRESETS = [
-  {
-    label: "Chrome / Windows",
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    platform: "Windows",
-    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
-  },
-  {
-    label: "Edge / Windows",
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
-    platform: "Windows",
-    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
-  },
-  {
-    label: "Chrome / macOS",
-    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    platform: "macOS",
-    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
-  },
-  {
-    label: "Firefox / Windows",
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-    platform: "Windows",
-    acceptLanguage: "vi,en-US;q=0.9,en;q=0.8"
-  },
-  {
-    label: "Tùy chỉnh / Custom",
-    userAgent: "",
-    platform: "Windows",
-    acceptLanguage: DEFAULT_LANG
-  }
-];
-
-// Token key is now based on atToken to support multiple accounts sharing the same cookie (1PSID)
-const buildTokenKey = (_cookie: string, atToken: string): string => {
-  return (atToken || '').trim();
-};
-
-const getTokenStats = (configs: GeminiChatConfig[]): TokenStats => {
-  const seen = new Map<string, string>();
-  const duplicateIds = new Set<string>();
-  const activeConfigs = configs.filter(c => c.isActive);
-
-  for (const config of activeConfigs) {
-    const key = buildTokenKey(config.cookie || '', config.atToken || '');
-    if (seen.has(key)) {
-      duplicateIds.add(config.id);
-      const firstId = seen.get(key);
-      if (firstId) duplicateIds.add(firstId);
-    } else {
-      seen.set(key, config.id);
-    }
-  }
-
-  return {
-    distinctActiveCount: seen.size,
-    activeCount: activeConfigs.length,
-    duplicateIds
-  };
-};
+import {
+  BROWSER_PRESETS,
+  DEFAULT_LANG,
+  DEFAULT_UA,
+  formatLogMetadata,
+  getTokenStats,
+  type GeminiChatConfig,
+  type GeminiChatListTab,
+  type GeminiChatSettingsProps,
+  type LiveTokenStats,
+  type ProxyInfo,
+  type TokenStats
+} from './GeminiChatSettings.shared';
+import { GeminiChatAccountsPanel } from './GeminiChatAccountsPanel';
+import { GeminiChatWebApiOpsPanel } from './GeminiChatWebApiOpsPanel';
+import { GeminiChatWebApiLogsPanel } from './GeminiChatWebApiLogsPanel';
 
 export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   // Mode: 'list' | 'edit' | 'create'
@@ -158,6 +55,15 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     duplicateIds: new Set()
   });
   const [liveStats, setLiveStats] = useState<LiveTokenStats | null>(null);
+  const [listTab, setListTab] = useState<GeminiChatListTab>('accounts');
+  const [webApiHealth, setWebApiHealth] = useState<GeminiWebApiHealthSnapshot | null>(null);
+  const [webApiOps, setWebApiOps] = useState<GeminiWebApiOpsSnapshot | null>(null);
+  const [webApiLogs, setWebApiLogs] = useState<GeminiWebApiLogEntry[]>([]);
+  const [webApiLoading, setWebApiLoading] = useState<boolean>(false);
+  const [webApiError, setWebApiError] = useState<string>('');
+  const [logTypeFilter, setLogTypeFilter] = useState<string>('');
+  const [logAccountFilter, setLogAccountFilter] = useState<string>('');
+  const [logTextFilter, setLogTextFilter] = useState<string>('');
   const [createChatOnWeb, setCreateChatOnWeb] = useState<boolean>(false);
   const [useStoredContextOnFirstSend, setUseStoredContextOnFirstSend] = useState<boolean>(false);
 
@@ -214,6 +120,51 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     loadConfigs();
   }, [loadConfigs]);
 
+  const loadWebApiHealth = useCallback(async () => {
+    try {
+      setWebApiLoading(true);
+      const result = await window.electronAPI.geminiWebApi.getHealth();
+      if (result.success && result.data) {
+        setWebApiHealth(result.data);
+        setWebApiError('');
+      } else {
+        setWebApiError(result.error || 'Không thể kiểm tra Gemini WebAPI.');
+      }
+    } catch (error) {
+      setWebApiError(String(error));
+    } finally {
+      setWebApiLoading(false);
+    }
+  }, []);
+
+  const loadWebApiOps = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.geminiWebApi.getAccountStatuses();
+      if (result.success && result.data) {
+        setWebApiOps(result.data);
+        setWebApiError('');
+      } else if (result.error) {
+        setWebApiError(result.error);
+      }
+    } catch (error) {
+      setWebApiError(String(error));
+    }
+  }, []);
+
+  const loadWebApiLogs = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.geminiWebApi.getLogs(300);
+      if (result.success && result.data) {
+        setWebApiLogs(result.data);
+        setWebApiError('');
+      } else if (result.error) {
+        setWebApiError(result.error);
+      }
+    } catch (error) {
+      setWebApiError(String(error));
+    }
+  }, []);
+
   useEffect(() => {
     const loadProxies = async () => {
       try {
@@ -248,6 +199,27 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     const interval = setInterval(fetchStats, 3000);
     return () => clearInterval(interval);
   }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'list') return;
+
+    void loadWebApiOps();
+    if (listTab !== 'accounts') {
+      void loadWebApiHealth();
+    }
+    if (listTab === 'logs') {
+      void loadWebApiLogs();
+    }
+
+    const interval = setInterval(() => {
+      void loadWebApiOps();
+      if (listTab === 'logs') {
+        void loadWebApiLogs();
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [listTab, loadWebApiHealth, loadWebApiLogs, loadWebApiOps, mode]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -339,7 +311,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     setParseStatus('');
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: MouseEvent) => {
     e.stopPropagation();
     if (confirm('Bạn có chắc muốn xóa cấu hình này?')) {
       try {
@@ -355,7 +327,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     }
   };
 
-  const handleToggleActive = async (config: GeminiChatConfig, e: React.MouseEvent) => {
+  const handleToggleActive = async (config: GeminiChatConfig, e: MouseEvent) => {
     e.stopPropagation();
     try {
       const result = await window.electronAPI.geminiChat.update(config.id, { isActive: !config.isActive });
@@ -367,7 +339,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     }
   };
 
-  const handleToggleError = async (config: GeminiChatConfig, e: React.MouseEvent) => {
+  const handleToggleError = async (config: GeminiChatConfig, e: MouseEvent) => {
     e.stopPropagation();
     try {
       const currentIsError = config.isError || false;
@@ -386,7 +358,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     }
   };
 
-  const handleClearError = async (configId: string, e: React.MouseEvent) => {
+  const handleClearError = async (configId: string, e: MouseEvent) => {
     e.stopPropagation();
     try {
       await window.electronAPI.geminiChat.clearConfigError(configId);
@@ -400,9 +372,21 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     }
   };
 
-  const getAccountLiveStatus = (configId: string) => {
-    if (!liveStats) return null;
-    return liveStats.accounts.find(a => a.id === configId) || null;
+  const handleRefreshWebApiSection = async () => {
+    await Promise.all([loadWebApiHealth(), loadWebApiOps(), loadWebApiLogs()]);
+  };
+
+  const handleClearWebApiLogs = async () => {
+    try {
+      const result = await window.electronAPI.geminiWebApi.clearLogs();
+      if (!result.success) {
+        setWebApiError(result.error || 'Không thể xóa log WebAPI.');
+        return;
+      }
+      setWebApiLogs([]);
+    } catch (error) {
+      setWebApiError(String(error));
+    }
   };
 
 
@@ -542,6 +526,25 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     }
   };
 
+  const filteredWebApiLogs = webApiLogs.filter((entry) => {
+    if (logTypeFilter && !entry.type.toLowerCase().includes(logTypeFilter.toLowerCase())) {
+      return false;
+    }
+    if (logAccountFilter) {
+      const haystack = `${entry.accountName || ''} ${entry.accountConfigId || ''}`.toLowerCase();
+      if (!haystack.includes(logAccountFilter.toLowerCase())) {
+        return false;
+      }
+    }
+    if (logTextFilter) {
+      const haystack = `${entry.message} ${entry.error || ''} ${formatLogMetadata(entry.metadata)}`.toLowerCase();
+      if (!haystack.includes(logTextFilter.toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
+  });
+
 
   // --- RENDER LIST VIEW ---
   if (mode === 'list') {
@@ -550,7 +553,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         <div className={styles.detailHeader}>
           <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại"><ArrowLeft size={20} /></Button>
           <div className="flex-1">
-             <div className={styles.detailTitle}>Danh sách Tài khoản (Proxy)</div>
+             <div className={styles.detailTitle}>Gemini Chat (Web)</div>
              <div className="text-xs text-(--color-text-secondary) mt-1">
                Token active khác nhau: {tokenStats.distinctActiveCount}/{tokenStats.activeCount}
                {tokenStats.duplicateIds.size > 0 && (
@@ -560,6 +563,12 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                  <span className="ml-3">
                    <span style={{ color: '#22c55e' }}>✓ {liveStats.ready}</span>
                    <span className="mx-1" style={{ color: '#f59e0b' }}>⊛ {liveStats.busy}</span>
+                 </span>
+               )}
+               {webApiOps && (
+                 <span className="ml-3">
+                   <span style={{ color: '#16a34a' }}>cookie OK {webApiOps.summary.refreshSuccessCount}</span>
+                   <span className="mx-2" style={{ color: '#dc2626' }}>fail {webApiOps.summary.refreshFailCount}</span>
                  </span>
                )}
              </div>
@@ -584,107 +593,80 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         </div>
 
         <div className={styles.detailContent}>
-           {errorMessage && <div className="p-4 bg-red-100 text-red-700 rounded-lg">{errorMessage}</div>}
-           
-           <div className="grid grid-cols-1 gap-4">
-             {configs.map(config => (
-               <div key={config.id} className="bg-(--color-card) border border-(--color-border) rounded-xl p-4 flex items-center gap-4 hover:border-(--color-primary) transition-colors cursor-pointer group" onClick={() => handleEdit(config)}>
-                 {(() => {
-                   const live = getAccountLiveStatus(config.id);
-                   const statusColor = !config.isActive ? 'bg-gray-100 text-gray-400'
-                     : live?.status === 'error' ? 'bg-red-100 text-red-600'
-                     : live?.status === 'busy' ? 'bg-yellow-100 text-yellow-600'
-                     : live?.status === 'cooldown' ? 'bg-blue-100 text-blue-600'
-                     : 'bg-green-100 text-green-600';
-                   return (
-                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${statusColor}`}>
-                       {!config.isActive ? <X size={20} />
-                         : live?.status === 'error' ? <AlertTriangle size={20} />
-                         : live?.status === 'busy' ? <RefreshCw size={20} className="animate-spin" />
-                         : live?.status === 'cooldown' ? <RefreshCw size={20} />
-                         : <Check size={20} />}
-                     </div>
-                   );
-                 })()}
-                 
-                 <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                        <span className="font-semibold text-lg">{config.name}</span>
-                        {config.id === 'legacy' ? <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Legacy</span> : null}
-                        {tokenStats.duplicateIds.has(config.id) && (
-                          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Trùng token</span>
-                        )}
-                        {(() => {
-                          const live = getAccountLiveStatus(config.id);
-                          if (!live || !config.isActive) return null;
-                          if (live.status === 'error') return (
-                            <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded" title="Tài khoản đang gặp lỗi">⚠ Lỗi</span>
-                          );
-                          if (live.status === 'busy') return (
-                            <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Đang gửi...</span>
-                          );
-                          if (live.status === 'cooldown') return (
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Chờ {Math.ceil(live.waitTimeMs / 1000)}s</span>
-                          );
-                          return (
-                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Sẵn sàng</span>
-                          );
-                        })()}
-                    </div>
-                    <div className="text-sm text-(--color-text-secondary) flex gap-4 mt-1">
-                      <span className="flex items-center gap-1"><Monitor size={12}/> {config.platform || 'Unknown'}</span>
-                      <span className="opacity-80">Proxy: {getProxyLabel(config.proxyId)}</span>
-                      <span className="truncate max-w-50 opacity-70">{config.cookie.substring(0, 30)}...</span>
-                    </div>
-                    {(() => {
-                      const live = getAccountLiveStatus(config.id);
-                      if (live?.status === 'error') return (
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-red-500 flex items-center gap-1">
-                              <AlertTriangle size={12} /> Gặp lỗi
-                          </span>
-                          <button
-                            onClick={(e) => handleClearError(config.id, e)}
-                            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm whitespace-nowrap"
-                            title="Xóa trạng thái lỗi để hệ thống thử lại"
-                          >
-                            <RefreshCw size={10} /> Đặt lại
-                          </button>
-                        </div>
-                      );
-                      return null;
-                    })()}
-                 </div>
+           {(errorMessage || webApiError) && (
+             <div className="p-4 bg-red-100 text-red-700 rounded-lg">
+               {errorMessage || webApiError}
+             </div>
+           )}
 
-                 <div className="flex items-center gap-2">
-                    <button 
-                        onClick={(e) => handleToggleActive(config, e)}
-                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${config.isActive ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
-                    >
-                        {config.isActive ? 'Đang dùng' : 'Đang tắt'}
-                    </button>
-
-                    <button 
-                        onClick={(e) => handleToggleError(config, e)}
-                        className={`text-xs px-2 py-1.5 rounded-full border transition-colors ${config.isError ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'}`}
-                        title={config.isError ? 'Tắt trạng thái lỗi' : 'Bật trạng thái lỗi'}
-                    >
-                        <AlertTriangle size={16} />
-                    </button>
-                    
-                    <Button variant="danger" iconOnly onClick={(e) => handleDelete(config.id, e)} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 size={16} />
-                    </Button>
-                 </div>
-               </div>
+           <div className="flex items-center gap-2 border-b border-(--color-border) pb-4">
+             {([
+               ['accounts', 'Accounts'],
+               ['webapi', 'WebAPI Ops'],
+               ['logs', 'Logs']
+             ] as Array<[GeminiChatListTab, string]>).map(([tabKey, label]) => (
+               <button
+                 key={tabKey}
+                 onClick={() => setListTab(tabKey)}
+                 className={`px-4 py-2 rounded-full text-sm border transition-colors ${
+                   listTab === tabKey
+                     ? 'bg-(--color-primary) text-white border-(--color-primary)'
+                     : 'bg-(--color-card) text-(--color-text-secondary) border-(--color-border) hover:border-(--color-primary)'
+                 }`}
+               >
+                 {label}
+               </button>
              ))}
-
-             {configs.length === 0 && !isLoading && (
-                 <div className="text-center py-20 text-gray-400">
-                     Chưa có tài khoản nào. Nhấn "Thêm mới" để cấu hình.
-                 </div>
-             )}
+             <div className="ml-auto flex items-center gap-2">
+               <Button variant="secondary" onClick={handleRefreshWebApiSection} disabled={webApiLoading}>
+                 <RefreshCw size={16} className={webApiLoading ? 'animate-spin' : ''} />
+                 Refresh WebAPI
+               </Button>
+               {listTab === 'logs' && (
+                 <Button variant="danger" onClick={handleClearWebApiLogs}>
+                   <Trash2 size={16} />
+                   Xóa log
+                 </Button>
+               )}
+             </div>
            </div>
+
+           {listTab === 'accounts' && (
+             <GeminiChatAccountsPanel
+               configs={configs}
+               isLoading={isLoading}
+               tokenStats={tokenStats}
+               liveStats={liveStats}
+               webApiOps={webApiOps}
+               getProxyLabel={getProxyLabel}
+               onEdit={handleEdit}
+               onDelete={handleDelete}
+               onToggleActive={handleToggleActive}
+               onToggleError={handleToggleError}
+               onClearError={handleClearError}
+             />
+           )}
+
+           {listTab === 'webapi' && (
+             <GeminiChatWebApiOpsPanel
+               webApiHealth={webApiHealth}
+               webApiOps={webApiOps}
+               webApiLoading={webApiLoading}
+               onRefreshHealth={loadWebApiHealth}
+             />
+           )}
+
+           {listTab === 'logs' && (
+             <GeminiChatWebApiLogsPanel
+               logs={filteredWebApiLogs}
+               logTypeFilter={logTypeFilter}
+               logAccountFilter={logAccountFilter}
+               logTextFilter={logTextFilter}
+               onLogTypeFilterChange={setLogTypeFilter}
+               onLogAccountFilterChange={setLogAccountFilter}
+               onLogTextFilterChange={setLogTextFilter}
+             />
+           )}
         </div>
       </div>
     );

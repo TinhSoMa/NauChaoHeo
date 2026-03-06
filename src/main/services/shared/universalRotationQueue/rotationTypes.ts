@@ -252,6 +252,7 @@ export interface QueueJobRuntimeSnapshot {
   requiredCapabilities?: string[];
   payloadPreview: PayloadPreview;
   lastError?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface QueueEventRecord {

@@ -13,6 +13,7 @@ import { registerGeminiChatHandlers } from './geminiChatHandlers';
 import { registerProxyHandlers } from './proxyHandlers'; // Thêm import cho proxy handlers
 import { registerCutVideoHandlers } from './cutVideoHandlers';
 import { registerRotationQueueHandlers } from './rotationQueueHandlers';
+import { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -44,6 +45,9 @@ export function registerAllHandlers(): void {
   // Dang ky Gemini Chat handlers
   registerGeminiChatHandlers();
 
+  // Dang ky Gemini WebAPI ops handlers
+  registerGeminiWebApiHandlers();
+
   // Đăng ký Proxy handlers (quản lý proxy rotation)
   registerProxyHandlers();
 
@@ -65,6 +69,7 @@ export { registerPromptHandlers } from './promptHandlers';
 export { registerProjectHandlers } from './projectHandlers';
 export { registerAppSettingsHandlers } from './appSettingsHandlers';
 export { registerGeminiChatHandlers } from './geminiChatHandlers';
+export { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 export { registerProxyHandlers } from './proxyHandlers';
 export { registerCutVideoHandlers } from './cutVideoHandlers';
 export { registerRotationQueueHandlers } from './rotationQueueHandlers';

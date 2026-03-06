@@ -4,6 +4,7 @@ import { createCaptionAPI, createTTSAPI, createCaptionVideoAPI, CaptionAPI, TTSA
 import { projectApi, ProjectAPI } from './projectApi'
 import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
 import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
+import { geminiWebApiApi, GeminiWebApiAPI } from './geminiWebApiApi'
 import { proxyApi, ProxyAPI } from './proxyApi'
 import { promptApi, PromptAPI } from './promptApi'
 import { cutVideoApi, CutVideoAPI } from './cutVideoApi'
@@ -49,6 +50,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Gemini Chat API (cau hinh Gemini web)
   geminiChat: geminiChatApi,
 
+  // Gemini WebAPI Ops API
+  geminiWebApi: geminiWebApiApi,
+
   // Proxy API (quan ly proxy rotation)
   proxy: proxyApi,
 
@@ -81,6 +85,7 @@ declare global {
       project: ProjectAPI
       appSettings: AppSettingsAPI
       geminiChat: GeminiChatAPI
+      geminiWebApi: GeminiWebApiAPI
       proxy: ProxyAPI
       prompt: PromptAPI
       captionVideo: CaptionVideoAPI

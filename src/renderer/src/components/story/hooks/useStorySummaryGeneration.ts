@@ -82,6 +82,7 @@ export function useStorySummaryGeneration({
   getDistinctActiveTokenConfigs
 }: UseStorySummaryGenerationProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [batchSummaryProgress, setBatchSummaryProgress] = useState<{ current: number; total: number } | null>(null);
   const [, setTick] = useState(0); // Force re-render for elapsed time
   
@@ -101,6 +102,8 @@ export function useStorySummaryGeneration({
   
   // Ref to track if batch is currently running (for hot-add workers)
   const isBatchRunningRef = useRef(false);
+  const activeWorkerCountRef = useRef(0);
+  const spawnTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // Ref to latest startWorker function for use in effects
   const startWorkerRef = useRef<((channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => Promise<void>) | null>(null);
 
@@ -123,8 +126,11 @@ export function useStorySummaryGeneration({
     shouldStopRef.current = true;
     setShouldStop(true);
     isBatchRunningRef.current = false;
-    setIsGenerating(false);
-    setStatus('idle');
+    setIsStopping(true);
+    for (const timeout of spawnTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    spawnTimeoutsRef.current = [];
   };
 
   const handleGenerateSummary = async (selectedChapterId: string | null, retranslateSummary: boolean = false) => {
@@ -370,6 +376,7 @@ export function useStorySummaryGeneration({
   // Worker function - processes chapter summaries from the queue
   const startWorker = async (channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
     const workerId = ++workerIdRef.current;
+    activeWorkerCountRef.current += 1;
     console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} started (${channel})`);
 
     if (channel === 'token' && tokenConfig) {
@@ -406,6 +413,9 @@ export function useStorySummaryGeneration({
                 result = await processChapterSummary(chapter, index, workerId, channel, tokenConfig || null);
 
                 if (result && 'retryable' in result && result.retryable) {
+                    if (shouldStopRef.current) {
+                        break;
+                    }
                     retryCount++;
                     if (retryCount > MAX_RETRIES) {
                         console.error(`[useStorySummaryGeneration] ❌ Worker ${workerId} Failed chapter ${index + 1} after ${MAX_RETRIES} retries.`);
@@ -417,22 +427,32 @@ export function useStorySummaryGeneration({
             }
 
             if (result && !('retryable' in result) && result !== null) {
+                 if (shouldStopRef.current) {
+                    break;
+                 }
                  batchStateRef.current.completed++;
                  setBatchSummaryProgress({ current: batchStateRef.current.completed, total: batchStateRef.current.chapters.length });
             }
         }
     } finally {
+        activeWorkerCountRef.current = Math.max(0, activeWorkerCountRef.current - 1);
         if (channel === 'token' && tokenConfig) {
             batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
         }
         console.log(`[useStorySummaryGeneration] ✓ Worker ${workerId} finished`);
         
         // Check if all workers are done
-        if (batchStateRef.current.completed >= batchStateRef.current.chapters.length || 
-            (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length && 
-             batchStateRef.current.activeWorkerConfigIds.size === 0)) {
+        if (
+          activeWorkerCountRef.current === 0 &&
+          (
+            shouldStopRef.current ||
+            batchStateRef.current.completed >= batchStateRef.current.chapters.length ||
+            batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length
+          )
+        ) {
           isBatchRunningRef.current = false;
           setIsGenerating(false);
+          setIsStopping(false);
           setStatus('idle');
           setBatchSummaryProgress(null);
         }
@@ -498,6 +518,11 @@ export function useStorySummaryGeneration({
         isFirstChapterTaken: false
     };
     workerIdRef.current = 0;
+    activeWorkerCountRef.current = 0;
+    for (const timeout of spawnTimeoutsRef.current) {
+      clearTimeout(timeout);
+    }
+    spawnTimeoutsRef.current = [];
 
     // 4. Set Status
     setIsGenerating(true);
@@ -505,6 +530,7 @@ export function useStorySummaryGeneration({
     setBatchSummaryProgress({ current: 0, total: chaptersToSummarize.length });
     shouldStopRef.current = false;
     setShouldStop(false);
+    setIsStopping(false);
     isBatchRunningRef.current = true;
 
     // 5. Async Checks (Max Browsers)
@@ -557,13 +583,12 @@ export function useStorySummaryGeneration({
         const spawnDelay = getRandomInt(MIN_SPAWN_DELAY, MAX_SPAWN_DELAY);
         cumulativeDelay += spawnDelay;
         console.log(`[useStorySummaryGeneration] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
-        
-        setTimeout(() => {
+        spawnTimeoutsRef.current.push(setTimeout(() => {
           if (!shouldStopRef.current) {
             console.log(`[useStorySummaryGeneration] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`);
             startWorker('token', config);
           }
-        }, cumulativeDelay);
+        }, cumulativeDelay));
       }
     }
   };
@@ -573,7 +598,8 @@ export function useStorySummaryGeneration({
     handleGenerateSummary,
     handleGenerateAllSummaries,
     stopGeneration,
-    batchSummaryProgress
+    batchSummaryProgress,
+    isStopping
   };
 }
 

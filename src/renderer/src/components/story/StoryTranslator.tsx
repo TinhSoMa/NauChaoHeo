@@ -91,6 +91,7 @@ export function StoryTranslator() {
     setProcessingChapters,
     batchProgress: batchTranslationProgress,
     isTranslating: isBatchTranslating,
+    isStopping: isBatchStopping,
     handleTranslateAll: handleBatchTranslate,
     handleStopTranslation: handleStopBatchTranslation
   } = useStoryBatchTranslation({
@@ -116,6 +117,7 @@ export function StoryTranslator() {
 
   const {
     isTranslating: isWebQueueTranslating,
+    isStopping: isWebQueueStopping,
     batchProgress: webQueueBatchProgress,
     resolvedWorkerCount: webQueueResolvedWorkerCount,
     handleTranslateAll: handleTranslateAllWebQueue,
@@ -217,6 +219,7 @@ export function StoryTranslator() {
   // Summary generation hook
   const { 
     isGenerating: isGeneratingSummary, 
+    isStopping: isSummaryStopping,
     handleGenerateSummary, 
     handleGenerateAllSummaries, 
     stopGeneration: stopSummaryGeneration, 
@@ -453,7 +456,9 @@ export function StoryTranslator() {
               title="Dừng tóm tắt batch hiện tại"
             >
               <StopCircle size={16} />
-              Dừng ({batchSummaryProgress?.current}/{batchSummaryProgress?.total})
+              {isSummaryStopping
+                ? `Đang dừng (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
+                : `Dừng (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
             </Button>
           ) : status === 'running' && isWebQueueTranslating && webQueueBatchProgress ? (
             <Button
@@ -463,7 +468,7 @@ export function StoryTranslator() {
               title="Dừng dịch Web Queue hiện tại"
             >
               <StopCircle size={16} />
-              Dừng Web Queue ({webQueueBatchProgress.current}/{webQueueBatchProgress.total}
+              {isWebQueueStopping ? 'Đang dừng Web Queue' : 'Dừng Web Queue'} ({webQueueBatchProgress.current}/{webQueueBatchProgress.total}
               {webQueueMode === 'multi_auto' && webQueueResolvedWorkerCount ? ` · W${webQueueResolvedWorkerCount}` : ''})
             </Button>
           ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
@@ -474,7 +479,9 @@ export function StoryTranslator() {
               title="Dừng dịch batch hiện tại"
             >
               <StopCircle size={16} />
-              Dừng ({batchTranslationProgress?.current}/{batchTranslationProgress?.total})
+              {isBatchStopping
+                ? `Đang dừng (${batchTranslationProgress?.current}/${batchTranslationProgress?.total})`
+                : `Dừng (${batchTranslationProgress?.current}/${batchTranslationProgress?.total})`}
             </Button>
           ) : (
             <>
@@ -482,10 +489,10 @@ export function StoryTranslator() {
                 variant="primary"
                 onClick={isBatchTranslating ? handleStopBatchTranslation : handleBatchTranslate}
                 className="flex items-center gap-2"
-                disabled={isGeneratingSummary || (status !== 'idle' && !isBatchTranslating)}
+                disabled={isGeneratingSummary || isSummaryStopping || isWebQueueStopping || (status !== 'idle' && !isBatchTranslating)}
               >
                 {isBatchTranslating ? <StopCircle size={16} /> : <FileText size={16} />}
-                {isBatchTranslating ? 'Dừng dịch' : 'Dịch'}
+                {isBatchTranslating ? (isBatchStopping ? 'Đang dừng' : 'Dừng dịch') : 'Dịch'}
               </Button>
 
               {isGeminiWebQueueEnabled && (
@@ -495,7 +502,7 @@ export function StoryTranslator() {
                     <select
                       value={webQueueMode}
                       onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
-                      disabled={isWebQueueTranslating || status === 'running'}
+                      disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running'}
                       className="h-9 px-3 rounded-md border border-border bg-card text-text-primary text-sm"
                     >
                       <option value="multi_auto">Nhiều chương (Queue Auto)</option>
@@ -516,6 +523,7 @@ export function StoryTranslator() {
                     disabled={
                       !filePath ||
                       isGeneratingSummary ||
+                      isSummaryStopping ||
                       (status !== 'idle' && !isWebQueueTranslating) ||
                       (!isWebQueueTranslating && webQueueEligibleChapterCount <= 0)
                     }
@@ -523,7 +531,7 @@ export function StoryTranslator() {
                   >
                     {isWebQueueTranslating ? <StopCircle size={16} /> : <Sparkles size={16} />}
                     {isWebQueueTranslating
-                      ? `Dừng Web Queue (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
+                      ? `${isWebQueueStopping ? 'Đang dừng Web Queue' : 'Dừng Web Queue'} (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
                       : webQueueMode === 'multi_auto'
                         ? 'Dịch Web Queue (Auto)'
                         : 'Dịch Web Queue (Tuần tự)'}
@@ -535,11 +543,11 @@ export function StoryTranslator() {
                   variant="secondary"
                   onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
                   className="flex items-center gap-2 h-9 px-6"
-                  disabled={isBatchTranslating || isWebQueueTranslating || (status !== 'idle' && !isGeneratingSummary)}
+                  disabled={isBatchTranslating || isBatchStopping || isWebQueueTranslating || isWebQueueStopping || (status !== 'idle' && !isGeneratingSummary)}
                   title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
               >
                   {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
-                  {isGeneratingSummary ? 'Dừng tóm tắt' : 'Tóm tắt'}
+                  {isGeneratingSummary ? (isSummaryStopping ? 'Đang dừng tóm tắt' : 'Dừng tóm tắt') : 'Tóm tắt'}
               </Button>
             </>
           )}
@@ -597,8 +605,13 @@ export function StoryTranslator() {
             {chapters.map((chapter) => {
               const isProcessing = processingChapters.has(chapter.id);
               const processingInfo = processingChapters.get(chapter.id);
-              const elapsedTime = isProcessing && processingInfo 
-                ? Math.floor((Date.now() - processingInfo.startTime) / 1000)
+              const elapsedAnchor = isProcessing && processingInfo
+                ? processingInfo.phase === 'queued'
+                  ? (processingInfo.queuedAt || processingInfo.startTime)
+                  : processingInfo.startTime
+                : 0;
+              const elapsedTime = isProcessing && processingInfo
+                ? Math.floor((Date.now() - elapsedAnchor) / 1000)
                 : 0;
               const hasTranslatedTitle = translatedTitles.has(chapter.id) || translatedChapters.has(chapter.id);
               
@@ -697,10 +710,22 @@ export function StoryTranslator() {
                         ? 'border-yellow-300/60 bg-yellow-300/10'
                         : 'border-yellow-500/60 bg-yellow-500/10'
                     }`}>
-                      {processingInfo.channel === 'api' ? 'API' : 'TOKEN'}
+                      {processingInfo.phase === 'queued'
+                        ? 'QUEUE'
+                        : processingInfo.channel === 'api'
+                          ? 'API'
+                          : 'TOKEN'}
                     </span>
-                    <Loader size={12} className="animate-spin" />
+                    <Loader
+                      size={12}
+                      className={processingInfo.phase === 'queued' ? '' : 'animate-spin'}
+                    />
                     <span className="font-mono">W{processingInfo.workerId}</span>
+                    {processingInfo.resourceLabel && (
+                      <span className="px-1.5 py-0.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-500">
+                        {processingInfo.resourceLabel}
+                      </span>
+                    )}
                     <Clock size={10} />
                     <span className="font-mono">{elapsedTime}s</span>
                     {processingInfo.retryCount && processingInfo.retryCount > 0 && (

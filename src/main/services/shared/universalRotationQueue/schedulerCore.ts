@@ -314,7 +314,8 @@ export class SchedulerCore {
       serviceId,
       jobId,
       feature: request.feature,
-      jobType: request.jobType
+      jobType: request.jobType,
+      metadata: request.metadata
     });
     this.runServiceRebalance(request.poolId, nowMs);
     this.requestDispatch();
@@ -859,7 +860,8 @@ export class SchedulerCore {
       jobType: dequeued.request.jobType,
       resourceId: resource.resourceId,
       attempt,
-      maxAttempts
+      maxAttempts,
+      metadata: this.buildJobEventMetadata(dequeued.request.metadata, resource)
     });
     this.emitResourceStateChanged(resource.poolId, resource.resourceId);
     this.emit({
@@ -872,7 +874,8 @@ export class SchedulerCore {
       jobType: dequeued.request.jobType,
       resourceId: resource.resourceId,
       attempt,
-      maxAttempts
+      maxAttempts,
+      metadata: this.buildJobEventMetadata(dequeued.request.metadata, resource)
     });
     this.markPoolSpacingAfterStart(resource.poolId, nowMs);
 
@@ -985,7 +988,8 @@ export class SchedulerCore {
       jobType: record.request.jobType,
       resourceId: running.resourceId,
       attempt: running.attempt,
-      maxAttempts: running.maxAttempts
+      maxAttempts: running.maxAttempts,
+      metadata: this.buildJobEventMetadata(record.request.metadata, resource)
     });
 
     this.resolveTerminalJob({
@@ -1026,7 +1030,11 @@ export class SchedulerCore {
         jobType: record.request.jobType,
         resourceId: running.resourceId,
         error: failure.errorMessage,
-        errorCode: failure.errorCode
+        errorCode: failure.errorCode,
+        metadata: this.buildJobEventMetadata(
+          record.request.metadata,
+          this.registry.getResource(record.request.poolId, running.resourceId)
+        )
       });
       this.resolveTerminalJob({
         success: false,
@@ -1086,7 +1094,11 @@ export class SchedulerCore {
         maxAttempts: running.maxAttempts,
         retryAt,
         error: failure.errorMessage,
-        errorCode: failure.errorCode
+        errorCode: failure.errorCode,
+        metadata: this.buildJobEventMetadata(
+          record.request.metadata,
+          this.registry.getResource(record.request.poolId, running.resourceId)
+        )
       });
       this.runServiceRebalance(record.request.poolId, nowMs);
       this.requestDispatch(retryAt);
@@ -1105,7 +1117,11 @@ export class SchedulerCore {
       attempt: running.attempt,
       maxAttempts: running.maxAttempts,
       error: failure.errorMessage,
-      errorCode: failure.errorCode
+      errorCode: failure.errorCode,
+      metadata: this.buildJobEventMetadata(
+        record.request.metadata,
+        this.registry.getResource(record.request.poolId, running.resourceId)
+      )
     });
     this.resolveTerminalJob({
       success: false,
@@ -1167,6 +1183,24 @@ export class SchedulerCore {
       resourceId,
       metadata: { state }
     });
+  }
+
+  private buildJobEventMetadata(
+    jobMetadata?: Record<string, unknown>,
+    resource?: ResourceRuntime
+  ): Record<string, unknown> | undefined {
+    const merged: Record<string, unknown> = {
+      ...(jobMetadata ?? {})
+    };
+
+    if (resource) {
+      merged.resourceLabel = resource.label;
+      if (resource.metadata) {
+        merged.resourceMetadata = resource.metadata;
+      }
+    }
+
+    return Object.keys(merged).length > 0 ? merged : undefined;
   }
 
   private emit(event: DispatchEvent): void {
