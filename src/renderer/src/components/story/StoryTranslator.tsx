@@ -332,6 +332,16 @@ export function StoryTranslator() {
     await fileManagement.handleBrowse();
   };
 
+  const compactModelLabel = (label: string): string => {
+    const raw = (label || '').trim();
+    if (!raw) return raw;
+    return raw
+      .replace(/\s*\(Mới nhất\)\s*/gi, '')
+      .replace(/\s*Preview\s*/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  };
+
   // const LANG_OPTIONS = [
   //   { value: 'auto', label: 'Tự động phát hiện' },
   //   { value: 'en', label: 'Tiếng Anh (English)' },
@@ -342,43 +352,19 @@ export function StoryTranslator() {
   // ];
 
   return (
-    <div className="flex flex-col h-screen p-6 gap-4 max-w-7xl mx-auto w-full">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-primary">
-          Dịch Truyện AI
-        </h1>
-        {chapters.length > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm px-3 py-1 bg-primary/10 text-primary rounded-full">
-              Đã dịch: {translatedChapters.size}/{chapters.length} chương
-            </span>
-            {translatedChapters.size > 0 && (
-              <Button 
-                onClick={handleExportEbook}
-                variant="primary"
-                disabled={exportStatus === 'exporting'}
-                className="h-8 px-4 text-sm"
-              >
-                <Download size={16} />
-                {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-      
+    <div className="flex flex-col w-full h-[calc(100vh-4rem)] min-h-0 gap-3 overflow-hidden">
       {/* Configuration Section */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-card border border-border rounded-xl">
-        <div className="md:col-span-3 flex flex-col gap-1">
-           <label className="text-sm font-medium text-text-secondary">File Truyện</label>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-2 p-2.5 bg-card border border-border rounded-xl shrink-0 overflow-hidden">
+        <div className="md:col-span-3 flex flex-col gap-1 min-w-0">
+           <label className="text-sm font-medium text-text-secondary">File</label>
            <div className="flex gap-2">
              <Input 
-               placeholder="Chọn file..." 
+               placeholder="Chọn file" 
                value={filePath}
                onChange={(e) => setFilePath(e.target.value)}
                containerClassName="flex-1"
              />
-             <Button onClick={handleBrowse} variant="secondary" className="shrink-0 h-9 px-3">
+             <Button onClick={handleBrowse} variant="secondary" className="shrink-0 h-8 px-2 text-xs">
                <FileText size={16} />
              </Button>
            </div>
@@ -393,7 +379,7 @@ export function StoryTranslator() {
           />
         </div>
 
-        <div className="md:col-span-2">
+        <div className="md:col-span-2 min-w-0">
            <Select
             label="Ngôn ngữ đích"
             value={targetLang}
@@ -404,19 +390,19 @@ export function StoryTranslator() {
 
         <div className="md:col-span-2">
           <Select
-            label="Model AI"
+            label="Model"
             value={model}
             onChange={(e) => setModel(e.target.value)}
             options={GEMINI_MODEL_LIST.map(m => ({
               value: m.id,
-              label: m.label
+              label: compactModelLabel(m.label)
             }))}
           />
         </div>
 
-        <div className="md:col-span-1">
+        <div className="md:col-span-1 min-w-0">
           <Select
-            label="Chế độ dịch"
+            label="Mode"
             value={translateMode}
             onChange={(e) => setTranslateMode(e.target.value as 'api' | 'token' | 'both')}
             options={[
@@ -427,99 +413,124 @@ export function StoryTranslator() {
           />
         </div>
 
-        <div className="md:col-span-2 flex items-end gap-2">
-          <Button 
-            onClick={handleTranslate} 
-            variant="secondary" 
-            disabled={!filePath || status === 'running' || !selectedChapterId}
-            className="flex-1 h-9 px-3"
-            title="Dịch chương đang chọn"
-          >
-            <BookOpen size={16} />
-            Dịch 1
-          </Button>
-          <Button 
-            onClick={() => handleGenerateSummary(selectedChapterId)} 
-            variant="secondary" 
-            disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
-            className="flex-1 h-9 px-3"
-            title="Tóm tắt chương đang chọn"
-          >
-            <FileText size={16} />
-            {isGeneratingSummary ? 'Đang tóm tắt...' : 'Tóm tắt 1'}
-          </Button>
-          {isGeneratingSummary && batchSummaryProgress ? (
-            <Button 
-              onClick={stopSummaryGeneration}
-              variant="secondary"
-              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-              title="Dừng tóm tắt batch hiện tại"
+        {isGeminiWebQueueEnabled && (
+          <div className="md:col-span-2 min-w-0">
+            <label className="text-xs text-text-secondary mb-1 block">Queue</label>
+            <select
+              value={webQueueMode}
+              onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
+              disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running'}
+              className="h-8 px-2 rounded-md border border-border bg-card text-text-primary text-xs w-full"
             >
-              <StopCircle size={16} />
-              {isSummaryStopping
-                ? `Đang dừng (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
-                : `Dừng (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
-            </Button>
-          ) : status === 'running' && isWebQueueTranslating && webQueueBatchProgress ? (
-            <Button
-              onClick={handleStopWebQueueTranslation}
-              variant="secondary"
-              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-              title="Dừng dịch Web Queue hiện tại"
-            >
-              <StopCircle size={16} />
-              {isWebQueueStopping ? 'Đang dừng Web Queue' : 'Dừng Web Queue'} ({webQueueBatchProgress.current}/{webQueueBatchProgress.total}
-              {webQueueMode === 'multi_auto' && webQueueResolvedWorkerCount ? ` · W${webQueueResolvedWorkerCount}` : ''})
-            </Button>
-          ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
-            <Button 
-              onClick={handleStopBatchTranslation}
-              variant="secondary"
-              className="flex-1 h-9 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-              title="Dừng dịch batch hiện tại"
-            >
-              <StopCircle size={16} />
-              {isBatchStopping
-                ? `Đang dừng (${batchTranslationProgress?.current}/${batchTranslationProgress?.total})`
-                : `Dừng (${batchTranslationProgress?.current}/${batchTranslationProgress?.total})`}
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="primary"
-                onClick={isBatchTranslating ? handleStopBatchTranslation : handleBatchTranslate}
-                className="flex items-center gap-2"
-                disabled={isGeneratingSummary || isSummaryStopping || isWebQueueStopping || (status !== 'idle' && !isBatchTranslating)}
-              >
-                {isBatchTranslating ? <StopCircle size={16} /> : <FileText size={16} />}
-                {isBatchTranslating ? (isBatchStopping ? 'Đang dừng' : 'Dừng dịch') : 'Dịch'}
-              </Button>
+              <option value="multi_auto">Auto</option>
+              <option value="sequential">Tuần tự</option>
+            </select>
+            {webQueueMode === 'multi_auto' && (
+              <span className="text-[10px] text-text-secondary block mt-1">
+                {isWebQueueTranslating
+                  ? `Auto workers: ${webQueueResolvedWorkerCount ?? 3}`
+                  : 'Tự điều phối'}
+              </span>
+            )}
+          </div>
+        )}
 
-              {isGeminiWebQueueEnabled && (
-                <div className="flex items-end gap-2">
-                  <div className="flex flex-col gap-1 min-w-[190px]">
-                    <label className="text-xs text-text-secondary">Web Queue mode</label>
-                    <select
-                      value={webQueueMode}
-                      onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
-                      disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running'}
-                      className="h-9 px-3 rounded-md border border-border bg-card text-text-primary text-sm"
-                    >
-                      <option value="multi_auto">Nhiều chương (Queue Auto)</option>
-                      <option value="sequential">Tuần tự từng chương</option>
-                    </select>
-                    {webQueueMode === 'multi_auto' && (
-                      <span className="text-[11px] text-text-secondary">
-                        {isWebQueueTranslating
-                          ? `Auto workers: ${webQueueResolvedWorkerCount ?? 3}`
-                          : 'Auto theo tài nguyên queue'}
-                      </span>
-                    )}
-                  </div>
+        {chapters.length > 0 && (
+          <div className="md:col-span-4 flex items-end justify-end gap-2 min-w-0">
+            <span className="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full whitespace-nowrap">
+              Đã dịch: {translatedChapters.size}/{chapters.length} chương
+            </span>
+            {translatedChapters.size > 0 && (
+              <Button
+                onClick={handleExportEbook}
+                variant="primary"
+                disabled={exportStatus === 'exporting'}
+                className="h-8 px-3 text-xs shrink-0"
+              >
+                <Download size={14} />
+                {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
+              </Button>
+            )}
+          </div>
+        )}
+
+        <div className="md:col-span-12 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button 
+              onClick={handleTranslate} 
+              variant="secondary" 
+              disabled={!filePath || status === 'running' || !selectedChapterId}
+              className="h-8 px-2.5 text-xs shrink-0"
+              title="Dịch chương đang chọn"
+            >
+              <BookOpen size={16} />
+              Dịch 1
+            </Button>
+            <Button 
+              onClick={() => handleGenerateSummary(selectedChapterId)} 
+              variant="secondary" 
+              disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
+              className="h-8 px-2.5 text-xs shrink-0"
+              title="Tóm tắt chương đang chọn"
+            >
+              <FileText size={16} />
+              {isGeneratingSummary ? 'Đang tóm...' : 'Tóm 1'}
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 justify-end">
+            {isGeneratingSummary && batchSummaryProgress ? (
+              <Button 
+                onClick={stopSummaryGeneration}
+                variant="secondary"
+                className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                title="Dừng tóm tắt batch hiện tại"
+              >
+                <StopCircle size={16} />
+                {isSummaryStopping
+                  ? `Đang dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
+                  : `Dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
+              </Button>
+            ) : status === 'running' && isWebQueueTranslating && webQueueBatchProgress ? (
+              <Button
+                onClick={handleStopWebQueueTranslation}
+                variant="secondary"
+                className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                title="Dừng dịch Web Queue hiện tại"
+              >
+                <StopCircle size={16} />
+                {isWebQueueStopping ? 'Đang dừng WQ' : 'Dừng WQ'} ({webQueueBatchProgress.current}/{webQueueBatchProgress.total}
+                {webQueueMode === 'multi_auto' && webQueueResolvedWorkerCount ? ` · W${webQueueResolvedWorkerCount}` : ''})
+              </Button>
+            ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
+              <Button 
+                onClick={handleStopBatchTranslation}
+                variant="secondary"
+                className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                title="Dừng dịch batch hiện tại"
+              >
+                <StopCircle size={16} />
+                {isBatchStopping
+                  ? `Đang dừng Dịch (${batchTranslationProgress?.current}/${batchTranslationProgress?.total})`
+                  : `Dừng Dịch (${batchTranslationProgress?.current}/${batchTranslationProgress?.total})`}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="primary"
+                  onClick={isBatchTranslating ? handleStopBatchTranslation : handleBatchTranslate}
+                  className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
+                  disabled={isGeneratingSummary || isSummaryStopping || isWebQueueStopping || (status !== 'idle' && !isBatchTranslating)}
+                >
+                  {isBatchTranslating ? <StopCircle size={16} /> : <FileText size={16} />}
+                  {isBatchTranslating ? (isBatchStopping ? 'Đang dừng' : 'Dừng dịch') : 'Dịch'}
+                </Button>
+
+                {isGeminiWebQueueEnabled && (
                   <Button
                     variant="secondary"
                     onClick={isWebQueueTranslating ? handleStopWebQueueTranslation : handleTranslateAllWebQueue}
-                    className="flex items-center gap-2 h-9 px-6"
+                    className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
                     disabled={
                       !filePath ||
                       isGeneratingSummary ||
@@ -531,30 +542,30 @@ export function StoryTranslator() {
                   >
                     {isWebQueueTranslating ? <StopCircle size={16} /> : <Sparkles size={16} />}
                     {isWebQueueTranslating
-                      ? `${isWebQueueStopping ? 'Đang dừng Web Queue' : 'Dừng Web Queue'} (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
+                      ? `${isWebQueueStopping ? 'Đang dừng WQ' : 'Dừng WQ'} (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
                       : webQueueMode === 'multi_auto'
-                        ? 'Dịch Web Queue (Auto)'
-                        : 'Dịch Web Queue (Tuần tự)'}
+                        ? 'Dịch WQ Auto'
+                        : 'Dịch WQ Tuần tự'}
                   </Button>
-                </div>
-              )}
+                )}
 
-              <Button
-                  variant="secondary"
-                  onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
-                  className="flex items-center gap-2 h-9 px-6"
-                  disabled={isBatchTranslating || isBatchStopping || isWebQueueTranslating || isWebQueueStopping || (status !== 'idle' && !isGeneratingSummary)}
-                  title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
-              >
-                  {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
-                  {isGeneratingSummary ? (isSummaryStopping ? 'Đang dừng tóm tắt' : 'Dừng tóm tắt') : 'Tóm tắt'}
-              </Button>
-            </>
-          )}
+                <Button
+                    variant="secondary"
+                    onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
+                    className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
+                    disabled={isBatchTranslating || isBatchStopping || isWebQueueTranslating || isWebQueueStopping || (status !== 'idle' && !isGeneratingSummary)}
+                    title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
+                >
+                    {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
+                    {isGeneratingSummary ? (isSummaryStopping ? 'Đang dừng tóm' : 'Dừng tóm') : 'Tóm tất cả'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
 
-        <div className="md:col-span-12 flex items-center gap-4 text-sm">
+        <div className="md:col-span-12 flex items-center gap-3 text-xs">
           <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
             <input
               type="checkbox"
@@ -562,15 +573,15 @@ export function StoryTranslator() {
               onChange={(e) => setRetranslateExisting(e.target.checked)}
               className="w-4 h-4 rounded border-border cursor-pointer"
             />
-            <span>Dịch lại các chương đã dịch</span>
+            <span>Dịch lại chương đã dịch</span>
           </label>
         </div>
       </div>
 
       {/* Main Split View */}
-      <div className="flex-1 flex gap-4 min-h-0">
+      <div className="flex-1 flex gap-3 min-h-0 overflow-hidden">
         {/* Left Panel: Chapter List */}
-        <div className="w-1/4 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <div className="w-[320px] max-w-[35%] min-w-[280px] bg-card border border-border rounded-xl flex flex-col overflow-hidden">
           {/* Header voi toggle buttons */}
           <div className="p-3 border-b border-border bg-surface/50">
             <div className="flex justify-between items-center mb-2">
@@ -601,7 +612,7 @@ export function StoryTranslator() {
           
           {/* Chapter list voi checkboxes */}
           <div className="flex-1 flex flex-col-reverse overflow-hidden">
-            <div className="flex-1 overflow-y-auto overflow-x-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1">
             {chapters.map((chapter) => {
               const isProcessing = processingChapters.has(chapter.id);
               const processingInfo = processingChapters.get(chapter.id);
@@ -618,7 +629,7 @@ export function StoryTranslator() {
               return (
               <div
                 key={chapter.id}
-                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm transition-colors ${
                   selectedChapterId === chapter.id
                     ? 'bg-primary text-text-invert'
                     : 'text-text-secondary hover:bg-surface hover:text-text-primary'
@@ -660,7 +671,7 @@ export function StoryTranslator() {
                   }}
                   className="min-w-0 flex-1 text-left flex items-center gap-2"
                 >
-                  <span className={`truncate ${
+                  <span className={`break-words leading-5 ${
                     !isChapterIncluded(chapter.id)
                       ? selectedChapterId === chapter.id
                         ? 'text-white/60 italic'
@@ -743,8 +754,8 @@ export function StoryTranslator() {
 
         {/* Right Panel: Content */}
         <div className="flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
-           <div className="p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex justify-between items-center">
-            <div className="flex items-center gap-4">
+           <div className="p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex flex-wrap justify-between items-start gap-2">
+            <div className="flex items-center gap-3 min-w-0 flex-wrap">
               <span>Nội dung</span>
               {selectedChapterId && (
                 <div className="flex gap-1 bg-surface rounded p-1">
@@ -773,7 +784,7 @@ export function StoryTranslator() {
               
               {/* Reading Controls */}
               {selectedChapterId && (
-                <div className="flex items-center gap-3 ml-2 pl-3 border-l border-border">
+                <div className="flex items-center gap-3 ml-2 pl-3 border-l border-border flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-text-secondary">Cỡ chữ:</span>
                     <button 
@@ -812,7 +823,7 @@ export function StoryTranslator() {
 
             </div>
             {selectedChapterId && (
-              <div className="flex gap-2 items-center">
+              <div className="flex gap-2 items-center flex-wrap justify-end min-w-0">
                  {/* Hien thi trang thai loai tru */}
                  {!isChapterIncluded(selectedChapterId) && (
                    <span className="text-xs text-orange-500 bg-orange-500/10 px-2 py-1 rounded">
@@ -825,7 +836,7 @@ export function StoryTranslator() {
                  <Button onClick={handleSaveSummaryPrompt} variant="secondary" className="text-xs h-8 px-2">
                    Lưu Prompt Tóm Tắt
                  </Button>
-                 <span className="text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border">
+                 <span className="text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border max-w-[320px] truncate">
                    {chapters.find(c => c.id === selectedChapterId)?.title}
                  </span>
               </div>

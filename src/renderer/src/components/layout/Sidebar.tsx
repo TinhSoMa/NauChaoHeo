@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Scissors } from 'lucide-react';
 import clsx from 'clsx';
@@ -11,8 +11,31 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
 
 
 export const Sidebar = () => {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    try {
+      const saved = window.localStorage.getItem('ai-toolkit.sidebar.collapsed');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch {
+      // Ignore localStorage errors and keep compact default.
+    }
+    return true;
+  });
   const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem('ai-toolkit.sidebar.collapsed', String(collapsed));
+    } catch {
+      // Ignore persistence error in renderer.
+    }
+  }, [collapsed]);
   
   // Preserve query parameters (especially projectId) when navigating
   const getNavPath = (path: string) => {
