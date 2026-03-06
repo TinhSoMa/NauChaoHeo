@@ -17,6 +17,7 @@ import { useStoryBatchTranslation } from './hooks/useStoryBatchTranslation';
 import { useStoryExport } from './hooks/useStoryExport';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
+import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
 
 export function StoryTranslator() {
   const [filePath, setFilePath] = useState('');
@@ -36,6 +37,7 @@ export function StoryTranslator() {
   const [summaryTitles, setSummaryTitles] = useState<Map<string, string>>(new Map());
   const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
   const [isGeminiWebQueueEnabled, setIsGeminiWebQueueEnabled] = useState(false);
+  const [webQueueMode, setWebQueueMode] = useState<StoryWebQueueMode>('multi_auto');
   
   // Token management (using custom hook)
   const {
@@ -115,6 +117,7 @@ export function StoryTranslator() {
   const {
     isTranslating: isWebQueueTranslating,
     batchProgress: webQueueBatchProgress,
+    resolvedWorkerCount: webQueueResolvedWorkerCount,
     handleTranslateAll: handleTranslateAllWebQueue,
     handleStopTranslation: handleStopWebQueueTranslation,
     eligibleChapterCount: webQueueEligibleChapterCount
@@ -123,6 +126,7 @@ export function StoryTranslator() {
     sourceLang,
     targetLang,
     model,
+    webQueueMode,
     retranslateExisting,
     isChapterIncluded,
     translatedChapters,
@@ -459,7 +463,8 @@ export function StoryTranslator() {
               title="Dừng dịch Web Queue hiện tại"
             >
               <StopCircle size={16} />
-              Dừng Web Queue ({webQueueBatchProgress.current}/{webQueueBatchProgress.total})
+              Dừng Web Queue ({webQueueBatchProgress.current}/{webQueueBatchProgress.total}
+              {webQueueMode === 'multi_auto' && webQueueResolvedWorkerCount ? ` · W${webQueueResolvedWorkerCount}` : ''})
             </Button>
           ) : status === 'running' && isBatchTranslating && batchTranslationProgress ? (
             <Button 
@@ -484,23 +489,46 @@ export function StoryTranslator() {
               </Button>
 
               {isGeminiWebQueueEnabled && (
-                <Button
-                  variant="secondary"
-                  onClick={isWebQueueTranslating ? handleStopWebQueueTranslation : handleTranslateAllWebQueue}
-                  className="flex items-center gap-2 h-9 px-6"
-                  disabled={
-                    !filePath ||
-                    isGeneratingSummary ||
-                    (status !== 'idle' && !isWebQueueTranslating) ||
-                    (!isWebQueueTranslating && webQueueEligibleChapterCount <= 0)
-                  }
-                  title="Dịch batch bằng Gemini Web API + Universal Queue"
-                >
-                  {isWebQueueTranslating ? <StopCircle size={16} /> : <Sparkles size={16} />}
-                  {isWebQueueTranslating
-                    ? `Dừng Web Queue (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
-                    : 'Dịch Web Queue'}
-                </Button>
+                <div className="flex items-end gap-2">
+                  <div className="flex flex-col gap-1 min-w-[190px]">
+                    <label className="text-xs text-text-secondary">Web Queue mode</label>
+                    <select
+                      value={webQueueMode}
+                      onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
+                      disabled={isWebQueueTranslating || status === 'running'}
+                      className="h-9 px-3 rounded-md border border-border bg-card text-text-primary text-sm"
+                    >
+                      <option value="multi_auto">Nhiều chương (Queue Auto)</option>
+                      <option value="sequential">Tuần tự từng chương</option>
+                    </select>
+                    {webQueueMode === 'multi_auto' && (
+                      <span className="text-[11px] text-text-secondary">
+                        {isWebQueueTranslating
+                          ? `Auto workers: ${webQueueResolvedWorkerCount ?? 3}`
+                          : 'Auto theo tài nguyên queue'}
+                      </span>
+                    )}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={isWebQueueTranslating ? handleStopWebQueueTranslation : handleTranslateAllWebQueue}
+                    className="flex items-center gap-2 h-9 px-6"
+                    disabled={
+                      !filePath ||
+                      isGeneratingSummary ||
+                      (status !== 'idle' && !isWebQueueTranslating) ||
+                      (!isWebQueueTranslating && webQueueEligibleChapterCount <= 0)
+                    }
+                    title="Dịch batch bằng Gemini Web API + Universal Queue"
+                  >
+                    {isWebQueueTranslating ? <StopCircle size={16} /> : <Sparkles size={16} />}
+                    {isWebQueueTranslating
+                      ? `Dừng Web Queue (${webQueueBatchProgress?.current || 0}/${webQueueBatchProgress?.total || 0})`
+                      : webQueueMode === 'multi_auto'
+                        ? 'Dịch Web Queue (Auto)'
+                        : 'Dịch Web Queue (Tuần tự)'}
+                  </Button>
+                </div>
               )}
 
               <Button

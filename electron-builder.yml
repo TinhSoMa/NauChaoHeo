@@ -47,6 +47,7 @@ win:
     - target: nsis
       arch:
         - x64
+  requestedExecutionLevel: requireAdministrator
   icon: resources/icons/icon.png
   artifactName: ${productName}-${version}-setup.${ext}
 

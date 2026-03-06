@@ -26,6 +26,14 @@ export interface StoryTranslateGeminiWebQueuePayload {
   resetConversation?: boolean;
 }
 
+export interface StoryTranslateGeminiWebQueueMetadata extends Record<string, unknown> {
+  queuePacingMode?: 'after_finish_per_resource';
+  queueGapMs?: number;
+  startedAt?: number;
+  endedAt?: number;
+  nextAllowedAt?: number;
+}
+
 export interface StoryTranslateGeminiWebQueueResult {
   success: boolean;
   data?: string;
@@ -33,7 +41,7 @@ export interface StoryTranslateGeminiWebQueueResult {
   resourceId?: string;
   queueRuntimeKey: string;
   errorCode?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: StoryTranslateGeminiWebQueueMetadata;
 }
 
 export const STORY_IPC_CHANNELS = {
