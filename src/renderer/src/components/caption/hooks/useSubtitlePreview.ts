@@ -145,6 +145,38 @@ function fitRect(
   };
 }
 
+function coverSourceRect(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number
+): { sx: number; sy: number; sw: number; sh: number } {
+  const safeSourceW = Math.max(1, sourceWidth);
+  const safeSourceH = Math.max(1, sourceHeight);
+  const safeTargetW = Math.max(1, targetWidth);
+  const safeTargetH = Math.max(1, targetHeight);
+  const sourceRatio = safeSourceW / safeSourceH;
+  const targetRatio = safeTargetW / safeTargetH;
+
+  if (sourceRatio > targetRatio) {
+    const sw = safeSourceH * targetRatio;
+    return {
+      sx: (safeSourceW - sw) / 2,
+      sy: 0,
+      sw,
+      sh: safeSourceH,
+    };
+  }
+
+  const sh = safeSourceW / targetRatio;
+  return {
+    sx: 0,
+    sy: (safeSourceH - sh) / 2,
+    sw: safeSourceW,
+    sh,
+  };
+}
+
 function resolvePreviewCoordinateSpace(
   renderMode: PreviewRenderMode,
   renderResolution: PreviewRenderResolution,
@@ -366,6 +398,8 @@ export function useSubtitlePreview({
   onLogoScaleChange,
   renderSnapshotMode,
 }: UseSubtitlePreviewOptions) {
+  const LANDSCAPE_FRAME_WIDTH = 1920;
+  const LANDSCAPE_FRAME_HEIGHT = 1080;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -886,10 +920,14 @@ export function useSubtitlePreview({
     const isPortraitMode = renderMode === 'hardsub_portrait_9_16' && !renderSnapshotMode;
     const outputRect = isPortraitMode
       ? fitRect(cw, ch, 9, 16)
-      : fitRect(cw, ch, img.width, img.height);
+      : fitRect(cw, ch, 16, 9);
 
-    const previewWidth = Math.max(1, state.videoSize.width);
-    const previewHeight = Math.max(1, state.videoSize.height);
+    const previewWidth = isPortraitMode
+      ? Math.max(1, state.videoSize.width)
+      : LANDSCAPE_FRAME_WIDTH;
+    const previewHeight = isPortraitMode
+      ? Math.max(1, state.videoSize.height)
+      : LANDSCAPE_FRAME_HEIGHT;
     previewRectRef.current = outputRect;
     previewSpaceRef.current = { width: previewWidth, height: previewHeight };
     markHitRectRef.current = {
@@ -967,7 +1005,18 @@ export function useSubtitlePreview({
         fgRect.height
       );
     } else {
-      ctx.drawImage(img, outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+      const srcRect = coverSourceRect(img.width, img.height, outputRect.width, outputRect.height);
+      ctx.drawImage(
+        img,
+        srcRect.sx,
+        srcRect.sy,
+        srcRect.sw,
+        srcRect.sh,
+        outputRect.x,
+        outputRect.y,
+        outputRect.width,
+        outputRect.height
+      );
     }
     portraitFgRectRef.current = portraitFgRect;
     const coverRegion = outputRect;

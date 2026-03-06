@@ -1257,6 +1257,9 @@
 
 /* Desktop shell redesign */
 .container {
+  --cap-gap: clamp(8px, 0.7vw, 12px);
+  --cap-step-rail: clamp(124px, 9.2vw, 152px);
+  --cap-inspector: clamp(320px, 24vw, 388px);
   width: 100%;
   height: calc(100vh - 4rem);
   padding: 0;
@@ -1264,7 +1267,7 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   align-items: stretch;
-  gap: 12px;
+  gap: var(--cap-gap);
   overflow: hidden;
 }
 
@@ -1302,8 +1305,8 @@
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: 152px minmax(0, 1fr) 404px;
-  gap: 12px;
+  grid-template-columns: var(--cap-step-rail) minmax(0, 1fr) var(--cap-inspector);
+  gap: var(--cap-gap);
 }
 
 .stepRail,
@@ -1529,10 +1532,12 @@
 .stageHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
   border-bottom: 1px solid var(--color-border);
-  padding: 10px 12px;
+  padding: 9px 11px;
   background: var(--color-card);
 }
 
@@ -1550,15 +1555,19 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .thumbnailFolderPicker {
-  min-width: 220px;
+  min-width: 160px;
+  max-width: 320px;
+  flex: 1 1 220px;
 }
 
 .thumbnailFolderSelect {
   width: 100%;
-  max-width: 320px;
+  max-width: none;
   padding: 4px 10px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
@@ -1571,7 +1580,7 @@
 .stageBody {
   min-height: 0;
   overflow: hidden;
-  padding: 10px;
+  padding: 6px;
 }
 
 .previewSurface {
@@ -1580,7 +1589,7 @@
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-surface);
-  padding: 10px;
+  padding: 6px;
   overflow: hidden;
 }
 
@@ -1747,6 +1756,8 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .inspectorTitle {
@@ -1765,6 +1776,7 @@
   flex-shrink: 0;
   font-size: 11px;
   padding: 4px 9px;
+  margin-left: auto;
 }
 
 .inspectorTabs {
@@ -2244,14 +2256,15 @@
 
 .runBarControls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px 210px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(200px, 1fr) minmax(180px, 1fr);
+  gap: var(--cap-gap);
   align-items: start;
 }
 
 .runBarModeSwitch {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .disabled {
@@ -2260,12 +2273,13 @@
 }
 
 @media (max-width: 1520px) {
-  .workspace {
-    grid-template-columns: 144px minmax(0, 1fr) 360px;
+  .container {
+    --cap-step-rail: 132px;
+    --cap-inspector: 320px;
   }
 
   .runBarControls {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   }
 
   .stepBrowseRow,
@@ -2276,13 +2290,17 @@
 }
 
 @media (max-width: 1240px) {
+  .container {
+    --cap-step-rail: 140px;
+  }
+
   .workspace {
-    grid-template-columns: 144px minmax(0, 1fr);
+    grid-template-columns: var(--cap-step-rail) minmax(0, 1fr);
   }
 
   .inspector {
     grid-column: 1 / -1;
-    min-height: 380px;
+    min-height: 360px;
   }
 
 }
