@@ -174,6 +174,8 @@ interface UseCaptionProcessingProps {
   inputType: string;
   captionFolder: string | null;
   settings: {
+    fontSizeScaleVersion?: number;
+    subtitleFontSizeRel?: number;
     geminiModel: string;
     splitByLines: boolean;
     linesPerFile: number;
@@ -194,6 +196,10 @@ interface UseCaptionProcessingProps {
     coverMode?: 'blackout_bottom' | 'copy_from_above';
     coverQuad?: CoverQuad;
     coverFeatherPx?: number;
+    coverFeatherHorizontalPx?: number;
+    coverFeatherVerticalPx?: number;
+    coverFeatherHorizontalPercent?: number;
+    coverFeatherVerticalPercent?: number;
     autoFitAudio: boolean;
     audioSpeed?: number;
     renderAudioSpeed?: number;
@@ -211,11 +217,14 @@ interface UseCaptionProcessingProps {
     thumbnailTextSecondary?: string;
     thumbnailFontName?: string;
     thumbnailFontSize?: number;
+    thumbnailFontSizeRel?: number;
     thumbnailTextPrimaryFontName?: string;
     thumbnailTextPrimaryFontSize?: number;
+    thumbnailTextPrimaryFontSizeRel?: number;
     thumbnailTextPrimaryColor?: string;
     thumbnailTextSecondaryFontName?: string;
     thumbnailTextSecondaryFontSize?: number;
+    thumbnailTextSecondaryFontSizeRel?: number;
     thumbnailTextSecondaryColor?: string;
     thumbnailLineHeightRatio?: number;
     thumbnailTextPrimaryPosition?: { x: number; y: number };
@@ -1120,6 +1129,8 @@ export function useCaptionProcessing({
         autoFitAudio: cfg.autoFitAudio,
       },
       step7Render: {
+        fontSizeScaleVersion: cfg.fontSizeScaleVersion,
+        subtitleFontSizeRel: cfg.subtitleFontSizeRel,
         renderMode: cfg.renderMode,
         renderResolution: cfg.renderResolution,
         renderContainer: cfg.renderContainer || 'mp4',
@@ -1130,6 +1141,10 @@ export function useCaptionProcessing({
         coverMode: cfg.coverMode || 'blackout_bottom',
         coverQuad: cfg.coverQuad,
         coverFeatherPx: cfg.coverFeatherPx,
+        coverFeatherHorizontalPx: cfg.coverFeatherHorizontalPx,
+        coverFeatherVerticalPx: cfg.coverFeatherVerticalPx,
+        coverFeatherHorizontalPercent: cfg.coverFeatherHorizontalPercent,
+        coverFeatherVerticalPercent: cfg.coverFeatherVerticalPercent,
         style: cfg.style,
         thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
         thumbnailDurationSec: cfg.thumbnailDurationSec,
@@ -1141,11 +1156,14 @@ export function useCaptionProcessing({
           : (cfg.thumbnailTextSecondary || '').trim(),
         thumbnailFontName: cfg.thumbnailFontName,
         thumbnailFontSize: cfg.thumbnailFontSize,
+        thumbnailFontSizeRel: cfg.thumbnailFontSizeRel,
         thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
         thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+        thumbnailTextPrimaryFontSizeRel: cfg.thumbnailTextPrimaryFontSizeRel,
         thumbnailTextPrimaryColor: cfg.thumbnailTextPrimaryColor,
         thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
         thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+        thumbnailTextSecondaryFontSizeRel: cfg.thumbnailTextSecondaryFontSizeRel,
         thumbnailTextSecondaryColor: cfg.thumbnailTextSecondaryColor,
         thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
         thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
@@ -1162,6 +1180,8 @@ export function useCaptionProcessing({
     });
 
     const projectSettingsForRun: CaptionProjectSettingsValues = {
+      fontSizeScaleVersion: cfg.fontSizeScaleVersion,
+      subtitleFontSizeRel: cfg.subtitleFontSizeRel,
       inputType: inputType as 'srt' | 'draft',
       geminiModel: cfg.geminiModel,
       translateMethod: cfg.translateMethod,
@@ -1184,17 +1204,24 @@ export function useCaptionProcessing({
       coverMode: cfg.coverMode || 'blackout_bottom',
       coverQuad: cfg.coverQuad,
       ...(cfg.coverFeatherPx != null ? { coverFeatherPx: cfg.coverFeatherPx } : {}),
+      ...(cfg.coverFeatherHorizontalPx != null ? { coverFeatherHorizontalPx: cfg.coverFeatherHorizontalPx } : {}),
+      ...(cfg.coverFeatherVerticalPx != null ? { coverFeatherVerticalPx: cfg.coverFeatherVerticalPx } : {}),
+      ...(cfg.coverFeatherHorizontalPercent != null ? { coverFeatherHorizontalPercent: cfg.coverFeatherHorizontalPercent } : {}),
+      ...(cfg.coverFeatherVerticalPercent != null ? { coverFeatherVerticalPercent: cfg.coverFeatherVerticalPercent } : {}),
       audioSpeed: cfg.audioSpeed,
       renderAudioSpeed: cfg.renderAudioSpeed,
       videoVolume: cfg.videoVolume,
       audioVolume: cfg.audioVolume,
       thumbnailFontName: cfg.thumbnailFontName,
       thumbnailFontSize: cfg.thumbnailFontSize,
+      thumbnailFontSizeRel: cfg.thumbnailFontSizeRel,
       thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
       thumbnailTextPrimaryFontSize: cfg.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryFontSizeRel: cfg.thumbnailTextPrimaryFontSizeRel,
       thumbnailTextPrimaryColor: cfg.thumbnailTextPrimaryColor,
       thumbnailTextSecondaryFontName: cfg.thumbnailTextSecondaryFontName,
       thumbnailTextSecondaryFontSize: cfg.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryFontSizeRel: cfg.thumbnailTextSecondaryFontSizeRel,
       thumbnailTextSecondaryColor: cfg.thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
       thumbnailTextSecondary: cfg.thumbnailTextSecondary,
@@ -2192,6 +2219,10 @@ export function useCaptionProcessing({
           coverMode: cfg.coverMode || 'blackout_bottom',
           coverQuad: cfg.coverQuad,
           coverFeatherPx: cfg.coverFeatherPx,
+          coverFeatherHorizontalPx: cfg.coverFeatherHorizontalPx,
+          coverFeatherVerticalPx: cfg.coverFeatherVerticalPx,
+          coverFeatherHorizontalPercent: cfg.coverFeatherHorizontalPercent,
+          coverFeatherVerticalPercent: cfg.coverFeatherVerticalPercent,
           audioPath: mergedAudioPathForRender,
           audioSpeed: cfg.renderAudioSpeed,
           step7AudioSpeedInput: step7AudioSpeed,

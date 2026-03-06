@@ -207,6 +207,10 @@ export interface CaptionVideoAPI {
       bl: { x: number; y: number };
     };
     coverFeatherPx?: number;
+    coverFeatherHorizontalPx?: number;
+    coverFeatherVerticalPx?: number;
+    coverFeatherHorizontalPercent?: number;
+    coverFeatherVerticalPercent?: number;
     audioSpeed?: number;
     step7AudioSpeedInput?: number;
     audioPath?: string;

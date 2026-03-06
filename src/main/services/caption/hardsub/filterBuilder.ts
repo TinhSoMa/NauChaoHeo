@@ -25,6 +25,10 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
       renderHeight: input.renderHeight,
       coverQuad: input.coverQuad,
       coverFeatherPx: input.coverFeatherPx,
+      coverFeatherHorizontalPx: input.coverFeatherHorizontalPx,
+      coverFeatherVerticalPx: input.coverFeatherVerticalPx,
+      coverFeatherHorizontalPercent: input.coverFeatherHorizontalPercent,
+      coverFeatherVerticalPercent: input.coverFeatherVerticalPercent,
       featherStrategy: input.featherStrategy,
       labelPrefix: 'landscape_cover',
     });

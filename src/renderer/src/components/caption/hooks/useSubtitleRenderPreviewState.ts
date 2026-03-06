@@ -25,6 +25,10 @@ interface UseSubtitleRenderPreviewStateOptions {
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
@@ -50,6 +54,10 @@ interface RenderVideoPreviewFrameRequest {
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
@@ -148,6 +156,10 @@ export function useSubtitleRenderPreviewState(
       coverMode: options.coverMode,
       coverQuad: options.coverQuad,
       coverFeatherPx: options.coverFeatherPx,
+      coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
+      coverFeatherVerticalPx: options.coverFeatherVerticalPx,
+      coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
+      coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
@@ -160,6 +172,10 @@ export function useSubtitleRenderPreviewState(
     options.coverMode,
     options.coverQuad,
     options.coverFeatherPx,
+    options.coverFeatherHorizontalPx,
+    options.coverFeatherVerticalPx,
+    options.coverFeatherHorizontalPercent,
+    options.coverFeatherVerticalPercent,
     options.logoPath,
     options.logoPosition,
     options.logoScale,

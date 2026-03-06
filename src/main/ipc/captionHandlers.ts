@@ -393,6 +393,11 @@ export function registerCaptionHandlers(): void {
           br: { x: number; y: number };
           bl: { x: number; y: number };
         };
+        coverFeatherPx?: number;
+        coverFeatherHorizontalPx?: number;
+        coverFeatherVerticalPx?: number;
+        coverFeatherHorizontalPercent?: number;
+        coverFeatherVerticalPercent?: number;
         audioSpeed?: number;
         step7AudioSpeedInput?: number;
         srtTimeScale?: number;

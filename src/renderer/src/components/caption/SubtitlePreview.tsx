@@ -21,6 +21,10 @@ interface SubtitlePreviewProps {
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   hardwareAcceleration?: RenderVideoOptions['hardwareAcceleration'];
@@ -44,7 +48,7 @@ interface SubtitlePreviewProps {
   realPreviewDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -55,6 +59,10 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     coverMode,
     coverQuad,
     coverFeatherPx,
+    coverFeatherHorizontalPx,
+    coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent,
     renderMode,
     renderResolution,
     logoPath,
@@ -81,6 +89,10 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     coverMode,
     coverQuad,
     coverFeatherPx,
+    coverFeatherHorizontalPx,
+    coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent,
     logoPath,
     logoPosition,
     logoScale,
@@ -141,7 +153,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     : (preview.mode === 'logo'
       ? `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`
       : (preview.coverMode === 'copy_from_above'
-        ? `Copy mode · offset ${preview.copyOffsetPx}px · feather ${Math.round(preview.coverFeatherPx)}px · ${preview.coverQuadValid ? 'Quad OK' : 'Quad lỗi'}`
+        ? `Copy mode · offset ${preview.copyOffsetPx}px · feather LR ${Math.round(preview.coverFeatherHorizontalPercent ?? 20)}% / TB ${Math.round(preview.coverFeatherVerticalPercent ?? 20)}% · ${preview.coverQuadValid ? 'Quad OK' : 'Quad lỗi'}`
         : `${isPortraitMode ? 'Blur' : 'Mask'} ${blackoutPct}%`));
   const resolutionInfo = `${preview.videoSize.width}×${preview.videoSize.height} · ${isPortraitMode ? '9:16' : '16:9'} ${displayRenderResolution}`;
 

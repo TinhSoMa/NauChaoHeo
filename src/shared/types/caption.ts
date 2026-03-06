@@ -474,6 +474,10 @@ export interface RenderVideoOptions {
   coverMode?: CaptionCoverMode; // Chế độ che video (legacy mặc định: blackout_bottom)
   coverQuad?: CoverQuad; // Tứ giác normalized (0..1) cho mode copy_from_above
   coverFeatherPx?: number; // Feather viền vùng copy_from_above (px), không dùng blur
+  coverFeatherHorizontalPx?: number; // Feather trái/phải cho copy_from_above (px)
+  coverFeatherVerticalPx?: number; // Feather trên/dưới cho copy_from_above (px)
+  coverFeatherHorizontalPercent?: number; // Feather trái/phải theo % bề ngang vùng copy
+  coverFeatherVerticalPercent?: number; // Feather trên/dưới theo % bề dọc vùng copy
   audioSpeed?: number;    // Tốc độ phát audio (sẽ tự động tính videoSpeed để khớp)
   step7AudioSpeedInput?: number; // Tốc độ audio người dùng nhập ở Step 7 (giữ riêng để trace khi audioPath đã pre-adjust)
   srtTimeScale?: number;  // Scale timeline SRT đã dùng khi merge audio (vd: settings.srtSpeed)
@@ -584,6 +588,10 @@ export interface RenderVideoPreviewFrameOptions {
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
@@ -783,6 +791,8 @@ export interface CaptionSessionRuntime {
 export type CaptionSettingsSyncState = 'synced' | 'pending' | 'error';
 
 export interface CaptionProjectSettingsValues {
+  fontSizeScaleVersion?: number;
+  subtitleFontSizeRel?: number;
   inputType?: 'srt' | 'draft';
   geminiModel?: string;
   translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
@@ -805,6 +815,10 @@ export interface CaptionProjectSettingsValues {
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   audioSpeed?: number;
   renderAudioSpeed?: number;
   portraitForegroundCropPercent?: number;
@@ -812,11 +826,14 @@ export interface CaptionProjectSettingsValues {
   audioVolume?: number; // 0..400, mapping tuyến tính 100=x1
   thumbnailFontName?: string;
   thumbnailFontSize?: number;
+  thumbnailFontSizeRel?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryFontSizeRel?: number;
   thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryFontSizeRel?: number;
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextSecondary?: string;
@@ -829,6 +846,8 @@ export interface CaptionProjectSettingsValues {
   thumbnailFrameTimeSec?: number | null;
   layoutProfiles?: {
     landscape?: {
+      fontSizeScaleVersion?: number;
+      subtitleFontSizeRel?: number;
       style?: ASSStyleConfig;
       renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
       renderContainer?: 'mp4' | 'mov';
@@ -836,6 +855,10 @@ export interface CaptionProjectSettingsValues {
       coverMode?: CaptionCoverMode;
       coverQuad?: CoverQuad | null;
       coverFeatherPx?: number;
+      coverFeatherHorizontalPx?: number;
+      coverFeatherVerticalPx?: number;
+      coverFeatherHorizontalPercent?: number;
+      coverFeatherVerticalPercent?: number;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
@@ -844,11 +867,14 @@ export interface CaptionProjectSettingsValues {
       logoScale?: number;
       thumbnailFontName?: string;
       thumbnailFontSize?: number;
+      thumbnailFontSizeRel?: number;
       thumbnailTextPrimaryFontName?: string;
       thumbnailTextPrimaryFontSize?: number;
+      thumbnailTextPrimaryFontSizeRel?: number;
       thumbnailTextPrimaryColor?: string;
       thumbnailTextSecondaryFontName?: string;
       thumbnailTextSecondaryFontSize?: number;
+      thumbnailTextSecondaryFontSizeRel?: number;
       thumbnailTextSecondaryColor?: string;
       thumbnailLineHeightRatio?: number;
       thumbnailTextSecondary?: string;
@@ -857,6 +883,8 @@ export interface CaptionProjectSettingsValues {
       foregroundCropPercent?: number;
     };
     portrait?: {
+      fontSizeScaleVersion?: number;
+      subtitleFontSizeRel?: number;
       style?: ASSStyleConfig;
       renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
       renderContainer?: 'mp4' | 'mov';
@@ -864,6 +892,10 @@ export interface CaptionProjectSettingsValues {
       coverMode?: CaptionCoverMode;
       coverQuad?: CoverQuad | null;
       coverFeatherPx?: number;
+      coverFeatherHorizontalPx?: number;
+      coverFeatherVerticalPx?: number;
+      coverFeatherHorizontalPercent?: number;
+      coverFeatherVerticalPercent?: number;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
@@ -872,11 +904,14 @@ export interface CaptionProjectSettingsValues {
       logoScale?: number;
       thumbnailFontName?: string;
       thumbnailFontSize?: number;
+      thumbnailFontSizeRel?: number;
       thumbnailTextPrimaryFontName?: string;
       thumbnailTextPrimaryFontSize?: number;
+      thumbnailTextPrimaryFontSizeRel?: number;
       thumbnailTextPrimaryColor?: string;
       thumbnailTextSecondaryFontName?: string;
       thumbnailTextSecondaryFontSize?: number;
+      thumbnailTextSecondaryFontSizeRel?: number;
       thumbnailTextSecondaryColor?: string;
       thumbnailLineHeightRatio?: number;
       thumbnailTextSecondary?: string;

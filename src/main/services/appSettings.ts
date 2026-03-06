@@ -49,12 +49,16 @@ export interface GeminiWebApiCookieFallback {
 }
 
 export interface CaptionTypographyLayoutDefaults {
+  fontSizeScaleVersion?: number;
   style: ASSStyleConfig;
+  subtitleFontSizeRel?: number;
   subtitlePosition: { x: number; y: number } | null;
   thumbnailTextPrimaryFontName: string;
   thumbnailTextPrimaryFontSize: number;
+  thumbnailTextPrimaryFontSizeRel?: number;
   thumbnailTextSecondaryFontName: string;
   thumbnailTextSecondaryFontSize: number;
+  thumbnailTextSecondaryFontSizeRel?: number;
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
@@ -89,12 +93,16 @@ const DEFAULT_TYPOGRAPHY_LAYOUT: CaptionTypographyLayoutDefaults = {
 
 function cloneTypographyLayout(layout: CaptionTypographyLayoutDefaults): CaptionTypographyLayoutDefaults {
   return {
+    fontSizeScaleVersion: layout.fontSizeScaleVersion,
     style: { ...layout.style },
+    subtitleFontSizeRel: layout.subtitleFontSizeRel,
     subtitlePosition: layout.subtitlePosition ? { ...layout.subtitlePosition } : null,
     thumbnailTextPrimaryFontName: layout.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: layout.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryFontSizeRel: layout.thumbnailTextPrimaryFontSizeRel,
     thumbnailTextSecondaryFontName: layout.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: layout.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryFontSizeRel: layout.thumbnailTextSecondaryFontSizeRel,
     thumbnailLineHeightRatio: layout.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: { ...layout.thumbnailTextPrimaryPosition },
     thumbnailTextSecondaryPosition: { ...layout.thumbnailTextSecondaryPosition },
@@ -153,8 +161,14 @@ function normalizeTypographyLayout(
 ): CaptionTypographyLayoutDefaults {
   const layout = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   const next = cloneTypographyLayout(fallback);
+  if (isFiniteNumber(layout.fontSizeScaleVersion)) {
+    next.fontSizeScaleVersion = Math.max(1, Math.round(layout.fontSizeScaleVersion));
+  }
 
   next.style = normalizeStyle(layout.style, fallback.style);
+  if (isFiniteNumber(layout.subtitleFontSizeRel)) {
+    next.subtitleFontSizeRel = clamp(layout.subtitleFontSizeRel, 1, 200);
+  }
   if (layout.subtitlePosition === null) {
     next.subtitlePosition = null;
   } else if (layout.subtitlePosition && typeof layout.subtitlePosition === 'object') {
@@ -167,11 +181,17 @@ function normalizeTypographyLayout(
   if (isFiniteNumber(layout.thumbnailTextPrimaryFontSize)) {
     next.thumbnailTextPrimaryFontSize = clamp(Math.round(layout.thumbnailTextPrimaryFontSize), 24, 400);
   }
+  if (isFiniteNumber(layout.thumbnailTextPrimaryFontSizeRel)) {
+    next.thumbnailTextPrimaryFontSizeRel = clamp(layout.thumbnailTextPrimaryFontSizeRel, 8, 200);
+  }
   if (typeof layout.thumbnailTextSecondaryFontName === 'string' && layout.thumbnailTextSecondaryFontName.trim().length > 0) {
     next.thumbnailTextSecondaryFontName = layout.thumbnailTextSecondaryFontName.trim();
   }
   if (isFiniteNumber(layout.thumbnailTextSecondaryFontSize)) {
     next.thumbnailTextSecondaryFontSize = clamp(Math.round(layout.thumbnailTextSecondaryFontSize), 24, 400);
+  }
+  if (isFiniteNumber(layout.thumbnailTextSecondaryFontSizeRel)) {
+    next.thumbnailTextSecondaryFontSizeRel = clamp(layout.thumbnailTextSecondaryFontSizeRel, 8, 200);
   }
   if (isFiniteNumber(layout.thumbnailLineHeightRatio)) {
     next.thumbnailLineHeightRatio = clamp(layout.thumbnailLineHeightRatio, 0, 4);

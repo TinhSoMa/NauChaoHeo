@@ -273,13 +273,22 @@ const COVER_FEATHER_RETRYABLE_PATTERN =
 function shouldRetryWithGblurFeather(
   coverMode: string | undefined,
   coverFeatherPx: number | undefined,
+  coverFeatherHorizontalPx: number | undefined,
+  coverFeatherVerticalPx: number | undefined,
+  coverFeatherHorizontalPercent: number | undefined,
+  coverFeatherVerticalPercent: number | undefined,
   strategy: CoverFeatherStrategy,
   errorText: string
 ): boolean {
   if (coverMode !== 'copy_from_above') {
     return false;
   }
-  if (!Number.isFinite(coverFeatherPx) || (coverFeatherPx as number) <= 0) {
+  const hasLegacyFeather = Number.isFinite(coverFeatherPx) && (coverFeatherPx as number) > 0;
+  const hasHorizontalFeather = Number.isFinite(coverFeatherHorizontalPx) && (coverFeatherHorizontalPx as number) > 0;
+  const hasVerticalFeather = Number.isFinite(coverFeatherVerticalPx) && (coverFeatherVerticalPx as number) > 0;
+  const hasHorizontalPercent = Number.isFinite(coverFeatherHorizontalPercent) && (coverFeatherHorizontalPercent as number) > 0;
+  const hasVerticalPercent = Number.isFinite(coverFeatherVerticalPercent) && (coverFeatherVerticalPercent as number) > 0;
+  if (!hasLegacyFeather && !hasHorizontalFeather && !hasVerticalFeather && !hasHorizontalPercent && !hasVerticalPercent) {
     return false;
   }
   if (strategy !== 'geq_distance') {
@@ -564,6 +573,10 @@ export async function renderHardsubVideo(
     coverMode,
     coverQuad: options.coverQuad,
     coverFeatherPx: options.coverFeatherPx,
+    coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
+    coverFeatherVerticalPx: options.coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
     featherStrategy,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     subtitleFilter,
@@ -848,8 +861,13 @@ export async function renderHardsubVideo(
   const totalFrames = Math.floor(outputDuration * fps);
   const includeFullStderrOnError =
     coverMode === 'copy_from_above' &&
-    Number.isFinite(options.coverFeatherPx) &&
-    (options.coverFeatherPx as number) > 0;
+    (
+      (Number.isFinite(options.coverFeatherPx) && (options.coverFeatherPx as number) > 0) ||
+      (Number.isFinite(options.coverFeatherHorizontalPx) && (options.coverFeatherHorizontalPx as number) > 0) ||
+      (Number.isFinite(options.coverFeatherVerticalPx) && (options.coverFeatherVerticalPx as number) > 0) ||
+      (Number.isFinite(options.coverFeatherHorizontalPercent) && (options.coverFeatherHorizontalPercent as number) > 0) ||
+      (Number.isFinite(options.coverFeatherVerticalPercent) && (options.coverFeatherVerticalPercent as number) > 0)
+    );
   const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
@@ -864,7 +882,16 @@ export async function renderHardsubVideo(
   });
   if (
     !renderResult.success &&
-    shouldRetryWithGblurFeather(coverMode, options.coverFeatherPx, featherStrategy, renderResult.error || '')
+    shouldRetryWithGblurFeather(
+      coverMode,
+      options.coverFeatherPx,
+      options.coverFeatherHorizontalPx,
+      options.coverFeatherVerticalPx,
+      options.coverFeatherHorizontalPercent,
+      options.coverFeatherVerticalPercent,
+      featherStrategy,
+      renderResult.error || ''
+    )
   ) {
     console.warn('[VideoRenderer][Hardsub] Retry with fallback feather strategy gblur_mask.', {
       initialStrategy: featherStrategy,
@@ -1030,6 +1057,10 @@ export async function renderHardsubPortraitVideo(
     coverMode,
     coverQuad: options.coverQuad,
     coverFeatherPx: options.coverFeatherPx,
+    coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
+    coverFeatherVerticalPx: options.coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
     featherStrategy,
     bgDownscaleWidth,
     bgDownscaleHeight,
@@ -1252,8 +1283,13 @@ export async function renderHardsubPortraitVideo(
   const totalFrames = Math.floor(outputDuration * fps);
   const includeFullStderrOnError =
     coverMode === 'copy_from_above' &&
-    Number.isFinite(options.coverFeatherPx) &&
-    (options.coverFeatherPx as number) > 0;
+    (
+      (Number.isFinite(options.coverFeatherPx) && (options.coverFeatherPx as number) > 0) ||
+      (Number.isFinite(options.coverFeatherHorizontalPx) && (options.coverFeatherHorizontalPx as number) > 0) ||
+      (Number.isFinite(options.coverFeatherVerticalPx) && (options.coverFeatherVerticalPx as number) > 0) ||
+      (Number.isFinite(options.coverFeatherHorizontalPercent) && (options.coverFeatherHorizontalPercent as number) > 0) ||
+      (Number.isFinite(options.coverFeatherVerticalPercent) && (options.coverFeatherVerticalPercent as number) > 0)
+    );
   const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
@@ -1268,7 +1304,16 @@ export async function renderHardsubPortraitVideo(
   });
   if (
     !renderResult.success &&
-    shouldRetryWithGblurFeather(coverMode, options.coverFeatherPx, featherStrategy, renderResult.error || '')
+    shouldRetryWithGblurFeather(
+      coverMode,
+      options.coverFeatherPx,
+      options.coverFeatherHorizontalPx,
+      options.coverFeatherVerticalPx,
+      options.coverFeatherHorizontalPercent,
+      options.coverFeatherVerticalPercent,
+      featherStrategy,
+      renderResult.error || ''
+    )
   ) {
     console.warn('[VideoRenderer][HardsubPortrait] Retry with fallback feather strategy gblur_mask.', {
       initialStrategy: featherStrategy,
@@ -1554,6 +1599,10 @@ export async function renderVideoPreviewFrame(
       coverMode: options.coverMode,
       coverQuad: options.coverQuad,
       coverFeatherPx: options.coverFeatherPx,
+      coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
+      coverFeatherVerticalPx: options.coverFeatherVerticalPx,
+      coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
+      coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
@@ -1627,6 +1676,10 @@ export async function renderVideoPreviewFrame(
         coverMode: options.coverMode || 'blackout_bottom',
         coverQuad: options.coverQuad,
         coverFeatherPx: options.coverFeatherPx,
+        coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
+        coverFeatherVerticalPx: options.coverFeatherVerticalPx,
+        coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
+        coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
         featherStrategy,
         bgDownscaleWidth: even(portraitCanvas.width / 8),
         bgDownscaleHeight: even(portraitCanvas.height / 8),
@@ -1673,6 +1726,10 @@ export async function renderVideoPreviewFrame(
         coverMode: options.coverMode || 'blackout_bottom',
         coverQuad: options.coverQuad,
         coverFeatherPx: options.coverFeatherPx,
+        coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
+        coverFeatherVerticalPx: options.coverFeatherVerticalPx,
+        coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
+        coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
         featherStrategy,
         videoSpeedMultiplier: 1.0,
         subtitleFilter,
@@ -1810,7 +1867,16 @@ export async function renderVideoPreviewFrame(
         }
         if (
           featherRetryCount < 1 &&
-          shouldRetryWithGblurFeather(coverMode, options.coverFeatherPx, featherStrategy, combinedErrorText)
+          shouldRetryWithGblurFeather(
+            coverMode,
+            options.coverFeatherPx,
+            options.coverFeatherHorizontalPx,
+            options.coverFeatherVerticalPx,
+            options.coverFeatherHorizontalPercent,
+            options.coverFeatherVerticalPercent,
+            featherStrategy,
+            combinedErrorText
+          )
         ) {
           console.warn('[VideoRenderer][PreviewFrame] Retry with fallback feather strategy gblur_mask.', {
             currentStrategy: featherStrategy,

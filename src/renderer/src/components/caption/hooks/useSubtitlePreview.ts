@@ -40,6 +40,10 @@ export interface UseSubtitlePreviewOptions {
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   renderMode?: PreviewRenderMode;
   renderResolution?: PreviewRenderResolution;
   logoPath?: string;
@@ -208,13 +212,54 @@ const PREVIEW_ZOOM_STEP = 0.1;
 const MIN_COVER_FEATHER_PX = 0;
 const MAX_COVER_FEATHER_PX = 120;
 const DEFAULT_COVER_FEATHER_PX = 18;
-const COVER_FEATHER_EDGE_RATIO = 0.20;
+const MIN_COVER_FEATHER_PERCENT = 0;
+const MAX_COVER_FEATHER_PERCENT = 50;
+const DEFAULT_COVER_FEATHER_PERCENT = 20;
 
-function normalizeCoverFeatherPx(value: number | undefined): number {
+function normalizeCoverFeatherAxisPx(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value)) {
-    return DEFAULT_COVER_FEATHER_PX;
+    return clampNumber(Math.round(fallback), MIN_COVER_FEATHER_PX, MAX_COVER_FEATHER_PX);
   }
   return clampNumber(Math.round(value as number), MIN_COVER_FEATHER_PX, MAX_COVER_FEATHER_PX);
+}
+
+function normalizeCoverFeatherPercent(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return clampNumber(Math.round(fallback), MIN_COVER_FEATHER_PERCENT, MAX_COVER_FEATHER_PERCENT);
+  }
+  return clampNumber(Math.round(value as number), MIN_COVER_FEATHER_PERCENT, MAX_COVER_FEATHER_PERCENT);
+}
+
+function coverFeatherPxToPercent(valuePx: number): number {
+  const normalizedPx = normalizeCoverFeatherAxisPx(valuePx, DEFAULT_COVER_FEATHER_PX);
+  const percent = (normalizedPx / Math.max(1, MAX_COVER_FEATHER_PX)) * MAX_COVER_FEATHER_PERCENT;
+  return normalizeCoverFeatherPercent(percent, DEFAULT_COVER_FEATHER_PERCENT);
+}
+
+function resolveCoverFeatherPair(
+  legacyFeather: number | undefined,
+  horizontalFeather: number | undefined,
+  verticalFeather: number | undefined,
+  horizontalPercent: number | undefined,
+  verticalPercent: number | undefined
+): { horizontal: number; vertical: number; horizontalPercent: number; verticalPercent: number } {
+  const legacy = normalizeCoverFeatherAxisPx(legacyFeather, DEFAULT_COVER_FEATHER_PX);
+  const horizontalPx = normalizeCoverFeatherAxisPx(horizontalFeather, legacy);
+  const verticalPx = normalizeCoverFeatherAxisPx(verticalFeather, legacy);
+  const hasHorizontalPercent = Number.isFinite(horizontalPercent);
+  const hasVerticalPercent = Number.isFinite(verticalPercent);
+  const horizontalPct = hasHorizontalPercent
+    ? normalizeCoverFeatherPercent(horizontalPercent, DEFAULT_COVER_FEATHER_PERCENT)
+    : coverFeatherPxToPercent(horizontalPx);
+  const verticalPct = hasVerticalPercent
+    ? normalizeCoverFeatherPercent(verticalPercent, DEFAULT_COVER_FEATHER_PERCENT)
+    : coverFeatherPxToPercent(verticalPx);
+  return {
+    horizontal: horizontalPx,
+    vertical: verticalPx,
+    horizontalPercent: horizontalPct,
+    verticalPercent: verticalPct,
+  };
 }
 
 function applyEdgeFeatherMask(
@@ -303,6 +348,10 @@ export function useSubtitlePreview({
   coverMode,
   coverQuad,
   coverFeatherPx,
+  coverFeatherHorizontalPx,
+  coverFeatherVerticalPx,
+  coverFeatherHorizontalPercent,
+  coverFeatherVerticalPercent,
   renderMode,
   renderResolution,
   logoPath,
@@ -957,7 +1006,13 @@ export function useSubtitlePreview({
 
       const scaleX = region.width / previewWidth;
       const scaleY = region.height / previewHeight;
-      const normalizedCoverFeatherPx = normalizeCoverFeatherPx(coverFeatherPx);
+      const coverFeatherPair = resolveCoverFeatherPair(
+        coverFeatherPx,
+        coverFeatherHorizontalPx,
+        coverFeatherVerticalPx,
+        coverFeatherHorizontalPercent,
+        coverFeatherVerticalPercent
+      );
       const rectCanvasX = region.x + rectPx.x * scaleX;
       const rectCanvasY = region.y + rectPx.y * scaleY;
       const rectCanvasW = rectPx.w * scaleX;
@@ -989,7 +1044,7 @@ export function useSubtitlePreview({
           scratchCtx.imageSmoothingQuality = 'high';
           scratchCtx.drawImage(canvas, 0, 0, cw, ch);
 
-          if (normalizedCoverFeatherPx <= 0) {
+          if (coverFeatherPair.horizontalPercent <= 0 && coverFeatherPair.verticalPercent <= 0) {
             ctx.drawImage(
               scratch,
               rectCanvasX,
@@ -1034,8 +1089,8 @@ export function useSubtitlePreview({
                 patchCtx,
                 patchCanvas.width,
                 patchCanvas.height,
-                Math.max(1, Math.round(patchCanvas.width * COVER_FEATHER_EDGE_RATIO)),
-                Math.max(1, Math.round(patchCanvas.height * COVER_FEATHER_EDGE_RATIO))
+                Math.max(0, Math.round((patchCanvas.width * coverFeatherPair.horizontalPercent) / 100)),
+                Math.max(0, Math.round((patchCanvas.height * coverFeatherPair.verticalPercent) / 100))
               );
               ctx.drawImage(
                 patchCanvas,
@@ -1320,7 +1375,7 @@ export function useSubtitlePreview({
     }
 
     presentWorldCanvas();
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan]);
 
   // Load video frame image
   useEffect(() => {
@@ -1937,6 +1992,13 @@ export function useSubtitlePreview({
     Math.max(1, state.videoSize.height)
   );
   const logoPositionPx = localLogoPositionRef.current || null;
+  const normalizedCoverFeather = resolveCoverFeatherPair(
+    coverFeatherPx,
+    coverFeatherHorizontalPx,
+    coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent
+  );
 
   return {
     canvasRef,
@@ -1961,7 +2023,11 @@ export function useSubtitlePreview({
     coverMode: localCoverMode,
     setCoverMode,
     coverQuad: localCoverQuad,
-    coverFeatherPx: normalizeCoverFeatherPx(coverFeatherPx),
+    coverFeatherPx: Math.round((normalizedCoverFeather.horizontal + normalizedCoverFeather.vertical) / 2),
+    coverFeatherHorizontalPx: normalizedCoverFeather.horizontal,
+    coverFeatherVerticalPx: normalizedCoverFeather.vertical,
+    coverFeatherHorizontalPercent: normalizedCoverFeather.horizontalPercent,
+    coverFeatherVerticalPercent: normalizedCoverFeather.verticalPercent,
     coverQuadValid,
     copyOffsetPx,
     copyRectDebug,

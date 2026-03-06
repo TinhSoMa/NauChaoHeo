@@ -51,6 +51,10 @@ export interface VideoFilterBuildInput {
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   featherStrategy?: CoverFeatherStrategy;
   videoSpeedMultiplier: number;
   subtitleFilter: string;
@@ -74,6 +78,10 @@ export interface PortraitVideoFilterBuildInput {
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   featherStrategy?: CoverFeatherStrategy;
   bgDownscaleWidth: number;
   bgDownscaleHeight: number;

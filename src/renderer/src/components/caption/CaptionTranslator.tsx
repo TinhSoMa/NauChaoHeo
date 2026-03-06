@@ -51,11 +51,16 @@ type InspectorPane = 'step' | 'common' | 'snapshot';
 const COMMON_COLOR_HISTORY_LIMIT = 12;
 const COMMON_COLOR_HISTORY_STORAGE_PREFIX = 'caption.common.colorHistory.v1';
 const SUBTITLE_FONT_SIZE_MIN = 1;
-const SUBTITLE_FONT_SIZE_MAX = 1000;
-const SUBTITLE_FONT_SIZE_DEFAULT = 62;
-const THUMBNAIL_FONT_SIZE_MIN = 24;
-const THUMBNAIL_FONT_SIZE_MAX = 400;
-const THUMBNAIL_FONT_SIZE_DEFAULT = 145;
+const SUBTITLE_FONT_SIZE_MAX = 200;
+const SUBTITLE_FONT_SIZE_DEFAULT = 21;
+const THUMBNAIL_FONT_SIZE_MIN = 8;
+const THUMBNAIL_FONT_SIZE_MAX = 200;
+const THUMBNAIL_FONT_SIZE_DEFAULT = 48;
+const VIDEO_VOLUME_PERCENT_MIN = 0;
+const VIDEO_VOLUME_PERCENT_MAX = 200;
+const AUDIO_VOLUME_PERCENT_MIN = 0;
+const AUDIO_VOLUME_PERCENT_MAX = 400;
+const VOLUME_MULTIPLIER_STEP = 0.1;
 
 const DEFAULT_COVER_QUAD: CoverQuad = {
   tl: { x: 0, y: 0 },
@@ -394,6 +399,29 @@ function mergeRecentColors(colors: string[], nextColor: string): string[] {
 
 function formatPercentDisplay(value: number | undefined, fallback = 0): string {
   const safe = Number.isFinite(value) ? (value as number) : fallback;
+  const rounded = Math.round(safe * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+}
+
+function percentToMultiplierDisplayValue(valuePercent: number | undefined, fallbackPercent = 100): number {
+  const safePercent = Number.isFinite(valuePercent) ? (valuePercent as number) : fallbackPercent;
+  return Math.round((safePercent / 100) * 10) / 10;
+}
+
+function multiplierToPercentValue(
+  multiplier: number,
+  minPercent: number,
+  maxPercent: number,
+  fallbackPercent: number
+): number {
+  const safeMultiplier = Number.isFinite(multiplier) ? multiplier : fallbackPercent / 100;
+  const percent = Math.round(safeMultiplier * 1000) / 10;
+  const bounded = Math.max(minPercent, Math.min(maxPercent, percent));
+  return Math.round(bounded * 10) / 10;
+}
+
+function formatMultiplierDisplay(multiplier: number | undefined, fallback = 1): string {
+  const safe = Number.isFinite(multiplier) ? (multiplier as number) : fallback;
   const rounded = Math.round(safe * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
 }
@@ -841,19 +869,19 @@ export function CaptionTranslator() {
   }, [commonColorHistory]);
 
   const subtitleFontSizeValue = clampInteger(
-    Number(settings.style?.fontSize),
+    Number(settings.subtitleFontSizeRel),
     SUBTITLE_FONT_SIZE_MIN,
     SUBTITLE_FONT_SIZE_MAX,
     SUBTITLE_FONT_SIZE_DEFAULT
   );
   const thumbnailTextPrimaryFontSizeValue = clampInteger(
-    Number(settings.thumbnailTextPrimaryFontSize),
+    Number(settings.thumbnailTextPrimaryFontSizeRel),
     THUMBNAIL_FONT_SIZE_MIN,
     THUMBNAIL_FONT_SIZE_MAX,
     THUMBNAIL_FONT_SIZE_DEFAULT
   );
   const thumbnailTextSecondaryFontSizeValue = clampInteger(
-    Number(settings.thumbnailTextSecondaryFontSize),
+    Number(settings.thumbnailTextSecondaryFontSizeRel),
     THUMBNAIL_FONT_SIZE_MIN,
     THUMBNAIL_FONT_SIZE_MAX,
     THUMBNAIL_FONT_SIZE_DEFAULT
@@ -883,9 +911,9 @@ export function CaptionTranslator() {
       SUBTITLE_FONT_SIZE_MAX,
       subtitleFontSizeValue
     );
-    settings.setStyle((s: any) => ({ ...s, fontSize: normalized }));
+    settings.setSubtitleFontSizeRel(normalized);
     setSubtitleFontSizeInput(String(normalized));
-  }, [settings.setStyle, subtitleFontSizeInput, subtitleFontSizeValue]);
+  }, [settings.setSubtitleFontSizeRel, subtitleFontSizeInput, subtitleFontSizeValue]);
 
   const commitThumbnailTextPrimaryFontSizeInput = useCallback(() => {
     const parsed = Number(thumbnailTextPrimaryFontSizeInput.trim());
@@ -998,6 +1026,8 @@ export function CaptionTranslator() {
   });
 
   const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
+    fontSizeScaleVersion: settings.fontSizeScaleVersion,
+    subtitleFontSizeRel: settings.subtitleFontSizeRel,
     inputType: settings.inputType,
     geminiModel: settings.geminiModel,
     translateMethod: settings.translateMethod,
@@ -1020,17 +1050,24 @@ export function CaptionTranslator() {
     coverMode: settings.coverMode,
     coverQuad: settings.coverQuad,
     coverFeatherPx: settings.coverFeatherPx,
+    coverFeatherHorizontalPx: settings.coverFeatherHorizontalPx,
+    coverFeatherVerticalPx: settings.coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent: settings.coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent: settings.coverFeatherVerticalPercent,
     audioSpeed: settings.audioSpeed,
     renderAudioSpeed: settings.renderAudioSpeed,
     videoVolume: settings.videoVolume,
     audioVolume: settings.audioVolume,
     thumbnailFontName: settings.thumbnailFontName,
     thumbnailFontSize: settings.thumbnailFontSize,
+    thumbnailFontSizeRel: settings.thumbnailFontSizeRel,
     thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryFontSizeRel: settings.thumbnailTextPrimaryFontSizeRel,
     thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryFontSizeRel: settings.thumbnailTextSecondaryFontSizeRel,
     thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
     thumbnailTextSecondary: settings.thumbnailTextSecondary,
@@ -1043,6 +1080,8 @@ export function CaptionTranslator() {
     layoutProfiles: settings.layoutProfiles,
     processingMode: settings.processingMode,
   }), [
+    settings.fontSizeScaleVersion,
+    settings.subtitleFontSizeRel,
     settings.inputType,
     settings.geminiModel,
     settings.translateMethod,
@@ -1065,17 +1104,24 @@ export function CaptionTranslator() {
     settings.coverMode,
     settings.coverQuad,
     settings.coverFeatherPx,
+    settings.coverFeatherHorizontalPx,
+    settings.coverFeatherVerticalPx,
+    settings.coverFeatherHorizontalPercent,
+    settings.coverFeatherVerticalPercent,
     settings.audioSpeed,
     settings.renderAudioSpeed,
     settings.videoVolume,
     settings.audioVolume,
     settings.thumbnailFontName,
     settings.thumbnailFontSize,
+    settings.thumbnailFontSizeRel,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextPrimaryFontSizeRel,
     settings.thumbnailTextPrimaryColor,
     settings.thumbnailTextSecondaryFontName,
     settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailTextSecondaryFontSizeRel,
     settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     settings.thumbnailTextSecondary,
@@ -2527,8 +2573,8 @@ export function CaptionTranslator() {
         key: 'Thumbnail',
         value:
           `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s | ` +
-          `T1 ${settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextPrimaryFontSize ?? settings.thumbnailFontSize ?? 145}px | ` +
-          `T2 ${settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextSecondaryFontSize ?? settings.thumbnailFontSize ?? 145}px | ` +
+          `T1 ${settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextPrimaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48}r | ` +
+          `T2 ${settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextSecondaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48}r | ` +
           `C1 ${(settings.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()} | C2 ${(settings.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()} | ` +
           `line ${Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x`,
       },
@@ -3051,6 +3097,31 @@ export function CaptionTranslator() {
     return '';
   }, []);
 
+  const videoVolumeMultiplier = percentToMultiplierDisplayValue(settings.videoVolume, 100);
+  const audioVolumeMultiplier = percentToMultiplierDisplayValue(settings.audioVolume, 100);
+
+  const handleVideoVolumeMultiplierChange = useCallback((multiplier: number) => {
+    settings.setVideoVolume(
+      multiplierToPercentValue(
+        multiplier,
+        VIDEO_VOLUME_PERCENT_MIN,
+        VIDEO_VOLUME_PERCENT_MAX,
+        100
+      )
+    );
+  }, [settings.setVideoVolume]);
+
+  const handleAudioVolumeMultiplierChange = useCallback((multiplier: number) => {
+    settings.setAudioVolume(
+      multiplierToPercentValue(
+        multiplier,
+        AUDIO_VOLUME_PERCENT_MIN,
+        AUDIO_VOLUME_PERCENT_MAX,
+        100
+      )
+    );
+  }, [settings.setAudioVolume]);
+
   const commonConfigBar = (
     <div className={styles.commonConfigBar}>
       <div className={styles.commonConfigTop}>
@@ -3200,20 +3271,41 @@ export function CaptionTranslator() {
               <div className={styles.commonInlineSection}>
                 <div className={styles.commonInlineHeader}>
                   <span className={styles.label}>Feather viền copy</span>
-                  <span className={styles.commonInlineValue}>{Math.round(settings.coverFeatherPx ?? 18)} px</span>
+                  <span className={styles.commonInlineValue}>
+                    LR {Math.round(settings.coverFeatherHorizontalPercent ?? 20)}% | TB {Math.round(settings.coverFeatherVerticalPercent ?? 20)}%
+                  </span>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={120}
-                  step={1}
-                  value={settings.coverFeatherPx ?? 18}
-                  onChange={(e) => settings.setCoverFeatherPx(Number(e.target.value))}
-                  disabled={settings.renderMode === 'black_bg'}
-                />
                 <div className={styles.commonInlineActions}>
-                  <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherPx(18)}>
-                    Mặc định
+                  <label className={styles.label}>Trái / Phải</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={50}
+                    step={1}
+                    value={settings.coverFeatherHorizontalPercent ?? 20}
+                    onChange={(e) => settings.setCoverFeatherHorizontalPercent(Number(e.target.value))}
+                    disabled={settings.renderMode === 'black_bg'}
+                  />
+                  <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherHorizontalPercent(20)}>
+                    LR mặc định 20%
+                  </button>
+                </div>
+                <div className={styles.commonInlineActions}>
+                  <label className={styles.label}>Trên / Dưới</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={50}
+                    step={1}
+                    value={settings.coverFeatherVerticalPercent ?? 20}
+                    onChange={(e) => settings.setCoverFeatherVerticalPercent(Number(e.target.value))}
+                    disabled={settings.renderMode === 'black_bg'}
+                  />
+                  <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherVerticalPercent(20)}>
+                    TB mặc định 20%
+                  </button>
+                  <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherPx(20)}>
+                    Đồng bộ 20%
                   </button>
                 </div>
               </div>
@@ -3303,7 +3395,7 @@ export function CaptionTranslator() {
                 </select>
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Size subtitle</label>
+                <label className={styles.label}>Size subtitle (relative)</label>
                 <Input
                   type="number"
                   min={SUBTITLE_FONT_SIZE_MIN}
@@ -3364,7 +3456,7 @@ export function CaptionTranslator() {
                 </select>
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Size Text1</label>
+                <label className={styles.label}>Size Text1 (relative)</label>
                 <Input
                   type="number"
                   min={THUMBNAIL_FONT_SIZE_MIN}
@@ -3425,7 +3517,7 @@ export function CaptionTranslator() {
                 </select>
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Size Text2</label>
+                <label className={styles.label}>Size Text2 (relative)</label>
                 <Input
                   type="number"
                   min={THUMBNAIL_FONT_SIZE_MIN}
@@ -3498,47 +3590,47 @@ export function CaptionTranslator() {
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
-                <span className={styles.label}>Âm lượng video</span>
-                <span className={styles.commonInlineValue}>{formatPercentDisplay(settings.videoVolume)}%</span>
+                <span className={styles.label}>Âm lượng video (x)</span>
+                <span className={styles.commonInlineValue}>{formatMultiplierDisplay(videoVolumeMultiplier, 1)}x</span>
               </div>
               <input
                 type="range"
-                value={settings.videoVolume}
-                onChange={(e) => settings.setVideoVolume(Number(e.target.value))}
-                min={0}
-                max={200}
-                step={0.1}
+                value={videoVolumeMultiplier}
+                onChange={(e) => handleVideoVolumeMultiplierChange(Number(e.target.value))}
+                min={VIDEO_VOLUME_PERCENT_MIN / 100}
+                max={VIDEO_VOLUME_PERCENT_MAX / 100}
+                step={VOLUME_MULTIPLIER_STEP}
               />
               <Input
                 type="number"
-                value={settings.videoVolume}
-                onChange={(e) => settings.setVideoVolume(Number(e.target.value))}
-                min={0}
-                max={200}
-                step={0.1}
+                value={videoVolumeMultiplier}
+                onChange={(e) => handleVideoVolumeMultiplierChange(Number(e.target.value))}
+                min={VIDEO_VOLUME_PERCENT_MIN / 100}
+                max={VIDEO_VOLUME_PERCENT_MAX / 100}
+                step={VOLUME_MULTIPLIER_STEP}
               />
             </div>
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
-                <span className={styles.label}>Âm lượng TTS render</span>
-                <span className={styles.commonInlineValue}>{formatPercentDisplay(settings.audioVolume)}%</span>
+                <span className={styles.label}>Âm lượng TTS render (x)</span>
+                <span className={styles.commonInlineValue}>{formatMultiplierDisplay(audioVolumeMultiplier, 1)}x</span>
               </div>
               <input
                 type="range"
-                value={settings.audioVolume}
-                onChange={(e) => settings.setAudioVolume(Number(e.target.value))}
-                min={0}
-                max={400}
-                step={0.1}
+                value={audioVolumeMultiplier}
+                onChange={(e) => handleAudioVolumeMultiplierChange(Number(e.target.value))}
+                min={AUDIO_VOLUME_PERCENT_MIN / 100}
+                max={AUDIO_VOLUME_PERCENT_MAX / 100}
+                step={VOLUME_MULTIPLIER_STEP}
               />
               <Input
                 type="number"
-                value={settings.audioVolume}
-                onChange={(e) => settings.setAudioVolume(Number(e.target.value))}
-                min={0}
-                max={400}
-                step={0.1}
+                value={audioVolumeMultiplier}
+                onChange={(e) => handleAudioVolumeMultiplierChange(Number(e.target.value))}
+                min={AUDIO_VOLUME_PERCENT_MIN / 100}
+                max={AUDIO_VOLUME_PERCENT_MAX / 100}
+                step={VOLUME_MULTIPLIER_STEP}
               />
             </div>
 
@@ -4098,6 +4190,10 @@ export function CaptionTranslator() {
                   coverMode={settings.coverMode}
                   coverQuad={settings.coverQuad}
                   coverFeatherPx={settings.coverFeatherPx}
+                  coverFeatherHorizontalPx={settings.coverFeatherHorizontalPx}
+                  coverFeatherVerticalPx={settings.coverFeatherVerticalPx}
+                  coverFeatherHorizontalPercent={settings.coverFeatherHorizontalPercent}
+                  coverFeatherVerticalPercent={settings.coverFeatherVerticalPercent}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
                   hardwareAcceleration={settings.hardwareAcceleration}

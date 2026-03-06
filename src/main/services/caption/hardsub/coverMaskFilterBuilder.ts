@@ -19,6 +19,10 @@ interface BuildCopyFromAboveFilterInput {
   renderHeight: number;
   coverQuad?: CoverQuad | null;
   coverFeatherPx?: number;
+  coverFeatherHorizontalPx?: number;
+  coverFeatherVerticalPx?: number;
+  coverFeatherHorizontalPercent?: number;
+  coverFeatherVerticalPercent?: number;
   featherStrategy?: CoverFeatherStrategy;
   labelPrefix?: string;
 }
@@ -50,8 +54,10 @@ function isAxisAlignedRectangle(quad: CoverQuad, tolerance = 1e-3): boolean {
 
 const DEFAULT_COVER_FEATHER_PX = 18;
 const MAX_COVER_FEATHER_PX = 120;
+const MIN_COVER_FEATHER_PERCENT = 0;
+const MAX_COVER_FEATHER_PERCENT = 50;
+const DEFAULT_COVER_FEATHER_PERCENT = 20;
 const DEFAULT_FEATHER_STRATEGY: Exclude<CoverFeatherStrategy, 'auto'> = 'geq_distance';
-const FEATHER_EDGE_RATIO = 0.20;
 
 function normalizeCoverFeatherPx(value: number | undefined, maxForRect: number): number {
   const fallback = Math.min(DEFAULT_COVER_FEATHER_PX, maxForRect);
@@ -63,16 +69,50 @@ function normalizeCoverFeatherPx(value: number | undefined, maxForRect: number):
   return Math.max(0, Math.min(maxForRect, bounded));
 }
 
-function resolveEdgeFadePxByRatio(lengthPx: number): number {
-  const safeLen = Math.max(1, Math.round(lengthPx));
-  const maxForAxis = Math.max(1, Math.floor((safeLen - 1) / 2));
-  const ratioPx = Math.max(1, Math.round(safeLen * FEATHER_EDGE_RATIO));
-  return Math.min(maxForAxis, ratioPx);
+function normalizeCoverFeatherAxisPx(
+  value: number | undefined,
+  fallback: number,
+  maxForAxis: number
+): number {
+  const safeMax = Math.max(0, maxForAxis);
+  const safeFallback = Math.max(0, Math.min(safeMax, Math.round(fallback)));
+  if (!Number.isFinite(value)) {
+    return safeFallback;
+  }
+  const raw = Math.max(0, Math.round(value as number));
+  return Math.min(safeMax, Math.min(MAX_COVER_FEATHER_PX, raw));
+}
+
+function normalizeCoverFeatherPercent(
+  value: number | undefined,
+  fallbackPercent: number
+): number {
+  const safeFallback = Math.max(
+    MIN_COVER_FEATHER_PERCENT,
+    Math.min(MAX_COVER_FEATHER_PERCENT, Math.round(fallbackPercent))
+  );
+  if (!Number.isFinite(value)) {
+    return safeFallback;
+  }
+  return Math.max(
+    MIN_COVER_FEATHER_PERCENT,
+    Math.min(MAX_COVER_FEATHER_PERCENT, Math.round(value as number))
+  );
+}
+
+function percentToAxisPx(percent: number, axisLengthPx: number, maxForAxis: number): number {
+  const raw = Math.round((Math.max(0, percent) / 100) * Math.max(1, axisLengthPx));
+  return Math.max(0, Math.min(maxForAxis, raw));
 }
 
 function buildRectFeatherAlphaExpr(featherX: number, featherY: number): string {
-  // Mờ dần từ ngoài vào trong: chỉ áp dụng trong dải biên featherX/featherY.
-  return `255*min(1,max(0,min(min(X\\,W-1-X)/${featherX},min(Y\\,H-1-Y)/${featherY})))`;
+  const xExpr = featherX > 0
+    ? `min(X\\,W-1-X)/${Math.max(1, featherX)}`
+    : '1';
+  const yExpr = featherY > 0
+    ? `min(Y\\,H-1-Y)/${Math.max(1, featherY)}`
+    : '1';
+  return `255*min(1,max(0,min(${xExpr},${yExpr})))`;
 }
 
 function resolveFeatherStrategy(
@@ -87,19 +127,21 @@ function resolveFeatherStrategy(
 function buildRectFeatherMaskByGblur(
   maskW: number,
   maskH: number,
-  featherPx: number,
+  featherX: number,
+  featherY: number,
   maskLabelPrefix: string,
   outputMaskLabel: string
 ): string[] {
-  const pad = featherPx;
+  const pad = Math.max(1, Math.max(featherX, featherY));
   const paddedW = maskW + pad * 2;
   const paddedH = maskH + pad * 2;
   const paddedLabel = `[${maskLabelPrefix}_mask_pad]`;
-  const sigma = Math.max(0.5, Math.min(64, featherPx / 4));
+  const sigmaX = Math.max(0.5, Math.min(64, Math.max(1, featherX) / 4));
+  const sigmaY = Math.max(0.5, Math.min(64, Math.max(1, featherY) / 4));
   return [
     `color=black:s=${paddedW}x${paddedH},format=gray,` +
       `drawbox=x=${pad}:y=${pad}:w=${maskW}:h=${maskH}:color=white:t=fill,` +
-      `gblur=sigma=${sigma.toFixed(3)}:steps=1${paddedLabel}`,
+      `gblur=sigma=${Math.max(sigmaX, sigmaY).toFixed(3)}:steps=1${paddedLabel}`,
     `${paddedLabel}crop=${maskW}:${maskH}:${pad}:${pad}${outputMaskLabel}`,
   ];
 }
@@ -159,25 +201,58 @@ export function buildCopyFromAboveFilter(
     const patchLabel = `[${prefix}_patch_rgb]`;
     const patchAlphaLabel = `[${prefix}_patch_alpha]`;
     const maskPatchLabel = `[${prefix}_mask_patch]`;
-    const maxRectFeather = Math.max(0, Math.floor((Math.min(rectPx.w, rectPx.h) - 1) / 2));
-    const requestedFeatherPx = normalizeCoverFeatherPx(input.coverFeatherPx, maxRectFeather);
-    const featherX = resolveEdgeFadePxByRatio(rectPx.w);
-    const featherY = resolveEdgeFadePxByRatio(rectPx.h);
-    const fallbackFeatherPx = Math.max(1, Math.round((featherX + featherY) / 2));
+    const maxRectFeatherX = Math.max(0, Math.floor((rectPx.w - 1) / 2));
+    const maxRectFeatherY = Math.max(0, Math.floor((rectPx.h - 1) / 2));
+    const legacyFallbackX = normalizeCoverFeatherPx(input.coverFeatherPx, maxRectFeatherX);
+    const legacyFallbackY = normalizeCoverFeatherPx(input.coverFeatherPx, maxRectFeatherY);
+    const requestedFeatherLegacyX = normalizeCoverFeatherAxisPx(
+      input.coverFeatherHorizontalPx,
+      legacyFallbackX,
+      maxRectFeatherX
+    );
+    const requestedFeatherLegacyY = normalizeCoverFeatherAxisPx(
+      input.coverFeatherVerticalPx,
+      legacyFallbackY,
+      maxRectFeatherY
+    );
+    const requestedFeatherHorizontalPercent = normalizeCoverFeatherPercent(
+      input.coverFeatherHorizontalPercent,
+      DEFAULT_COVER_FEATHER_PERCENT
+    );
+    const requestedFeatherVerticalPercent = normalizeCoverFeatherPercent(
+      input.coverFeatherVerticalPercent,
+      DEFAULT_COVER_FEATHER_PERCENT
+    );
+    const hasHorizontalPercent = Number.isFinite(input.coverFeatherHorizontalPercent);
+    const hasVerticalPercent = Number.isFinite(input.coverFeatherVerticalPercent);
+    const requestedFeatherX = hasHorizontalPercent
+      ? percentToAxisPx(requestedFeatherHorizontalPercent, rectPx.w, maxRectFeatherX)
+      : requestedFeatherLegacyX;
+    const requestedFeatherY = hasVerticalPercent
+      ? percentToAxisPx(requestedFeatherVerticalPercent, rectPx.h, maxRectFeatherY)
+      : requestedFeatherLegacyY;
+    const fallbackFeatherPx = Math.max(1, Math.max(requestedFeatherX, requestedFeatherY));
     const featherStrategy = resolveFeatherStrategy(input.featherStrategy);
     const rectFilterParts = [
       `${ensureLabelRef(input.inputLabel)}split=2${baseLabel}${shiftSrcLabel}`,
       `${shiftSrcLabel}format=rgb24,crop=${rectPx.w}:${rectPx.h}:${rectPx.x}:${sourceY}${patchLabel}`,
     ];
-    if (requestedFeatherPx > 0 && featherX > 0 && featherY > 0) {
+    if (requestedFeatherX > 0 || requestedFeatherY > 0) {
       if (featherStrategy === 'geq_distance') {
-        const featherExpr = buildRectFeatherAlphaExpr(Math.max(1, featherX), Math.max(1, featherY));
+        const featherExpr = buildRectFeatherAlphaExpr(requestedFeatherX, requestedFeatherY);
         rectFilterParts.push(
           `color=black:s=${rectPx.w}x${rectPx.h},format=gray,geq=lum='${featherExpr}'${maskPatchLabel}`
         );
       } else {
         rectFilterParts.push(
-          ...buildRectFeatherMaskByGblur(rectPx.w, rectPx.h, fallbackFeatherPx, prefix, maskPatchLabel)
+          ...buildRectFeatherMaskByGblur(
+            rectPx.w,
+            rectPx.h,
+            Math.max(1, requestedFeatherX),
+            Math.max(1, requestedFeatherY),
+            prefix,
+            maskPatchLabel
+          )
         );
       }
       rectFilterParts.push(`${patchLabel}${maskPatchLabel}alphamerge${patchAlphaLabel}`);
@@ -198,11 +273,12 @@ export function buildCopyFromAboveFilter(
         fastPath: 'bbox_overlay',
         offsetPx,
         offsetNorm,
-        requestedFeatherPx,
+        requestedFeatherPx: Math.max(requestedFeatherX, requestedFeatherY),
+        requestedFeatherHorizontalPx: requestedFeatherX,
+        requestedFeatherVerticalPx: requestedFeatherY,
+        requestedFeatherHorizontalPercent,
+        requestedFeatherVerticalPercent,
         fallbackFeatherPx,
-        featherX,
-        featherY,
-        featherEdgeRatio: FEATHER_EDGE_RATIO,
         featherStrategy,
         bbox,
         quadPx,

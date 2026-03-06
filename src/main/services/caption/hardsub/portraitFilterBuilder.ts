@@ -71,6 +71,10 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
       renderHeight: input.outputHeight,
       coverQuad: input.coverQuad,
       coverFeatherPx: input.coverFeatherPx,
+      coverFeatherHorizontalPx: input.coverFeatherHorizontalPx,
+      coverFeatherVerticalPx: input.coverFeatherVerticalPx,
+      coverFeatherHorizontalPercent: input.coverFeatherHorizontalPercent,
+      coverFeatherVerticalPercent: input.coverFeatherVerticalPercent,
       featherStrategy: input.featherStrategy,
       labelPrefix: 'portrait_cover',
     });
