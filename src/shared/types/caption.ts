@@ -473,6 +473,7 @@ export interface RenderVideoOptions {
   blackoutTop?: number;   // Tỉ lệ 0-1 từ trên xuống; landscape = tô đen đáy, portrait = mốc bắt đầu blur đáy foreground
   coverMode?: CaptionCoverMode; // Chế độ che video (legacy mặc định: blackout_bottom)
   coverQuad?: CoverQuad; // Tứ giác normalized (0..1) cho mode copy_from_above
+  coverFeatherPx?: number; // Feather viền vùng copy_from_above (px), không dùng blur
   audioSpeed?: number;    // Tốc độ phát audio (sẽ tự động tính videoSpeed để khớp)
   step7AudioSpeedInput?: number; // Tốc độ audio người dùng nhập ở Step 7 (giữ riêng để trace khi audioPath đã pre-adjust)
   srtTimeScale?: number;  // Scale timeline SRT đã dùng khi merge audio (vd: settings.srtSpeed)
@@ -571,6 +572,10 @@ export interface RenderVideoPreviewFrameOptions {
   videoPath: string;
   entries: SubtitleEntry[];
   previewTimeSec: number;
+  requestToken?: string;
+  previewCacheKey?: string;
+  timeBucketSec?: number;
+  hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -578,6 +583,7 @@ export interface RenderVideoPreviewFrameOptions {
   blackoutTop?: number;
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
+  coverFeatherPx?: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
@@ -798,6 +804,7 @@ export interface CaptionProjectSettingsValues {
   blackoutTop?: number | null;
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
+  coverFeatherPx?: number;
   audioSpeed?: number;
   renderAudioSpeed?: number;
   portraitForegroundCropPercent?: number;
@@ -828,6 +835,7 @@ export interface CaptionProjectSettingsValues {
       blackoutTop?: number | null;
       coverMode?: CaptionCoverMode;
       coverQuad?: CoverQuad | null;
+      coverFeatherPx?: number;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
@@ -855,6 +863,7 @@ export interface CaptionProjectSettingsValues {
       blackoutTop?: number | null;
       coverMode?: CaptionCoverMode;
       coverQuad?: CoverQuad | null;
+      coverFeatherPx?: number;
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
@@ -916,6 +925,7 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   STOP_RENDER: 'captionVideo:stopRender',
   RENDER_PROGRESS: 'captionVideo:renderProgress',
   RENDER_VIDEO_PREVIEW_FRAME: 'captionVideo:renderVideoPreviewFrame',
+  STOP_VIDEO_PREVIEW_FRAME: 'captionVideo:stopVideoPreviewFrame',
   MIX_AUDIO_PREVIEW: 'captionVideo:mixAudioPreview',
   STOP_AUDIO_PREVIEW: 'captionVideo:stopAudioPreview',
   AUDIO_PREVIEW_PROGRESS: 'captionVideo:audioPreviewProgress',

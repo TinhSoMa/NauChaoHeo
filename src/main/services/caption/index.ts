@@ -62,6 +62,7 @@ export {
   extractVideoFrame,
   renderVideo,
   renderVideoPreviewFrame,
+  stopActiveVideoPreviewFrame,
   stopActiveRender,
   renderStep7AudioPreview,
   stopActiveAudioPreview,

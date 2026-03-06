@@ -1,5 +1,7 @@
 import { CaptionCoverMode, CoverQuad, RenderProgress, RenderVideoOptions, VideoMetadata } from '../../../../shared/types/caption';
 
+export type CoverFeatherStrategy = 'auto' | 'geq_distance' | 'gblur_mask';
+
 export interface MediaProbeResult {
   success: boolean;
   metadata?: VideoMetadata;
@@ -22,6 +24,8 @@ export interface RunFFmpegProcessOptions {
   cleanupTempPaths?: string[];
   duration: number;
   progressCallback?: (progress: RenderProgress) => void;
+  debugLabel?: string;
+  includeFullStderrOnError?: boolean;
 }
 
 export interface HardsubAudioMixBuildInput {
@@ -46,6 +50,8 @@ export interface VideoFilterBuildInput {
   blackoutTop?: number | null; // 0-1 từ trên xuống; dùng cho nhánh landscape (tô đen đáy)
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
+  coverFeatherPx?: number;
+  featherStrategy?: CoverFeatherStrategy;
   videoSpeedMultiplier: number;
   subtitleFilter: string;
 }
@@ -67,6 +73,8 @@ export interface PortraitVideoFilterBuildInput {
   blackoutTop?: number | null; // 0-1 theo output; với portrait: mốc bắt đầu blur vùng đáy của foreground
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
+  coverFeatherPx?: number;
+  featherStrategy?: CoverFeatherStrategy;
   bgDownscaleWidth: number;
   bgDownscaleHeight: number;
   bgBlurLumaRadius: number;

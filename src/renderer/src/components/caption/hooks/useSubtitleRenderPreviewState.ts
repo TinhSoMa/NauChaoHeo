@@ -9,6 +9,9 @@ import { buildObjectFingerprint } from './captionSessionStore';
 
 type PreviewMode = 'live' | 'real';
 type RealPreviewStatus = 'idle' | 'pending' | 'updating' | 'ready' | 'error';
+const REAL_PREVIEW_TIME_BUCKET_SEC = 1 / 24;
+const REAL_PREVIEW_DEBOUNCE_MS = 120;
+const REAL_PREVIEW_CACHE_MAX_ITEMS = 80;
 
 interface UseSubtitleRenderPreviewStateOptions {
   videoPath: string | null;
@@ -21,9 +24,11 @@ interface UseSubtitleRenderPreviewStateOptions {
   blackoutTop?: number | null;
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
+  coverFeatherPx?: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
+  hardwareAcceleration?: RenderVideoOptions['hardwareAcceleration'];
   portraitForegroundCropPercent?: number;
   disabled?: boolean;
   disabledReason?: string;
@@ -33,6 +38,10 @@ interface RenderVideoPreviewFrameRequest {
   videoPath: string;
   entries: SubtitleEntry[];
   previewTimeSec: number;
+  requestToken?: string;
+  previewCacheKey?: string;
+  timeBucketSec?: number;
+  hardwareAcceleration?: RenderVideoOptions['hardwareAcceleration'];
   style?: ASSStyleConfig;
   renderMode?: RenderVideoOptions['renderMode'];
   renderResolution?: RenderVideoOptions['renderResolution'];
@@ -40,6 +49,7 @@ interface RenderVideoPreviewFrameRequest {
   blackoutTop?: number;
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
+  coverFeatherPx?: number;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
@@ -58,6 +68,24 @@ interface UseSubtitleRenderPreviewStateResult {
 
 function toDataUri(frameData: string): string {
   return frameData.startsWith('data:') ? frameData : `data:image/png;base64,${frameData}`;
+}
+
+function quantizePreviewTimeSec(timeSec: number, bucketSec: number): number {
+  if (!Number.isFinite(timeSec)) {
+    return 0;
+  }
+  const safeBucket = Number.isFinite(bucketSec) && bucketSec > 0 ? bucketSec : REAL_PREVIEW_TIME_BUCKET_SEC;
+  const safeTime = Math.max(0, timeSec);
+  return Math.round(safeTime / safeBucket) * safeBucket;
+}
+
+function makeRequestToken(hash: string): string {
+  return `${hash}::${Date.now().toString(36)}::${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function isPreviewStoppedError(raw: unknown): boolean {
+  const text = String(raw || '');
+  return /dừng preview frame|preview frame đang chạy|request token/i.test(text);
 }
 
 function sanitizeEntries(entries?: SubtitleEntry[]): SubtitleEntry[] {
@@ -91,23 +119,27 @@ export function useSubtitleRenderPreviewState(
   const [realSize, setRealSize] = useState<{ width: number; height: number } | null>(null);
   const [lastSyncHash, setLastSyncHash] = useState('');
 
-  const requestIdRef = useRef(0);
+  const debounceTimerRef = useRef<number | null>(null);
+  const activeRequestTokenRef = useRef<string | null>(null);
+  const requestGenerationRef = useRef(0);
   const cacheRef = useRef(new Map<string, { frameData: string; size: { width: number; height: number } | null }>());
 
   const normalizedEntries = useMemo(() => sanitizeEntries(options.entries), [options.entries]);
+  const quantizedPreviewTimeSec = useMemo(
+    () => quantizePreviewTimeSec(options.previewTimeSec, REAL_PREVIEW_TIME_BUCKET_SEC),
+    [options.previewTimeSec]
+  );
 
-  const requestPayload = useMemo<RenderVideoPreviewFrameRequest | null>(() => {
+  const visualPayload = useMemo<Omit<RenderVideoPreviewFrameRequest, 'previewTimeSec'> | null>(() => {
     if (!options.videoPath) {
       return null;
     }
     if (normalizedEntries.length === 0) {
       return null;
     }
-    const safePreviewTime = Number.isFinite(options.previewTimeSec) ? Math.max(0, options.previewTimeSec) : 0;
     return {
       videoPath: options.videoPath,
       entries: normalizedEntries,
-      previewTimeSec: safePreviewTime,
       style: options.style,
       renderMode: options.renderMode,
       renderResolution: options.renderResolution,
@@ -115,9 +147,11 @@ export function useSubtitleRenderPreviewState(
       blackoutTop: options.blackoutTop == null ? undefined : options.blackoutTop,
       coverMode: options.coverMode,
       coverQuad: options.coverQuad,
+      coverFeatherPx: options.coverFeatherPx,
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
+      hardwareAcceleration: options.hardwareAcceleration,
       portraitForegroundCropPercent: options.portraitForegroundCropPercent,
     };
   }, [
@@ -125,11 +159,12 @@ export function useSubtitleRenderPreviewState(
     options.blackoutTop,
     options.coverMode,
     options.coverQuad,
+    options.coverFeatherPx,
     options.logoPath,
     options.logoPosition,
     options.logoScale,
+    options.hardwareAcceleration,
     options.portraitForegroundCropPercent,
-    options.previewTimeSec,
     options.renderMode,
     options.renderResolution,
     options.style,
@@ -137,12 +172,63 @@ export function useSubtitleRenderPreviewState(
     options.videoPath,
   ]);
 
-  const dependencyHash = useMemo(() => {
-    if (!requestPayload) {
+  const requestPayload = useMemo<RenderVideoPreviewFrameRequest | null>(() => {
+    if (!visualPayload) {
+      return null;
+    }
+    return {
+      ...visualPayload,
+      previewTimeSec: quantizedPreviewTimeSec,
+      timeBucketSec: quantizedPreviewTimeSec,
+    };
+  }, [visualPayload, quantizedPreviewTimeSec]);
+
+  const visualPayloadHash = useMemo(() => {
+    if (!visualPayload) {
       return '';
     }
-    return buildObjectFingerprint(requestPayload);
-  }, [requestPayload]);
+    return buildObjectFingerprint(visualPayload);
+  }, [visualPayload]);
+
+  const dependencyHash = useMemo(() => {
+    if (!visualPayloadHash) {
+      return '';
+    }
+    return `${visualPayloadHash}::t=${quantizedPreviewTimeSec.toFixed(3)}`;
+  }, [quantizedPreviewTimeSec, visualPayloadHash]);
+
+  const insertCacheEntry = (key: string, value: { frameData: string; size: { width: number; height: number } | null }) => {
+    const cache = cacheRef.current;
+    if (cache.has(key)) {
+      cache.delete(key);
+    }
+    cache.set(key, value);
+    while (cache.size > REAL_PREVIEW_CACHE_MAX_ITEMS) {
+      const oldest = cache.keys().next().value as string | undefined;
+      if (!oldest) {
+        break;
+      }
+      cache.delete(oldest);
+    }
+  };
+
+  const clearDebounceTimer = () => {
+    if (debounceTimerRef.current != null) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  };
+
+  const stopActivePreviewRequest = async () => {
+    const token = activeRequestTokenRef.current;
+    if (!token) {
+      return;
+    }
+    activeRequestTokenRef.current = null;
+    try {
+      await (window.electronAPI as any).captionVideo.stopVideoPreviewFrame?.(token);
+    } catch {}
+  };
 
   useEffect(() => {
     if (options.disabled && mode === 'real') {
@@ -151,13 +237,24 @@ export function useSubtitleRenderPreviewState(
   }, [mode, options.disabled]);
 
   useEffect(() => {
+    return () => {
+      clearDebounceTimer();
+      void stopActivePreviewRequest();
+    };
+  }, []);
+
+  useEffect(() => {
     if (mode !== 'real') {
+      clearDebounceTimer();
+      void stopActivePreviewRequest();
       setRealStatus('idle');
       setRealMessage('Sẵn sàng xem preview thật.');
       return;
     }
 
     if (options.disabled) {
+      clearDebounceTimer();
+      void stopActivePreviewRequest();
       setRealStatus('error');
       setRealMessage(options.disabledReason || 'Preview thật đang tạm khóa.');
       return;
@@ -184,22 +281,40 @@ export function useSubtitleRenderPreviewState(
       return;
     }
 
+    clearDebounceTimer();
+    requestGenerationRef.current += 1;
+    const currentGeneration = requestGenerationRef.current;
+    void stopActivePreviewRequest();
+
     setRealStatus('pending');
     setRealMessage('Đang chờ cập nhật preview thật...');
-    const requestId = ++requestIdRef.current;
-    const timer = window.setTimeout(async () => {
-      if (requestId !== requestIdRef.current) {
+    debounceTimerRef.current = window.setTimeout(async () => {
+      if (currentGeneration !== requestGenerationRef.current) {
         return;
       }
+      const requestToken = makeRequestToken(dependencyHash);
+      activeRequestTokenRef.current = requestToken;
       setRealStatus('updating');
       setRealMessage('Đang cập nhật preview thật...');
       try {
-        const res = await (window.electronAPI as any).captionVideo.renderVideoPreviewFrame(requestPayload);
-        if (requestId !== requestIdRef.current) {
+        const payloadWithToken: RenderVideoPreviewFrameRequest = {
+          ...requestPayload,
+          requestToken,
+          previewCacheKey: dependencyHash,
+          timeBucketSec: quantizedPreviewTimeSec,
+        };
+        const res = await (window.electronAPI as any).captionVideo.renderVideoPreviewFrame(payloadWithToken);
+        if (activeRequestTokenRef.current === requestToken) {
+          activeRequestTokenRef.current = null;
+        }
+        if (currentGeneration !== requestGenerationRef.current) {
           return;
         }
         if (!res?.success || !res.data?.success || !res.data?.frameData) {
           const errorMessage = res?.error || res?.data?.error || 'Không thể render preview thật.';
+          if (isPreviewStoppedError(errorMessage)) {
+            return;
+          }
           setRealStatus('error');
           setRealMessage(errorMessage);
           return;
@@ -211,7 +326,7 @@ export function useSubtitleRenderPreviewState(
             ? { width: res.data.width, height: res.data.height }
             : null
         );
-        cacheRef.current.set(dependencyHash, {
+        insertCacheEntry(dependencyHash, {
           frameData,
           size: nextSize,
         });
@@ -221,22 +336,29 @@ export function useSubtitleRenderPreviewState(
         setRealMessage('Preview thật đã đồng bộ.');
         setLastSyncHash(dependencyHash);
       } catch (error) {
-        if (requestId !== requestIdRef.current) {
+        if (activeRequestTokenRef.current === requestToken) {
+          activeRequestTokenRef.current = null;
+        }
+        if (currentGeneration !== requestGenerationRef.current) {
+          return;
+        }
+        if (isPreviewStoppedError(error)) {
           return;
         }
         setRealStatus('error');
         setRealMessage(String(error));
       }
-    }, 350);
+    }, REAL_PREVIEW_DEBOUNCE_MS);
 
     return () => {
-      window.clearTimeout(timer);
+      clearDebounceTimer();
     };
   }, [
     dependencyHash,
     mode,
     options.disabled,
     options.disabledReason,
+    quantizedPreviewTimeSec,
     options.videoPath,
     requestPayload,
   ]);

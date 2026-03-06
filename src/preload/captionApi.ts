@@ -206,6 +206,7 @@ export interface CaptionVideoAPI {
       br: { x: number; y: number };
       bl: { x: number; y: number };
     };
+    coverFeatherPx?: number;
     audioSpeed?: number;
     step7AudioSpeedInput?: number;
     audioPath?: string;
@@ -254,6 +255,11 @@ export interface CaptionVideoAPI {
   renderVideoPreviewFrame: (
     options: RenderVideoPreviewFrameOptions
   ) => Promise<IpcApiResponse<RenderVideoPreviewFrameResult>>;
+
+  // Stop current real preview frame render process
+  stopVideoPreviewFrame: (
+    requestToken?: string
+  ) => Promise<IpcApiResponse<{ stopped: boolean; message: string }>>;
 
   // Listen to audio preview progress
   onAudioPreviewProgress: (callback: (progress: RenderAudioPreviewProgress) => void) => void;
@@ -314,6 +320,9 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
 
     renderVideoPreviewFrame: (options: RenderVideoPreviewFrameOptions) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO_PREVIEW_FRAME, options),
+
+    stopVideoPreviewFrame: (requestToken?: string) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.STOP_VIDEO_PREVIEW_FRAME, requestToken),
 
     onAudioPreviewProgress: (callback: (progress: RenderAudioPreviewProgress) => void) => {
       ipcRenderer.removeAllListeners(CAPTION_VIDEO_IPC_CHANNELS.AUDIO_PREVIEW_PROGRESS);

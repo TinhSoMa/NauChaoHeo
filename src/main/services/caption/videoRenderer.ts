@@ -55,13 +55,19 @@ import {
 } from './hardsub/thumbnailPipeline';
 import { registerTempFile, unregisterTempFile } from './garbageCollector';
 import { exportToSrt, msToSrtTime } from './srtParser';
+import type { CoverFeatherStrategy } from './hardsub/types';
 
 export const getVideoMetadata = probeGetVideoMetadata;
 export const extractVideoFrame = probeExtractVideoFrame;
 
 const AUDIO_PREVIEW_STOPPED_MESSAGE = 'Đã dừng test audio theo yêu cầu.';
+const VIDEO_PREVIEW_STOPPED_MESSAGE = 'Đã dừng preview frame theo yêu cầu.';
 let activeAudioPreviewProcess: ChildProcessWithoutNullStreams | null = null;
 let audioPreviewStopRequested = false;
+let activePreviewFrameProcess: ChildProcessWithoutNullStreams | null = null;
+let activePreviewFrameToken: string | null = null;
+let cancelAllPreviewRequests = false;
+const canceledPreviewTokens = new Set<string>();
 
 function resolvePortraitCanvasByPreset(
   renderResolution?: RenderVideoOptions['renderResolution']
@@ -91,23 +97,17 @@ function resolveEncoderProfile(
   renderMode: RenderVideoOptions['renderMode']
 ): EncoderProfile {
   if (hardware === 'qsv') {
-    if (renderMode === 'hardsub_portrait_9_16') {
-      // Portrait filter graph dày đặc filter CPU; decode software ổn định hơn.
-      const enableQsvDecode = process.env.CAPTION_PORTRAIT_QSV_DECODE === '1';
-      return {
-        hwaccelArgs: enableQsvDecode ? ['-hwaccel', 'auto'] : [],
-        videoCodec: 'h264_qsv',
-        codecParams: ['-preset', 'fast', '-global_quality', '25'],
-        pixelFormat: 'nv12',
-        decodePath: enableQsvDecode ? 'qsv_decode + qsv_encode' : 'software_decode + qsv_encode',
-      };
-    }
+    // Mặc định ưu tiên software decode + QSV encode để ổn định màu và filter.
+    // Có thể bật QSV decode qua env khi cần benchmark.
+    const enableQsvDecode =
+      process.env.CAPTION_QSV_DECODE === '1' ||
+      (renderMode === 'hardsub_portrait_9_16' && process.env.CAPTION_PORTRAIT_QSV_DECODE === '1');
     return {
-      hwaccelArgs: ['-hwaccel', 'auto'],
+      hwaccelArgs: enableQsvDecode ? ['-hwaccel', 'auto'] : [],
       videoCodec: 'h264_qsv',
       codecParams: ['-preset', 'fast', '-global_quality', '25'],
       pixelFormat: 'nv12',
-      decodePath: 'auto_decode + qsv_encode',
+      decodePath: enableQsvDecode ? 'qsv_decode + qsv_encode' : 'software_decode + qsv_encode',
     };
   }
 
@@ -115,7 +115,8 @@ function resolveEncoderProfile(
     return {
       hwaccelArgs: [],
       videoCodec: 'h264_nvenc',
-      codecParams: ['-preset', 'p4', '-rc', 'vbr', '-cq', '24', '-b:v', '0'],
+      // Ưu tiên tốc độ khi user chọn NVENC.
+      codecParams: ['-preset', 'p1', '-rc', 'vbr', '-cq', '24', '-b:v', '0'],
       pixelFormat: 'nv12',
       decodePath: 'software_decode + nvenc_encode',
     };
@@ -124,7 +125,7 @@ function resolveEncoderProfile(
   return {
     hwaccelArgs: [],
     videoCodec: 'libx264',
-    codecParams: ['-preset', 'medium', '-crf', '23'],
+    codecParams: ['-preset', 'fast', '-crf', '23'],
     pixelFormat: 'yuv420p',
     decodePath: 'software',
   };
@@ -246,6 +247,56 @@ function parseFfmpegTimestampToSec(raw: string): number | null {
   return (hours * 3600) + (minutes * 60) + seconds;
 }
 
+function summarizeFfmpegStderr(stderr: string): string {
+  const text = (stderr || '').trim();
+  if (!text) {
+    return 'FFmpeg xử lý thất bại.';
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return 'FFmpeg xử lý thất bại.';
+  }
+  const important = lines.filter((line) =>
+    /(error|failed|invalid|cannot|unable|no such|not found|could not)/i.test(line)
+  );
+  const source = important.length > 0 ? important : lines;
+  const picked = [source[0], ...source.slice(-3)].filter((line, index, arr) => !!line && arr.indexOf(line) === index);
+  return picked.join(' | ');
+}
+
+const COVER_FEATHER_RETRYABLE_PATTERN =
+  /(could not open encoder before eof|output file is empty|nothing was written|error while filtering|error initializing (complex )?filters?|invalid argument)/i;
+
+function shouldRetryWithGblurFeather(
+  coverMode: string | undefined,
+  coverFeatherPx: number | undefined,
+  strategy: CoverFeatherStrategy,
+  errorText: string
+): boolean {
+  if (coverMode !== 'copy_from_above') {
+    return false;
+  }
+  if (!Number.isFinite(coverFeatherPx) || (coverFeatherPx as number) <= 0) {
+    return false;
+  }
+  if (strategy !== 'geq_distance') {
+    return false;
+  }
+  return COVER_FEATHER_RETRYABLE_PATTERN.test(errorText || '');
+}
+
+function resolvePreviewHwaccelArgs(
+  hardware: RenderVideoPreviewFrameOptions['hardwareAcceleration']
+): string[] {
+  if (hardware === 'qsv' || hardware === 'nvenc') {
+    return ['-hwaccel', 'auto'];
+  }
+  return [];
+}
+
 function normalizePreviewEntries(entries: SubtitleEntry[]): SubtitleEntry[] {
   if (!Array.isArray(entries)) {
     return [];
@@ -304,7 +355,17 @@ function selectPreviewEntriesAtTime(entries: SubtitleEntry[], previewTimeSec: nu
   const previewMs = Math.max(0, Math.round(previewTimeSec * 1000));
   const active = entries.filter((entry) => entry.startMs <= previewMs && previewMs < entry.endMs);
   if (active.length > 0) {
-    return withReindexedEntries(active);
+    const rebasedActive = active.map((entry) => {
+      const relativeStart = Math.max(0, entry.startMs - previewMs);
+      const relativeEndRaw = entry.endMs - previewMs;
+      const relativeEnd = Math.max(relativeStart + 400, relativeEndRaw);
+      return {
+        ...entry,
+        startMs: relativeStart,
+        endMs: relativeEnd,
+      };
+    });
+    return withReindexedEntries(rebasedActive);
   }
 
   let nearest: SubtitleEntry | null = null;
@@ -328,8 +389,8 @@ function selectPreviewEntriesAtTime(entries: SubtitleEntry[], previewTimeSec: nu
     return [];
   }
 
-  const syntheticStart = Math.max(0, previewMs - 350);
-  const syntheticEnd = Math.max(syntheticStart + 1200, previewMs + 1200);
+  const syntheticStart = 0;
+  const syntheticEnd = 1800;
   return withReindexedEntries([{
     ...nearest,
     index: 1,
@@ -466,7 +527,8 @@ async function injectInlineThumbnailAtEnd(input: {
  */
 export async function renderHardsubVideo(
   options: RenderVideoOptions,
-  progressCallback?: (progress: RenderProgress) => void
+  progressCallback?: (progress: RenderProgress) => void,
+  featherStrategy: CoverFeatherStrategy = 'geq_distance'
 ): Promise<RenderResult> {
   if (!options.videoPath || !existsSync(options.videoPath)) {
     return { success: false, error: 'Chế độ hardsub yêu cầu videoPath' };
@@ -501,6 +563,8 @@ export async function renderHardsubVideo(
     blackoutTop: options.blackoutTop,
     coverMode,
     coverQuad: options.coverQuad,
+    coverFeatherPx: options.coverFeatherPx,
+    featherStrategy,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     subtitleFilter,
   });
@@ -782,6 +846,10 @@ export async function renderHardsubVideo(
   console.log('[VideoRenderer][Hardsub][TimingPayload]', hardsubTimingDebug);
 
   const totalFrames = Math.floor(outputDuration * fps);
+  const includeFullStderrOnError =
+    coverMode === 'copy_from_above' &&
+    Number.isFinite(options.coverFeatherPx) &&
+    (options.coverFeatherPx as number) > 0;
   const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
@@ -791,7 +859,19 @@ export async function renderHardsubVideo(
     cleanupTempPaths: inlineThumbnail.cleanupFiles,
     duration: outputDuration,
     progressCallback,
+    debugLabel: `hardsub:${featherStrategy}`,
+    includeFullStderrOnError,
   });
+  if (
+    !renderResult.success &&
+    shouldRetryWithGblurFeather(coverMode, options.coverFeatherPx, featherStrategy, renderResult.error || '')
+  ) {
+    console.warn('[VideoRenderer][Hardsub] Retry with fallback feather strategy gblur_mask.', {
+      initialStrategy: featherStrategy,
+      error: renderResult.error,
+    });
+    return renderHardsubVideo(options, progressCallback, 'gblur_mask');
+  }
   if (renderResult.success) {
     renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
   }
@@ -803,7 +883,8 @@ export async function renderHardsubVideo(
  */
 export async function renderHardsubPortraitVideo(
   options: RenderVideoOptions,
-  progressCallback?: (progress: RenderProgress) => void
+  progressCallback?: (progress: RenderProgress) => void,
+  featherStrategy: CoverFeatherStrategy = 'geq_distance'
 ): Promise<RenderResult> {
   if (!options.videoPath || !existsSync(options.videoPath)) {
     return { success: false, error: 'Chế độ hardsub 9:16 yêu cầu videoPath' };
@@ -934,6 +1015,7 @@ export async function renderHardsubPortraitVideo(
       ? (options.portraitForegroundCropPercent as number)
       : 0)
   );
+  const coverMode = options.coverMode || 'blackout_bottom';
 
   const portraitVideo = buildPortraitVideoFilter({
     inputLabel: '[0:v]',
@@ -945,8 +1027,10 @@ export async function renderHardsubPortraitVideo(
     foregroundCropPercent,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     blackoutTop: options.blackoutTop,
-    coverMode: options.coverMode || 'blackout_bottom',
+    coverMode,
     coverQuad: options.coverQuad,
+    coverFeatherPx: options.coverFeatherPx,
+    featherStrategy,
     bgDownscaleWidth,
     bgDownscaleHeight,
     bgBlurLumaRadius,
@@ -1159,13 +1243,17 @@ export async function renderHardsubPortraitVideo(
       audioSource: options.step7AudioSource || 'unknown',
     },
     cover: {
-      mode: options.coverMode || 'blackout_bottom',
+      mode: coverMode,
       hasQuad: !!options.coverQuad,
     },
   });
   console.log('[VideoRenderer][HardsubPortrait][TimingPayload]', hardsubTimingDebug);
 
   const totalFrames = Math.floor(outputDuration * fps);
+  const includeFullStderrOnError =
+    coverMode === 'copy_from_above' &&
+    Number.isFinite(options.coverFeatherPx) &&
+    (options.coverFeatherPx as number) > 0;
   const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
@@ -1175,7 +1263,19 @@ export async function renderHardsubPortraitVideo(
     cleanupTempPaths: inlineThumbnail.cleanupFiles,
     duration: outputDuration,
     progressCallback,
+    debugLabel: `hardsub_portrait:${featherStrategy}`,
+    includeFullStderrOnError,
   });
+  if (
+    !renderResult.success &&
+    shouldRetryWithGblurFeather(coverMode, options.coverFeatherPx, featherStrategy, renderResult.error || '')
+  ) {
+    console.warn('[VideoRenderer][HardsubPortrait] Retry with fallback feather strategy gblur_mask.', {
+      initialStrategy: featherStrategy,
+      error: renderResult.error,
+    });
+    return renderHardsubPortraitVideo(options, progressCallback, 'gblur_mask');
+  }
   if (renderResult.success) {
     renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
     const outputAspectMeta = await probeOutputAspectForLog(outputPath);
@@ -1219,12 +1319,7 @@ export async function renderBlackBackgroundVideo(
   const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
 
-  let videoCodec = 'libx264';
-  let codecParams = ['-preset', 'medium', '-crf', '23'];
-  if (options.hardwareAcceleration === 'qsv') {
-    videoCodec = 'h264_qsv';
-    codecParams = ['-preset', 'fast', '-global_quality', '25'];
-  }
+  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode);
 
   const finalDurationStr = prep.newAudioDuration.toFixed(3);
   const fps = 24;
@@ -1264,11 +1359,11 @@ export async function renderBlackBackgroundVideo(
     ...inputArgs,
     '-filter_complex', filterComplexParts.join(';'),
     ...mapArgs,
-    '-c:v', videoCodec,
-    ...codecParams,
+    '-c:v', encoderProfile.videoCodec,
+    ...encoderProfile.codecParams,
     '-c:a', 'aac',
     '-b:a', '192k',
-    '-pix_fmt', 'yuv420p',
+    '-pix_fmt', encoderProfile.pixelFormat,
     '-t', finalDurationStr,
     '-y',
     outputPath,
@@ -1339,13 +1434,38 @@ export async function renderVideo(
 }
 
 export async function renderVideoPreviewFrame(
-  options: RenderVideoPreviewFrameOptions
+  options: RenderVideoPreviewFrameOptions,
+  retryCount = 0,
+  featherStrategy: CoverFeatherStrategy = 'geq_distance',
+  featherRetryCount = 0
 ): Promise<RenderVideoPreviewFrameResult> {
   if (!isFFmpegAvailable()) {
     return { success: false, error: 'FFmpeg không được cài đặt' };
   }
   if (!options.videoPath || !existsSync(options.videoPath)) {
     return { success: false, error: `Video không tồn tại: ${options.videoPath}` };
+  }
+  const requestToken =
+    typeof options.requestToken === 'string' && options.requestToken.trim().length > 0
+      ? options.requestToken.trim()
+      : null;
+  if (requestToken && canceledPreviewTokens.has(requestToken)) {
+    canceledPreviewTokens.delete(requestToken);
+    return { success: false, error: VIDEO_PREVIEW_STOPPED_MESSAGE };
+  }
+  if (cancelAllPreviewRequests) {
+    cancelAllPreviewRequests = false;
+  }
+  if (activePreviewFrameProcess && !activePreviewFrameProcess.killed) {
+    const sameRequestToken = requestToken && activePreviewFrameToken === requestToken;
+    if (!sameRequestToken) {
+      if (activePreviewFrameToken) {
+        canceledPreviewTokens.add(activePreviewFrameToken);
+      }
+      try {
+        activePreviewFrameProcess.kill('SIGKILL');
+      } catch {}
+    }
   }
 
   const normalizedEntries = normalizePreviewEntries(options.entries || []);
@@ -1363,12 +1483,22 @@ export async function renderVideoPreviewFrame(
   const sourceWidth = sourceMeta?.width || 1920;
   const sourceHeight = sourceMeta?.actualHeight || sourceMeta?.height || 1080;
   const sourceDuration = sourceMeta?.duration || 0;
+  const sourceFps = sourceMeta?.fps && sourceMeta.fps > 0 ? sourceMeta.fps : 25;
   const requestedTime = Number.isFinite(options.previewTimeSec) ? Number(options.previewTimeSec) : 0;
-  const safePreviewTimeSec = Math.max(0, Math.min(sourceDuration > 0 ? sourceDuration : requestedTime, requestedTime));
+  const effectiveRequestedTime = Number.isFinite(options.timeBucketSec) && (options.timeBucketSec as number) > 0
+    ? Number(options.timeBucketSec)
+    : requestedTime;
+  const frameStepSec = 1 / sourceFps;
+  const seekBackoffSec = Math.min(0.25, Math.max(0.02, frameStepSec));
+  const seekUpperBound = sourceDuration > 0
+    ? Math.max(0, sourceDuration - seekBackoffSec)
+    : effectiveRequestedTime;
+  const safePreviewTimeSec = Math.max(0, Math.min(seekUpperBound, effectiveRequestedTime));
   const previewEntries = selectPreviewEntriesAtTime(normalizedEntries, safePreviewTimeSec);
   if (previewEntries.length === 0) {
     return { success: false, error: 'Không tìm được subtitle hợp lệ để render preview.' };
   }
+  const previewHwaccelArgs = resolvePreviewHwaccelArgs(options.hardwareAcceleration);
 
   let tempDirPath = '';
   let tempSrtPath = '';
@@ -1423,6 +1553,7 @@ export async function renderVideoPreviewFrame(
       blackoutTop: options.blackoutTop,
       coverMode: options.coverMode,
       coverQuad: options.coverQuad,
+      coverFeatherPx: options.coverFeatherPx,
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
@@ -1495,12 +1626,14 @@ export async function renderVideoPreviewFrame(
         blackoutTop: options.blackoutTop,
         coverMode: options.coverMode || 'blackout_bottom',
         coverQuad: options.coverQuad,
+        coverFeatherPx: options.coverFeatherPx,
+        featherStrategy,
         bgDownscaleWidth: even(portraitCanvas.width / 8),
         bgDownscaleHeight: even(portraitCanvas.height / 8),
         bgBlurLumaRadius: 8,
         bgBlurLumaPower: 1,
       });
-      inputArgs = ['-i', options.videoPath];
+      inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];
       filterComplexParts.push(...portraitVideo.filterParts);
       const portraitOutputLabel = `[${portraitVideo.outputLabel}]`;
       if (options.logoPath && existsSync(options.logoPath)) {
@@ -1539,10 +1672,12 @@ export async function renderVideoPreviewFrame(
         blackoutTop: options.blackoutTop,
         coverMode: options.coverMode || 'blackout_bottom',
         coverQuad: options.coverQuad,
+        coverFeatherPx: options.coverFeatherPx,
+        featherStrategy,
         videoSpeedMultiplier: 1.0,
         subtitleFilter,
       });
-      inputArgs = ['-i', options.videoPath];
+      inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];
       filterComplexParts.push(...videoFilter.filterParts);
       if (options.logoPath && existsSync(options.logoPath)) {
         inputArgs.push('-i', options.logoPath);
@@ -1568,7 +1703,6 @@ export async function renderVideoPreviewFrame(
       ...inputArgs,
       '-filter_complex', filterComplexParts.join(';'),
       '-map', finalVideoLabel,
-      '-ss', safePreviewTimeSec.toFixed(3),
       '-frames:v', '1',
       '-c:v', 'png',
       '-an',
@@ -1576,9 +1710,25 @@ export async function renderVideoPreviewFrame(
       '-y',
       tempFramePath,
     ];
+    const isCanceledRequest = (): boolean => {
+      if (cancelAllPreviewRequests) {
+        return true;
+      }
+      if (requestToken && canceledPreviewTokens.has(requestToken)) {
+        return true;
+      }
+      return false;
+    };
+    const clearCanceledFlag = (): void => {
+      if (requestToken) {
+        canceledPreviewTokens.delete(requestToken);
+      }
+    };
 
     return await new Promise<RenderVideoPreviewFrameResult>((resolve) => {
       const process = spawn(ffmpegPath, args);
+      activePreviewFrameProcess = process;
+      activePreviewFrameToken = requestToken;
       let stderr = '';
 
       process.stderr.on('data', (data) => {
@@ -1586,10 +1736,22 @@ export async function renderVideoPreviewFrame(
       });
 
       process.on('close', async (code) => {
+        const canceled = isCanceledRequest();
+        if (activePreviewFrameProcess === process) {
+          activePreviewFrameProcess = null;
+          activePreviewFrameToken = null;
+        }
+        if (canceled) {
+          clearCanceledFlag();
+          await cleanupPreviewTemps();
+          resolve({ success: false, error: VIDEO_PREVIEW_STOPPED_MESSAGE });
+          return;
+        }
         if (code === 0) {
           try {
             const frameBuffer = await fs.readFile(tempFramePath);
             await cleanupPreviewTemps();
+            clearCanceledFlag();
             resolve({
               success: true,
               frameData: frameBuffer.toString('base64'),
@@ -1604,19 +1766,91 @@ export async function renderVideoPreviewFrame(
           return;
         }
 
+        const summarizedError = summarizeFfmpegStderr(stderr) || `FFmpeg exit code: ${code}`;
+        const combinedErrorText = `${stderr}\n${summarizedError}`;
+        const coverMode = options.coverMode || 'blackout_bottom';
+        console.error('[VideoRenderer][PreviewFrame] FFmpeg command failed', {
+          coverMode,
+          featherStrategy,
+          retryCount,
+          featherRetryCount,
+          args,
+          filterComplex: filterComplexParts.join(';'),
+          stderr,
+        });
         await cleanupPreviewTemps();
+        clearCanceledFlag();
+        const eofEncoderError = /could not open encoder before eof|output file is empty|nothing was written into output file/i.test(
+          combinedErrorText
+        );
+        if (eofEncoderError && retryCount < 1 && safePreviewTimeSec > 0.05) {
+          const retryPreviewTimeSec = Math.max(0, safePreviewTimeSec - Math.max(0.25, frameStepSec * 2));
+          if (retryPreviewTimeSec < safePreviewTimeSec - 0.001) {
+            console.warn('[VideoRenderer][PreviewFrame] Retry preview frame due to EOF/empty-output error.', {
+              requestedTime,
+              safePreviewTimeSec,
+              retryPreviewTimeSec,
+              sourceDuration,
+              sourceFps,
+              retryCount,
+              error: summarizedError,
+            });
+            const retryResult = await renderVideoPreviewFrame(
+              {
+                ...options,
+                previewTimeSec: retryPreviewTimeSec,
+              },
+              retryCount + 1,
+              featherStrategy,
+              featherRetryCount
+            );
+            resolve(retryResult);
+            return;
+          }
+        }
+        if (
+          featherRetryCount < 1 &&
+          shouldRetryWithGblurFeather(coverMode, options.coverFeatherPx, featherStrategy, combinedErrorText)
+        ) {
+          console.warn('[VideoRenderer][PreviewFrame] Retry with fallback feather strategy gblur_mask.', {
+            currentStrategy: featherStrategy,
+            error: summarizedError,
+          });
+          const retryResult = await renderVideoPreviewFrame(
+            options,
+            retryCount,
+            'gblur_mask',
+            featherRetryCount + 1
+          );
+          resolve(retryResult);
+          return;
+        }
         resolve({
           success: false,
-          error: stderr || `FFmpeg exit code: ${code}`,
+          error: summarizedError,
         });
       });
 
       process.on('error', async (error) => {
+        const canceled = isCanceledRequest();
+        if (activePreviewFrameProcess === process) {
+          activePreviewFrameProcess = null;
+          activePreviewFrameToken = null;
+        }
+        clearCanceledFlag();
         await cleanupPreviewTemps();
-        resolve({ success: false, error: `Lỗi FFmpeg: ${error.message}` });
+        if (canceled) {
+          resolve({ success: false, error: VIDEO_PREVIEW_STOPPED_MESSAGE });
+          return;
+        }
+        const summarizedError = `Lỗi FFmpeg: ${error.message}`;
+        resolve({ success: false, error: summarizedError });
       });
     });
   } catch (error) {
+    if (requestToken) {
+      canceledPreviewTokens.delete(requestToken);
+    }
     await cleanupPreviewTemps();
     return { success: false, error: String(error) };
   }
@@ -1883,6 +2117,39 @@ export async function renderStep7AudioPreview(
     await cleanupPreviewTemps();
     return { success: false, error: String(error) };
   }
+}
+
+export function stopActiveVideoPreviewFrame(
+  requestToken?: string
+): { success: boolean; stopped: boolean; message: string } {
+  const normalizedToken =
+    typeof requestToken === 'string' && requestToken.trim().length > 0
+      ? requestToken.trim()
+      : null;
+  const hasActiveProcess = !!activePreviewFrameProcess && !activePreviewFrameProcess.killed;
+  if (!hasActiveProcess) {
+    return { success: true, stopped: false, message: 'Không có tiến trình preview frame đang chạy.' };
+  }
+
+  if (
+    normalizedToken &&
+    activePreviewFrameToken &&
+    normalizedToken !== activePreviewFrameToken
+  ) {
+    return { success: true, stopped: false, message: 'Request token không khớp preview frame đang chạy.' };
+  }
+
+  if (normalizedToken) {
+    canceledPreviewTokens.add(normalizedToken);
+  } else {
+    cancelAllPreviewRequests = true;
+  }
+
+  try {
+    activePreviewFrameProcess!.kill('SIGKILL');
+  } catch {}
+
+  return { success: true, stopped: true, message: VIDEO_PREVIEW_STOPPED_MESSAGE };
 }
 
 export function stopActiveAudioPreview(): { success: boolean; stopped: boolean; message: string } {

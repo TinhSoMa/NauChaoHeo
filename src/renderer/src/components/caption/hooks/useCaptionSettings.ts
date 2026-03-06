@@ -36,6 +36,7 @@ interface LayoutProfile {
   blackoutTop: number | null;
   coverMode: CaptionCoverMode;
   coverQuad: CoverQuad;
+  coverFeatherPx: number;
   foregroundCropPercent: number;
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
@@ -111,6 +112,9 @@ const MIN_VIDEO_VOLUME_PERCENT = 0;
 const MAX_VIDEO_VOLUME_PERCENT = 200;
 const MIN_TTS_VOLUME_PERCENT = 0;
 const MAX_TTS_VOLUME_PERCENT = 400;
+const MIN_COVER_FEATHER_PX = 0;
+const MAX_COVER_FEATHER_PX = 120;
+const DEFAULT_COVER_FEATHER_PX = 18;
 
 function clampPercent(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) {
@@ -164,6 +168,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   blackoutTop: 0.9,
   coverMode: 'blackout_bottom',
   coverQuad: normalizeQuad(),
+  coverFeatherPx: DEFAULT_COVER_FEATHER_PX,
   foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
@@ -192,6 +197,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   blackoutTop: 0.9,
   coverMode: 'blackout_bottom',
   coverQuad: normalizeQuad(),
+  coverFeatherPx: DEFAULT_COVER_FEATHER_PX,
   foregroundCropPercent: 0,
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
@@ -258,6 +264,12 @@ function normalizeProfile(
   if (patch.coverQuad && typeof patch.coverQuad === 'object') {
     const normalized = normalizeQuad(patch.coverQuad as Partial<CoverQuad>);
     next.coverQuad = isConvexQuad(normalized) ? normalized : normalizeQuad(fallback.coverQuad);
+  }
+  if (typeof patch.coverFeatherPx === 'number' && Number.isFinite(patch.coverFeatherPx)) {
+    next.coverFeatherPx = Math.min(
+      MAX_COVER_FEATHER_PX,
+      Math.max(MIN_COVER_FEATHER_PX, Math.round(patch.coverFeatherPx))
+    );
   }
   if (typeof patch.foregroundCropPercent === 'number') {
     next.foregroundCropPercent = Math.min(20, Math.max(0, patch.foregroundCropPercent));
@@ -556,6 +568,14 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, coverQuad: normalized }));
   }, [updateActiveProfile]);
 
+  const setCoverFeatherPx = useCallback((value: number) => {
+    const normalized = Math.min(
+      MAX_COVER_FEATHER_PX,
+      Math.max(MIN_COVER_FEATHER_PX, Number.isFinite(value) ? Math.round(value) : DEFAULT_COVER_FEATHER_PX)
+    );
+    updateActiveProfile((current) => ({ ...current, coverFeatherPx: normalized }));
+  }, [updateActiveProfile]);
+
   const setForegroundCropPercent = useCallback((value: number) => {
     const normalized = Math.min(20, Math.max(0, Number.isFinite(value) ? value : 0));
     updateActiveProfile((current) => ({ ...current, foregroundCropPercent: normalized }));
@@ -753,6 +773,7 @@ export function useCaptionSettings() {
       blackoutTop: activeProfile.blackoutTop,
       coverMode: activeProfile.coverMode,
       coverQuad: activeProfile.coverQuad,
+      coverFeatherPx: activeProfile.coverFeatherPx,
       portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
       audioSpeed,
       renderAudioSpeed,
@@ -867,6 +888,7 @@ export function useCaptionSettings() {
       blackoutTop: saved.blackoutTop,
       coverMode: saved.coverMode,
       coverQuad: saved.coverQuad,
+      coverFeatherPx: saved.coverFeatherPx,
       foregroundCropPercent: saved.portraitForegroundCropPercent,
       subtitlePosition: saved.subtitlePosition,
       thumbnailFrameTimeSec: saved.thumbnailFrameTimeSec,
@@ -1069,6 +1091,8 @@ export function useCaptionSettings() {
     setCoverMode,
     coverQuad: activeProfile.coverQuad,
     setCoverQuad,
+    coverFeatherPx: activeProfile.coverFeatherPx,
+    setCoverFeatherPx,
     foregroundCropPercent: activeProfile.foregroundCropPercent,
     setForegroundCropPercent,
     portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,

@@ -499,6 +499,29 @@ export function registerCaptionHandlers(): void {
   );
 
   ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.STOP_VIDEO_PREVIEW_FRAME,
+    async (
+      _event: IpcMainInvokeEvent,
+      requestToken?: string
+    ): Promise<IpcResponse<{ stopped: boolean; message: string }>> => {
+      try {
+        const stopResult = CaptionService.stopActiveVideoPreviewFrame(requestToken);
+        return {
+          success: stopResult.success,
+          data: {
+            stopped: stopResult.stopped,
+            message: stopResult.message,
+          },
+          error: stopResult.success ? undefined : stopResult.message,
+        };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi stop video preview frame:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
     CAPTION_VIDEO_IPC_CHANNELS.MIX_AUDIO_PREVIEW,
     async (
       event: IpcMainInvokeEvent,

@@ -9,6 +9,26 @@ const RENDER_STOPPED_MESSAGE = 'Đã dừng render theo yêu cầu.';
 let activeRenderProcess: ChildProcessWithoutNullStreams | null = null;
 let stopRequested = false;
 
+function summarizeFfmpegError(stderr: string): string {
+  const text = (stderr || '').trim();
+  if (!text) {
+    return 'FFmpeg render thất bại.';
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return 'FFmpeg render thất bại.';
+  }
+  const important = lines.filter((line) =>
+    /(error|failed|invalid|cannot|unable|no such|not found|could not)/i.test(line)
+  );
+  const source = important.length > 0 ? important : lines;
+  const picked = [source[0], ...source.slice(-3)].filter((line, index, arr) => !!line && arr.indexOf(line) === index);
+  return picked.join(' | ');
+}
+
 export function requestStopCurrentRender(): { requested: boolean; hadActiveProcess: boolean } {
   stopRequested = true;
   const hadActiveProcess = !!activeRenderProcess && !activeRenderProcess.killed;
@@ -109,9 +129,30 @@ export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<Rend
         fps: 0,
         percent: 0,
         status: 'error',
-        message: `Lỗi render: ${stderr.substring(0, 200)}`,
+        message: `Lỗi render: ${summarizeFfmpegError(stderr)}`,
       });
-      resolve({ success: false, error: stderr || `FFmpeg exit code: ${code}` });
+      const debugLabel = options.debugLabel || 'render';
+      if (stderr.trim()) {
+        if (options.includeFullStderrOnError) {
+          console.error(`[FFmpeg][${debugLabel}] Command failed`, {
+            args: options.args,
+            stderr,
+          });
+        } else {
+          console.error(`[FFmpeg][${debugLabel}] Command failed`, {
+            args: options.args,
+            stderrTail: stderr.slice(-4000),
+          });
+        }
+      } else {
+        console.error(`[FFmpeg][${debugLabel}] Command failed with empty stderr`, {
+          args: options.args,
+        });
+      }
+      resolve({
+        success: false,
+        error: summarizeFfmpegError(stderr) || `FFmpeg exit code: ${code}`,
+      });
     });
 
     process.on('error', async (error) => {

@@ -50,6 +50,12 @@ type LayoutSwitchValue = 'landscape' | 'portrait';
 type InspectorPane = 'step' | 'common' | 'snapshot';
 const COMMON_COLOR_HISTORY_LIMIT = 12;
 const COMMON_COLOR_HISTORY_STORAGE_PREFIX = 'caption.common.colorHistory.v1';
+const SUBTITLE_FONT_SIZE_MIN = 1;
+const SUBTITLE_FONT_SIZE_MAX = 1000;
+const SUBTITLE_FONT_SIZE_DEFAULT = 62;
+const THUMBNAIL_FONT_SIZE_MIN = 24;
+const THUMBNAIL_FONT_SIZE_MAX = 400;
+const THUMBNAIL_FONT_SIZE_DEFAULT = 145;
 
 const DEFAULT_COVER_QUAD: CoverQuad = {
   tl: { x: 0, y: 0 },
@@ -390,6 +396,13 @@ function formatPercentDisplay(value: number | undefined, fallback = 0): string {
   const safe = Number.isFinite(value) ? (value as number) : fallback;
   const rounded = Math.round(safe * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+}
+
+function clampInteger(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function wildcardToRegExp(pattern: string): RegExp {
@@ -827,6 +840,85 @@ export function CaptionTranslator() {
     );
   }, [commonColorHistory]);
 
+  const subtitleFontSizeValue = clampInteger(
+    Number(settings.style?.fontSize),
+    SUBTITLE_FONT_SIZE_MIN,
+    SUBTITLE_FONT_SIZE_MAX,
+    SUBTITLE_FONT_SIZE_DEFAULT
+  );
+  const thumbnailTextPrimaryFontSizeValue = clampInteger(
+    Number(settings.thumbnailTextPrimaryFontSize),
+    THUMBNAIL_FONT_SIZE_MIN,
+    THUMBNAIL_FONT_SIZE_MAX,
+    THUMBNAIL_FONT_SIZE_DEFAULT
+  );
+  const thumbnailTextSecondaryFontSizeValue = clampInteger(
+    Number(settings.thumbnailTextSecondaryFontSize),
+    THUMBNAIL_FONT_SIZE_MIN,
+    THUMBNAIL_FONT_SIZE_MAX,
+    THUMBNAIL_FONT_SIZE_DEFAULT
+  );
+
+  const [subtitleFontSizeInput, setSubtitleFontSizeInput] = useState(String(subtitleFontSizeValue));
+  const [thumbnailTextPrimaryFontSizeInput, setThumbnailTextPrimaryFontSizeInput] = useState(String(thumbnailTextPrimaryFontSizeValue));
+  const [thumbnailTextSecondaryFontSizeInput, setThumbnailTextSecondaryFontSizeInput] = useState(String(thumbnailTextSecondaryFontSizeValue));
+
+  useEffect(() => {
+    setSubtitleFontSizeInput(String(subtitleFontSizeValue));
+  }, [subtitleFontSizeValue]);
+
+  useEffect(() => {
+    setThumbnailTextPrimaryFontSizeInput(String(thumbnailTextPrimaryFontSizeValue));
+  }, [thumbnailTextPrimaryFontSizeValue]);
+
+  useEffect(() => {
+    setThumbnailTextSecondaryFontSizeInput(String(thumbnailTextSecondaryFontSizeValue));
+  }, [thumbnailTextSecondaryFontSizeValue]);
+
+  const commitSubtitleFontSizeInput = useCallback(() => {
+    const parsed = Number(subtitleFontSizeInput.trim());
+    const normalized = clampInteger(
+      parsed,
+      SUBTITLE_FONT_SIZE_MIN,
+      SUBTITLE_FONT_SIZE_MAX,
+      subtitleFontSizeValue
+    );
+    settings.setStyle((s: any) => ({ ...s, fontSize: normalized }));
+    setSubtitleFontSizeInput(String(normalized));
+  }, [settings.setStyle, subtitleFontSizeInput, subtitleFontSizeValue]);
+
+  const commitThumbnailTextPrimaryFontSizeInput = useCallback(() => {
+    const parsed = Number(thumbnailTextPrimaryFontSizeInput.trim());
+    const normalized = clampInteger(
+      parsed,
+      THUMBNAIL_FONT_SIZE_MIN,
+      THUMBNAIL_FONT_SIZE_MAX,
+      thumbnailTextPrimaryFontSizeValue
+    );
+    settings.setThumbnailTextPrimaryFontSize(normalized);
+    setThumbnailTextPrimaryFontSizeInput(String(normalized));
+  }, [
+    settings.setThumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryFontSizeInput,
+    thumbnailTextPrimaryFontSizeValue,
+  ]);
+
+  const commitThumbnailTextSecondaryFontSizeInput = useCallback(() => {
+    const parsed = Number(thumbnailTextSecondaryFontSizeInput.trim());
+    const normalized = clampInteger(
+      parsed,
+      THUMBNAIL_FONT_SIZE_MIN,
+      THUMBNAIL_FONT_SIZE_MAX,
+      thumbnailTextSecondaryFontSizeValue
+    );
+    settings.setThumbnailTextSecondaryFontSize(normalized);
+    setThumbnailTextSecondaryFontSizeInput(String(normalized));
+  }, [
+    settings.setThumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryFontSizeInput,
+    thumbnailTextSecondaryFontSizeValue,
+  ]);
+
   useEffect(() => {
     const normalizedVoice = normalizeVoiceValue(settings.voice);
     if (normalizedVoice !== settings.voice) {
@@ -927,6 +1019,7 @@ export function CaptionTranslator() {
     blackoutTop: settings.blackoutTop,
     coverMode: settings.coverMode,
     coverQuad: settings.coverQuad,
+    coverFeatherPx: settings.coverFeatherPx,
     audioSpeed: settings.audioSpeed,
     renderAudioSpeed: settings.renderAudioSpeed,
     videoVolume: settings.videoVolume,
@@ -971,6 +1064,7 @@ export function CaptionTranslator() {
     settings.blackoutTop,
     settings.coverMode,
     settings.coverQuad,
+    settings.coverFeatherPx,
     settings.audioSpeed,
     settings.renderAudioSpeed,
     settings.videoVolume,
@@ -3102,6 +3196,29 @@ export function CaptionTranslator() {
               </div>
             </div>
 
+            {settings.coverMode === 'copy_from_above' && (
+              <div className={styles.commonInlineSection}>
+                <div className={styles.commonInlineHeader}>
+                  <span className={styles.label}>Feather viền copy</span>
+                  <span className={styles.commonInlineValue}>{Math.round(settings.coverFeatherPx ?? 18)} px</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={120}
+                  step={1}
+                  value={settings.coverFeatherPx ?? 18}
+                  onChange={(e) => settings.setCoverFeatherPx(Number(e.target.value))}
+                  disabled={settings.renderMode === 'black_bg'}
+                />
+                <div className={styles.commonInlineActions}>
+                  <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherPx(18)}>
+                    Mặc định
+                  </button>
+                </div>
+              </div>
+            )}
+
             {settings.renderMode === 'hardsub_portrait_9_16' && (
               <div className={styles.commonInlineSection}>
                 <div className={styles.commonInlineHeader}>
@@ -3189,11 +3306,18 @@ export function CaptionTranslator() {
                 <label className={styles.label}>Size subtitle</label>
                 <Input
                   type="number"
-                  min={1}
-                  max={1000}
+                  min={SUBTITLE_FONT_SIZE_MIN}
+                  max={SUBTITLE_FONT_SIZE_MAX}
                   step={1}
-                  value={settings.style?.fontSize}
-                  onChange={(e) => settings.setStyle((s: any) => ({ ...s, fontSize: Number(e.target.value) }))}
+                  value={subtitleFontSizeInput}
+                  onChange={(e) => setSubtitleFontSizeInput(e.target.value)}
+                  onBlur={commitSubtitleFontSizeInput}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
                 />
               </div>
             </div>
@@ -3243,11 +3367,18 @@ export function CaptionTranslator() {
                 <label className={styles.label}>Size Text1</label>
                 <Input
                   type="number"
-                  min={24}
-                  max={400}
+                  min={THUMBNAIL_FONT_SIZE_MIN}
+                  max={THUMBNAIL_FONT_SIZE_MAX}
                   step={1}
-                  value={settings.thumbnailTextPrimaryFontSize ?? 145}
-                  onChange={(e) => settings.setThumbnailTextPrimaryFontSize(Number(e.target.value))}
+                  value={thumbnailTextPrimaryFontSizeInput}
+                  onChange={(e) => setThumbnailTextPrimaryFontSizeInput(e.target.value)}
+                  onBlur={commitThumbnailTextPrimaryFontSizeInput}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
                 />
               </div>
             </div>
@@ -3297,11 +3428,18 @@ export function CaptionTranslator() {
                 <label className={styles.label}>Size Text2</label>
                 <Input
                   type="number"
-                  min={24}
-                  max={400}
+                  min={THUMBNAIL_FONT_SIZE_MIN}
+                  max={THUMBNAIL_FONT_SIZE_MAX}
                   step={1}
-                  value={settings.thumbnailTextSecondaryFontSize ?? 145}
-                  onChange={(e) => settings.setThumbnailTextSecondaryFontSize(Number(e.target.value))}
+                  value={thumbnailTextSecondaryFontSizeInput}
+                  onChange={(e) => setThumbnailTextSecondaryFontSizeInput(e.target.value)}
+                  onBlur={commitThumbnailTextSecondaryFontSizeInput}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
+                  }}
                 />
               </div>
             </div>
@@ -3959,8 +4097,10 @@ export function CaptionTranslator() {
                   blackoutTop={settings.blackoutTop}
                   coverMode={settings.coverMode}
                   coverQuad={settings.coverQuad}
+                  coverFeatherPx={settings.coverFeatherPx}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
+                  hardwareAcceleration={settings.hardwareAcceleration}
                   previewLayoutValue={activeLayoutSwitch}
                   onPreviewLayoutChange={handlePreviewLayoutChange}
                   logoPath={settings.logoPath}

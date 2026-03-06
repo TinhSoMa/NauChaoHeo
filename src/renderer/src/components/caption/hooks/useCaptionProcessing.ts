@@ -193,6 +193,7 @@ interface UseCaptionProcessingProps {
     blackoutTop?: number | null;
     coverMode?: 'blackout_bottom' | 'copy_from_above';
     coverQuad?: CoverQuad;
+    coverFeatherPx?: number;
     autoFitAudio: boolean;
     audioSpeed?: number;
     renderAudioSpeed?: number;
@@ -1128,6 +1129,7 @@ export function useCaptionProcessing({
         audioVolume: cfg.audioVolume,
         coverMode: cfg.coverMode || 'blackout_bottom',
         coverQuad: cfg.coverQuad,
+        coverFeatherPx: cfg.coverFeatherPx,
         style: cfg.style,
         thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
         thumbnailDurationSec: cfg.thumbnailDurationSec,
@@ -1181,6 +1183,7 @@ export function useCaptionProcessing({
       blackoutTop: cfg.blackoutTop,
       coverMode: cfg.coverMode || 'blackout_bottom',
       coverQuad: cfg.coverQuad,
+      ...(cfg.coverFeatherPx != null ? { coverFeatherPx: cfg.coverFeatherPx } : {}),
       audioSpeed: cfg.audioSpeed,
       renderAudioSpeed: cfg.renderAudioSpeed,
       videoVolume: cfg.videoVolume,
@@ -1197,7 +1200,7 @@ export function useCaptionProcessing({
       thumbnailTextSecondary: cfg.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
-      thumbnailTextsSecondaryByOrder: cfg.thumbnailTextsSecondaryByOrder,
+      thumbnailTextSecondaryByOrder: cfg.thumbnailTextsSecondaryByOrder,
       thumbnailTextSecondaryOverrideFlags: cfg.thumbnailTextSecondaryOverrideFlags,
       subtitlePosition: cfg.subtitlePosition,
       thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
@@ -2188,6 +2191,7 @@ export function useCaptionProcessing({
             ? cfg.blackoutTop : undefined,
           coverMode: cfg.coverMode || 'blackout_bottom',
           coverQuad: cfg.coverQuad,
+          coverFeatherPx: cfg.coverFeatherPx,
           audioPath: mergedAudioPathForRender,
           audioSpeed: cfg.renderAudioSpeed,
           step7AudioSpeedInput: step7AudioSpeed,

@@ -39,6 +39,7 @@ export interface UseSubtitlePreviewOptions {
   blackoutTop?: number | null;  // fraction 0-1 (persisted from settings)
   coverMode?: 'blackout_bottom' | 'copy_from_above';
   coverQuad?: CoverQuad;
+  coverFeatherPx?: number;
   renderMode?: PreviewRenderMode;
   renderResolution?: PreviewRenderResolution;
   logoPath?: string;
@@ -204,6 +205,76 @@ const MIN_COVER_RECT_SIZE = 0.02;
 const MIN_PREVIEW_ZOOM = 1;
 const MAX_PREVIEW_ZOOM = 4;
 const PREVIEW_ZOOM_STEP = 0.1;
+const MIN_COVER_FEATHER_PX = 0;
+const MAX_COVER_FEATHER_PX = 120;
+const DEFAULT_COVER_FEATHER_PX = 18;
+const COVER_FEATHER_EDGE_RATIO = 0.20;
+
+function normalizeCoverFeatherPx(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_COVER_FEATHER_PX;
+  }
+  return clampNumber(Math.round(value as number), MIN_COVER_FEATHER_PX, MAX_COVER_FEATHER_PX);
+}
+
+function applyEdgeFeatherMask(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  featherX: number,
+  featherY: number
+): void {
+  const fx = Math.max(0, Math.min(width / 2, featherX));
+  const fy = Math.max(0, Math.min(height / 2, featherY));
+  if (fx <= 0 && fy <= 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-in';
+  const opaque = 'rgba(255,255,255,1)';
+  const transparent = 'rgba(255,255,255,0)';
+
+  if (fx > 0) {
+    const centerW = Math.max(0, width - fx * 2);
+    if (centerW > 0) {
+      ctx.fillStyle = opaque;
+      ctx.fillRect(fx, 0, centerW, height);
+    }
+    const leftGradient = ctx.createLinearGradient(0, 0, fx, 0);
+    leftGradient.addColorStop(0, transparent);
+    leftGradient.addColorStop(1, opaque);
+    ctx.fillStyle = leftGradient;
+    ctx.fillRect(0, 0, fx, height);
+
+    const rightGradient = ctx.createLinearGradient(width - fx, 0, width, 0);
+    rightGradient.addColorStop(0, opaque);
+    rightGradient.addColorStop(1, transparent);
+    ctx.fillStyle = rightGradient;
+    ctx.fillRect(width - fx, 0, fx, height);
+  }
+
+  if (fy > 0) {
+    const centerH = Math.max(0, height - fy * 2);
+    if (centerH > 0) {
+      ctx.fillStyle = opaque;
+      ctx.fillRect(0, fy, width, centerH);
+    }
+    const topGradient = ctx.createLinearGradient(0, 0, 0, fy);
+    topGradient.addColorStop(0, transparent);
+    topGradient.addColorStop(1, opaque);
+    ctx.fillStyle = topGradient;
+    ctx.fillRect(0, 0, width, fy);
+
+    const bottomGradient = ctx.createLinearGradient(0, height - fy, 0, height);
+    bottomGradient.addColorStop(0, opaque);
+    bottomGradient.addColorStop(1, transparent);
+    ctx.fillStyle = bottomGradient;
+    ctx.fillRect(0, height - fy, width, fy);
+  }
+
+  ctx.restore();
+}
 
 function rectToQuad(rect: CoverRect): CoverQuad {
   return {
@@ -224,16 +295,6 @@ function quadToRect(quad: CoverQuad): CoverRect {
   };
 }
 
-function hitCanvasRect(rect: CanvasRect | null, x: number, y: number, padding = 0): boolean {
-  if (!rect) return false;
-  return (
-    x >= rect.x - padding
-    && x <= rect.x + rect.width + padding
-    && y >= rect.y - padding
-    && y <= rect.y + rect.height + padding
-  );
-}
-
 export function useSubtitlePreview({
   style,
   entries,
@@ -241,6 +302,7 @@ export function useSubtitlePreview({
   blackoutTop,
   coverMode,
   coverQuad,
+  coverFeatherPx,
   renderMode,
   renderResolution,
   logoPath,
@@ -260,6 +322,7 @@ export function useSubtitlePreview({
   const imageRef = useRef<HTMLImageElement | null>(null);
   const logoImageRef = useRef<HTMLImageElement | null>(null);
   const blurScratchRef = useRef<HTMLCanvasElement | null>(null);
+  const coverPatchScratchRef = useRef<HTMLCanvasElement | null>(null);
   const worldCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // Stores logo bounding box in canvas-pixel coords, updated every drawCanvas
   const logoBoundsRef = useRef<{ cx: number; cy: number; hw: number; hh: number } | null>(null);
@@ -894,6 +957,7 @@ export function useSubtitlePreview({
 
       const scaleX = region.width / previewWidth;
       const scaleY = region.height / previewHeight;
+      const normalizedCoverFeatherPx = normalizeCoverFeatherPx(coverFeatherPx);
       const rectCanvasX = region.x + rectPx.x * scaleX;
       const rectCanvasY = region.y + rectPx.y * scaleY;
       const rectCanvasW = rectPx.w * scaleX;
@@ -924,17 +988,64 @@ export function useSubtitlePreview({
           scratchCtx.imageSmoothingEnabled = true;
           scratchCtx.imageSmoothingQuality = 'high';
           scratchCtx.drawImage(canvas, 0, 0, cw, ch);
-          ctx.drawImage(
-            scratch,
-            rectCanvasX,
-            sourceCanvasY,
-            rectCanvasW,
-            rectCanvasH,
-            rectCanvasX,
-            rectCanvasY,
-            rectCanvasW,
-            rectCanvasH
-          );
+
+          if (normalizedCoverFeatherPx <= 0) {
+            ctx.drawImage(
+              scratch,
+              rectCanvasX,
+              sourceCanvasY,
+              rectCanvasW,
+              rectCanvasH,
+              rectCanvasX,
+              rectCanvasY,
+              rectCanvasW,
+              rectCanvasH
+            );
+          } else {
+            let patchCanvas = coverPatchScratchRef.current;
+            if (!patchCanvas) {
+              patchCanvas = document.createElement('canvas');
+              coverPatchScratchRef.current = patchCanvas;
+            }
+            const patchWidth = Math.max(1, Math.round(rectCanvasW));
+            const patchHeight = Math.max(1, Math.round(rectCanvasH));
+            if (patchCanvas.width !== patchWidth || patchCanvas.height !== patchHeight) {
+              patchCanvas.width = patchWidth;
+              patchCanvas.height = patchHeight;
+            }
+            const patchCtx = patchCanvas.getContext('2d');
+            if (patchCtx) {
+              patchCtx.setTransform(1, 0, 0, 1, 0, 0);
+              patchCtx.clearRect(0, 0, patchCanvas.width, patchCanvas.height);
+              patchCtx.imageSmoothingEnabled = true;
+              patchCtx.imageSmoothingQuality = 'high';
+              patchCtx.drawImage(
+                scratch,
+                rectCanvasX,
+                sourceCanvasY,
+                rectCanvasW,
+                rectCanvasH,
+                0,
+                0,
+                patchCanvas.width,
+                patchCanvas.height
+              );
+              applyEdgeFeatherMask(
+                patchCtx,
+                patchCanvas.width,
+                patchCanvas.height,
+                Math.max(1, Math.round(patchCanvas.width * COVER_FEATHER_EDGE_RATIO)),
+                Math.max(1, Math.round(patchCanvas.height * COVER_FEATHER_EDGE_RATIO))
+              );
+              ctx.drawImage(
+                patchCanvas,
+                rectCanvasX,
+                rectCanvasY,
+                rectCanvasW,
+                rectCanvasH
+              );
+            }
+          }
         }
       }
 
@@ -1209,7 +1320,7 @@ export function useSubtitlePreview({
     }
 
     presentWorldCanvas();
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan]);
 
   // Load video frame image
   useEffect(() => {
@@ -1434,37 +1545,13 @@ export function useSubtitlePreview({
     const wx = worldPoint.x;
     const wy = worldPoint.y;
 
-    let activeMode: PreviewMode = mode;
-    const logoBounds = logoBoundsRef.current;
-    const hitLogoBody = !!logoBounds
-      && Math.abs(wx - logoBounds.cx) <= logoBounds.hw
-      && Math.abs(wy - logoBounds.cy) <= logoBounds.hh;
-    const hitLogoCorner = isNearCorner(wx, wy);
-
-    if (hitLogoBody || hitLogoCorner) {
-      if (activeMode !== 'logo') {
-        activeMode = 'logo';
-        setMode('logo');
-      }
-    } else {
-      const hitSubtitle = hitCanvasRect(subtitleHitRectRef.current, wx, wy, 8);
-      const hitMark = hitCanvasRect(markHitRectRef.current, wx, wy, 8);
-      if (hitSubtitle && activeMode !== 'subtitle') {
-        activeMode = 'subtitle';
-        setMode('subtitle');
-      } else if (hitMark && activeMode !== 'blackout') {
-        activeMode = 'blackout';
-        setMode('blackout');
-      }
-    }
-
     setIsDragging(true);
 
-    if (activeMode === 'subtitle') {
+    if (mode === 'subtitle') {
       const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
       onPositionChange?.(newPos);
-    } else if (activeMode === 'logo') {
+    } else if (mode === 'logo') {
       const b = logoBoundsRef.current;
       if (b && isNearCorner(wx, wy)) {
         // Bắt đầu kéo góc để resize — dùng ref để đọc scale hiện tại chính xác
@@ -1556,35 +1643,23 @@ export function useSubtitlePreview({
       return;
     }
 
-    // Ưu tiên cursor theo object đang hover để user chọn/kéo trực tiếp (không cần bấm mode trước).
     if (!isDragging) {
-      const logoBounds = logoBoundsRef.current;
-      const hoverLogoBody = !!logoBounds
-        && Math.abs(wx - logoBounds.cx) <= logoBounds.hw
-        && Math.abs(wy - logoBounds.cy) <= logoBounds.hh;
-      const hoverLogoCorner = isNearCorner(wx, wy);
-      const hoverSubtitle = hitCanvasRect(subtitleHitRectRef.current, wx, wy, 8);
-      const hoverMark = hitCanvasRect(markHitRectRef.current, wx, wy, 8);
-
-      if (hoverLogoCorner) {
-        setCanvasCursor('nwse-resize');
-        return;
-      }
-      if (hoverLogoBody || hoverSubtitle) {
-        setCanvasCursor('move');
-        return;
-      }
-      if (hoverMark && !(mode === 'blackout' && localCoverMode === 'copy_from_above')) {
-        setCanvasCursor('ns-resize');
-        return;
-      }
-    }
-
-    // Fallback cursor theo mode khi không hover trúng object.
-    if (mode === 'logo' && !isDragging) {
-      setCanvasCursor('move');
-    } else if (mode !== 'logo') {
-      if (mode === 'blackout' && localCoverMode === 'copy_from_above') {
+      if (mode === 'logo') {
+        const hoverLogoCorner = isNearCorner(wx, wy);
+        const logoBounds = logoBoundsRef.current;
+        const hoverLogoBody = !!logoBounds
+          && Math.abs(wx - logoBounds.cx) <= logoBounds.hw
+          && Math.abs(wy - logoBounds.cy) <= logoBounds.hh;
+        if (hoverLogoCorner) {
+          setCanvasCursor('nwse-resize');
+          return;
+        }
+        if (hoverLogoBody) {
+          setCanvasCursor('move');
+          return;
+        }
+        setCanvasCursor('crosshair');
+      } else if (mode === 'blackout' && localCoverMode === 'copy_from_above') {
         const edgeKey = hitCoverEdge(wx, wy);
         if (edgeKey === 'left' || edgeKey === 'right') {
           setCanvasCursor('ew-resize');
@@ -1886,6 +1961,7 @@ export function useSubtitlePreview({
     coverMode: localCoverMode,
     setCoverMode,
     coverQuad: localCoverQuad,
+    coverFeatherPx: normalizeCoverFeatherPx(coverFeatherPx),
     coverQuadValid,
     copyOffsetPx,
     copyRectDebug,
