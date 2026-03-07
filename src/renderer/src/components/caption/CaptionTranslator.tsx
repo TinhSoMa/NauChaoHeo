@@ -47,7 +47,7 @@ type TtsVoiceProvider = 'edge' | 'capcut';
 type TtsVoiceTier = 'free' | 'pro';
 type CommonConfigTab = 'render' | 'typography' | 'audio';
 type LayoutSwitchValue = 'landscape' | 'portrait';
-type InspectorPane = 'step' | 'common' | 'snapshot';
+type InspectorPane = 'step' | 'common' | 'snapshot' | 'thumbnail';
 const COMMON_COLOR_HISTORY_LIMIT = 12;
 const COMMON_COLOR_HISTORY_STORAGE_PREFIX = 'caption.common.colorHistory.v1';
 const SUBTITLE_FONT_SIZE_MIN = 1;
@@ -2105,6 +2105,105 @@ export function CaptionTranslator() {
     settings.setThumbnailTextSecondary(value);
   }, [hardsubSettings, isMultiFolder, settings, thumbnailPreviewFolderIndex]);
 
+  const [thumbnailPreviewVideoMeta, setThumbnailPreviewVideoMeta] = useState<{ duration: number; fps: number }>({
+    duration: 5,
+    fps: 30,
+  });
+
+  useEffect(() => {
+    if (!thumbnailPreviewVideoPath) {
+      setThumbnailPreviewVideoMeta({ duration: 5, fps: 30 });
+      return;
+    }
+    let cancelled = false;
+    const loadVideoMeta = async () => {
+      try {
+        const api = (window.electronAPI as any).captionVideo;
+        const res = await api.getVideoMetadata(thumbnailPreviewVideoPath);
+        if (cancelled || !res?.success || !res?.data) {
+          return;
+        }
+        const duration = Number.isFinite(res.data.duration) && res.data.duration > 0 ? res.data.duration : 5;
+        const fps = Number.isFinite(res.data.fps) && res.data.fps > 0 ? res.data.fps : 30;
+        setThumbnailPreviewVideoMeta({ duration, fps });
+      } catch {
+        if (!cancelled) {
+          setThumbnailPreviewVideoMeta({ duration: 5, fps: 30 });
+        }
+      }
+    };
+    void loadVideoMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [thumbnailPreviewVideoPath]);
+
+  const thumbnailFrameFps = Number.isFinite(thumbnailPreviewVideoMeta.fps) && thumbnailPreviewVideoMeta.fps > 0
+    ? thumbnailPreviewVideoMeta.fps
+    : 30;
+  const thumbnailFrameStepSec = 1 / thumbnailFrameFps;
+  const thumbnailFrameMaxSec = Math.max(
+    thumbnailFrameStepSec,
+    Number.isFinite(thumbnailPreviewVideoMeta.duration) && thumbnailPreviewVideoMeta.duration > 0
+      ? thumbnailPreviewVideoMeta.duration
+      : 5
+  );
+  const thumbnailFrameValueSec = Math.max(
+    0,
+    Math.min(thumbnailFrameMaxSec, settings.thumbnailFrameTimeSec ?? 0)
+  );
+  const thumbnailFrameValueIndex = Math.max(0, Math.round(thumbnailFrameValueSec * thumbnailFrameFps));
+
+  const setThumbnailFrameSecClamped = useCallback((value: number) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    const next = Math.max(0, Math.min(thumbnailFrameMaxSec, value));
+    settings.setThumbnailFrameTimeSec(next);
+  }, [settings.setThumbnailFrameTimeSec, thumbnailFrameMaxSec]);
+
+  const stepThumbnailFrame = useCallback((delta: number) => {
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    const maxFrame = Math.max(0, Math.round(thumbnailFrameMaxSec * thumbnailFrameFps));
+    const nextFrame = Math.max(0, Math.min(maxFrame, thumbnailFrameValueIndex + Math.round(delta)));
+    settings.setThumbnailFrameTimeSec(nextFrame / thumbnailFrameFps);
+  }, [
+    settings.setThumbnailFrameTimeSec,
+    thumbnailFrameFps,
+    thumbnailFrameMaxSec,
+    thumbnailFrameValueIndex,
+  ]);
+
+  const setThumbnailPrimaryPositionAxis = useCallback((axis: 'x' | 'y', value: number) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    settings.setThumbnailTextPrimaryPosition({
+      x: axis === 'x' ? value : settings.thumbnailTextPrimaryPosition.x,
+      y: axis === 'y' ? value : settings.thumbnailTextPrimaryPosition.y,
+    });
+  }, [
+    settings.setThumbnailTextPrimaryPosition,
+    settings.thumbnailTextPrimaryPosition.x,
+    settings.thumbnailTextPrimaryPosition.y,
+  ]);
+
+  const setThumbnailSecondaryPositionAxis = useCallback((axis: 'x' | 'y', value: number) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    settings.setThumbnailTextSecondaryPosition({
+      x: axis === 'x' ? value : settings.thumbnailTextSecondaryPosition.x,
+      y: axis === 'y' ? value : settings.thumbnailTextSecondaryPosition.y,
+    });
+  }, [
+    settings.setThumbnailTextSecondaryPosition,
+    settings.thumbnailTextSecondaryPosition.x,
+    settings.thumbnailTextSecondaryPosition.y,
+  ]);
+
   const handleBulkApplyJsonLines = useCallback((raw: string): BulkApplyResult => {
     const folderCount = hardsubSettings.thumbnailFolderItems.length;
     if (!folderCount) {
@@ -4040,6 +4139,246 @@ export function CaptionTranslator() {
     </div>
   );
 
+  const thumbnailConfigBar = (
+    <div className={styles.panelSection}>
+      <div className={styles.configSummaryTitle}>Thumbnail Config</div>
+      <div className={styles.commonHint}>
+        Quản lý text/style/frame/vị trí thumbnail tại panel phải. Kéo-thả vẫn thực hiện trên canvas preview bên trái.
+      </div>
+      <div className={styles.commonConfigSection}>
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Text1</label>
+            <textarea
+              className={styles.input}
+              rows={2}
+              value={thumbnailPreviewText}
+              onChange={(e) => handleThumbnailPreviewTextChange(e.target.value)}
+              placeholder="Tiêu đề video..."
+            />
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Text2</label>
+            <textarea
+              className={styles.input}
+              rows={2}
+              value={thumbnailPreviewSecondaryText}
+              onChange={(e) => handleThumbnailPreviewSecondaryTextChange(e.target.value)}
+              placeholder="Tên phim..."
+            />
+          </div>
+        </div>
+
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Font Text1</label>
+            <select
+              className={styles.select}
+              value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+              onChange={(e) => settings.setThumbnailTextPrimaryFontName(e.target.value)}
+            >
+              {availableFonts.map((font) => (
+                <option key={`thumb-panel-t1-${font}`} value={font}>
+                  {font}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Size Text1 (relative)</label>
+            <Input
+              type="number"
+              min={THUMBNAIL_FONT_SIZE_MIN}
+              max={THUMBNAIL_FONT_SIZE_MAX}
+              step={1}
+              value={settings.thumbnailTextPrimaryFontSizeRel ?? THUMBNAIL_FONT_SIZE_DEFAULT}
+              onChange={(e) => settings.setThumbnailTextPrimaryFontSize(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Màu Text1</label>
+            <input
+              className={styles.colorInput}
+              type="color"
+              value={settings.thumbnailTextPrimaryColor || '#FFFF00'}
+              onInput={(e) => applyThumbnailTextPrimaryColor((e.target as HTMLInputElement).value)}
+              onChange={(e) => applyThumbnailTextPrimaryColor(e.target.value)}
+              onBlur={(e) => commitThumbnailTextPrimaryColor(e.target.value)}
+            />
+            {renderColorHistory(settings.thumbnailTextPrimaryColor || '#FFFF00', commitThumbnailTextPrimaryColor)}
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Line height</label>
+            <Input
+              type="number"
+              min={0}
+              max={4}
+              step={0.02}
+              value={Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
+              onChange={(e) => settings.setThumbnailLineHeightRatio(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Font Text2</label>
+            <select
+              className={styles.select}
+              value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+              onChange={(e) => settings.setThumbnailTextSecondaryFontName(e.target.value)}
+            >
+              {availableFonts.map((font) => (
+                <option key={`thumb-panel-t2-${font}`} value={font}>
+                  {font}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Size Text2 (relative)</label>
+            <Input
+              type="number"
+              min={THUMBNAIL_FONT_SIZE_MIN}
+              max={THUMBNAIL_FONT_SIZE_MAX}
+              step={1}
+              value={settings.thumbnailTextSecondaryFontSizeRel ?? THUMBNAIL_FONT_SIZE_DEFAULT}
+              onChange={(e) => settings.setThumbnailTextSecondaryFontSize(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Màu Text2</label>
+            <input
+              className={styles.colorInput}
+              type="color"
+              value={settings.thumbnailTextSecondaryColor || '#FFFF00'}
+              onInput={(e) => applyThumbnailTextSecondaryColor((e.target as HTMLInputElement).value)}
+              onChange={(e) => applyThumbnailTextSecondaryColor(e.target.value)}
+              onBlur={(e) => commitThumbnailTextSecondaryColor(e.target.value)}
+            />
+            {renderColorHistory(settings.thumbnailTextSecondaryColor || '#FFFF00', commitThumbnailTextSecondaryColor)}
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Frame time (s)</label>
+            <Input
+              type="number"
+              min={0}
+              max={thumbnailFrameMaxSec}
+              step={thumbnailFrameStepSec}
+              value={thumbnailFrameValueSec}
+              onChange={(e) => setThumbnailFrameSecClamped(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className={styles.commonInlineSection}>
+          <div className={styles.commonInlineHeader}>
+            <span className={styles.label}>Frame thumbnail</span>
+            <span className={styles.commonInlineValue}>
+              #{thumbnailFrameValueIndex} @ {thumbnailFrameValueSec.toFixed(2)}s ({thumbnailFrameFps.toFixed(2)} fps)
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={thumbnailFrameMaxSec}
+            step={thumbnailFrameStepSec}
+            value={thumbnailFrameValueSec}
+            onChange={(e) => setThumbnailFrameSecClamped(Number(e.target.value))}
+            disabled={!thumbnailPreviewVideoPath}
+          />
+          <div className={styles.commonInlineActions}>
+            <button
+              type="button"
+              className={styles.resetBtnLike}
+              onClick={() => stepThumbnailFrame(-1)}
+              disabled={!thumbnailPreviewVideoPath}
+            >
+              -1f
+            </button>
+            <button
+              type="button"
+              className={styles.resetBtnLike}
+              onClick={() => stepThumbnailFrame(1)}
+              disabled={!thumbnailPreviewVideoPath}
+            >
+              +1f
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Text1 Position</label>
+            <div className={styles.grid2}>
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={settings.thumbnailTextPrimaryPosition.x.toFixed(3)}
+                onChange={(e) => setThumbnailPrimaryPositionAxis('x', Number(e.target.value))}
+              />
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={settings.thumbnailTextPrimaryPosition.y.toFixed(3)}
+                onChange={(e) => setThumbnailPrimaryPositionAxis('y', Number(e.target.value))}
+              />
+            </div>
+            <div className={styles.commonInlineActions}>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => settings.setThumbnailTextPrimaryPosition({ x: 0.5, y: 0.5 })}
+              >
+                Reset Text1
+              </button>
+            </div>
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Text2 Position</label>
+            <div className={styles.grid2}>
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={settings.thumbnailTextSecondaryPosition.x.toFixed(3)}
+                onChange={(e) => setThumbnailSecondaryPositionAxis('x', Number(e.target.value))}
+              />
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={settings.thumbnailTextSecondaryPosition.y.toFixed(3)}
+                onChange={(e) => setThumbnailSecondaryPositionAxis('y', Number(e.target.value))}
+              />
+            </div>
+            <div className={styles.commonInlineActions}>
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={() => settings.setThumbnailTextSecondaryPosition({ x: 0.5, y: 0.64 })}
+              >
+                Reset Text2
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const activeStepContent = (() => {
     if (activeStep === 1) {
       return (
@@ -4658,37 +4997,24 @@ export function CaptionTranslator() {
                   sourceLabel={thumbnailPreviewSourceLabel}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
-                  availableFonts={availableFonts}
                   thumbnailText={thumbnailPreviewText}
                   thumbnailTextSecondary={thumbnailPreviewSecondaryText}
-                  thumbnailTextReadOnly={false}
                   thumbnailTextHelper={undefined}
-                  onThumbnailTextChange={handleThumbnailPreviewTextChange}
-                  onThumbnailTextSecondaryChange={handleThumbnailPreviewSecondaryTextChange}
                   thumbnailFrameTimeSec={settings.thumbnailFrameTimeSec}
                   onThumbnailFrameTimeSecChange={settings.setThumbnailFrameTimeSec}
                   thumbnailFontName={settings.thumbnailFontName}
                   thumbnailFontSize={settings.thumbnailFontSize}
                   thumbnailTextPrimaryFontName={settings.thumbnailTextPrimaryFontName}
                   thumbnailTextPrimaryFontSize={settings.thumbnailTextPrimaryFontSize}
-                  thumbnailTextPrimaryFontSizeRel={settings.thumbnailTextPrimaryFontSizeRel}
                   thumbnailTextPrimaryColor={settings.thumbnailTextPrimaryColor}
                   thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
                   thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
-                  thumbnailTextSecondaryFontSizeRel={settings.thumbnailTextSecondaryFontSizeRel}
                   thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
                   thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
                   thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
                   thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
                   onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}
                   onThumbnailTextSecondaryPositionChange={settings.setThumbnailTextSecondaryPosition}
-                  onThumbnailTextPrimaryFontNameChange={settings.setThumbnailTextPrimaryFontName}
-                  onThumbnailTextPrimaryFontSizeChange={settings.setThumbnailTextPrimaryFontSize}
-                  onThumbnailTextPrimaryColorChange={settings.setThumbnailTextPrimaryColor}
-                  onThumbnailTextSecondaryFontNameChange={settings.setThumbnailTextSecondaryFontName}
-                  onThumbnailTextSecondaryFontSizeChange={settings.setThumbnailTextSecondaryFontSize}
-                  onThumbnailTextSecondaryColorChange={settings.setThumbnailTextSecondaryColor}
-                  onThumbnailLineHeightRatioChange={settings.setThumbnailLineHeightRatio}
                   contextKey={thumbnailPreviewContextKey}
                   inputType={settings.inputType}
                 />
@@ -4736,6 +5062,13 @@ export function CaptionTranslator() {
             >
               Snapshot
             </button>
+            <button
+              type="button"
+              className={`${styles.inspectorTabBtn} ${inspectorPane === 'thumbnail' ? styles.inspectorTabBtnActive : ''}`}
+              onClick={() => setInspectorPane('thumbnail')}
+            >
+              Thumbnail
+            </button>
           </div>
           <div className={styles.inspectorBody}>
             {inspectorPane === 'step' && activeStepContent}
@@ -4753,6 +5086,7 @@ export function CaptionTranslator() {
                 </div>
               </div>
             )}
+            {inspectorPane === 'thumbnail' && thumbnailConfigBar}
             <div className={styles.commonHint} style={{ marginTop: 8 }} title={fileManager.filePath || undefined}>
               {inspectorPane === 'step'
                 ? (settings.inputType === 'draft'
@@ -4760,7 +5094,9 @@ export function CaptionTranslator() {
                   : `Input: SRT | ${fileManager.entries.length} dòng`)
                 : inspectorPane === 'common'
                   ? 'Common: Render / Typography / Audio dùng lại nhiều step. Voice giữ ở B4.'
-                  : `Snapshot: trạng thái ${processing.status}, rà nhanh trước khi chạy.`}
+                  : inspectorPane === 'thumbnail'
+                    ? (thumbnailPreviewSourceLabel || 'Thumbnail config')
+                    : `Snapshot: trạng thái ${processing.status}, rà nhanh trước khi chạy.`}
             </div>
           </div>
         </aside>
