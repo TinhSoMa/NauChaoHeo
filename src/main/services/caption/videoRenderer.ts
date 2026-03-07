@@ -680,8 +680,7 @@ export async function renderHardsubVideo(
   const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
   const coverMode = options.coverMode || 'blackout_bottom';
-  const effectiveFeatherStrategy: CoverFeatherStrategy =
-    coverMode === 'copy_from_above' ? 'gblur_mask' : featherStrategy;
+  const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
   const videoFilter = buildVideoFilter({
     inputLabel: '[0:v]',
     needsScale: prep.needsScale,
@@ -1081,8 +1080,7 @@ export async function renderHardsubPortraitVideo(
   const prep = await prepareSubtitleAndDurationPortrait(renderOptions, portraitCanvas);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
   const coverMode = options.coverMode || 'blackout_bottom';
-  const effectiveFeatherStrategy: CoverFeatherStrategy =
-    coverMode === 'copy_from_above' ? 'gblur_mask' : featherStrategy;
+  const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
   const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
     coverMode,
     hasLogo: Boolean(options.logoPath),
@@ -1826,11 +1824,14 @@ export async function renderVideoPreviewFrame(
         const rounded = Math.max(2, Math.round(value));
         return rounded % 2 === 0 ? rounded : rounded + 1;
       };
+      const coverMode = options.coverMode || 'blackout_bottom';
+      const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
       const sourceAspect = sourceWidth / Math.max(1, sourceHeight);
       const outputAspect = portraitCanvas.width / portraitCanvas.height;
       const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
+      const nearPortraitAspectThreshold = 0.05;
       const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
-        aspectDiffRatio <= 0.05 ? 'direct_fit_no_blur' : 'blur_composite';
+        aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
       const foregroundCropPercent = Math.min(
         20,
         Math.max(
@@ -1850,18 +1851,18 @@ export async function renderVideoPreviewFrame(
         foregroundCropPercent,
         videoSpeedMultiplier: 1.0,
         blackoutTop: options.blackoutTop,
-        coverMode: options.coverMode || 'blackout_bottom',
+        coverMode,
         coverQuad: options.coverQuad,
         coverFeatherPx: options.coverFeatherPx,
         coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
         coverFeatherVerticalPx: options.coverFeatherVerticalPx,
         coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
         coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
-        featherStrategy,
-        bgDownscaleWidth: even(portraitCanvas.width / 8),
-        bgDownscaleHeight: even(portraitCanvas.height / 8),
-        bgBlurLumaRadius: 8,
-        bgBlurLumaPower: 1,
+        featherStrategy: effectiveFeatherStrategy,
+        bgDownscaleWidth: even(portraitCanvas.width / SPEED_MAX_PROFILE.portraitBgDownscaleDivisor),
+        bgDownscaleHeight: even(portraitCanvas.height / SPEED_MAX_PROFILE.portraitBgDownscaleDivisor),
+        bgBlurLumaRadius: SPEED_MAX_PROFILE.portraitBgBlurLumaRadius,
+        bgBlurLumaPower: SPEED_MAX_PROFILE.portraitBgBlurLumaPower,
       });
       inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];
       filterComplexParts.push(...portraitVideo.filterParts);
@@ -2448,7 +2449,8 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
   error?: string;
 }> {
   const videoExtensions = ['.mp4', '.mov'];
-  const potentialVideos: string[] = [];
+  const generatedRenderNamePattern = /(?:^|_)nauchaoheo_video_(?:16_9|9_16)(?:_|\.|$)/i;
+  const potentialVideos: Array<{ path: string; isGeneratedRender: boolean }> = [];
 
   for (const dir of folderPaths) {
     if (!existsSync(dir)) {
@@ -2460,7 +2462,10 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
       for (const file of files) {
         const ext = path.extname(file).toLowerCase();
         if (videoExtensions.includes(ext)) {
-          potentialVideos.push(path.join(dir, file));
+          potentialVideos.push({
+            path: path.join(dir, file),
+            isGeneratedRender: generatedRenderNamePattern.test(file),
+          });
         }
       }
     } catch (error) {
@@ -2472,19 +2477,37 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
     return { success: false, error: 'Không tìm thấy file video (.mp4, .mov) nào trong thư mục' };
   }
 
-  type VideoStat = { path: string; metadata: VideoMetadata; area: number };
+  // Ưu tiên video gốc; chỉ fallback sang video render nội bộ nếu không có lựa chọn nào khác.
+  const preferredCandidates = potentialVideos.filter((video) => !video.isGeneratedRender);
+  const candidatePool = preferredCandidates.length > 0 ? preferredCandidates : potentialVideos;
+
+  type VideoStat = {
+    path: string;
+    metadata: VideoMetadata;
+    area: number;
+    isGeneratedRender: boolean;
+    mtimeMs: number;
+  };
   const validVideos: VideoStat[] = [];
 
-  for (const videoPath of potentialVideos) {
+  for (const candidate of candidatePool) {
+    const videoPath = candidate.path;
     const res = await probeGetVideoMetadata(videoPath);
     if (res.success && res.metadata) {
       const realHeight = res.metadata.actualHeight || 1080;
       const maxDim = Math.max(res.metadata.width, realHeight);
       if (maxDim >= 720 && realHeight > 500) {
+        let mtimeMs = 0;
+        try {
+          const stat = await fs.stat(videoPath);
+          mtimeMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0;
+        } catch {}
         validVideos.push({
           path: videoPath,
           metadata: res.metadata,
           area: res.metadata.width * realHeight,
+          isGeneratedRender: candidate.isGeneratedRender,
+          mtimeMs,
         });
       }
     }
@@ -2494,7 +2517,18 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
     return { success: false, error: 'Không có video nào đạt độ phân giải > 750p' };
   }
 
-  validVideos.sort((a, b) => b.area - a.area);
+  validVideos.sort((a, b) => {
+    if (a.isGeneratedRender !== b.isGeneratedRender) {
+      return a.isGeneratedRender ? 1 : -1;
+    }
+    if (a.area !== b.area) {
+      return b.area - a.area;
+    }
+    return b.mtimeMs - a.mtimeMs;
+  });
   const bestVideo = validVideos[0];
+  if (bestVideo.isGeneratedRender) {
+    console.warn('[VideoRenderer] findBestVideoInFolders: fallback sang video render nội bộ do không có video gốc phù hợp.');
+  }
   return { success: true, videoPath: bestVideo.path, metadata: bestVideo.metadata };
 }

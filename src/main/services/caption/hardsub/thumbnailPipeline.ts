@@ -747,8 +747,10 @@ export async function buildInlineThumbnailVideoFilter(
     thumbnailFontSize: options.thumbnailFontSize,
     thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
     thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+    thumbnailTextPrimaryColor: options.thumbnailTextPrimaryColor,
     thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+    thumbnailTextSecondaryColor: options.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
@@ -814,6 +816,16 @@ export async function buildInlineThumbnailVideoFilter(
       textSecondaryPosition: drawTextContext.secondaryPosition,
       textPrimaryLayout: summarizeLayoutForLog(drawTextContext.primaryLayout),
       textSecondaryLayout: summarizeLayoutForLog(drawTextContext.secondaryLayout),
+      textColors: {
+        primary: normalizeThumbnailTextColor(
+          options.thumbnailTextPrimaryColor,
+          DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR
+        ),
+        secondary: normalizeThumbnailTextColor(
+          options.thumbnailTextSecondaryColor,
+          DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR
+        ),
+      },
       sourceFreeze: {
         thumbnailTimeSec: timeSec,
         durationSec,

@@ -1217,29 +1217,24 @@ export function useSubtitlePreview({
       const pct = Math.round((1 - localBlackoutTop) * 100);
 
       if (isPortraitMode && portraitFgRect) {
-        const fgBottom = portraitFgRect.y + portraitFgRect.height;
-        const blurStartY = portraitFgRect.y + portraitFgRect.height * localBlackoutTop;
-        const blurH = fgBottom - blurStartY;
+        const bandY = outputRect.y + outputRect.height * localBlackoutTop;
+        const bandH = outputRect.height * (1 - localBlackoutTop);
         markHitRectRef.current = {
-          x: portraitFgRect.x,
-          y: Math.max(portraitFgRect.y, blurStartY - 12),
-          width: portraitFgRect.width,
-          height: Math.max(18, fgBottom - Math.max(portraitFgRect.y, blurStartY - 12)),
+          x: outputRect.x,
+          y: Math.max(outputRect.y, bandY - 12),
+          width: outputRect.width,
+          height: Math.max(18, outputRect.y + outputRect.height - Math.max(outputRect.y, bandY - 12)),
         };
 
-        if (blurH > 1 && portraitFgRect.width > 1) {
-          const sx = Math.max(0, Math.floor(portraitFgRect.x));
-          const sy = Math.max(0, Math.floor(blurStartY));
-          const sw = Math.max(1, Math.min(cw - sx, Math.floor(portraitFgRect.width)));
-          const sh = Math.max(1, Math.min(ch - sy, Math.floor(blurH)));
-
+        // Chỉ che/mờ nền (hai đầu), không che lên vùng foreground ở giữa.
+        if (bandH > 1) {
           let scratch = blurScratchRef.current;
           if (!scratch) {
             scratch = document.createElement('canvas');
             blurScratchRef.current = scratch;
           }
-          const scratchW = Math.max(1, Math.floor(sw * dpr));
-          const scratchH = Math.max(1, Math.floor(sh * dpr));
+          const scratchW = Math.max(1, Math.floor(cw * dpr));
+          const scratchH = Math.max(1, Math.floor(ch * dpr));
           if (scratch.width !== scratchW || scratch.height !== scratchH) {
             scratch.width = scratchW;
             scratch.height = scratchH;
@@ -1249,30 +1244,40 @@ export function useSubtitlePreview({
           if (scratchCtx) {
             scratchCtx.setTransform(1, 0, 0, 1, 0, 0);
             scratchCtx.clearRect(0, 0, scratch.width, scratch.height);
-            scratchCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            scratchCtx.drawImage(canvas, 0, 0, scratch.width, scratch.height);
+
+            const drawBackgroundOnlyBand = (drawFn: () => void) => {
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(outputRect.x, bandY, outputRect.width, bandH);
+              ctx.rect(portraitFgRect.x, portraitFgRect.y, portraitFgRect.width, portraitFgRect.height);
+              ctx.clip('evenodd');
+              drawFn();
+              ctx.restore();
+            };
+
+            drawBackgroundOnlyBand(() => {
+              ctx.filter = 'blur(14px)';
+              ctx.drawImage(
+                scratch,
+                0,
+                0,
+                scratch.width,
+                scratch.height,
+                0,
+                0,
+                cw,
+                ch
+              );
+            });
+
+            drawBackgroundOnlyBand(() => {
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+              ctx.fillRect(outputRect.x, bandY, outputRect.width, bandH);
+            });
+
             scratchCtx.imageSmoothingEnabled = true;
             scratchCtx.imageSmoothingQuality = 'high';
-            scratchCtx.drawImage(
-              canvas,
-              sx * dpr,
-              sy * dpr,
-              sw * dpr,
-              sh * dpr,
-              0,
-              0,
-              sw,
-              sh
-            );
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(sx, sy, sw, sh);
-            ctx.clip();
-            ctx.filter = 'blur(14px)';
-            // Draw 2 passes để vùng blur đủ rõ mà không cần thêm slider strength.
-            ctx.drawImage(scratch, sx, sy, sw, sh);
-            ctx.drawImage(scratch, sx, sy, sw, sh);
-            ctx.restore();
           }
         }
 
@@ -1280,15 +1285,15 @@ export function useSubtitlePreview({
         ctx.lineWidth = 2;
         ctx.setLineDash([]);
         ctx.beginPath();
-        ctx.moveTo(portraitFgRect.x, blurStartY);
-        ctx.lineTo(portraitFgRect.x + portraitFgRect.width, blurStartY);
+        ctx.moveTo(outputRect.x, bandY);
+        ctx.lineTo(outputRect.x + outputRect.width, bandY);
         ctx.stroke();
 
         ctx.fillStyle = 'rgba(255, 60, 60, 0.9)';
         ctx.font = '11px "JetBrains Mono", monospace';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(`blur ${pct}%`, portraitFgRect.x + portraitFgRect.width - 6, blurStartY - 4);
+        ctx.fillText(`blur ${pct}%`, outputRect.x + outputRect.width - 6, bandY - 4);
       } else {
         const bandY = outputRect.y + outputRect.height * localBlackoutTop;
         const bandH = outputRect.height * (1 - localBlackoutTop);

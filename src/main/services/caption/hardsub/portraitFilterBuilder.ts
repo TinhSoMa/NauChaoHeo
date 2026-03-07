@@ -1,33 +1,33 @@
 import { PortraitVideoFilterBuildInput, PortraitVideoFilterBuildOutput } from './types';
 import { buildCopyFromAboveFilter } from './coverMaskFilterBuilder';
 
-function appendForegroundBottomBlur(
+function appendBackgroundBottomBlur(
   parts: string[],
   input: PortraitVideoFilterBuildInput,
-  fgLabel: string
+  bgLabel: string
 ): string {
   if (input.coverMode === 'copy_from_above') {
-    return fgLabel;
+    return bgLabel;
   }
   if (input.blackoutTop == null || input.blackoutTop >= 1) {
-    return fgLabel;
+    return bgLabel;
   }
 
   const escapeExprCommas = (expr: string) => expr.replace(/,/g, '\\,');
   const blackoutTop = Math.max(0, Math.min(1, input.blackoutTop));
-  // blackoutTop cho portrait phải neo theo foreground (video gốc), không theo toàn canvas 9:16.
+  // Portrait blackout: chỉ tác động nền (hai đầu), không làm mờ vùng foreground ở giữa.
   const blurStartExprRaw = `max(0,min(ih-2,ih*${blackoutTop.toFixed(6)}))`;
   const blurStartEvenExprRaw = `trunc(${blurStartExprRaw}/2)*2`;
   const blurHeightExprRaw = `max(2,trunc((ih-${blurStartEvenExprRaw})/2)*2)`;
   const blurStartEvenExpr = escapeExprCommas(blurStartEvenExprRaw);
   const blurHeightExpr = escapeExprCommas(blurHeightExprRaw);
 
-  // Tối ưu hiệu năng: chỉ blur vùng đáy cần che thay vì blur toàn bộ foreground.
-  parts.push(`[${fgLabel}]split=2[fg_base][fg_blur_src]`);
-  parts.push(`[fg_blur_src]crop=iw:${blurHeightExpr}:0:${blurStartEvenExpr}[fg_blur_crop]`);
-  parts.push('[fg_blur_crop]gblur=sigma=16:steps=1[fg_blur]');
-  parts.push('[fg_base][fg_blur]overlay=0:H-h[fg_blurred]');
-  return 'fg_blurred';
+  // Tối ưu hiệu năng: chỉ blur dải đáy nền cần che thay vì blur toàn bộ khung.
+  parts.push(`[${bgLabel}]split=2[bg_base][bg_blur_src]`);
+  parts.push(`[bg_blur_src]crop=iw:${blurHeightExpr}:0:${blurStartEvenExpr}[bg_blur_crop]`);
+  parts.push('[bg_blur_crop]gblur=sigma=16:steps=1[bg_bottom_blur]');
+  parts.push('[bg_base][bg_bottom_blur]overlay=0:H-h[bg_blurred]');
+  return 'bg_blurred';
 }
 
 export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): PortraitVideoFilterBuildOutput {
@@ -44,9 +44,9 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
 
   if (input.layoutStrategy === 'direct_fit_no_blur' && sourceAspect > 0) {
     parts.push(`${input.inputLabel}${fgScaleFilter}[fg_fit]`);
-    const fgLabel = appendForegroundBottomBlur(parts, input, 'fg_fit');
     parts.push(
-      `[${fgLabel}]pad=${input.outputWidth}:${input.outputHeight}:(ow-iw)/2:(oh-ih)/2:black,` +
+      '[fg_fit]pad=' +
+      `${input.outputWidth}:${input.outputHeight}:(ow-iw)/2:(oh-ih)/2:black,` +
       'setsar=1,setdar=9/16[v_canvas]'
     );
   } else {
@@ -57,8 +57,8 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
       `scale=${input.outputWidth}:${input.outputHeight}[bg_blur]`
     );
     parts.push(`[fg]${fgScaleFilter}[fg_fit]`);
-    const fgLabel = appendForegroundBottomBlur(parts, input, 'fg_fit');
-    parts.push(`[bg_blur][${fgLabel}]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v_canvas]`);
+    const bgLabel = appendBackgroundBottomBlur(parts, input, 'bg_blur');
+    parts.push(`[${bgLabel}][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v_canvas]`);
   }
 
   let currentLabel = '[v_canvas]';

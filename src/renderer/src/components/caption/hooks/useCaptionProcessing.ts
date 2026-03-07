@@ -246,6 +246,281 @@ interface UseCaptionProcessingProps {
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
 }
 
+type ProcessingSettings = UseCaptionProcessingProps['settings'];
+type LooseRecord = Record<string, unknown>;
+
+function cloneQuad(quad: CoverQuad | null | undefined): CoverQuad | null | undefined {
+  if (!quad) {
+    return quad;
+  }
+  return {
+    tl: { ...quad.tl },
+    tr: { ...quad.tr },
+    br: { ...quad.br },
+    bl: { ...quad.bl },
+  };
+}
+
+function toRecord(value: unknown): LooseRecord {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+  return value as LooseRecord;
+}
+
+function readNumber(record: LooseRecord, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readString(record: LooseRecord, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readPoint(record: LooseRecord, key: string): { x: number; y: number } | undefined {
+  const value = record[key];
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const typed = value as { x?: unknown; y?: unknown };
+  if (typeof typed.x !== 'number' || !Number.isFinite(typed.x)) {
+    return undefined;
+  }
+  if (typeof typed.y !== 'number' || !Number.isFinite(typed.y)) {
+    return undefined;
+  }
+  return { x: typed.x, y: typed.y };
+}
+
+function readPointOrNull(record: LooseRecord, key: string): { x: number; y: number } | null | undefined {
+  if (record[key] === null) {
+    return null;
+  }
+  return readPoint(record, key);
+}
+
+function readCoverQuad(record: LooseRecord, key: string): CoverQuad | undefined {
+  const value = record[key];
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const quad = value as CoverQuad;
+  if (!quad.tl || !quad.tr || !quad.br || !quad.bl) {
+    return undefined;
+  }
+  return cloneQuad(quad) as CoverQuad;
+}
+
+function readCoverMode(
+  record: LooseRecord,
+  key: string
+): 'blackout_bottom' | 'copy_from_above' | undefined {
+  const value = record[key];
+  if (value === 'blackout_bottom' || value === 'copy_from_above') {
+    return value;
+  }
+  return undefined;
+}
+
+function readRenderResolution(
+  record: LooseRecord,
+  key: string
+): ProcessingSettings['renderResolution'] | undefined {
+  const value = record[key];
+  if (
+    value === 'original'
+    || value === '1080p'
+    || value === '720p'
+    || value === '540p'
+    || value === '360p'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function readRenderContainer(record: LooseRecord, key: string): 'mp4' | 'mov' | undefined {
+  const value = record[key];
+  if (value === 'mp4' || value === 'mov') {
+    return value;
+  }
+  return undefined;
+}
+
+function cloneLayoutProfile(profile: LooseRecord | undefined): LooseRecord | undefined {
+  if (!profile || typeof profile !== 'object') {
+    return profile;
+  }
+  return {
+    ...profile,
+    style: profile.style && typeof profile.style === 'object'
+      ? { ...(profile.style as LooseRecord) }
+      : profile.style,
+    subtitlePosition: profile.subtitlePosition === null
+      ? null
+      : readPoint(profile, 'subtitlePosition'),
+    coverQuad: readCoverQuad(profile, 'coverQuad'),
+    logoPosition: readPoint(profile, 'logoPosition'),
+    thumbnailTextPrimaryPosition: readPoint(profile, 'thumbnailTextPrimaryPosition'),
+    thumbnailTextSecondaryPosition: readPoint(profile, 'thumbnailTextSecondaryPosition'),
+  };
+}
+
+function cloneLayoutProfiles(
+  layoutProfiles: ProcessingSettings['layoutProfiles']
+): ProcessingSettings['layoutProfiles'] {
+  if (!layoutProfiles || typeof layoutProfiles !== 'object') {
+    return layoutProfiles;
+  }
+  const landscape = layoutProfiles.landscape;
+  const portrait = layoutProfiles.portrait;
+  return {
+    landscape: cloneLayoutProfile(landscape && typeof landscape === 'object' ? (landscape as LooseRecord) : undefined),
+    portrait: cloneLayoutProfile(portrait && typeof portrait === 'object' ? (portrait as LooseRecord) : undefined),
+  };
+}
+
+function withFallback<T>(value: T | undefined, fallback: T | undefined): T | undefined {
+  return value !== undefined ? value : fallback;
+}
+
+function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<ProcessingSettings> {
+  const layoutKey = settings.renderMode === 'hardsub_portrait_9_16' ? 'portrait' : 'landscape';
+  const profile = toRecord(settings.layoutProfiles?.[layoutKey]);
+  if (!profile || typeof profile !== 'object') {
+    return {};
+  }
+
+  const styleRecord = toRecord(profile.style);
+  const style =
+    Object.keys(styleRecord).length > 0
+      ? styleRecord
+      : settings.style;
+  const subtitlePosition = readPointOrNull(profile, 'subtitlePosition');
+  const thumbnailTextPrimaryPosition = readPoint(profile, 'thumbnailTextPrimaryPosition');
+  const thumbnailTextSecondaryPosition = readPoint(profile, 'thumbnailTextSecondaryPosition');
+  const logoPosition = readPoint(profile, 'logoPosition');
+  const coverQuad = readCoverQuad(profile, 'coverQuad');
+  const coverMode = readCoverMode(profile, 'coverMode');
+  const renderResolution = readRenderResolution(profile, 'renderResolution');
+  const renderContainer = readRenderContainer(profile, 'renderContainer');
+
+  return {
+    fontSizeScaleVersion: withFallback(readNumber(profile, 'fontSizeScaleVersion'), settings.fontSizeScaleVersion),
+    subtitleFontSizeRel: withFallback(readNumber(profile, 'subtitleFontSizeRel'), settings.subtitleFontSizeRel),
+    style,
+    renderResolution: withFallback(
+      renderResolution,
+      settings.renderResolution
+    ),
+    renderContainer: withFallback(
+      renderContainer,
+      settings.renderContainer
+    ),
+    blackoutTop: withFallback(
+      profile.blackoutTop === null ? null : readNumber(profile, 'blackoutTop'),
+      settings.blackoutTop
+    ),
+    coverMode: withFallback(
+      coverMode,
+      settings.coverMode
+    ),
+    coverQuad: withFallback(
+      coverQuad,
+      settings.coverQuad
+    ),
+    coverFeatherPx: withFallback(readNumber(profile, 'coverFeatherPx'), settings.coverFeatherPx),
+    coverFeatherHorizontalPx: withFallback(
+      readNumber(profile, 'coverFeatherHorizontalPx'),
+      settings.coverFeatherHorizontalPx
+    ),
+    coverFeatherVerticalPx: withFallback(
+      readNumber(profile, 'coverFeatherVerticalPx'),
+      settings.coverFeatherVerticalPx
+    ),
+    coverFeatherHorizontalPercent: withFallback(
+      readNumber(profile, 'coverFeatherHorizontalPercent'),
+      settings.coverFeatherHorizontalPercent
+    ),
+    coverFeatherVerticalPercent: withFallback(
+      readNumber(profile, 'coverFeatherVerticalPercent'),
+      settings.coverFeatherVerticalPercent
+    ),
+    subtitlePosition: subtitlePosition === null
+      ? null
+      : withFallback(subtitlePosition, settings.subtitlePosition),
+    thumbnailFrameTimeSec: withFallback(
+      profile.thumbnailFrameTimeSec === null ? null : readNumber(profile, 'thumbnailFrameTimeSec'),
+      settings.thumbnailFrameTimeSec
+    ),
+    thumbnailDurationSec: withFallback(readNumber(profile, 'thumbnailDurationSec'), settings.thumbnailDurationSec),
+    logoPath: withFallback(readString(profile, 'logoPath'), settings.logoPath),
+    logoPosition: withFallback(
+      logoPosition,
+      settings.logoPosition
+    ),
+    logoScale: withFallback(readNumber(profile, 'logoScale'), settings.logoScale),
+    thumbnailFontName: withFallback(readString(profile, 'thumbnailFontName'), settings.thumbnailFontName),
+    thumbnailFontSize: withFallback(readNumber(profile, 'thumbnailFontSize'), settings.thumbnailFontSize),
+    thumbnailFontSizeRel: withFallback(readNumber(profile, 'thumbnailFontSizeRel'), settings.thumbnailFontSizeRel),
+    thumbnailTextPrimaryFontName: withFallback(
+      readString(profile, 'thumbnailTextPrimaryFontName'),
+      settings.thumbnailTextPrimaryFontName
+    ),
+    thumbnailTextPrimaryFontSize: withFallback(
+      readNumber(profile, 'thumbnailTextPrimaryFontSize'),
+      settings.thumbnailTextPrimaryFontSize
+    ),
+    thumbnailTextPrimaryFontSizeRel: withFallback(
+      readNumber(profile, 'thumbnailTextPrimaryFontSizeRel'),
+      settings.thumbnailTextPrimaryFontSizeRel
+    ),
+    thumbnailTextPrimaryColor: withFallback(
+      readString(profile, 'thumbnailTextPrimaryColor'),
+      settings.thumbnailTextPrimaryColor
+    ),
+    thumbnailTextSecondaryFontName: withFallback(
+      readString(profile, 'thumbnailTextSecondaryFontName'),
+      settings.thumbnailTextSecondaryFontName
+    ),
+    thumbnailTextSecondaryFontSize: withFallback(
+      readNumber(profile, 'thumbnailTextSecondaryFontSize'),
+      settings.thumbnailTextSecondaryFontSize
+    ),
+    thumbnailTextSecondaryFontSizeRel: withFallback(
+      readNumber(profile, 'thumbnailTextSecondaryFontSizeRel'),
+      settings.thumbnailTextSecondaryFontSizeRel
+    ),
+    thumbnailTextSecondaryColor: withFallback(
+      readString(profile, 'thumbnailTextSecondaryColor'),
+      settings.thumbnailTextSecondaryColor
+    ),
+    thumbnailLineHeightRatio: withFallback(
+      readNumber(profile, 'thumbnailLineHeightRatio'),
+      settings.thumbnailLineHeightRatio
+    ),
+    thumbnailTextSecondary: withFallback(
+      readString(profile, 'thumbnailTextSecondary'),
+      settings.thumbnailTextSecondary
+    ),
+    thumbnailTextPrimaryPosition: withFallback(
+      thumbnailTextPrimaryPosition,
+      settings.thumbnailTextPrimaryPosition
+    ),
+    thumbnailTextSecondaryPosition: withFallback(
+      thumbnailTextSecondaryPosition,
+      settings.thumbnailTextSecondaryPosition
+    ),
+    portraitForegroundCropPercent: settings.renderMode === 'hardsub_portrait_9_16'
+      ? withFallback(
+          readNumber(profile, 'foregroundCropPercent'),
+          settings.portraitForegroundCropPercent
+        )
+      : settings.portraitForegroundCropPercent,
+  };
+}
+
 function entriesToSrtText(entries: SubtitleEntry[]): string {
   if (!entries.length) {
     return '';
@@ -833,25 +1108,48 @@ export function useCaptionProcessing({
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
     setStepDependencyIssues([]);
+    const renderLayoutOverrides = resolveRenderLayoutOverrides(settings);
+    const styleForRun = renderLayoutOverrides.style ?? settings.style;
+    const subtitlePositionForRun =
+      renderLayoutOverrides.subtitlePosition !== undefined
+        ? renderLayoutOverrides.subtitlePosition
+        : settings.subtitlePosition;
+    const coverQuadForRun =
+      renderLayoutOverrides.coverQuad !== undefined
+        ? renderLayoutOverrides.coverQuad
+        : settings.coverQuad;
+    const logoPositionForRun =
+      renderLayoutOverrides.logoPosition !== undefined
+        ? renderLayoutOverrides.logoPosition
+        : settings.logoPosition;
+    const thumbnailTextPrimaryPositionForRun =
+      renderLayoutOverrides.thumbnailTextPrimaryPosition !== undefined
+        ? renderLayoutOverrides.thumbnailTextPrimaryPosition
+        : settings.thumbnailTextPrimaryPosition;
+    const thumbnailTextSecondaryPositionForRun =
+      renderLayoutOverrides.thumbnailTextSecondaryPosition !== undefined
+        ? renderLayoutOverrides.thumbnailTextSecondaryPosition
+        : settings.thumbnailTextSecondaryPosition;
     const runLockedSettings = {
       ...settings,
-      style: settings.style ? { ...settings.style } : settings.style,
-      subtitlePosition: settings.subtitlePosition ? { ...settings.subtitlePosition } : settings.subtitlePosition,
-      coverQuad: settings.coverQuad
+      ...renderLayoutOverrides,
+      style: styleForRun ? { ...styleForRun } : styleForRun,
+      subtitlePosition: subtitlePositionForRun ? { ...subtitlePositionForRun } : subtitlePositionForRun,
+      coverQuad: coverQuadForRun
         ? {
-            tl: { ...settings.coverQuad.tl },
-            tr: { ...settings.coverQuad.tr },
-            br: { ...settings.coverQuad.br },
-            bl: { ...settings.coverQuad.bl },
+            tl: { ...coverQuadForRun.tl },
+            tr: { ...coverQuadForRun.tr },
+            br: { ...coverQuadForRun.br },
+            bl: { ...coverQuadForRun.bl },
           }
-        : settings.coverQuad,
-      logoPosition: settings.logoPosition ? { ...settings.logoPosition } : settings.logoPosition,
-      thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition
-        ? { ...settings.thumbnailTextPrimaryPosition }
-        : settings.thumbnailTextPrimaryPosition,
-      thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition
-        ? { ...settings.thumbnailTextSecondaryPosition }
-        : settings.thumbnailTextSecondaryPosition,
+        : coverQuadForRun,
+      logoPosition: logoPositionForRun ? { ...logoPositionForRun } : logoPositionForRun,
+      thumbnailTextPrimaryPosition: thumbnailTextPrimaryPositionForRun
+        ? { ...thumbnailTextPrimaryPositionForRun }
+        : thumbnailTextPrimaryPositionForRun,
+      thumbnailTextSecondaryPosition: thumbnailTextSecondaryPositionForRun
+        ? { ...thumbnailTextSecondaryPositionForRun }
+        : thumbnailTextSecondaryPositionForRun,
       thumbnailTextsByOrder: settings.thumbnailTextsByOrder ? [...settings.thumbnailTextsByOrder] : [],
       thumbnailTextsSecondaryByOrder: settings.thumbnailTextsSecondaryByOrder ? [...settings.thumbnailTextsSecondaryByOrder] : [],
       thumbnailTextSecondaryOverrideFlags: settings.thumbnailTextSecondaryOverrideFlags
@@ -859,6 +1157,7 @@ export function useCaptionProcessing({
         : [],
       thumbnailText: settings.thumbnailText || '',
       thumbnailTextSecondary: settings.thumbnailTextSecondary || '',
+      layoutProfiles: cloneLayoutProfiles(settings.layoutProfiles),
     };
     const cfg = runLockedSettings;
     const processingMode = cfg.processingMode ?? 'folder-first';
