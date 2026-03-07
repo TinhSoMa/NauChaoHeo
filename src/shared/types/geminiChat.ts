@@ -2,9 +2,11 @@ export interface GeminiChatConfig {
   id: string;
   name: string;
   cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
+  blLabel?: string;
+  fSid?: string;
+  atToken?: string;
+  secure1psid?: string;
+  secure1psidts?: string;
   proxyId?: string;
   convId: string;
   respId: string;

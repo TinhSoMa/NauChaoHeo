@@ -554,9 +554,11 @@ interface GeminiChatConfig {
   id: string;
   name: string;
   cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
+  blLabel?: string;
+  fSid?: string;
+  atToken?: string;
+  secure1psid?: string;
+  secure1psidts?: string;
   proxyId?: string;
   convId: string;
   respId: string;
@@ -613,7 +615,7 @@ interface GeminiChatAPI {
   update: (id: string, data: UpdateGeminiChatConfigDTO) => Promise<IpcApiResponse<GeminiChatConfig | null>>;
   delete: (id: string) => Promise<IpcApiResponse<boolean>>;
   sendMessage: (message: string, configId: string, context?: { conversationId: string; responseId: string; choiceId: string }) => Promise<IpcApiResponse<{ text: string; context: { conversationId: string; responseId: string; choiceId: string } }>>;
-  checkDuplicateToken: (payload: { cookie: string; atToken: string; excludeId?: string }) => Promise<IpcApiResponse<{ isDuplicate: boolean; duplicate?: GeminiChatConfig }>>;
+  checkDuplicateToken: (payload: { cookie: string; excludeId?: string }) => Promise<IpcApiResponse<{ isDuplicate: boolean; duplicate?: GeminiChatConfig }>>;
   
   // Cookie config methods (bảng gemini_cookie)
   getCookieConfig: () => Promise<IpcApiResponse<GeminiCookieConfig | null>>;

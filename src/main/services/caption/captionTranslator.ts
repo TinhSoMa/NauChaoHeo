@@ -275,6 +275,9 @@ async function translateBatchGeminiWebQueue(
       execute: async (ctx) => {
         const accountConfigId = ctx.resource.resourceId;
         const resourceLabel = (ctx.resource.label || resourceLabelById.get(accountConfigId) || accountConfigId).trim();
+        console.log(
+          `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} cookie-sync accountConfigId=${accountConfigId} (${resourceLabel})`
+        );
         const conversationMetadata = getCaptionGeminiConversation({
           projectId,
           sourcePath,
@@ -492,6 +495,9 @@ export async function translateAll(
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
     const methodLabel: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
     const defaultTokenLabel = useGeminiWebQueue ? 'queue_rr' : (useImpit ? 'impit_cookie' : (assignedKey?.keyInfo.name || 'rotation'));
+    const dispatchModeLabel = useGeminiWebQueue
+      ? 'dispatch mỗi 10s, không chờ batch trước'
+      : `${MAX_CONCURRENT} song song, pacing 10s`;
     let progressTokenLabel = defaultTokenLabel;
 
     // Report progress khi batch đã vào hàng đợi pacing
@@ -521,12 +527,16 @@ export async function translateAll(
         batchIndex: i,
         totalBatches: batches.length,
         status: 'translating',
-        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${MAX_CONCURRENT} song song, pacing 10s)...`,
+        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`,
         eventType: 'batch_started',
         transport: methodLabel,
         ...dispatchTiming,
       });
     }
+
+    console.log(
+      `[CaptionTranslator] Dispatch batch #${i + 1}/${batches.length} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
+    );
 
     // Dịch batch 1 lần; retry do queue/transport tự quản lý
     let batchResult: BatchTranslationResult = useGeminiWebQueue
@@ -576,7 +586,7 @@ export async function translateAll(
       progressCallback({
         current: Math.min(processedLines, entries.length),
         total: entries.length,
-        batchIndex: completedBatches,
+        batchIndex: report.batchIndex - 1,
         totalBatches: batches.length,
         status: report.status === 'success' ? 'translating' : 'error',
         message: completionMessage,
@@ -597,34 +607,43 @@ export async function translateAll(
 
   // Chạy theo từng nhóm MAX_CONCURRENT batch
   const manager = getApiManager();
-  for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
-    const chunk = batches.slice(i, i + MAX_CONCURRENT);
-
-    // Pre-assign 1 key riêng biệt cho mỗi batch trong chunk (chỉ áp dụng cho API, không phải impit)
-    const assignedKeys: Array<{ apiKey: string; keyInfo: KeyInfo } | undefined> = [];
-    if (!useImpit && !useGeminiWebQueue) {
-      for (let k = 0; k < chunk.length; k++) {
-        const { apiKey, keyInfo } = manager.getNextApiKey();
-        assignedKeys.push(apiKey && keyInfo ? { apiKey, keyInfo } : undefined);
-      }
-      const keyNames = assignedKeys.map(k => k?.keyInfo.name ?? 'rotation').join(', ');
-      console.log(`[CaptionTranslator] Chunk ${Math.floor(i / MAX_CONCURRENT) + 1}: gán key [${keyNames}]`);
-    }
-
-    // Stagger start: mỗi batch trong chunk delay 300ms để tránh burst cùng lúc
-    await Promise.all(
-      chunk.map((batch, offset) =>
-        new Promise<void>((resolve) =>
-          setTimeout(() => {
-            processBatch(batch, i + offset, assignedKeys[offset])
-              .catch((error) => {
-                console.error('[CaptionTranslator] Lỗi processBatch không mong muốn:', error);
-              })
-              .finally(resolve);
-          }, offset * 300)
-        )
-      )
+  if (useGeminiWebQueue) {
+    const dispatchPromises = batches.map((batch, index) =>
+      processBatch(batch, index).catch((error) => {
+        console.error('[CaptionTranslator] Lỗi processBatch không mong muốn:', error);
+      })
     );
+    await Promise.all(dispatchPromises);
+  } else {
+    for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
+      const chunk = batches.slice(i, i + MAX_CONCURRENT);
+
+      // Pre-assign 1 key riêng biệt cho mỗi batch trong chunk (chỉ áp dụng cho API, không phải impit)
+      const assignedKeys: Array<{ apiKey: string; keyInfo: KeyInfo } | undefined> = [];
+      if (!useImpit) {
+        for (let k = 0; k < chunk.length; k++) {
+          const { apiKey, keyInfo } = manager.getNextApiKey();
+          assignedKeys.push(apiKey && keyInfo ? { apiKey, keyInfo } : undefined);
+        }
+        const keyNames = assignedKeys.map(k => k?.keyInfo.name ?? 'rotation').join(', ');
+        console.log(`[CaptionTranslator] Chunk ${Math.floor(i / MAX_CONCURRENT) + 1}: gán key [${keyNames}]`);
+      }
+
+      // Stagger start: mỗi batch trong chunk delay 300ms để tránh burst cùng lúc
+      await Promise.all(
+        chunk.map((batch, offset) =>
+          new Promise<void>((resolve) =>
+            setTimeout(() => {
+              processBatch(batch, i + offset, assignedKeys[offset])
+                .catch((error) => {
+                  console.error('[CaptionTranslator] Lỗi processBatch không mong muốn:', error);
+                })
+                .finally(resolve);
+            }, offset * 300)
+          )
+        )
+      );
+    }
   }
 
   // Merge kết quả vào entries

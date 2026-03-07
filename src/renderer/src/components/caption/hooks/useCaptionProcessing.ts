@@ -1011,7 +1011,7 @@ export function useCaptionProcessing({
 }: UseCaptionProcessingProps) {
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [status, setStatus] = useState<ProcessStatus>('idle');
-  const [progress, setProgress] = useState({ current: 0, total: 0, message: 'Sẵn sàng.' });
+  const [progress, setProgress] = useState<TranslationProgress>({ current: 0, total: 0, message: 'Sẵn sàng.' });
   const [currentFolder, setCurrentFolder] = useState<{ index: number; total: number; name: string; path: string } | null>(null);
   const [stepDependencyIssues, setStepDependencyIssues] = useState<StepDependencyIssue[]>([]);
   
@@ -1400,7 +1400,12 @@ export function useCaptionProcessing({
     // Listen for progress — đăng ký 1 lần với replace (ghi đè listener cũ)
     // @ts-ignore
     window.electronAPI.caption.onTranslateProgress((p: TranslationProgress) => {
-      setProgress({ current: p.current, total: p.total, message: p.message });
+      setProgress({
+        ...p,
+        current: p.current,
+        total: p.total,
+        message: p.message,
+      });
       const batchHandler = translateBatchProgressHandlerRef.current;
       if (batchHandler) {
         Promise.resolve(batchHandler(p)).catch((error) => {

@@ -46,9 +46,11 @@ export const DEFAULT_APP_LANGUAGE: AppLanguage = 'vi';
 export interface GeminiChatConfig {
   id?: string;
   cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
+  blLabel?: string;
+  fSid?: string;
+  atToken?: string;
+  secure1psid?: string;
+  secure1psidts?: string;
   convId: string;
   respId: string;
   candId: string;

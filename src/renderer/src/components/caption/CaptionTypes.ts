@@ -28,6 +28,11 @@ export interface TranslationProgress {
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
+  queuePacingMode?: 'dispatch_spacing_global';
+  queueGapMs?: number;
+  startedAt?: number;
+  endedAt?: number;
+  nextAllowedAt?: number;
 }
 
 export interface TranslationBatchReport {
@@ -41,6 +46,8 @@ export interface TranslationBatchReport {
   attempts: number;
   status: 'success' | 'failed';
   error?: string;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface TTSProgress {

@@ -147,9 +147,9 @@ export function registerGeminiChatHandlers(): void {
   });
 
   // Kiem tra token bi trung trong DB
-  ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload: { cookie: string; atToken: string; excludeId?: string }) => {
+  ipcMain.handle(CHANNELS.CHECK_DUPLICATE_TOKEN, async (_, payload: { cookie: string; excludeId?: string }) => {
     try {
-      const result = GeminiChatService.checkDuplicateToken(payload.cookie, payload.atToken, payload.excludeId);
+      const result = GeminiChatService.checkDuplicateToken(payload.cookie, payload.excludeId);
       return { success: true, data: result };
     } catch (error) {
       console.error('[GeminiChatHandlers] Loi checkDuplicateToken:', error);

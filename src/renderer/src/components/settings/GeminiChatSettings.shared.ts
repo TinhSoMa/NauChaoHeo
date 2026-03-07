@@ -2,9 +2,9 @@ export interface GeminiChatConfig {
   id: string;
   name: string;
   cookie: string;
-  blLabel: string;
-  fSid: string;
-  atToken: string;
+  blLabel?: string;
+  fSid?: string;
+  atToken?: string;
   proxyId?: string;
   convId: string;
   respId: string;
@@ -52,48 +52,12 @@ export interface ProxyInfo {
 
 export type GeminiChatListTab = 'accounts' | 'webapi' | 'logs';
 
-export const DEFAULT_UA = '';
-export const DEFAULT_LANG = 'vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6,zh-CN;q=0.5,zh;q=0.4';
-
-export const BROWSER_PRESETS = [
-  {
-    label: 'Chrome / Windows',
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    platform: 'Windows',
-    acceptLanguage: 'vi,en-US;q=0.9,en;q=0.8'
-  },
-  {
-    label: 'Edge / Windows',
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
-    platform: 'Windows',
-    acceptLanguage: 'vi,en-US;q=0.9,en;q=0.8'
-  },
-  {
-    label: 'Chrome / macOS',
-    userAgent:
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    platform: 'macOS',
-    acceptLanguage: 'vi,en-US;q=0.9,en;q=0.8'
-  },
-  {
-    label: 'Firefox / Windows',
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
-    platform: 'Windows',
-    acceptLanguage: 'vi,en-US;q=0.9,en;q=0.8'
-  },
-  {
-    label: 'Tuy chinh / Custom',
-    userAgent: '',
-    platform: 'Windows',
-    acceptLanguage: DEFAULT_LANG
-  }
-];
-
-export const buildTokenKey = (_cookie: string, atToken: string): string => {
-  return (atToken || '').trim();
+export const buildTokenKey = (cookie: string): string => {
+  const normalized = (cookie || '').trim();
+  const secure1psid = normalized.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
+  const secure1psidts = normalized.match(/__Secure-1PSIDTS=([^;\s]+)/)?.[1] || '';
+  const combined = [secure1psid, secure1psidts].filter(Boolean).join('|');
+  return combined || normalized;
 };
 
 export const getTokenStats = (configs: GeminiChatConfig[]): TokenStats => {
@@ -102,7 +66,10 @@ export const getTokenStats = (configs: GeminiChatConfig[]): TokenStats => {
   const activeConfigs = configs.filter((config) => config.isActive);
 
   for (const config of activeConfigs) {
-    const key = buildTokenKey(config.cookie || '', config.atToken || '');
+    const key = buildTokenKey(config.cookie || '');
+    if (!key) {
+      continue;
+    }
     if (seen.has(key)) {
       duplicateIds.add(config.id);
       const firstId = seen.get(key);

@@ -41,13 +41,55 @@ import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { AlertCircle, Download, Eye } from 'lucide-react';
-import { CaptionProjectSettingsValues, CaptionSessionV1, CoverQuad, VoiceInfo } from '@shared/types/caption';
+import {
+  CaptionProjectSettingsValues,
+  CaptionSessionV1,
+  CoverQuad,
+  TranslationBatchReport as SharedTranslationBatchReport,
+  VoiceInfo,
+} from '@shared/types/caption';
 
 type TtsVoiceProvider = 'edge' | 'capcut';
 type TtsVoiceTier = 'free' | 'pro';
 type CommonConfigTab = 'render' | 'typography' | 'audio';
 type LayoutSwitchValue = 'landscape' | 'portrait';
-type InspectorPane = 'step' | 'common' | 'snapshot' | 'thumbnail';
+type InspectorPane = 'step' | 'common' | 'snapshot' | 'thumbnail' | 'batch3';
+type Step3BatchState = NonNullable<CaptionSessionV1['data']['step3BatchState']>;
+type Step3BatchStatus = 'waiting' | 'running' | 'success' | 'failed';
+type Step3RuntimePhase = 'waiting' | 'running' | 'success' | 'failed';
+type Step3BatchRuntimeEntry = {
+  phase: Step3RuntimePhase;
+  queuedAtMs: number | null;
+  dispatchAtMs: number | null;
+  completedAtMs: number | null;
+  nextAllowedAtMs: number | null;
+  error?: string;
+};
+type Step3BatchViewRow = {
+  batchIndex: number;
+  status: Step3BatchStatus;
+  attempts: number;
+  expectedLines: number;
+  translatedLines: number;
+  lineSummaryLabel: string;
+  missingLines: number;
+  startedAtMs: number | null;
+  endedAtMs: number | null;
+  timeLabel: string;
+  timeMetaLabel: string;
+  missingLabel: string;
+  error?: string;
+};
+type Step3BatchViewModel = {
+  totalBatches: number;
+  waitingBatches: number;
+  completedBatches: number;
+  failedBatches: number;
+  runningBatchIndex: number | null;
+  missingBatchIndexes: number[];
+  updatedAtLabel: string;
+  rows: Step3BatchViewRow[];
+};
 const COMMON_COLOR_HISTORY_LIMIT = 12;
 const COMMON_COLOR_HISTORY_STORAGE_PREFIX = 'caption.common.colorHistory.v1';
 const SUBTITLE_FONT_SIZE_MIN = 1;
@@ -56,6 +98,7 @@ const SUBTITLE_FONT_SIZE_DEFAULT = 21;
 const THUMBNAIL_FONT_SIZE_MIN = 8;
 const THUMBNAIL_FONT_SIZE_MAX = 200;
 const THUMBNAIL_FONT_SIZE_DEFAULT = 48;
+const STEP3_DEFAULT_LINES_PER_BATCH = 50;
 const VIDEO_VOLUME_PERCENT_MIN = 0;
 const VIDEO_VOLUME_PERCENT_MAX = 200;
 const AUDIO_VOLUME_PERCENT_MIN = 0;
@@ -317,6 +360,33 @@ function formatElapsedMs(elapsedMs: number): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function toEpochMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : null;
+}
+
+function formatEpochDisplay(value: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '--';
+  }
+  try {
+    return new Date(value).toLocaleTimeString('vi-VN', { hour12: false });
+  } catch {
+    return '--';
+  }
+}
+
+function formatEtaDisplay(nextAllowedAtMs: number | null, nowMs: number): string {
+  if (typeof nextAllowedAtMs !== 'number' || !Number.isFinite(nextAllowedAtMs)) {
+    return 'ETA --';
+  }
+  const remainMs = Math.max(0, nextAllowedAtMs - nowMs);
+  const atLabel = formatEpochDisplay(nextAllowedAtMs);
+  if (remainMs <= 0) {
+    return `ETA ${atLabel} (ngay)`;
+  }
+  return `ETA ${atLabel} (còn ${formatElapsedMs(remainMs)})`;
 }
 
 function parseStep3RuntimeHints(message: string): { apiLabel?: string; tokenLabel?: string } {
@@ -1814,8 +1884,11 @@ export function CaptionTranslator() {
   const [sessionStepStatus, setSessionStepStatus] = useState<Partial<Record<Step, string>>>({});
   const [sessionStepSkipped, setSessionStepSkipped] = useState<Partial<Record<Step, boolean>>>({});
   const [sessionStepTimingMeta, setSessionStepTimingMeta] = useState<Partial<Record<Step, SessionStepTimingMeta>>>({});
+  const [sessionStep3BatchState, setSessionStep3BatchState] = useState<Step3BatchState | null>(null);
   const [uiNowMs, setUiNowMs] = useState<number>(() => Date.now());
   const [stepLiveStartMs, setStepLiveStartMs] = useState<Partial<Record<Step, number>>>({});
+  const [step3BatchRuntimeMap, setStep3BatchRuntimeMap] = useState<Record<number, Step3BatchRuntimeEntry>>({});
+  const [step3LiveTotalBatches, setStep3LiveTotalBatches] = useState<number | null>(null);
   const [step3RuntimeTimer, setStep3RuntimeTimer] = useState<Step3RuntimeTimer>({
     apiLabel: '',
     tokenLabel: '',
@@ -1840,6 +1913,9 @@ export function CaptionTranslator() {
       setSessionStepStatus({});
       setSessionStepSkipped({});
       setSessionStepTimingMeta({});
+      setSessionStep3BatchState(null);
+      setStep3BatchRuntimeMap({});
+      setStep3LiveTotalBatches(null);
       setSessionPreviewEntries(fileManager.entries);
       setRenderedPreviewVideoPath(null);
       setPreviewSourceLabel('live_video');
@@ -1851,6 +1927,9 @@ export function CaptionTranslator() {
     const activeInputPath = processing.currentFolder?.path ?? inputPaths[0];
     if (!activeInputPath) {
       setSessionTimingSnapshot(null);
+      setSessionStep3BatchState(null);
+      setStep3BatchRuntimeMap({});
+      setStep3LiveTotalBatches(null);
       return;
     }
 
@@ -1936,6 +2015,7 @@ export function CaptionTranslator() {
         setSessionStepStatus(nextStepStatus);
         setSessionStepSkipped(nextStepSkipped);
         setSessionStepTimingMeta(nextStepTimingMeta);
+        setSessionStep3BatchState(session.data.step3BatchState ?? null);
         setSessionTimingSnapshot(readTimingSnapshotFromSession(session));
 
         const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
@@ -1974,6 +2054,9 @@ export function CaptionTranslator() {
           setSessionStepStatus({});
           setSessionStepSkipped({});
           setSessionStepTimingMeta({});
+          setSessionStep3BatchState(null);
+          setStep3BatchRuntimeMap({});
+          setStep3LiveTotalBatches(null);
           setSessionPreviewEntries(fileManager.entries);
           setRenderedPreviewVideoPath(null);
           setSessionTimingSnapshot(null);
@@ -2710,6 +2793,8 @@ export function CaptionTranslator() {
 
   useEffect(() => {
     setStepLiveStartMs({});
+    setStep3BatchRuntimeMap({});
+    setStep3LiveTotalBatches(null);
     setStep3RuntimeTimer({
       apiLabel: '',
       tokenLabel: '',
@@ -2778,6 +2863,107 @@ export function CaptionTranslator() {
   }, [isStep3Running, processing.progress.message, settings.translateMethod]);
 
   useEffect(() => {
+    const totalBatches = typeof processing.progress.totalBatches === 'number' && Number.isFinite(processing.progress.totalBatches)
+      ? Math.max(1, Math.floor(processing.progress.totalBatches))
+      : null;
+    if (totalBatches !== null) {
+      setStep3LiveTotalBatches((prev) => (prev === totalBatches ? prev : totalBatches));
+    }
+
+    if (!isStep3Running) {
+      return;
+    }
+
+    const eventType = processing.progress.eventType;
+    if (eventType !== 'batch_started' && eventType !== 'batch_retry' && eventType !== 'batch_completed' && eventType !== 'batch_failed') {
+      return;
+    }
+
+    const fromReport = typeof processing.progress.batchReport?.batchIndex === 'number'
+      ? Math.floor(processing.progress.batchReport.batchIndex)
+      : null;
+    const fromProgress = typeof processing.progress.batchIndex === 'number'
+      ? Math.floor(processing.progress.batchIndex) + 1
+      : null;
+    const batchIndex = fromReport ?? fromProgress;
+    if (!batchIndex || batchIndex <= 0) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    const progressStartMs = toEpochMs(processing.progress.startedAt);
+    const progressEndMs = toEpochMs(processing.progress.endedAt);
+    const progressNextAllowedMs = toEpochMs(processing.progress.nextAllowedAt);
+
+    setStep3BatchRuntimeMap((prev) => {
+      const current = prev[batchIndex];
+      const next: Step3BatchRuntimeEntry = current
+        ? { ...current }
+        : {
+            phase: 'waiting',
+            queuedAtMs: nowMs,
+            dispatchAtMs: null,
+            completedAtMs: null,
+            nextAllowedAtMs: null,
+          };
+
+      if (eventType === 'batch_started' || eventType === 'batch_retry') {
+        if (progressStartMs !== null) {
+          next.phase = 'running';
+          next.dispatchAtMs = progressStartMs;
+          next.queuedAtMs = next.queuedAtMs ?? nowMs;
+        } else if (next.phase !== 'running') {
+          next.phase = 'waiting';
+          next.queuedAtMs = next.queuedAtMs ?? nowMs;
+        }
+        next.nextAllowedAtMs = progressNextAllowedMs ?? next.nextAllowedAtMs;
+      } else if (eventType === 'batch_completed' || eventType === 'batch_failed') {
+        next.phase = eventType === 'batch_completed' ? 'success' : 'failed';
+        next.dispatchAtMs = toEpochMs(processing.progress.batchReport?.startedAt) ?? progressStartMs ?? next.dispatchAtMs;
+        next.completedAtMs = toEpochMs(processing.progress.batchReport?.endedAt) ?? progressEndMs ?? nowMs;
+        next.error = processing.progress.batchReport?.error;
+      }
+
+      if (
+        current
+        && current.phase === next.phase
+        && current.queuedAtMs === next.queuedAtMs
+        && current.dispatchAtMs === next.dispatchAtMs
+        && current.completedAtMs === next.completedAtMs
+        && current.nextAllowedAtMs === next.nextAllowedAtMs
+        && current.error === next.error
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [batchIndex]: next,
+      };
+    });
+  }, [
+    isStep3Running,
+    processing.progress.eventType,
+    processing.progress.batchIndex,
+    processing.progress.totalBatches,
+    processing.progress.batchReport?.batchIndex,
+    processing.progress.batchReport?.startedAt,
+    processing.progress.batchReport?.endedAt,
+    processing.progress.batchReport?.error,
+    processing.progress.startedAt,
+    processing.progress.endedAt,
+    processing.progress.nextAllowedAt,
+  ]);
+
+  useEffect(() => {
+    if (isStep3Running) {
+      return;
+    }
+    setStep3BatchRuntimeMap({});
+    setStep3LiveTotalBatches(null);
+  }, [isStep3Running]);
+
+  useEffect(() => {
     const shouldTick = processing.status === 'running'
       || isStep3Running
       || Object.values(sessionStepTimingMeta).some((meta) => meta?.status === 'running');
@@ -2830,6 +3016,164 @@ export function CaptionTranslator() {
     const endMs = step3RuntimeTimer.tokenEndedAtMs ?? uiNowMs;
     return formatElapsedMs(Math.max(0, endMs - step3RuntimeTimer.tokenStartedAtMs));
   }, [step3RuntimeTimer.tokenStartedAtMs, step3RuntimeTimer.tokenEndedAtMs, uiNowMs]);
+
+  const step3BatchViewModel = useMemo<Step3BatchViewModel | null>(() => {
+    const safeState = sessionStep3BatchState;
+    const stateReports = Array.isArray(safeState?.batches) ? safeState.batches : [];
+    const reportMap = new Map<number, SharedTranslationBatchReport>();
+    for (const report of stateReports) {
+      if (!report || typeof report.batchIndex !== 'number') {
+        continue;
+      }
+      const batchIndex = Math.max(1, Math.floor(report.batchIndex));
+      reportMap.set(batchIndex, report);
+    }
+
+    const runtimeIndexes = Object.keys(step3BatchRuntimeMap)
+      .map((key) => Number(key))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const maxRuntimeIndex = runtimeIndexes.reduce((max, current) => Math.max(max, current), 0);
+    const maxReportIndex = Array.from(reportMap.keys()).reduce((max, current) => Math.max(max, current), 0);
+    const liveTotal = step3LiveTotalBatches && step3LiveTotalBatches > 0
+      ? step3LiveTotalBatches
+      : 0;
+    const stateTotal = typeof safeState?.totalBatches === 'number' && Number.isFinite(safeState.totalBatches)
+      ? Math.max(1, Math.floor(safeState.totalBatches))
+      : 0;
+    const totalBatches = Math.max(stateTotal, liveTotal, maxReportIndex, maxRuntimeIndex);
+    const totalSourceLines = Math.max(0, fileManager.entries.length);
+    const maxExpectedFromReports = stateReports
+      .map((report) => (typeof report?.expectedLines === 'number' && Number.isFinite(report.expectedLines) ? Math.floor(report.expectedLines) : 0))
+      .reduce((max, current) => Math.max(max, current), 0);
+    const step3BatchSize = Math.max(1, maxExpectedFromReports || STEP3_DEFAULT_LINES_PER_BATCH);
+
+    const missingBatchIndexes = Array.isArray(safeState?.missingBatchIndexes)
+      ? safeState.missingBatchIndexes
+        .filter((value): value is number => Number.isFinite(value))
+        .map((value) => Math.max(1, Math.floor(value)))
+        .sort((a, b) => a - b)
+      : [];
+
+    const rows: Step3BatchViewRow[] = [];
+    for (let batchIndex = 1; batchIndex <= totalBatches; batchIndex++) {
+      const report = reportMap.get(batchIndex);
+      const runtimeEntry = step3BatchRuntimeMap[batchIndex];
+      const fallbackStartIndex = Math.max(0, (batchIndex - 1) * step3BatchSize);
+      const fallbackExpectedLines = totalSourceLines > fallbackStartIndex
+        ? Math.min(step3BatchSize, totalSourceLines - fallbackStartIndex)
+        : 0;
+      const fallbackEndIndex = fallbackExpectedLines > 0
+        ? fallbackStartIndex + fallbackExpectedLines - 1
+        : fallbackStartIndex;
+      const reportStatus = report?.status === 'success' || report?.status === 'failed'
+        ? report.status
+        : null;
+      const runtimeStatus = runtimeEntry?.phase;
+      const status: Step3BatchStatus =
+        runtimeStatus === 'waiting' || runtimeStatus === 'running'
+          ? runtimeStatus
+          : runtimeStatus === 'success' || runtimeStatus === 'failed'
+            ? runtimeStatus
+            : (reportStatus || 'waiting');
+
+      const reportStartedAtMs = toEpochMs((report as { startedAt?: number } | undefined)?.startedAt);
+      const reportEndedAtMs = toEpochMs((report as { endedAt?: number } | undefined)?.endedAt);
+      const startedAtMs = reportStartedAtMs ?? runtimeEntry?.dispatchAtMs ?? null;
+      const endedAtMs = reportEndedAtMs ?? runtimeEntry?.completedAtMs ?? null;
+      const queuedAtMs = runtimeEntry?.queuedAtMs ?? null;
+      const nextAllowedAtMs = runtimeEntry?.nextAllowedAtMs ?? null;
+      const expectedLines = typeof report?.expectedLines === 'number' && Number.isFinite(report.expectedLines)
+        ? Math.max(0, Math.floor(report.expectedLines))
+        : fallbackExpectedLines;
+      const translatedLines = typeof report?.translatedLines === 'number' && Number.isFinite(report.translatedLines)
+        ? Math.max(0, Math.floor(report.translatedLines))
+        : 0;
+      const startLine = (typeof report?.startIndex === 'number' && Number.isFinite(report.startIndex))
+        ? Math.max(0, Math.floor(report.startIndex))
+        : fallbackStartIndex;
+      const endLine = (typeof report?.endIndex === 'number' && Number.isFinite(report.endIndex))
+        ? Math.max(startLine, Math.floor(report.endIndex))
+        : fallbackEndIndex;
+      const lineRangeLabel = expectedLines > 0 ? `dòng ${startLine + 1}-${endLine + 1}` : 'dòng --';
+      const lineSummaryLabel = (() => {
+        if (status === 'success') {
+          return `Dịch ${translatedLines}/${expectedLines} (${lineRangeLabel})`;
+        }
+        if (status === 'failed') {
+          return `Nhận ${translatedLines}/${expectedLines} (${lineRangeLabel})`;
+        }
+        return `${expectedLines} dòng gốc (${lineRangeLabel})`;
+      })();
+
+      const timeLabel = (() => {
+        if (status === 'waiting') {
+          return typeof queuedAtMs === 'number'
+            ? `Chờ ${formatElapsedMs(Math.max(0, uiNowMs - queuedAtMs))}`
+            : 'Chờ --';
+        }
+        if (status === 'running') {
+          return typeof startedAtMs === 'number'
+            ? `Xử lý ${formatElapsedMs(Math.max(0, uiNowMs - startedAtMs))}`
+            : 'Xử lý --';
+        }
+        if (typeof startedAtMs === 'number' && typeof endedAtMs === 'number' && endedAtMs >= startedAtMs) {
+          return formatElapsedMs(endedAtMs - startedAtMs);
+        }
+        return '--';
+      })();
+      const timeMetaLabel = (() => {
+        if (status === 'waiting') {
+          return formatEtaDisplay(nextAllowedAtMs, uiNowMs);
+        }
+        if (status === 'running') {
+          return `Bắt đầu ${formatEpochDisplay(startedAtMs)}`;
+        }
+        return `${formatEpochDisplay(startedAtMs)} → ${formatEpochDisplay(endedAtMs)}`;
+      })();
+      const missingLines = Array.isArray(report?.missingGlobalLineIndexes)
+        ? report.missingGlobalLineIndexes.length
+        : 0;
+
+      rows.push({
+        batchIndex,
+        status,
+        attempts: typeof report?.attempts === 'number' ? Math.max(0, Math.floor(report.attempts)) : 0,
+        expectedLines,
+        translatedLines,
+        lineSummaryLabel,
+        missingLines,
+        startedAtMs,
+        endedAtMs,
+        timeLabel,
+        timeMetaLabel,
+        missingLabel: missingLines > 0 ? formatNumberList(report?.missingGlobalLineIndexes || [], 16) : '--',
+        error: report?.error || runtimeEntry?.error,
+      });
+    }
+
+    const waitingBatches = rows.filter((row) => row.status === 'waiting').length;
+    const completedBatches = rows.filter((row) => row.status === 'success').length;
+    const failedBatches = rows.filter((row) => row.status === 'failed').length;
+    const runningBatchIndex = rows.find((row) => row.status === 'running')?.batchIndex ?? null;
+    const updatedAtLabel = formatIsoDisplay(safeState?.updatedAt);
+
+    return {
+      totalBatches,
+      waitingBatches,
+      completedBatches,
+      failedBatches,
+      runningBatchIndex,
+      missingBatchIndexes,
+      updatedAtLabel,
+      rows,
+    };
+  }, [
+    fileManager.entries.length,
+    sessionStep3BatchState,
+    step3BatchRuntimeMap,
+    step3LiveTotalBatches,
+    uiNowMs,
+  ]);
 
   const getStepBadge = (step: Step): { label: string; className: string } => {
     const hasIssue = processing.stepDependencyIssues.some((item) => item.step === step);
@@ -4139,6 +4483,130 @@ export function CaptionTranslator() {
     </div>
   );
 
+  const step3BatchInspectorPane = (() => {
+    if (activeStep !== 3) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.configSummaryTitle}>Step 3 Batch</div>
+          <div className={styles.commonHint}>Tab này chỉ áp dụng khi đang chọn Step 3.</div>
+        </div>
+      );
+    }
+
+    if (!step3BatchViewModel) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.configSummaryTitle}>Step 3 Batch</div>
+          <div className={styles.commonHint}>Chưa có dữ liệu batch trong session.</div>
+        </div>
+      );
+    }
+
+    if (step3BatchViewModel.totalBatches === 0) {
+      return (
+        <div className={styles.panelSection}>
+          <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
+          <div className={styles.commonHint}>Chưa chạy Step 3 hoặc chưa nhận được batch progress.</div>
+        </div>
+      );
+    }
+
+    const progressPercent = step3BatchViewModel.totalBatches > 0
+      ? Math.min(100, Math.max(0, (step3BatchViewModel.completedBatches / step3BatchViewModel.totalBatches) * 100))
+      : 0;
+
+    return (
+      <div className={styles.step3BatchPane}>
+        <div className={styles.panelSection}>
+          <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
+          <div className={styles.step3BatchSummaryGrid}>
+            <div className={styles.step3BatchStatCard}>
+              <span className={styles.step3BatchStatLabel}>Đang chờ</span>
+              <span className={styles.step3BatchStatValue}>{step3BatchViewModel.waitingBatches}</span>
+            </div>
+            <div className={styles.step3BatchStatCard}>
+              <span className={styles.step3BatchStatLabel}>Đang xử lý</span>
+              <span className={styles.step3BatchStatValue}>{step3BatchViewModel.runningBatchIndex ? `#${step3BatchViewModel.runningBatchIndex}` : '--'}</span>
+            </div>
+            <div className={styles.step3BatchStatCard}>
+              <span className={styles.step3BatchStatLabel}>Thành công</span>
+              <span className={styles.step3BatchStatValue}>{step3BatchViewModel.completedBatches}/{step3BatchViewModel.totalBatches}</span>
+            </div>
+            <div className={styles.step3BatchStatCard}>
+              <span className={styles.step3BatchStatLabel}>Lỗi</span>
+              <span className={styles.step3BatchStatValue}>{step3BatchViewModel.failedBatches}</span>
+            </div>
+          </div>
+          <div className={styles.step3BatchProgressBar}>
+            <div className={styles.step3BatchProgressFill} style={{ width: `${progressPercent.toFixed(1)}%` }} />
+          </div>
+          <div className={styles.step3BatchMetaRow}>
+            <span>Missing batch: {formatNumberList(step3BatchViewModel.missingBatchIndexes, 16)}</span>
+            <span className={styles.step3BatchMetaMono}>Updated: {step3BatchViewModel.updatedAtLabel}</span>
+          </div>
+        </div>
+
+        <div className={styles.panelSection}>
+          <div className={styles.step3BatchTableHeader}>
+            <span>Batch</span>
+            <span>Status</span>
+            <span>Time</span>
+          </div>
+          <div className={styles.step3BatchList}>
+            {step3BatchViewModel.rows.map((row) => (
+              <div key={`s3-batch-${row.batchIndex}`} className={styles.step3BatchRow}>
+                <div className={styles.step3BatchColMain}>
+                  <span className={styles.step3BatchTitle}>#{row.batchIndex}</span>
+                  <span className={styles.step3BatchSub}>
+                    {row.lineSummaryLabel}
+                  </span>
+                </div>
+                <div className={styles.step3BatchColStatus}>
+                  <span
+                    className={`${styles.step3BatchStatusPill} ${
+                      row.status === 'success'
+                        ? styles.step3BatchStatusSuccess
+                        : row.status === 'failed'
+                          ? styles.step3BatchStatusFailed
+                          : row.status === 'running'
+                            ? styles.step3BatchStatusRunning
+                            : styles.step3BatchStatusWaiting
+                    }`}
+                  >
+                    {row.status === 'success'
+                      ? 'THÀNH CÔNG'
+                      : row.status === 'failed'
+                        ? 'LỖI'
+                        : row.status === 'running'
+                          ? 'ĐANG XỬ LÝ'
+                          : 'ĐANG CHỜ'}
+                  </span>
+                  <span className={styles.step3BatchSub}>try {row.attempts || '--'}</span>
+                </div>
+                <div className={styles.step3BatchColTime}>
+                  <span className={styles.step3BatchTime}>{row.timeLabel}</span>
+                  <span className={styles.step3BatchSub}>
+                    {row.timeMetaLabel}
+                  </span>
+                </div>
+                {(row.missingLines > 0 || row.error) && (
+                  <div className={styles.step3BatchErrorRow}>
+                    {row.missingLines > 0 && (
+                      <span>Missing: {row.missingLines} ({row.missingLabel})</span>
+                    )}
+                    {row.error && (
+                      <span className={styles.step3BatchMetaMono}>Err: {row.error}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  })();
+
   const thumbnailConfigBar = (
     <div className={styles.panelSection}>
       <div className={styles.configSummaryTitle}>Thumbnail Config</div>
@@ -5062,6 +5530,15 @@ export function CaptionTranslator() {
             >
               Snapshot
             </button>
+            {activeStep === 3 && (
+              <button
+                type="button"
+                className={`${styles.inspectorTabBtn} ${inspectorPane === 'batch3' ? styles.inspectorTabBtnActive : ''}`}
+                onClick={() => setInspectorPane('batch3')}
+              >
+                Batch
+              </button>
+            )}
             <button
               type="button"
               className={`${styles.inspectorTabBtn} ${inspectorPane === 'thumbnail' ? styles.inspectorTabBtnActive : ''}`}
@@ -5086,6 +5563,7 @@ export function CaptionTranslator() {
                 </div>
               </div>
             )}
+            {inspectorPane === 'batch3' && step3BatchInspectorPane}
             {inspectorPane === 'thumbnail' && thumbnailConfigBar}
             <div className={styles.commonHint} style={{ marginTop: 8 }} title={fileManager.filePath || undefined}>
               {inspectorPane === 'step'
@@ -5094,6 +5572,10 @@ export function CaptionTranslator() {
                   : `Input: SRT | ${fileManager.entries.length} dòng`)
                 : inspectorPane === 'common'
                   ? 'Common: Render / Typography / Audio dùng lại nhiều step. Voice giữ ở B4.'
+                  : inspectorPane === 'batch3'
+                    ? (activeStep === 3
+                      ? 'Theo dõi realtime batch đang dịch ở Step 3 (Live + Session).'
+                      : 'Tab Batch chỉ dùng cho Step 3.')
                   : inspectorPane === 'thumbnail'
                     ? (thumbnailPreviewSourceLabel || 'Thumbnail config')
                     : `Snapshot: trạng thái ${processing.status}, rà nhanh trước khi chạy.`}

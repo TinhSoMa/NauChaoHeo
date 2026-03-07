@@ -1,30 +1,21 @@
 /**
  * GeminiChatSettings - Cấu hình kết nối Gemini qua giao diện web
- * Hỗ trợ nhiều tài khoản và cấu hình trình duyệt (Browser Profile)
+ * Hỗ trợ nhiều tài khoản theo chế độ cookie-only
  */
 
 import { useState, useCallback, useEffect, type MouseEvent } from 'react';
 import {
   Cookie,
-  Globe,
-  Hash,
-  Shield,
-  Sparkles,
   Save,
   ArrowLeft,
   Plus,
   Trash2,
-  Laptop,
-  Clipboard,
   RefreshCw
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import styles from './Settings.module.css';
 import {
-  BROWSER_PRESETS,
-  DEFAULT_LANG,
-  DEFAULT_UA,
   formatLogMetadata,
   getTokenStats,
   type GeminiChatConfig,
@@ -68,29 +59,13 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   const [formData, setFormData] = useState<{
     name: string;
     cookie: string;
-    blLabel: string;
-    fSid: string;
-    atToken: string;
-    userAgent: string;
-    acceptLanguage: string;
-    platform: string;
     isActive: boolean;
   }>({
     name: '',
     cookie: '',
-    blLabel: '',
-    fSid: '',
-    atToken: '',
-    userAgent: DEFAULT_UA,
-    acceptLanguage: DEFAULT_LANG,
-    platform: 'Windows',
     isActive: true
   });
-  
-  // Auto-parse State
-  const [rawInput, setRawInput] = useState<string>('');
-  const [parseStatus, setParseStatus] = useState<string>('');
-  const [selectedPreset, setSelectedPreset] = useState<string>('4'); // Default to Custom
+
   const editingConfig = editingId ? configs.find(c => c.id === editingId) : null;
 
   // Load configs
@@ -277,16 +252,8 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     setFormData({
       name: `Account ${configs.length + 1}`,
       cookie: '',
-      blLabel: '',
-      fSid: '',
-      atToken: '',
-      userAgent: DEFAULT_UA,
-      acceptLanguage: DEFAULT_LANG,
-      platform: 'Windows',
       isActive: true
     });
-    setRawInput('');
-    setParseStatus('');
   };
 
   const handleEdit = (config: GeminiChatConfig) => {
@@ -295,16 +262,8 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     setFormData({
       name: config.name,
       cookie: config.cookie,
-      blLabel: config.blLabel,
-      fSid: config.fSid,
-      atToken: config.atToken,
-      userAgent: config.userAgent || DEFAULT_UA,
-      acceptLanguage: config.acceptLanguage || DEFAULT_LANG,
-      platform: config.platform || 'Windows',
       isActive: config.isActive
     });
-    setRawInput('');
-    setParseStatus('');
   };
 
   const handleDelete = async (id: string, e: MouseEvent) => {
@@ -386,93 +345,27 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   };
 
 
-  // Auto-parse logic (reused from previous version)
-  const handleAutoParse = useCallback(() => {
-    if (!rawInput.trim()) {
-      setParseStatus('Vui lòng dán dữ liệu vào ô trên trước');
-      return;
+  const extractSecureCookieTokens = useCallback((cookie: string): { secure1psid: string; secure1psidts: string } | null => {
+    const normalized = (cookie || '').replace(/\^/g, '').trim();
+    if (!normalized) {
+      return null;
     }
-
-    let foundCount = 0;
-    const text = rawInput;
-    const newData = { ...formData };
-
-    // Parse Cookie
-    const curlCookieMatch = text.match(/-b\s+\^?"([^"]+)\^?"/);
-    if (curlCookieMatch && curlCookieMatch[1]) {
-      newData.cookie = curlCookieMatch[1].trim();
-      foundCount++;
-    } else {
-      const cookieHeaderMatch = text.match(/Cookie:\s*(.+?)(?:\r?\n|$)/i);
-      if (cookieHeaderMatch && cookieHeaderMatch[1]) {
-        newData.cookie = cookieHeaderMatch[1].trim();
-        foundCount++;
-      } else {
-        const securePsidMatch = text.match(/(__Secure-1PSID=[^;\s]+(?:;[^"]+)?)/);
-        if (securePsidMatch && securePsidMatch[1]) {
-          newData.cookie = securePsidMatch[1].trim();
-          foundCount++;
-        }
-      }
+    const secure1psid = normalized.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
+    const secure1psidts = normalized.match(/__Secure-1PSIDTS=([^;\s]+)/)?.[1] || '';
+    if (!secure1psid || !secure1psidts) {
+      return null;
     }
-
-    // Parse BL, F_SID, AT_TOKEN
-    const blMatch = text.match(/[?&]bl=([^&\s^"]+)/) || text.match(/bl=([^&\s^"]+)/);
-    if (blMatch && blMatch[1]) {
-        newData.blLabel = decodeURIComponent(blMatch[1].replace(/\^/g, ''));
-        foundCount++;
-    }
-
-    const fsidMatch = text.match(/[?&]f\.sid=([^&\s^"]+)/) || text.match(/f\.sid=([^&\s^"]+)/);
-    if (fsidMatch && fsidMatch[1]) {
-        newData.fSid = fsidMatch[1].replace(/\^/g, '');
-        foundCount++;
-    }
-
-    const atMatch = text.match(/[&?]at=([^&\s^"]+)/) || text.match(/at=([^&\s^"]+)/) || text.match(/"at":\s*"([^"]+)"/);
-    if (atMatch && atMatch[1]) {
-        try {
-            let atValue = atMatch[1].replace(/\^/g, '');
-            newData.atToken = decodeURIComponent(atValue);
-        } catch {
-            newData.atToken = atMatch[1].replace(/\^/g, '');
-        }
-        foundCount++;
-    }
-
-    // Try parsing UA
-    const uaMatch = text.match(/User-Agent:\s*(.+?)(?:\r?\n|$)/i) || text.match(/-A\s+"([^"]+)"/);
-    if (uaMatch && uaMatch[1]) {
-        newData.userAgent = uaMatch[1].trim();
-        foundCount++;
-    }
-
-    setFormData(newData);
-    
-    if (foundCount > 0) {
-      setParseStatus(`Đã tìm thấy ${foundCount} trường thông tin.`);
-    } else {
-      setParseStatus('Không tìm thấy dữ liệu hợp lệ.');
-    }
-  }, [rawInput, formData]);
-
-  const handlePresetChange = (index: string) => {
-    setSelectedPreset(index);
-    const preset = BROWSER_PRESETS[parseInt(index)];
-    if (preset) {
-      setFormData({
-        ...formData,
-        userAgent: preset.userAgent,
-        platform: preset.platform,
-        acceptLanguage: preset.acceptLanguage
-      });
-    }
-  };
+    return { secure1psid, secure1psidts };
+  }, []);
 
 
   const handleSave = async () => {
-    if (!formData.cookie || !formData.blLabel || !formData.fSid || !formData.atToken) {
-        alert('Vui lòng nhập đầy đủ 4 trường bắt buộc: Cookie, BL Label, F.SID, AT Token');
+    if (!formData.cookie.trim()) {
+        alert('Vui lòng nhập Cookie.');
+        return;
+    }
+    if (!extractSecureCookieTokens(formData.cookie)) {
+        alert('Cookie phải chứa đủ __Secure-1PSID và __Secure-1PSIDTS.');
         return;
     }
 
@@ -481,13 +374,9 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         const payload = { ...formData };
         // Clean strings
         payload.cookie = payload.cookie.replace(/\^/g, '').trim();
-        payload.blLabel = payload.blLabel.replace(/\^/g, '').trim();
-        payload.fSid = payload.fSid.replace(/\^/g, '').trim();
-        payload.atToken = payload.atToken.replace(/\^/g, '').trim();
 
         const duplicateCheck = await window.electronAPI.geminiChat.checkDuplicateToken({
           cookie: payload.cookie,
-          atToken: payload.atToken,
           excludeId: mode === 'edit' ? editingId || undefined : undefined
         });
 
@@ -498,7 +387,7 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
 
         if (duplicateCheck.data?.isDuplicate) {
           const duplicateName = duplicateCheck.data.duplicate?.name || 'tài khoản khác';
-          alert(`Phát hiện trùng lặp!\n\nThông tin "AT Token" bạn nhập đã tồn tại trong cấu hình: "${duplicateName}".\n\nHệ thống hiện tại chỉ dùng AT Token để phân biệt tài khoản. Vui lòng kiểm tra lại.`);
+          alert(`Phát hiện trùng cookie secure!\n\nTài khoản "${duplicateName}" đã có cùng __Secure-1PSID/__Secure-1PSIDTS.`);
           return;
         }
 
@@ -711,32 +600,9 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
           </div>
         </div>
 
-        {/* Auto Parse */}
-        <div className={styles.section}>
-             <div className={styles.row} style={{ display: 'block' }}>
-                <div className={styles.label} style={{ marginBottom: 8 }}>
-                  <span className={styles.labelText} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Clipboard size={18} /> Tự động phân tích
-                  </span>
-                  <span className={styles.labelDesc}>Dán headers/curl từ DevTools để tự động điền các trường bên dưới</span>
-                </div>
-                <textarea 
-                    value={rawInput}
-                    onChange={e => setRawInput(e.target.value)}
-                    rows={3}
-                    className="w-full p-3 rounded-lg border bg-(--bg-secondary) font-mono text-xs"
-                    placeholder="Paste curl or raw headers here..."
-                />
-                <div className="flex gap-4 items-center mt-2">
-                    <Button onClick={handleAutoParse} variant="primary" className="h-8 text-xs"><Sparkles size={14} className="mr-1"/> Phân tích</Button>
-                    {parseStatus && <span className="text-xs text-green-600">{parseStatus}</span>}
-                </div>
-             </div>
-        </div>
-
         {/* Core Auth Fields */}
         <div className={styles.section}>
-          <div className="p-4 border-b font-medium bg-(--color-surface)">Thông tin xác thực (Bắt buộc)</div>
+          <div className="p-4 border-b font-medium bg-(--color-surface)">Thông tin xác thực Cookie (Bắt buộc)</div>
           
           <div className={styles.row} style={{display:'block'}}>
              <div className="mb-1 font-medium text-sm flex items-center gap-2"><Cookie size={14} /> Cookie</div>
@@ -745,92 +611,12 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
                 onChange={e => setFormData({...formData, cookie: e.target.value})}
                 rows={2}
                 className="w-full p-2 rounded border bg-(--bg-secondary) font-mono text-xs"
-                placeholder="__Secure-1PSID=...; __Secure-3PSID=..."
+                placeholder="__Secure-1PSID=...; __Secure-1PSIDTS=..."
              />
+             <div className="mt-1 text-xs text-gray-500">
+               Hệ thống sẽ tự tách và lưu __Secure-1PSID + __Secure-1PSIDTS từ Cookie.
+             </div>
           </div>
-
-           <div className={styles.row}>
-             <div className="flex flex-col">
-                <span className="font-medium text-sm flex items-center gap-2"><Globe size={14} /> BL_LABEL</span>
-                <span className="text-xs text-gray-500">Từ URL parameter bl=...</span>
-             </div>
-             <Input value={formData.blLabel} onChange={e => setFormData({...formData, blLabel: e.target.value})} containerClassName="w-1/2" />
-          </div>
-
-          <div className={styles.row}>
-             <div className="flex flex-col">
-                <span className="font-medium text-sm flex items-center gap-2"><Hash size={14} /> F_SID</span>
-                <span className="text-xs text-gray-500">Từ URL parameter f.sid=...</span>
-             </div>
-             <Input value={formData.fSid} onChange={e => setFormData({...formData, fSid: e.target.value})} containerClassName="w-1/2" />
-          </div>
-
-          <div className={styles.row}>
-              <div className="flex flex-col">
-                <span className="font-medium text-sm flex items-center gap-2"><Shield size={14} /> AT_TOKEN</span>
-                <span className="text-xs text-gray-500">Từ Body parameter at=...</span>
-             </div>
-             <Input value={formData.atToken} onChange={e => setFormData({...formData, atToken: e.target.value})} containerClassName="w-1/2" />
-          </div>
-        </div>
-
-        {/* Browser Profile */}
-        <div className={styles.section}>
-           <div className="p-4 border-b font-medium bg-(--color-surface) flex items-center gap-2">
-              <Laptop size={16} /> Hồ sơ trình duyệt (Browser Profile)
-           </div>
-
-           {/* Preset Selection */}
-           <div className={styles.row}>
-             <div className="flex flex-col gap-1">
-                <span className="font-medium text-sm flex items-center gap-2">
-                  <Sparkles size={14} /> Chọn preset trình duyệt
-                </span>
-                <span className="text-xs text-gray-500">Chọn preset sẽ tự động điền thông tin bên dưới</span>
-             </div>
-             <select 
-                value={selectedPreset}
-                onChange={e => handlePresetChange(e.target.value)}
-                className={styles.select}
-             >
-                {BROWSER_PRESETS.map((preset, idx) => (
-                  <option key={idx} value={idx}>{preset.label}</option>
-                ))}
-             </select>
-           </div>
-
-           <div className={styles.row}>
-             <div className="flex flex-col gap-1">
-                <span className="font-medium text-sm">Platform / OS</span>
-                <span className="text-xs text-gray-500">Hệ điều hành giả lập</span>
-             </div>
-             <select 
-                value={formData.platform}
-                onChange={e => setFormData({...formData, platform: e.target.value})}
-                className={styles.select}
-             >
-                <option value="Windows">Windows</option>
-                <option value="macOS">macOS</option>
-                <option value="Linux">Linux</option>
-                <option value="Android">Android</option>
-                <option value="iOS">iOS</option>
-             </select>
-           </div>
-
-           <div className={styles.row} style={{display:'block'}}>
-             <div className="mb-2 font-medium text-sm">User Agent</div>
-             <textarea 
-                value={formData.userAgent}
-                onChange={e => setFormData({...formData, userAgent: e.target.value})}
-                rows={2}
-                className="w-full p-2 rounded border bg-(--bg-secondary) font-mono text-xs"
-             />
-           </div>
-
-           <div className={styles.row} style={{display:'block'}}>
-             <div className="mb-2 font-medium text-sm">Accept-Language</div>
-             <Input value={formData.acceptLanguage} onChange={e => setFormData({...formData, acceptLanguage: e.target.value})} />
-           </div>
         </div>
 
         {/* Footer Actions */}

@@ -125,14 +125,29 @@ export class GeminiChatServiceClass {
         }
     }
 
-    private buildTokenKey(_cookie: string, atToken: string): string {
-        // User update: Do not compare cookie column because Google stores multiple accounts in one cookie.
-        // Use atToken as the unique identifier.
-        return (atToken || '').trim();
+    private extractSecureCookieTokens(cookie: string): { secure1psid: string; secure1psidts: string } | null {
+        const normalized = (cookie || '').trim();
+        if (!normalized) {
+            return null;
+        }
+        const secure1psid = normalized.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
+        const secure1psidts = normalized.match(/__Secure-1PSIDTS=([^;\s]+)/)?.[1] || '';
+        if (!secure1psid || !secure1psidts) {
+            return null;
+        }
+        return { secure1psid, secure1psidts };
+    }
+
+    private buildTokenKey(cookie: string): string {
+        const secureTokens = this.extractSecureCookieTokens(cookie);
+        if (!secureTokens) {
+            return '';
+        }
+        return `${secureTokens.secure1psid}|${secureTokens.secure1psidts}`;
     }
 
     private getTokenKey(config: GeminiChatConfig): string {
-        return this.buildTokenKey(config.cookie || '', config.atToken || '') || config.id;
+        return this.buildTokenKey(config.cookie || '') || config.id;
     }
     
     
@@ -309,10 +324,8 @@ export class GeminiChatServiceClass {
         };
     }
 
-    checkDuplicateToken(cookie: string, atToken: string, excludeId?: string): { isDuplicate: boolean; duplicate?: GeminiChatConfig } {
-        const tokenKey = this.buildTokenKey(cookie || '', atToken || '');
-        // console.log(`[DEBUG] Check Duplicate - Input Key: '${tokenKey}', Exclude: ${excludeId}`);
-
+    checkDuplicateToken(cookie: string, excludeId?: string): { isDuplicate: boolean; duplicate?: GeminiChatConfig } {
+        const tokenKey = this.buildTokenKey(cookie || '');
         if (!tokenKey) {
             return { isDuplicate: false };
         }
@@ -320,14 +333,8 @@ export class GeminiChatServiceClass {
         const configs = this.getAll();
         for (const config of configs) {
             if (excludeId && config.id === excludeId) continue;
-            // Use same logic to build key for comparison
-            const configKey = this.buildTokenKey(config.cookie || '', config.atToken || '');
-
-            // console.log(`[DEBUG] Comparing with '${config.name}': '${configKey}'`);
-
-            // Check for match
+            const configKey = this.buildTokenKey(config.cookie || '');
             if (configKey && configKey === tokenKey) {
-                console.log(`[DEBUG] FOUND DUPLICATE: Input '${tokenKey}' == Config '${configKey}' (Name: ${config.name})`);
                 return { isDuplicate: true, duplicate: config };
             }
         }
@@ -729,25 +736,25 @@ export class GeminiChatServiceClass {
     const db = getDatabase();
     const now = Date.now();
     const id = uuidv4();
+    const normalizedCookie = (data.cookie || '').trim();
+    const secureTokens = this.extractSecureCookieTokens(normalizedCookie);
+    if (!secureTokens) {
+        throw new Error('Cookie must contain __Secure-1PSID and __Secure-1PSIDTS');
+    }
 
     // Deactivate cau hinh cu neu dang tao cau hinh moi
     try {
-        
-        // Auto-assign random browser profile if not provided
-        const profile = getRandomBrowserProfile();
-        console.log('[GeminiChatService] Creating config with profile:', data.userAgent ? 'Custom' : profile.platform);
-
         db.prepare(`
         INSERT INTO gemini_chat_config (
             id, name, cookie, bl_label, f_sid, at_token, proxy_id,
             conv_id, resp_id, cand_id, req_id, 
-            user_agent, accept_language, platform,
+            user_agent, accept_language, platform, "__Secure-1PSID", "__Secure-1PSIDTS",
             is_active, is_error, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
         `).run(
         id,
         data.name || 'default',
-        data.cookie,
+        normalizedCookie,
         data.blLabel || '',
         data.fSid || '',
         data.atToken || '',
@@ -756,9 +763,11 @@ export class GeminiChatServiceClass {
         data.respId || '',
         data.candId || '',
         data.reqId || generateInitialReqId(),
-        data.userAgent || profile.userAgent,
+        data.userAgent || null,
         data.acceptLanguage || null,
-        data.platform || profile.platform,
+        data.platform || null,
+        secureTokens.secure1psid,
+        secureTokens.secure1psidts,
         now,
         now
         );
@@ -787,10 +796,19 @@ export class GeminiChatServiceClass {
 
     if (data.name !== undefined) { updates.push('name = @name'); params.name = data.name; }
     
-    if (data.cookie !== undefined) { updates.push('cookie = @cookie'); params.cookie = data.cookie; }
-    if (data.blLabel !== undefined) { updates.push('bl_label = @blLabel'); params.blLabel = data.blLabel; }
-    if (data.fSid !== undefined) { updates.push('f_sid = @fSid'); params.fSid = data.fSid; }
-    if (data.atToken !== undefined) { updates.push('at_token = @atToken'); params.atToken = data.atToken; }
+    if (data.cookie !== undefined) {
+      const normalizedCookie = (data.cookie || '').trim();
+      const secureTokens = this.extractSecureCookieTokens(normalizedCookie);
+      if (!secureTokens) {
+        throw new Error('Cookie must contain __Secure-1PSID and __Secure-1PSIDTS');
+      }
+      updates.push('cookie = @cookie');
+      updates.push('"__Secure-1PSID" = @secure1psid');
+      updates.push('"__Secure-1PSIDTS" = @secure1psidts');
+      params.cookie = normalizedCookie;
+      params.secure1psid = secureTokens.secure1psid;
+      params.secure1psidts = secureTokens.secure1psidts;
+    }
     if (data.proxyId !== undefined) { updates.push('proxy_id = @proxyId'); params.proxyId = data.proxyId; }
     if (data.convId !== undefined) { updates.push('conv_id = @convId'); params.convId = data.convId; }
     if (data.respId !== undefined) { updates.push('resp_id = @respId'); params.respId = data.respId; }
@@ -850,6 +868,8 @@ export class GeminiChatServiceClass {
       blLabel: row.bl_label,
       fSid: row.f_sid,
       atToken: row.at_token,
+      secure1psid: row['__Secure-1PSID'] || undefined,
+      secure1psidts: row['__Secure-1PSIDTS'] || undefined,
     proxyId: row.proxy_id || undefined,
       convId: row.conv_id,
       respId: row.resp_id,
@@ -916,7 +936,14 @@ export class GeminiChatServiceClass {
       metadata?: any,
       onRetry?: (attempt: number, maxRetries: number) => void
   ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string; metadata?: any; retryable?: boolean }> {
-      
+        return {
+            success: false,
+            error: 'IMPIT mode is disabled. GeminiChat now uses cookie-only accounts.',
+            configId: configId || undefined,
+            metadata,
+            retryable: false,
+        };
+
         // 1. Resolve Config
         let config: GeminiChatConfig | null = null;
         if (configId) {

@@ -1822,6 +1822,179 @@
   background: var(--color-card);
 }
 
+.step3BatchPane {
+  display: grid;
+  gap: 10px;
+}
+
+.step3BatchSummaryGrid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.step3BatchStatCard {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 4px;
+}
+
+.step3BatchStatLabel {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.step3BatchStatValue {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.step3BatchProgressBar {
+  margin-top: 8px;
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-border) 70%, transparent);
+  overflow: hidden;
+}
+
+.step3BatchProgressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent, #4a9eff) 85%, #1f6fe0), var(--color-accent, #4a9eff));
+  transition: width 0.2s ease;
+}
+
+.step3BatchMetaRow {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.step3BatchMetaMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.step3BatchTableHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.step3BatchList {
+  display: grid;
+  gap: 8px;
+  max-height: 330px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.step3BatchRow {
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--color-surface);
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.step3BatchColMain,
+.step3BatchColStatus,
+.step3BatchColTime {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.step3BatchTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.step3BatchSub {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step3BatchStatusPill {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.step3BatchStatusSuccess {
+  color: var(--color-success, #22c55e);
+  border-color: color-mix(in srgb, var(--color-success, #22c55e) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent);
+}
+
+.step3BatchStatusFailed {
+  color: var(--color-error, #ef4444);
+  border-color: color-mix(in srgb, var(--color-error, #ef4444) 52%, var(--color-border));
+  background: color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent);
+}
+
+.step3BatchStatusRunning {
+  color: var(--color-accent, #4a9eff);
+  border-color: color-mix(in srgb, var(--color-accent, #4a9eff) 60%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 15%, transparent);
+}
+
+.step3BatchStatusWaiting {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+  background: transparent;
+}
+
+.step3BatchTime {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.step3BatchErrorRow {
+  grid-column: 1 / -1;
+  padding-top: 4px;
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 80%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--color-error, #ef4444);
+  flex-wrap: wrap;
+}
+
 .stepDataDrawerBackdrop {
   position: fixed;
   inset: 0;

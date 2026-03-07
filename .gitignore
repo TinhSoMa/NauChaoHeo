@@ -36,3 +36,7 @@ test/*
 .agents/*
 dist/*
 build/*
+browser_cookie3.md
+.gitignore
+HackBrowserData.md
+geminicookie.md
