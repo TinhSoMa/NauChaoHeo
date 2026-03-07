@@ -7,9 +7,9 @@ export function useProjectOpen() {
   }, [])
 
   const createAndOpenProject = useCallback(
-    async (payload: { projectId?: string; id?: string }) => {
-      console.log('[UI] Đang yêu cầu tạo và mở project:', payload?.projectId ?? payload?.id)
-      return window.electronAPI.project.createAndOpen(payload)
+    async (projectName: string) => {
+      console.log('[UI] Đang yêu cầu tạo và mở project:', projectName)
+      return window.electronAPI.project.createAndOpen(projectName)
     },
     []
   )

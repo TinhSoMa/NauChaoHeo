@@ -14,12 +14,8 @@ import {
   ArrowLeft,
   Plus,
   Trash2,
-  Check,
-  X,
-  Monitor,
   Laptop,
   Clipboard,
-  AlertTriangle,
   RefreshCw
 } from 'lucide-react';
 import { Button } from '../common/Button';

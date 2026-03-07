@@ -11,7 +11,6 @@ import { Button } from '../common/Button';
 import type {
   GeminiChatConfig,
   LiveTokenStats,
-  ProxyInfo,
   TokenStats
 } from './GeminiChatSettings.shared';
 import { formatDateTime } from './GeminiChatSettings.shared';
