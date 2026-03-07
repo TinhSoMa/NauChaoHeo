@@ -1446,32 +1446,31 @@ export function CaptionTranslator() {
   ): Promise<boolean> => {
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
     if (!inputPaths.length) return false;
-    if (thumbnailSessionHydratedKeyRef.current !== thumbnailSessionHydrationKey) return false;
+    const isHydrated = thumbnailSessionHydratedKeyRef.current === thumbnailSessionHydrationKey;
+    const isManualPersist = !!overrides;
+    if (!isHydrated && !isManualPersist) return false;
 
     const multiFolderTexts = overrides?.thumbnailTextsByOrder ?? hardsubSettings.thumbnailTextsByOrder;
     const multiFolderSecondaryTexts = overrides?.thumbnailTextsSecondaryByOrder ?? hardsubSettings.thumbnailTextsSecondaryByOrder;
     const multiFolderSecondaryFlags = overrides?.thumbnailTextSecondaryOverrideFlags ?? hardsubSettings.thumbnailTextSecondaryOverrideFlags;
 
     if (inputPaths.length > 1) {
-      if (
-        multiFolderTexts.length !== inputPaths.length
-        || multiFolderSecondaryTexts.length !== inputPaths.length
-        || multiFolderSecondaryFlags.length !== inputPaths.length
-      ) {
-        console.warn('[CaptionTranslator] Bỏ qua lưu thumbnail text theo folder do dữ liệu chưa đồng bộ độ dài', {
-          folderCount: inputPaths.length,
-          text1Count: multiFolderTexts.length,
-          text2Count: multiFolderSecondaryTexts.length,
-          text2FlagCount: multiFolderSecondaryFlags.length,
-        });
-        return false;
-      }
+      const secondaryGlobalFallback = (
+        overrides?.thumbnailTextSecondaryGlobal
+        ?? settings.thumbnailTextSecondary
+        ?? ''
+      );
+      const normalizedTexts = inputPaths.map((_, idx) => String(multiFolderTexts[idx] || '').trim());
+      const normalizedSecondaryTexts = inputPaths.map((_, idx) => (
+        String(multiFolderSecondaryTexts[idx] ?? secondaryGlobalFallback).trim()
+      ));
+      const normalizedSecondaryFlags = inputPaths.map((_, idx) => !!multiFolderSecondaryFlags[idx]);
 
       for (let i = 0; i < inputPaths.length; i++) {
         const inputPath = inputPaths[i];
-        const text = (multiFolderTexts[i] || '').trim();
-        const secondaryText = (multiFolderSecondaryTexts[i] || '').trim();
-        const secondarySource = multiFolderSecondaryFlags[i] ? 'override' : 'global';
+        const text = normalizedTexts[i];
+        const secondaryText = normalizedSecondaryTexts[i];
+        const secondarySource = normalizedSecondaryFlags[i] ? 'override' : 'global';
         const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
         await updateCaptionSession(
           sessionPath,
@@ -2164,8 +2163,6 @@ export function CaptionTranslator() {
       ? `Nguồn: ${getPathBaseName(thumbnailPreviewFolderPathResolved)}`
       : 'Nguồn: folder hiện tại')
     : 'Nguồn: file hiện tại';
-  const isThumbnailSessionHydrated = thumbnailSessionHydratedKeyRef.current === thumbnailSessionHydrationKey;
-
   const handleThumbnailPreviewTextChange = useCallback((value: string) => {
     if (isMultiFolder) {
       if (thumbnailPreviewFolderIndex < 0) {
@@ -5266,7 +5263,7 @@ export function CaptionTranslator() {
               onManualSaveTexts={handleManualSaveThumbnailTexts}
               manualSaveState={thumbnailManualSaveState}
               manualSaveMessage={thumbnailManualSaveMessage}
-              manualSaveDisabled={!isThumbnailSessionHydrated}
+              manualSaveDisabled={false}
               showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
               dependencyWarning={step7DependencyWarning}
             />
