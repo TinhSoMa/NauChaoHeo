@@ -226,7 +226,122 @@ function escapeFilterPath(p: string): string {
 }
 
 function normalizeName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function isSubsequenceMatch(needle: string, haystack: string): boolean {
+  if (!needle || !haystack) {
+    return false;
+  }
+  if (needle.length > haystack.length) {
+    return false;
+  }
+  let i = 0;
+  for (let j = 0; j < haystack.length && i < needle.length; j++) {
+    if (haystack[j] === needle[i]) {
+      i += 1;
+    }
+  }
+  return i === needle.length;
+}
+
+function decodeUtf16Be(input: Buffer): string {
+  if (input.length < 2) {
+    return '';
+  }
+  const le = Buffer.allocUnsafe(input.length);
+  for (let i = 0; i + 1 < input.length; i += 2) {
+    le[i] = input[i + 1];
+    le[i + 1] = input[i];
+  }
+  return le.toString('utf16le').replace(/\u0000/g, '').trim();
+}
+
+async function extractFontFamilyName(fontPath: string): Promise<string | null> {
+  try {
+    const buffer = await fs.readFile(fontPath);
+    if (buffer.length < 12) {
+      return null;
+    }
+
+    const numTables = buffer.readUInt16BE(4);
+    let nameTableOffset = -1;
+    let nameTableLength = 0;
+    let recordOffset = 12;
+
+    for (let i = 0; i < numTables; i++) {
+      const tag = buffer.toString('ascii', recordOffset, recordOffset + 4);
+      const tableOffset = buffer.readUInt32BE(recordOffset + 8);
+      const tableLength = buffer.readUInt32BE(recordOffset + 12);
+      if (tag === 'name') {
+        nameTableOffset = tableOffset;
+        nameTableLength = tableLength;
+        break;
+      }
+      recordOffset += 16;
+    }
+
+    if (nameTableOffset < 0 || nameTableLength <= 0) {
+      return null;
+    }
+
+    const count = buffer.readUInt16BE(nameTableOffset + 2);
+    const stringOffset = buffer.readUInt16BE(nameTableOffset + 4);
+    const recordsStart = nameTableOffset + 6;
+    const stringsStart = nameTableOffset + stringOffset;
+
+    const candidates: string[] = [];
+    const fallback: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const rec = recordsStart + i * 12;
+      const platformId = buffer.readUInt16BE(rec);
+      const encodingId = buffer.readUInt16BE(rec + 2);
+      const languageId = buffer.readUInt16BE(rec + 4);
+      const nameId = buffer.readUInt16BE(rec + 6);
+      const length = buffer.readUInt16BE(rec + 8);
+      const offset = buffer.readUInt16BE(rec + 10);
+
+      if (nameId !== 1 || length <= 0) {
+        continue;
+      }
+
+      const start = stringsStart + offset;
+      const end = start + length;
+      if (start < 0 || end > buffer.length) {
+        continue;
+      }
+
+      const raw = buffer.subarray(start, end);
+      let decoded = '';
+      if (platformId === 3) {
+        decoded = decodeUtf16Be(raw);
+      } else if (platformId === 1 || encodingId === 0) {
+        decoded = raw.toString('latin1').replace(/\u0000/g, '').trim();
+      } else {
+        decoded = raw.toString('utf8').replace(/\u0000/g, '').trim();
+      }
+
+      if (!decoded) {
+        continue;
+      }
+
+      if (platformId === 3 && languageId === 0x0409) {
+        candidates.push(decoded);
+      } else {
+        fallback.push(decoded);
+      }
+    }
+
+    return candidates[0] || fallback[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 function isSupportedFontFile(fileName: string): boolean {
@@ -261,23 +376,63 @@ async function resolveThumbnailFontPath(fontName?: string): Promise<string | nul
   try {
     const files = await fs.readdir(fontsDir);
     const fontFiles = files.filter((file) => isSupportedFontFile(file));
+    const fontEntries = fontFiles.map((file) => ({
+      file,
+      baseNormalized: normalizeName(path.parse(file).name),
+    }));
 
-    const exact = fontFiles.find((file) => normalizeName(path.parse(file).name) === requestedNormalized);
+    const exact = fontEntries.find((entry) => entry.baseNormalized === requestedNormalized);
     if (exact) {
-      return path.join(fontsDir, exact);
+      return path.join(fontsDir, exact.file);
     }
 
-    const close = fontFiles.find((file) => {
-      const base = normalizeName(path.parse(file).name);
+    const close = fontEntries.find((entry) => {
+      const base = entry.baseNormalized;
       return base.includes(requestedNormalized) || requestedNormalized.includes(base);
     });
     if (close) {
-      return path.join(fontsDir, close);
+      return path.join(fontsDir, close.file);
     }
 
-    const fallback = fontFiles.find((file) => normalizeName(path.parse(file).name) === 'brightwallpersonal')
-      || fontFiles[0];
-    return fallback ? path.join(fontsDir, fallback) : null;
+    const subsequence = fontEntries.find((entry) => (
+      isSubsequenceMatch(requestedNormalized, entry.baseNormalized)
+      || isSubsequenceMatch(entry.baseNormalized, requestedNormalized)
+    ));
+    if (subsequence) {
+      return path.join(fontsDir, subsequence.file);
+    }
+
+    const familyEntries = await Promise.all(fontEntries.map(async (entry) => {
+      const family = await extractFontFamilyName(path.join(fontsDir, entry.file));
+      return {
+        ...entry,
+        familyNormalized: family ? normalizeName(family) : '',
+      };
+    }));
+
+    const exactFamily = familyEntries.find((entry) => (
+      entry.familyNormalized.length > 0 && entry.familyNormalized === requestedNormalized
+    ));
+    if (exactFamily) {
+      return path.join(fontsDir, exactFamily.file);
+    }
+
+    const closeFamily = familyEntries.find((entry) => (
+      entry.familyNormalized.length > 0
+      && (
+        entry.familyNormalized.includes(requestedNormalized)
+        || requestedNormalized.includes(entry.familyNormalized)
+        || isSubsequenceMatch(requestedNormalized, entry.familyNormalized)
+        || isSubsequenceMatch(entry.familyNormalized, requestedNormalized)
+      )
+    ));
+    if (closeFamily) {
+      return path.join(fontsDir, closeFamily.file);
+    }
+
+    const fallback = fontEntries.find((entry) => entry.baseNormalized === 'brightwallpersonal')
+      || fontEntries[0];
+    return fallback ? path.join(fontsDir, fallback.file) : null;
   } catch {
     return null;
   }
