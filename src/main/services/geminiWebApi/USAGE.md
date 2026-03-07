@@ -33,6 +33,7 @@ console.log('health', health);
 
 const result = await service.generateContent({
   prompt: 'xin chao',
+  accountConfigId: 'acc-default',
   forceCookieRefresh: false,
   timeoutMs: 90000,
 });

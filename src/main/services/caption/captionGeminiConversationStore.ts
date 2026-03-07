@@ -8,7 +8,7 @@ export interface CaptionGeminiConversationScope {
   accountConfigId: string;
 }
 
-export type CaptionGeminiConversationMetadata = Record<string, unknown>;
+export type CaptionGeminiConversationMetadata = Record<string, unknown> | unknown[];
 
 function normalizeProjectId(projectId?: string | null): string {
   const trimmed = (projectId || '').trim();
@@ -29,6 +29,13 @@ function normalizeSourcePath(sourcePath?: string | null): string {
 
 function buildSourcePathHash(normalizedSourcePath: string): string {
   return crypto.createHash('sha256').update(normalizedSourcePath).digest('hex');
+}
+
+export function buildConversationKey(scope: Pick<CaptionGeminiConversationScope, 'projectId' | 'sourcePath'>): string {
+  const projectId = normalizeProjectId(scope.projectId);
+  const sourcePath = normalizeSourcePath(scope.sourcePath);
+  const sourcePathHash = buildSourcePathHash(sourcePath);
+  return `caption:${projectId}:${sourcePathHash}`;
 }
 
 function buildScope(scope: CaptionGeminiConversationScope): {
@@ -76,7 +83,7 @@ export function getConversation(
     }
 
     const parsed = JSON.parse(row.conversation_metadata_json);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (!parsed || typeof parsed !== 'object') {
       return null;
     }
     return parsed as CaptionGeminiConversationMetadata;
@@ -90,7 +97,7 @@ export function upsertConversation(
   scope: CaptionGeminiConversationScope,
   metadata: CaptionGeminiConversationMetadata | null | undefined
 ): void {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+  if (!metadata || typeof metadata !== 'object') {
     return;
   }
 
@@ -171,4 +178,3 @@ export function clearConversation(
     return 0;
   }
 }
-

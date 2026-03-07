@@ -10,7 +10,7 @@ export type GeminiErrorCode =
   | 'GEMINI_REQUEST_FAILED'
   | 'GEMINI_TIMEOUT';
 
-export type GeminiConversationMetadata = Record<string, unknown>;
+export type GeminiConversationMetadata = Record<string, unknown> | unknown[];
 
 export interface GeminiGenerateRequest {
   prompt: string;
@@ -18,7 +18,7 @@ export interface GeminiGenerateRequest {
   timeoutMs?: number;
   forceCookieRefresh?: boolean;
   browserPriority?: GeminiBrowserType[];
-  accountConfigId?: string;
+  accountConfigId: string;
   conversationMetadata?: GeminiConversationMetadata | null;
   conversationKey?: string;
   resetConversation?: boolean;
@@ -35,6 +35,8 @@ export interface GeminiGenerateResult {
   refreshed: boolean;
   conversationKey?: string;
   conversationMetadata?: GeminiConversationMetadata | null;
+  conversationMetadataReason?: string;
+  conversationMetadataDebug?: Record<string, unknown> | null;
   conversationContinued?: boolean;
 }
 

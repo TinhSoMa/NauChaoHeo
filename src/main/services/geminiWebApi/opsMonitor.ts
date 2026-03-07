@@ -178,6 +178,7 @@ class GeminiWebApiOpsMonitor {
     refreshed: boolean;
     errorCode?: GeminiErrorCode;
     error?: string;
+    metadata?: Record<string, unknown>;
   }): void {
     const runtime = this.getOrCreateAccountRuntime(input.accountConfigId);
     this.appendLog({
@@ -192,7 +193,8 @@ class GeminiWebApiOpsMonitor {
       error: input.error,
       metadata: {
         cookieSource: input.cookieSource,
-        refreshed: input.refreshed
+        refreshed: input.refreshed,
+        ...(input.metadata || {})
       }
     });
   }

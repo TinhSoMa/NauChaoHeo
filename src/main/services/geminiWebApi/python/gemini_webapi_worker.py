@@ -36,6 +36,62 @@ def _parse_browser_priority(value: Any) -> Tuple[str, ...]:
     return ("chrome", "edge")
 
 
+def _to_json_safe(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        return None
+
+
+def _normalize_conversation_metadata(value: Any) -> Tuple[Any | None, str | None, Dict[str, Any] | None]:
+    debug_info: Dict[str, Any] = {
+        "rawType": type(value).__name__ if value is not None else "NoneType",
+    }
+
+    if value is None:
+        return None, "chat.metadata is None", debug_info
+
+    candidates = [("raw", value)]
+
+    to_dict_fn = getattr(value, "to_dict", None)
+    if callable(to_dict_fn):
+        try:
+            candidates.append(("to_dict", to_dict_fn()))
+        except Exception as exc:
+            debug_info["toDictError"] = _safe_error(exc)
+            return None, f"chat.metadata.to_dict() failed: {_safe_error(exc)}", debug_info
+
+    dict_fn = getattr(value, "dict", None)
+    if callable(dict_fn):
+        try:
+            candidates.append(("dict", dict_fn()))
+        except Exception:
+            debug_info["dictMethodFailed"] = True
+
+    dict_attr = getattr(value, "__dict__", None)
+    if isinstance(dict_attr, dict):
+        candidates.append(("__dict__", dict_attr))
+
+    candidate_types = []
+    for source_name, candidate in candidates:
+        candidate_types.append(f"{source_name}:{type(candidate).__name__}")
+        safe_value = _to_json_safe(candidate)
+        if isinstance(safe_value, (dict, list)):
+            debug_info["resolvedFrom"] = source_name
+            if isinstance(safe_value, dict):
+                debug_info["resolvedKind"] = "dict"
+                debug_info["resolvedKeys"] = list(safe_value.keys())[:12]
+            else:
+                debug_info["resolvedKind"] = "list"
+                debug_info["resolvedLength"] = len(safe_value)
+            return safe_value, None, debug_info
+
+    debug_info["candidateTypes"] = candidate_types
+    if isinstance(value, (list, tuple)):
+        debug_info["rawLength"] = len(value)
+    return None, f"Unsupported chat.metadata type={type(value).__name__}", debug_info
+
+
 async def _close_client(client: Any) -> None:
     close_fn = getattr(client, "close", None)
     if callable(close_fn):
@@ -123,7 +179,7 @@ async def _cmd_generate(payload: Dict[str, Any]) -> Dict[str, Any]:
     temporary = bool(payload.get("temporary"))
     use_chat_session = bool(payload.get("useChatSession"))
     conversation_metadata = payload.get("conversationMetadata")
-    if not isinstance(conversation_metadata, dict):
+    if not isinstance(conversation_metadata, (dict, list)):
         conversation_metadata = None
 
     if not secure_1psid or not secure_1psidts:
@@ -171,15 +227,18 @@ async def _cmd_generate(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         text = (getattr(result, "text", "") or "").strip()
         chat_metadata = None
+        chat_metadata_reason = None
+        chat_metadata_debug = None
         if use_chat_session or conversation_metadata is not None:
             metadata_obj = getattr(chat, "metadata", None)
-            if isinstance(metadata_obj, dict):
-                chat_metadata = metadata_obj
+            chat_metadata, chat_metadata_reason, chat_metadata_debug = _normalize_conversation_metadata(metadata_obj)
         return {
             "success": True,
             "data": {
                 "text": text,
                 "conversationMetadata": chat_metadata,
+                "conversationMetadataReason": chat_metadata_reason,
+                "conversationMetadataDebug": chat_metadata_debug,
             },
         }
     except asyncio.TimeoutError:

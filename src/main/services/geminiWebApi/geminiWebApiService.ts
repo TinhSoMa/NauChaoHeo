@@ -27,6 +27,8 @@ interface WorkerRefreshPayload {
 interface WorkerGeneratePayload {
   text: string | null;
   conversationMetadata?: GeminiConversationMetadata | null;
+  conversationMetadataReason?: string;
+  conversationMetadataDebug?: Record<string, unknown> | null;
 }
 
 export class GeminiWebApiService {
@@ -201,6 +203,17 @@ export class GeminiWebApiService {
   }
 
   async generateContent(request: GeminiGenerateRequest): Promise<GeminiGenerateResult> {
+    const accountConfigId = (request.accountConfigId || '').trim();
+    if (!accountConfigId) {
+      return {
+        success: false,
+        errorCode: 'GEMINI_REQUEST_FAILED',
+        error: 'accountConfigId is required',
+        cookieSource: 'none',
+        refreshed: false,
+      };
+    }
+
     const prompt = (request.prompt || '').trim();
     if (!prompt) {
       return {
@@ -213,7 +226,10 @@ export class GeminiWebApiService {
     }
 
     const timeoutMs = request.timeoutMs ?? 90000;
-    const conversationStoreKey = this.buildConversationStoreKey(request);
+    const conversationStoreKey = this.buildConversationStoreKey({
+      accountConfigId,
+      conversationKey: request.conversationKey,
+    });
     let inputConversationMetadata = this.toConversationMetadata(request.conversationMetadata);
     const useChatSession = request.useChatSession || !!conversationStoreKey || !!inputConversationMetadata;
     if (conversationStoreKey && request.resetConversation) {
@@ -229,7 +245,7 @@ export class GeminiWebApiService {
       conversationContinued = !!inputConversationMetadata;
     }
 
-    let resolved = this.cookieStore.resolveStoredCookie(request.accountConfigId);
+    let resolved = this.cookieStore.resolveStoredCookie(accountConfigId);
     let secure1psid = resolved.secure1psid || null;
     let secure1psidts = resolved.secure1psidts || null;
     let refreshed = false;
@@ -237,7 +253,7 @@ export class GeminiWebApiService {
     if (request.forceCookieRefresh || !secure1psid || !secure1psidts) {
       const refresh = await this.refreshCookieFromBrowser({
         browserPriority: request.browserPriority,
-        accountConfigId: request.accountConfigId,
+        accountConfigId,
       });
 
       if (!refresh.success) {
@@ -250,7 +266,7 @@ export class GeminiWebApiService {
         };
         getGeminiWebApiOpsMonitor().recordRequestResult({
           success: false,
-          accountConfigId: request.accountConfigId,
+          accountConfigId,
           cookieSource: failed.cookieSource,
           refreshed: failed.refreshed,
           errorCode: failed.errorCode,
@@ -260,7 +276,7 @@ export class GeminiWebApiService {
       }
 
       refreshed = true;
-      resolved = this.cookieStore.resolveStoredCookie(request.accountConfigId);
+      resolved = this.cookieStore.resolveStoredCookie(accountConfigId);
       secure1psid = resolved.secure1psid || null;
       secure1psidts = resolved.secure1psidts || null;
     }
@@ -275,7 +291,7 @@ export class GeminiWebApiService {
       };
       getGeminiWebApiOpsMonitor().recordRequestResult({
         success: false,
-        accountConfigId: request.accountConfigId,
+        accountConfigId,
         cookieSource: failed.cookieSource,
         refreshed: failed.refreshed,
         errorCode: failed.errorCode,
@@ -311,7 +327,7 @@ export class GeminiWebApiService {
       };
       getGeminiWebApiOpsMonitor().recordRequestResult({
         success: false,
-        accountConfigId: request.accountConfigId,
+        accountConfigId,
         cookieSource: failed.cookieSource,
         refreshed: failed.refreshed,
         errorCode: failed.errorCode,
@@ -330,7 +346,7 @@ export class GeminiWebApiService {
       };
       getGeminiWebApiOpsMonitor().recordRequestResult({
         success: false,
-        accountConfigId: request.accountConfigId,
+        accountConfigId,
         cookieSource: failed.cookieSource,
         refreshed: failed.refreshed,
         errorCode: failed.errorCode,
@@ -340,8 +356,23 @@ export class GeminiWebApiService {
     }
 
     const outputConversationMetadata = this.toConversationMetadata(response.data?.conversationMetadata);
+    const conversationMetadataReason = response.data?.conversationMetadataReason;
+    const conversationMetadataDebug = response.data?.conversationMetadataDebug || null;
     if (conversationStoreKey && outputConversationMetadata && useChatSession) {
       this.conversationMetadataByKey.set(conversationStoreKey, outputConversationMetadata);
+    }
+
+    if (useChatSession) {
+      const conversationState = conversationContinued ? 'reused' : 'created_new';
+      const conversationTraceId = this.extractConversationTraceId(outputConversationMetadata || inputConversationMetadata);
+      console.log(
+        `[GeminiWebApiService] Chat session accountConfigId=${accountConfigId} state=${conversationState} conversationId=${conversationTraceId} key=${request.conversationKey || '(none)'}`
+      );
+      if (!outputConversationMetadata) {
+        console.warn(
+          `[GeminiWebApiService] Missing conversation metadata accountConfigId=${accountConfigId} key=${request.conversationKey || '(none)'} reason=${conversationMetadataReason || 'unknown'} textLen=${(response.data?.text || '').length} debug=${JSON.stringify(conversationMetadataDebug || {})}`
+        );
+      }
     }
 
     const successResult: GeminiGenerateResult = {
@@ -351,13 +382,23 @@ export class GeminiWebApiService {
       refreshed,
       conversationKey: request.conversationKey,
       conversationMetadata: outputConversationMetadata,
+      conversationMetadataReason,
+      conversationMetadataDebug,
       conversationContinued,
     };
     getGeminiWebApiOpsMonitor().recordRequestResult({
       success: true,
-      accountConfigId: request.accountConfigId,
+      accountConfigId,
       cookieSource: successResult.cookieSource,
-      refreshed: successResult.refreshed
+      refreshed: successResult.refreshed,
+      metadata: {
+        conversationKey: request.conversationKey || null,
+        conversationContinued,
+        conversationTraceId: this.extractConversationTraceId(outputConversationMetadata || inputConversationMetadata),
+        conversationMetadataReason: conversationMetadataReason || null,
+        conversationMetadataDebug: conversationMetadataDebug || null,
+        responseTextLength: (successResult.text || '').length,
+      },
     });
     return successResult;
   }
@@ -399,17 +440,45 @@ export class GeminiWebApiService {
     }
   }
 
-  private buildConversationStoreKey(request: GeminiGenerateRequest): string | null {
+  private buildConversationStoreKey(request: {
+    accountConfigId: string;
+    conversationKey?: string;
+  }): string | null {
     const conversationKey = request.conversationKey?.trim();
     if (!conversationKey) {
       return null;
     }
-    const accountConfigId = request.accountConfigId?.trim() || 'default';
+    const accountConfigId = request.accountConfigId.trim();
+    if (!accountConfigId) {
+      return null;
+    }
     return `${accountConfigId}::${conversationKey}`;
   }
 
+  private extractConversationTraceId(metadata: GeminiConversationMetadata | null): string {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return 'unknown';
+    }
+    const candidates = [
+      metadata.conversationId,
+      metadata.conversation_id,
+      metadata.chatId,
+      metadata.chat_id,
+      metadata.id,
+    ];
+    const raw = candidates.find((item) => typeof item === 'string' && item.trim().length > 0);
+    if (!raw || typeof raw !== 'string') {
+      return 'unknown';
+    }
+    const trimmed = raw.trim();
+    if (trimmed.length <= 12) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
+  }
+
   private toConversationMetadata(value: unknown): GeminiConversationMetadata | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    if (!value || typeof value !== 'object') {
       return null;
     }
     return value as GeminiConversationMetadata;

@@ -27,6 +27,8 @@ import {
   ensureCaptionGeminiWebQueueRuntime,
 } from './captionGeminiWebQueueRuntime';
 import {
+  buildConversationKey as buildCaptionConversationKey,
+  clearConversation as clearCaptionGeminiConversation,
   getConversation as getCaptionGeminiConversation,
   upsertConversation as upsertCaptionGeminiConversation,
 } from './captionGeminiConversationStore';
@@ -146,6 +148,32 @@ function mergePacingMetadata(
     return undefined;
   }
   return merged;
+}
+
+function isConversationMetadata(value: unknown): value is Record<string, unknown> | unknown[] {
+  return !!value && typeof value === 'object';
+}
+
+function extractConversationTraceId(metadata: unknown): string {
+  if (!isConversationMetadata(metadata) || Array.isArray(metadata)) {
+    return 'unknown';
+  }
+  const candidates = [
+    metadata.conversationId,
+    metadata.conversation_id,
+    metadata.chatId,
+    metadata.chat_id,
+    metadata.id,
+  ];
+  const raw = candidates.find((item) => typeof item === 'string' && item.trim().length > 0);
+  if (!raw || typeof raw !== 'string') {
+    return 'unknown';
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length <= 12) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`;
 }
 
 /**
@@ -275,20 +303,24 @@ async function translateBatchGeminiWebQueue(
       execute: async (ctx) => {
         const accountConfigId = ctx.resource.resourceId;
         const resourceLabel = (ctx.resource.label || resourceLabelById.get(accountConfigId) || accountConfigId).trim();
-        console.log(
-          `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} cookie-sync accountConfigId=${accountConfigId} (${resourceLabel})`
-        );
-        const conversationMetadata = getCaptionGeminiConversation({
+        const conversationKey = buildCaptionConversationKey({ projectId, sourcePath });
+        const conversationScope = {
           projectId,
           sourcePath,
           accountConfigId,
-        });
-        const response = await getGeminiWebApiRuntime().generateContent({
+        };
+        const storedConversationMetadata = getCaptionGeminiConversation(conversationScope);
+        const hasStoredConversation = isConversationMetadata(storedConversationMetadata);
+        console.log(
+          `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} cookie-sync accountConfigId=${accountConfigId} (${resourceLabel})`
+        );
+        let response = await getGeminiWebApiRuntime().generateContent({
           prompt: ctx.payload.prompt,
           timeoutMs: 120_000,
           accountConfigId,
+          conversationKey,
           useChatSession: true,
-          conversationMetadata,
+          conversationMetadata: hasStoredConversation ? storedConversationMetadata : null,
         });
 
         if (!response.success) {
@@ -302,13 +334,67 @@ async function translateBatchGeminiWebQueue(
           throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
         }
 
-        upsertCaptionGeminiConversation(
-          {
-            projectId,
-            sourcePath,
+        let outputConversationMetadata = isConversationMetadata(response.conversationMetadata)
+          ? response.conversationMetadata
+          : null;
+        let outputConversationMetadataReason = response.conversationMetadataReason || 'unknown';
+        let outputConversationMetadataDebug = response.conversationMetadataDebug || null;
+        let conversationMode: 'reused' | 'created_new' = hasStoredConversation
+          ? 'reused'
+          : (response.conversationContinued ? 'reused' : 'created_new');
+
+        if (!outputConversationMetadata) {
+          if (hasStoredConversation) {
+            clearCaptionGeminiConversation(projectId, sourcePath, accountConfigId);
+            console.warn(
+              `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} metadata missing -> reset stored conversation accountConfigId=${accountConfigId} reason=${outputConversationMetadataReason} textLen=${(response.text || '').length} debug=${JSON.stringify(outputConversationMetadataDebug || {})}`
+            );
+          } else {
+            console.warn(
+              `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} metadata missing on new conversation accountConfigId=${accountConfigId} reason=${outputConversationMetadataReason} textLen=${(response.text || '').length} debug=${JSON.stringify(outputConversationMetadataDebug || {})}`
+            );
+          }
+
+          response = await getGeminiWebApiRuntime().generateContent({
+            prompt: ctx.payload.prompt,
+            timeoutMs: 120_000,
             accountConfigId,
-          },
-          response.conversationMetadata || null
+            conversationKey,
+            useChatSession: true,
+            resetConversation: true,
+            conversationMetadata: null,
+          });
+
+          if (!response.success) {
+            const errorMessage = response.error || 'GeminiWebApi execution failed after conversation reset';
+            if (response.errorCode === 'GEMINI_TIMEOUT') {
+              throw new RotationJobExecutionError('TIMEOUT', errorMessage);
+            }
+            if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+              throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
+            }
+            throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
+          }
+
+          outputConversationMetadata = isConversationMetadata(response.conversationMetadata)
+            ? response.conversationMetadata
+            : null;
+          outputConversationMetadataReason = response.conversationMetadataReason || 'unknown';
+          outputConversationMetadataDebug = response.conversationMetadataDebug || null;
+          conversationMode = 'created_new';
+
+          if (!outputConversationMetadata) {
+            throw new RotationJobExecutionError(
+              'EXECUTION_ERROR',
+              `GeminiWebApi did not return conversation metadata after resetConversation (reason=${outputConversationMetadataReason}, textLen=${(response.text || '').length}, debug=${JSON.stringify(outputConversationMetadataDebug || {})})`
+            );
+          }
+        }
+
+        upsertCaptionGeminiConversation(conversationScope, outputConversationMetadata);
+        const traceConversationId = extractConversationTraceId(outputConversationMetadata);
+        console.log(
+          `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} conversation=${conversationMode} accountConfigId=${accountConfigId} conversationId=${traceConversationId} key=${conversationKey}`
         );
 
         return {
