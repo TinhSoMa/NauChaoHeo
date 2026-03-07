@@ -8,6 +8,7 @@ export const CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'caption.translation.geminiW
 export const CAPTION_GEMINI_WEB_QUEUE_POOL_ID = 'caption-geminiweb-accounts';
 export const CAPTION_GEMINI_WEB_QUEUE_FEATURE = 'caption.translate.geminiWeb';
 export const CAPTION_GEMINI_WEB_QUEUE_SERVICE_ID = 'caption-step3';
+export const CAPTION_STEP3_QUEUE_GAP_MS = 10_000;
 
 interface GeminiWebQueueAccountRow {
   id: string;
@@ -27,7 +28,10 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
   queue.registerPool({
     poolId: CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
     label: 'Caption GeminiWeb Accounts',
-    selector: 'round_robin'
+    selector: 'round_robin',
+    dispatchSpacingMs: CAPTION_STEP3_QUEUE_GAP_MS,
+    defaultCooldownMinMs: 0,
+    defaultCooldownMaxMs: 0
   });
 
   const db = getDatabase();
@@ -62,6 +66,8 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
       capabilities: ['caption_translate', 'gemini_webapi'],
       enabled,
       maxConcurrency: 1,
+      cooldownMinMs: 0,
+      cooldownMaxMs: 0,
       metadata: {
         accountName: label
       }
@@ -86,4 +92,3 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
 
   return { queue, resourceLabelById };
 }
-

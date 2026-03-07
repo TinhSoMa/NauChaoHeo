@@ -1,6 +1,6 @@
 /**
  * Caption Translator - Dịch caption sử dụng Gemini API
- * Xử lý dịch batch với retry và progress callback
+ * Xử lý dịch batch theo pacing queue và progress callback
  */
 
 import {
@@ -9,6 +9,7 @@ import {
   TranslationResult,
   TranslationProgress,
   TranslationBatchReport,
+  TranslationQueuePacingMetadata,
 } from '../../../shared/types/caption';
 import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type GeminiModel } from '../gemini';
 import { type KeyInfo } from '../../../shared/types/gemini';
@@ -21,6 +22,7 @@ import {
   CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
   CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
   CAPTION_GEMINI_WEB_QUEUE_SERVICE_ID,
+  CAPTION_STEP3_QUEUE_GAP_MS,
   type CaptionGeminiWebQueueRuntimeContext,
   ensureCaptionGeminiWebQueueRuntime,
 } from './captionGeminiWebQueueRuntime';
@@ -47,6 +49,19 @@ interface BatchTranslationResult {
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
+  queuePacingMode?: TranslationQueuePacingMetadata['queuePacingMode'];
+  queueGapMs?: number;
+  startedAt?: number;
+  endedAt?: number;
+  nextAllowedAt?: number;
+}
+
+interface DispatchTimingMetadata {
+  queuePacingMode: 'dispatch_spacing_global';
+  queueGapMs: number;
+  startedAt: number;
+  endedAt: number;
+  nextAllowedAt: number;
 }
 
 function formatIndexRanges(indexes: number[]): string {
@@ -81,27 +96,56 @@ function formatIndexRanges(indexes: number[]): string {
   return ranges.join(',');
 }
 
-function collectMissingIndexes(batch: TextBatch, translatedTexts: string[] = []): {
-  missingLinesInBatch: number[];
-  missingGlobalLineIndexes: number[];
-} {
-  const missingLinesInBatch: number[] = [];
-  const missingGlobalLineIndexes: number[] = [];
-  const expected = batch.texts.length;
-
-  for (let i = 0; i < expected; i++) {
-    const text = translatedTexts[i] ?? '';
-    if (typeof text === 'string' && text.trim().length > 0) {
-      continue;
-    }
-    missingLinesInBatch.push(i + 1);
-    missingGlobalLineIndexes.push(batch.startIndex + i + 1);
-  }
-
+function createDispatchTimingMetadata(
+  startedAt: number,
+  queueGapMs: number
+): DispatchTimingMetadata {
+  const safeStartedAt = Number.isFinite(startedAt) ? Math.floor(startedAt) : Date.now();
   return {
-    missingLinesInBatch,
-    missingGlobalLineIndexes,
+    queuePacingMode: 'dispatch_spacing_global',
+    queueGapMs,
+    startedAt: safeStartedAt,
+    endedAt: safeStartedAt,
+    nextAllowedAt: safeStartedAt + queueGapMs,
   };
+}
+
+function buildQueueTimingFromResult(
+  queued: { startedAt?: number; endedAt?: number },
+  queueGapMs: number
+): TranslationQueuePacingMetadata {
+  const startedAt = Number.isFinite(queued.startedAt) ? Math.floor(queued.startedAt as number) : undefined;
+  const endedAt = Number.isFinite(queued.endedAt) ? Math.floor(queued.endedAt as number) : Date.now();
+  return {
+    queuePacingMode: 'dispatch_spacing_global',
+    queueGapMs,
+    startedAt,
+    endedAt,
+    nextAllowedAt: startedAt !== undefined ? startedAt + queueGapMs : undefined,
+  };
+}
+
+function mergePacingMetadata(
+  primary?: TranslationQueuePacingMetadata,
+  fallback?: TranslationQueuePacingMetadata
+): TranslationQueuePacingMetadata | undefined {
+  const merged: TranslationQueuePacingMetadata = {
+    queuePacingMode: primary?.queuePacingMode ?? fallback?.queuePacingMode,
+    queueGapMs: primary?.queueGapMs ?? fallback?.queueGapMs,
+    startedAt: primary?.startedAt ?? fallback?.startedAt,
+    endedAt: primary?.endedAt ?? fallback?.endedAt,
+    nextAllowedAt: primary?.nextAllowedAt ?? fallback?.nextAllowedAt,
+  };
+  if (
+    !merged.queuePacingMode &&
+    typeof merged.queueGapMs !== 'number' &&
+    typeof merged.startedAt !== 'number' &&
+    typeof merged.endedAt !== 'number' &&
+    typeof merged.nextAllowedAt !== 'number'
+  ) {
+    return undefined;
+  }
+  return merged;
 }
 
 /**
@@ -271,6 +315,7 @@ async function translateBatchGeminiWebQueue(
         };
       },
     });
+    const queueTiming = buildQueueTimingFromResult(queued, CAPTION_STEP3_QUEUE_GAP_MS);
 
     if (!queued.success) {
       return {
@@ -281,6 +326,7 @@ async function translateBatchGeminiWebQueue(
         resourceId: queued.resourceId,
         resourceLabel: queued.resourceId ? resourceLabelById.get(queued.resourceId) : undefined,
         queueRuntimeKey: CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+        ...queueTiming,
       };
     }
 
@@ -299,6 +345,7 @@ async function translateBatchGeminiWebQueue(
         resourceId: queued.resourceId,
         resourceLabel: queued.result?.resourceLabel || (queued.resourceId ? resourceLabelById.get(queued.resourceId) : undefined),
         queueRuntimeKey: CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+        ...queueTiming,
       };
     }
 
@@ -309,6 +356,7 @@ async function translateBatchGeminiWebQueue(
       resourceId: queued.resourceId,
       resourceLabel: queued.result?.resourceLabel || (queued.resourceId ? resourceLabelById.get(queued.resourceId) : undefined),
       queueRuntimeKey: CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+      ...queueTiming,
     };
   } catch (error) {
     return {
@@ -355,7 +403,29 @@ export async function translateAll(
   const projectId = (options.projectId || '').trim() || '__default_project__';
   const sourcePath = (options.sourcePath || '').trim() || '__unknown_source__';
   const MAX_CONCURRENT = useImpit ? 3 : 5;
+  const queueGapMs = CAPTION_STEP3_QUEUE_GAP_MS;
+  let lastDispatchTiming: TranslationQueuePacingMetadata | undefined;
+  let nextDispatchAtMs = Date.now();
+  let dispatchGateQueue: Promise<void> = Promise.resolve();
   let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
+
+  const reserveDispatchSlot = (): Promise<DispatchTimingMetadata> => {
+    const reservation = dispatchGateQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const now = Date.now();
+        const dispatchAt = Math.max(now, nextDispatchAtMs);
+        const waitMs = dispatchAt - now;
+        if (waitMs > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+        }
+        const timing = createDispatchTimingMetadata(Date.now(), queueGapMs);
+        nextDispatchAtMs = timing.nextAllowedAt;
+        return timing;
+      });
+    dispatchGateQueue = reservation.then(() => undefined, () => undefined);
+    return reservation;
+  };
 
   if (useGeminiWebQueue) {
     geminiWebQueueContext = ensureCaptionGeminiWebQueueRuntime();
@@ -376,6 +446,8 @@ export async function translateAll(
         batchReports: [],
         missingBatchIndexes: batches.map((batch) => batch.batchIndex + 1),
         missingGlobalLineIndexes: Array.from({ length: entries.length }, (_, index) => index + 1),
+        queuePacingMode: 'dispatch_spacing_global',
+        queueGapMs,
       };
     }
   }
@@ -421,7 +493,8 @@ export async function translateAll(
     const methodLabel: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
     const defaultTokenLabel = useGeminiWebQueue ? 'queue_rr' : (useImpit ? 'impit_cookie' : (assignedKey?.keyInfo.name || 'rotation'));
     let progressTokenLabel = defaultTokenLabel;
-    // Report progress khi bắt đầu batch
+
+    // Report progress khi batch đã vào hàng đợi pacing
     if (progressCallback) {
       progressCallback({
         current: batch.startIndex,
@@ -429,53 +502,39 @@ export async function translateAll(
         batchIndex: i,
         totalBatches: batches.length,
         status: 'translating',
-        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${MAX_CONCURRENT} song song)...`,
+        message: `Batch ${i + 1}/${batches.length} đang chờ dispatch 10s [${methodLabel}] [token:${progressTokenLabel}]...`,
         eventType: 'batch_started',
         transport: methodLabel,
+        queuePacingMode: 'dispatch_spacing_global',
+        queueGapMs,
+        nextAllowedAt: nextDispatchAtMs,
       });
     }
 
-    // Dịch batch với retry — yêu cầu 100%, không chấp nhận thiếu dòng
-    const maxAttempts = 3; // 1 lần đầu + 2 retry
-    let attemptCount = 0;
+    const dispatchTiming = await reserveDispatchSlot();
+    lastDispatchTiming = dispatchTiming;
+
+    if (progressCallback) {
+      progressCallback({
+        current: batch.startIndex,
+        total: entries.length,
+        batchIndex: i,
+        totalBatches: batches.length,
+        status: 'translating',
+        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${MAX_CONCURRENT} song song, pacing 10s)...`,
+        eventType: 'batch_started',
+        transport: methodLabel,
+        ...dispatchTiming,
+      });
+    }
+
+    // Dịch batch 1 lần; retry do queue/transport tự quản lý
     let batchResult: BatchTranslationResult = useGeminiWebQueue
       ? await translateBatchGeminiWebQueue(batch, targetLanguage, promptTemplate, projectId, sourcePath, geminiWebQueueContext!)
       : useImpit
         ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
         : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
-    attemptCount++;
-
-    while (!batchResult.success && attemptCount < maxAttempts) {
-      attemptCount++;
-      const missingInfo = collectMissingIndexes(batch, batchResult.translatedTexts || []);
-      const missingCount = missingInfo.missingGlobalLineIndexes.length;
-      const missingBatchRanges = formatIndexRanges(missingInfo.missingLinesInBatch);
-      const missingGlobalRanges = formatIndexRanges(missingInfo.missingGlobalLineIndexes);
-      console.log(`[CaptionTranslator] Retry ${attemptCount - 1}/${maxAttempts - 1} cho batch ${i + 1} (thiếu ${missingCount} dòng)`);
-      progressTokenLabel = useGeminiWebQueue ? 'queue_rr' : (useImpit ? 'impit_cookie' : 'rotation');
-      if (progressCallback) {
-        progressCallback({
-          current: batch.startIndex,
-          total: entries.length,
-          batchIndex: i,
-          totalBatches: batches.length,
-          status: 'translating',
-          message: `Batch ${i + 1}: Thiếu ${missingCount} dòng (batch: ${missingBatchRanges}; global: ${missingGlobalRanges}) — đang thử lại lần ${attemptCount - 1}/${maxAttempts - 1} [${methodLabel}] [token:${progressTokenLabel}]...`,
-          eventType: 'batch_retry',
-          transport: batchResult.transport || methodLabel,
-          resourceId: batchResult.resourceId,
-          resourceLabel: batchResult.resourceLabel,
-          queueRuntimeKey: batchResult.queueRuntimeKey,
-        });
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      // Retry không cần key cố định — để rotation tự chọn key khác
-      batchResult = useGeminiWebQueue
-        ? await translateBatchGeminiWebQueue(batch, targetLanguage, promptTemplate, projectId, sourcePath, geminiWebQueueContext!)
-        : useImpit
-          ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
-          : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate);
-    }
+    const pacingMetadata = mergePacingMetadata(batchResult, dispatchTiming);
 
     const normalizedTexts = Array.from({ length: batch.texts.length }, (_, idx) => batchResult.translatedTexts?.[idx] ?? '');
     const isFullSuccess = !!batchResult.success;
@@ -485,7 +544,7 @@ export async function translateAll(
     const report = buildBatchReport(
       batch,
       normalizedTexts,
-      attemptCount,
+      1,
       isFullSuccess ? 'success' : 'failed',
       isFullSuccess ? undefined : (batchResult.error || 'BATCH_TRANSLATION_FAILED')
     );
@@ -502,7 +561,7 @@ export async function translateAll(
 
     if (!isFullSuccess) {
       const globalMissing = formatIndexRanges(report.missingGlobalLineIndexes);
-      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau ${maxAttempts} lần thử (global: ${globalMissing})`;
+      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau 1 lần gửi (global: ${globalMissing})`;
       console.error(`[CaptionTranslator] ${errorMsg}`);
       errors.push(errorMsg);
     }
@@ -531,6 +590,7 @@ export async function translateAll(
         resourceId: batchResult.resourceId,
         resourceLabel: batchResult.resourceLabel,
         queueRuntimeKey: batchResult.queueRuntimeKey,
+        ...pacingMetadata,
       });
     }
   };
@@ -573,6 +633,7 @@ export async function translateAll(
   // Report completion
   if (progressCallback) {
     const summaryTransport: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
+    const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
     progressCallback({
       current: entries.length,
       total: entries.length,
@@ -583,6 +644,7 @@ export async function translateAll(
       eventType: 'summary',
       transport: summaryTransport,
       queueRuntimeKey: useGeminiWebQueue ? CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY : undefined,
+      ...summaryPacingMetadata,
     });
   }
 
@@ -611,6 +673,7 @@ export async function translateAll(
     batchReports,
     missingBatchIndexes,
     missingGlobalLineIndexes,
+    ...mergePacingMetadata(lastDispatchTiming),
   };
 }
 

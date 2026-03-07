@@ -74,6 +74,20 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+function normalizeLayerPosition(
+  value: { x: number; y: number } | null | undefined,
+  referenceWidth: number,
+  referenceHeight: number
+): { x: number; y: number } | null {
+  if (!isFiniteSubtitlePosition(value)) {
+    return null;
+  }
+  if (isNormalizedSubtitlePosition(value)) {
+    return clampNormalizedSubtitlePosition(value);
+  }
+  return toNormalizedSubtitlePosition(value, Math.max(1, referenceWidth), Math.max(1, referenceHeight));
+}
+
 function normalizeSubtitleFontSize(value: number | undefined): number {
   if (!Number.isFinite(value)) {
     return DEFAULT_SUBTITLE_FONT_SIZE;
@@ -416,9 +430,11 @@ export function useSubtitlePreview({
   const frameRequestSerialRef = useRef(0);
 
   const [frameTimeSec, setFrameTimeSec] = useState(0);
-  const initialSubtitlePosition = isFiniteSubtitlePosition(subtitlePosition)
-    ? toNormalizedSubtitlePosition(subtitlePosition, 1920, 1080)
-    : { x: 0.5, y: 0.5 };
+  const initialSubtitlePosition = normalizeLayerPosition(
+    subtitlePosition,
+    LANDSCAPE_FRAME_WIDTH,
+    LANDSCAPE_FRAME_HEIGHT
+  ) || { x: 0.5, y: 0.5 };
 
   const [state, setState] = useState<SubtitlePreviewState>({
     frameData: null,
@@ -471,8 +487,13 @@ export function useSubtitlePreview({
   const coverActiveRegionRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   
   // Local logo position for dragging
-  const [localLogoPosition, setLocalLogoPosition] = useState<{ x: number; y: number } | null>(logoPosition ?? null);
-  const localLogoPositionRef = useRef<{ x: number; y: number } | null>(logoPosition ?? null);
+  const initialLogoPosition = normalizeLayerPosition(
+    logoPosition,
+    LANDSCAPE_FRAME_WIDTH,
+    LANDSCAPE_FRAME_HEIGHT
+  );
+  const [localLogoPosition, setLocalLogoPosition] = useState<{ x: number; y: number } | null>(initialLogoPosition);
+  const localLogoPositionRef = useRef<{ x: number; y: number } | null>(initialLogoPosition);
   const setLocalLogoPositionSynced = (pos: { x: number; y: number } | null) => {
     localLogoPositionRef.current = pos;
     setLocalLogoPosition(pos);
@@ -569,7 +590,12 @@ export function useSubtitlePreview({
   }, [coverQuad]);
 
   useEffect(() => {
-    if (!isFiniteSubtitlePosition(subtitlePosition)) {
+    const nextNormalized = normalizeLayerPosition(
+      subtitlePosition,
+      LANDSCAPE_FRAME_WIDTH,
+      LANDSCAPE_FRAME_HEIGHT
+    );
+    if (!nextNormalized) {
       setState((prev) => {
         const fallback = { x: 0.5, y: 0.5 };
         if (
@@ -585,11 +611,6 @@ export function useSubtitlePreview({
       });
       return;
     }
-    const nextNormalized = toNormalizedSubtitlePosition(
-      subtitlePosition,
-      Math.max(1, state.videoSize.width),
-      Math.max(1, state.videoSize.height)
-    );
     setState((prev) => {
       if (
         prev.subtitlePosition.x === nextNormalized.x &&
@@ -602,7 +623,7 @@ export function useSubtitlePreview({
         subtitlePosition: nextNormalized,
       };
     });
-  }, [state.videoSize.height, state.videoSize.width, subtitlePosition]);
+  }, [subtitlePosition]);
 
   // Khi đổi mode/resolution, cập nhật lại coordinate-space preview để hiển thị chính xác hơn.
   useEffect(() => {
@@ -622,34 +643,37 @@ export function useSubtitlePreview({
   }, [renderMode, renderResolution]);
 
   useEffect(() => {
-    const legacyPosition = subtitlePosition;
     if (!state.frameData || !onPositionChange) {
       return;
     }
-    if (!isFiniteSubtitlePosition(legacyPosition)) {
+    const legacyPosition = subtitlePosition;
+    if (!isFiniteSubtitlePosition(legacyPosition) || isNormalizedSubtitlePosition(legacyPosition)) {
       return;
     }
-    if (isNormalizedSubtitlePosition(legacyPosition)) {
-      return;
-    }
-    const legacyPoint = legacyPosition as { x: number; y: number };
-    const signature = `${legacyPoint.x}:${legacyPoint.y}:${state.videoSize.width}:${state.videoSize.height}`;
+    const signature = `${legacyPosition.x}:${legacyPosition.y}`;
     if (migratedLegacySubtitleRef.current === signature) {
       return;
     }
     migratedLegacySubtitleRef.current = signature;
-    onPositionChange(toNormalizedSubtitlePosition(legacyPoint, state.videoSize.width, state.videoSize.height));
-  }, [
-    onPositionChange,
-    state.frameData,
-    state.videoSize.height,
-    state.videoSize.width,
-    subtitlePosition,
-  ]);
+    const normalized = normalizeLayerPosition(
+      legacyPosition,
+      LANDSCAPE_FRAME_WIDTH,
+      LANDSCAPE_FRAME_HEIGHT
+    );
+    if (normalized) {
+      onPositionChange(normalized);
+    }
+  }, [onPositionChange, state.frameData, subtitlePosition]);
   
   useEffect(() => {
-    localLogoPositionRef.current = logoPosition ?? null;
-    setLocalLogoPosition(logoPosition ?? null);
+    const previewSpace = previewSpaceRef.current;
+    const normalized = normalizeLayerPosition(
+      logoPosition,
+      previewSpace.width,
+      previewSpace.height
+    );
+    localLogoPositionRef.current = normalized;
+    setLocalLogoPosition(normalized);
   }, [logoPosition]);
 
   useEffect(() => {
@@ -776,7 +800,14 @@ export function useSubtitlePreview({
         setState(prev => {
           let nextPosition = prev.subtitlePosition;
           if (isFiniteSubtitlePosition(subtitlePosition)) {
-            nextPosition = toNormalizedSubtitlePosition(subtitlePosition, previewSpace.width, previewSpace.height);
+            const normalized = normalizeLayerPosition(
+              subtitlePosition,
+              LANDSCAPE_FRAME_WIDTH,
+              LANDSCAPE_FRAME_HEIGHT
+            );
+            if (normalized) {
+              nextPosition = normalized;
+            }
           } else if (!Number.isFinite(prev.subtitlePosition.x) || !Number.isFinite(prev.subtitlePosition.y)) {
             let initialY = 0.5;
             if (localBlackoutTop !== null && localBlackoutTop < 1) {
@@ -938,10 +969,6 @@ export function useSubtitlePreview({
     };
 
     const ratio = previewWidth / Math.max(1, outputRect.width);
-    const mapPreviewToCanvas = (x: number, y: number) => ({
-      x: outputRect.x + (x / previewWidth) * outputRect.width,
-      y: outputRect.y + (y / previewHeight) * outputRect.height,
-    });
 
     // Background
     ctx.fillStyle = '#111827';
@@ -1363,13 +1390,14 @@ export function useSubtitlePreview({
     // ===== Logo Image =====
     const logoImg = logoImageRef.current;
     if (logoImg) {
-      // Mặc định ném logo vào góc trên bên trái nếu chưa có vị trí
-      const logoXCoord = localLogoPosition?.x ?? (logoImg.width / 2) + 50;
-      const logoYCoord = localLogoPosition?.y ?? (logoImg.height / 2) + 50;
-      
-      const mappedLogo = mapPreviewToCanvas(logoXCoord, logoYCoord);
-      const logoDrawX = mappedLogo.x;
-      const logoDrawY = mappedLogo.y;
+      // Mặc định ném logo vào góc trên bên trái nếu chưa có vị trí.
+      const defaultLogoPos = {
+        x: clamp01(((logoImg.width / 2) + 50) / Math.max(1, previewWidth)),
+        y: clamp01(((logoImg.height / 2) + 50) / Math.max(1, previewHeight)),
+      };
+      const logoPosNorm = localLogoPosition || defaultLogoPos;
+      const logoDrawX = outputRect.x + logoPosNorm.x * outputRect.width;
+      const logoDrawY = outputRect.y + logoPosNorm.y * outputRect.height;
       
       // Vẽ logo (tâm ở logoDrawX, logoDrawY)
       const scaledLogoW = (logoImg.width / ratio) * localLogoScale;
@@ -1461,9 +1489,10 @@ export function useSubtitlePreview({
              
              // Gán vị trí mặc định nếu chưa có (góc trên bên trái)
              if (!localLogoPositionRef.current) {
+               const previewSpace = previewSpaceRef.current;
                const defaultPos = {
-                 x: Math.floor((logImg.width / 2) + 50),
-                 y: Math.floor((logImg.height / 2) + 50)
+                 x: clamp01(((logImg.width / 2) + 50) / Math.max(1, previewSpace.width)),
+                 y: clamp01(((logImg.height / 2) + 50) / Math.max(1, previewSpace.height)),
                };
                setLocalLogoPositionSynced(defaultPos);
                setTimeout(() => onLogoPositionChange?.(defaultPos), 0);
@@ -1518,21 +1547,6 @@ export function useSubtitlePreview({
       { x: b.cx - b.hw, y: b.cy + b.hh },
       { x: b.cx + b.hw, y: b.cy + b.hh },
     ].some(c => Math.abs(cx - c.x) <= HIT && Math.abs(cy - c.y) <= HIT);
-  }, []);
-
-  const canvasToPreviewCoords = useCallback((cx: number, cy: number) => {
-    const rect = previewRectRef.current;
-    const space = previewSpaceRef.current;
-    const safeW = Math.max(1, rect.width);
-    const safeH = Math.max(1, rect.height);
-
-    const relX = Math.max(0, Math.min(1, (cx - rect.x) / safeW));
-    const relY = Math.max(0, Math.min(1, (cy - rect.y) / safeH));
-
-    return {
-      x: Math.floor(relX * Math.max(1, space.width)),
-      y: Math.floor(relY * Math.max(1, space.height)),
-    };
   }, []);
 
   const screenToWorldPoint = useCallback((sx: number, sy: number) => {
@@ -1664,7 +1678,7 @@ export function useSubtitlePreview({
       } else {
         // Di chuyển logo — chỉ cập nhật local, commit khi mouseUp
         cornerDragRef.current = null;
-        const newPos = canvasToPreviewCoords(wx, wy);
+        const newPos = canvasToPreviewNormalized(wx, wy);
         setLocalLogoPositionSynced(newPos);
       }
     } else {
@@ -1696,7 +1710,6 @@ export function useSubtitlePreview({
     }
   }, [
     canvasToCoverNormalized,
-    canvasToPreviewCoords,
     canvasToPreviewNormalized,
     canvasYToFraction,
     state.frameData,
@@ -1794,7 +1807,7 @@ export function useSubtitlePreview({
         setLocalLogoScaleSynced(newScale);
       } else {
         // Di chuyển logo
-        const newPos = canvasToPreviewCoords(wx, wy);
+        const newPos = canvasToPreviewNormalized(wx, wy);
         setLocalLogoPositionSynced(newPos);
       }
     } else {
@@ -1822,7 +1835,6 @@ export function useSubtitlePreview({
     }
   }, [
     canvasToCoverNormalized,
-    canvasToPreviewCoords,
     canvasToPreviewNormalized,
     canvasYToFraction,
     hitCoverEdge,
@@ -1894,12 +1906,12 @@ export function useSubtitlePreview({
 
     if (mode === 'logo') {
       const current = localLogoPositionRef.current || {
-        x: Math.round(maxW / 2),
-        y: Math.round(maxH / 2),
+        x: 0.5,
+        y: 0.5,
       };
       const nextPos = {
-        x: clampNumber(Math.round(current.x + dxPx), 0, maxW),
-        y: clampNumber(Math.round(current.y + dyPx), 0, maxH),
+        x: clamp01(current.x + dxPx / maxW),
+        y: clamp01(current.y + dyPx / maxH),
       };
       setLocalLogoPositionSynced(nextPos);
       onLogoPositionChange?.(nextPos);
@@ -2040,7 +2052,13 @@ export function useSubtitlePreview({
     Math.max(1, state.videoSize.width),
     Math.max(1, state.videoSize.height)
   );
-  const logoPositionPx = localLogoPositionRef.current || null;
+  const logoPositionPx = localLogoPositionRef.current
+    ? toPixelSubtitlePosition(
+        localLogoPositionRef.current,
+        Math.max(1, state.videoSize.width),
+        Math.max(1, state.videoSize.height)
+      )
+    : null;
   const normalizedCoverFeather = resolveCoverFeatherPair(
     coverFeatherPx,
     coverFeatherHorizontalPx,

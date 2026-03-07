@@ -939,6 +939,11 @@
   cursor: not-allowed;
 }
 
+.thumbnailListSaveBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .thumbnailListCopyStatus {
   margin-bottom: 8px;
   border-radius: 8px;

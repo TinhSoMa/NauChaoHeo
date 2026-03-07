@@ -189,6 +189,38 @@ function resolveOutputHeightByLayout(layoutKey: LayoutKey, renderResolution: Ren
   return 1080;
 }
 
+function resolveOutputSizeByLayout(
+  layoutKey: LayoutKey,
+  renderResolution: RenderResolution
+): { width: number; height: number } {
+  if (layoutKey === 'portrait') {
+    if (renderResolution === '720p') return { width: 720, height: 1280 };
+    if (renderResolution === '540p') return { width: 540, height: 960 };
+    if (renderResolution === '360p') return { width: 360, height: 640 };
+    return { width: 1080, height: 1920 };
+  }
+  if (renderResolution === '720p') return { width: 1280, height: 720 };
+  if (renderResolution === '540p') return { width: 960, height: 540 };
+  if (renderResolution === '360p') return { width: 640, height: 360 };
+  return { width: 1920, height: 1080 };
+}
+
+function normalizePositionValue(
+  value: { x: number; y: number },
+  referenceWidth: number,
+  referenceHeight: number
+): { x: number; y: number } {
+  if (isNormalizedSubtitlePosition(value)) {
+    return clampNormalizedSubtitlePosition(value);
+  }
+  const safeW = Math.max(1, referenceWidth);
+  const safeH = Math.max(1, referenceHeight);
+  return {
+    x: Math.min(1, Math.max(0, value.x / safeW)),
+    y: Math.min(1, Math.max(0, value.y / safeH)),
+  };
+}
+
 function pxToRelativeFontSize(
   pxValue: number,
   outputHeight: number,
@@ -476,7 +508,8 @@ function normalizeProfile(
       ? '1080p'
       : requested;
   }
-  const outputHeight = resolveOutputHeightByLayout(layoutKey, next.renderResolution);
+  const outputSize = resolveOutputSizeByLayout(layoutKey, next.renderResolution);
+  const outputHeight = outputSize.height;
 
   const style = patch.style as ASSStyleConfig | undefined;
   if (style && typeof style === 'object') {
@@ -594,10 +627,11 @@ function normalizeProfile(
   } else if (patch.subtitlePosition && typeof patch.subtitlePosition === 'object') {
     const p = patch.subtitlePosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
-      const candidate = { x: p.x, y: p.y };
-      next.subtitlePosition = isNormalizedSubtitlePosition(candidate)
-        ? clampNormalizedSubtitlePosition(candidate)
-        : candidate;
+      next.subtitlePosition = normalizePositionValue(
+        { x: p.x, y: p.y },
+        outputSize.width,
+        outputSize.height
+      );
     }
   }
   if (patch.thumbnailFrameTimeSec === null || typeof patch.thumbnailFrameTimeSec === 'number') {
@@ -619,7 +653,11 @@ function normalizeProfile(
   } else if (patch.logoPosition && typeof patch.logoPosition === 'object') {
     const p = patch.logoPosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
-      next.logoPosition = { x: p.x, y: p.y };
+      next.logoPosition = normalizePositionValue(
+        { x: p.x, y: p.y },
+        outputSize.width,
+        outputSize.height
+      );
     }
   }
   if (typeof patch.logoScale === 'number') {
@@ -730,19 +768,21 @@ function normalizeProfile(
   if (patch.thumbnailTextPrimaryPosition && typeof patch.thumbnailTextPrimaryPosition === 'object') {
     const p = patch.thumbnailTextPrimaryPosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
-      next.thumbnailTextPrimaryPosition = {
-        x: Math.min(1, Math.max(0, p.x)),
-        y: Math.min(1, Math.max(0, p.y)),
-      };
+      next.thumbnailTextPrimaryPosition = normalizePositionValue(
+        { x: p.x, y: p.y },
+        outputSize.width,
+        outputSize.height
+      );
     }
   }
   if (patch.thumbnailTextSecondaryPosition && typeof patch.thumbnailTextSecondaryPosition === 'object') {
     const p = patch.thumbnailTextSecondaryPosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
-      next.thumbnailTextSecondaryPosition = {
-        x: Math.min(1, Math.max(0, p.x)),
-        y: Math.min(1, Math.max(0, p.y)),
-      };
+      next.thumbnailTextSecondaryPosition = normalizePositionValue(
+        { x: p.x, y: p.y },
+        outputSize.width,
+        outputSize.height
+      );
     }
   }
 
@@ -1253,8 +1293,17 @@ export function useCaptionSettings() {
   }, [updateActiveProfile]);
 
   const setLogoPosition = useCallback((value: { x: number; y: number } | undefined) => {
-    updateActiveProfile((current) => ({ ...current, logoPosition: value }));
-  }, [updateActiveProfile]);
+    updateActiveProfile((current) => {
+      if (!isFiniteSubtitlePosition(value)) {
+        return { ...current, logoPosition: undefined };
+      }
+      const outputSize = resolveOutputSizeByLayout(activeLayoutKey, current.renderResolution);
+      return {
+        ...current,
+        logoPosition: normalizePositionValue(value, outputSize.width, outputSize.height),
+      };
+    });
+  }, [activeLayoutKey, updateActiveProfile]);
 
   const setLogoScale = useCallback((value: number) => {
     updateActiveProfile((current) => ({ ...current, logoScale: value }));
@@ -1266,10 +1315,11 @@ export function useCaptionSettings() {
       if (!isFiniteSubtitlePosition(value)) {
         return { ...current, subtitlePosition: null };
       }
-      const normalized = clampNormalizedSubtitlePosition(value);
+      const outputSize = resolveOutputSizeByLayout(activeLayoutKey, current.renderResolution);
+      const normalized = normalizePositionValue(value, outputSize.width, outputSize.height);
       return { ...current, subtitlePosition: normalized };
     });
-  }, [markTypographyDefaultsDirty, updateActiveProfile]);
+  }, [activeLayoutKey, markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailFrameTimeSec = useCallback((value: number | null) => {
     updateActiveProfile((current) => ({ ...current, thumbnailFrameTimeSec: value }));
@@ -1286,25 +1336,33 @@ export function useCaptionSettings() {
 
   const setThumbnailTextPrimaryPosition = useCallback((value: { x: number; y: number }) => {
     markTypographyDefaultsDirty();
-    updateActiveProfile((current) => ({
-      ...current,
-      thumbnailTextPrimaryPosition: {
-        x: Math.min(1, Math.max(0, Number.isFinite(value.x) ? value.x : current.thumbnailTextPrimaryPosition.x)),
-        y: Math.min(1, Math.max(0, Number.isFinite(value.y) ? value.y : current.thumbnailTextPrimaryPosition.y)),
-      },
-    }));
-  }, [markTypographyDefaultsDirty, updateActiveProfile]);
+    updateActiveProfile((current) => {
+      const outputSize = resolveOutputSizeByLayout(activeLayoutKey, current.renderResolution);
+      const nextRaw = {
+        x: Number.isFinite(value.x) ? value.x : current.thumbnailTextPrimaryPosition.x,
+        y: Number.isFinite(value.y) ? value.y : current.thumbnailTextPrimaryPosition.y,
+      };
+      return {
+        ...current,
+        thumbnailTextPrimaryPosition: normalizePositionValue(nextRaw, outputSize.width, outputSize.height),
+      };
+    });
+  }, [activeLayoutKey, markTypographyDefaultsDirty, updateActiveProfile]);
 
   const setThumbnailTextSecondaryPosition = useCallback((value: { x: number; y: number }) => {
     markTypographyDefaultsDirty();
-    updateActiveProfile((current) => ({
-      ...current,
-      thumbnailTextSecondaryPosition: {
-        x: Math.min(1, Math.max(0, Number.isFinite(value.x) ? value.x : current.thumbnailTextSecondaryPosition.x)),
-        y: Math.min(1, Math.max(0, Number.isFinite(value.y) ? value.y : current.thumbnailTextSecondaryPosition.y)),
-      },
-    }));
-  }, [markTypographyDefaultsDirty, updateActiveProfile]);
+    updateActiveProfile((current) => {
+      const outputSize = resolveOutputSizeByLayout(activeLayoutKey, current.renderResolution);
+      const nextRaw = {
+        x: Number.isFinite(value.x) ? value.x : current.thumbnailTextSecondaryPosition.x,
+        y: Number.isFinite(value.y) ? value.y : current.thumbnailTextSecondaryPosition.y,
+      };
+      return {
+        ...current,
+        thumbnailTextSecondaryPosition: normalizePositionValue(nextRaw, outputSize.width, outputSize.height),
+      };
+    });
+  }, [activeLayoutKey, markTypographyDefaultsDirty, updateActiveProfile]);
 
   const settingsValues = useMemo(
     () => ({

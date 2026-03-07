@@ -92,7 +92,8 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
   }
 
   parts.push(`${currentLabel}${input.subtitleFilter}[v_subbed]`);
-  parts.push('[v_subbed]format=nv12[v_portrait_out]');
+  // Dùng yuv420p để tránh artifact nửa khung xanh trên một số pipeline decode/render preview.
+  parts.push('[v_subbed]format=yuv420p[v_portrait_out]');
   return {
     filterParts: parts,
     outputLabel: 'v_portrait_out',

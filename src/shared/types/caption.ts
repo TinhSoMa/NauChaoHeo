@@ -63,10 +63,18 @@ export interface TranslationBatchReport {
   error?: string;
 }
 
+export interface TranslationQueuePacingMetadata {
+  queuePacingMode?: 'dispatch_spacing_global';
+  queueGapMs?: number;
+  startedAt?: number;
+  endedAt?: number;
+  nextAllowedAt?: number;
+}
+
 /**
  * Kết quả dịch
  */
-export interface TranslationResult {
+export interface TranslationResult extends TranslationQueuePacingMetadata {
   success: boolean;
   entries: SubtitleEntry[];
   totalLines: number;
@@ -81,7 +89,7 @@ export interface TranslationResult {
 /**
  * Progress callback cho quá trình dịch
  */
-export interface TranslationProgress {
+export interface TranslationProgress extends TranslationQueuePacingMetadata {
   current: number;
   total: number;
   batchIndex: number;
@@ -489,7 +497,7 @@ export interface RenderVideoOptions {
   videoVolume?: number;   // Âm lượng video gốc (%), hỗ trợ 0..200, mapping tuyến tính 100=x1
   audioVolume?: number;   // Âm lượng file audio TTS (%), hỗ trợ 0..400, mapping tuyến tính 100=x1
   logoPath?: string;      // Đường dẫn file logo để watermark
-  logoPosition?: { x: number; y: number }; // Toạ độ (tâm) chèn logo
+  logoPosition?: { x: number; y: number }; // Vị trí tâm logo (ưu tiên normalized 0..1; vẫn tương thích dữ liệu pixel legacy)
   logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
   portraitForegroundCropPercent?: number; // Chỉ dùng cho mode 9:16, crop tổng theo chiều ngang (%)
   // --- Thumbnail prepend ---

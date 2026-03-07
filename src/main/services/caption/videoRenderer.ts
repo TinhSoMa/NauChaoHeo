@@ -92,22 +92,90 @@ interface EncoderProfile {
   decodePath: string;
 }
 
+interface EncoderDecisionContext {
+  renderMode?: RenderVideoOptions['renderMode'];
+  coverMode?: RenderVideoOptions['coverMode'];
+  hasLogo?: boolean;
+  thumbnailEnabled?: boolean;
+}
+
+interface SpeedMaxProfile {
+  qsvPreset: string;
+  qsvGlobalQuality: number;
+  nvencPreset: string;
+  nvencCq: number;
+  x264Preset: string;
+  x264Crf: number;
+  portraitBgDownscaleDivisor: number;
+  portraitBgBlurLumaRadius: number;
+  portraitBgBlurLumaPower: number;
+  filterThreadsCap: number;
+}
+
+const SPEED_MAX_PROFILE: SpeedMaxProfile = {
+  qsvPreset: 'veryfast',
+  qsvGlobalQuality: 27,
+  nvencPreset: 'p1',
+  nvencCq: 25,
+  x264Preset: 'veryfast',
+  x264Crf: 24,
+  portraitBgDownscaleDivisor: 10,
+  portraitBgBlurLumaRadius: 6,
+  portraitBgBlurLumaPower: 1,
+  filterThreadsCap: 8,
+};
+
+function isHeavyFilterPipelineForQsvDecode(context?: EncoderDecisionContext): boolean {
+  if (!context) {
+    return false;
+  }
+  return (
+    context.renderMode === 'hardsub_portrait_9_16'
+    || context.coverMode === 'copy_from_above'
+    || Boolean(context.hasLogo)
+    || Boolean(context.thumbnailEnabled)
+  );
+}
+
+function resolveFfmpegThreadArgs(): string[] {
+  const coreCount = Math.max(2, os.cpus()?.length || 4);
+  const filterThreads = Math.max(2, Math.min(SPEED_MAX_PROFILE.filterThreadsCap, Math.floor(coreCount * 0.75)));
+  const filterComplexThreads = Math.max(2, Math.min(SPEED_MAX_PROFILE.filterThreadsCap, Math.ceil(filterThreads / 2)));
+  return [
+    '-threads', String(coreCount),
+    '-filter_threads', String(filterThreads),
+    '-filter_complex_threads', String(filterComplexThreads),
+  ];
+}
+
 function resolveEncoderProfile(
   hardware: RenderVideoOptions['hardwareAcceleration'],
-  renderMode: RenderVideoOptions['renderMode']
+  renderMode: RenderVideoOptions['renderMode'],
+  context?: EncoderDecisionContext
 ): EncoderProfile {
   if (hardware === 'qsv') {
-    // Mặc định ưu tiên software decode + QSV encode để ổn định màu và filter.
-    // Có thể bật QSV decode qua env khi cần benchmark.
-    const enableQsvDecode =
+    // Speed profile: dùng hybrid CPU filter + QSV encode.
+    // Nếu pipeline nặng filter, ưu tiên software decode để tránh overhead upload/download.
+    const forceQsvDecode =
       process.env.CAPTION_QSV_DECODE === '1' ||
       (renderMode === 'hardsub_portrait_9_16' && process.env.CAPTION_PORTRAIT_QSV_DECODE === '1');
+    const forceSoftwareDecode = process.env.CAPTION_QSV_DECODE === '0';
+    const heavyPipeline = isHeavyFilterPipelineForQsvDecode({
+      renderMode,
+      ...context,
+    });
+    const enableQsvDecode = forceSoftwareDecode ? false : (forceQsvDecode || !heavyPipeline);
     return {
       hwaccelArgs: enableQsvDecode ? ['-hwaccel', 'auto'] : [],
       videoCodec: 'h264_qsv',
-      codecParams: ['-preset', 'fast', '-global_quality', '25'],
+      codecParams: [
+        '-preset', SPEED_MAX_PROFILE.qsvPreset,
+        '-global_quality', String(SPEED_MAX_PROFILE.qsvGlobalQuality),
+      ],
       pixelFormat: 'nv12',
-      decodePath: enableQsvDecode ? 'qsv_decode + qsv_encode' : 'software_decode + qsv_encode',
+      decodePath: enableQsvDecode
+        ? (heavyPipeline ? 'qsv_decode(forced) + qsv_encode' : 'qsv_decode + qsv_encode')
+        : 'software_decode + qsv_encode',
     };
   }
 
@@ -116,7 +184,12 @@ function resolveEncoderProfile(
       hwaccelArgs: [],
       videoCodec: 'h264_nvenc',
       // Ưu tiên tốc độ khi user chọn NVENC.
-      codecParams: ['-preset', 'p1', '-rc', 'vbr', '-cq', '24', '-b:v', '0'],
+      codecParams: [
+        '-preset', SPEED_MAX_PROFILE.nvencPreset,
+        '-rc', 'vbr',
+        '-cq', String(SPEED_MAX_PROFILE.nvencCq),
+        '-b:v', '0',
+      ],
       pixelFormat: 'nv12',
       decodePath: 'software_decode + nvenc_encode',
     };
@@ -125,7 +198,7 @@ function resolveEncoderProfile(
   return {
     hwaccelArgs: [],
     videoCodec: 'libx264',
-    codecParams: ['-preset', 'fast', '-crf', '23'],
+    codecParams: ['-preset', SPEED_MAX_PROFILE.x264Preset, '-crf', String(SPEED_MAX_PROFILE.x264Crf)],
     pixelFormat: 'yuv420p',
     decodePath: 'software',
   };
@@ -136,6 +209,44 @@ function clampVolumePercent(value: number | undefined, min: number, max: number,
     return fallback;
   }
   return Math.min(max, Math.max(min, value as number));
+}
+
+function isFinitePoint(value: unknown): value is { x: number; y: number } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const point = value as { x?: unknown; y?: unknown };
+  return typeof point.x === 'number' && Number.isFinite(point.x)
+    && typeof point.y === 'number' && Number.isFinite(point.y);
+}
+
+function resolveLogoOverlayPositionExpr(
+  logoPosition: { x: number; y: number } | undefined,
+  scaleFactor: number,
+  outputWidth: number,
+  outputHeight: number
+): { x: string; y: string } | null {
+  if (!isFinitePoint(logoPosition)) {
+    return null;
+  }
+  const isNormalized = (
+    logoPosition.x >= 0
+    && logoPosition.x <= 1
+    && logoPosition.y >= 0
+    && logoPosition.y <= 1
+  );
+  if (isNormalized) {
+    const px = Math.round(logoPosition.x * Math.max(1, outputWidth));
+    const py = Math.round(logoPosition.y * Math.max(1, outputHeight));
+    return {
+      x: `${px}-overlay_w/2`,
+      y: `${py}-overlay_h/2`,
+    };
+  }
+  return {
+    x: `${Math.round(logoPosition.x * scaleFactor)}-overlay_w/2`,
+    y: `${Math.round(logoPosition.y * scaleFactor)}-overlay_h/2`,
+  };
 }
 
 async function probeOutputAspectForLog(videoPath: string): Promise<{
@@ -298,8 +409,13 @@ function shouldRetryWithGblurFeather(
 }
 
 function resolvePreviewHwaccelArgs(
-  hardware: RenderVideoPreviewFrameOptions['hardwareAcceleration']
+  hardware: RenderVideoPreviewFrameOptions['hardwareAcceleration'],
+  renderMode?: RenderVideoPreviewFrameOptions['renderMode']
 ): string[] {
+  // Portrait preview dễ gặp artifact xanh với một số driver khi decode bằng hwaccel.
+  if (renderMode === 'hardsub_portrait_9_16') {
+    return [];
+  }
   if (hardware === 'qsv' || hardware === 'nvenc') {
     return ['-hwaccel', 'auto'];
   }
@@ -564,6 +680,8 @@ export async function renderHardsubVideo(
   const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
   const coverMode = options.coverMode || 'blackout_bottom';
+  const effectiveFeatherStrategy: CoverFeatherStrategy =
+    coverMode === 'copy_from_above' ? 'gblur_mask' : featherStrategy;
   const videoFilter = buildVideoFilter({
     inputLabel: '[0:v]',
     needsScale: prep.needsScale,
@@ -577,12 +695,16 @@ export async function renderHardsubVideo(
     coverFeatherVerticalPx: options.coverFeatherVerticalPx,
     coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
     coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
-    featherStrategy,
+    featherStrategy: effectiveFeatherStrategy,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     subtitleFilter,
   });
 
-  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode);
+  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
+    coverMode,
+    hasLogo: Boolean(options.logoPath),
+    thumbnailEnabled: Boolean(options.thumbnailEnabled),
+  });
 
   // Hardsub: tính thời lượng output đúng cho cả 2 trường hợp:
   //   - videoSpeedMultiplier < 1 (video chậm đi):  stretchedVideo > newAudio  -> dùng stretchedVideo
@@ -688,8 +810,16 @@ export async function renderHardsubVideo(
     let logoYAxis = `50*${prep.scaleFactor}`;
 
     if (renderOptions.logoPosition) {
-      logoXAxis = `${Math.round(renderOptions.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
-      logoYAxis = `${Math.round(renderOptions.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+      const logoPositionExpr = resolveLogoOverlayPositionExpr(
+        renderOptions.logoPosition,
+        prep.scaleFactor,
+        prep.renderWidth,
+        prep.renderHeight
+      );
+      if (logoPositionExpr) {
+        logoXAxis = logoPositionExpr.x;
+        logoYAxis = logoPositionExpr.y;
+      }
     }
 
     filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
@@ -729,8 +859,10 @@ export async function renderHardsubVideo(
     mapArgs.push('-map', audioMix.mapAudioArg);
   }
 
+  const ffmpegThreadArgs = resolveFfmpegThreadArgs();
   const args = [
     ...inputArgs,
+    ...ffmpegThreadArgs,
     '-filter_complex', filterComplexParts.join(';'),
     ...mapArgs,
     '-c:v', encoderProfile.videoCodec,
@@ -868,6 +1000,7 @@ export async function renderHardsubVideo(
       (Number.isFinite(options.coverFeatherHorizontalPercent) && (options.coverFeatherHorizontalPercent as number) > 0) ||
       (Number.isFinite(options.coverFeatherVerticalPercent) && (options.coverFeatherVerticalPercent as number) > 0)
     );
+  const renderStartedAtMs = Date.now();
   const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
@@ -877,7 +1010,7 @@ export async function renderHardsubVideo(
     cleanupTempPaths: inlineThumbnail.cleanupFiles,
     duration: outputDuration,
     progressCallback,
-    debugLabel: `hardsub:${featherStrategy}`,
+    debugLabel: `hardsub:${effectiveFeatherStrategy}`,
     includeFullStderrOnError,
   });
   if (
@@ -889,7 +1022,7 @@ export async function renderHardsubVideo(
       options.coverFeatherVerticalPx,
       options.coverFeatherHorizontalPercent,
       options.coverFeatherVerticalPercent,
-      featherStrategy,
+      effectiveFeatherStrategy,
       renderResult.error || ''
     )
   ) {
@@ -899,8 +1032,16 @@ export async function renderHardsubVideo(
     });
     return renderHardsubVideo(options, progressCallback, 'gblur_mask');
   }
+  const renderWallMs = Date.now() - renderStartedAtMs;
   if (renderResult.success) {
-    renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
+    renderResult.timingPayload = {
+      ...(hardsubTimingDebug as Record<string, unknown>),
+      perf: {
+        profile: 'speed_max',
+        renderWallMs,
+        ffmpegThreadArgs,
+      },
+    } as Record<string, unknown>;
   }
   return renderResult;
 }
@@ -939,8 +1080,14 @@ export async function renderHardsubPortraitVideo(
 
   const prep = await prepareSubtitleAndDurationPortrait(renderOptions, portraitCanvas);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
-
-  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode);
+  const coverMode = options.coverMode || 'blackout_bottom';
+  const effectiveFeatherStrategy: CoverFeatherStrategy =
+    coverMode === 'copy_from_above' ? 'gblur_mask' : featherStrategy;
+  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
+    coverMode,
+    hasLogo: Boolean(options.logoPath),
+    thumbnailEnabled: Boolean(options.thumbnailEnabled),
+  });
 
   const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
     ? prep.originalVideoDuration / prep.videoSpeedMultiplier
@@ -1013,10 +1160,10 @@ export async function renderHardsubPortraitVideo(
     return rounded % 2 === 0 ? rounded : rounded + 1;
   };
   // Ưu tiên tốc độ cho mode 9:16: downscale nền mạnh hơn trước khi blur.
-  const bgDownscaleWidth = even(portraitCanvas.width / 8);
-  const bgDownscaleHeight = even(portraitCanvas.height / 8);
-  const bgBlurLumaRadius = 8;
-  const bgBlurLumaPower = 1;
+  const bgDownscaleWidth = even(portraitCanvas.width / SPEED_MAX_PROFILE.portraitBgDownscaleDivisor);
+  const bgDownscaleHeight = even(portraitCanvas.height / SPEED_MAX_PROFILE.portraitBgDownscaleDivisor);
+  const bgBlurLumaRadius = SPEED_MAX_PROFILE.portraitBgBlurLumaRadius;
+  const bgBlurLumaPower = SPEED_MAX_PROFILE.portraitBgBlurLumaPower;
   const nearPortraitAspectThreshold = 0.05;
 
   let sourceWidth = portraitCanvas.width;
@@ -1042,8 +1189,6 @@ export async function renderHardsubPortraitVideo(
       ? (options.portraitForegroundCropPercent as number)
       : 0)
   );
-  const coverMode = options.coverMode || 'blackout_bottom';
-
   const portraitVideo = buildPortraitVideoFilter({
     inputLabel: '[0:v]',
     outputWidth: portraitCanvas.width,
@@ -1061,7 +1206,7 @@ export async function renderHardsubPortraitVideo(
     coverFeatherVerticalPx: options.coverFeatherVerticalPx,
     coverFeatherHorizontalPercent: options.coverFeatherHorizontalPercent,
     coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
-    featherStrategy,
+    featherStrategy: effectiveFeatherStrategy,
     bgDownscaleWidth,
     bgDownscaleHeight,
     bgBlurLumaRadius,
@@ -1101,8 +1246,16 @@ export async function renderHardsubPortraitVideo(
     let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
     let logoYAxis = `50*${prep.scaleFactor}`;
     if (renderOptions.logoPosition) {
-      logoXAxis = `${Math.round(renderOptions.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
-      logoYAxis = `${Math.round(renderOptions.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+      const logoPositionExpr = resolveLogoOverlayPositionExpr(
+        renderOptions.logoPosition,
+        prep.scaleFactor,
+        prep.renderWidth,
+        prep.renderHeight
+      );
+      if (logoPositionExpr) {
+        logoXAxis = logoPositionExpr.x;
+        logoYAxis = logoPositionExpr.y;
+      }
     }
 
     filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
@@ -1142,8 +1295,10 @@ export async function renderHardsubPortraitVideo(
     mapArgs.push('-map', audioMix.mapAudioArg);
   }
 
+  const ffmpegThreadArgs = resolveFfmpegThreadArgs();
   const args = [
     ...inputArgs,
+    ...ffmpegThreadArgs,
     '-filter_complex', filterComplexParts.join(';'),
     ...mapArgs,
     '-c:v', encoderProfile.videoCodec,
@@ -1290,6 +1445,7 @@ export async function renderHardsubPortraitVideo(
       (Number.isFinite(options.coverFeatherHorizontalPercent) && (options.coverFeatherHorizontalPercent as number) > 0) ||
       (Number.isFinite(options.coverFeatherVerticalPercent) && (options.coverFeatherVerticalPercent as number) > 0)
     );
+  const renderStartedAtMs = Date.now();
   const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
@@ -1299,7 +1455,7 @@ export async function renderHardsubPortraitVideo(
     cleanupTempPaths: inlineThumbnail.cleanupFiles,
     duration: outputDuration,
     progressCallback,
-    debugLabel: `hardsub_portrait:${featherStrategy}`,
+    debugLabel: `hardsub_portrait:${effectiveFeatherStrategy}`,
     includeFullStderrOnError,
   });
   if (
@@ -1311,7 +1467,7 @@ export async function renderHardsubPortraitVideo(
       options.coverFeatherVerticalPx,
       options.coverFeatherHorizontalPercent,
       options.coverFeatherVerticalPercent,
-      featherStrategy,
+      effectiveFeatherStrategy,
       renderResult.error || ''
     )
   ) {
@@ -1321,8 +1477,16 @@ export async function renderHardsubPortraitVideo(
     });
     return renderHardsubPortraitVideo(options, progressCallback, 'gblur_mask');
   }
+  const renderWallMs = Date.now() - renderStartedAtMs;
   if (renderResult.success) {
-    renderResult.timingPayload = hardsubTimingDebug as Record<string, unknown>;
+    renderResult.timingPayload = {
+      ...(hardsubTimingDebug as Record<string, unknown>),
+      perf: {
+        profile: 'speed_max',
+        renderWallMs,
+        ffmpegThreadArgs,
+      },
+    } as Record<string, unknown>;
     const outputAspectMeta = await probeOutputAspectForLog(outputPath);
     if (outputAspectMeta) {
       console.log('[VideoRenderer][HardsubPortrait] Output aspect check', {
@@ -1364,7 +1528,9 @@ export async function renderBlackBackgroundVideo(
   const prep = await prepareSubtitleAndDuration(renderOptions);
   const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
 
-  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode);
+  const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
+    thumbnailEnabled: Boolean(options.thumbnailEnabled),
+  });
 
   const finalDurationStr = prep.newAudioDuration.toFixed(3);
   const fps = 24;
@@ -1400,8 +1566,10 @@ export async function renderBlackBackgroundVideo(
     mapArgs.push('-map', (volAud !== 1.0 || !!audAtempo) ? '[a_out]' : '1:a');
   }
 
+  const ffmpegThreadArgs = resolveFfmpegThreadArgs();
   const args = [
     ...inputArgs,
+    ...ffmpegThreadArgs,
     '-filter_complex', filterComplexParts.join(';'),
     ...mapArgs,
     '-c:v', encoderProfile.videoCodec,
@@ -1415,7 +1583,8 @@ export async function renderBlackBackgroundVideo(
   ];
 
   const totalFrames = Math.floor(prep.newAudioDuration * fps);
-  return runFFmpegProcess({
+  const renderStartedAtMs = Date.now();
+  const renderResult = await runFFmpegProcess({
     args,
     totalFrames,
     fps,
@@ -1424,6 +1593,14 @@ export async function renderBlackBackgroundVideo(
     duration: prep.duration,
     progressCallback,
   });
+  if (renderResult.success) {
+    renderResult.timingPayload = {
+      profile: 'speed_max',
+      renderWallMs: Date.now() - renderStartedAtMs,
+      ffmpegThreadArgs,
+    };
+  }
+  return renderResult;
 }
 
 /**
@@ -1543,7 +1720,7 @@ export async function renderVideoPreviewFrame(
   if (previewEntries.length === 0) {
     return { success: false, error: 'Không tìm được subtitle hợp lệ để render preview.' };
   }
-  const previewHwaccelArgs = resolvePreviewHwaccelArgs(options.hardwareAcceleration);
+  const previewHwaccelArgs = resolvePreviewHwaccelArgs(options.hardwareAcceleration, options.renderMode);
 
   let tempDirPath = '';
   let tempSrtPath = '';
@@ -1699,8 +1876,16 @@ export async function renderVideoPreviewFrame(
         let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
         let logoYAxis = `50*${prep.scaleFactor}`;
         if (options.logoPosition) {
-          logoXAxis = `${Math.round(options.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
-          logoYAxis = `${Math.round(options.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+          const logoPositionExpr = resolveLogoOverlayPositionExpr(
+            options.logoPosition,
+            prep.scaleFactor,
+            outputWidth,
+            outputHeight
+          );
+          if (logoPositionExpr) {
+            logoXAxis = logoPositionExpr.x;
+            logoYAxis = logoPositionExpr.y;
+          }
         }
         filterComplexParts.push('[1:v]' + logoScaleFilter + '[logo_scaled_preview]');
         filterComplexParts.push(`${portraitOutputLabel}[logo_scaled_preview]overlay=x=${logoXAxis}:y=${logoYAxis}${finalVideoLabel}`);
@@ -1746,8 +1931,16 @@ export async function renderVideoPreviewFrame(
         let logoXAxis = `main_w-overlay_w-50*${prep.scaleFactor}`;
         let logoYAxis = `50*${prep.scaleFactor}`;
         if (options.logoPosition) {
-          logoXAxis = `${Math.round(options.logoPosition.x * prep.scaleFactor)}-overlay_w/2`;
-          logoYAxis = `${Math.round(options.logoPosition.y * prep.scaleFactor)}-overlay_w/2`;
+          const logoPositionExpr = resolveLogoOverlayPositionExpr(
+            options.logoPosition,
+            prep.scaleFactor,
+            outputWidth,
+            outputHeight
+          );
+          if (logoPositionExpr) {
+            logoXAxis = logoPositionExpr.x;
+            logoYAxis = logoPositionExpr.y;
+          }
         }
         filterComplexParts.push('[1:v]' + logoScaleFilter + '[logo_scaled_preview]');
         filterComplexParts.push(`${videoFilter.outputLabel}[logo_scaled_preview]overlay=x=${logoXAxis}:y=${logoYAxis}${finalVideoLabel}`);

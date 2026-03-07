@@ -71,6 +71,8 @@ interface ProbeProfileResult {
 }
 
 const SUPPORTED_EXTS = new Set(['.mp4', '.mov']);
+const NAME_PATTERN_TS_PREFIX_WITH_THUMB = /^(\d{8}_\d{6})_nauchaoheo_video_(16_9|9_16)_([a-z0-9_]+)\.(mp4|mov)$/i;
+const NAME_PATTERN_TS_PREFIX_SIMPLE = /^(\d{8}_\d{6})_nauchaoheo_video_(16_9|9_16)\.(mp4|mov)$/i;
 const NAME_PATTERN_WITH_THUMB = /^nauchaoheo_video_(16_9|9_16)_([a-z0-9_]+)_(\d{6})\.(mp4|mov)$/i;
 const NAME_PATTERN_LEGACY = /^nauchaoheo_video_(16_9|9_16)_(\d{6})\.(mp4|mov)$/i;
 const NATURAL_NAME_COLLATOR = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
@@ -147,18 +149,33 @@ class VideoMergerService {
     }
   }
 
+  private extractModeFromFileName(fileName: string): MergeAspectMode | null {
+    const tsWithThumbMatch = fileName.match(NAME_PATTERN_TS_PREFIX_WITH_THUMB);
+    if (tsWithThumbMatch) {
+      return tsWithThumbMatch[2] as MergeAspectMode;
+    }
+    const tsSimpleMatch = fileName.match(NAME_PATTERN_TS_PREFIX_SIMPLE);
+    if (tsSimpleMatch) {
+      return tsSimpleMatch[2] as MergeAspectMode;
+    }
+    const withThumbMatch = fileName.match(NAME_PATTERN_WITH_THUMB);
+    if (withThumbMatch) {
+      return withThumbMatch[1] as MergeAspectMode;
+    }
+    const legacyMatch = fileName.match(NAME_PATTERN_LEGACY);
+    if (legacyMatch) {
+      return legacyMatch[1] as MergeAspectMode;
+    }
+    return null;
+  }
+
   private resolveScanDir(inputFolderPath: string): string {
     // Quét trực tiếp trong folder người dùng chọn.
     return inputFolderPath.replace(/[\\/]+$/, '');
   }
 
   private fileMatchesMode(fileName: string, mode: MergeAspectMode): boolean {
-    const withThumbMatch = fileName.match(NAME_PATTERN_WITH_THUMB);
-    if (withThumbMatch && withThumbMatch[1] === mode) {
-      return true;
-    }
-    const legacyMatch = fileName.match(NAME_PATTERN_LEGACY);
-    return !!legacyMatch && legacyMatch[1] === mode;
+    return this.extractModeFromFileName(fileName) === mode;
   }
 
   private async probeVideoProfile(videoPath: string): Promise<ProbeProfileResult> {

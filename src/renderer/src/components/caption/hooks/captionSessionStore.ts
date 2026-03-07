@@ -628,6 +628,25 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
   };
 }
 
+const STEP7_RUNTIME_PRESERVE_KEYS = [
+  'thumbnailText',
+  'thumbnailTextSecondary',
+  'thumbnailTextSecondarySource',
+  'thumbnailTextsByOrder',
+  'thumbnailTextsSecondaryByOrder',
+  'thumbnailTextSecondaryOverrideFlags',
+] as const;
+
+function preserveStep7RuntimeFields(currentStep7: Record<string, unknown>): Record<string, unknown> {
+  const preserved: Record<string, unknown> = {};
+  for (const key of STEP7_RUNTIME_PRESERVE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(currentStep7, key)) {
+      preserved[key] = currentStep7[key];
+    }
+  }
+  return preserved;
+}
+
 export async function syncSessionWithProjectSettings(
   sessionPath: string,
   payload: {
@@ -640,17 +659,30 @@ export async function syncSessionWithProjectSettings(
 ): Promise<void> {
   await updateCaptionSession(
     sessionPath,
-    (session) => ({
-      ...session,
-      settings: {
-        ...session.settings,
-        ...buildProjectSettingsMirror(payload.projectSettings),
-      },
-      effectiveSettingsRevision: payload.revision,
-      effectiveSettingsUpdatedAt: payload.updatedAt,
-      effectiveSettingsSource: payload.source || 'project_default',
-      syncState: 'synced',
-    }),
+    (session) => {
+      const mirror = buildProjectSettingsMirror(payload.projectSettings);
+      const mirrorRecord = toRecord(mirror);
+      const currentStep7 = toRecord(session.settings?.step7Render);
+      const mirrorStep7 = toRecord(mirrorRecord.step7Render);
+      const preservedStep7Runtime = preserveStep7RuntimeFields(currentStep7);
+
+      return {
+        ...session,
+        settings: {
+          ...session.settings,
+          ...mirrorRecord,
+          step7Render: {
+            ...currentStep7,
+            ...mirrorStep7,
+            ...preservedStep7Runtime,
+          },
+        },
+        effectiveSettingsRevision: payload.revision,
+        effectiveSettingsUpdatedAt: payload.updatedAt,
+        effectiveSettingsSource: payload.source || 'project_default',
+        syncState: 'synced',
+      };
+    },
     fallback
   );
 }

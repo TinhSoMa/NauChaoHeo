@@ -111,6 +111,10 @@ function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
 
+function pad4(value: number): string {
+  return String(value).padStart(4, '0');
+}
+
 function toSafeThumbSlug(thumbnailText?: string): string {
   const raw = (thumbnailText || '').trim();
   if (!raw) {
@@ -134,10 +138,12 @@ function buildRenderedVideoName(
   thumbnailText?: string
 ): string {
   const now = new Date();
-  const dateMonthHour = `${pad2(now.getDate())}${pad2(now.getMonth() + 1)}${pad2(now.getHours())}`;
+  const timestampPrefix =
+    `${pad4(now.getFullYear())}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}_` +
+    `${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
   const aspect = renderMode === 'hardsub_portrait_9_16' ? '9_16' : '16_9';
   const thumbSlug = toSafeThumbSlug(thumbnailText);
-  return `nauchaoheo_video_${aspect}_${thumbSlug}_${dateMonthHour}.${renderContainer}`;
+  return `${timestampPrefix}_nauchaoheo_video_${aspect}_${thumbSlug}.${renderContainer}`;
 }
 
 function buildScaledSubtitleEntries(entries: SubtitleEntry[], scale: number): SubtitleEntry[] {

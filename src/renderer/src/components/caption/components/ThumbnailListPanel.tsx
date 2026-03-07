@@ -20,6 +20,10 @@ interface ThumbnailListPanelProps {
   onItemSecondaryTextChange: (indexZeroBased: number, value: string) => void;
   onResetSecondaryOverride: (indexZeroBased: number) => void;
   onBulkApplyJsonLines: (raw: string) => BulkApplyResult;
+  onManualSaveTexts: () => void;
+  manualSaveState: 'idle' | 'saving' | 'success' | 'error';
+  manualSaveMessage: string;
+  manualSaveDisabled?: boolean;
   showMissingWarning: boolean;
   dependencyWarning?: string;
 }
@@ -146,6 +150,15 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
           <span className={styles.thumbnailListCountBadge}>{props.items.length} folder</span>
           <button
             type="button"
+            className={`${styles.thumbnailAutoFillBtn} ${styles.thumbnailListSaveBtn}`}
+            onClick={props.onManualSaveTexts}
+            disabled={props.manualSaveDisabled || props.items.length === 0 || props.manualSaveState === 'saving'}
+            title="Lưu thủ công Text1/Text2 cho tất cả folder"
+          >
+            {props.manualSaveState === 'saving' ? 'Đang lưu...' : 'Lưu Text1/Text2'}
+          </button>
+          <button
+            type="button"
             className={`${styles.thumbnailAutoFillBtn} ${styles.thumbnailListCopyBtn}`}
             onClick={() => {
               void handleCopyVideoNames();
@@ -164,6 +177,19 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
           }`}
         >
           {copyMessage}
+        </div>
+      )}
+      {!!props.manualSaveMessage && (
+        <div
+          className={`${styles.thumbnailListCopyStatus} ${
+            props.manualSaveState === 'success'
+              ? styles.thumbnailListCopyStatusSuccess
+              : props.manualSaveState === 'error'
+                ? styles.thumbnailListCopyStatusError
+                : ''
+          }`}
+        >
+          {props.manualSaveMessage}
         </div>
       )}
 

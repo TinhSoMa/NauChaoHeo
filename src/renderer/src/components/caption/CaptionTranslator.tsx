@@ -153,6 +153,14 @@ type ThumbnailBulkParseResult =
       errorMessage: string;
     };
 
+type PersistThumbnailSessionOverrides = {
+  thumbnailText?: string;
+  thumbnailTextSecondaryGlobal?: string;
+  thumbnailTextsByOrder?: string[];
+  thumbnailTextsSecondaryByOrder?: string[];
+  thumbnailTextSecondaryOverrideFlags?: boolean[];
+};
+
 const SENSITIVE_KEY_PATTERN = /(token|api[_-]?key|secret|password|authorization|cookie)/i;
 
 function getPathBaseName(pathValue: string): string {
@@ -1030,6 +1038,8 @@ export function CaptionTranslator() {
   );
   const thumbnailSessionHydratedKeyRef = useRef<string | null>(null);
   const [thumbnailSessionHydrationRevision, setThumbnailSessionHydrationRevision] = useState(0);
+  const [thumbnailManualSaveState, setThumbnailManualSaveState] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [thumbnailManualSaveMessage, setThumbnailManualSaveMessage] = useState('');
 
   const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
     fontSizeScaleVersion: settings.fontSizeScaleVersion,
@@ -1265,89 +1275,105 @@ export function CaptionTranslator() {
     settings.settingsUpdatedAt,
   ]);
 
-  // Persist thumbnail text theo folder (không ghi vào project default).
-  useEffect(() => {
+  const persistThumbnailTextToSessions = useCallback(async (
+    overrides?: PersistThumbnailSessionOverrides
+  ): Promise<boolean> => {
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
-    if (!inputPaths.length) return;
-    if (thumbnailSessionHydratedKeyRef.current !== thumbnailSessionHydrationKey) return;
-    const persistThumbnailText = async () => {
-      if (inputPaths.length > 1) {
-        for (let i = 0; i < inputPaths.length; i++) {
-          const inputPath = inputPaths[i];
-          const text = (hardsubSettings.thumbnailTextsByOrder[i] || '').trim();
-          const secondaryText = (hardsubSettings.thumbnailTextsSecondaryByOrder[i] || '').trim();
-          const secondarySource = hardsubSettings.thumbnailTextSecondaryOverrideFlags[i] ? 'override' : 'global';
-          const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
-          await updateCaptionSession(
-            sessionPath,
-            (session) => ({
-              ...session,
-              settings: {
-                ...session.settings,
-                step7Render: {
-                  ...(session.settings.step7Render || {}),
-                  thumbnailText: text,
-                  thumbnailTextSecondary: secondaryText,
-                  thumbnailTextSecondarySource: secondarySource,
-                  thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
-                  thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
-                  thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
-                  thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
-                  thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
-                  thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
-                  thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
-                  thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
-                  thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
-                },
-              },
-            }),
-            {
-              projectId,
-              inputType: settings.inputType,
-              sourcePath: inputPath,
-              folderPath: inputPath,
-            }
-          );
-        }
-        return;
+    if (!inputPaths.length) return false;
+    if (thumbnailSessionHydratedKeyRef.current !== thumbnailSessionHydrationKey) return false;
+
+    const multiFolderTexts = overrides?.thumbnailTextsByOrder ?? hardsubSettings.thumbnailTextsByOrder;
+    const multiFolderSecondaryTexts = overrides?.thumbnailTextsSecondaryByOrder ?? hardsubSettings.thumbnailTextsSecondaryByOrder;
+    const multiFolderSecondaryFlags = overrides?.thumbnailTextSecondaryOverrideFlags ?? hardsubSettings.thumbnailTextSecondaryOverrideFlags;
+
+    if (inputPaths.length > 1) {
+      if (
+        multiFolderTexts.length !== inputPaths.length
+        || multiFolderSecondaryTexts.length !== inputPaths.length
+        || multiFolderSecondaryFlags.length !== inputPaths.length
+      ) {
+        console.warn('[CaptionTranslator] Bỏ qua lưu thumbnail text theo folder do dữ liệu chưa đồng bộ độ dài', {
+          folderCount: inputPaths.length,
+          text1Count: multiFolderTexts.length,
+          text2Count: multiFolderSecondaryTexts.length,
+          text2FlagCount: multiFolderSecondaryFlags.length,
+        });
+        return false;
       }
 
-      const inputPath = inputPaths[0];
-      const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
-      await updateCaptionSession(
-        sessionPath,
-        (session) => ({
-          ...session,
-          settings: {
-            ...session.settings,
-            step7Render: {
-              ...(session.settings.step7Render || {}),
-              thumbnailText: hardsubSettings.thumbnailText,
-              thumbnailTextSecondary: settings.thumbnailTextSecondary || '',
-              thumbnailTextSecondarySource: 'single',
-              thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
-              thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
-              thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
-              thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
-              thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
-              thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
-              thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
-              thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
-              thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
+      for (let i = 0; i < inputPaths.length; i++) {
+        const inputPath = inputPaths[i];
+        const text = (multiFolderTexts[i] || '').trim();
+        const secondaryText = (multiFolderSecondaryTexts[i] || '').trim();
+        const secondarySource = multiFolderSecondaryFlags[i] ? 'override' : 'global';
+        const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+        await updateCaptionSession(
+          sessionPath,
+          (session) => ({
+            ...session,
+            settings: {
+              ...session.settings,
+              step7Render: {
+                ...(session.settings.step7Render || {}),
+                thumbnailText: text,
+                thumbnailTextSecondary: secondaryText,
+                thumbnailTextSecondarySource: secondarySource,
+                thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
+                thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+                thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
+                thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
+                thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+                thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
+                thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+                thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
+                thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
+              },
             },
+          }),
+          {
+            projectId,
+            inputType: settings.inputType,
+            sourcePath: inputPath,
+            folderPath: inputPath,
+          }
+        );
+      }
+      return true;
+    }
+
+    const inputPath = inputPaths[0];
+    const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+    await updateCaptionSession(
+      sessionPath,
+      (session) => ({
+        ...session,
+        settings: {
+          ...session.settings,
+          step7Render: {
+            ...(session.settings.step7Render || {}),
+            thumbnailText: overrides?.thumbnailText ?? hardsubSettings.thumbnailText,
+            thumbnailTextSecondary: overrides?.thumbnailTextSecondaryGlobal ?? (settings.thumbnailTextSecondary || ''),
+            thumbnailTextSecondarySource: 'single',
+            thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
+            thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+            thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
+            thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
+            thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+            thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
+            thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+            thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
+            thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
           },
-        }),
-        {
-          projectId,
-          inputType: settings.inputType,
-          sourcePath: inputPath,
-          folderPath: settings.inputType === 'draft' ? inputPath : inputPath.replace(/[^/\\]+$/, ''),
-        }
-      );
-    };
-    persistThumbnailText().catch((error) => {
-      console.warn('[CaptionTranslator] Không thể lưu thumbnail text theo folder', error);
-    });
+        },
+      }),
+      {
+        projectId,
+        inputType: settings.inputType,
+        sourcePath: inputPath,
+        folderPath: settings.inputType === 'draft' ? inputPath : inputPath.replace(/[^/\\]+$/, ''),
+      }
+    );
+    return true;
   }, [
     fileManager.filePath,
     projectId,
@@ -1367,7 +1393,61 @@ export function CaptionTranslator() {
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
     thumbnailSessionHydrationKey,
-    thumbnailSessionHydrationRevision,
+  ]);
+
+  // Persist thumbnail text theo folder (không ghi vào project default).
+  useEffect(() => {
+    persistThumbnailTextToSessions().catch((error) => {
+      console.warn('[CaptionTranslator] Không thể lưu thumbnail text theo folder', error);
+    });
+  }, [persistThumbnailTextToSessions, thumbnailSessionHydrationRevision]);
+
+  useEffect(() => {
+    if (thumbnailManualSaveState !== 'success' && thumbnailManualSaveState !== 'error') {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setThumbnailManualSaveState('idle');
+      setThumbnailManualSaveMessage('');
+    }, 2200);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [thumbnailManualSaveState]);
+
+  const handleManualSaveThumbnailTexts = useCallback(() => {
+    const folderCount = hardsubSettings.thumbnailFolderItems.length;
+    setThumbnailManualSaveState('saving');
+    setThumbnailManualSaveMessage('Đang lưu Text1/Text2...');
+    void (async () => {
+      try {
+        const saved = await persistThumbnailTextToSessions({
+          thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
+          thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
+          thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
+          thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary || '',
+        });
+        if (!saved) {
+          setThumbnailManualSaveState('error');
+          setThumbnailManualSaveMessage('Lưu thất bại: dữ liệu session chưa hydrate xong, thử lại sau vài giây.');
+          return;
+        }
+        setThumbnailManualSaveState('success');
+        setThumbnailManualSaveMessage(`Đã lưu Text1/Text2 cho ${folderCount} folder.`);
+      } catch (error) {
+        setThumbnailManualSaveState('error');
+        setThumbnailManualSaveMessage(
+          `Lưu thất bại: ${error instanceof Error ? error.message : String(error || 'Unknown error')}`
+        );
+      }
+    })();
+  }, [
+    hardsubSettings.thumbnailFolderItems.length,
+    hardsubSettings.thumbnailTextsByOrder,
+    hardsubSettings.thumbnailTextsSecondaryByOrder,
+    hardsubSettings.thumbnailTextSecondaryOverrideFlags,
+    persistThumbnailTextToSessions,
+    settings.thumbnailTextSecondary,
   ]);
 
   // 4. Processing Hook
@@ -1875,6 +1955,7 @@ export function CaptionTranslator() {
       ? `Nguồn: ${getPathBaseName(thumbnailPreviewFolderPathResolved)}`
       : 'Nguồn: folder hiện tại')
     : 'Nguồn: file hiện tại';
+  const isThumbnailSessionHydrated = thumbnailSessionHydratedKeyRef.current === thumbnailSessionHydrationKey;
 
   const handleThumbnailPreviewTextChange = useCallback((value: string) => {
     if (isMultiFolder) {
@@ -1940,6 +2021,38 @@ export function CaptionTranslator() {
     }
 
     const applyResult = hardsubSettings.applyBulkThumbnailByOrder(rowsForApply);
+    const normalizedRows = rowsForApply
+      .map((row) => ({
+        indexZeroBased: row.indexZeroBased,
+        text1: (row.text1 || '').trim(),
+        hasText2: Object.prototype.hasOwnProperty.call(row, 'text2'),
+        text2: typeof row.text2 === 'string' ? row.text2.trim() : '',
+      }))
+      .filter((row) => row.text1.length > 0);
+    const text2Rows = normalizedRows.filter((row) => row.hasText2);
+    const nextTextsByOrder = hardsubSettings.thumbnailTextsByOrder.length === folderCount
+      ? [...hardsubSettings.thumbnailTextsByOrder]
+      : new Array(folderCount).fill('');
+    const nextSecondaryByOrder = hardsubSettings.thumbnailTextsSecondaryByOrder.length === folderCount
+      ? [...hardsubSettings.thumbnailTextsSecondaryByOrder]
+      : new Array(folderCount).fill(settings.thumbnailTextSecondary || '');
+    const nextSecondaryOverrideFlags = hardsubSettings.thumbnailTextSecondaryOverrideFlags.length === folderCount
+      ? [...hardsubSettings.thumbnailTextSecondaryOverrideFlags]
+      : new Array(folderCount).fill(false);
+    normalizedRows.forEach((row) => {
+      nextTextsByOrder[row.indexZeroBased] = row.text1;
+    });
+    text2Rows.forEach((row) => {
+      nextSecondaryByOrder[row.indexZeroBased] = row.text2 || '';
+      nextSecondaryOverrideFlags[row.indexZeroBased] = true;
+    });
+    void persistThumbnailTextToSessions({
+      thumbnailTextsByOrder: nextTextsByOrder,
+      thumbnailTextsSecondaryByOrder: nextSecondaryByOrder,
+      thumbnailTextSecondaryOverrideFlags: nextSecondaryOverrideFlags,
+    }).catch((error) => {
+      console.warn('[CaptionTranslator] Không thể lưu thumbnail text ngay sau bulk apply', error);
+    });
 
     const notes: string[] = [...parsed.notes];
     if (parsed.mode === 'json_lines') {
@@ -1966,7 +2079,7 @@ export function CaptionTranslator() {
       summary: `[${modeLabel}] Đã áp dụng ${applyResult.appliedText1}/${folderCount} dòng (Text2: ${applyResult.appliedText2}).`,
       detail: notes.join(' '),
     };
-  }, [hardsubSettings]);
+  }, [hardsubSettings, persistThumbnailTextToSessions, settings.thumbnailTextSecondary]);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -2564,10 +2677,10 @@ export function CaptionTranslator() {
 
   const configSummaryRows = useMemo(() => {
     const subtitlePos = settings.subtitlePosition
-      ? `${Math.round(settings.subtitlePosition.x)}, ${Math.round(settings.subtitlePosition.y)}`
+      ? `${settings.subtitlePosition.x.toFixed(3)}, ${settings.subtitlePosition.y.toFixed(3)}`
       : 'Auto';
     const logoPos = settings.logoPosition
-      ? `${Math.round(settings.logoPosition.x)}, ${Math.round(settings.logoPosition.y)}`
+      ? `${settings.logoPosition.x.toFixed(3)}, ${settings.logoPosition.y.toFixed(3)}`
       : 'Off';
     return [
       { key: 'Input', value: settings.inputType === 'draft' ? 'Draft' : 'SRT' },
@@ -4076,6 +4189,10 @@ export function CaptionTranslator() {
               onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
               onResetSecondaryOverride={hardsubSettings.resetThumbnailTextSecondaryOverride}
               onBulkApplyJsonLines={handleBulkApplyJsonLines}
+              onManualSaveTexts={handleManualSaveThumbnailTexts}
+              manualSaveState={thumbnailManualSaveState}
+              manualSaveMessage={thumbnailManualSaveMessage}
+              manualSaveDisabled={!isThumbnailSessionHydrated}
               showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
               dependencyWarning={step7DependencyWarning}
             />
