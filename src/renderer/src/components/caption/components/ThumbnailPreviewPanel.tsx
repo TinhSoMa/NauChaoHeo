@@ -16,6 +16,7 @@ interface ThumbnailPreviewPanelProps {
   thumbnailTextSecondary: string;
   thumbnailTextReadOnly?: boolean;
   thumbnailTextHelper?: string;
+  availableFonts?: string[];
   onThumbnailTextChange?: (text: string) => void;
   onThumbnailTextSecondaryChange?: (text: string) => void;
   thumbnailFrameTimeSec: number | null;
@@ -25,15 +26,24 @@ interface ThumbnailPreviewPanelProps {
   thumbnailFontSize?: number;
   thumbnailTextPrimaryFontName?: string;
   thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryFontSizeRel?: number;
   thumbnailTextPrimaryColor?: string;
   thumbnailTextSecondaryFontName?: string;
   thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryFontSizeRel?: number;
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;
   onThumbnailTextSecondaryPositionChange: (pos: { x: number; y: number }) => void;
+  onThumbnailTextPrimaryFontNameChange?: (value: string) => void;
+  onThumbnailTextPrimaryFontSizeChange?: (value: number) => void;
+  onThumbnailTextPrimaryColorChange?: (value: string) => void;
+  onThumbnailTextSecondaryFontNameChange?: (value: string) => void;
+  onThumbnailTextSecondaryFontSizeChange?: (value: number) => void;
+  onThumbnailTextSecondaryColorChange?: (value: string) => void;
+  onThumbnailLineHeightRatioChange?: (value: number) => void;
   contextKey: ThumbnailPreviewContextKey | null;
   inputType: 'srt' | 'draft';
 }
@@ -151,6 +161,7 @@ export function ThumbnailPreviewPanel({
   thumbnailTextSecondary,
   thumbnailTextReadOnly,
   thumbnailTextHelper,
+  availableFonts,
   onThumbnailTextChange,
   onThumbnailTextSecondaryChange,
   thumbnailFrameTimeSec,
@@ -159,15 +170,24 @@ export function ThumbnailPreviewPanel({
   thumbnailFontSize,
   thumbnailTextPrimaryFontName,
   thumbnailTextPrimaryFontSize,
+  thumbnailTextPrimaryFontSizeRel,
   thumbnailTextPrimaryColor,
   thumbnailTextSecondaryFontName,
   thumbnailTextSecondaryFontSize,
+  thumbnailTextSecondaryFontSizeRel,
   thumbnailTextSecondaryColor,
   thumbnailLineHeightRatio,
   thumbnailTextPrimaryPosition,
   thumbnailTextSecondaryPosition,
   onThumbnailTextPrimaryPositionChange,
   onThumbnailTextSecondaryPositionChange,
+  onThumbnailTextPrimaryFontNameChange,
+  onThumbnailTextPrimaryFontSizeChange,
+  onThumbnailTextPrimaryColorChange,
+  onThumbnailTextSecondaryFontNameChange,
+  onThumbnailTextSecondaryFontSizeChange,
+  onThumbnailTextSecondaryColorChange,
+  onThumbnailLineHeightRatioChange,
   contextKey,
   inputType,
 }: ThumbnailPreviewPanelProps) {
@@ -514,6 +534,13 @@ export function ThumbnailPreviewPanel({
 
   const hasPrimaryText = thumbnailText.trim().length > 0;
   const hasSecondaryText = thumbnailTextSecondary.trim().length > 0;
+  const primaryFontName = (thumbnailTextPrimaryFontName || thumbnailFontName || 'BrightwallPersonal').trim();
+  const secondaryFontName = (thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal').trim();
+  const fontOptions = Array.from(new Set([
+    ...(availableFonts || []),
+    primaryFontName,
+    secondaryFontName,
+  ].map((font) => String(font || '').trim()).filter((font) => font.length > 0)));
 
   const handleDownloadThumbnail = useCallback(async () => {
     if (!videoPath || isDownloading) {
@@ -722,6 +749,89 @@ export function ThumbnailPreviewPanel({
                   />
                 </div>
                 <div className={styles.fullRow}>
+                  <span className={styles.label}>Text1 Style</span>
+                  <div className={styles.inlineFields}>
+                    <select
+                      className={styles.input}
+                      value={primaryFontName}
+                      onChange={(e) => onThumbnailTextPrimaryFontNameChange?.(e.target.value)}
+                    >
+                      {fontOptions.map((font) => (
+                        <option key={`thumb-t1-${font}`} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className={styles.input}
+                      type="number"
+                      min={24}
+                      max={180}
+                      step={1}
+                      value={thumbnailTextPrimaryFontSizeRel ?? 48}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (Number.isFinite(next)) onThumbnailTextPrimaryFontSizeChange?.(next);
+                      }}
+                    />
+                    <input
+                      className={styles.colorInput}
+                      type="color"
+                      value={thumbnailTextPrimaryColor || '#FFFF00'}
+                      onChange={(e) => onThumbnailTextPrimaryColorChange?.(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className={styles.fullRow}>
+                  <span className={styles.label}>Text2 Style</span>
+                  <div className={styles.inlineFields}>
+                    <select
+                      className={styles.input}
+                      value={secondaryFontName}
+                      onChange={(e) => onThumbnailTextSecondaryFontNameChange?.(e.target.value)}
+                    >
+                      {fontOptions.map((font) => (
+                        <option key={`thumb-t2-${font}`} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className={styles.input}
+                      type="number"
+                      min={24}
+                      max={180}
+                      step={1}
+                      value={thumbnailTextSecondaryFontSizeRel ?? 48}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (Number.isFinite(next)) onThumbnailTextSecondaryFontSizeChange?.(next);
+                      }}
+                    />
+                    <input
+                      className={styles.colorInput}
+                      type="color"
+                      value={thumbnailTextSecondaryColor || '#FFFF00'}
+                      onChange={(e) => onThumbnailTextSecondaryColorChange?.(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className={styles.fullRow}>
+                  <span className={styles.label}>Line height</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min={0}
+                    max={4}
+                    step={0.02}
+                    value={Number(thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
+                    onChange={(e) => {
+                      const next = Number(e.target.value);
+                      if (Number.isFinite(next)) onThumbnailLineHeightRatioChange?.(next);
+                    }}
+                  />
+                </div>
+                <div className={styles.fullRow}>
                   <span className={styles.label}>Frame thumbnail</span>
                   <input
                     className={styles.range}
@@ -779,7 +889,7 @@ export function ThumbnailPreviewPanel({
               <div className={styles.metaRow}>
                 <span className={styles.metaKey}>Text1 Font</span>
                 <span className={styles.metaValue}>
-                  {(thumbnailTextPrimaryFontName || thumbnailFontName || 'BrightwallPersonal')}
+                  {primaryFontName}
                   {' '}
                   {thumbnailTextPrimaryFontSize ?? thumbnailFontSize ?? 145}px
                 </span>
@@ -787,7 +897,7 @@ export function ThumbnailPreviewPanel({
                 <span className={styles.metaValue}>{(thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}</span>
                 <span className={styles.metaKey}>Text2 Font</span>
                 <span className={styles.metaValue}>
-                  {(thumbnailTextSecondaryFontName || thumbnailFontName || 'BrightwallPersonal')}
+                  {secondaryFontName}
                   {' '}
                   {thumbnailTextSecondaryFontSize ?? thumbnailFontSize ?? 145}px
                 </span>

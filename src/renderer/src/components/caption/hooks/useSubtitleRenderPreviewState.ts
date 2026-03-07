@@ -34,6 +34,29 @@ interface UseSubtitleRenderPreviewStateOptions {
   logoScale?: number;
   hardwareAcceleration?: RenderVideoOptions['hardwareAcceleration'];
   portraitForegroundCropPercent?: number;
+  thumbnailText?: string;
+  thumbnailTextSecondary?: string;
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryColor?: string;
+  thumbnailLineHeightRatio?: number;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
   disabled?: boolean;
   disabledReason?: string;
 }
@@ -62,6 +85,29 @@ interface RenderVideoPreviewFrameRequest {
   logoPosition?: { x: number; y: number };
   logoScale?: number;
   portraitForegroundCropPercent?: number;
+  thumbnailText?: string;
+  thumbnailTextSecondary?: string;
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryColor?: string;
+  thumbnailLineHeightRatio?: number;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
 }
 
 interface UseSubtitleRenderPreviewStateResult {
@@ -165,6 +211,29 @@ export function useSubtitleRenderPreviewState(
       logoScale: options.logoScale,
       hardwareAcceleration: options.hardwareAcceleration,
       portraitForegroundCropPercent: options.portraitForegroundCropPercent,
+      thumbnailText: options.thumbnailText,
+      thumbnailTextSecondary: options.thumbnailTextSecondary,
+      hardsubPortraitTextPrimary: options.hardsubPortraitTextPrimary,
+      hardsubPortraitTextSecondary: options.hardsubPortraitTextSecondary,
+      thumbnailFontName: options.thumbnailFontName,
+      thumbnailFontSize: options.thumbnailFontSize,
+      hardsubPortraitTextPrimaryFontName: options.hardsubPortraitTextPrimaryFontName,
+      hardsubPortraitTextPrimaryFontSize: options.hardsubPortraitTextPrimaryFontSize,
+      hardsubPortraitTextPrimaryColor: options.hardsubPortraitTextPrimaryColor,
+      hardsubPortraitTextSecondaryFontName: options.hardsubPortraitTextSecondaryFontName,
+      hardsubPortraitTextSecondaryFontSize: options.hardsubPortraitTextSecondaryFontSize,
+      hardsubPortraitTextSecondaryColor: options.hardsubPortraitTextSecondaryColor,
+      hardsubPortraitTextPrimaryPosition: options.hardsubPortraitTextPrimaryPosition,
+      hardsubPortraitTextSecondaryPosition: options.hardsubPortraitTextSecondaryPosition,
+      portraitTextPrimaryFontName: options.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: options.portraitTextPrimaryFontSize,
+      portraitTextPrimaryColor: options.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: options.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: options.portraitTextSecondaryFontSize,
+      portraitTextSecondaryColor: options.portraitTextSecondaryColor,
+      thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
+      portraitTextPrimaryPosition: options.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: options.portraitTextSecondaryPosition,
     };
   }, [
     normalizedEntries,
@@ -181,6 +250,29 @@ export function useSubtitleRenderPreviewState(
     options.logoScale,
     options.hardwareAcceleration,
     options.portraitForegroundCropPercent,
+    options.thumbnailText,
+    options.thumbnailTextSecondary,
+    options.hardsubPortraitTextPrimary,
+    options.hardsubPortraitTextSecondary,
+    options.thumbnailFontName,
+    options.thumbnailFontSize,
+    options.hardsubPortraitTextPrimaryFontName,
+    options.hardsubPortraitTextPrimaryFontSize,
+    options.hardsubPortraitTextPrimaryColor,
+    options.hardsubPortraitTextSecondaryFontName,
+    options.hardsubPortraitTextSecondaryFontSize,
+    options.hardsubPortraitTextSecondaryColor,
+    options.hardsubPortraitTextPrimaryPosition,
+    options.hardsubPortraitTextSecondaryPosition,
+    options.portraitTextPrimaryFontName,
+    options.portraitTextPrimaryFontSize,
+    options.portraitTextPrimaryColor,
+    options.portraitTextSecondaryFontName,
+    options.portraitTextSecondaryFontSize,
+    options.portraitTextSecondaryColor,
+    options.thumbnailLineHeightRatio,
+    options.portraitTextPrimaryPosition,
+    options.portraitTextSecondaryPosition,
     options.renderMode,
     options.renderResolution,
     options.style,

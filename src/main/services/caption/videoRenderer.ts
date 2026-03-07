@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import os from 'os';
+import { createHash } from 'crypto';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import {
   RenderAudioPreviewOptions,
@@ -49,6 +50,7 @@ import {
 } from './hardsub/timingDebugWriter';
 import {
   applyThumbnailPostProcess,
+  buildThumbnailDrawTextFilter,
   buildInlineThumbnailVideoFilter,
   normalizeThumbnailDurationSec,
   renderThumbnailPreviewFrame as renderThumbnailPreviewFramePipeline,
@@ -342,6 +344,353 @@ function ensureAudioLabelForConcat(
     `${sourceLabel}aformat=channel_layouts=stereo,aresample=44100[${outputLabelName}]`
   );
   return `[${outputLabelName}]`;
+}
+
+interface PortraitMainTextOverlayOptions {
+  // Main video text namespace cho mode hardsub 16:9
+  hardsubTextPrimary?: string;
+  hardsubTextSecondary?: string;
+  hardsubTextPrimaryFontName?: string;
+  hardsubTextPrimaryFontSize?: number;
+  hardsubTextPrimaryColor?: string;
+  hardsubTextSecondaryFontName?: string;
+  hardsubTextSecondaryFontSize?: number;
+  hardsubTextSecondaryColor?: string;
+  hardsubTextPrimaryPosition?: { x: number; y: number };
+  hardsubTextSecondaryPosition?: { x: number; y: number };
+  // Main video text namespace cho mode hardsub 9:16
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  // Legacy content fallback (trước đây dùng thumbnail text cho main-video 9:16)
+  thumbnailText?: string;
+  thumbnailTextSecondary?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryColor?: string;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
+  // Legacy fallback (để đọc dữ liệu cũ chưa migrate)
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
+  thumbnailLineHeightRatio?: number;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
+}
+
+interface PortraitMainTextOverlayCacheEntry {
+  drawTextFilter: string;
+  textFilePaths: string[];
+  debug: Record<string, unknown>;
+}
+
+const PORTRAIT_MAIN_TEXT_OVERLAY_CACHE_MAX_ITEMS = 80;
+const portraitMainTextOverlayCache = new Map<string, PortraitMainTextOverlayCacheEntry>();
+
+function normalizePortraitMainTextValue(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.replace(/\\N/g, '\n').trim();
+}
+
+function normalizePortraitForegroundCropPercent(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return Math.min(20, Math.max(0, numeric));
+}
+
+function buildPortraitMainTextOverlayCacheKey(input: {
+  textPrimary: string;
+  textSecondary: string;
+  primaryFontName?: string;
+  primaryFontSize?: number;
+  primaryColor?: string;
+  secondaryFontName?: string;
+  secondaryFontSize?: number;
+  secondaryColor?: string;
+  lineHeightRatio?: number;
+  primaryPosition?: { x: number; y: number };
+  secondaryPosition?: { x: number; y: number };
+  outputWidth: number;
+  outputHeight: number;
+}): string {
+  const payload = {
+    textPrimary: input.textPrimary,
+    textSecondary: input.textSecondary,
+    primaryFontName: input.primaryFontName || '',
+    primaryFontSize: input.primaryFontSize ?? null,
+    primaryColor: input.primaryColor || '',
+    secondaryFontName: input.secondaryFontName || '',
+    secondaryFontSize: input.secondaryFontSize ?? null,
+    secondaryColor: input.secondaryColor || '',
+    lineHeightRatio: input.lineHeightRatio ?? 1.16,
+    primaryPosition: input.primaryPosition || null,
+    secondaryPosition: input.secondaryPosition || null,
+    outputWidth: input.outputWidth,
+    outputHeight: input.outputHeight,
+  };
+  return createHash('sha1')
+    .update(JSON.stringify(payload))
+    .digest('hex');
+}
+
+function hasAllCachedTextFiles(paths: string[]): boolean {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return false;
+  }
+  return paths.every((filePath) => !!filePath && existsSync(filePath));
+}
+
+async function removeCachedTextFiles(paths: string[]): Promise<void> {
+  for (const filePath of paths) {
+    if (!filePath) {
+      continue;
+    }
+    try {
+      await fs.unlink(filePath);
+    } catch {}
+  }
+}
+
+async function upsertPortraitMainTextOverlayCache(
+  key: string,
+  entry: PortraitMainTextOverlayCacheEntry
+): Promise<void> {
+  if (portraitMainTextOverlayCache.has(key)) {
+    portraitMainTextOverlayCache.delete(key);
+  }
+  portraitMainTextOverlayCache.set(key, entry);
+  while (portraitMainTextOverlayCache.size > PORTRAIT_MAIN_TEXT_OVERLAY_CACHE_MAX_ITEMS) {
+    const oldestKey = portraitMainTextOverlayCache.keys().next().value as string | undefined;
+    if (!oldestKey) {
+      break;
+    }
+    const oldest = portraitMainTextOverlayCache.get(oldestKey);
+    portraitMainTextOverlayCache.delete(oldestKey);
+    if (oldest) {
+      await removeCachedTextFiles(oldest.textFilePaths);
+    }
+  }
+}
+
+async function appendPortraitMainTextOverlay(input: {
+  filterComplexParts: string[];
+  sourceLabel: string;
+  outputLabel: string;
+  options: PortraitMainTextOverlayOptions;
+  outputWidth: number;
+  outputHeight: number;
+  textFileBasePath: string;
+  persistentCache?: boolean;
+}): Promise<{
+  cleanupFiles: string[];
+  applied: boolean;
+  debug: Record<string, unknown>;
+}> {
+  const sourceLabel = ensureFilterLabelReference(input.sourceLabel);
+  const outputLabel = ensureFilterLabelReference(input.outputLabel);
+  const normalizedPrimaryText = normalizePortraitMainTextValue(
+    input.options.hardsubPortraitTextPrimary
+      ?? input.options.hardsubTextPrimary
+      ?? input.options.thumbnailText
+  );
+  const normalizedSecondaryText = normalizePortraitMainTextValue(
+    input.options.hardsubPortraitTextSecondary
+      ?? input.options.hardsubTextSecondary
+      ?? input.options.thumbnailTextSecondary
+  );
+  const hasAnyText = normalizedPrimaryText.length > 0 || normalizedSecondaryText.length > 0;
+  if (!hasAnyText) {
+    input.filterComplexParts.push(`${sourceLabel}null${outputLabel}`);
+    return {
+      cleanupFiles: [],
+      applied: false,
+      debug: {
+        enabled: false,
+        primaryChars: 0,
+        secondaryChars: 0,
+      },
+    };
+  }
+
+  const resolvedPrimaryFontName =
+    input.options.hardsubPortraitTextPrimaryFontName
+    || input.options.hardsubTextPrimaryFontName
+    || input.options.portraitTextPrimaryFontName
+    || input.options.thumbnailTextPrimaryFontName
+    || input.options.thumbnailFontName;
+  const resolvedSecondaryFontName =
+    input.options.hardsubPortraitTextSecondaryFontName
+    || input.options.hardsubTextSecondaryFontName
+    || input.options.portraitTextSecondaryFontName
+    || input.options.thumbnailTextSecondaryFontName
+    || input.options.thumbnailFontName;
+  const resolvedPrimaryFontSize =
+    input.options.hardsubPortraitTextPrimaryFontSize
+    ?? input.options.hardsubTextPrimaryFontSize
+    ?? input.options.portraitTextPrimaryFontSize
+    ?? input.options.thumbnailTextPrimaryFontSize
+    ?? input.options.thumbnailFontSize;
+  const resolvedSecondaryFontSize =
+    input.options.hardsubPortraitTextSecondaryFontSize
+    ?? input.options.hardsubTextSecondaryFontSize
+    ?? input.options.portraitTextSecondaryFontSize
+    ?? input.options.thumbnailTextSecondaryFontSize
+    ?? input.options.thumbnailFontSize;
+  const resolvedPrimaryColor =
+    input.options.hardsubPortraitTextPrimaryColor
+    || input.options.hardsubTextPrimaryColor
+    || input.options.portraitTextPrimaryColor
+    || input.options.thumbnailTextPrimaryColor;
+  const resolvedSecondaryColor =
+    input.options.hardsubPortraitTextSecondaryColor
+    || input.options.hardsubTextSecondaryColor
+    || input.options.portraitTextSecondaryColor
+    || input.options.thumbnailTextSecondaryColor;
+  const resolvedPrimaryPosition =
+    input.options.hardsubPortraitTextPrimaryPosition
+    || input.options.hardsubTextPrimaryPosition
+    || input.options.portraitTextPrimaryPosition
+    || input.options.thumbnailTextPrimaryPosition;
+  const resolvedSecondaryPosition =
+    input.options.hardsubPortraitTextSecondaryPosition
+    || input.options.hardsubTextSecondaryPosition
+    || input.options.portraitTextSecondaryPosition
+    || input.options.thumbnailTextSecondaryPosition;
+  const overlayCacheKey = input.persistentCache
+    ? buildPortraitMainTextOverlayCacheKey({
+        textPrimary: normalizedPrimaryText,
+        textSecondary: normalizedSecondaryText,
+        primaryFontName: resolvedPrimaryFontName,
+        primaryFontSize: resolvedPrimaryFontSize,
+        primaryColor: resolvedPrimaryColor,
+        secondaryFontName: resolvedSecondaryFontName,
+        secondaryFontSize: resolvedSecondaryFontSize,
+        secondaryColor: resolvedSecondaryColor,
+        lineHeightRatio: input.options.thumbnailLineHeightRatio,
+        primaryPosition: resolvedPrimaryPosition,
+        secondaryPosition: resolvedSecondaryPosition,
+        outputWidth: input.outputWidth,
+        outputHeight: input.outputHeight,
+      })
+    : null;
+  if (overlayCacheKey) {
+    const cached = portraitMainTextOverlayCache.get(overlayCacheKey);
+    if (cached && hasAllCachedTextFiles(cached.textFilePaths)) {
+      portraitMainTextOverlayCache.delete(overlayCacheKey);
+      portraitMainTextOverlayCache.set(overlayCacheKey, cached);
+      input.filterComplexParts.push(`${sourceLabel}${cached.drawTextFilter}${outputLabel}`);
+      return {
+        cleanupFiles: [],
+        applied: true,
+        debug: {
+          ...cached.debug,
+          cacheStatus: 'hit',
+        },
+      };
+    }
+    if (cached) {
+      portraitMainTextOverlayCache.delete(overlayCacheKey);
+      await removeCachedTextFiles(cached.textFilePaths);
+    }
+  }
+
+  const baseSuffix = overlayCacheKey
+    ? overlayCacheKey.slice(0, 16)
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const primaryBasePath = `${input.textFileBasePath}_primary_${baseSuffix}`;
+  const secondaryBasePath = `${input.textFileBasePath}_secondary_${baseSuffix}`;
+  const drawTextContext = await buildThumbnailDrawTextFilter({
+    thumbnailText: normalizedPrimaryText,
+    thumbnailTextSecondary: normalizedSecondaryText,
+    thumbnailFontName: resolvedPrimaryFontName || input.options.thumbnailFontName,
+    thumbnailFontSize: resolvedPrimaryFontSize ?? input.options.thumbnailFontSize,
+    thumbnailTextPrimaryFontName: resolvedPrimaryFontName,
+    thumbnailTextPrimaryFontSize: resolvedPrimaryFontSize,
+    thumbnailTextPrimaryColor: resolvedPrimaryColor,
+    thumbnailTextSecondaryFontName: resolvedSecondaryFontName,
+    thumbnailTextSecondaryFontSize: resolvedSecondaryFontSize,
+    thumbnailTextSecondaryColor: resolvedSecondaryColor,
+    thumbnailLineHeightRatio: input.options.thumbnailLineHeightRatio,
+    thumbnailTextPrimaryPosition: resolvedPrimaryPosition,
+    thumbnailTextSecondaryPosition: resolvedSecondaryPosition,
+    renderMode: 'hardsub_portrait_9_16',
+    outputWidth: input.outputWidth,
+    outputHeight: input.outputHeight,
+    // Normalize position semantics to full 9:16 canvas for main video text layer.
+    sourceWidth: input.outputWidth,
+    sourceHeight: input.outputHeight,
+    textFilePath: primaryBasePath,
+    secondaryTextFilePath: secondaryBasePath,
+  });
+
+  if (!drawTextContext.drawTextFilter) {
+    input.filterComplexParts.push(`${sourceLabel}null${outputLabel}`);
+    if (input.persistentCache && drawTextContext.textFilePaths.length > 0) {
+      await removeCachedTextFiles(drawTextContext.textFilePaths);
+    }
+    return {
+      cleanupFiles: input.persistentCache ? [] : drawTextContext.textFilePaths,
+      applied: false,
+      debug: {
+        enabled: false,
+        primaryChars: normalizedPrimaryText.length,
+        secondaryChars: normalizedSecondaryText.length,
+      },
+    };
+  }
+
+  const debugPayload: Record<string, unknown> = {
+    enabled: true,
+    textNamespace: input.options.hardsubPortraitTextPrimary !== undefined || input.options.hardsubPortraitTextSecondary !== undefined
+      ? 'hardsub_portrait'
+      : (input.options.hardsubTextPrimary !== undefined || input.options.hardsubTextSecondary !== undefined
+        ? 'hardsub_landscape'
+        : 'thumbnail_legacy'),
+    primaryChars: normalizedPrimaryText.length,
+    secondaryChars: normalizedSecondaryText.length,
+    primaryLines: drawTextContext.primaryLayout.lineCount,
+    secondaryLines: drawTextContext.secondaryLayout.lineCount,
+    primaryPosition: drawTextContext.primaryPosition,
+    secondaryPosition: drawTextContext.secondaryPosition,
+    lineHeightRatio: input.options.thumbnailLineHeightRatio ?? 1.16,
+    region: drawTextContext.textRegion,
+  };
+  if (overlayCacheKey && input.persistentCache) {
+    await upsertPortraitMainTextOverlayCache(overlayCacheKey, {
+      drawTextFilter: drawTextContext.drawTextFilter,
+      textFilePaths: [...drawTextContext.textFilePaths],
+      debug: debugPayload,
+    });
+  }
+
+  input.filterComplexParts.push(`${sourceLabel}${drawTextContext.drawTextFilter}${outputLabel}`);
+  return {
+    cleanupFiles: input.persistentCache ? [] : drawTextContext.textFilePaths,
+    applied: true,
+    debug: overlayCacheKey && input.persistentCache
+      ? { ...debugPayload, cacheStatus: 'miss_cached' }
+      : debugPayload,
+  };
 }
 
 function parseFfmpegTimestampToSec(raw: string): number | null {
@@ -913,12 +1262,12 @@ export async function renderHardsubVideo(
       fillStrategy: 'scale_to_output',
       outputAspect: `${prep.renderWidth}:${prep.renderHeight}`,
       durationSec: inlineThumbnail.thumbnailDurationSec > 0 ? inlineThumbnail.thumbnailDurationSec : (options.thumbnailDurationSec ?? 0.5),
-      fontName: options.thumbnailTextPrimaryFontName || options.thumbnailFontName || 'BrightwallPersonal',
-      fontSize: options.thumbnailTextPrimaryFontSize ?? options.thumbnailFontSize ?? 145,
-      fontColor: options.thumbnailTextPrimaryColor || '#FFFF00',
-      secondaryFontName: options.thumbnailTextSecondaryFontName || options.thumbnailFontName || 'BrightwallPersonal',
-      secondaryFontSize: options.thumbnailTextSecondaryFontSize ?? options.thumbnailFontSize ?? 145,
-      secondaryFontColor: options.thumbnailTextSecondaryColor || '#FFFF00',
+      fontName: options.hardsubTextPrimaryFontName || options.thumbnailTextPrimaryFontName || options.thumbnailFontName || 'BrightwallPersonal',
+      fontSize: options.hardsubTextPrimaryFontSize ?? options.thumbnailTextPrimaryFontSize ?? options.thumbnailFontSize ?? 145,
+      fontColor: options.hardsubTextPrimaryColor || options.thumbnailTextPrimaryColor || '#FFFF00',
+      secondaryFontName: options.hardsubTextSecondaryFontName || options.thumbnailTextSecondaryFontName || options.thumbnailFontName || 'BrightwallPersonal',
+      secondaryFontSize: options.hardsubTextSecondaryFontSize ?? options.thumbnailTextSecondaryFontSize ?? options.thumbnailFontSize ?? 145,
+      secondaryFontColor: options.hardsubTextSecondaryColor || options.thumbnailTextSecondaryColor || '#FFFF00',
       lineHeightRatio: options.thumbnailLineHeightRatio ?? 1.16,
       pipeline: options.thumbnailEnabled ? 'inline_single_stream' : 'post_concat_copy',
       audio: options.thumbnailEnabled ? 'silent_prefix' : 'none',
@@ -1181,11 +1530,8 @@ export async function renderHardsubPortraitVideo(
   const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
   const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
     aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
-  const foregroundCropPercent = Math.min(
-    20,
-    Math.max(0, Number.isFinite(options.portraitForegroundCropPercent ?? 0)
-      ? (options.portraitForegroundCropPercent as number)
-      : 0)
+  const foregroundCropPercent = normalizePortraitForegroundCropPercent(
+    options.portraitForegroundCropPercent
   );
   const portraitVideo = buildPortraitVideoFilter({
     inputLabel: '[0:v]',
@@ -1236,6 +1582,7 @@ export async function renderHardsubPortraitVideo(
 
   filterComplexParts.push(...portraitVideo.filterParts);
 
+  const portraitPostLogoLabel = '[v_portrait_post_logo]';
   if (hasLogo && logoInputIndex > 0) {
     const userLogoScale = renderOptions.logoScale ?? 1.0;
     const totalLogoScale = prep.scaleFactor * userLogoScale;
@@ -1257,10 +1604,62 @@ export async function renderHardsubPortraitVideo(
     }
 
     filterComplexParts.push(`[${logoInputIndex}:v]${logoScaleFilter}[logo_scaled]`);
-    filterComplexParts.push(`[${portraitVideo.outputLabel}][logo_scaled]overlay=x=${logoXAxis}:y=${logoYAxis}[v_out]`);
+    filterComplexParts.push(`[${portraitVideo.outputLabel}][logo_scaled]overlay=x=${logoXAxis}:y=${logoYAxis}${portraitPostLogoLabel}`);
   } else {
-    filterComplexParts.push(`[${portraitVideo.outputLabel}]null[v_out]`);
+    filterComplexParts.push(`[${portraitVideo.outputLabel}]null${portraitPostLogoLabel}`);
   }
+
+  const portraitMainTextOverlay = await appendPortraitMainTextOverlay({
+    filterComplexParts,
+    sourceLabel: portraitPostLogoLabel,
+    outputLabel: '[v_out]',
+    options: {
+      hardsubTextPrimary: renderOptions.hardsubTextPrimary,
+      hardsubTextSecondary: renderOptions.hardsubTextSecondary,
+      hardsubTextPrimaryFontName: renderOptions.hardsubTextPrimaryFontName,
+      hardsubTextPrimaryFontSize: renderOptions.hardsubTextPrimaryFontSize,
+      hardsubTextPrimaryColor: renderOptions.hardsubTextPrimaryColor,
+      hardsubTextSecondaryFontName: renderOptions.hardsubTextSecondaryFontName,
+      hardsubTextSecondaryFontSize: renderOptions.hardsubTextSecondaryFontSize,
+      hardsubTextSecondaryColor: renderOptions.hardsubTextSecondaryColor,
+      hardsubTextPrimaryPosition: renderOptions.hardsubTextPrimaryPosition,
+      hardsubTextSecondaryPosition: renderOptions.hardsubTextSecondaryPosition,
+      hardsubPortraitTextPrimary: renderOptions.hardsubPortraitTextPrimary,
+      hardsubPortraitTextSecondary: renderOptions.hardsubPortraitTextSecondary,
+      hardsubPortraitTextPrimaryFontName: renderOptions.hardsubPortraitTextPrimaryFontName,
+      hardsubPortraitTextPrimaryFontSize: renderOptions.hardsubPortraitTextPrimaryFontSize,
+      hardsubPortraitTextPrimaryColor: renderOptions.hardsubPortraitTextPrimaryColor,
+      hardsubPortraitTextSecondaryFontName: renderOptions.hardsubPortraitTextSecondaryFontName,
+      hardsubPortraitTextSecondaryFontSize: renderOptions.hardsubPortraitTextSecondaryFontSize,
+      hardsubPortraitTextSecondaryColor: renderOptions.hardsubPortraitTextSecondaryColor,
+      hardsubPortraitTextPrimaryPosition: renderOptions.hardsubPortraitTextPrimaryPosition,
+      hardsubPortraitTextSecondaryPosition: renderOptions.hardsubPortraitTextSecondaryPosition,
+      thumbnailText: renderOptions.thumbnailText,
+      thumbnailTextSecondary: renderOptions.thumbnailTextSecondary,
+      thumbnailFontName: renderOptions.thumbnailFontName,
+      thumbnailFontSize: renderOptions.thumbnailFontSize,
+      portraitTextPrimaryFontName: renderOptions.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: renderOptions.portraitTextPrimaryFontSize,
+      portraitTextPrimaryColor: renderOptions.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: renderOptions.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: renderOptions.portraitTextSecondaryFontSize,
+      portraitTextSecondaryColor: renderOptions.portraitTextSecondaryColor,
+      portraitTextPrimaryPosition: renderOptions.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: renderOptions.portraitTextSecondaryPosition,
+      thumbnailTextPrimaryFontName: renderOptions.thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: renderOptions.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor: renderOptions.thumbnailTextPrimaryColor,
+      thumbnailTextSecondaryFontName: renderOptions.thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: renderOptions.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor: renderOptions.thumbnailTextSecondaryColor,
+      thumbnailLineHeightRatio: renderOptions.thumbnailLineHeightRatio,
+      thumbnailTextPrimaryPosition: renderOptions.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: renderOptions.thumbnailTextSecondaryPosition,
+    },
+    outputWidth: portraitCanvas.width,
+    outputHeight: portraitCanvas.height,
+    textFileBasePath: path.join(os.tmpdir(), 'caption_portrait_main_text'),
+  });
 
   const fps = 24;
   const inlineMainAudioLabel = options.thumbnailEnabled
@@ -1430,7 +1829,12 @@ export async function renderHardsubPortraitVideo(
       mode: coverMode,
       hasQuad: !!options.coverQuad,
     },
+    mainTextOverlay: portraitMainTextOverlay.debug,
   });
+  const extraCleanupFiles = [
+    ...portraitMainTextOverlay.cleanupFiles,
+    ...inlineThumbnail.cleanupFiles,
+  ];
   console.log('[VideoRenderer][HardsubPortrait][TimingPayload]', hardsubTimingDebug);
 
   const totalFrames = Math.floor(outputDuration * fps);
@@ -1450,7 +1854,7 @@ export async function renderHardsubPortraitVideo(
     fps,
     outputPath,
     tempAssPath: prep.tempAssPath,
-    cleanupTempPaths: inlineThumbnail.cleanupFiles,
+    cleanupTempPaths: extraCleanupFiles,
     duration: outputDuration,
     progressCallback,
     debugLabel: `hardsub_portrait:${effectiveFeatherStrategy}`,
@@ -1644,6 +2048,34 @@ export async function renderVideo(
     thumbnailLineHeightRatio: options.thumbnailLineHeightRatio ?? 1.16,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition ?? null,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition ?? null,
+    hardsubTextPrimary: options.hardsubTextPrimary ?? '',
+    hardsubTextSecondary: options.hardsubTextSecondary ?? '',
+    hardsubTextPrimaryFontName: options.hardsubTextPrimaryFontName || null,
+    hardsubTextPrimaryFontSize: options.hardsubTextPrimaryFontSize ?? null,
+    hardsubTextPrimaryColor: options.hardsubTextPrimaryColor || null,
+    hardsubTextSecondaryFontName: options.hardsubTextSecondaryFontName || null,
+    hardsubTextSecondaryFontSize: options.hardsubTextSecondaryFontSize ?? null,
+    hardsubTextSecondaryColor: options.hardsubTextSecondaryColor || null,
+    hardsubTextPrimaryPosition: options.hardsubTextPrimaryPosition ?? null,
+    hardsubTextSecondaryPosition: options.hardsubTextSecondaryPosition ?? null,
+    hardsubPortraitTextPrimary: options.hardsubPortraitTextPrimary ?? '',
+    hardsubPortraitTextSecondary: options.hardsubPortraitTextSecondary ?? '',
+    hardsubPortraitTextPrimaryFontName: options.hardsubPortraitTextPrimaryFontName || null,
+    hardsubPortraitTextPrimaryFontSize: options.hardsubPortraitTextPrimaryFontSize ?? null,
+    hardsubPortraitTextPrimaryColor: options.hardsubPortraitTextPrimaryColor || null,
+    hardsubPortraitTextSecondaryFontName: options.hardsubPortraitTextSecondaryFontName || null,
+    hardsubPortraitTextSecondaryFontSize: options.hardsubPortraitTextSecondaryFontSize ?? null,
+    hardsubPortraitTextSecondaryColor: options.hardsubPortraitTextSecondaryColor || null,
+    hardsubPortraitTextPrimaryPosition: options.hardsubPortraitTextPrimaryPosition ?? null,
+    hardsubPortraitTextSecondaryPosition: options.hardsubPortraitTextSecondaryPosition ?? null,
+    portraitTextPrimaryFontName: options.portraitTextPrimaryFontName || null,
+    portraitTextPrimaryFontSize: options.portraitTextPrimaryFontSize ?? null,
+    portraitTextPrimaryColor: options.portraitTextPrimaryColor || null,
+    portraitTextSecondaryFontName: options.portraitTextSecondaryFontName || null,
+    portraitTextSecondaryFontSize: options.portraitTextSecondaryFontSize ?? null,
+    portraitTextSecondaryColor: options.portraitTextSecondaryColor || null,
+    portraitTextPrimaryPosition: options.portraitTextPrimaryPosition ?? null,
+    portraitTextSecondaryPosition: options.portraitTextSecondaryPosition ?? null,
   });
 
   if (options.renderMode === 'black_bg') {
@@ -1781,6 +2213,47 @@ export async function renderVideoPreviewFrame(
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
+      thumbnailText: options.thumbnailText,
+      thumbnailTextSecondary: options.thumbnailTextSecondary,
+      thumbnailFontName: options.thumbnailFontName,
+      thumbnailFontSize: options.thumbnailFontSize,
+      thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+      thumbnailTextPrimaryColor: options.thumbnailTextPrimaryColor,
+      thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+      thumbnailTextSecondaryColor: options.thumbnailTextSecondaryColor,
+      thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
+      thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+      hardsubTextPrimary: options.hardsubTextPrimary,
+      hardsubTextSecondary: options.hardsubTextSecondary,
+      hardsubTextPrimaryFontName: options.hardsubTextPrimaryFontName,
+      hardsubTextPrimaryFontSize: options.hardsubTextPrimaryFontSize,
+      hardsubTextPrimaryColor: options.hardsubTextPrimaryColor,
+      hardsubTextSecondaryFontName: options.hardsubTextSecondaryFontName,
+      hardsubTextSecondaryFontSize: options.hardsubTextSecondaryFontSize,
+      hardsubTextSecondaryColor: options.hardsubTextSecondaryColor,
+      hardsubTextPrimaryPosition: options.hardsubTextPrimaryPosition,
+      hardsubTextSecondaryPosition: options.hardsubTextSecondaryPosition,
+      hardsubPortraitTextPrimary: options.hardsubPortraitTextPrimary,
+      hardsubPortraitTextSecondary: options.hardsubPortraitTextSecondary,
+      hardsubPortraitTextPrimaryFontName: options.hardsubPortraitTextPrimaryFontName,
+      hardsubPortraitTextPrimaryFontSize: options.hardsubPortraitTextPrimaryFontSize,
+      hardsubPortraitTextPrimaryColor: options.hardsubPortraitTextPrimaryColor,
+      hardsubPortraitTextSecondaryFontName: options.hardsubPortraitTextSecondaryFontName,
+      hardsubPortraitTextSecondaryFontSize: options.hardsubPortraitTextSecondaryFontSize,
+      hardsubPortraitTextSecondaryColor: options.hardsubPortraitTextSecondaryColor,
+      hardsubPortraitTextPrimaryPosition: options.hardsubPortraitTextPrimaryPosition,
+      hardsubPortraitTextSecondaryPosition: options.hardsubPortraitTextSecondaryPosition,
+      portraitTextPrimaryFontName: options.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: options.portraitTextPrimaryFontSize,
+      portraitTextPrimaryColor: options.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: options.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: options.portraitTextSecondaryFontSize,
+      portraitTextSecondaryColor: options.portraitTextSecondaryColor,
+      portraitTextPrimaryPosition: options.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: options.portraitTextSecondaryPosition,
       portraitForegroundCropPercent: options.portraitForegroundCropPercent,
       audioSpeed: 1.0,
       step7AudioSpeedInput: 1.0,
@@ -1832,14 +2305,8 @@ export async function renderVideoPreviewFrame(
       const nearPortraitAspectThreshold = 0.05;
       const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
         aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
-      const foregroundCropPercent = Math.min(
-        20,
-        Math.max(
-          0,
-          Number.isFinite(options.portraitForegroundCropPercent ?? 0)
-            ? (options.portraitForegroundCropPercent as number)
-            : 0
-        )
+      const foregroundCropPercent = normalizePortraitForegroundCropPercent(
+        options.portraitForegroundCropPercent
       );
       const portraitVideo = buildPortraitVideoFilter({
         inputLabel: '[0:v]',
@@ -1867,6 +2334,7 @@ export async function renderVideoPreviewFrame(
       inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];
       filterComplexParts.push(...portraitVideo.filterParts);
       const portraitOutputLabel = `[${portraitVideo.outputLabel}]`;
+      const portraitPostLogoLabel = '[v_preview_portrait_post_logo]';
       if (options.logoPath && existsSync(options.logoPath)) {
         inputArgs.push('-i', options.logoPath);
         const userLogoScale = options.logoScale ?? 1.0;
@@ -1889,10 +2357,62 @@ export async function renderVideoPreviewFrame(
           }
         }
         filterComplexParts.push('[1:v]' + logoScaleFilter + '[logo_scaled_preview]');
-        filterComplexParts.push(`${portraitOutputLabel}[logo_scaled_preview]overlay=x=${logoXAxis}:y=${logoYAxis}${finalVideoLabel}`);
+        filterComplexParts.push(`${portraitOutputLabel}[logo_scaled_preview]overlay=x=${logoXAxis}:y=${logoYAxis}${portraitPostLogoLabel}`);
       } else {
-        filterComplexParts.push(`${portraitOutputLabel}null${finalVideoLabel}`);
+        filterComplexParts.push(`${portraitOutputLabel}null${portraitPostLogoLabel}`);
       }
+      await appendPortraitMainTextOverlay({
+        filterComplexParts,
+        sourceLabel: portraitPostLogoLabel,
+        outputLabel: finalVideoLabel,
+        options: {
+          hardsubTextPrimary: options.hardsubTextPrimary,
+          hardsubTextSecondary: options.hardsubTextSecondary,
+          hardsubTextPrimaryFontName: options.hardsubTextPrimaryFontName,
+          hardsubTextPrimaryFontSize: options.hardsubTextPrimaryFontSize,
+          hardsubTextPrimaryColor: options.hardsubTextPrimaryColor,
+          hardsubTextSecondaryFontName: options.hardsubTextSecondaryFontName,
+          hardsubTextSecondaryFontSize: options.hardsubTextSecondaryFontSize,
+          hardsubTextSecondaryColor: options.hardsubTextSecondaryColor,
+          hardsubTextPrimaryPosition: options.hardsubTextPrimaryPosition,
+          hardsubTextSecondaryPosition: options.hardsubTextSecondaryPosition,
+          hardsubPortraitTextPrimary: options.hardsubPortraitTextPrimary,
+          hardsubPortraitTextSecondary: options.hardsubPortraitTextSecondary,
+          hardsubPortraitTextPrimaryFontName: options.hardsubPortraitTextPrimaryFontName,
+          hardsubPortraitTextPrimaryFontSize: options.hardsubPortraitTextPrimaryFontSize,
+          hardsubPortraitTextPrimaryColor: options.hardsubPortraitTextPrimaryColor,
+          hardsubPortraitTextSecondaryFontName: options.hardsubPortraitTextSecondaryFontName,
+          hardsubPortraitTextSecondaryFontSize: options.hardsubPortraitTextSecondaryFontSize,
+          hardsubPortraitTextSecondaryColor: options.hardsubPortraitTextSecondaryColor,
+          hardsubPortraitTextPrimaryPosition: options.hardsubPortraitTextPrimaryPosition,
+          hardsubPortraitTextSecondaryPosition: options.hardsubPortraitTextSecondaryPosition,
+          thumbnailText: options.thumbnailText,
+          thumbnailTextSecondary: options.thumbnailTextSecondary,
+          thumbnailFontName: options.thumbnailFontName,
+          thumbnailFontSize: options.thumbnailFontSize,
+          portraitTextPrimaryFontName: options.portraitTextPrimaryFontName,
+          portraitTextPrimaryFontSize: options.portraitTextPrimaryFontSize,
+          portraitTextPrimaryColor: options.portraitTextPrimaryColor,
+          portraitTextSecondaryFontName: options.portraitTextSecondaryFontName,
+          portraitTextSecondaryFontSize: options.portraitTextSecondaryFontSize,
+          portraitTextSecondaryColor: options.portraitTextSecondaryColor,
+          portraitTextPrimaryPosition: options.portraitTextPrimaryPosition,
+          portraitTextSecondaryPosition: options.portraitTextSecondaryPosition,
+          thumbnailTextPrimaryFontName: options.thumbnailTextPrimaryFontName,
+          thumbnailTextPrimaryFontSize: options.thumbnailTextPrimaryFontSize,
+          thumbnailTextPrimaryColor: options.thumbnailTextPrimaryColor,
+          thumbnailTextSecondaryFontName: options.thumbnailTextSecondaryFontName,
+          thumbnailTextSecondaryFontSize: options.thumbnailTextSecondaryFontSize,
+          thumbnailTextSecondaryColor: options.thumbnailTextSecondaryColor,
+          thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
+          thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
+          thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+        },
+        outputWidth,
+        outputHeight,
+        textFileBasePath: path.join(os.tmpdir(), 'caption_preview_portrait_main_text'),
+        persistentCache: true,
+      });
     } else {
       const prep = await prepareSubtitleAndDuration({
         ...renderOptionsBase,

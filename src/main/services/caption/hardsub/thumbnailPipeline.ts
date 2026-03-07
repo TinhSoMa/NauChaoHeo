@@ -312,7 +312,7 @@ async function extractFrameToPng(
   return { success: true };
 }
 
-async function buildThumbnailDrawTextFilter(options: {
+export async function buildThumbnailDrawTextFilter(options: {
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
   thumbnailFontName?: string;

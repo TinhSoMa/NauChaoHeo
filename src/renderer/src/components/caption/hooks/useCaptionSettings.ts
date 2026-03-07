@@ -67,6 +67,16 @@ interface LayoutProfile {
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
+  portraitTextPrimaryFontName: string;
+  portraitTextPrimaryFontSize: number;
+  portraitTextPrimaryFontSizeRel: number;
+  portraitTextPrimaryColor: string;
+  portraitTextSecondaryFontName: string;
+  portraitTextSecondaryFontSize: number;
+  portraitTextSecondaryFontSizeRel: number;
+  portraitTextSecondaryColor: string;
+  portraitTextPrimaryPosition: { x: number; y: number };
+  portraitTextSecondaryPosition: { x: number; y: number };
 }
 
 interface LayoutProfilesState {
@@ -90,6 +100,16 @@ interface CaptionTypographyLayoutDefaults {
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
+  portraitTextPrimaryFontName: string;
+  portraitTextPrimaryFontSize: number;
+  portraitTextPrimaryFontSizeRel: number;
+  portraitTextPrimaryColor: string;
+  portraitTextSecondaryFontName: string;
+  portraitTextSecondaryFontSize: number;
+  portraitTextSecondaryFontSizeRel: number;
+  portraitTextSecondaryColor: string;
+  portraitTextPrimaryPosition: { x: number; y: number };
+  portraitTextSecondaryPosition: { x: number; y: number };
 }
 
 interface CaptionTypographyDefaults {
@@ -346,6 +366,28 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
+  portraitTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  portraitTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  portraitTextPrimaryFontSizeRel: pxToRelativeFontSize(
+    DEFAULT_THUMBNAIL_FONT_SIZE,
+    resolveOutputHeightByLayout('portrait', '1080p'),
+    MIN_THUMBNAIL_FONT_SIZE_REL,
+    MAX_THUMBNAIL_FONT_SIZE_REL,
+    48
+  ),
+  portraitTextPrimaryColor: DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR,
+  portraitTextSecondaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  portraitTextSecondaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  portraitTextSecondaryFontSizeRel: pxToRelativeFontSize(
+    DEFAULT_THUMBNAIL_FONT_SIZE,
+    resolveOutputHeightByLayout('portrait', '1080p'),
+    MIN_THUMBNAIL_FONT_SIZE_REL,
+    MAX_THUMBNAIL_FONT_SIZE_REL,
+    48
+  ),
+  portraitTextSecondaryColor: DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR,
+  portraitTextPrimaryPosition: { x: 0.5, y: 0.5 },
+  portraitTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
 
 const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
@@ -408,6 +450,28 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
+  portraitTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  portraitTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  portraitTextPrimaryFontSizeRel: pxToRelativeFontSize(
+    DEFAULT_THUMBNAIL_FONT_SIZE,
+    resolveOutputHeightByLayout('portrait', '1080p'),
+    MIN_THUMBNAIL_FONT_SIZE_REL,
+    MAX_THUMBNAIL_FONT_SIZE_REL,
+    48
+  ),
+  portraitTextPrimaryColor: DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR,
+  portraitTextSecondaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
+  portraitTextSecondaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
+  portraitTextSecondaryFontSizeRel: pxToRelativeFontSize(
+    DEFAULT_THUMBNAIL_FONT_SIZE,
+    resolveOutputHeightByLayout('portrait', '1080p'),
+    MIN_THUMBNAIL_FONT_SIZE_REL,
+    MAX_THUMBNAIL_FONT_SIZE_REL,
+    48
+  ),
+  portraitTextSecondaryColor: DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR,
+  portraitTextPrimaryPosition: { x: 0.5, y: 0.5 },
+  portraitTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
 
 function cloneProfile(profile: LayoutProfile): LayoutProfile {
@@ -419,6 +483,8 @@ function cloneProfile(profile: LayoutProfile): LayoutProfile {
     logoPosition: profile.logoPosition ? { ...profile.logoPosition } : undefined,
     thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
     thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
+    portraitTextPrimaryPosition: { ...profile.portraitTextPrimaryPosition },
+    portraitTextSecondaryPosition: { ...profile.portraitTextSecondaryPosition },
   };
 }
 
@@ -430,6 +496,7 @@ function normalizeProfile(
   const next = cloneProfile(fallback);
   if (!patch || typeof patch !== 'object') {
     const outputHeight = resolveOutputHeightByLayout(layoutKey, next.renderResolution);
+    const portraitOutputHeight = resolveOutputHeightByLayout('portrait', '1080p');
     next.subtitleFontSizeRel = clamp(
       Number.isFinite(next.subtitleFontSizeRel)
         ? next.subtitleFontSizeRel
@@ -469,6 +536,32 @@ function normalizeProfile(
       MIN_THUMBNAIL_FONT_SIZE_REL,
       MAX_THUMBNAIL_FONT_SIZE_REL
     );
+    next.portraitTextPrimaryFontSizeRel = clamp(
+      Number.isFinite(next.portraitTextPrimaryFontSizeRel)
+        ? next.portraitTextPrimaryFontSizeRel
+        : pxToRelativeFontSize(
+            next.portraitTextPrimaryFontSize,
+            portraitOutputHeight,
+            MIN_THUMBNAIL_FONT_SIZE_REL,
+            MAX_THUMBNAIL_FONT_SIZE_REL,
+            fallback.portraitTextPrimaryFontSizeRel
+          ),
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL
+    );
+    next.portraitTextSecondaryFontSizeRel = clamp(
+      Number.isFinite(next.portraitTextSecondaryFontSizeRel)
+        ? next.portraitTextSecondaryFontSizeRel
+        : pxToRelativeFontSize(
+            next.portraitTextSecondaryFontSize,
+            portraitOutputHeight,
+            MIN_THUMBNAIL_FONT_SIZE_REL,
+            MAX_THUMBNAIL_FONT_SIZE_REL,
+            fallback.portraitTextSecondaryFontSizeRel
+          ),
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL
+    );
     next.style = normalizeAssStyle(
       {
         ...next.style,
@@ -496,6 +589,20 @@ function normalizeProfile(
       MAX_THUMBNAIL_FONT_SIZE,
       next.thumbnailTextSecondaryFontSize
     );
+    next.portraitTextPrimaryFontSize = relativeToPxFontSize(
+      next.portraitTextPrimaryFontSizeRel,
+      portraitOutputHeight,
+      MIN_THUMBNAIL_FONT_SIZE,
+      MAX_THUMBNAIL_FONT_SIZE,
+      next.portraitTextPrimaryFontSize
+    );
+    next.portraitTextSecondaryFontSize = relativeToPxFontSize(
+      next.portraitTextSecondaryFontSizeRel,
+      portraitOutputHeight,
+      MIN_THUMBNAIL_FONT_SIZE,
+      MAX_THUMBNAIL_FONT_SIZE,
+      next.portraitTextSecondaryFontSize
+    );
     next.thumbnailFontSize = next.thumbnailTextPrimaryFontSize;
     next.thumbnailFontSizeRel = next.thumbnailTextPrimaryFontSizeRel;
     next.fontSizeScaleVersion = FONT_SIZE_SCALE_VERSION;
@@ -510,6 +617,8 @@ function normalizeProfile(
   }
   const outputSize = resolveOutputSizeByLayout(layoutKey, next.renderResolution);
   const outputHeight = outputSize.height;
+  const portraitOutputSize = resolveOutputSizeByLayout('portrait', '1080p');
+  const portraitOutputHeight = portraitOutputSize.height;
 
   const style = patch.style as ASSStyleConfig | undefined;
   if (style && typeof style === 'object') {
@@ -688,6 +797,24 @@ function normalizeProfile(
         MAX_THUMBNAIL_FONT_SIZE_REL,
         fallback.thumbnailTextSecondaryFontSizeRel
       );
+  let portraitTextPrimaryFontSizeRel = Number.isFinite(next.portraitTextPrimaryFontSizeRel)
+    ? clamp(next.portraitTextPrimaryFontSizeRel, MIN_THUMBNAIL_FONT_SIZE_REL, MAX_THUMBNAIL_FONT_SIZE_REL)
+    : pxToRelativeFontSize(
+        next.portraitTextPrimaryFontSize,
+        portraitOutputHeight,
+        MIN_THUMBNAIL_FONT_SIZE_REL,
+        MAX_THUMBNAIL_FONT_SIZE_REL,
+        fallback.portraitTextPrimaryFontSizeRel
+      );
+  let portraitTextSecondaryFontSizeRel = Number.isFinite(next.portraitTextSecondaryFontSizeRel)
+    ? clamp(next.portraitTextSecondaryFontSizeRel, MIN_THUMBNAIL_FONT_SIZE_REL, MAX_THUMBNAIL_FONT_SIZE_REL)
+    : pxToRelativeFontSize(
+        next.portraitTextSecondaryFontSize,
+        portraitOutputHeight,
+        MIN_THUMBNAIL_FONT_SIZE_REL,
+        MAX_THUMBNAIL_FONT_SIZE_REL,
+        fallback.portraitTextSecondaryFontSizeRel
+      );
   if (legacyFontName) {
     next.thumbnailFontName = legacyFontName;
     next.thumbnailTextPrimaryFontName = legacyFontName;
@@ -785,6 +912,118 @@ function normalizeProfile(
       );
     }
   }
+  const hasPortraitTextPrimaryFontNamePatch =
+    typeof patch.portraitTextPrimaryFontName === 'string' && patch.portraitTextPrimaryFontName.trim().length > 0;
+  const hasPortraitTextPrimaryFontSizePatch =
+    typeof patch.portraitTextPrimaryFontSize === 'number' && Number.isFinite(patch.portraitTextPrimaryFontSize);
+  const hasPortraitTextPrimaryFontSizeRelPatch =
+    typeof patch.portraitTextPrimaryFontSizeRel === 'number' && Number.isFinite(patch.portraitTextPrimaryFontSizeRel);
+  if (hasPortraitTextPrimaryFontNamePatch) {
+    next.portraitTextPrimaryFontName = (patch.portraitTextPrimaryFontName as string).trim();
+  }
+  if (hasPortraitTextPrimaryFontSizePatch) {
+    portraitTextPrimaryFontSizeRel = pxToRelativeFontSize(
+      patch.portraitTextPrimaryFontSize as number,
+      portraitOutputHeight,
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL,
+      portraitTextPrimaryFontSizeRel
+    );
+  }
+  if (hasPortraitTextPrimaryFontSizeRelPatch) {
+    portraitTextPrimaryFontSizeRel = clamp(
+      Math.round(patch.portraitTextPrimaryFontSizeRel as number),
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL
+    );
+  }
+  if (typeof patch.portraitTextPrimaryColor === 'string') {
+    next.portraitTextPrimaryColor = normalizeHexColor(
+      patch.portraitTextPrimaryColor,
+      next.portraitTextPrimaryColor
+    );
+  }
+
+  const hasPortraitTextSecondaryFontNamePatch =
+    typeof patch.portraitTextSecondaryFontName === 'string' && patch.portraitTextSecondaryFontName.trim().length > 0;
+  const hasPortraitTextSecondaryFontSizePatch =
+    typeof patch.portraitTextSecondaryFontSize === 'number' && Number.isFinite(patch.portraitTextSecondaryFontSize);
+  const hasPortraitTextSecondaryFontSizeRelPatch =
+    typeof patch.portraitTextSecondaryFontSizeRel === 'number' && Number.isFinite(patch.portraitTextSecondaryFontSizeRel);
+  if (hasPortraitTextSecondaryFontNamePatch) {
+    next.portraitTextSecondaryFontName = (patch.portraitTextSecondaryFontName as string).trim();
+  }
+  if (hasPortraitTextSecondaryFontSizePatch) {
+    portraitTextSecondaryFontSizeRel = pxToRelativeFontSize(
+      patch.portraitTextSecondaryFontSize as number,
+      portraitOutputHeight,
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL,
+      portraitTextSecondaryFontSizeRel
+    );
+  }
+  if (hasPortraitTextSecondaryFontSizeRelPatch) {
+    portraitTextSecondaryFontSizeRel = clamp(
+      Math.round(patch.portraitTextSecondaryFontSizeRel as number),
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL
+    );
+  }
+  if (typeof patch.portraitTextSecondaryColor === 'string') {
+    next.portraitTextSecondaryColor = normalizeHexColor(
+      patch.portraitTextSecondaryColor,
+      next.portraitTextSecondaryColor
+    );
+  }
+
+  const hasPortraitTextPrimaryPositionPatch =
+    !!patch.portraitTextPrimaryPosition && typeof patch.portraitTextPrimaryPosition === 'object';
+  if (hasPortraitTextPrimaryPositionPatch) {
+    const p = patch.portraitTextPrimaryPosition as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      next.portraitTextPrimaryPosition = normalizePositionValue(
+        { x: p.x, y: p.y },
+        portraitOutputSize.width,
+        portraitOutputSize.height
+      );
+    }
+  }
+  const hasPortraitTextSecondaryPositionPatch =
+    !!patch.portraitTextSecondaryPosition && typeof patch.portraitTextSecondaryPosition === 'object';
+  if (hasPortraitTextSecondaryPositionPatch) {
+    const p = patch.portraitTextSecondaryPosition as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      next.portraitTextSecondaryPosition = normalizePositionValue(
+        { x: p.x, y: p.y },
+        portraitOutputSize.width,
+        portraitOutputSize.height
+      );
+    }
+  }
+  if (!hasPortraitTextPrimaryFontNamePatch) {
+    next.portraitTextPrimaryFontName = next.thumbnailTextPrimaryFontName;
+  }
+  if (!hasPortraitTextSecondaryFontNamePatch) {
+    next.portraitTextSecondaryFontName = next.thumbnailTextSecondaryFontName;
+  }
+  if (!hasPortraitTextPrimaryFontSizePatch && !hasPortraitTextPrimaryFontSizeRelPatch) {
+    portraitTextPrimaryFontSizeRel = thumbnailTextPrimaryFontSizeRel;
+  }
+  if (!hasPortraitTextSecondaryFontSizePatch && !hasPortraitTextSecondaryFontSizeRelPatch) {
+    portraitTextSecondaryFontSizeRel = thumbnailTextSecondaryFontSizeRel;
+  }
+  if (typeof patch.portraitTextPrimaryColor !== 'string') {
+    next.portraitTextPrimaryColor = next.thumbnailTextPrimaryColor;
+  }
+  if (typeof patch.portraitTextSecondaryColor !== 'string') {
+    next.portraitTextSecondaryColor = next.thumbnailTextSecondaryColor;
+  }
+  if (!hasPortraitTextPrimaryPositionPatch) {
+    next.portraitTextPrimaryPosition = { ...next.thumbnailTextPrimaryPosition };
+  }
+  if (!hasPortraitTextSecondaryPositionPatch) {
+    next.portraitTextSecondaryPosition = { ...next.thumbnailTextSecondaryPosition };
+  }
 
   next.thumbnailTextPrimaryFontSizeRel = thumbnailTextPrimaryFontSizeRel;
   next.thumbnailTextSecondaryFontSizeRel = thumbnailTextSecondaryFontSizeRel;
@@ -801,6 +1040,22 @@ function normalizeProfile(
     MIN_THUMBNAIL_FONT_SIZE,
     MAX_THUMBNAIL_FONT_SIZE,
     next.thumbnailTextSecondaryFontSize
+  );
+  next.portraitTextPrimaryFontSizeRel = portraitTextPrimaryFontSizeRel;
+  next.portraitTextSecondaryFontSizeRel = portraitTextSecondaryFontSizeRel;
+  next.portraitTextPrimaryFontSize = relativeToPxFontSize(
+    portraitTextPrimaryFontSizeRel,
+    portraitOutputHeight,
+    MIN_THUMBNAIL_FONT_SIZE,
+    MAX_THUMBNAIL_FONT_SIZE,
+    next.portraitTextPrimaryFontSize
+  );
+  next.portraitTextSecondaryFontSize = relativeToPxFontSize(
+    portraitTextSecondaryFontSizeRel,
+    portraitOutputHeight,
+    MIN_THUMBNAIL_FONT_SIZE,
+    MAX_THUMBNAIL_FONT_SIZE,
+    next.portraitTextSecondaryFontSize
   );
   next.fontSizeScaleVersion = FONT_SIZE_SCALE_VERSION;
   next.thumbnailFontName = next.thumbnailTextPrimaryFontName;
@@ -838,6 +1093,16 @@ function toTypographyLayoutDefaults(profile: LayoutProfile): CaptionTypographyLa
     thumbnailLineHeightRatio: profile.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
     thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
+    portraitTextPrimaryFontName: profile.portraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize: profile.portraitTextPrimaryFontSize,
+    portraitTextPrimaryFontSizeRel: profile.portraitTextPrimaryFontSizeRel,
+    portraitTextPrimaryColor: profile.portraitTextPrimaryColor,
+    portraitTextSecondaryFontName: profile.portraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize: profile.portraitTextSecondaryFontSize,
+    portraitTextSecondaryFontSizeRel: profile.portraitTextSecondaryFontSizeRel,
+    portraitTextSecondaryColor: profile.portraitTextSecondaryColor,
+    portraitTextPrimaryPosition: { ...profile.portraitTextPrimaryPosition },
+    portraitTextSecondaryPosition: { ...profile.portraitTextSecondaryPosition },
   };
 }
 
@@ -945,6 +1210,15 @@ export function useCaptionSettings() {
     },
     [activeLayoutKey]
   );
+  const updatePortraitProfile = useCallback(
+    (updater: (current: LayoutProfile) => LayoutProfile) => {
+      setLayoutProfiles((prev) => ({
+        ...prev,
+        portrait: updater(prev.portrait),
+      }));
+    },
+    []
+  );
 
   const setVideoVolume = useCallback((value: number) => {
     setVideoVolumeState((prev) =>
@@ -1019,12 +1293,32 @@ export function useCaptionSettings() {
         MAX_THUMBNAIL_FONT_SIZE,
         current.thumbnailTextSecondaryFontSize
       );
+      const portraitPrimaryPx = activeLayoutKey === 'portrait'
+        ? relativeToPxFontSize(
+            current.portraitTextPrimaryFontSizeRel,
+            outputHeight,
+            MIN_THUMBNAIL_FONT_SIZE,
+            MAX_THUMBNAIL_FONT_SIZE,
+            current.portraitTextPrimaryFontSize
+          )
+        : current.portraitTextPrimaryFontSize;
+      const portraitSecondaryPx = activeLayoutKey === 'portrait'
+        ? relativeToPxFontSize(
+            current.portraitTextSecondaryFontSizeRel,
+            outputHeight,
+            MIN_THUMBNAIL_FONT_SIZE,
+            MAX_THUMBNAIL_FONT_SIZE,
+            current.portraitTextSecondaryFontSize
+          )
+        : current.portraitTextSecondaryFontSize;
       return {
         ...current,
         renderResolution: requested,
         style: { ...current.style, fontSize: subtitlePx },
         thumbnailTextPrimaryFontSize: thumbPrimaryPx,
         thumbnailTextSecondaryFontSize: thumbSecondaryPx,
+        portraitTextPrimaryFontSize: portraitPrimaryPx,
+        portraitTextSecondaryFontSize: portraitSecondaryPx,
         thumbnailFontSize: thumbPrimaryPx,
       };
     });
@@ -1364,6 +1658,120 @@ export function useCaptionSettings() {
     });
   }, [activeLayoutKey, markTypographyDefaultsDirty, updateActiveProfile]);
 
+  const setPortraitTextPrimaryFontName = useCallback((value: string) => {
+    const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => ({
+      ...current,
+      portraitTextPrimaryFontName: nextValue,
+    }));
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextPrimaryFontSize = useCallback((value: number) => {
+    const normalizedRel = clamp(
+      Number.isFinite(value) ? Math.round(value) : 48,
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL
+    );
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => {
+      const outputHeight = resolveOutputHeightByLayout('portrait', current.renderResolution);
+      const normalizedPx = relativeToPxFontSize(
+        normalizedRel,
+        outputHeight,
+        MIN_THUMBNAIL_FONT_SIZE,
+        MAX_THUMBNAIL_FONT_SIZE,
+        current.portraitTextPrimaryFontSize
+      );
+      return {
+        ...current,
+        portraitTextPrimaryFontSizeRel: normalizedRel,
+        portraitTextPrimaryFontSize: normalizedPx,
+      };
+    });
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextPrimaryColor = useCallback((value: string) => {
+    const normalized = normalizeHexColor(value, DEFAULT_THUMBNAIL_TEXT_PRIMARY_COLOR);
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => ({
+      ...current,
+      portraitTextPrimaryColor: normalized,
+    }));
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextSecondaryFontName = useCallback((value: string) => {
+    const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => ({
+      ...current,
+      portraitTextSecondaryFontName: nextValue,
+    }));
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextSecondaryFontSize = useCallback((value: number) => {
+    const normalizedRel = clamp(
+      Number.isFinite(value) ? Math.round(value) : 48,
+      MIN_THUMBNAIL_FONT_SIZE_REL,
+      MAX_THUMBNAIL_FONT_SIZE_REL
+    );
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => {
+      const outputHeight = resolveOutputHeightByLayout('portrait', current.renderResolution);
+      const normalizedPx = relativeToPxFontSize(
+        normalizedRel,
+        outputHeight,
+        MIN_THUMBNAIL_FONT_SIZE,
+        MAX_THUMBNAIL_FONT_SIZE,
+        current.portraitTextSecondaryFontSize
+      );
+      return {
+        ...current,
+        portraitTextSecondaryFontSizeRel: normalizedRel,
+        portraitTextSecondaryFontSize: normalizedPx,
+      };
+    });
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextSecondaryColor = useCallback((value: string) => {
+    const normalized = normalizeHexColor(value, DEFAULT_THUMBNAIL_TEXT_SECONDARY_COLOR);
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => ({
+      ...current,
+      portraitTextSecondaryColor: normalized,
+    }));
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextPrimaryPosition = useCallback((value: { x: number; y: number }) => {
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => {
+      const outputSize = resolveOutputSizeByLayout('portrait', current.renderResolution);
+      const nextRaw = {
+        x: Number.isFinite(value.x) ? value.x : current.portraitTextPrimaryPosition.x,
+        y: Number.isFinite(value.y) ? value.y : current.portraitTextPrimaryPosition.y,
+      };
+      return {
+        ...current,
+        portraitTextPrimaryPosition: normalizePositionValue(nextRaw, outputSize.width, outputSize.height),
+      };
+    });
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
+  const setPortraitTextSecondaryPosition = useCallback((value: { x: number; y: number }) => {
+    markTypographyDefaultsDirty();
+    updatePortraitProfile((current) => {
+      const outputSize = resolveOutputSizeByLayout('portrait', current.renderResolution);
+      const nextRaw = {
+        x: Number.isFinite(value.x) ? value.x : current.portraitTextSecondaryPosition.x,
+        y: Number.isFinite(value.y) ? value.y : current.portraitTextSecondaryPosition.y,
+      };
+      return {
+        ...current,
+        portraitTextSecondaryPosition: normalizePositionValue(nextRaw, outputSize.width, outputSize.height),
+      };
+    });
+  }, [markTypographyDefaultsDirty, updatePortraitProfile]);
+
   const settingsValues = useMemo(
     () => ({
       fontSizeScaleVersion: FONT_SIZE_SCALE_VERSION,
@@ -1414,6 +1822,36 @@ export function useCaptionSettings() {
       thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
+      hardsubTextPrimaryFontName: activeProfile.thumbnailTextPrimaryFontName,
+      hardsubTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
+      hardsubTextPrimaryFontSizeRel: activeProfile.thumbnailTextPrimaryFontSizeRel,
+      hardsubTextPrimaryColor: activeProfile.thumbnailTextPrimaryColor,
+      hardsubTextSecondaryFontName: activeProfile.thumbnailTextSecondaryFontName,
+      hardsubTextSecondaryFontSize: activeProfile.thumbnailTextSecondaryFontSize,
+      hardsubTextSecondaryFontSizeRel: activeProfile.thumbnailTextSecondaryFontSizeRel,
+      hardsubTextSecondaryColor: activeProfile.thumbnailTextSecondaryColor,
+      hardsubTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
+      hardsubTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
+      hardsubPortraitTextPrimaryFontName: layoutProfiles.portrait.portraitTextPrimaryFontName,
+      hardsubPortraitTextPrimaryFontSize: layoutProfiles.portrait.portraitTextPrimaryFontSize,
+      hardsubPortraitTextPrimaryFontSizeRel: layoutProfiles.portrait.portraitTextPrimaryFontSizeRel,
+      hardsubPortraitTextPrimaryColor: layoutProfiles.portrait.portraitTextPrimaryColor,
+      hardsubPortraitTextSecondaryFontName: layoutProfiles.portrait.portraitTextSecondaryFontName,
+      hardsubPortraitTextSecondaryFontSize: layoutProfiles.portrait.portraitTextSecondaryFontSize,
+      hardsubPortraitTextSecondaryFontSizeRel: layoutProfiles.portrait.portraitTextSecondaryFontSizeRel,
+      hardsubPortraitTextSecondaryColor: layoutProfiles.portrait.portraitTextSecondaryColor,
+      hardsubPortraitTextPrimaryPosition: layoutProfiles.portrait.portraitTextPrimaryPosition,
+      hardsubPortraitTextSecondaryPosition: layoutProfiles.portrait.portraitTextSecondaryPosition,
+      portraitTextPrimaryFontName: layoutProfiles.portrait.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: layoutProfiles.portrait.portraitTextPrimaryFontSize,
+      portraitTextPrimaryFontSizeRel: layoutProfiles.portrait.portraitTextPrimaryFontSizeRel,
+      portraitTextPrimaryColor: layoutProfiles.portrait.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: layoutProfiles.portrait.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: layoutProfiles.portrait.portraitTextSecondaryFontSize,
+      portraitTextSecondaryFontSizeRel: layoutProfiles.portrait.portraitTextSecondaryFontSizeRel,
+      portraitTextSecondaryColor: layoutProfiles.portrait.portraitTextSecondaryColor,
+      portraitTextPrimaryPosition: layoutProfiles.portrait.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: layoutProfiles.portrait.portraitTextSecondaryPosition,
       subtitlePosition: activeProfile.subtitlePosition,
       thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,
       thumbnailDurationSec: activeProfile.thumbnailDurationSec,
@@ -1528,18 +1966,28 @@ export function useCaptionSettings() {
       thumbnailFontName: saved.thumbnailFontName,
       thumbnailFontSize: saved.thumbnailFontSize,
       thumbnailFontSizeRel: saved.thumbnailFontSizeRel,
-      thumbnailTextPrimaryFontName: saved.thumbnailTextPrimaryFontName,
-      thumbnailTextPrimaryFontSize: saved.thumbnailTextPrimaryFontSize,
-      thumbnailTextPrimaryFontSizeRel: saved.thumbnailTextPrimaryFontSizeRel,
-      thumbnailTextPrimaryColor: saved.thumbnailTextPrimaryColor,
-      thumbnailTextSecondaryFontName: saved.thumbnailTextSecondaryFontName,
-      thumbnailTextSecondaryFontSize: saved.thumbnailTextSecondaryFontSize,
-      thumbnailTextSecondaryFontSizeRel: saved.thumbnailTextSecondaryFontSizeRel,
-      thumbnailTextSecondaryColor: saved.thumbnailTextSecondaryColor,
+      thumbnailTextPrimaryFontName: saved.thumbnailTextPrimaryFontName ?? saved.hardsubTextPrimaryFontName,
+      thumbnailTextPrimaryFontSize: saved.thumbnailTextPrimaryFontSize ?? saved.hardsubTextPrimaryFontSize,
+      thumbnailTextPrimaryFontSizeRel: saved.thumbnailTextPrimaryFontSizeRel ?? saved.hardsubTextPrimaryFontSizeRel,
+      thumbnailTextPrimaryColor: saved.thumbnailTextPrimaryColor ?? saved.hardsubTextPrimaryColor,
+      thumbnailTextSecondaryFontName: saved.thumbnailTextSecondaryFontName ?? saved.hardsubTextSecondaryFontName,
+      thumbnailTextSecondaryFontSize: saved.thumbnailTextSecondaryFontSize ?? saved.hardsubTextSecondaryFontSize,
+      thumbnailTextSecondaryFontSizeRel: saved.thumbnailTextSecondaryFontSizeRel ?? saved.hardsubTextSecondaryFontSizeRel,
+      thumbnailTextSecondaryColor: saved.thumbnailTextSecondaryColor ?? saved.hardsubTextSecondaryColor,
       thumbnailLineHeightRatio: saved.thumbnailLineHeightRatio,
       thumbnailTextSecondary: saved.thumbnailTextSecondary,
-      thumbnailTextPrimaryPosition: saved.thumbnailTextPrimaryPosition,
-      thumbnailTextSecondaryPosition: saved.thumbnailTextSecondaryPosition,
+      thumbnailTextPrimaryPosition: saved.thumbnailTextPrimaryPosition ?? saved.hardsubTextPrimaryPosition,
+      thumbnailTextSecondaryPosition: saved.thumbnailTextSecondaryPosition ?? saved.hardsubTextSecondaryPosition,
+      portraitTextPrimaryFontName: saved.hardsubPortraitTextPrimaryFontName ?? saved.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: saved.hardsubPortraitTextPrimaryFontSize ?? saved.portraitTextPrimaryFontSize,
+      portraitTextPrimaryFontSizeRel: saved.hardsubPortraitTextPrimaryFontSizeRel ?? saved.portraitTextPrimaryFontSizeRel,
+      portraitTextPrimaryColor: saved.hardsubPortraitTextPrimaryColor ?? saved.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: saved.hardsubPortraitTextSecondaryFontName ?? saved.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: saved.hardsubPortraitTextSecondaryFontSize ?? saved.portraitTextSecondaryFontSize,
+      portraitTextSecondaryFontSizeRel: saved.hardsubPortraitTextSecondaryFontSizeRel ?? saved.portraitTextSecondaryFontSizeRel,
+      portraitTextSecondaryColor: saved.hardsubPortraitTextSecondaryColor ?? saved.portraitTextSecondaryColor,
+      portraitTextPrimaryPosition: saved.hardsubPortraitTextPrimaryPosition ?? saved.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: saved.hardsubPortraitTextSecondaryPosition ?? saved.portraitTextSecondaryPosition,
     };
 
     const mergedLegacyLandscape = normalizeProfile(legacyPatch, fallback.landscape, 'landscape');
@@ -1778,6 +2226,62 @@ export function useCaptionSettings() {
     setThumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
     setThumbnailTextSecondaryPosition,
+    // Namespace rõ ràng cho main-video mode hardsub 16:9 (hiện alias qua bộ text của thumbnail để tương thích ngược).
+    hardsubTextPrimaryFontName: activeProfile.thumbnailTextPrimaryFontName,
+    setHardsubTextPrimaryFontName: setThumbnailTextPrimaryFontName,
+    hardsubTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
+    hardsubTextPrimaryFontSizeRel: activeProfile.thumbnailTextPrimaryFontSizeRel,
+    setHardsubTextPrimaryFontSize: setThumbnailTextPrimaryFontSize,
+    hardsubTextPrimaryColor: activeProfile.thumbnailTextPrimaryColor,
+    setHardsubTextPrimaryColor: setThumbnailTextPrimaryColor,
+    hardsubTextSecondaryFontName: activeProfile.thumbnailTextSecondaryFontName,
+    setHardsubTextSecondaryFontName: setThumbnailTextSecondaryFontName,
+    hardsubTextSecondaryFontSize: activeProfile.thumbnailTextSecondaryFontSize,
+    hardsubTextSecondaryFontSizeRel: activeProfile.thumbnailTextSecondaryFontSizeRel,
+    setHardsubTextSecondaryFontSize: setThumbnailTextSecondaryFontSize,
+    hardsubTextSecondaryColor: activeProfile.thumbnailTextSecondaryColor,
+    setHardsubTextSecondaryColor: setThumbnailTextSecondaryColor,
+    hardsubTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
+    setHardsubTextPrimaryPosition: setThumbnailTextPrimaryPosition,
+    hardsubTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
+    setHardsubTextSecondaryPosition: setThumbnailTextSecondaryPosition,
+    portraitTextPrimaryFontName: layoutProfiles.portrait.portraitTextPrimaryFontName,
+    setPortraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize: layoutProfiles.portrait.portraitTextPrimaryFontSize,
+    portraitTextPrimaryFontSizeRel: layoutProfiles.portrait.portraitTextPrimaryFontSizeRel,
+    setPortraitTextPrimaryFontSize,
+    portraitTextPrimaryColor: layoutProfiles.portrait.portraitTextPrimaryColor,
+    setPortraitTextPrimaryColor,
+    portraitTextSecondaryFontName: layoutProfiles.portrait.portraitTextSecondaryFontName,
+    setPortraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize: layoutProfiles.portrait.portraitTextSecondaryFontSize,
+    portraitTextSecondaryFontSizeRel: layoutProfiles.portrait.portraitTextSecondaryFontSizeRel,
+    setPortraitTextSecondaryFontSize,
+    portraitTextSecondaryColor: layoutProfiles.portrait.portraitTextSecondaryColor,
+    setPortraitTextSecondaryColor,
+    portraitTextPrimaryPosition: layoutProfiles.portrait.portraitTextPrimaryPosition,
+    setPortraitTextPrimaryPosition,
+    portraitTextSecondaryPosition: layoutProfiles.portrait.portraitTextSecondaryPosition,
+    setPortraitTextSecondaryPosition,
+    // Namespace mới cho main-video mode hardsub 9:16.
+    hardsubPortraitTextPrimaryFontName: layoutProfiles.portrait.portraitTextPrimaryFontName,
+    setHardsubPortraitTextPrimaryFontName: setPortraitTextPrimaryFontName,
+    hardsubPortraitTextPrimaryFontSize: layoutProfiles.portrait.portraitTextPrimaryFontSize,
+    hardsubPortraitTextPrimaryFontSizeRel: layoutProfiles.portrait.portraitTextPrimaryFontSizeRel,
+    setHardsubPortraitTextPrimaryFontSize: setPortraitTextPrimaryFontSize,
+    hardsubPortraitTextPrimaryColor: layoutProfiles.portrait.portraitTextPrimaryColor,
+    setHardsubPortraitTextPrimaryColor: setPortraitTextPrimaryColor,
+    hardsubPortraitTextSecondaryFontName: layoutProfiles.portrait.portraitTextSecondaryFontName,
+    setHardsubPortraitTextSecondaryFontName: setPortraitTextSecondaryFontName,
+    hardsubPortraitTextSecondaryFontSize: layoutProfiles.portrait.portraitTextSecondaryFontSize,
+    hardsubPortraitTextSecondaryFontSizeRel: layoutProfiles.portrait.portraitTextSecondaryFontSizeRel,
+    setHardsubPortraitTextSecondaryFontSize: setPortraitTextSecondaryFontSize,
+    hardsubPortraitTextSecondaryColor: layoutProfiles.portrait.portraitTextSecondaryColor,
+    setHardsubPortraitTextSecondaryColor: setPortraitTextSecondaryColor,
+    hardsubPortraitTextPrimaryPosition: layoutProfiles.portrait.portraitTextPrimaryPosition,
+    setHardsubPortraitTextPrimaryPosition: setPortraitTextPrimaryPosition,
+    hardsubPortraitTextSecondaryPosition: layoutProfiles.portrait.portraitTextSecondaryPosition,
+    setHardsubPortraitTextSecondaryPosition: setPortraitTextSecondaryPosition,
     logoPath: activeProfile.logoPath,
     setLogoPath,
     logoPosition: activeProfile.logoPosition,

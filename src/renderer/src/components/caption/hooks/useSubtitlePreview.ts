@@ -28,7 +28,7 @@ interface SubtitlePreviewState {
   error: string | null;
 }
 
-export type PreviewMode = 'subtitle' | 'blackout' | 'logo';
+export type PreviewMode = 'subtitle' | 'blackout' | 'logo' | 'text_primary' | 'text_secondary';
 type PreviewRenderMode = RenderVideoOptions['renderMode'];
 type PreviewRenderResolution = RenderVideoOptions['renderResolution'];
 
@@ -50,12 +50,35 @@ export interface UseSubtitlePreviewOptions {
   logoPosition?: { x: number; y: number };
   logoScale?: number;  // user-set scale multiplier (1.0 = native size)
   portraitForegroundCropPercent?: number; // crop ngang tổng (%) cho mode 9:16
+  thumbnailText?: string;
+  thumbnailTextSecondary?: string;
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryColor?: string;
+  thumbnailLineHeightRatio?: number;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
   onPositionChange?: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (top: number | null) => void;
   onCoverModeChange?: (mode: 'blackout_bottom' | 'copy_from_above') => void;
   onCoverQuadChange?: (quad: CoverQuad) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
+  onPortraitTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
 }
 
@@ -65,6 +88,14 @@ const MIN_SUBTITLE_SHADOW = 0;
 const MAX_SUBTITLE_SHADOW = 20;
 const DEFAULT_SUBTITLE_FONT_SIZE = 48;
 const DEFAULT_SUBTITLE_SHADOW = 2;
+const DEFAULT_THUMBNAIL_TEXT1_POSITION = { x: 0.5, y: 0.5 };
+const DEFAULT_THUMBNAIL_TEXT2_POSITION = { x: 0.5, y: 0.64 };
+const DEFAULT_THUMBNAIL_TEXT_FONT_SIZE = 145;
+const MIN_THUMBNAIL_TEXT_FONT_SIZE = 24;
+const MAX_THUMBNAIL_TEXT_FONT_SIZE = 400;
+const DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO = 1.16;
+const MIN_THUMBNAIL_LINE_HEIGHT_RATIO = 0;
+const MAX_THUMBNAIL_LINE_HEIGHT_RATIO = 4;
 
 function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -100,6 +131,28 @@ function normalizeSubtitleShadow(value: number | undefined): number {
     return DEFAULT_SUBTITLE_SHADOW;
   }
   return clampNumber(value as number, MIN_SUBTITLE_SHADOW, MAX_SUBTITLE_SHADOW);
+}
+
+function normalizeThumbnailTextFontSize(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_THUMBNAIL_TEXT_FONT_SIZE;
+  }
+  return clampNumber(
+    Math.round(value as number),
+    MIN_THUMBNAIL_TEXT_FONT_SIZE,
+    MAX_THUMBNAIL_TEXT_FONT_SIZE
+  );
+}
+
+function normalizeThumbnailLineHeightRatio(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO;
+  }
+  return clampNumber(
+    value as number,
+    MIN_THUMBNAIL_LINE_HEIGHT_RATIO,
+    MAX_THUMBNAIL_LINE_HEIGHT_RATIO
+  );
 }
 
 function resolveSubtitleScaleFactor(
@@ -404,12 +457,35 @@ export function useSubtitlePreview({
   logoPosition,
   logoScale,
   portraitForegroundCropPercent,
+  thumbnailText,
+  thumbnailTextSecondary,
+  hardsubPortraitTextPrimary,
+  hardsubPortraitTextSecondary,
+  hardsubPortraitTextPrimaryFontName,
+  hardsubPortraitTextPrimaryFontSize,
+  hardsubPortraitTextPrimaryColor,
+  hardsubPortraitTextSecondaryFontName,
+  hardsubPortraitTextSecondaryFontSize,
+  hardsubPortraitTextSecondaryColor,
+  hardsubPortraitTextPrimaryPosition,
+  hardsubPortraitTextSecondaryPosition,
+  portraitTextPrimaryFontName,
+  portraitTextPrimaryFontSize,
+  portraitTextPrimaryColor,
+  portraitTextSecondaryFontName,
+  portraitTextSecondaryFontSize,
+  portraitTextSecondaryColor,
+  thumbnailLineHeightRatio,
+  portraitTextPrimaryPosition,
+  portraitTextSecondaryPosition,
   onPositionChange,
   onBlackoutChange,
   onCoverModeChange,
   onCoverQuadChange,
   onLogoPositionChange,
   onLogoScaleChange,
+  onPortraitTextPrimaryPositionChange,
+  onPortraitTextSecondaryPositionChange,
   renderSnapshotMode,
 }: UseSubtitlePreviewOptions) {
   const LANDSCAPE_FRAME_WIDTH = 1920;
@@ -464,7 +540,7 @@ export function useSubtitlePreview({
   const previewSpaceRef = useRef({ width: 1920, height: 1080 });
   const migratedLegacySubtitleRef = useRef<string | null>(null);
 
-  // Mode: subtitle positioning, blackout line dragging, or logo positioning
+  // Mode: subtitle/text positioning, blackout line dragging, or logo positioning
   const [mode, setMode] = useState<PreviewMode>('subtitle');
 
   // Local blackout top (fraction 0-1) for live dragging — synced from prop
@@ -505,6 +581,32 @@ export function useSubtitlePreview({
   const setLocalLogoScaleSynced = (s: number) => {
     localLogoScaleRef.current = s;
     setLocalLogoScale(s);
+  };
+
+  const initialTextPrimaryPosition = normalizeLayerPosition(
+    hardsubPortraitTextPrimaryPosition ?? portraitTextPrimaryPosition,
+    LANDSCAPE_FRAME_WIDTH,
+    LANDSCAPE_FRAME_HEIGHT
+  ) || DEFAULT_THUMBNAIL_TEXT1_POSITION;
+  const [localTextPrimaryPosition, setLocalTextPrimaryPosition] = useState<{ x: number; y: number }>(initialTextPrimaryPosition);
+  const localTextPrimaryPositionRef = useRef<{ x: number; y: number }>(initialTextPrimaryPosition);
+  const setLocalTextPrimaryPositionSynced = (pos: { x: number; y: number }) => {
+    const normalized = clampNormalizedSubtitlePosition(pos);
+    localTextPrimaryPositionRef.current = normalized;
+    setLocalTextPrimaryPosition(normalized);
+  };
+
+  const initialTextSecondaryPosition = normalizeLayerPosition(
+    hardsubPortraitTextSecondaryPosition ?? portraitTextSecondaryPosition,
+    LANDSCAPE_FRAME_WIDTH,
+    LANDSCAPE_FRAME_HEIGHT
+  ) || DEFAULT_THUMBNAIL_TEXT2_POSITION;
+  const [localTextSecondaryPosition, setLocalTextSecondaryPosition] = useState<{ x: number; y: number }>(initialTextSecondaryPosition);
+  const localTextSecondaryPositionRef = useRef<{ x: number; y: number }>(initialTextSecondaryPosition);
+  const setLocalTextSecondaryPositionSynced = (pos: { x: number; y: number }) => {
+    const normalized = clampNormalizedSubtitlePosition(pos);
+    localTextSecondaryPositionRef.current = normalized;
+    setLocalTextSecondaryPosition(normalized);
   };
 
   const setLocalCoverQuadSynced = (quad: CoverQuad) => {
@@ -680,6 +782,32 @@ export function useSubtitlePreview({
     localLogoScaleRef.current = logoScale ?? 1.0;
     setLocalLogoScale(logoScale ?? 1.0);
   }, [logoScale]);
+
+  useEffect(() => {
+    const previewSpace = previewSpaceRef.current;
+    const normalized = normalizeLayerPosition(
+      hardsubPortraitTextPrimaryPosition ?? portraitTextPrimaryPosition,
+      previewSpace.width,
+      previewSpace.height
+    ) || DEFAULT_THUMBNAIL_TEXT1_POSITION;
+    setLocalTextPrimaryPositionSynced(normalized);
+  }, [hardsubPortraitTextPrimaryPosition, portraitTextPrimaryPosition]);
+
+  useEffect(() => {
+    const previewSpace = previewSpaceRef.current;
+    const normalized = normalizeLayerPosition(
+      hardsubPortraitTextSecondaryPosition ?? portraitTextSecondaryPosition,
+      previewSpace.width,
+      previewSpace.height
+    ) || DEFAULT_THUMBNAIL_TEXT2_POSITION;
+    setLocalTextSecondaryPositionSynced(normalized);
+  }, [hardsubPortraitTextSecondaryPosition, portraitTextSecondaryPosition]);
+
+  useEffect(() => {
+    if (renderMode !== 'hardsub_portrait_9_16' && (mode === 'text_primary' || mode === 'text_secondary')) {
+      setMode('subtitle');
+    }
+  }, [mode, renderMode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1391,6 +1519,109 @@ export function useSubtitlePreview({
       ctx.fillText(line, textX, ly);
       ctx.restore();
     });
+
+    if (isPortraitMode) {
+      const lineHeightRatio = normalizeThumbnailLineHeightRatio(thumbnailLineHeightRatio);
+      const drawPortraitTextLayer = (params: {
+        text: string;
+        fallbackText: string;
+        position: { x: number; y: number };
+        fontName?: string;
+        fontSize?: number;
+        color?: string;
+        showPlaceholder: boolean;
+      }): { x: number; y: number; width: number; height: number; anchorX: number; anchorY: number } => {
+        const rawText = params.text.replace(/\\N/g, '\n').trim();
+        const normalizedPos = clampNormalizedSubtitlePosition(params.position);
+        const anchorX = outputRect.x + normalizedPos.x * outputRect.width;
+        const anchorY = outputRect.y + normalizedPos.y * outputRect.height;
+        if (rawText.length === 0 && !params.showPlaceholder) {
+          return {
+            x: anchorX,
+            y: anchorY,
+            width: 0,
+            height: 0,
+            anchorX,
+            anchorY,
+          };
+        }
+        const isFallback = rawText.length === 0;
+        const drawText = isFallback ? params.fallbackText : rawText;
+        const lines = drawText.split('\n').filter((line) => line.length > 0);
+        const safeLines = lines.length > 0 ? lines : [params.fallbackText];
+        const fontSize = Math.max(1, normalizeThumbnailTextFontSize(params.fontSize) / ratio);
+        const textColor = /^#[0-9A-Fa-f]{6}$/.test(params.color || '') ? (params.color as string) : '#FFFF00';
+        const lineHeightPx = fontSize * lineHeightRatio;
+        const totalHeight = (safeLines.length - 1) * lineHeightPx;
+        const startLineY = anchorY - totalHeight / 2;
+        const outlinePx = Math.max(2, fontSize * 0.08);
+
+        ctx.font = `${fontSize}px "${params.fontName || 'BrightwallPersonal'}", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const maxWidth = safeLines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0);
+        const padX = Math.max(8, fontSize * 0.22);
+        const padY = Math.max(6, fontSize * 0.2);
+
+        safeLines.forEach((line, index) => {
+          const lineY = startLineY + index * lineHeightPx;
+          ctx.save();
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+          ctx.lineWidth = outlinePx;
+          ctx.strokeText(line, anchorX, lineY);
+          ctx.fillStyle = isFallback ? 'rgba(255, 255, 255, 0.75)' : textColor;
+          ctx.fillText(line, anchorX, lineY);
+          ctx.restore();
+        });
+
+        return {
+          x: anchorX - maxWidth / 2 - padX,
+          y: startLineY - lineHeightPx / 2 - padY,
+          width: maxWidth + padX * 2,
+          height: totalHeight + lineHeightPx + padY * 2,
+          anchorX,
+          anchorY,
+        };
+      };
+
+      const primaryBounds = drawPortraitTextLayer({
+        text: (hardsubPortraitTextPrimary ?? thumbnailText) || '',
+        fallbackText: 'Text1',
+        position: localTextPrimaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT1_POSITION,
+        fontName: hardsubPortraitTextPrimaryFontName || portraitTextPrimaryFontName,
+        fontSize: hardsubPortraitTextPrimaryFontSize ?? portraitTextPrimaryFontSize,
+        color: hardsubPortraitTextPrimaryColor || portraitTextPrimaryColor,
+        showPlaceholder: mode === 'text_primary',
+      });
+      const secondaryBounds = drawPortraitTextLayer({
+        text: (hardsubPortraitTextSecondary ?? thumbnailTextSecondary) || '',
+        fallbackText: 'Text2',
+        position: localTextSecondaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT2_POSITION,
+        fontName: hardsubPortraitTextSecondaryFontName || portraitTextSecondaryFontName,
+        fontSize: hardsubPortraitTextSecondaryFontSize ?? portraitTextSecondaryFontSize,
+        color: hardsubPortraitTextSecondaryColor || portraitTextSecondaryColor,
+        showPlaceholder: mode === 'text_secondary',
+      });
+
+      if (mode === 'text_primary' || mode === 'text_secondary') {
+        const activeBounds = mode === 'text_primary' ? primaryBounds : secondaryBounds;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.92)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeRect(activeBounds.x, activeBounds.y, activeBounds.width, activeBounds.height);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(activeBounds.anchorX - 20, activeBounds.anchorY);
+        ctx.lineTo(activeBounds.anchorX + 20, activeBounds.anchorY);
+        ctx.moveTo(activeBounds.anchorX, activeBounds.anchorY - 12);
+        ctx.lineTo(activeBounds.anchorX, activeBounds.anchorY + 12);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
     
     // ===== Logo Image =====
     const logoImg = logoImageRef.current;
@@ -1457,7 +1688,7 @@ export function useSubtitlePreview({
     }
 
     presentWorldCanvas();
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan]);
+  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
 
   // Load video frame image
   useEffect(() => {
@@ -1518,7 +1749,15 @@ export function useSubtitlePreview({
   useEffect(() => {
     const run = async () => {
       try {
-        const fontsToLoad = Array.from(new Set([style.fontName].map((f) => f?.trim()).filter(Boolean))) as string[];
+        const fontsToLoad = Array.from(
+          new Set(
+            [
+              style.fontName,
+              portraitTextPrimaryFontName,
+              portraitTextSecondaryFontName,
+            ].map((f) => f?.trim()).filter(Boolean)
+          )
+        ) as string[];
         await ensureCaptionFontsLoaded(fontsToLoad);
       } catch (e) {
         console.error('Lỗi tải font base64:', e);
@@ -1528,7 +1767,7 @@ export function useSubtitlePreview({
     };
 
     run();
-  }, [style.fontName, drawCanvas]);
+  }, [style.fontName, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextSecondaryFontName, portraitTextPrimaryFontName, portraitTextSecondaryFontName, drawCanvas]);
 
   // Redraw on state changes
   useEffect(() => {
@@ -1674,6 +1913,14 @@ export function useSubtitlePreview({
       const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
       onPositionChange?.(newPos);
+    } else if (mode === 'text_primary') {
+      const newPos = canvasToPreviewNormalized(wx, wy);
+      setLocalTextPrimaryPositionSynced(newPos);
+      onPortraitTextPrimaryPositionChange?.(newPos);
+    } else if (mode === 'text_secondary') {
+      const newPos = canvasToPreviewNormalized(wx, wy);
+      setLocalTextSecondaryPositionSynced(newPos);
+      onPortraitTextSecondaryPositionChange?.(newPos);
     } else if (mode === 'logo') {
       const b = logoBoundsRef.current;
       if (b && isNearCorner(wx, wy)) {
@@ -1723,6 +1970,8 @@ export function useSubtitlePreview({
     isPointInsideCoverQuad,
     localCoverMode,
     onPositionChange,
+    onPortraitTextPrimaryPositionChange,
+    onPortraitTextSecondaryPositionChange,
     previewZoom,
     screenToWorldPoint,
     spacePressed,
@@ -1802,6 +2051,12 @@ export function useSubtitlePreview({
     if (mode === 'subtitle') {
       const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
+    } else if (mode === 'text_primary') {
+      const newPos = canvasToPreviewNormalized(wx, wy);
+      setLocalTextPrimaryPositionSynced(newPos);
+    } else if (mode === 'text_secondary') {
+      const newPos = canvasToPreviewNormalized(wx, wy);
+      setLocalTextSecondaryPositionSynced(newPos);
     } else if (mode === 'logo') {
       if (cornerDragRef.current) {
         // Resize từ góc: tính scale theo tỉ lệ khoảng cách tới tâm
@@ -1909,6 +2164,28 @@ export function useSubtitlePreview({
       return;
     }
 
+    if (mode === 'text_primary') {
+      const current = localTextPrimaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT1_POSITION;
+      const nextPos = {
+        x: clamp01(current.x + dxPx / maxW),
+        y: clamp01(current.y + dyPx / maxH),
+      };
+      setLocalTextPrimaryPositionSynced(nextPos);
+      onPortraitTextPrimaryPositionChange?.(nextPos);
+      return;
+    }
+
+    if (mode === 'text_secondary') {
+      const current = localTextSecondaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT2_POSITION;
+      const nextPos = {
+        x: clamp01(current.x + dxPx / maxW),
+        y: clamp01(current.y + dyPx / maxH),
+      };
+      setLocalTextSecondaryPositionSynced(nextPos);
+      onPortraitTextSecondaryPositionChange?.(nextPos);
+      return;
+    }
+
     if (mode === 'logo') {
       const current = localLogoPositionRef.current || {
         x: 0.5,
@@ -1945,6 +2222,8 @@ export function useSubtitlePreview({
     onCoverQuadChange,
     onLogoPositionChange,
     onPositionChange,
+    onPortraitTextPrimaryPositionChange,
+    onPortraitTextSecondaryPositionChange,
   ]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
@@ -1983,6 +2262,10 @@ export function useSubtitlePreview({
       if (state.frameData) {
         onPositionChange?.(state.subtitlePosition);
       }
+    } else if (mode === 'text_primary') {
+      onPortraitTextPrimaryPositionChange?.(localTextPrimaryPositionRef.current);
+    } else if (mode === 'text_secondary') {
+      onPortraitTextSecondaryPositionChange?.(localTextSecondaryPositionRef.current);
     } else if (mode === 'logo') {
       if (cornerDragRef.current) {
         // Commit scale — dùng ref để tránh stale closure
@@ -2011,6 +2294,8 @@ export function useSubtitlePreview({
     state.frameData,
     state.subtitlePosition,
     onPositionChange,
+    onPortraitTextPrimaryPositionChange,
+    onPortraitTextSecondaryPositionChange,
     onLogoPositionChange,
     onLogoScaleChange,
     localBlackoutTop,
@@ -2035,6 +2320,28 @@ export function useSubtitlePreview({
     });
   }, [onPositionChange]);
 
+  const resetTextLayerToCenter = useCallback(() => {
+    if (mode === 'text_primary') {
+      const current = localTextPrimaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT1_POSITION;
+      const centered = {
+        x: 0.5,
+        y: clamp01(current.y),
+      };
+      setLocalTextPrimaryPositionSynced(centered);
+      onPortraitTextPrimaryPositionChange?.(centered);
+      return;
+    }
+    if (mode === 'text_secondary') {
+      const current = localTextSecondaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT2_POSITION;
+      const centered = {
+        x: 0.5,
+        y: clamp01(current.y),
+      };
+      setLocalTextSecondaryPositionSynced(centered);
+      onPortraitTextSecondaryPositionChange?.(centered);
+    }
+  }, [mode, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange]);
+
   const clearBlackout = useCallback(() => {
     setLocalBlackoutTop(null);
     onBlackoutChange?.(null);
@@ -2054,6 +2361,22 @@ export function useSubtitlePreview({
   const subtitlePositionRel = clampNormalizedSubtitlePosition(state.subtitlePosition);
   const subtitlePositionPx = toPixelSubtitlePosition(
     subtitlePositionRel,
+    Math.max(1, state.videoSize.width),
+    Math.max(1, state.videoSize.height)
+  );
+  const textPrimaryPositionRel = clampNormalizedSubtitlePosition(
+    localTextPrimaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT1_POSITION
+  );
+  const textSecondaryPositionRel = clampNormalizedSubtitlePosition(
+    localTextSecondaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT2_POSITION
+  );
+  const textPrimaryPositionPx = toPixelSubtitlePosition(
+    textPrimaryPositionRel,
+    Math.max(1, state.videoSize.width),
+    Math.max(1, state.videoSize.height)
+  );
+  const textSecondaryPositionPx = toPixelSubtitlePosition(
+    textSecondaryPositionRel,
     Math.max(1, state.videoSize.width),
     Math.max(1, state.videoSize.height)
   );
@@ -2079,6 +2402,10 @@ export function useSubtitlePreview({
     subtitlePosition: subtitlePositionPx,
     subtitlePositionRel,
     subtitlePositionPx,
+    textPrimaryPositionRel,
+    textSecondaryPositionRel,
+    textPrimaryPositionPx,
+    textSecondaryPositionPx,
     videoSize: state.videoSize,
     isLoading: state.isLoading,
     error: state.error,
@@ -2112,6 +2439,7 @@ export function useSubtitlePreview({
     setFrameTimeSec,
     videoDuration: videoMetaRef.current?.duration ?? 0,
     resetToCenter,
+    resetTextLayerToCenter,
     clearBlackout,
     resetCoverQuad,
     handleMouseDown,

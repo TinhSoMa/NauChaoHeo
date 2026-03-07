@@ -147,7 +147,10 @@ export async function updateCaptionSession(
     });
   sessionWriteQueue.set(sessionPath, queued);
   await queued;
-  return nextSession as CaptionSessionV1;
+  if (!nextSession) {
+    throw new Error('Không thể cập nhật caption session.');
+  }
+  return nextSession;
 }
 
 export function toStepKey(step: number): 'step1' | 'step2' | 'step3' | 'step4' | 'step5' | 'step6' | 'step7' {
@@ -494,11 +497,14 @@ export function shouldSkipStep(
   }
   const stepKey = toStepKey(step);
   const stepState = session.steps[stepKey];
-  if (!stepState || stepState.status !== 'success') {
+  if (!stepState) {
     return { skip: false, reason: 'not_success_yet' };
   }
   if (stepState.status === 'stale') {
     return { skip: false, reason: 'step_stale' };
+  }
+  if (stepState.status !== 'success') {
+    return { skip: false, reason: 'not_success_yet' };
   }
   const outputCheck = validateStepOutputForSkip(session, step);
   if (!outputCheck.ok) {
@@ -610,6 +616,40 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       thumbnailTextSecondary: settings.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
+      hardsubTextPrimary: settings.hardsubTextPrimary,
+      hardsubTextSecondary: settings.hardsubTextSecondary,
+      hardsubTextPrimaryFontName: settings.hardsubTextPrimaryFontName,
+      hardsubTextPrimaryFontSize: settings.hardsubTextPrimaryFontSize,
+      hardsubTextPrimaryFontSizeRel: settings.hardsubTextPrimaryFontSizeRel,
+      hardsubTextPrimaryColor: settings.hardsubTextPrimaryColor,
+      hardsubTextSecondaryFontName: settings.hardsubTextSecondaryFontName,
+      hardsubTextSecondaryFontSize: settings.hardsubTextSecondaryFontSize,
+      hardsubTextSecondaryFontSizeRel: settings.hardsubTextSecondaryFontSizeRel,
+      hardsubTextSecondaryColor: settings.hardsubTextSecondaryColor,
+      hardsubTextPrimaryPosition: settings.hardsubTextPrimaryPosition,
+      hardsubTextSecondaryPosition: settings.hardsubTextSecondaryPosition,
+      hardsubPortraitTextPrimary: settings.hardsubPortraitTextPrimary,
+      hardsubPortraitTextSecondary: settings.hardsubPortraitTextSecondary,
+      hardsubPortraitTextPrimaryFontName: settings.hardsubPortraitTextPrimaryFontName,
+      hardsubPortraitTextPrimaryFontSize: settings.hardsubPortraitTextPrimaryFontSize,
+      hardsubPortraitTextPrimaryFontSizeRel: settings.hardsubPortraitTextPrimaryFontSizeRel,
+      hardsubPortraitTextPrimaryColor: settings.hardsubPortraitTextPrimaryColor,
+      hardsubPortraitTextSecondaryFontName: settings.hardsubPortraitTextSecondaryFontName,
+      hardsubPortraitTextSecondaryFontSize: settings.hardsubPortraitTextSecondaryFontSize,
+      hardsubPortraitTextSecondaryFontSizeRel: settings.hardsubPortraitTextSecondaryFontSizeRel,
+      hardsubPortraitTextSecondaryColor: settings.hardsubPortraitTextSecondaryColor,
+      hardsubPortraitTextPrimaryPosition: settings.hardsubPortraitTextPrimaryPosition,
+      hardsubPortraitTextSecondaryPosition: settings.hardsubPortraitTextSecondaryPosition,
+      portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: settings.portraitTextPrimaryFontSize,
+      portraitTextPrimaryFontSizeRel: settings.portraitTextPrimaryFontSizeRel,
+      portraitTextPrimaryColor: settings.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: settings.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: settings.portraitTextSecondaryFontSize,
+      portraitTextSecondaryFontSizeRel: settings.portraitTextSecondaryFontSizeRel,
+      portraitTextSecondaryColor: settings.portraitTextSecondaryColor,
+      portraitTextPrimaryPosition: settings.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: settings.portraitTextSecondaryPosition,
       blackoutTop: settings.blackoutTop,
       coverMode: settings.coverMode,
       coverQuad: settings.coverQuad,
@@ -631,6 +671,10 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
 const STEP7_RUNTIME_PRESERVE_KEYS = [
   'thumbnailText',
   'thumbnailTextSecondary',
+  'hardsubTextPrimary',
+  'hardsubTextSecondary',
+  'hardsubPortraitTextPrimary',
+  'hardsubPortraitTextSecondary',
   'thumbnailTextSecondarySource',
   'thumbnailTextsByOrder',
   'thumbnailTextsSecondaryByOrder',

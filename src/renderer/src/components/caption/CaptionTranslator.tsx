@@ -782,6 +782,8 @@ export function CaptionTranslator() {
       settings.style?.fontColor,
       settings.thumbnailTextPrimaryColor,
       settings.thumbnailTextSecondaryColor,
+      settings.portraitTextPrimaryColor,
+      settings.portraitTextSecondaryColor,
     ];
     setCommonColorHistory((prev) => {
       if (prev.length > 0) {
@@ -800,6 +802,8 @@ export function CaptionTranslator() {
     settings.style?.fontColor,
     settings.thumbnailTextPrimaryColor,
     settings.thumbnailTextSecondaryColor,
+    settings.portraitTextPrimaryColor,
+    settings.portraitTextSecondaryColor,
   ]);
 
   const rememberCommonColor = useCallback((rawColor: string): string | null => {
@@ -849,6 +853,28 @@ export function CaptionTranslator() {
     settings.setThumbnailTextSecondaryColor(normalized);
     rememberCommonColor(normalized);
   }, [rememberCommonColor, settings.setThumbnailTextSecondaryColor]);
+  const applyPortraitTextPrimaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setPortraitTextPrimaryColor(normalized);
+  }, [settings.setPortraitTextPrimaryColor]);
+  const commitPortraitTextPrimaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setPortraitTextPrimaryColor(normalized);
+    rememberCommonColor(normalized);
+  }, [rememberCommonColor, settings.setPortraitTextPrimaryColor]);
+  const applyPortraitTextSecondaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setPortraitTextSecondaryColor(normalized);
+  }, [settings.setPortraitTextSecondaryColor]);
+  const commitPortraitTextSecondaryColor = useCallback((rawColor: string) => {
+    const normalized = normalizeHexColor(rawColor);
+    if (!normalized) return;
+    settings.setPortraitTextSecondaryColor(normalized);
+    rememberCommonColor(normalized);
+  }, [rememberCommonColor, settings.setPortraitTextSecondaryColor]);
 
   const renderColorHistory = useCallback((
     currentColor: string,
@@ -894,10 +920,24 @@ export function CaptionTranslator() {
     THUMBNAIL_FONT_SIZE_MAX,
     THUMBNAIL_FONT_SIZE_DEFAULT
   );
+  const portraitTextPrimaryFontSizeValue = clampInteger(
+    Number(settings.portraitTextPrimaryFontSizeRel),
+    THUMBNAIL_FONT_SIZE_MIN,
+    THUMBNAIL_FONT_SIZE_MAX,
+    THUMBNAIL_FONT_SIZE_DEFAULT
+  );
+  const portraitTextSecondaryFontSizeValue = clampInteger(
+    Number(settings.portraitTextSecondaryFontSizeRel),
+    THUMBNAIL_FONT_SIZE_MIN,
+    THUMBNAIL_FONT_SIZE_MAX,
+    THUMBNAIL_FONT_SIZE_DEFAULT
+  );
 
   const [subtitleFontSizeInput, setSubtitleFontSizeInput] = useState(String(subtitleFontSizeValue));
   const [thumbnailTextPrimaryFontSizeInput, setThumbnailTextPrimaryFontSizeInput] = useState(String(thumbnailTextPrimaryFontSizeValue));
   const [thumbnailTextSecondaryFontSizeInput, setThumbnailTextSecondaryFontSizeInput] = useState(String(thumbnailTextSecondaryFontSizeValue));
+  const [portraitTextPrimaryFontSizeInput, setPortraitTextPrimaryFontSizeInput] = useState(String(portraitTextPrimaryFontSizeValue));
+  const [portraitTextSecondaryFontSizeInput, setPortraitTextSecondaryFontSizeInput] = useState(String(portraitTextSecondaryFontSizeValue));
 
   useEffect(() => {
     setSubtitleFontSizeInput(String(subtitleFontSizeValue));
@@ -910,6 +950,12 @@ export function CaptionTranslator() {
   useEffect(() => {
     setThumbnailTextSecondaryFontSizeInput(String(thumbnailTextSecondaryFontSizeValue));
   }, [thumbnailTextSecondaryFontSizeValue]);
+  useEffect(() => {
+    setPortraitTextPrimaryFontSizeInput(String(portraitTextPrimaryFontSizeValue));
+  }, [portraitTextPrimaryFontSizeValue]);
+  useEffect(() => {
+    setPortraitTextSecondaryFontSizeInput(String(portraitTextSecondaryFontSizeValue));
+  }, [portraitTextSecondaryFontSizeValue]);
 
   const commitSubtitleFontSizeInput = useCallback(() => {
     const parsed = Number(subtitleFontSizeInput.trim());
@@ -953,6 +999,36 @@ export function CaptionTranslator() {
     settings.setThumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryFontSizeInput,
     thumbnailTextSecondaryFontSizeValue,
+  ]);
+  const commitPortraitTextPrimaryFontSizeInput = useCallback(() => {
+    const parsed = Number(portraitTextPrimaryFontSizeInput.trim());
+    const normalized = clampInteger(
+      parsed,
+      THUMBNAIL_FONT_SIZE_MIN,
+      THUMBNAIL_FONT_SIZE_MAX,
+      portraitTextPrimaryFontSizeValue
+    );
+    settings.setPortraitTextPrimaryFontSize(normalized);
+    setPortraitTextPrimaryFontSizeInput(String(normalized));
+  }, [
+    portraitTextPrimaryFontSizeInput,
+    portraitTextPrimaryFontSizeValue,
+    settings.setPortraitTextPrimaryFontSize,
+  ]);
+  const commitPortraitTextSecondaryFontSizeInput = useCallback(() => {
+    const parsed = Number(portraitTextSecondaryFontSizeInput.trim());
+    const normalized = clampInteger(
+      parsed,
+      THUMBNAIL_FONT_SIZE_MIN,
+      THUMBNAIL_FONT_SIZE_MAX,
+      portraitTextSecondaryFontSizeValue
+    );
+    settings.setPortraitTextSecondaryFontSize(normalized);
+    setPortraitTextSecondaryFontSizeInput(String(normalized));
+  }, [
+    portraitTextSecondaryFontSizeInput,
+    portraitTextSecondaryFontSizeValue,
+    settings.setPortraitTextSecondaryFontSize,
   ]);
 
   useEffect(() => {
@@ -1089,6 +1165,16 @@ export function CaptionTranslator() {
     thumbnailTextSecondary: settings.thumbnailTextSecondary,
     thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
+    portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize: settings.portraitTextPrimaryFontSize,
+    portraitTextPrimaryFontSizeRel: settings.portraitTextPrimaryFontSizeRel,
+    portraitTextPrimaryColor: settings.portraitTextPrimaryColor,
+    portraitTextSecondaryFontName: settings.portraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize: settings.portraitTextSecondaryFontSize,
+    portraitTextSecondaryFontSizeRel: settings.portraitTextSecondaryFontSizeRel,
+    portraitTextSecondaryColor: settings.portraitTextSecondaryColor,
+    portraitTextPrimaryPosition: settings.portraitTextPrimaryPosition,
+    portraitTextSecondaryPosition: settings.portraitTextSecondaryPosition,
     subtitlePosition: settings.subtitlePosition,
     thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
     thumbnailDurationSec: settings.thumbnailDurationSec,
@@ -1143,6 +1229,16 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
+    settings.portraitTextPrimaryFontName,
+    settings.portraitTextPrimaryFontSize,
+    settings.portraitTextPrimaryFontSizeRel,
+    settings.portraitTextPrimaryColor,
+    settings.portraitTextSecondaryFontName,
+    settings.portraitTextSecondaryFontSize,
+    settings.portraitTextSecondaryFontSizeRel,
+    settings.portraitTextSecondaryColor,
+    settings.portraitTextPrimaryPosition,
+    settings.portraitTextSecondaryPosition,
     settings.subtitlePosition,
     settings.thumbnailFrameTimeSec,
     settings.thumbnailDurationSec,
@@ -1327,6 +1423,14 @@ export function CaptionTranslator() {
                 thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
                 thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
                 thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
+                portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
+                portraitTextPrimaryFontSize: settings.portraitTextPrimaryFontSize,
+                portraitTextPrimaryColor: settings.portraitTextPrimaryColor,
+                portraitTextSecondaryFontName: settings.portraitTextSecondaryFontName,
+                portraitTextSecondaryFontSize: settings.portraitTextSecondaryFontSize,
+                portraitTextSecondaryColor: settings.portraitTextSecondaryColor,
+                portraitTextPrimaryPosition: settings.portraitTextPrimaryPosition,
+                portraitTextSecondaryPosition: settings.portraitTextSecondaryPosition,
               },
             },
           }),
@@ -1363,6 +1467,14 @@ export function CaptionTranslator() {
             thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
             thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
             thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
+            portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
+            portraitTextPrimaryFontSize: settings.portraitTextPrimaryFontSize,
+            portraitTextPrimaryColor: settings.portraitTextPrimaryColor,
+            portraitTextSecondaryFontName: settings.portraitTextSecondaryFontName,
+            portraitTextSecondaryFontSize: settings.portraitTextSecondaryFontSize,
+            portraitTextSecondaryColor: settings.portraitTextSecondaryColor,
+            portraitTextPrimaryPosition: settings.portraitTextPrimaryPosition,
+            portraitTextSecondaryPosition: settings.portraitTextSecondaryPosition,
           },
         },
       }),
@@ -1389,9 +1501,23 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondaryFontName,
     settings.thumbnailTextSecondaryFontSize,
     settings.thumbnailTextSecondaryColor,
+    settings.portraitTextPrimaryFontName,
+    settings.portraitTextPrimaryFontSizeRel,
+    settings.portraitTextPrimaryColor,
+    settings.portraitTextSecondaryFontName,
+    settings.portraitTextSecondaryFontSizeRel,
+    settings.portraitTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
+    settings.portraitTextPrimaryFontName,
+    settings.portraitTextPrimaryFontSize,
+    settings.portraitTextPrimaryColor,
+    settings.portraitTextSecondaryFontName,
+    settings.portraitTextSecondaryFontSize,
+    settings.portraitTextSecondaryColor,
+    settings.portraitTextPrimaryPosition,
+    settings.portraitTextSecondaryPosition,
     thumbnailSessionHydrationKey,
   ]);
 
@@ -2703,9 +2829,33 @@ export function CaptionTranslator() {
         key: 'Thumbnail',
         value:
           `${settings.thumbnailDurationSec ?? 0.5}s @ ${settings.thumbnailFrameTimeSec ?? 0}s | ` +
-          `T1 ${settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextPrimaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48}r | ` +
-          `T2 ${settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName} ${settings.thumbnailTextSecondaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48}r | ` +
-          `C1 ${(settings.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()} | C2 ${(settings.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()} | ` +
+          `T1 ${
+            settings.renderMode === 'hardsub_portrait_9_16'
+              ? (settings.portraitTextPrimaryFontName || settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName)
+              : (settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName)
+          } ${
+            settings.renderMode === 'hardsub_portrait_9_16'
+              ? (settings.portraitTextPrimaryFontSizeRel ?? settings.thumbnailTextPrimaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48)
+              : (settings.thumbnailTextPrimaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48)
+          }r | ` +
+          `T2 ${
+            settings.renderMode === 'hardsub_portrait_9_16'
+              ? (settings.portraitTextSecondaryFontName || settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName)
+              : (settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName)
+          } ${
+            settings.renderMode === 'hardsub_portrait_9_16'
+              ? (settings.portraitTextSecondaryFontSizeRel ?? settings.thumbnailTextSecondaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48)
+              : (settings.thumbnailTextSecondaryFontSizeRel ?? settings.thumbnailFontSizeRel ?? 48)
+          }r | ` +
+          `C1 ${
+            (settings.renderMode === 'hardsub_portrait_9_16'
+              ? (settings.portraitTextPrimaryColor || settings.thumbnailTextPrimaryColor || '#FFFF00')
+              : (settings.thumbnailTextPrimaryColor || '#FFFF00')).toUpperCase()
+          } | C2 ${
+            (settings.renderMode === 'hardsub_portrait_9_16'
+              ? (settings.portraitTextSecondaryColor || settings.thumbnailTextSecondaryColor || '#FFFF00')
+              : (settings.thumbnailTextSecondaryColor || '#FFFF00')).toUpperCase()
+          } | ` +
           `line ${Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x`,
       },
       {
@@ -3570,116 +3720,233 @@ export function CaptionTranslator() {
               </div>
             </div>
 
-            <div className={styles.grid2}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Font Text1</label>
-                <select
-                  className={styles.select}
-                  value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
-                  onChange={(e) => settings.setThumbnailTextPrimaryFontName(e.target.value)}
-                >
-                  {availableFonts.map((font) => (
-                    <option key={`t1-${font}`} value={font}>
-                      {font}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Size Text1 (relative)</label>
-                <Input
-                  type="number"
-                  min={THUMBNAIL_FONT_SIZE_MIN}
-                  max={THUMBNAIL_FONT_SIZE_MAX}
-                  step={1}
-                  value={thumbnailTextPrimaryFontSizeInput}
-                  onChange={(e) => setThumbnailTextPrimaryFontSizeInput(e.target.value)}
-                  onBlur={commitThumbnailTextPrimaryFontSizeInput}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              </div>
-            </div>
+            {settings.renderMode === 'hardsub_portrait_9_16' ? (
+              <>
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Font Text1 Video (Hardsub 9:16)</label>
+                    <select
+                      className={styles.select}
+                      value={settings.portraitTextPrimaryFontName || settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+                      onChange={(e) => settings.setPortraitTextPrimaryFontName(e.target.value)}
+                    >
+                      {availableFonts.map((font) => (
+                        <option key={`t1-video-${font}`} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Size Text1 Video (relative)</label>
+                    <Input
+                      type="number"
+                      min={THUMBNAIL_FONT_SIZE_MIN}
+                      max={THUMBNAIL_FONT_SIZE_MAX}
+                      step={1}
+                      value={portraitTextPrimaryFontSizeInput}
+                      onChange={(e) => setPortraitTextPrimaryFontSizeInput(e.target.value)}
+                      onBlur={commitPortraitTextPrimaryFontSizeInput}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
 
-            <div className={styles.grid2}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Màu Text1</label>
-                <input
-                  className={styles.colorInput}
-                  type="color"
-                  value={settings.thumbnailTextPrimaryColor || '#FFFF00'}
-                  onInput={(e) => applyThumbnailTextPrimaryColor((e.target as HTMLInputElement).value)}
-                  onChange={(e) => applyThumbnailTextPrimaryColor(e.target.value)}
-                  onBlur={(e) => commitThumbnailTextPrimaryColor(e.target.value)}
-                />
-                {renderColorHistory(settings.thumbnailTextPrimaryColor || '#FFFF00', commitThumbnailTextPrimaryColor)}
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Line height</label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={4}
-                  step={0.02}
-                  value={Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
-                  onChange={(e) => settings.setThumbnailLineHeightRatio(Number(e.target.value))}
-                />
-              </div>
-            </div>
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Màu Text1 Video</label>
+                    <input
+                      className={styles.colorInput}
+                      type="color"
+                      value={settings.portraitTextPrimaryColor || '#FFFF00'}
+                      onInput={(e) => applyPortraitTextPrimaryColor((e.target as HTMLInputElement).value)}
+                      onChange={(e) => applyPortraitTextPrimaryColor(e.target.value)}
+                      onBlur={(e) => commitPortraitTextPrimaryColor(e.target.value)}
+                    />
+                    {renderColorHistory(settings.portraitTextPrimaryColor || '#FFFF00', commitPortraitTextPrimaryColor)}
+                  </div>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Line height</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={4}
+                      step={0.02}
+                      value={Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
+                      onChange={(e) => settings.setThumbnailLineHeightRatio(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
 
-            <div className={styles.grid2}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Font Text2</label>
-                <select
-                  className={styles.select}
-                  value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
-                  onChange={(e) => settings.setThumbnailTextSecondaryFontName(e.target.value)}
-                >
-                  {availableFonts.map((font) => (
-                    <option key={`t2-${font}`} value={font}>
-                      {font}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Size Text2 (relative)</label>
-                <Input
-                  type="number"
-                  min={THUMBNAIL_FONT_SIZE_MIN}
-                  max={THUMBNAIL_FONT_SIZE_MAX}
-                  step={1}
-                  value={thumbnailTextSecondaryFontSizeInput}
-                  onChange={(e) => setThumbnailTextSecondaryFontSizeInput(e.target.value)}
-                  onBlur={commitThumbnailTextSecondaryFontSizeInput}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              </div>
-            </div>
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Font Text2 Video (Hardsub 9:16)</label>
+                    <select
+                      className={styles.select}
+                      value={settings.portraitTextSecondaryFontName || settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+                      onChange={(e) => settings.setPortraitTextSecondaryFontName(e.target.value)}
+                    >
+                      {availableFonts.map((font) => (
+                        <option key={`t2-video-${font}`} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Size Text2 Video (relative)</label>
+                    <Input
+                      type="number"
+                      min={THUMBNAIL_FONT_SIZE_MIN}
+                      max={THUMBNAIL_FONT_SIZE_MAX}
+                      step={1}
+                      value={portraitTextSecondaryFontSizeInput}
+                      onChange={(e) => setPortraitTextSecondaryFontSizeInput(e.target.value)}
+                      onBlur={commitPortraitTextSecondaryFontSizeInput}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
 
-            <div className={styles.grid2}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Màu Text2</label>
-                <input
-                  className={styles.colorInput}
-                  type="color"
-                  value={settings.thumbnailTextSecondaryColor || '#FFFF00'}
-                  onInput={(e) => applyThumbnailTextSecondaryColor((e.target as HTMLInputElement).value)}
-                  onChange={(e) => applyThumbnailTextSecondaryColor(e.target.value)}
-                  onBlur={(e) => commitThumbnailTextSecondaryColor(e.target.value)}
-                />
-                {renderColorHistory(settings.thumbnailTextSecondaryColor || '#FFFF00', commitThumbnailTextSecondaryColor)}
-              </div>
-            </div>
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Màu Text2 Video</label>
+                    <input
+                      className={styles.colorInput}
+                      type="color"
+                      value={settings.portraitTextSecondaryColor || '#FFFF00'}
+                      onInput={(e) => applyPortraitTextSecondaryColor((e.target as HTMLInputElement).value)}
+                      onChange={(e) => applyPortraitTextSecondaryColor(e.target.value)}
+                      onBlur={(e) => commitPortraitTextSecondaryColor(e.target.value)}
+                    />
+                    {renderColorHistory(settings.portraitTextSecondaryColor || '#FFFF00', commitPortraitTextSecondaryColor)}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Font Text1 Thumbnail</label>
+                    <select
+                      className={styles.select}
+                      value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+                      onChange={(e) => settings.setThumbnailTextPrimaryFontName(e.target.value)}
+                    >
+                      {availableFonts.map((font) => (
+                        <option key={`t1-thumb-${font}`} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Size Text1 Thumbnail (relative)</label>
+                    <Input
+                      type="number"
+                      min={THUMBNAIL_FONT_SIZE_MIN}
+                      max={THUMBNAIL_FONT_SIZE_MAX}
+                      step={1}
+                      value={thumbnailTextPrimaryFontSizeInput}
+                      onChange={(e) => setThumbnailTextPrimaryFontSizeInput(e.target.value)}
+                      onBlur={commitThumbnailTextPrimaryFontSizeInput}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Màu Text1 Thumbnail</label>
+                    <input
+                      className={styles.colorInput}
+                      type="color"
+                      value={settings.thumbnailTextPrimaryColor || '#FFFF00'}
+                      onInput={(e) => applyThumbnailTextPrimaryColor((e.target as HTMLInputElement).value)}
+                      onChange={(e) => applyThumbnailTextPrimaryColor(e.target.value)}
+                      onBlur={(e) => commitThumbnailTextPrimaryColor(e.target.value)}
+                    />
+                    {renderColorHistory(settings.thumbnailTextPrimaryColor || '#FFFF00', commitThumbnailTextPrimaryColor)}
+                  </div>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Line height</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={4}
+                      step={0.02}
+                      value={Number(settings.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}
+                      onChange={(e) => settings.setThumbnailLineHeightRatio(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Font Text2 Thumbnail</label>
+                    <select
+                      className={styles.select}
+                      value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
+                      onChange={(e) => settings.setThumbnailTextSecondaryFontName(e.target.value)}
+                    >
+                      {availableFonts.map((font) => (
+                        <option key={`t2-thumb-${font}`} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Size Text2 Thumbnail (relative)</label>
+                    <Input
+                      type="number"
+                      min={THUMBNAIL_FONT_SIZE_MIN}
+                      max={THUMBNAIL_FONT_SIZE_MAX}
+                      step={1}
+                      value={thumbnailTextSecondaryFontSizeInput}
+                      onChange={(e) => setThumbnailTextSecondaryFontSizeInput(e.target.value)}
+                      onBlur={commitThumbnailTextSecondaryFontSizeInput}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.grid2}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Màu Text2 Thumbnail</label>
+                    <input
+                      className={styles.colorInput}
+                      type="color"
+                      value={settings.thumbnailTextSecondaryColor || '#FFFF00'}
+                      onInput={(e) => applyThumbnailTextSecondaryColor((e.target as HTMLInputElement).value)}
+                      onChange={(e) => applyThumbnailTextSecondaryColor(e.target.value)}
+                      onBlur={(e) => commitThumbnailTextSecondaryColor(e.target.value)}
+                    />
+                    {renderColorHistory(settings.thumbnailTextSecondaryColor || '#FFFF00', commitThumbnailTextSecondaryColor)}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -4337,6 +4604,29 @@ export function CaptionTranslator() {
                   logoPosition={settings.logoPosition}
                   logoScale={settings.logoScale}
                   portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
+                  thumbnailText={thumbnailPreviewText}
+                  thumbnailTextSecondary={thumbnailPreviewSecondaryText}
+                  hardsubPortraitTextPrimary={thumbnailPreviewText}
+                  hardsubPortraitTextSecondary={thumbnailPreviewSecondaryText}
+                  thumbnailFontName={settings.thumbnailFontName}
+                  thumbnailFontSize={settings.thumbnailFontSize}
+                  hardsubPortraitTextPrimaryFontName={settings.hardsubPortraitTextPrimaryFontName || settings.portraitTextPrimaryFontName}
+                  hardsubPortraitTextPrimaryFontSize={settings.hardsubPortraitTextPrimaryFontSize ?? settings.portraitTextPrimaryFontSize}
+                  hardsubPortraitTextPrimaryColor={settings.hardsubPortraitTextPrimaryColor || settings.portraitTextPrimaryColor}
+                  hardsubPortraitTextSecondaryFontName={settings.hardsubPortraitTextSecondaryFontName || settings.portraitTextSecondaryFontName}
+                  hardsubPortraitTextSecondaryFontSize={settings.hardsubPortraitTextSecondaryFontSize ?? settings.portraitTextSecondaryFontSize}
+                  hardsubPortraitTextSecondaryColor={settings.hardsubPortraitTextSecondaryColor || settings.portraitTextSecondaryColor}
+                  portraitTextPrimaryFontName={settings.portraitTextPrimaryFontName}
+                  portraitTextPrimaryFontSize={settings.portraitTextPrimaryFontSize}
+                  portraitTextPrimaryColor={settings.portraitTextPrimaryColor}
+                  portraitTextSecondaryFontName={settings.portraitTextSecondaryFontName}
+                  portraitTextSecondaryFontSize={settings.portraitTextSecondaryFontSize}
+                  portraitTextSecondaryColor={settings.portraitTextSecondaryColor}
+                  thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
+                  hardsubPortraitTextPrimaryPosition={settings.hardsubPortraitTextPrimaryPosition || settings.portraitTextPrimaryPosition}
+                  hardsubPortraitTextSecondaryPosition={settings.hardsubPortraitTextSecondaryPosition || settings.portraitTextSecondaryPosition}
+                  portraitTextPrimaryPosition={settings.portraitTextPrimaryPosition}
+                  portraitTextSecondaryPosition={settings.portraitTextSecondaryPosition}
                   onPositionChange={settings.setSubtitlePosition}
                   onBlackoutChange={settings.setBlackoutTop}
                   onCoverModeChange={settings.setCoverMode}
@@ -4344,6 +4634,8 @@ export function CaptionTranslator() {
                   onRenderResolutionChange={settings.setRenderResolution}
                   onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
                   onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+                  onPortraitTextPrimaryPositionChange={settings.setPortraitTextPrimaryPosition}
+                  onPortraitTextSecondaryPositionChange={settings.setPortraitTextSecondaryPosition}
                   renderSnapshotMode={effectivePreviewMode === 'render'}
                   onSelectLogo={handleSelectLogo}
                   onRemoveLogo={handleRemoveLogo}
@@ -4366,6 +4658,7 @@ export function CaptionTranslator() {
                   sourceLabel={thumbnailPreviewSourceLabel}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
+                  availableFonts={availableFonts}
                   thumbnailText={thumbnailPreviewText}
                   thumbnailTextSecondary={thumbnailPreviewSecondaryText}
                   thumbnailTextReadOnly={false}
@@ -4378,15 +4671,24 @@ export function CaptionTranslator() {
                   thumbnailFontSize={settings.thumbnailFontSize}
                   thumbnailTextPrimaryFontName={settings.thumbnailTextPrimaryFontName}
                   thumbnailTextPrimaryFontSize={settings.thumbnailTextPrimaryFontSize}
+                  thumbnailTextPrimaryFontSizeRel={settings.thumbnailTextPrimaryFontSizeRel}
                   thumbnailTextPrimaryColor={settings.thumbnailTextPrimaryColor}
                   thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
                   thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
+                  thumbnailTextSecondaryFontSizeRel={settings.thumbnailTextSecondaryFontSizeRel}
                   thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
                   thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
                   thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
                   thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
                   onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}
                   onThumbnailTextSecondaryPositionChange={settings.setThumbnailTextSecondaryPosition}
+                  onThumbnailTextPrimaryFontNameChange={settings.setThumbnailTextPrimaryFontName}
+                  onThumbnailTextPrimaryFontSizeChange={settings.setThumbnailTextPrimaryFontSize}
+                  onThumbnailTextPrimaryColorChange={settings.setThumbnailTextPrimaryColor}
+                  onThumbnailTextSecondaryFontNameChange={settings.setThumbnailTextSecondaryFontName}
+                  onThumbnailTextSecondaryFontSizeChange={settings.setThumbnailTextSecondaryFontSize}
+                  onThumbnailTextSecondaryColorChange={settings.setThumbnailTextSecondaryColor}
+                  onThumbnailLineHeightRatioChange={settings.setThumbnailLineHeightRatio}
                   contextKey={thumbnailPreviewContextKey}
                   inputType={settings.inputType}
                 />

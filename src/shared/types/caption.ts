@@ -517,6 +517,35 @@ export interface RenderVideoOptions {
   thumbnailLineHeightRatio?: number; // Khoảng cách dòng cho text thumbnail (áp dụng cho Enter + wrap)
   thumbnailTextPrimaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text1 trong vùng hợp lệ
   thumbnailTextSecondaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text2 trong vùng hợp lệ
+  hardsubTextPrimary?: string; // Text1 cho main video mode hardsub 16:9
+  hardsubTextSecondary?: string; // Text2 cho main video mode hardsub 16:9
+  hardsubTextPrimaryFontName?: string; // Font Text1 cho main video mode hardsub 16:9
+  hardsubTextPrimaryFontSize?: number; // Size Text1 cho main video mode hardsub 16:9
+  hardsubTextPrimaryColor?: string; // Màu Text1 cho main video mode hardsub 16:9
+  hardsubTextSecondaryFontName?: string; // Font Text2 cho main video mode hardsub 16:9
+  hardsubTextSecondaryFontSize?: number; // Size Text2 cho main video mode hardsub 16:9
+  hardsubTextSecondaryColor?: string; // Màu Text2 cho main video mode hardsub 16:9
+  hardsubTextPrimaryPosition?: { x: number; y: number }; // Vị trí Text1 cho main video mode hardsub 16:9
+  hardsubTextSecondaryPosition?: { x: number; y: number }; // Vị trí Text2 cho main video mode hardsub 16:9
+  hardsubPortraitTextPrimary?: string; // Text1 cho main video mode hardsub 9:16
+  hardsubPortraitTextSecondary?: string; // Text2 cho main video mode hardsub 9:16
+  hardsubPortraitTextPrimaryFontName?: string; // Font Text1 cho main video mode hardsub 9:16
+  hardsubPortraitTextPrimaryFontSize?: number; // Size Text1 cho main video mode hardsub 9:16
+  hardsubPortraitTextPrimaryColor?: string; // Màu Text1 cho main video mode hardsub 9:16
+  hardsubPortraitTextSecondaryFontName?: string; // Font Text2 cho main video mode hardsub 9:16
+  hardsubPortraitTextSecondaryFontSize?: number; // Size Text2 cho main video mode hardsub 9:16
+  hardsubPortraitTextSecondaryColor?: string; // Màu Text2 cho main video mode hardsub 9:16
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number }; // Vị trí Text1 cho main video mode hardsub 9:16
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number }; // Vị trí Text2 cho main video mode hardsub 9:16
+  // Legacy 9:16 naming (giữ để tương thích dữ liệu cũ)
+  portraitTextPrimaryFontName?: string; // Font Text1 riêng cho overlay 9:16
+  portraitTextPrimaryFontSize?: number; // Cỡ Text1 riêng cho overlay 9:16
+  portraitTextPrimaryColor?: string; // Màu Text1 riêng cho overlay 9:16
+  portraitTextSecondaryFontName?: string; // Font Text2 riêng cho overlay 9:16
+  portraitTextSecondaryFontSize?: number; // Cỡ Text2 riêng cho overlay 9:16
+  portraitTextSecondaryColor?: string; // Màu Text2 riêng cho overlay 9:16
+  portraitTextPrimaryPosition?: { x: number; y: number }; // Vị trí Text1 riêng cho overlay 9:16
+  portraitTextSecondaryPosition?: { x: number; y: number }; // Vị trí Text2 riêng cho overlay 9:16
   step7SubtitleSource?: 'session_translated_entries';
   step7AudioSource?: 'session_merged_audio';
 }
@@ -604,6 +633,47 @@ export interface RenderVideoPreviewFrameOptions {
   logoPosition?: { x: number; y: number };
   logoScale?: number;
   portraitForegroundCropPercent?: number;
+  thumbnailText?: string;
+  thumbnailTextSecondary?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+  thumbnailTextPrimaryFontName?: string;
+  thumbnailTextPrimaryFontSize?: number;
+  thumbnailTextPrimaryColor?: string;
+  thumbnailTextSecondaryFontName?: string;
+  thumbnailTextSecondaryFontSize?: number;
+  thumbnailTextSecondaryColor?: string;
+  thumbnailLineHeightRatio?: number;
+  thumbnailTextPrimaryPosition?: { x: number; y: number };
+  thumbnailTextSecondaryPosition?: { x: number; y: number };
+  hardsubTextPrimary?: string;
+  hardsubTextSecondary?: string;
+  hardsubTextPrimaryFontName?: string;
+  hardsubTextPrimaryFontSize?: number;
+  hardsubTextPrimaryColor?: string;
+  hardsubTextSecondaryFontName?: string;
+  hardsubTextSecondaryFontSize?: number;
+  hardsubTextSecondaryColor?: string;
+  hardsubTextPrimaryPosition?: { x: number; y: number };
+  hardsubTextSecondaryPosition?: { x: number; y: number };
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryColor?: string;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
 }
 
 export interface RenderVideoPreviewFrameResult {
@@ -847,6 +917,40 @@ export interface CaptionProjectSettingsValues {
   thumbnailTextSecondary?: string;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
+  hardsubTextPrimary?: string;
+  hardsubTextSecondary?: string;
+  hardsubTextPrimaryFontName?: string;
+  hardsubTextPrimaryFontSize?: number;
+  hardsubTextPrimaryFontSizeRel?: number;
+  hardsubTextPrimaryColor?: string;
+  hardsubTextSecondaryFontName?: string;
+  hardsubTextSecondaryFontSize?: number;
+  hardsubTextSecondaryFontSizeRel?: number;
+  hardsubTextSecondaryColor?: string;
+  hardsubTextPrimaryPosition?: { x: number; y: number };
+  hardsubTextSecondaryPosition?: { x: number; y: number };
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryFontSizeRel?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryFontSizeRel?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryFontSizeRel?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryFontSizeRel?: number;
+  portraitTextSecondaryColor?: string;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryByOrder?: string[];
   thumbnailTextSecondaryOverrideFlags?: boolean[];
   thumbnailDurationSec?: number;
@@ -888,6 +992,40 @@ export interface CaptionProjectSettingsValues {
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };
       thumbnailTextSecondaryPosition?: { x: number; y: number };
+      hardsubTextPrimary?: string;
+      hardsubTextSecondary?: string;
+      hardsubTextPrimaryFontName?: string;
+      hardsubTextPrimaryFontSize?: number;
+      hardsubTextPrimaryFontSizeRel?: number;
+      hardsubTextPrimaryColor?: string;
+      hardsubTextSecondaryFontName?: string;
+      hardsubTextSecondaryFontSize?: number;
+      hardsubTextSecondaryFontSizeRel?: number;
+      hardsubTextSecondaryColor?: string;
+      hardsubTextPrimaryPosition?: { x: number; y: number };
+      hardsubTextSecondaryPosition?: { x: number; y: number };
+      hardsubPortraitTextPrimary?: string;
+      hardsubPortraitTextSecondary?: string;
+      hardsubPortraitTextPrimaryFontName?: string;
+      hardsubPortraitTextPrimaryFontSize?: number;
+      hardsubPortraitTextPrimaryFontSizeRel?: number;
+      hardsubPortraitTextPrimaryColor?: string;
+      hardsubPortraitTextSecondaryFontName?: string;
+      hardsubPortraitTextSecondaryFontSize?: number;
+      hardsubPortraitTextSecondaryFontSizeRel?: number;
+      hardsubPortraitTextSecondaryColor?: string;
+      hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+      hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+      portraitTextPrimaryFontName?: string;
+      portraitTextPrimaryFontSize?: number;
+      portraitTextPrimaryFontSizeRel?: number;
+      portraitTextPrimaryColor?: string;
+      portraitTextSecondaryFontName?: string;
+      portraitTextSecondaryFontSize?: number;
+      portraitTextSecondaryFontSizeRel?: number;
+      portraitTextSecondaryColor?: string;
+      portraitTextPrimaryPosition?: { x: number; y: number };
+      portraitTextSecondaryPosition?: { x: number; y: number };
       foregroundCropPercent?: number;
     };
     portrait?: {
@@ -925,6 +1063,40 @@ export interface CaptionProjectSettingsValues {
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };
       thumbnailTextSecondaryPosition?: { x: number; y: number };
+      hardsubTextPrimary?: string;
+      hardsubTextSecondary?: string;
+      hardsubTextPrimaryFontName?: string;
+      hardsubTextPrimaryFontSize?: number;
+      hardsubTextPrimaryFontSizeRel?: number;
+      hardsubTextPrimaryColor?: string;
+      hardsubTextSecondaryFontName?: string;
+      hardsubTextSecondaryFontSize?: number;
+      hardsubTextSecondaryFontSizeRel?: number;
+      hardsubTextSecondaryColor?: string;
+      hardsubTextPrimaryPosition?: { x: number; y: number };
+      hardsubTextSecondaryPosition?: { x: number; y: number };
+      hardsubPortraitTextPrimary?: string;
+      hardsubPortraitTextSecondary?: string;
+      hardsubPortraitTextPrimaryFontName?: string;
+      hardsubPortraitTextPrimaryFontSize?: number;
+      hardsubPortraitTextPrimaryFontSizeRel?: number;
+      hardsubPortraitTextPrimaryColor?: string;
+      hardsubPortraitTextSecondaryFontName?: string;
+      hardsubPortraitTextSecondaryFontSize?: number;
+      hardsubPortraitTextSecondaryFontSizeRel?: number;
+      hardsubPortraitTextSecondaryColor?: string;
+      hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+      hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+      portraitTextPrimaryFontName?: string;
+      portraitTextPrimaryFontSize?: number;
+      portraitTextPrimaryFontSizeRel?: number;
+      portraitTextPrimaryColor?: string;
+      portraitTextSecondaryFontName?: string;
+      portraitTextSecondaryFontSize?: number;
+      portraitTextSecondaryFontSizeRel?: number;
+      portraitTextSecondaryColor?: string;
+      portraitTextPrimaryPosition?: { x: number; y: number };
+      portraitTextSecondaryPosition?: { x: number; y: number };
       foregroundCropPercent?: number;
     };
   };

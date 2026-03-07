@@ -32,6 +32,29 @@ interface SubtitlePreviewProps {
   logoPosition?: { x: number; y: number };
   logoScale?: number;
   portraitForegroundCropPercent?: number;
+  thumbnailText?: string;
+  thumbnailTextSecondary?: string;
+  hardsubPortraitTextPrimary?: string;
+  hardsubPortraitTextSecondary?: string;
+  thumbnailFontName?: string;
+  thumbnailFontSize?: number;
+  hardsubPortraitTextPrimaryFontName?: string;
+  hardsubPortraitTextPrimaryFontSize?: number;
+  hardsubPortraitTextPrimaryColor?: string;
+  hardsubPortraitTextSecondaryFontName?: string;
+  hardsubPortraitTextSecondaryFontSize?: number;
+  hardsubPortraitTextSecondaryColor?: string;
+  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+  portraitTextPrimaryFontName?: string;
+  portraitTextPrimaryFontSize?: number;
+  portraitTextPrimaryColor?: string;
+  portraitTextSecondaryFontName?: string;
+  portraitTextSecondaryFontSize?: number;
+  portraitTextSecondaryColor?: string;
+  thumbnailLineHeightRatio?: number;
+  portraitTextPrimaryPosition?: { x: number; y: number };
+  portraitTextSecondaryPosition?: { x: number; y: number };
   onPositionChange: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (value: number | null) => void;
   onCoverModeChange?: (value: 'blackout_bottom' | 'copy_from_above') => void;
@@ -41,6 +64,8 @@ interface SubtitlePreviewProps {
   onPreviewLayoutChange?: (value: 'landscape' | 'portrait') => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
+  onPortraitTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   onSelectLogo?: () => void;
   onRemoveLogo?: () => void;
   renderSnapshotMode?: boolean;
@@ -48,7 +73,7 @@ interface SubtitlePreviewProps {
   realPreviewDisabledReason?: string;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -69,12 +94,35 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     logoPosition,
     logoScale,
     portraitForegroundCropPercent,
+    thumbnailText,
+    thumbnailTextSecondary,
+    hardsubPortraitTextPrimary,
+    hardsubPortraitTextSecondary,
+    hardsubPortraitTextPrimaryFontName,
+    hardsubPortraitTextPrimaryFontSize,
+    hardsubPortraitTextPrimaryColor,
+    hardsubPortraitTextSecondaryFontName,
+    hardsubPortraitTextSecondaryFontSize,
+    hardsubPortraitTextSecondaryColor,
+    hardsubPortraitTextPrimaryPosition,
+    hardsubPortraitTextSecondaryPosition,
+    portraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize,
+    portraitTextPrimaryColor,
+    portraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize,
+    portraitTextSecondaryColor,
+    thumbnailLineHeightRatio,
+    portraitTextPrimaryPosition,
+    portraitTextSecondaryPosition,
     onPositionChange: (pos) => onPositionChange(pos),
     onBlackoutChange,
     onCoverModeChange,
     onCoverQuadChange,
     onLogoPositionChange,
     onLogoScaleChange,
+    onPortraitTextPrimaryPositionChange,
+    onPortraitTextSecondaryPositionChange,
     renderSnapshotMode,
   });
   const realPreview = useSubtitleRenderPreviewState({
@@ -98,6 +146,29 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     logoScale,
     hardwareAcceleration,
     portraitForegroundCropPercent,
+    thumbnailText,
+    thumbnailTextSecondary,
+    hardsubPortraitTextPrimary,
+    hardsubPortraitTextSecondary,
+    thumbnailFontName,
+    thumbnailFontSize,
+    hardsubPortraitTextPrimaryFontName,
+    hardsubPortraitTextPrimaryFontSize,
+    hardsubPortraitTextPrimaryColor,
+    hardsubPortraitTextSecondaryFontName,
+    hardsubPortraitTextSecondaryFontSize,
+    hardsubPortraitTextSecondaryColor,
+    hardsubPortraitTextPrimaryPosition,
+    hardsubPortraitTextSecondaryPosition,
+    portraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize,
+    portraitTextPrimaryColor,
+    portraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize,
+    portraitTextSecondaryColor,
+    thumbnailLineHeightRatio,
+    portraitTextPrimaryPosition,
+    portraitTextSecondaryPosition,
     disabled: Boolean(realPreviewDisabledReason),
     disabledReason: realPreviewDisabledReason,
   });
@@ -148,13 +219,18 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
   const blackoutPct = preview.blackoutTop !== null
     ? Math.round((1 - preview.blackoutTop) * 100)
     : 0;
-  const mainInfo = preview.mode === 'subtitle'
-    ? `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`
-    : (preview.mode === 'logo'
-      ? `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`
-      : (preview.coverMode === 'copy_from_above'
-        ? `Copy mode · offset ${preview.copyOffsetPx}px · feather LR ${Math.round(preview.coverFeatherHorizontalPercent ?? 20)}% / TB ${Math.round(preview.coverFeatherVerticalPercent ?? 20)}% · ${preview.coverQuadValid ? 'Quad OK' : 'Quad lỗi'}`
-        : `${isPortraitMode ? 'Blur' : 'Mask'} ${blackoutPct}%`));
+  let mainInfo = `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`;
+  if (preview.mode === 'text_primary') {
+    mainInfo = `Text1 Rel ${preview.textPrimaryPositionRel.x.toFixed(3)}, ${preview.textPrimaryPositionRel.y.toFixed(3)}`;
+  } else if (preview.mode === 'text_secondary') {
+    mainInfo = `Text2 Rel ${preview.textSecondaryPositionRel.x.toFixed(3)}, ${preview.textSecondaryPositionRel.y.toFixed(3)}`;
+  } else if (preview.mode === 'logo') {
+    mainInfo = `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`;
+  } else if (preview.mode !== 'subtitle') {
+    mainInfo = preview.coverMode === 'copy_from_above'
+      ? `Copy mode · offset ${preview.copyOffsetPx}px · feather LR ${Math.round(preview.coverFeatherHorizontalPercent ?? 20)}% / TB ${Math.round(preview.coverFeatherVerticalPercent ?? 20)}% · ${preview.coverQuadValid ? 'Quad OK' : 'Quad lỗi'}`
+      : `${isPortraitMode ? 'Blur' : 'Mask'} ${blackoutPct}%`;
+  }
   const resolutionInfo = `${preview.videoSize.width}×${preview.videoSize.height} · ${isPortraitMode ? '9:16' : '16:9'} ${displayRenderResolution}`;
 
   return (
@@ -207,6 +283,28 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           <Square size={13} />
           {isPortraitMode ? 'Blur' : 'Mask'}
         </button>
+        {isPortraitMode && (
+          <>
+            <button
+              className={`${styles.modeBtn} ${preview.mode === 'text_primary' ? styles.modeBtnActive : ''}`}
+              onClick={() => preview.setMode('text_primary')}
+              title="Kéo để đặt vị trí Text1"
+              disabled={isInteractionDisabled || isRealPreviewMode}
+            >
+              <Crosshair size={13} />
+              T1
+            </button>
+            <button
+              className={`${styles.modeBtn} ${preview.mode === 'text_secondary' ? styles.modeBtnActive : ''}`}
+              onClick={() => preview.setMode('text_secondary')}
+              title="Kéo để đặt vị trí Text2"
+              disabled={isInteractionDisabled || isRealPreviewMode}
+            >
+              <Crosshair size={13} />
+              T2
+            </button>
+          </>
+        )}
         {logoPath ? (
           <div style={{ display: 'flex', gap: 4 }}>
             <button
@@ -372,6 +470,11 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
                 <RotateCcw size={12} /> Căn giữa
               </button>
             </>
+          )}
+          {(preview.mode === 'text_primary' || preview.mode === 'text_secondary') && (
+            <button className={styles.resetBtn} onClick={preview.resetTextLayerToCenter} disabled={isInteractionDisabled}>
+              <RotateCcw size={12} /> Căn giữa
+            </button>
           )}
 
           {onPreviewLayoutChange && (

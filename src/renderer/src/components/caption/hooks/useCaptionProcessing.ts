@@ -235,6 +235,40 @@ interface UseCaptionProcessingProps {
     thumbnailLineHeightRatio?: number;
     thumbnailTextPrimaryPosition?: { x: number; y: number };
     thumbnailTextSecondaryPosition?: { x: number; y: number };
+    hardsubTextPrimary?: string;
+    hardsubTextSecondary?: string;
+    hardsubTextPrimaryFontName?: string;
+    hardsubTextPrimaryFontSize?: number;
+    hardsubTextPrimaryFontSizeRel?: number;
+    hardsubTextPrimaryColor?: string;
+    hardsubTextSecondaryFontName?: string;
+    hardsubTextSecondaryFontSize?: number;
+    hardsubTextSecondaryFontSizeRel?: number;
+    hardsubTextSecondaryColor?: string;
+    hardsubTextPrimaryPosition?: { x: number; y: number };
+    hardsubTextSecondaryPosition?: { x: number; y: number };
+    hardsubPortraitTextPrimary?: string;
+    hardsubPortraitTextSecondary?: string;
+    hardsubPortraitTextPrimaryFontName?: string;
+    hardsubPortraitTextPrimaryFontSize?: number;
+    hardsubPortraitTextPrimaryFontSizeRel?: number;
+    hardsubPortraitTextPrimaryColor?: string;
+    hardsubPortraitTextSecondaryFontName?: string;
+    hardsubPortraitTextSecondaryFontSize?: number;
+    hardsubPortraitTextSecondaryFontSizeRel?: number;
+    hardsubPortraitTextSecondaryColor?: string;
+    hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+    hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+    portraitTextPrimaryFontName?: string;
+    portraitTextPrimaryFontSize?: number;
+    portraitTextPrimaryFontSizeRel?: number;
+    portraitTextPrimaryColor?: string;
+    portraitTextSecondaryFontName?: string;
+    portraitTextSecondaryFontSize?: number;
+    portraitTextSecondaryFontSizeRel?: number;
+    portraitTextSecondaryColor?: string;
+    portraitTextPrimaryPosition?: { x: number; y: number };
+    portraitTextSecondaryPosition?: { x: number; y: number };
     thumbnailTextsByOrder?: string[];
     thumbnailTextsSecondaryByOrder?: string[];
     thumbnailTextSecondaryOverrideFlags?: boolean[];
@@ -364,6 +398,12 @@ function cloneLayoutProfile(profile: LooseRecord | undefined): LooseRecord | und
     logoPosition: readPoint(profile, 'logoPosition'),
     thumbnailTextPrimaryPosition: readPoint(profile, 'thumbnailTextPrimaryPosition'),
     thumbnailTextSecondaryPosition: readPoint(profile, 'thumbnailTextSecondaryPosition'),
+    hardsubTextPrimaryPosition: readPoint(profile, 'hardsubTextPrimaryPosition'),
+    hardsubTextSecondaryPosition: readPoint(profile, 'hardsubTextSecondaryPosition'),
+    hardsubPortraitTextPrimaryPosition: readPoint(profile, 'hardsubPortraitTextPrimaryPosition'),
+    hardsubPortraitTextSecondaryPosition: readPoint(profile, 'hardsubPortraitTextSecondaryPosition'),
+    portraitTextPrimaryPosition: readPoint(profile, 'portraitTextPrimaryPosition'),
+    portraitTextSecondaryPosition: readPoint(profile, 'portraitTextSecondaryPosition'),
   };
 }
 
@@ -400,6 +440,12 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
   const subtitlePosition = readPointOrNull(profile, 'subtitlePosition');
   const thumbnailTextPrimaryPosition = readPoint(profile, 'thumbnailTextPrimaryPosition');
   const thumbnailTextSecondaryPosition = readPoint(profile, 'thumbnailTextSecondaryPosition');
+  const hardsubTextPrimaryPosition = readPoint(profile, 'hardsubTextPrimaryPosition');
+  const hardsubTextSecondaryPosition = readPoint(profile, 'hardsubTextSecondaryPosition');
+  const hardsubPortraitTextPrimaryPosition = readPoint(profile, 'hardsubPortraitTextPrimaryPosition');
+  const hardsubPortraitTextSecondaryPosition = readPoint(profile, 'hardsubPortraitTextSecondaryPosition');
+  const portraitTextPrimaryPosition = readPoint(profile, 'portraitTextPrimaryPosition');
+  const portraitTextSecondaryPosition = readPoint(profile, 'portraitTextSecondaryPosition');
   const logoPosition = readPoint(profile, 'logoPosition');
   const coverQuad = readCoverQuad(profile, 'coverQuad');
   const coverMode = readCoverMode(profile, 'coverMode');
@@ -504,6 +550,22 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
       readString(profile, 'thumbnailTextSecondary'),
       settings.thumbnailTextSecondary
     ),
+    hardsubTextPrimary: withFallback(
+      readString(profile, 'hardsubTextPrimary'),
+      settings.hardsubTextPrimary
+    ),
+    hardsubTextSecondary: withFallback(
+      readString(profile, 'hardsubTextSecondary'),
+      settings.hardsubTextSecondary
+    ),
+    hardsubPortraitTextPrimary: withFallback(
+      readString(profile, 'hardsubPortraitTextPrimary'),
+      settings.hardsubPortraitTextPrimary
+    ),
+    hardsubPortraitTextSecondary: withFallback(
+      readString(profile, 'hardsubPortraitTextSecondary'),
+      settings.hardsubPortraitTextSecondary
+    ),
     thumbnailTextPrimaryPosition: withFallback(
       thumbnailTextPrimaryPosition,
       settings.thumbnailTextPrimaryPosition
@@ -511,6 +573,126 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
     thumbnailTextSecondaryPosition: withFallback(
       thumbnailTextSecondaryPosition,
       settings.thumbnailTextSecondaryPosition
+    ),
+    hardsubTextPrimaryPosition: withFallback(
+      hardsubTextPrimaryPosition,
+      settings.hardsubTextPrimaryPosition
+    ),
+    hardsubTextSecondaryPosition: withFallback(
+      hardsubTextSecondaryPosition,
+      settings.hardsubTextSecondaryPosition
+    ),
+    hardsubPortraitTextPrimaryPosition: withFallback(
+      hardsubPortraitTextPrimaryPosition,
+      settings.hardsubPortraitTextPrimaryPosition
+    ),
+    hardsubPortraitTextSecondaryPosition: withFallback(
+      hardsubPortraitTextSecondaryPosition,
+      settings.hardsubPortraitTextSecondaryPosition
+    ),
+    hardsubTextPrimaryFontName: withFallback(
+      readString(profile, 'hardsubTextPrimaryFontName'),
+      settings.hardsubTextPrimaryFontName
+    ),
+    hardsubTextPrimaryFontSize: withFallback(
+      readNumber(profile, 'hardsubTextPrimaryFontSize'),
+      settings.hardsubTextPrimaryFontSize
+    ),
+    hardsubTextPrimaryFontSizeRel: withFallback(
+      readNumber(profile, 'hardsubTextPrimaryFontSizeRel'),
+      settings.hardsubTextPrimaryFontSizeRel
+    ),
+    hardsubTextPrimaryColor: withFallback(
+      readString(profile, 'hardsubTextPrimaryColor'),
+      settings.hardsubTextPrimaryColor
+    ),
+    hardsubTextSecondaryFontName: withFallback(
+      readString(profile, 'hardsubTextSecondaryFontName'),
+      settings.hardsubTextSecondaryFontName
+    ),
+    hardsubTextSecondaryFontSize: withFallback(
+      readNumber(profile, 'hardsubTextSecondaryFontSize'),
+      settings.hardsubTextSecondaryFontSize
+    ),
+    hardsubTextSecondaryFontSizeRel: withFallback(
+      readNumber(profile, 'hardsubTextSecondaryFontSizeRel'),
+      settings.hardsubTextSecondaryFontSizeRel
+    ),
+    hardsubTextSecondaryColor: withFallback(
+      readString(profile, 'hardsubTextSecondaryColor'),
+      settings.hardsubTextSecondaryColor
+    ),
+    hardsubPortraitTextPrimaryFontName: withFallback(
+      readString(profile, 'hardsubPortraitTextPrimaryFontName'),
+      settings.hardsubPortraitTextPrimaryFontName
+    ),
+    hardsubPortraitTextPrimaryFontSize: withFallback(
+      readNumber(profile, 'hardsubPortraitTextPrimaryFontSize'),
+      settings.hardsubPortraitTextPrimaryFontSize
+    ),
+    hardsubPortraitTextPrimaryFontSizeRel: withFallback(
+      readNumber(profile, 'hardsubPortraitTextPrimaryFontSizeRel'),
+      settings.hardsubPortraitTextPrimaryFontSizeRel
+    ),
+    hardsubPortraitTextPrimaryColor: withFallback(
+      readString(profile, 'hardsubPortraitTextPrimaryColor'),
+      settings.hardsubPortraitTextPrimaryColor
+    ),
+    hardsubPortraitTextSecondaryFontName: withFallback(
+      readString(profile, 'hardsubPortraitTextSecondaryFontName'),
+      settings.hardsubPortraitTextSecondaryFontName
+    ),
+    hardsubPortraitTextSecondaryFontSize: withFallback(
+      readNumber(profile, 'hardsubPortraitTextSecondaryFontSize'),
+      settings.hardsubPortraitTextSecondaryFontSize
+    ),
+    hardsubPortraitTextSecondaryFontSizeRel: withFallback(
+      readNumber(profile, 'hardsubPortraitTextSecondaryFontSizeRel'),
+      settings.hardsubPortraitTextSecondaryFontSizeRel
+    ),
+    hardsubPortraitTextSecondaryColor: withFallback(
+      readString(profile, 'hardsubPortraitTextSecondaryColor'),
+      settings.hardsubPortraitTextSecondaryColor
+    ),
+    portraitTextPrimaryFontName: withFallback(
+      readString(profile, 'portraitTextPrimaryFontName'),
+      settings.portraitTextPrimaryFontName
+    ),
+    portraitTextPrimaryFontSize: withFallback(
+      readNumber(profile, 'portraitTextPrimaryFontSize'),
+      settings.portraitTextPrimaryFontSize
+    ),
+    portraitTextPrimaryFontSizeRel: withFallback(
+      readNumber(profile, 'portraitTextPrimaryFontSizeRel'),
+      settings.portraitTextPrimaryFontSizeRel
+    ),
+    portraitTextPrimaryColor: withFallback(
+      readString(profile, 'portraitTextPrimaryColor'),
+      settings.portraitTextPrimaryColor
+    ),
+    portraitTextSecondaryFontName: withFallback(
+      readString(profile, 'portraitTextSecondaryFontName'),
+      settings.portraitTextSecondaryFontName
+    ),
+    portraitTextSecondaryFontSize: withFallback(
+      readNumber(profile, 'portraitTextSecondaryFontSize'),
+      settings.portraitTextSecondaryFontSize
+    ),
+    portraitTextSecondaryFontSizeRel: withFallback(
+      readNumber(profile, 'portraitTextSecondaryFontSizeRel'),
+      settings.portraitTextSecondaryFontSizeRel
+    ),
+    portraitTextSecondaryColor: withFallback(
+      readString(profile, 'portraitTextSecondaryColor'),
+      settings.portraitTextSecondaryColor
+    ),
+    portraitTextPrimaryPosition: withFallback(
+      portraitTextPrimaryPosition,
+      settings.portraitTextPrimaryPosition
+    ),
+    portraitTextSecondaryPosition: withFallback(
+      portraitTextSecondaryPosition,
+      settings.portraitTextSecondaryPosition
     ),
     portraitForegroundCropPercent: settings.renderMode === 'hardsub_portrait_9_16'
       ? withFallback(
@@ -1130,6 +1312,30 @@ export function useCaptionProcessing({
       renderLayoutOverrides.thumbnailTextSecondaryPosition !== undefined
         ? renderLayoutOverrides.thumbnailTextSecondaryPosition
         : settings.thumbnailTextSecondaryPosition;
+    const hardsubTextPrimaryPositionForRun =
+      renderLayoutOverrides.hardsubTextPrimaryPosition !== undefined
+        ? renderLayoutOverrides.hardsubTextPrimaryPosition
+        : settings.hardsubTextPrimaryPosition;
+    const hardsubTextSecondaryPositionForRun =
+      renderLayoutOverrides.hardsubTextSecondaryPosition !== undefined
+        ? renderLayoutOverrides.hardsubTextSecondaryPosition
+        : settings.hardsubTextSecondaryPosition;
+    const hardsubPortraitTextPrimaryPositionForRun =
+      renderLayoutOverrides.hardsubPortraitTextPrimaryPosition !== undefined
+        ? renderLayoutOverrides.hardsubPortraitTextPrimaryPosition
+        : settings.hardsubPortraitTextPrimaryPosition;
+    const hardsubPortraitTextSecondaryPositionForRun =
+      renderLayoutOverrides.hardsubPortraitTextSecondaryPosition !== undefined
+        ? renderLayoutOverrides.hardsubPortraitTextSecondaryPosition
+        : settings.hardsubPortraitTextSecondaryPosition;
+    const portraitTextPrimaryPositionForRun =
+      renderLayoutOverrides.portraitTextPrimaryPosition !== undefined
+        ? renderLayoutOverrides.portraitTextPrimaryPosition
+        : settings.portraitTextPrimaryPosition;
+    const portraitTextSecondaryPositionForRun =
+      renderLayoutOverrides.portraitTextSecondaryPosition !== undefined
+        ? renderLayoutOverrides.portraitTextSecondaryPosition
+        : settings.portraitTextSecondaryPosition;
     const runLockedSettings = {
       ...settings,
       ...renderLayoutOverrides,
@@ -1150,6 +1356,24 @@ export function useCaptionProcessing({
       thumbnailTextSecondaryPosition: thumbnailTextSecondaryPositionForRun
         ? { ...thumbnailTextSecondaryPositionForRun }
         : thumbnailTextSecondaryPositionForRun,
+      hardsubTextPrimaryPosition: hardsubTextPrimaryPositionForRun
+        ? { ...hardsubTextPrimaryPositionForRun }
+        : hardsubTextPrimaryPositionForRun,
+      hardsubTextSecondaryPosition: hardsubTextSecondaryPositionForRun
+        ? { ...hardsubTextSecondaryPositionForRun }
+        : hardsubTextSecondaryPositionForRun,
+      hardsubPortraitTextPrimaryPosition: hardsubPortraitTextPrimaryPositionForRun
+        ? { ...hardsubPortraitTextPrimaryPositionForRun }
+        : hardsubPortraitTextPrimaryPositionForRun,
+      hardsubPortraitTextSecondaryPosition: hardsubPortraitTextSecondaryPositionForRun
+        ? { ...hardsubPortraitTextSecondaryPositionForRun }
+        : hardsubPortraitTextSecondaryPositionForRun,
+      portraitTextPrimaryPosition: portraitTextPrimaryPositionForRun
+        ? { ...portraitTextPrimaryPositionForRun }
+        : portraitTextPrimaryPositionForRun,
+      portraitTextSecondaryPosition: portraitTextSecondaryPositionForRun
+        ? { ...portraitTextSecondaryPositionForRun }
+        : portraitTextSecondaryPositionForRun,
       thumbnailTextsByOrder: settings.thumbnailTextsByOrder ? [...settings.thumbnailTextsByOrder] : [],
       thumbnailTextsSecondaryByOrder: settings.thumbnailTextsSecondaryByOrder ? [...settings.thumbnailTextsSecondaryByOrder] : [],
       thumbnailTextSecondaryOverrideFlags: settings.thumbnailTextSecondaryOverrideFlags
@@ -1473,6 +1697,40 @@ export function useCaptionProcessing({
         thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
         thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
         thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
+        hardsubTextPrimary: cfg.hardsubTextPrimary,
+        hardsubTextSecondary: cfg.hardsubTextSecondary,
+        hardsubTextPrimaryFontName: cfg.hardsubTextPrimaryFontName,
+        hardsubTextPrimaryFontSize: cfg.hardsubTextPrimaryFontSize,
+        hardsubTextPrimaryFontSizeRel: cfg.hardsubTextPrimaryFontSizeRel,
+        hardsubTextPrimaryColor: cfg.hardsubTextPrimaryColor,
+        hardsubTextSecondaryFontName: cfg.hardsubTextSecondaryFontName,
+        hardsubTextSecondaryFontSize: cfg.hardsubTextSecondaryFontSize,
+        hardsubTextSecondaryFontSizeRel: cfg.hardsubTextSecondaryFontSizeRel,
+        hardsubTextSecondaryColor: cfg.hardsubTextSecondaryColor,
+        hardsubTextPrimaryPosition: cfg.hardsubTextPrimaryPosition,
+        hardsubTextSecondaryPosition: cfg.hardsubTextSecondaryPosition,
+        hardsubPortraitTextPrimary: cfg.hardsubPortraitTextPrimary,
+        hardsubPortraitTextSecondary: cfg.hardsubPortraitTextSecondary,
+        hardsubPortraitTextPrimaryFontName: cfg.hardsubPortraitTextPrimaryFontName,
+        hardsubPortraitTextPrimaryFontSize: cfg.hardsubPortraitTextPrimaryFontSize,
+        hardsubPortraitTextPrimaryFontSizeRel: cfg.hardsubPortraitTextPrimaryFontSizeRel,
+        hardsubPortraitTextPrimaryColor: cfg.hardsubPortraitTextPrimaryColor,
+        hardsubPortraitTextSecondaryFontName: cfg.hardsubPortraitTextSecondaryFontName,
+        hardsubPortraitTextSecondaryFontSize: cfg.hardsubPortraitTextSecondaryFontSize,
+        hardsubPortraitTextSecondaryFontSizeRel: cfg.hardsubPortraitTextSecondaryFontSizeRel,
+        hardsubPortraitTextSecondaryColor: cfg.hardsubPortraitTextSecondaryColor,
+        hardsubPortraitTextPrimaryPosition: cfg.hardsubPortraitTextPrimaryPosition,
+        hardsubPortraitTextSecondaryPosition: cfg.hardsubPortraitTextSecondaryPosition,
+        portraitTextPrimaryFontName: cfg.portraitTextPrimaryFontName,
+        portraitTextPrimaryFontSize: cfg.portraitTextPrimaryFontSize,
+        portraitTextPrimaryFontSizeRel: cfg.portraitTextPrimaryFontSizeRel,
+        portraitTextPrimaryColor: cfg.portraitTextPrimaryColor,
+        portraitTextSecondaryFontName: cfg.portraitTextSecondaryFontName,
+        portraitTextSecondaryFontSize: cfg.portraitTextSecondaryFontSize,
+        portraitTextSecondaryFontSizeRel: cfg.portraitTextSecondaryFontSizeRel,
+        portraitTextSecondaryColor: cfg.portraitTextSecondaryColor,
+        portraitTextPrimaryPosition: cfg.portraitTextPrimaryPosition,
+        portraitTextSecondaryPosition: cfg.portraitTextSecondaryPosition,
         portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
         logoPath: cfg.logoPath,
         logoPosition: cfg.logoPosition,
@@ -1532,6 +1790,40 @@ export function useCaptionProcessing({
       thumbnailTextSecondary: cfg.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
+      hardsubTextPrimary: cfg.hardsubTextPrimary,
+      hardsubTextSecondary: cfg.hardsubTextSecondary,
+      hardsubTextPrimaryFontName: cfg.hardsubTextPrimaryFontName,
+      hardsubTextPrimaryFontSize: cfg.hardsubTextPrimaryFontSize,
+      hardsubTextPrimaryFontSizeRel: cfg.hardsubTextPrimaryFontSizeRel,
+      hardsubTextPrimaryColor: cfg.hardsubTextPrimaryColor,
+      hardsubTextSecondaryFontName: cfg.hardsubTextSecondaryFontName,
+      hardsubTextSecondaryFontSize: cfg.hardsubTextSecondaryFontSize,
+      hardsubTextSecondaryFontSizeRel: cfg.hardsubTextSecondaryFontSizeRel,
+      hardsubTextSecondaryColor: cfg.hardsubTextSecondaryColor,
+      hardsubTextPrimaryPosition: cfg.hardsubTextPrimaryPosition,
+      hardsubTextSecondaryPosition: cfg.hardsubTextSecondaryPosition,
+      hardsubPortraitTextPrimary: cfg.hardsubPortraitTextPrimary,
+      hardsubPortraitTextSecondary: cfg.hardsubPortraitTextSecondary,
+      hardsubPortraitTextPrimaryFontName: cfg.hardsubPortraitTextPrimaryFontName,
+      hardsubPortraitTextPrimaryFontSize: cfg.hardsubPortraitTextPrimaryFontSize,
+      hardsubPortraitTextPrimaryFontSizeRel: cfg.hardsubPortraitTextPrimaryFontSizeRel,
+      hardsubPortraitTextPrimaryColor: cfg.hardsubPortraitTextPrimaryColor,
+      hardsubPortraitTextSecondaryFontName: cfg.hardsubPortraitTextSecondaryFontName,
+      hardsubPortraitTextSecondaryFontSize: cfg.hardsubPortraitTextSecondaryFontSize,
+      hardsubPortraitTextSecondaryFontSizeRel: cfg.hardsubPortraitTextSecondaryFontSizeRel,
+      hardsubPortraitTextSecondaryColor: cfg.hardsubPortraitTextSecondaryColor,
+      hardsubPortraitTextPrimaryPosition: cfg.hardsubPortraitTextPrimaryPosition,
+      hardsubPortraitTextSecondaryPosition: cfg.hardsubPortraitTextSecondaryPosition,
+      portraitTextPrimaryFontName: cfg.portraitTextPrimaryFontName,
+      portraitTextPrimaryFontSize: cfg.portraitTextPrimaryFontSize,
+      portraitTextPrimaryFontSizeRel: cfg.portraitTextPrimaryFontSizeRel,
+      portraitTextPrimaryColor: cfg.portraitTextPrimaryColor,
+      portraitTextSecondaryFontName: cfg.portraitTextSecondaryFontName,
+      portraitTextSecondaryFontSize: cfg.portraitTextSecondaryFontSize,
+      portraitTextSecondaryFontSizeRel: cfg.portraitTextSecondaryFontSizeRel,
+      portraitTextSecondaryColor: cfg.portraitTextSecondaryColor,
+      portraitTextPrimaryPosition: cfg.portraitTextPrimaryPosition,
+      portraitTextSecondaryPosition: cfg.portraitTextSecondaryPosition,
       thumbnailTextSecondaryByOrder: cfg.thumbnailTextsSecondaryByOrder,
       thumbnailTextSecondaryOverrideFlags: cfg.thumbnailTextSecondaryOverrideFlags,
       subtitlePosition: cfg.subtitlePosition,
@@ -2494,12 +2786,92 @@ export function useCaptionProcessing({
 
         setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
 
+        const step7TextPrimaryFontName = cfg.renderMode === 'hardsub_portrait_9_16'
+          ? (
+              cfg.hardsubPortraitTextPrimaryFontName
+              || cfg.portraitTextPrimaryFontName
+              || cfg.thumbnailTextPrimaryFontName
+              || cfg.thumbnailFontName
+              || 'BrightwallPersonal'
+            )
+          : (
+              cfg.hardsubTextPrimaryFontName
+              || cfg.thumbnailTextPrimaryFontName
+              || cfg.thumbnailFontName
+              || 'BrightwallPersonal'
+            );
+        const step7TextPrimaryFontSize = cfg.renderMode === 'hardsub_portrait_9_16'
+          ? (
+              cfg.hardsubPortraitTextPrimaryFontSize
+              ?? cfg.portraitTextPrimaryFontSize
+              ?? cfg.thumbnailTextPrimaryFontSize
+              ?? cfg.thumbnailFontSize
+              ?? 145
+            )
+          : (
+              cfg.hardsubTextPrimaryFontSize
+              ?? cfg.thumbnailTextPrimaryFontSize
+              ?? cfg.thumbnailFontSize
+              ?? 145
+            );
+        const step7TextPrimaryColor = cfg.renderMode === 'hardsub_portrait_9_16'
+          ? (
+              cfg.hardsubPortraitTextPrimaryColor
+              || cfg.portraitTextPrimaryColor
+              || cfg.thumbnailTextPrimaryColor
+              || '#FFFF00'
+            )
+          : (
+              cfg.hardsubTextPrimaryColor
+              || cfg.thumbnailTextPrimaryColor
+              || '#FFFF00'
+            );
+        const step7TextSecondaryFontName = cfg.renderMode === 'hardsub_portrait_9_16'
+          ? (
+              cfg.hardsubPortraitTextSecondaryFontName
+              || cfg.portraitTextSecondaryFontName
+              || cfg.thumbnailTextSecondaryFontName
+              || cfg.thumbnailFontName
+              || 'BrightwallPersonal'
+            )
+          : (
+              cfg.hardsubTextSecondaryFontName
+              || cfg.thumbnailTextSecondaryFontName
+              || cfg.thumbnailFontName
+              || 'BrightwallPersonal'
+            );
+        const step7TextSecondaryFontSize = cfg.renderMode === 'hardsub_portrait_9_16'
+          ? (
+              cfg.hardsubPortraitTextSecondaryFontSize
+              ?? cfg.portraitTextSecondaryFontSize
+              ?? cfg.thumbnailTextSecondaryFontSize
+              ?? cfg.thumbnailFontSize
+              ?? 145
+            )
+          : (
+              cfg.hardsubTextSecondaryFontSize
+              ?? cfg.thumbnailTextSecondaryFontSize
+              ?? cfg.thumbnailFontSize
+              ?? 145
+            );
+        const step7TextSecondaryColor = cfg.renderMode === 'hardsub_portrait_9_16'
+          ? (
+              cfg.hardsubPortraitTextSecondaryColor
+              || cfg.portraitTextSecondaryColor
+              || cfg.thumbnailTextSecondaryColor
+              || '#FFFF00'
+            )
+          : (
+              cfg.hardsubTextSecondaryColor
+              || cfg.thumbnailTextSecondaryColor
+              || '#FFFF00'
+            );
         console.log(
-          `[CaptionProcessing][Step7][Thumbnail] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, ` +
-          `font1=${cfg.thumbnailTextPrimaryFontName || cfg.thumbnailFontName || 'BrightwallPersonal'} size1=${cfg.thumbnailTextPrimaryFontSize ?? cfg.thumbnailFontSize ?? 145}, ` +
-          `color1=${(cfg.thumbnailTextPrimaryColor || '#FFFF00').toUpperCase()}, ` +
-          `font2=${cfg.thumbnailTextSecondaryFontName || cfg.thumbnailFontName || 'BrightwallPersonal'} size2=${cfg.thumbnailTextSecondaryFontSize ?? cfg.thumbnailFontSize ?? 145}, ` +
-          `color2=${(cfg.thumbnailTextSecondaryColor || '#FFFF00').toUpperCase()}, ` +
+          `[CaptionProcessing][Step7][TextOverlay] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, ` +
+          `font1=${step7TextPrimaryFontName} size1=${step7TextPrimaryFontSize}, ` +
+          `color1=${step7TextPrimaryColor.toUpperCase()}, ` +
+          `font2=${step7TextSecondaryFontName} size2=${step7TextSecondaryFontSize}, ` +
+          `color2=${step7TextSecondaryColor.toUpperCase()}, ` +
           `lineHeight=${Number(cfg.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x, ` +
           `text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
         );
@@ -2547,6 +2919,10 @@ export function useCaptionProcessing({
           thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
           thumbnailText: thumbnailTextForRender,
           thumbnailTextSecondary: thumbnailTextSecondaryForRender,
+          hardsubTextPrimary: cfg.hardsubTextPrimary || '',
+          hardsubTextSecondary: cfg.hardsubTextSecondary || '',
+          hardsubPortraitTextPrimary: cfg.hardsubPortraitTextPrimary || thumbnailTextForRender,
+          hardsubPortraitTextSecondary: cfg.hardsubPortraitTextSecondary || thumbnailTextSecondaryForRender,
           thumbnailFontName: cfg.thumbnailFontName,
           thumbnailFontSize: cfg.thumbnailFontSize,
           thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,
@@ -2558,6 +2934,30 @@ export function useCaptionProcessing({
           thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
           thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
+          hardsubTextPrimaryFontName: cfg.hardsubTextPrimaryFontName,
+          hardsubTextPrimaryFontSize: cfg.hardsubTextPrimaryFontSize,
+          hardsubTextPrimaryColor: cfg.hardsubTextPrimaryColor,
+          hardsubTextSecondaryFontName: cfg.hardsubTextSecondaryFontName,
+          hardsubTextSecondaryFontSize: cfg.hardsubTextSecondaryFontSize,
+          hardsubTextSecondaryColor: cfg.hardsubTextSecondaryColor,
+          hardsubTextPrimaryPosition: cfg.hardsubTextPrimaryPosition,
+          hardsubTextSecondaryPosition: cfg.hardsubTextSecondaryPosition,
+          hardsubPortraitTextPrimaryFontName: cfg.hardsubPortraitTextPrimaryFontName,
+          hardsubPortraitTextPrimaryFontSize: cfg.hardsubPortraitTextPrimaryFontSize,
+          hardsubPortraitTextPrimaryColor: cfg.hardsubPortraitTextPrimaryColor,
+          hardsubPortraitTextSecondaryFontName: cfg.hardsubPortraitTextSecondaryFontName,
+          hardsubPortraitTextSecondaryFontSize: cfg.hardsubPortraitTextSecondaryFontSize,
+          hardsubPortraitTextSecondaryColor: cfg.hardsubPortraitTextSecondaryColor,
+          hardsubPortraitTextPrimaryPosition: cfg.hardsubPortraitTextPrimaryPosition,
+          hardsubPortraitTextSecondaryPosition: cfg.hardsubPortraitTextSecondaryPosition,
+          portraitTextPrimaryFontName: cfg.portraitTextPrimaryFontName,
+          portraitTextPrimaryFontSize: cfg.portraitTextPrimaryFontSize,
+          portraitTextPrimaryColor: cfg.portraitTextPrimaryColor,
+          portraitTextSecondaryFontName: cfg.portraitTextSecondaryFontName,
+          portraitTextSecondaryFontSize: cfg.portraitTextSecondaryFontSize,
+          portraitTextSecondaryColor: cfg.portraitTextSecondaryColor,
+          portraitTextPrimaryPosition: cfg.portraitTextPrimaryPosition,
+          portraitTextSecondaryPosition: cfg.portraitTextSecondaryPosition,
           step7SubtitleSource: 'session_translated_entries',
           step7AudioSource: 'session_merged_audio',
         });
