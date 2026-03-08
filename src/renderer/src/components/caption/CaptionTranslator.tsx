@@ -1246,7 +1246,7 @@ export function CaptionTranslator() {
     filePath: fileManager.filePath,
     folderVideos: fileManager.folderVideos,
     thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
-    thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary || '',
+    thumbnailTextSecondaryGlobal: '',
   });
   const thumbnailSessionHydrationKey = useMemo(
     () => `${projectId || ''}::${settings.inputType}::${fileManager.filePath || ''}`,
@@ -1302,7 +1302,7 @@ export function CaptionTranslator() {
     thumbnailTextSecondaryFontSizeRel: settings.thumbnailTextSecondaryFontSizeRel,
     thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
-    thumbnailTextSecondary: settings.thumbnailTextSecondary,
+    thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
     thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
     portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
@@ -1366,7 +1366,7 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondaryFontSizeRel,
     settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
-    settings.thumbnailTextSecondary,
+    hardsubSettings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
     settings.portraitTextPrimaryFontName,
@@ -1432,7 +1432,7 @@ export function CaptionTranslator() {
       const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
       if (!cancelled) {
         hardsubSettings.setThumbnailText(resolveSharedPrimaryTextFromStep7(step7));
-        settings.setThumbnailTextSecondary(resolveSharedSecondaryTextFromStep7(step7));
+        hardsubSettings.setThumbnailTextSecondary(resolveSharedSecondaryTextFromStep7(step7));
       }
     };
 
@@ -1527,7 +1527,7 @@ export function CaptionTranslator() {
     if (inputPaths.length > 1) {
       const secondaryGlobalFallback = (
         overrides?.thumbnailTextSecondaryGlobal
-        ?? settings.thumbnailTextSecondary
+        ?? hardsubSettings.thumbnailTextSecondary
         ?? ''
       );
       const normalizedTexts = inputPaths.map((_, idx) => String(multiFolderTexts[idx] || '').trim());
@@ -1591,7 +1591,7 @@ export function CaptionTranslator() {
     const inputPath = inputPaths[0];
     const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
     const sharedPrimaryText = ((overrides?.thumbnailText ?? hardsubSettings.thumbnailText) || '').trim();
-    const sharedSecondaryText = (overrides?.thumbnailTextSecondaryGlobal ?? (settings.thumbnailTextSecondary || '')).trim();
+    const sharedSecondaryText = (overrides?.thumbnailTextSecondaryGlobal ?? (hardsubSettings.thumbnailTextSecondary || '')).trim();
     await updateCaptionSession(
       sessionPath,
       (session) => ({
@@ -1643,7 +1643,7 @@ export function CaptionTranslator() {
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
     hardsubSettings.thumbnailTextSecondaryOverrideFlags,
-    settings.thumbnailTextSecondary,
+    hardsubSettings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
     settings.thumbnailTextPrimaryColor,
@@ -1700,7 +1700,7 @@ export function CaptionTranslator() {
           thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
           thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
           thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
-          thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary || '',
+          thumbnailTextSecondaryGlobal: hardsubSettings.thumbnailTextSecondary || '',
         });
         if (!saved) {
           setThumbnailManualSaveState('error');
@@ -1722,7 +1722,7 @@ export function CaptionTranslator() {
     hardsubSettings.thumbnailTextsSecondaryByOrder,
     hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     persistThumbnailTextToSessions,
-    settings.thumbnailTextSecondary,
+    hardsubSettings.thumbnailTextSecondary,
   ]);
 
   // 4. Processing Hook
@@ -1737,7 +1737,7 @@ export function CaptionTranslator() {
       ...settings,
       thumbnailText: hardsubSettings.thumbnailText,
       thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
-      thumbnailTextSecondary: settings.thumbnailTextSecondary,
+      thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
       thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
       thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     },
@@ -2289,7 +2289,7 @@ export function CaptionTranslator() {
           ? (hardsubSettings.thumbnailTextsSecondaryByOrder[thumbnailPreviewFolderIndex] || '')
           : (hardsubSettings.thumbnailTextSecondary || '')
       )
-    : (settings.thumbnailTextSecondary || '');
+    : (hardsubSettings.thumbnailTextSecondary || '');
   const videoNameByFolderPath = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     Object.entries(fileManager.folderVideos || {}).forEach(([folderPath, info]) => {
@@ -2321,8 +2321,8 @@ export function CaptionTranslator() {
       hardsubSettings.setThumbnailTextSecondaryByOrder(thumbnailPreviewFolderIndex, value);
       return;
     }
-    settings.setThumbnailTextSecondary(value);
-  }, [hardsubSettings, isMultiFolder, settings, thumbnailPreviewFolderIndex]);
+    hardsubSettings.setThumbnailTextSecondary(value);
+  }, [hardsubSettings, isMultiFolder, thumbnailPreviewFolderIndex]);
 
   const [thumbnailPreviewVideoMeta, setThumbnailPreviewVideoMeta] = useState<{ duration: number; fps: number }>({
     duration: 5,
@@ -2479,7 +2479,7 @@ export function CaptionTranslator() {
       : new Array(folderCount).fill('');
     const nextSecondaryByOrder = hardsubSettings.thumbnailTextsSecondaryByOrder.length === folderCount
       ? [...hardsubSettings.thumbnailTextsSecondaryByOrder]
-      : new Array(folderCount).fill(settings.thumbnailTextSecondary || '');
+      : new Array(folderCount).fill(hardsubSettings.thumbnailTextSecondary || '');
     const nextSecondaryOverrideFlags = hardsubSettings.thumbnailTextSecondaryOverrideFlags.length === folderCount
       ? [...hardsubSettings.thumbnailTextSecondaryOverrideFlags]
       : new Array(folderCount).fill(false);
@@ -2523,7 +2523,7 @@ export function CaptionTranslator() {
       summary: `[${modeLabel}] Đã áp dụng ${applyResult.appliedText1}/${folderCount} dòng (Text2: ${applyResult.appliedText2}).`,
       detail: notes.join(' '),
     };
-  }, [hardsubSettings, persistThumbnailTextToSessions, settings.thumbnailTextSecondary]);
+  }, [hardsubSettings, persistThumbnailTextToSessions]);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -5443,7 +5443,6 @@ export function CaptionTranslator() {
               secondaryGlobalText={hardsubSettings.thumbnailTextSecondary}
               onSecondaryGlobalTextChange={(value) => {
                 hardsubSettings.setThumbnailTextSecondaryGlobal(value);
-                settings.setThumbnailTextSecondary(value);
               }}
               onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
               onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
