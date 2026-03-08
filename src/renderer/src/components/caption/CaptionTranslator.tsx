@@ -104,6 +104,7 @@ const VIDEO_VOLUME_PERCENT_MAX = 200;
 const AUDIO_VOLUME_PERCENT_MIN = 0;
 const AUDIO_VOLUME_PERCENT_MAX = 400;
 const VOLUME_MULTIPLIER_STEP = 0.1;
+const STEP4_VOICE_TEST_DEFAULT_TEXT = 'kiểm thử giọng đọc';
 
 const DEFAULT_COVER_QUAD: CoverQuad = {
   tl: { x: 0, y: 0 },
@@ -1165,6 +1166,61 @@ export function CaptionTranslator() {
     () => ttsVoiceOptions.find((voice) => voice.value === settings.voice)?.label || settings.voice,
     [settings.voice, ttsVoiceOptions]
   );
+  const [step4VoiceTestText, setStep4VoiceTestText] = useState(STEP4_VOICE_TEST_DEFAULT_TEXT);
+  const [step4VoiceTestState, setStep4VoiceTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [step4VoiceTestMessage, setStep4VoiceTestMessage] = useState('');
+  const [isStep4VoiceTestPlaying, setIsStep4VoiceTestPlaying] = useState(false);
+  const step4VoiceTestAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopStep4VoiceTestPlayback = useCallback(() => {
+    const audio = step4VoiceTestAudioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    setIsStep4VoiceTestPlaying(false);
+  }, []);
+
+  const playStep4VoiceTestAudio = useCallback(async (audioDataUri: string) => {
+    if (!audioDataUri) {
+      throw new Error('Audio sample rỗng.');
+    }
+    const audio = step4VoiceTestAudioRef.current;
+    if (!audio) {
+      throw new Error('Không thể khởi tạo audio test.');
+    }
+    if (audio.src !== audioDataUri) {
+      audio.src = audioDataUri;
+    }
+    audio.currentTime = 0;
+    await audio.play();
+  }, []);
+
+  useEffect(() => {
+    const audio = new Audio();
+    const handlePlay = () => setIsStep4VoiceTestPlaying(true);
+    const handlePause = () => setIsStep4VoiceTestPlaying(false);
+    const handleEnded = () => setIsStep4VoiceTestPlaying(false);
+    const handleError = () => {
+      setIsStep4VoiceTestPlaying(false);
+      setStep4VoiceTestState('error');
+      setStep4VoiceTestMessage('Không thể phát audio test.');
+    };
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+    step4VoiceTestAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      step4VoiceTestAudioRef.current = null;
+    };
+  }, []);
 
   // 2. File Management Hook
   const fileManager = useCaptionFileManagement({
@@ -1664,6 +1720,65 @@ export function CaptionTranslator() {
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
   });
+
+  const handleStep4VoiceTest = useCallback(async () => {
+    if (processing.status === 'running' || step4VoiceTestState === 'testing') {
+      return;
+    }
+    const sampleText = (step4VoiceTestText || '').trim();
+    if (!sampleText) {
+      setStep4VoiceTestState('error');
+      setStep4VoiceTestMessage('Text test giọng không được để trống.');
+      return;
+    }
+
+    setStep4VoiceTestState('testing');
+    setStep4VoiceTestMessage('Đang test giọng...');
+    stopStep4VoiceTestPlayback();
+
+    try {
+      const response = await window.electronAPI.tts.testVoice({
+        text: sampleText,
+        voice: settings.voice,
+        rate: settings.rate,
+        volume: settings.volume,
+        outputFormat: 'mp3',
+      });
+      if (!response?.success || !response.data?.audioDataUri) {
+        throw new Error(response?.error || 'Không nhận được audio sample.');
+      }
+
+      await playStep4VoiceTestAudio(response.data.audioDataUri);
+      const durationText = response.data.durationMs && response.data.durationMs > 0
+        ? ` (${(response.data.durationMs / 1000).toFixed(2)}s)`
+        : '';
+      setStep4VoiceTestState('success');
+      setStep4VoiceTestMessage(`Test thành công: ${response.data.voice}${durationText}`);
+    } catch (error) {
+      setStep4VoiceTestState('error');
+      setStep4VoiceTestMessage(error instanceof Error ? error.message : 'Test giọng thất bại.');
+    }
+  }, [
+    playStep4VoiceTestAudio,
+    processing.status,
+    settings.rate,
+    settings.voice,
+    settings.volume,
+    step4VoiceTestState,
+    step4VoiceTestText,
+    stopStep4VoiceTestPlayback,
+  ]);
+
+  useEffect(() => {
+    if (processing.status !== 'running') {
+      return;
+    }
+    stopStep4VoiceTestPlayback();
+    if (step4VoiceTestState === 'testing') {
+      setStep4VoiceTestState('idle');
+      setStep4VoiceTestMessage('');
+    }
+  }, [processing.status, step4VoiceTestState, stopStep4VoiceTestPlayback]);
 
   const audioFiles = processing.audioFiles;
   const step7AudioElementRef = useRef<HTMLAudioElement | null>(null);
@@ -5100,6 +5215,16 @@ export function CaptionTranslator() {
     }
 
     if (activeStep === 4) {
+      const isStep4PipelineRunning = processing.status === 'running';
+      const isStep4VoiceTesting = step4VoiceTestState === 'testing';
+      const canRunStep4VoiceTest = !isStep4PipelineRunning && !isStep4VoiceTesting;
+      const step4VoiceTestStatusLabel = step4VoiceTestState === 'testing'
+        ? 'đang test'
+        : step4VoiceTestState === 'success'
+          ? 'thành công'
+          : step4VoiceTestState === 'error'
+            ? 'lỗi'
+            : 'idle';
       return (
         <div className={styles.stepInspectorStack}>
           <div className={styles.stepCard}>
@@ -5129,6 +5254,46 @@ export function CaptionTranslator() {
                   </optgroup>
                 )}
               </select>
+            </div>
+            <div className={styles.step4VoiceTestBlock}>
+              <label className={styles.label}>Text test giọng</label>
+              <textarea
+                rows={2}
+                className={styles.input}
+                value={step4VoiceTestText}
+                onChange={(e) => setStep4VoiceTestText(e.target.value)}
+                placeholder={STEP4_VOICE_TEST_DEFAULT_TEXT}
+                disabled={isStep4PipelineRunning}
+              />
+              <div className={styles.step4VoiceTestActions}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void handleStep4VoiceTest();
+                  }}
+                  disabled={!canRunStep4VoiceTest}
+                  className={styles.stepCompactBtn}
+                  title={isStep4PipelineRunning ? 'Đang chạy pipeline, tạm khóa test giọng.' : 'Test giọng hiện tại'}
+                >
+                  {isStep4VoiceTesting ? 'Đang test...' : 'Test giọng'}
+                </Button>
+                {isStep4VoiceTestPlaying && (
+                  <Button
+                    variant="secondary"
+                    onClick={stopStep4VoiceTestPlayback}
+                    className={styles.stepCompactBtn}
+                  >
+                    Dừng
+                  </Button>
+                )}
+                <span
+                  className={`${styles.step4VoiceTestStatus} ${step4VoiceTestState === 'error' ? styles.step4VoiceTestStatusError : ''}`}
+                >
+                  {step4VoiceTestMessage
+                    ? `${step4VoiceTestStatusLabel}: ${step4VoiceTestMessage}`
+                    : `Trạng thái: ${step4VoiceTestStatusLabel}`}
+                </span>
+              </div>
             </div>
           </div>
           {!isCapCutVoiceSelected && (

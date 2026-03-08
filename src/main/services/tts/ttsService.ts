@@ -5,6 +5,7 @@
 
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import WebSocket, { RawData } from 'ws';
 import { AppSettingsService } from '../appSettings';
@@ -18,6 +19,8 @@ import {
   TTSProgress,
   TTSProvider,
   TTSResult,
+  TTSTestVoiceRequest,
+  TTSTestVoiceResponse,
   TTS_VOICE_CATALOG,
   VoiceInfo,
 } from '../../../shared/types/caption';
@@ -47,6 +50,11 @@ interface SingleGenerateResult {
   error?: string;
 }
 
+interface TTSTestVoiceSampleOptions extends TTSTestVoiceRequest {
+  text: string;
+  voice: string;
+}
+
 type SingleGenerator = (args: {
   text: string;
   outputPath: string;
@@ -55,6 +63,10 @@ type SingleGenerator = (args: {
   volume: string;
   outputFormat: 'wav' | 'mp3';
 }) => Promise<SingleGenerateResult>;
+
+function getAudioMimeByFormat(format: 'wav' | 'mp3'): string {
+  return format === 'wav' ? 'audio/wav' : 'audio/mpeg';
+}
 
 /**
  * Lấy catalog voice hợp nhất.
@@ -522,6 +534,76 @@ export async function generateSingleAudio(
     rate,
     volume,
   });
+}
+
+/**
+ * Tạo sample audio test voice cho Step 4 bằng file tạm, sau đó trả về data URI.
+ */
+export async function testVoiceSample(options: TTSTestVoiceSampleOptions): Promise<TTSTestVoiceResponse> {
+  const sampleText = (options.text || '').trim();
+  if (!sampleText) {
+    throw new Error('Text test giọng không được để trống.');
+  }
+
+  const outputFormat: 'wav' | 'mp3' = options.outputFormat === 'wav' ? 'wav' : 'mp3';
+  const voiceSelection = resolveVoiceSelection({
+    voice: options.voice,
+    provider: normalizeVoiceSelection(options.voice).startsWith('capcut:') ? 'capcut' : 'edge',
+  });
+  const rate = options.rate || DEFAULT_RATE;
+  const volume = options.volume || DEFAULT_VOLUME;
+  const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nauchaoheo-tts-preview-'));
+  const outputPath = path.join(
+    tmpRoot,
+    `preview_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${outputFormat}`
+  );
+
+  try {
+    let generated: SingleGenerateResult;
+    if (voiceSelection.provider === 'capcut') {
+      const cfgResult = loadCapCutRuntimeConfig();
+      if (!cfgResult.ok) {
+        throw new Error(cfgResult.error);
+      }
+      generated = await generateSingleAudioCapCut({
+        text: sampleText,
+        outputPath,
+        voiceId: voiceSelection.voiceId,
+        rate: DEFAULT_RATE,
+        volume: DEFAULT_VOLUME,
+        outputFormat,
+      }, cfgResult.config);
+    } else {
+      generated = await generateSingleAudioEdge({
+        text: sampleText,
+        outputPath,
+        voiceId: voiceSelection.voiceId,
+        rate,
+        volume,
+      });
+    }
+
+    if (!generated.success) {
+      throw new Error(generated.error || 'Tạo audio test thất bại.');
+    }
+
+    const fileBuffer = await fs.readFile(outputPath);
+    if (!fileBuffer || fileBuffer.length === 0) {
+      throw new Error('Audio test rỗng.');
+    }
+
+    const mime = getAudioMimeByFormat(outputFormat);
+    const durationMs = await getAudioDuration(outputPath);
+    return {
+      audioDataUri: `data:${mime};base64,${fileBuffer.toString('base64')}`,
+      mime,
+      ...(Number.isFinite(durationMs) && durationMs > 0 ? { durationMs } : {}),
+      provider: voiceSelection.provider,
+      voice: voiceSelection.canonicalValue,
+    };
+  } finally {
+    await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 async function generateSingleAudioEdge(args: {

@@ -5,6 +5,7 @@
 // TTS Service
 export {
   generateSingleAudio,
+  testVoiceSample,
   generateBatchAudio,
   generateBatchAudioEdge,
   generateBatchAudioCapCut,

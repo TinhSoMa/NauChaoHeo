@@ -6,6 +6,8 @@ import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron';
 import {
   CAPTION_IPC_CHANNELS,
   SubtitleEntry,
+  TTSTestVoiceRequest,
+  TTSTestVoiceResponse,
   TTSOptions,
   TTSResult,
   MergeResult,
@@ -37,6 +39,40 @@ export function registerTTSHandlers(): void {
     async (): Promise<IpcResponse<VoiceInfo[]>> => {
       console.log('[TTSHandlers] Get voices');
       return { success: true, data: TTSService.getAvailableVoices() };
+    }
+  );
+
+  // ============================================
+  // TEST VOICE SAMPLE
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TEST_VOICE,
+    async (
+      _event: IpcMainInvokeEvent,
+      request: TTSTestVoiceRequest
+    ): Promise<IpcResponse<TTSTestVoiceResponse>> => {
+      try {
+        const sampleText = (request?.text || '').trim();
+        const sampleVoice = (request?.voice || '').trim();
+        if (!sampleText) {
+          return { success: false, error: 'Text test giọng không được để trống.' };
+        }
+        if (!sampleVoice) {
+          return { success: false, error: 'Voice test giọng không hợp lệ.' };
+        }
+        console.log(`[TTSHandlers] Test voice: ${sampleVoice}`);
+        const data = await TTSService.testVoiceSample({
+          text: sampleText,
+          voice: sampleVoice,
+          rate: request?.rate,
+          volume: request?.volume,
+          outputFormat: request?.outputFormat,
+        });
+        return { success: true, data };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi test voice:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
     }
   );
 

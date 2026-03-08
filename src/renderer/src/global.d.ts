@@ -405,6 +405,22 @@ interface TTSProgress {
   message: string;
 }
 
+interface TTSTestVoiceRequest {
+  text: string;
+  voice: string;
+  rate?: string;
+  volume?: string;
+  outputFormat?: 'wav' | 'mp3';
+}
+
+interface TTSTestVoiceResponse {
+  audioDataUri: string;
+  mime: string;
+  durationMs?: number;
+  provider: 'edge' | 'capcut';
+  voice: string;
+}
+
 interface MergeResult {
   success: boolean;
   outputPath: string;
@@ -434,11 +450,14 @@ interface VoiceInfo {
  */
 interface TTSAPI {
   getVoices: () => Promise<IpcApiResponse<VoiceInfo[]>>;
+  testVoice: (request: TTSTestVoiceRequest) => Promise<IpcApiResponse<TTSTestVoiceResponse>>;
   generate: (entries: SubtitleEntry[], options: Partial<TTSOptions>) => Promise<IpcApiResponse<TTSResult>>;
   onProgress: (callback: (progress: TTSProgress) => void) => void;
   analyzeAudio: (audioFiles: AudioFile[], srtDuration: number) => Promise<IpcApiResponse<unknown>>;
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) => Promise<IpcApiResponse<TrimSilenceResult>>;
 }
 
 // ============================================

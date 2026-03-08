@@ -186,6 +186,28 @@ export interface TTSProgress {
   message: string;
 }
 
+/**
+ * Request test nhanh một giọng TTS tại Step 4.
+ */
+export interface TTSTestVoiceRequest {
+  text: string;
+  voice: string;
+  rate?: string;
+  volume?: string;
+  outputFormat?: 'wav' | 'mp3';
+}
+
+/**
+ * Response audio sample trả về renderer để phát ngay.
+ */
+export interface TTSTestVoiceResponse {
+  audioDataUri: string;
+  mime: string;
+  durationMs?: number;
+  provider: TTSProvider;
+  voice: string;
+}
+
 // ============================================
 // AUDIO MERGE
 // ============================================
@@ -264,6 +286,7 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_GENERATE: 'tts:generate',
   TTS_PROGRESS: 'tts:progress',
   TTS_GET_VOICES: 'tts:getVoices',
+  TTS_TEST_VOICE: 'tts:testVoice',
   TTS_TRIM_SILENCE: 'tts:trimSilence',
   TTS_TRIM_SILENCE_END: 'tts:trimSilenceEnd',
   TTS_FIT_AUDIO: 'tts:fitAudio',

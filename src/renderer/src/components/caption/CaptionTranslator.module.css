@@ -2347,6 +2347,28 @@
   color: var(--color-text-secondary);
 }
 
+.step4VoiceTestBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.step4VoiceTestActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step4VoiceTestStatus {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.step4VoiceTestStatusError {
+  color: var(--color-error, #ef4444);
+}
+
 .stepRuntimeGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
