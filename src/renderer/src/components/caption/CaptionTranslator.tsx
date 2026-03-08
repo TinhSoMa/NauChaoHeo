@@ -798,6 +798,20 @@ function parseThumbnailBulkInput(raw: string, folderItems: ThumbnailFolderItem[]
   return parseThumbnailBulkJsonLines(raw);
 }
 
+function resolveSharedPrimaryTextFromStep7(step7: Record<string, unknown>): string {
+  if (typeof step7.thumbnailText === 'string') return step7.thumbnailText;
+  if (typeof step7.hardsubTextPrimary === 'string') return step7.hardsubTextPrimary;
+  if (typeof step7.hardsubPortraitTextPrimary === 'string') return step7.hardsubPortraitTextPrimary;
+  return '';
+}
+
+function resolveSharedSecondaryTextFromStep7(step7: Record<string, unknown>): string {
+  if (typeof step7.thumbnailTextSecondary === 'string') return step7.thumbnailTextSecondary;
+  if (typeof step7.hardsubTextSecondary === 'string') return step7.hardsubTextSecondary;
+  if (typeof step7.hardsubPortraitTextSecondary === 'string') return step7.hardsubPortraitTextSecondary;
+  return '';
+}
+
 export function CaptionTranslator() {
   // Project output paths
   const { paths, projectId } = useProjectContext();
@@ -1396,8 +1410,8 @@ export function CaptionTranslator() {
             folderPath: inputPath,
           });
           const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
-          texts.push(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
-          secondaryTexts.push(typeof step7.thumbnailTextSecondary === 'string' ? step7.thumbnailTextSecondary : '');
+          texts.push(resolveSharedPrimaryTextFromStep7(step7));
+          secondaryTexts.push(resolveSharedSecondaryTextFromStep7(step7));
           secondaryOverrideFlags.push(step7.thumbnailTextSecondarySource === 'override');
         }
         if (!cancelled) {
@@ -1417,8 +1431,8 @@ export function CaptionTranslator() {
       });
       const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
       if (!cancelled) {
-        hardsubSettings.setThumbnailText(typeof step7.thumbnailText === 'string' ? step7.thumbnailText : '');
-        settings.setThumbnailTextSecondary(typeof step7.thumbnailTextSecondary === 'string' ? step7.thumbnailTextSecondary : '');
+        hardsubSettings.setThumbnailText(resolveSharedPrimaryTextFromStep7(step7));
+        settings.setThumbnailTextSecondary(resolveSharedSecondaryTextFromStep7(step7));
       }
     };
 
@@ -1538,6 +1552,10 @@ export function CaptionTranslator() {
                 ...(session.settings.step7Render || {}),
                 thumbnailText: text,
                 thumbnailTextSecondary: secondaryText,
+                hardsubTextPrimary: text,
+                hardsubTextSecondary: secondaryText,
+                hardsubPortraitTextPrimary: text,
+                hardsubPortraitTextSecondary: secondaryText,
                 thumbnailTextSecondarySource: secondarySource,
                 thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
                 thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
@@ -1572,6 +1590,8 @@ export function CaptionTranslator() {
 
     const inputPath = inputPaths[0];
     const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
+    const sharedPrimaryText = ((overrides?.thumbnailText ?? hardsubSettings.thumbnailText) || '').trim();
+    const sharedSecondaryText = (overrides?.thumbnailTextSecondaryGlobal ?? (settings.thumbnailTextSecondary || '')).trim();
     await updateCaptionSession(
       sessionPath,
       (session) => ({
@@ -1580,8 +1600,12 @@ export function CaptionTranslator() {
           ...session.settings,
           step7Render: {
             ...(session.settings.step7Render || {}),
-            thumbnailText: overrides?.thumbnailText ?? hardsubSettings.thumbnailText,
-            thumbnailTextSecondary: overrides?.thumbnailTextSecondaryGlobal ?? (settings.thumbnailTextSecondary || ''),
+            thumbnailText: sharedPrimaryText,
+            thumbnailTextSecondary: sharedSecondaryText,
+            hardsubTextPrimary: sharedPrimaryText,
+            hardsubTextSecondary: sharedSecondaryText,
+            hardsubPortraitTextPrimary: sharedPrimaryText,
+            hardsubPortraitTextSecondary: sharedSecondaryText,
             thumbnailTextSecondarySource: 'single',
             thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
             thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
