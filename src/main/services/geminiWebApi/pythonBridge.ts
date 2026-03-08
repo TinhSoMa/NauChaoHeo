@@ -233,8 +233,11 @@ export class GeminiWebApiPythonBridge {
   private resolveWorkerPath(): string {
     const appPath = app.getAppPath();
     const candidates = [
+      path.join(process.resourcesPath || '', 'geminiWebApi', 'python', 'gemini_webapi_worker.py'),
+      path.join(process.resourcesPath || '', 'python', 'gemini_webapi_worker.py'),
       path.join(appPath, 'src', 'main', 'services', 'geminiWebApi', 'python', 'gemini_webapi_worker.py'),
       path.join(process.cwd(), 'src', 'main', 'services', 'geminiWebApi', 'python', 'gemini_webapi_worker.py'),
+      path.join(appPath, 'out', 'main', 'services', 'geminiWebApi', 'python', 'gemini_webapi_worker.py'),
       path.join(appPath, 'dist', 'main', 'src', 'main', 'services', 'geminiWebApi', 'python', 'gemini_webapi_worker.py'),
     ];
 

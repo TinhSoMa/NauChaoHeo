@@ -40,6 +40,10 @@ extraResources:
     to: licenses/python
     filter:
       - "**/*"
+  - from: src/main/services/geminiWebApi/python
+    to: geminiWebApi/python
+    filter:
+      - "gemini_webapi_worker.py"
 
 # Cấu hình Windows
 win:
