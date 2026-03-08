@@ -5,7 +5,13 @@
 // TTS Service
 export {
   generateSingleAudio,
+  testVoiceSample,
   generateBatchAudio,
+  generateBatchAudioEdge,
+  generateBatchAudioCapCut,
+  getAvailableVoices,
+  normalizeVoiceSelection,
+  resolveVoiceSelection,
   getSafeFilename,
   getAudioDuration,
 } from './ttsService';
@@ -16,4 +22,6 @@ export {
   mergeAudioFiles,
   smartMerge,
   trimSilence,
+  trimSilenceEnd,
+  fitAudioToDuration,
 } from './audioMerger';

@@ -7,6 +7,13 @@ import { registerCaptionHandlers } from './captionHandlers';
 import { registerTTSHandlers } from './ttsHandlers';
 import { registerStoryHandlers } from './storyHandlers';
 import { registerPromptHandlers } from './promptHandlers';
+import { registerProjectHandlers } from './projectHandlers';
+import { registerAppSettingsHandlers } from './appSettingsHandlers';
+import { registerGeminiChatHandlers } from './geminiChatHandlers';
+import { registerProxyHandlers } from './proxyHandlers'; // Thêm import cho proxy handlers
+import { registerCutVideoHandlers } from './cutVideoHandlers';
+import { registerRotationQueueHandlers } from './rotationQueueHandlers';
+import { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -29,7 +36,28 @@ export function registerAllHandlers(): void {
   // Đăng ký Prompt handlers
   registerPromptHandlers();
 
-  console.log('[IPC] Đã đăng ký xong tất cả handlers');
+  // Đăng ký Project handlers (quản lý dự án dịch)
+  registerProjectHandlers();
+
+  // Dang ky App Settings handlers
+  registerAppSettingsHandlers();
+
+  // Dang ky Gemini Chat handlers
+  registerGeminiChatHandlers();
+
+  // Dang ky Gemini WebAPI ops handlers
+  registerGeminiWebApiHandlers();
+
+  // Đăng ký Proxy handlers (quản lý proxy rotation)
+  registerProxyHandlers();
+
+  // Đăng ký Cut Video handlers
+  registerCutVideoHandlers();
+
+  // Đăng ký Rotation Queue inspector handlers (feature-flagged)
+  registerRotationQueueHandlers();
+
+  console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
 // Export individual handlers
@@ -38,4 +66,11 @@ export { registerCaptionHandlers } from './captionHandlers';
 export { registerTTSHandlers } from './ttsHandlers';
 export { registerStoryHandlers } from './storyHandlers';
 export { registerPromptHandlers } from './promptHandlers';
+export { registerProjectHandlers } from './projectHandlers';
+export { registerAppSettingsHandlers } from './appSettingsHandlers';
+export { registerGeminiChatHandlers } from './geminiChatHandlers';
+export { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
+export { registerProxyHandlers } from './proxyHandlers';
+export { registerCutVideoHandlers } from './cutVideoHandlers';
+export { registerRotationQueueHandlers } from './rotationQueueHandlers';
 

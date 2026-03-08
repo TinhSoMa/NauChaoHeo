@@ -1,0 +1,10 @@
+{
+  "proxies": [],
+  "settings": {
+    "maxRetries": 3,
+    "timeout": 10000,
+    "maxFailedCount": 5,
+    "enableRotation": true,
+    "fallbackToDirect": true
+  }
+}

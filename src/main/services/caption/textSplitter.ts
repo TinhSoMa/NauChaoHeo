@@ -67,17 +67,52 @@ export function mergeTranslatedTexts(
   }));
 }
 
+export type TranslationResponseFormat = 'numbered' | 'pipe';
+
+export interface TranslationPromptResult {
+  prompt: string;
+  responseFormat: TranslationResponseFormat;
+}
+
 /**
- * Tạo prompt template cho việc dịch batch
+ * Tạo prompt template cho việc dịch batch.
+ * Nếu customTemplate được cung cấp, thay thế các biến:
+ *   {{COUNT}}     → số dòng trong batch
+ *   {{TEXT}}      → nội dung các dòng (thuần văn bản, mỗi dòng một câu)
+ *   {{FILE_NAME}} → 'subtitle'
+ * Nếu template có format pipe (|...|), responseFormat = 'pipe', ngược lại = 'numbered'.
  */
 export function createTranslationPrompt(
   texts: string[],
-  targetLanguage: string = 'Vietnamese'
-): string {
-  // Format: mỗi dòng một số, để dễ parse kết quả
+  targetLanguage: string = 'Vietnamese',
+  customTemplate?: string
+): TranslationPromptResult {
+  const count = texts.length;
+
+  if (customTemplate) {
+    // --- Custom prompt: thay thế biến, KHÔNG kết hợp với default ---
+    // Nếu template có "{{TEXT}}" (có dấu nháy bao quanh) → thay bằng JSON array
+    // Nếu template có {{TEXT}} (không dấu nháy) → thay bằng plain text
+    const arrayText = JSON.stringify(texts);
+    const rawText = texts.join('\n');
+    const prompt = customTemplate
+      .replace(/"\{\{TEXT\}\}"/g, arrayText)   // "{{TEXT}}" → ["line1","line2",...]
+      .replace(/\{\{TEXT\}\}/g, rawText)          // {{TEXT}} → plain fallback
+      .replace(/\{\{COUNT\}\}/g, String(count))
+      .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
+
+    // Phát hiện format output: nếu template yêu cầu pipe format
+    const isPipe = /response_format["']?\s*:\s*["']?\|/.test(customTemplate)
+      || /"separator"\s*:\s*"\|"/.test(customTemplate)
+      || /Format output.*\|/.test(customTemplate);
+
+    console.log(`[TextSplitter] Sử dụng custom prompt, format: ${isPipe ? 'pipe' : 'numbered'}`);
+    return { prompt, responseFormat: isPipe ? 'pipe' : 'numbered' };
+  }
+
+  // --- Default prompt: format [số] KHÔNG kết hợp với custom ---
   const numberedLines = texts.map((text, i) => `[${i + 1}] ${text}`).join('\n');
-  
-  return `Dịch các dòng subtitle sau sang tiếng ${targetLanguage}.
+  const prompt = `Dịch các dòng subtitle sau sang tiếng ${targetLanguage}.
 Quy tắc:
 1. Dịch tự nhiên, phù hợp ngữ cảnh
 2. Giữ nguyên số thứ tự [1], [2], ...
@@ -88,6 +123,44 @@ Nội dung cần dịch:
 ${numberedLines}
 
 Kết quả (chỉ trả về các dòng đã dịch, giữ nguyên format [số]):`;
+
+  console.log(`[TextSplitter] Sử dụng default prompt, format: numbered`);
+  return { prompt, responseFormat: 'numbered' };
+}
+
+/**
+ * Parse kết quả dịch dạng pipe: |Câu1|Câu2|...|CâuN|
+ */
+export function parsePipeResponse(
+  response: string,
+  expectedCount: number
+): string[] {
+  console.log(`[TextSplitter] Parse pipe response, expected ${expectedCount} lines`);
+
+  // Tìm đoạn |...|...|...|  trong response (bỏ qua text thừa trước/sau)
+  const pipeMatch = response.match(/\|[^]*/);
+  const raw = pipeMatch ? pipeMatch[0] : response;
+
+  // Tách theo '|', bỏ phần tử rỗng (do dòng bắt đầu/kết thúc bằng |)
+  const parts = raw.split('|').map(s => s.trim());
+
+  // Lọc phần tử rỗng ở 2 đầu (do dòng bắt đầu/kết thúc bằng |)
+  const results: string[] = [];
+  for (const part of parts) {
+    if (results.length >= expectedCount) break;
+    if (part !== '') {
+      results.push(part);
+    }
+  }
+
+  // Điền các dòng thiếu bằng chuỗi rỗng
+  for (let i = results.length; i < expectedCount; i++) {
+    results.push('');
+    console.warn(`[TextSplitter] [Pipe] Thiếu dịch cho dòng ${i + 1}`);
+  }
+
+  console.log(`[TextSplitter] [Pipe] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`);
+  return results;
 }
 
 /**
