@@ -134,6 +134,28 @@ export function registerGeminiChatHandlers(): void {
     }
   });
 
+  // Gui tin nhan den Gemini Web API
+  ipcMain.handle(
+    CHANNELS.SEND_MESSAGE,
+    async (
+      _,
+      message: string,
+      configId: string,
+      context?: { conversationId: string; responseId: string; choiceId: string }
+    ) => {
+      try {
+        const result = await GeminiChatService.sendMessage(message, configId, context);
+        if (result.success) {
+          return { success: true, data: result.data };
+        }
+        return { success: false, error: result.error || 'Gemini Chat sendMessage failed' };
+      } catch (error) {
+        console.error('[GeminiChatHandlers] Loi sendMessage:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Xóa trạng thái lỗi của 1 config
   ipcMain.handle(CHANNELS.CLEAR_CONFIG_ERROR, async (_, configId: string) => {
     try {

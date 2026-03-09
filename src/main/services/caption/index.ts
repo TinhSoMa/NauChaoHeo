@@ -22,6 +22,7 @@ export {
   splitForTranslation,
   mergeTranslatedTexts,
   createTranslationPrompt,
+  parseJsonTranslationResponse,
   parseTranslationResponse,
   splitText,
   type TextBatch,

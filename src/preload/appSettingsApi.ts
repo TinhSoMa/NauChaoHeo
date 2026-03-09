@@ -45,6 +45,7 @@ export interface AppSettings {
   useProxy: boolean;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
+  geminiMinSendIntervalMs: number;
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;

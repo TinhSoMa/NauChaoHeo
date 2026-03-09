@@ -385,6 +385,17 @@ export function canRunStep(
   if (step === 4 && !enabledSet.has(3) && stepInputs.translatedEntries.length === 0) {
     return { ok: false, code: 'STEP4_MISSING_STEP3_TRANSLATED', reason: 'Chưa có translatedEntries trong session. Hãy chạy Step 3 trước.', missingDeps: [3] };
   }
+  if (step === 4 && !enabledSet.has(3)) {
+    const step3OutputCheck = validateStepOutputForSkip(session, 3);
+    if (!step3OutputCheck.ok && step3OutputCheck.reason === 'step3_translated_text_not_vietnamese') {
+      return {
+        ok: false,
+        code: 'STEP4_STEP3_TRANSLATION_NOT_VI',
+        reason: 'Bản dịch Step 3 không phải tiếng Việt. Hãy chạy lại Step 3 để dịch lại.',
+        missingDeps: [3],
+      };
+    }
+  }
   if (step === 5 && !enabledSet.has(4) && stepInputs.ttsAudioFiles.length === 0) {
     return { ok: false, code: 'STEP5_MISSING_STEP4_TTS', reason: 'Chưa có ttsAudioFiles trong session. Hãy chạy Step 4 trước.', missingDeps: [4] };
   }
@@ -394,6 +405,17 @@ export function canRunStep(
   if (step === 7) {
     if (!enabledSet.has(3) && stepInputs.translatedEntries.length === 0) {
       return { ok: false, code: 'STEP7_MISSING_STEP3_TRANSLATED', reason: 'Chưa có translatedEntries trong session. Hãy chạy Step 3 trước.', missingDeps: [3] };
+    }
+    if (!enabledSet.has(3)) {
+      const step3OutputCheck = validateStepOutputForSkip(session, 3);
+      if (!step3OutputCheck.ok && step3OutputCheck.reason === 'step3_translated_text_not_vietnamese') {
+        return {
+          ok: false,
+          code: 'STEP7_STEP3_TRANSLATION_NOT_VI',
+          reason: 'Bản dịch Step 3 không phải tiếng Việt. Hãy chạy lại Step 3 để dịch lại.',
+          missingDeps: [3],
+        };
+      }
     }
     if (!enabledSet.has(6) && !stepInputs.mergedAudioPath) {
       return { ok: false, code: 'STEP7_MISSING_STEP6_MERGED_AUDIO', reason: 'Chưa có mergedAudioPath trong session. Hãy chạy Step 6 trước.', missingDeps: [6] };
@@ -405,6 +427,49 @@ export function canRunStep(
 
 function hasNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+const VIETNAMESE_DIACRITICS_REGEX = /[ăâêôơưđáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
+const CJK_OR_KANA_OR_HANGUL_REGEX = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/i;
+const VIETNAMESE_COMMON_WORD_REGEX = /\b(và|la|là|cua|của|cho|không|khong|đã|da|đang|toi|tôi|anh|em|ban|bạn|chung|chúng|nhung|những|mot|một|co|có|trong|duoc|được|voi|với|nay|này|do|đó)\b/i;
+const ENGLISH_COMMON_WORD_REGEX = /\b(the|is|are|to|of|and|in|for|with|this|that|you|i|we|they|he|she|it|on|at|from|not)\b/i;
+
+function isLikelyVietnameseSentence(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (CJK_OR_KANA_OR_HANGUL_REGEX.test(normalized)) {
+    return false;
+  }
+
+  if (VIETNAMESE_DIACRITICS_REGEX.test(normalized)) {
+    return true;
+  }
+
+  if (!/[a-zA-Z]/.test(normalized)) {
+    return true;
+  }
+
+  if (VIETNAMESE_COMMON_WORD_REGEX.test(normalized)) {
+    return true;
+  }
+
+  if (ENGLISH_COMMON_WORD_REGEX.test(normalized)) {
+    return false;
+  }
+
+  const words = normalized
+    .toLowerCase()
+    .split(/[^a-zA-Z]+/)
+    .filter(Boolean);
+  if (words.length <= 2) {
+    // Các line ngắn có thể là tên riêng/interjection, không coi là lỗi ngôn ngữ.
+    return true;
+  }
+
+  return false;
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -442,6 +507,19 @@ export function validateStepOutputForSkip(
     const translated = Array.isArray(data.translatedEntries) ? data.translatedEntries : [];
     if (translated.length === 0) return { ok: false, reason: 'missing_translated_entries' };
     if (!hasNonEmptyString(data.translatedSrtContent)) return { ok: false, reason: 'missing_translated_srt_content' };
+    const hasInvalidLanguageLine = translated.some((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') {
+        return true;
+      }
+      const translatedText = (entry as SubtitleEntry).translatedText;
+      if (!hasNonEmptyString(translatedText)) {
+        return true;
+      }
+      return !isLikelyVietnameseSentence(translatedText);
+    });
+    if (hasInvalidLanguageLine) {
+      return { ok: false, reason: 'step3_translated_text_not_vietnamese' };
+    }
     const metrics = toRecord(stepState?.metrics);
     if (typeof metrics.failedLines === 'number' && metrics.failedLines > 0) {
       return { ok: false, reason: 'step3_has_failed_lines' };

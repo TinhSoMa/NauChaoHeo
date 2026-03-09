@@ -109,6 +109,7 @@ interface TranslationOptions {
   linesPerBatch: number;
   promptTemplate?: string;
   translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
+  retryBatchIndexes?: number[];
   projectId?: string;
   sourcePath?: string;
 }
@@ -515,6 +516,7 @@ interface AppSettings {
   useProxy: boolean;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
+  geminiMinSendIntervalMs: number;
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;

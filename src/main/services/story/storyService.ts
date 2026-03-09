@@ -1,7 +1,11 @@
 import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
 import { GeminiChatService } from '../chatGemini/geminiChatService';
-import { AppSettingsService } from '../appSettings';
+import {
+  AppSettingsService,
+  GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
+  normalizeGeminiMinSendIntervalMs,
+} from '../appSettings';
 import { getDatabase } from '../../database/schema';
 import { getGeminiWebApiRuntime } from '../geminiWebApi';
 import {
@@ -16,7 +20,7 @@ const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
 const STORY_GEMINI_WEB_QUEUE_FEATURE = 'story.translate.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_SERVICE_ID = 'story-translator-ui';
-const STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS = 10_000;
+const STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS = GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
 
 interface StoryTranslateChapterWithGeminiWebQueueOptions {
   prompt: any;
@@ -141,7 +145,7 @@ export class StoryService {
 
       this.ensureStoryGeminiWebQueueResources();
       const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
-      const queueGapMs = this.getStoryWebQueueGapMs(queue);
+      const queueGapMs = this.getStoryWebQueueGapMs();
 
       const queued = await queue.enqueue<{ promptText: string }, string>({
         poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
@@ -511,7 +515,7 @@ export class StoryService {
 
   private static ensureStoryGeminiWebQueueResources(): void {
     const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
-    const queueGapMs = this.getStoryWebQueueGapMs(queue);
+    const queueGapMs = this.getStoryWebQueueGapMs();
     queue.registerPool({
       poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
       label: 'Story GeminiWeb Accounts',
@@ -581,15 +585,14 @@ export class StoryService {
     }
   }
 
-  private static getStoryWebQueueGapMs(queue: ReturnType<typeof getQueueRuntimeOrCreate>): number {
-    const snapshot = queue.getSnapshot();
-    const byPool = snapshot.dispatchThrottleByPool ?? {};
-    const currentPool = byPool[STORY_GEMINI_WEB_QUEUE_POOL_ID];
-    const spacingMs = Number(currentPool?.spacingMs);
-    if (Number.isFinite(spacingMs) && spacingMs >= 0) {
-      return Math.floor(spacingMs);
+  private static getStoryWebQueueGapMs(): number {
+    try {
+      const settings = AppSettingsService.getAll();
+      return normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
+    } catch (error) {
+      console.warn('[StoryService] Failed to read geminiMinSendIntervalMs from AppSettings, fallback default.', error);
+      return STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS;
     }
-    return STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS;
   }
 
   private static buildStoryWebQueueTimingPayload(

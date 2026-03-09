@@ -7,8 +7,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../../database/schema';
 import { getConfigurationService } from '../gemini/configurationService';
 import { getSessionContextManager } from '../gemini/sessionContextManager';
+import { getGeminiWebApiRuntime } from '../geminiWebApi';
 import { getProxyManager } from '../proxy/proxyManager';
-import { AppSettingsService } from '../appSettings';
+import {
+    AppSettingsService,
+    GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
+    normalizeGeminiMinSendIntervalMs,
+} from '../appSettings';
 import { ProxyConfig } from '../../../shared/types/proxy';
 import { Impit } from 'impit';
 import { 
@@ -26,7 +31,6 @@ HL_LANG,
     IMPIT_BROWSERS,
     ImpitBrowser
 } from './geminiChatUtils';
-import { getRandomInt } from '../../../shared/utils/delayUtils';
 
 // --- CONFIGURATION ---
 // IMPORTANT: All values are now loaded from database (gemini_chat_config table)
@@ -59,6 +63,16 @@ export class GeminiChatServiceClass {
             GeminiChatServiceClass.instance = new GeminiChatServiceClass();
         }
         return GeminiChatServiceClass.instance;
+    }
+
+    private getGeminiMinSendIntervalMs(): number {
+        try {
+            const settings = AppSettingsService.getAll();
+            return normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
+        } catch (error) {
+            console.warn('[GeminiChatService] Failed to read geminiMinSendIntervalMs. Using default.', error);
+            return GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+        }
     }
 
     private async withTokenLock<T>(tokenKeyRaw: string, fn: () => Promise<T>): Promise<T> {
@@ -102,16 +116,14 @@ export class GeminiChatServiceClass {
             const result = await fn();
             return result;
         } finally {
-            // 3. Scheduling Next: Random delay AFTER completion
-            const MIN_DELAY_MS = 10000;
-            const MAX_DELAY_MS = 20000;
-            const randomDelay = getRandomInt(MIN_DELAY_MS, MAX_DELAY_MS);
+            // 3. Scheduling Next: Fixed minimum interval AFTER completion
+            const intervalMs = this.getGeminiMinSendIntervalMs();
             
             const completionTime = Date.now();
-            const nextTime = completionTime + randomDelay;
+            const nextTime = completionTime + intervalMs;
             
             this.nextAvailableTimeByTokenKey.set(tokenKey, nextTime);
-            console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${randomDelay}ms)`);
+            console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${intervalMs}ms)`);
             
             // Signal that this task is done
             if (typeof signalTaskDone === 'function') signalTaskDone();
@@ -144,6 +156,122 @@ export class GeminiChatServiceClass {
             return '';
         }
         return `${secureTokens.secure1psid}|${secureTokens.secure1psidts}`;
+    }
+
+    private normalizeChatContext(
+      context?: { conversationId: string; responseId: string; choiceId: string },
+    ): { conversationId: string; responseId: string; choiceId: string } | null {
+      if (!context) return null;
+      const conversationId = (context.conversationId || '').trim();
+      const responseId = (context.responseId || '').trim();
+      const choiceId = (context.choiceId || '').trim();
+      if (!conversationId && !responseId && !choiceId) {
+        return null;
+      }
+      return { conversationId, responseId, choiceId };
+    }
+
+    private buildConversationMetadataFromContext(
+      context: { conversationId: string; responseId: string; choiceId: string } | null
+    ): Record<string, string> | null {
+      if (!context) {
+        return null;
+      }
+
+      const conversationId = (context.conversationId || '').trim();
+      const responseId = (context.responseId || '').trim();
+      const choiceId = (context.choiceId || '').trim();
+      if (!conversationId && !responseId && !choiceId) {
+        return null;
+      }
+
+      return {
+        conversationId,
+        responseId,
+        choiceId,
+        conversation_id: conversationId,
+        response_id: responseId,
+        choice_id: choiceId,
+        cand_id: choiceId,
+      };
+    }
+
+    private extractContextFromConversationMetadata(
+      metadata: unknown,
+      fallback?: { conversationId: string; responseId: string; choiceId: string } | null
+    ): { conversationId: string; responseId: string; choiceId: string } {
+      const next = fallback
+        ? {
+            conversationId: (fallback.conversationId || '').trim(),
+            responseId: (fallback.responseId || '').trim(),
+            choiceId: (fallback.choiceId || '').trim(),
+          }
+        : {
+            conversationId: '',
+            responseId: '',
+            choiceId: '',
+          };
+
+      const applyValue = (keyRaw: string, valueRaw: string): void => {
+        const value = (valueRaw || '').trim();
+        if (!value) return;
+        const key = keyRaw.toLowerCase();
+
+        if (
+          !next.conversationId &&
+          (key === 'conversationid' || key === 'conversation_id' || key === 'chatid' || key === 'chat_id')
+        ) {
+          next.conversationId = value;
+          return;
+        }
+
+        if (!next.responseId && (key === 'responseid' || key === 'response_id' || key === 'respid' || key === 'resp_id')) {
+          next.responseId = value;
+          return;
+        }
+
+        if (
+          !next.choiceId &&
+          (key === 'choiceid' ||
+            key === 'choice_id' ||
+            key === 'candidateid' ||
+            key === 'candidate_id' ||
+            key === 'candid' ||
+            key === 'cand_id')
+        ) {
+          next.choiceId = value;
+        }
+      };
+
+      const walk = (node: unknown, depth: number): void => {
+        if (depth > 4 || node == null) return;
+
+        if (Array.isArray(node)) {
+          for (const item of node) {
+            walk(item, depth + 1);
+          }
+          return;
+        }
+
+        if (typeof node !== 'object') {
+          return;
+        }
+
+        const obj = node as Record<string, unknown>;
+        for (const [key, value] of Object.entries(obj)) {
+          if (typeof value === 'string') {
+            applyValue(key, value);
+          }
+        }
+        for (const value of Object.values(obj)) {
+          if (value && typeof value === 'object') {
+            walk(value, depth + 1);
+          }
+        }
+      };
+
+      walk(metadata, 0);
+      return next;
     }
 
     private getTokenKey(config: GeminiChatConfig): string {
@@ -889,7 +1017,89 @@ export class GeminiChatServiceClass {
   // GUI TIN NHAN DEN GEMINI WEB API - STRICT PYTHON PORT
   // =======================================================
   // DEPRECATED WEB method (node-fetch) removed - use API or IMPIT instead
-  // Old sendMessage() and _sendMessageInternal() functions deleted to avoid maintenance burden
+  // New sendMessage() now routes through geminiWebApi runtime + withTokenLock pacing.
+
+  async sendMessage(
+      message: string,
+      configId: string,
+      context?: { conversationId: string; responseId: string; choiceId: string }
+  ): Promise<{ success: boolean; data?: { text: string; context: { conversationId: string; responseId: string; choiceId: string } }; error?: string; configId?: string }> {
+      try {
+          const prompt = (message || '').trim();
+          if (!prompt) {
+              return { success: false, error: 'Message is empty' };
+          }
+
+          const normalizedConfigId = (configId || '').trim();
+          let config: GeminiChatConfig | null = null;
+
+          if (normalizedConfigId) {
+              config = this.getById(normalizedConfigId);
+              if (!config) {
+                  return { success: false, error: `Config ID ${normalizedConfigId} not found`, configId: normalizedConfigId };
+              }
+              if (!config.isActive) {
+                  return { success: false, error: 'Config is inactive', configId: normalizedConfigId };
+              }
+              if (config.isError) {
+                  return { success: false, error: 'Config has isError=true', configId: normalizedConfigId };
+              }
+          } else {
+              config = this.getNextActiveConfig();
+              if (!config) {
+                  return { success: false, error: 'No active config found' };
+              }
+          }
+
+          const tokenKey = this.getTokenKey(config);
+          const conversationKey = `gemini_chat:${config.id}`;
+          const incomingContext = this.normalizeChatContext(context);
+          const storedContext = this.getStoredConfigContext(config.id);
+          const effectiveContext = incomingContext || storedContext;
+          const conversationMetadata = this.buildConversationMetadataFromContext(effectiveContext);
+
+          return await this.withTokenLock(tokenKey, async () => {
+              const response = await getGeminiWebApiRuntime().generateContent({
+                  prompt,
+                  timeoutMs: 120000,
+                  accountConfigId: config!.id,
+                  conversationKey,
+                  useChatSession: true,
+                  conversationMetadata,
+              });
+
+              if (!response.success) {
+                  const errorMessage = response.error || response.errorCode || 'Gemini Web API request failed';
+                  if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+                      this.markConfigError(config!.id, errorMessage);
+                  }
+                  return { success: false, error: errorMessage, configId: config!.id };
+              }
+
+              const nextContext = this.extractContextFromConversationMetadata(response.conversationMetadata, effectiveContext);
+              this.saveContext(nextContext, config!.id);
+
+              const sessionManager = getSessionContextManager();
+              sessionManager.setContext(nextContext);
+              this.markConfigSuccess(config!.id);
+
+              return {
+                  success: true,
+                  data: {
+                      text: response.text || '',
+                      context: nextContext,
+                  },
+                  configId: config!.id,
+              };
+          });
+      } catch (error) {
+          return {
+              success: false,
+              error: String(error),
+              configId: (configId || '').trim() || undefined,
+          };
+      }
+  }
 
   // =======================================================
   // Hàm hòa trộn Cookie cũ và Set-Cookie mới
@@ -943,59 +1153,6 @@ export class GeminiChatServiceClass {
             metadata,
             retryable: false,
         };
-
-        // 1. Resolve Config
-        let config: GeminiChatConfig | null = null;
-        if (configId) {
-            config = this.getById(configId);
-            if (!config) return { success: false, error: `Config ID ${configId} not found`, metadata, retryable: false };
-            if (!config.isActive) return { success: false, error: 'Config is inactive', metadata, retryable: false };
-            if (config.isError) return { success: false, error: 'Config has isError=true', metadata, retryable: false };
-        } else {
-            config = this.getNextActiveConfig();
-            if (!config) return { success: false, error: 'No active config found', metadata, retryable: false };
-        }
-
-        const tokenKey = this.getTokenKey(config);
-        console.log(`[GeminiChatService] Sending message via IMPIT using config: ${config.name}`);
-
-        return await this.withTokenLock(tokenKey, async () => {
-            const MAX_RETRIES = 3;
-            const MIN_DELAY_MS = 10000;  // Match withTokenLock delay
-            const MAX_DELAY_MS = 20000;  // Match withTokenLock delay
-
-            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                console.log(`[GeminiChatService] Impit: Đang gửi tin nhắn (Lần ${attempt}/${MAX_RETRIES})...`);
-                if (onRetry) onRetry(attempt, MAX_RETRIES); // Notify callback
-                const result = await this._sendMessageImpitInternal(message, config!, context, useProxyOverride, metadata);
-
-                if (result.success) {
-                    this.markConfigSuccess(config!.id);
-                    return { ...result, metadata };
-                }
-
-                // VALIDATION FAILURE RETRY LOGIC
-                if (result.retryable) {
-                     console.warn(`[GeminiChatService] Impit: Validation Failed or Retryable Error ("${result.error}"). Retrying...`);
-                } else if (result.error && result.error.includes('Không còn proxy khả dụng')) {
-                    console.error('[GeminiChatService] Impit: Dừng retry do hết proxy khả dụng');
-                    return { ...result, metadata, retryable: true };
-                }
-
-                if (attempt < MAX_RETRIES) {
-                    const retryDelay = getRandomInt(MIN_DELAY_MS, MAX_DELAY_MS);
-                    console.log(`[GeminiChatService] Impit: Thử lại sau ${retryDelay}ms...`);
-                    await new Promise(resolve => setTimeout(resolve, retryDelay));
-                } else {
-                    console.error(`[GeminiChatService] Impit: Tất cả ${MAX_RETRIES} lần thử đều thất bại.`);
-                    this.markConfigError(config!.id, result.error || 'Max retries exceeded');
-                    return { ...result, metadata, retryable: true };
-                }
-            }
-
-            this.markConfigError(config!.id, 'Unexpected error in Impit retry loop');
-            return { success: false, error: 'Unexpected error in Impit retry loop', metadata, retryable: true };
-        });
   }
 
   private async _sendMessageImpitInternal(

@@ -21,6 +21,7 @@ export interface AppSettings {
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
   createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
+  geminiMinSendIntervalMs: number; // Khoảng chờ tối thiểu giữa mỗi lần gửi Gemini (ms)
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
   summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
   captionPromptId: string | null; // Prompt ID cho chức năng dịch caption (Step 3)
@@ -69,6 +70,10 @@ export interface CaptionTypographyDefaults {
   landscape: CaptionTypographyLayoutDefaults;
   portrait: CaptionTypographyLayoutDefaults;
 }
+
+export const GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS = 20_000;
+export const GEMINI_MIN_SEND_INTERVAL_MIN_MS = 5_000;
+export const GEMINI_MIN_SEND_INTERVAL_MAX_MS = 120_000;
 
 const DEFAULT_TYPOGRAPHY_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
@@ -275,6 +280,26 @@ function normalizeGeminiWebApiCookieFallback(value: unknown): GeminiWebApiCookie
   };
 }
 
+export function normalizeGeminiMinSendIntervalMs(value: unknown): number {
+  let numeric: number;
+  if (typeof value === 'number') {
+    numeric = value;
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+    }
+    numeric = Number(trimmed);
+  } else {
+    return GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+  }
+
+  if (!Number.isFinite(numeric)) {
+    return GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+  }
+  return clamp(Math.floor(numeric), GEMINI_MIN_SEND_INTERVAL_MIN_MS, GEMINI_MIN_SEND_INTERVAL_MAX_MS);
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
@@ -284,6 +309,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   useProxy: true, // Mặc định bật proxy
   createChatOnWeb: false,
   useStoredContextOnFirstSend: false,
+  geminiMinSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
   translationPromptId: null, // Tự động tìm prompt dịch
   summaryPromptId: null, // Tự động tìm prompt tóm tắt
   captionPromptId: null, // Tự động dùng prompt mặc định
@@ -339,6 +365,7 @@ class AppSettingsServiceClass {
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...loaded,
+          geminiMinSendIntervalMs: normalizeGeminiMinSendIntervalMs(loaded?.geminiMinSendIntervalMs),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
@@ -395,6 +422,9 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiWebApiCookieFallback')) {
       nextPartial.geminiWebApiCookieFallback = normalizeGeminiWebApiCookieFallback(partial.geminiWebApiCookieFallback);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {
+      nextPartial.geminiMinSendIntervalMs = normalizeGeminiMinSendIntervalMs(partial.geminiMinSendIntervalMs);
     }
     this.settings = { ...this.settings, ...nextPartial };
     this.save();

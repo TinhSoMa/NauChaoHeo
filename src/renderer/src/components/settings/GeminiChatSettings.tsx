@@ -3,7 +3,7 @@
  * Hỗ trợ nhiều tài khoản theo chế độ cookie-only
  */
 
-import { useState, useCallback, useEffect, type MouseEvent } from 'react';
+import { useState, useCallback, useEffect, type KeyboardEvent, type MouseEvent } from 'react';
 import {
   Cookie,
   Save,
@@ -29,6 +29,10 @@ import { GeminiChatAccountsPanel } from './GeminiChatAccountsPanel';
 import { GeminiChatWebApiOpsPanel } from './GeminiChatWebApiOpsPanel';
 import { GeminiChatWebApiLogsPanel } from './GeminiChatWebApiLogsPanel';
 
+const MIN_SEND_INTERVAL_SECONDS = 5;
+const MAX_SEND_INTERVAL_SECONDS = 120;
+const DEFAULT_SEND_INTERVAL_SECONDS = 20;
+
 export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   // Mode: 'list' | 'edit' | 'create'
   const [mode, setMode] = useState<'list' | 'edit' | 'create'>('list');
@@ -53,6 +57,9 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   const [logTextFilter, setLogTextFilter] = useState<string>('');
   const [createChatOnWeb, setCreateChatOnWeb] = useState<boolean>(false);
   const [useStoredContextOnFirstSend, setUseStoredContextOnFirstSend] = useState<boolean>(false);
+  const [minSendIntervalSecInput, setMinSendIntervalSecInput] = useState<string>(String(DEFAULT_SEND_INTERVAL_SECONDS));
+  const [savedMinSendIntervalSec, setSavedMinSendIntervalSec] = useState<number>(DEFAULT_SEND_INTERVAL_SECONDS);
+  const [isSavingMinSendInterval, setIsSavingMinSendInterval] = useState<boolean>(false);
 
   // Editing State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -199,6 +206,13 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         if (result.success && result.data) {
           setCreateChatOnWeb(!!result.data.createChatOnWeb);
           setUseStoredContextOnFirstSend(!!result.data.useStoredContextOnFirstSend);
+          const rawIntervalMs = Number(result.data.geminiMinSendIntervalMs);
+          const normalizedIntervalMs = Number.isFinite(rawIntervalMs)
+            ? Math.max(MIN_SEND_INTERVAL_SECONDS * 1000, Math.min(MAX_SEND_INTERVAL_SECONDS * 1000, Math.floor(rawIntervalMs)))
+            : DEFAULT_SEND_INTERVAL_SECONDS * 1000;
+          const intervalSec = Math.round(normalizedIntervalMs / 1000);
+          setMinSendIntervalSecInput(String(intervalSec));
+          setSavedMinSendIntervalSec(intervalSec);
         }
       } catch (error) {
         console.error('Error loading app settings:', error);
@@ -254,6 +268,45 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
       cookie: '',
       isActive: true
     });
+  };
+
+  const handleSaveMinSendInterval = async () => {
+    const trimmed = minSendIntervalSecInput.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      alert(`Khoảng gửi tối thiểu phải là số nguyên từ ${MIN_SEND_INTERVAL_SECONDS}-${MAX_SEND_INTERVAL_SECONDS} giây.`);
+      return;
+    }
+
+    const nextSec = Number(trimmed);
+    if (!Number.isFinite(nextSec) || nextSec < MIN_SEND_INTERVAL_SECONDS || nextSec > MAX_SEND_INTERVAL_SECONDS) {
+      alert(`Khoảng gửi tối thiểu phải nằm trong ${MIN_SEND_INTERVAL_SECONDS}-${MAX_SEND_INTERVAL_SECONDS} giây.`);
+      return;
+    }
+
+    const nextMs = Math.floor(nextSec * 1000);
+    try {
+      setIsSavingMinSendInterval(true);
+      const result = await window.electronAPI.appSettings.update({ geminiMinSendIntervalMs: nextMs });
+      if (result.success) {
+        setSavedMinSendIntervalSec(nextSec);
+        setMinSendIntervalSecInput(String(nextSec));
+      } else {
+        alert('Lỗi cập nhật khoảng gửi tối thiểu');
+      }
+    } catch (error) {
+      console.error('Error updating min send interval:', error);
+      alert('Lỗi cập nhật khoảng gửi tối thiểu');
+    } finally {
+      setIsSavingMinSendInterval(false);
+    }
+  };
+
+  const handleMinSendIntervalKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') {
+      return;
+    }
+    event.preventDefault();
+    void handleSaveMinSendInterval();
   };
 
   const handleEdit = (config: GeminiChatConfig) => {
@@ -459,6 +512,28 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
              </div>
           </div>
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--color-surface) px-2 py-1">
+              <span className="text-xs text-(--color-text-secondary)">Khoảng gửi tối thiểu</span>
+              <Input
+                type="number"
+                min={MIN_SEND_INTERVAL_SECONDS}
+                max={MAX_SEND_INTERVAL_SECONDS}
+                value={minSendIntervalSecInput}
+                onChange={(e) => setMinSendIntervalSecInput(e.target.value)}
+                onKeyDown={handleMinSendIntervalKeyDown}
+                className="w-16 text-center"
+                variant="small"
+              />
+              <span className="text-xs text-(--color-text-secondary)">s</span>
+              <button
+                onClick={() => void handleSaveMinSendInterval()}
+                disabled={isSavingMinSendInterval || Number(minSendIntervalSecInput) === savedMinSendIntervalSec}
+                className="text-xs px-2 py-1 rounded border border-(--color-border) text-(--color-text-secondary) hover:border-(--color-primary) disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Lưu khoảng gửi tối thiểu"
+              >
+                {isSavingMinSendInterval ? 'Đang lưu...' : 'Lưu'}
+              </button>
+            </div>
             <button
               onClick={handleToggleStoredContextOnFirstSend}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${useStoredContextOnFirstSend ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}

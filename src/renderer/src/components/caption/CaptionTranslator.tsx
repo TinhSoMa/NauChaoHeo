@@ -2130,7 +2130,7 @@ export function CaptionTranslator() {
     }
 
     let prompt: string;
-    let responseFormat: 'pipe' | 'numbered';
+    let responseFormat: 'json';
 
     if (customTemplate) {
       const arrayText = JSON.stringify(batchTexts);
@@ -2140,15 +2140,12 @@ export function CaptionTranslator() {
         .replace(/\{\{TEXT\}\}/g, rawText)          // {{TEXT}} → plain fallback
         .replace(/\{\{COUNT\}\}/g, String(count))
         .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
-      const isPipe = /response_format["']?\s*:\s*["']?\|/.test(customTemplate)
-        || /"separator"\s*:\s*"\|"/.test(customTemplate)
-        || /Format output.*\|/.test(customTemplate);
-      responseFormat = isPipe ? 'pipe' : 'numbered';
+      responseFormat = 'json';
     } else {
-      // Default numbered format
-      const numberedLines = batchTexts.map((t, i) => `[${i + 1}] ${t}`).join('\n');
-      prompt = `Dịch các dòng subtitle sau sang tiếng Vietnamese.\nQuy tắc:\n1. Dịch tự nhiên, phù hợp ngữ cảnh\n2. Giữ nguyên số thứ tự [1], [2], ...\n3. Không thêm giải thích\n4. Mỗi dòng dịch tương ứng với dòng gốc\n\nNội dung cần dịch:\n${numberedLines}\n\nKết quả (chỉ trả về các dòng đã dịch, giữ nguyên format [số]):`;
-      responseFormat = 'numbered';
+      // Default JSON-only format
+      const sourcePayload = batchTexts.map((text, i) => ({ index: i + 1, text }));
+      prompt = `Dịch ${count} dòng subtitle sau sang tiếng Vietnamese.\nYÊU CẦU BẮT BUỘC:\n1. CHỈ trả về JSON thuần túy, không markdown, không text thừa.\n2. JSON success schema:\n{\n  "status": "success",\n  "data": {\n    "translations": [\n      { "index": 1, "translated": "..." }\n    ],\n    "summary": {\n      "total_sentences": ${count},\n      "input_count": ${count},\n      "output_count": ${count},\n      "match": true,\n      "language_style": "casual"\n    }\n  }\n}\n3. translations phải có CHÍNH XÁC ${count} object, index từ 1..${count}, không thiếu, không trùng.\n4. Mỗi câu input tương ứng đúng 1 câu translated, không gộp/không tách câu.\n5. Nếu không thể xử lý, trả JSON error:\n{\n  "status": "error",\n  "error": {\n    "code": "ERROR_PROCESSING_FAILED",\n    "message": "..."\n  }\n}\n\nNguồn:\n${JSON.stringify(sourcePayload)}`;
+      responseFormat = 'json';
     }
 
     const header = [

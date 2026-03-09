@@ -46,6 +46,7 @@ export interface TranslationOptions {
   linesPerBatch: number;         // Số dòng mỗi batch (default: 50)
   promptTemplate?: string;       // Custom prompt template
   translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue'; // Phương thức dịch (default: 'api')
+  retryBatchIndexes?: number[];  // Chỉ dịch lại các batch index 1-based (Step 3 resume)
   projectId?: string;
   sourcePath?: string;
 }

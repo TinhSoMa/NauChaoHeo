@@ -1,5 +1,10 @@
 import { getDatabase } from '../../database/schema';
 import {
+  AppSettingsService,
+  GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
+  normalizeGeminiMinSendIntervalMs,
+} from '../appSettings';
+import {
   getQueueRuntimeOrCreate,
   type UniversalRotationQueueService
 } from '../shared/universalRotationQueue';
@@ -8,7 +13,7 @@ export const CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'caption.translation.geminiW
 export const CAPTION_GEMINI_WEB_QUEUE_POOL_ID = 'caption-geminiweb-accounts';
 export const CAPTION_GEMINI_WEB_QUEUE_FEATURE = 'caption.translate.geminiWeb';
 export const CAPTION_GEMINI_WEB_QUEUE_SERVICE_ID = 'caption-step3';
-export const CAPTION_STEP3_QUEUE_GAP_MS = 10_000;
+export const CAPTION_STEP3_QUEUE_GAP_MS = GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
 
 interface GeminiWebQueueAccountRow {
   id: string;
@@ -21,15 +26,22 @@ interface GeminiWebQueueAccountRow {
 export interface CaptionGeminiWebQueueRuntimeContext {
   queue: UniversalRotationQueueService;
   resourceLabelById: Map<string, string>;
+  queueGapMs: number;
+}
+
+export function getCaptionStep3QueueGapMs(): number {
+  const settings = AppSettingsService.getAll();
+  return normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
 }
 
 export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRuntimeContext {
   const queue = getQueueRuntimeOrCreate(CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+  const queueGapMs = getCaptionStep3QueueGapMs();
   queue.registerPool({
     poolId: CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
     label: 'Caption GeminiWeb Accounts',
     selector: 'round_robin',
-    dispatchSpacingMs: CAPTION_STEP3_QUEUE_GAP_MS,
+    dispatchSpacingMs: queueGapMs,
     defaultCooldownMinMs: 0,
     defaultCooldownMaxMs: 0
   });
@@ -90,5 +102,5 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
     }
   }
 
-  return { queue, resourceLabelById };
+  return { queue, resourceLabelById, queueGapMs };
 }
