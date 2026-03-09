@@ -2,6 +2,9 @@ import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import { GeminiWebApiCookieStore, maskSecret, parseGeminiCookieTokens } from './cookieStore';
 import { GeminiWebApiPythonBridge } from './pythonBridge';
 import { getGeminiWebApiOpsMonitor } from './opsMonitor';
+import { AppSettingsService } from '../appSettings';
+import { getProxyManager } from '../proxy/proxyManager';
+import type { ProxyConfig } from '../../../shared/types/proxy';
 import {
   GeminiConversationMetadata,
   GeminiCookieRefreshResult,
@@ -31,10 +34,24 @@ interface WorkerGeneratePayload {
   conversationMetadataDebug?: Record<string, unknown> | null;
 }
 
+type ProxySelectionSource = 'disabled' | 'manual' | 'pool' | 'none';
+type ProxyMode = 'direct' | 'proxy' | 'fallback_direct';
+type ProxyAssignmentState = 'none' | 'reused' | 'assigned_new';
+
+interface ProxySelectionResult {
+  accountConfigId: string;
+  useProxySetting: boolean;
+  source: ProxySelectionSource;
+  assignmentState: ProxyAssignmentState;
+  proxyUrl: string | null;
+  proxyConfig: ProxyConfig | null;
+}
+
 export class GeminiWebApiService {
   private readonly cookieStore = new GeminiWebApiCookieStore();
   private readonly bridge = new GeminiWebApiPythonBridge();
   private readonly conversationMetadataByKey = new Map<string, GeminiConversationMetadata>();
+  private readonly proxyAssignmentByAccount = new Map<string, string>();
 
   async healthCheck(): Promise<GeminiWebApiHealth> {
     const moduleCheck = await checkPythonModuleAvailability(['gemini_webapi', 'browser_cookie3'], {
@@ -300,15 +317,33 @@ export class GeminiWebApiService {
       return failed;
     }
 
-    let response;
-    try {
-      response = await this.bridge.request<WorkerGeneratePayload>(
+    const proxySelection = this.selectProxyForRequest(accountConfigId, request);
+    let proxyMode: ProxyMode = proxySelection.proxyUrl ? 'proxy' : 'direct';
+    let fallbackUsed = false;
+    if (proxySelection.source === 'manual' && proxySelection.proxyUrl) {
+      console.log(
+        `[GeminiWebApiService] Proxy route mode=manual accountConfigId=${accountConfigId} endpoint=${this.maskProxyForLog(proxySelection.proxyUrl)}`
+      );
+    } else if (proxySelection.source === 'pool' && proxySelection.proxyConfig) {
+      console.log(
+        `[GeminiWebApiService] Proxy route mode=pool accountConfigId=${accountConfigId} assignment=${proxySelection.assignmentState} proxyId=${proxySelection.proxyConfig.id} endpoint=${proxySelection.proxyConfig.host}:${proxySelection.proxyConfig.port}`
+      );
+    } else if (proxySelection.useProxySetting && proxySelection.source === 'none') {
+      console.warn(
+        `[GeminiWebApiService] Proxy enabled but no available proxy accountConfigId=${accountConfigId}. Falling back to direct request.`
+      );
+    }
+
+    const buildProxyTraceMetadata = (mode: ProxyMode, fallback: boolean) =>
+      this.buildProxyTraceMetadata(proxySelection, mode, fallback);
+    const invokeGenerate = async (proxyUrl: string | null) =>
+      this.bridge.request<WorkerGeneratePayload>(
         'generate',
         {
           prompt,
           secure1psid,
           secure1psidts,
-          proxy: request.proxy ?? null,
+          proxy: proxyUrl,
           timeoutMs,
           temporary: !!request.temporary,
           useChatSession,
@@ -316,24 +351,124 @@ export class GeminiWebApiService {
         },
         timeoutMs,
       );
-    } catch (error) {
-      const classified = this.classifyBridgeError(error);
-      const failed: GeminiGenerateResult = {
-        success: false,
-        errorCode: classified.errorCode,
-        error: classified.error,
-        cookieSource: resolved.source,
-        refreshed,
-      };
-      getGeminiWebApiOpsMonitor().recordRequestResult({
-        success: false,
-        accountConfigId,
-        cookieSource: failed.cookieSource,
-        refreshed: failed.refreshed,
-        errorCode: failed.errorCode,
-        error: failed.error
-      });
-      return failed;
+
+    let response;
+    if (proxySelection.proxyUrl) {
+      try {
+        response = await invokeGenerate(proxySelection.proxyUrl);
+      } catch (error) {
+        const classified = this.classifyBridgeError(error);
+        const shouldFallback = this.shouldFallbackToDirect(classified.errorCode);
+        if (shouldFallback) {
+          this.markProxyFailed(proxySelection, classified.error);
+        }
+        if (!shouldFallback) {
+          const failed: GeminiGenerateResult = {
+            success: false,
+            errorCode: classified.errorCode,
+            error: classified.error,
+            cookieSource: resolved.source,
+            refreshed,
+          };
+          getGeminiWebApiOpsMonitor().recordRequestResult({
+            success: false,
+            accountConfigId,
+            cookieSource: failed.cookieSource,
+            refreshed: failed.refreshed,
+            errorCode: failed.errorCode,
+            error: failed.error,
+            metadata: buildProxyTraceMetadata(proxyMode, fallbackUsed),
+          });
+          return failed;
+        }
+
+        fallbackUsed = true;
+        proxyMode = 'fallback_direct';
+        console.warn(
+          `[GeminiWebApiService] Proxy request failed accountConfigId=${accountConfigId}. Retry direct once. errorCode=${classified.errorCode}`
+        );
+        try {
+          response = await invokeGenerate(null);
+        } catch (directError) {
+          const classifiedDirect = this.classifyBridgeError(directError);
+          const failed: GeminiGenerateResult = {
+            success: false,
+            errorCode: classifiedDirect.errorCode,
+            error: classifiedDirect.error,
+            cookieSource: resolved.source,
+            refreshed,
+          };
+          getGeminiWebApiOpsMonitor().recordRequestResult({
+            success: false,
+            accountConfigId,
+            cookieSource: failed.cookieSource,
+            refreshed: failed.refreshed,
+            errorCode: failed.errorCode,
+            error: failed.error,
+            metadata: buildProxyTraceMetadata(proxyMode, fallbackUsed),
+          });
+          return failed;
+        }
+      }
+
+      if (response && !response.success) {
+        const normalizedErrorCode = this.normalizeGeminiErrorCode(response.errorCode, 'GEMINI_REQUEST_FAILED');
+        if (this.shouldFallbackToDirect(normalizedErrorCode)) {
+          this.markProxyFailed(proxySelection, response.error || 'Gemini request failed via proxy');
+          fallbackUsed = true;
+          proxyMode = 'fallback_direct';
+          console.warn(
+            `[GeminiWebApiService] Proxy response failed accountConfigId=${accountConfigId}. Retry direct once. errorCode=${normalizedErrorCode}`
+          );
+          try {
+            response = await invokeGenerate(null);
+          } catch (directError) {
+            const classifiedDirect = this.classifyBridgeError(directError);
+            const failed: GeminiGenerateResult = {
+              success: false,
+              errorCode: classifiedDirect.errorCode,
+              error: classifiedDirect.error,
+              cookieSource: resolved.source,
+              refreshed,
+            };
+            getGeminiWebApiOpsMonitor().recordRequestResult({
+              success: false,
+              accountConfigId,
+              cookieSource: failed.cookieSource,
+              refreshed: failed.refreshed,
+              errorCode: failed.errorCode,
+              error: failed.error,
+              metadata: buildProxyTraceMetadata(proxyMode, fallbackUsed),
+            });
+            return failed;
+          }
+        }
+      } else if (response?.success) {
+        this.markProxySuccess(proxySelection);
+      }
+    } else {
+      try {
+        response = await invokeGenerate(null);
+      } catch (error) {
+        const classified = this.classifyBridgeError(error);
+        const failed: GeminiGenerateResult = {
+          success: false,
+          errorCode: classified.errorCode,
+          error: classified.error,
+          cookieSource: resolved.source,
+          refreshed,
+        };
+        getGeminiWebApiOpsMonitor().recordRequestResult({
+          success: false,
+          accountConfigId,
+          cookieSource: failed.cookieSource,
+          refreshed: failed.refreshed,
+          errorCode: failed.errorCode,
+          error: failed.error,
+          metadata: buildProxyTraceMetadata(proxyMode, fallbackUsed),
+        });
+        return failed;
+      }
     }
 
     if (!response.success) {
@@ -350,7 +485,8 @@ export class GeminiWebApiService {
         cookieSource: failed.cookieSource,
         refreshed: failed.refreshed,
         errorCode: failed.errorCode,
-        error: failed.error
+        error: failed.error,
+        metadata: buildProxyTraceMetadata(proxyMode, fallbackUsed),
       });
       return failed;
     }
@@ -398,6 +534,7 @@ export class GeminiWebApiService {
         conversationMetadataReason: conversationMetadataReason || null,
         conversationMetadataDebug: conversationMetadataDebug || null,
         responseTextLength: (successResult.text || '').length,
+        ...buildProxyTraceMetadata(proxyMode, fallbackUsed),
       },
     });
     return successResult;
@@ -482,5 +619,168 @@ export class GeminiWebApiService {
       return null;
     }
     return value as GeminiConversationMetadata;
+  }
+
+  private selectProxyForRequest(accountConfigId: string, request: GeminiGenerateRequest): ProxySelectionResult {
+    const useProxySetting = this.readUseProxySetting();
+    if (!useProxySetting) {
+      return {
+        accountConfigId,
+        useProxySetting,
+        source: 'disabled',
+        assignmentState: 'none',
+        proxyUrl: null,
+        proxyConfig: null,
+      };
+    }
+
+    const manualProxy = this.normalizeProxy(request.proxy);
+    if (manualProxy) {
+      return {
+        accountConfigId,
+        useProxySetting,
+        source: 'manual',
+        assignmentState: 'none',
+        proxyUrl: manualProxy,
+        proxyConfig: null,
+      };
+    }
+
+    const reusedProxy = this.resolveAssignedProxy(accountConfigId);
+    if (reusedProxy) {
+      return {
+        accountConfigId,
+        useProxySetting,
+        source: 'pool',
+        assignmentState: 'reused',
+        proxyUrl: this.toProxyUrl(reusedProxy),
+        proxyConfig: reusedProxy,
+      };
+    }
+
+    const proxyConfig = getProxyManager().getNextProxy();
+    if (!proxyConfig) {
+      return {
+        accountConfigId,
+        useProxySetting,
+        source: 'none',
+        assignmentState: 'none',
+        proxyUrl: null,
+        proxyConfig: null,
+      };
+    }
+
+    this.proxyAssignmentByAccount.set(accountConfigId, proxyConfig.id);
+    console.log(
+      `[GeminiWebApiService] Proxy assigned accountConfigId=${accountConfigId} proxyId=${proxyConfig.id} endpoint=${proxyConfig.host}:${proxyConfig.port}`
+    );
+
+    return {
+      accountConfigId,
+      useProxySetting,
+      source: 'pool',
+      assignmentState: 'assigned_new',
+      proxyUrl: this.toProxyUrl(proxyConfig),
+      proxyConfig,
+    };
+  }
+
+  private shouldFallbackToDirect(errorCode: GeminiErrorCode): boolean {
+    return errorCode === 'GEMINI_TIMEOUT' || errorCode === 'GEMINI_REQUEST_FAILED';
+  }
+
+  private buildProxyTraceMetadata(
+    selection: ProxySelectionResult,
+    mode: ProxyMode,
+    fallbackUsed: boolean
+  ): Record<string, unknown> {
+    return {
+      useProxySetting: selection.useProxySetting,
+      proxySource: selection.source,
+      proxyAssignmentState: selection.assignmentState,
+      proxyMode: mode,
+      fallbackUsed,
+      proxyId: selection.proxyConfig?.id || null,
+      proxyEndpoint: selection.proxyConfig
+        ? `${selection.proxyConfig.host}:${selection.proxyConfig.port}`
+        : (selection.source === 'manual' ? selection.proxyUrl : null),
+    };
+  }
+
+  private markProxySuccess(selection: ProxySelectionResult): void {
+    if (selection.proxyConfig?.id) {
+      getProxyManager().markProxySuccess(selection.proxyConfig.id);
+    }
+  }
+
+  private markProxyFailed(selection: ProxySelectionResult, reason: string): void {
+    if (selection.proxyConfig?.id) {
+      getProxyManager().markProxyFailed(selection.proxyConfig.id, reason);
+      this.clearProxyAssignment(selection.accountConfigId, selection.proxyConfig.id, reason);
+    }
+  }
+
+  private resolveAssignedProxy(accountConfigId: string): ProxyConfig | null {
+    const assignedProxyId = this.proxyAssignmentByAccount.get(accountConfigId);
+    if (!assignedProxyId) {
+      return null;
+    }
+    const proxy = getProxyManager()
+      .getAllProxies()
+      .find((item) => item.id === assignedProxyId && item.enabled);
+    if (!proxy) {
+      this.proxyAssignmentByAccount.delete(accountConfigId);
+      return null;
+    }
+    return proxy;
+  }
+
+  private clearProxyAssignment(accountConfigId: string, proxyId: string, reason: string): void {
+    const assigned = this.proxyAssignmentByAccount.get(accountConfigId);
+    if (assigned !== proxyId) {
+      return;
+    }
+    this.proxyAssignmentByAccount.delete(accountConfigId);
+    console.warn(
+      `[GeminiWebApiService] Proxy assignment cleared accountConfigId=${accountConfigId} proxyId=${proxyId} reason=${reason}`
+    );
+  }
+
+  private readUseProxySetting(): boolean {
+    try {
+      return !!AppSettingsService.getAll().useProxy;
+    } catch (error) {
+      console.warn('[GeminiWebApiService] Could not read useProxy setting, defaulting to false.', error);
+      return false;
+    }
+  }
+
+  private normalizeProxy(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private toProxyUrl(proxy: ProxyConfig): string {
+    const scheme = proxy.type === 'socks5' ? 'socks5' : proxy.type === 'https' ? 'https' : 'http';
+    if (proxy.username) {
+      const username = encodeURIComponent(proxy.username);
+      const password = encodeURIComponent(proxy.password || '');
+      return `${scheme}://${username}:${password}@${proxy.host}:${proxy.port}`;
+    }
+    return `${scheme}://${proxy.host}:${proxy.port}`;
+  }
+
+  private maskProxyForLog(proxyUrl: string): string {
+    try {
+      const parsed = new URL(proxyUrl);
+      const host = parsed.hostname || 'unknown-host';
+      const port = parsed.port ? `:${parsed.port}` : '';
+      return `${parsed.protocol}//${host}${port}`;
+    } catch {
+      return proxyUrl;
+    }
   }
 }

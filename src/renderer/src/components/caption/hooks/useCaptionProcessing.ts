@@ -2468,7 +2468,10 @@ export function useCaptionProcessing({
           // @ts-ignore
           const resultEnd = await window.electronAPI.tts.trimSilenceEnd(filesToTrim.map(f => f.path));
           if (result.success && result.data && resultEnd.success && resultEnd.data) {
-            setProgress({ current: resultEnd.data.trimmedCount, total: filesToTrim.length, message: msgCtx(`Bước 5: Đã trim ${resultEnd.data.trimmedCount} files`) });
+            const trimmedMiddleData = result.data;
+            const trimmedEndData = resultEnd.data;
+            const trimmedCount = trimmedEndData.trimmedCount;
+            setProgress({ current: trimmedCount, total: filesToTrim.length, message: msgCtx(`Bước 5: Đã trim ${trimmedCount} files`) });
             await updateSessionForStep(currentPath, step, folderIdx, (session) => {
               const stepArtifacts: CaptionArtifactFile[] = [];
               for (const file of filesToTrim) {
@@ -2482,8 +2485,8 @@ export function useCaptionProcessing({
                 }))
               );
               const outputFingerprint = buildObjectFingerprint({
-                trimmedMiddle: result.data,
-                trimmedEnd: resultEnd.data,
+                trimmedMiddle: trimmedMiddleData,
+                trimmedEnd: trimmedEndData,
               });
               const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
               let nextSession: CaptionSessionV1 = {
@@ -2491,8 +2494,8 @@ export function useCaptionProcessing({
                 data: {
                   ...session.data,
                   trimResults: {
-                    trimmedMiddle: result.data,
-                    trimmedEnd: resultEnd.data,
+                    trimmedMiddle: trimmedMiddleData,
+                    trimmedEnd: trimmedEndData,
                   },
                 },
                 steps: {
@@ -2500,7 +2503,7 @@ export function useCaptionProcessing({
                   [stepKey]: {
                     ...makeStepSuccess(session.steps[stepKey], {
                       totalFiles: filesToTrim.length,
-                      trimmedCount: resultEnd.data.trimmedCount,
+                      trimmedCount,
                     }),
                     inputFingerprint,
                     outputFingerprint,
@@ -2573,7 +2576,12 @@ export function useCaptionProcessing({
             // @ts-ignore
             const fitResult = await window.electronAPI.tts.fitAudio(fitItems);
             if (fitResult.success && fitResult.data) {
-              const { scaledCount, pathMapping } = fitResult.data;
+              const fitData = fitResult.data as {
+                scaledCount?: number;
+                pathMapping?: Array<{ originalPath: string; outputPath: string }>;
+              };
+              const scaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
+              const pathMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
               setProgress({ current: scaledCount, total: fitItems.length, message: msgCtx(`Bước 6: Đã fit ${scaledCount}/${fitItems.length} files`) });
               for (const mapping of pathMapping) {
                 const idx = filesToMerge.findIndex(f => f.path === mapping.originalPath);
