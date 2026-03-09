@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Step,
   ProcessStatus,
@@ -115,6 +115,10 @@ function pad4(value: number): string {
   return String(value).padStart(4, '0');
 }
 
+function normalizePathKey(value: string): string {
+  return value.trim().replace(/[\\/]+$/, '').toLowerCase();
+}
+
 function toSafeThumbSlug(thumbnailText?: string): string {
   const raw = (thumbnailText || '').trim();
   if (!raw) {
@@ -177,6 +181,7 @@ interface UseCaptionProcessingProps {
   entries: SubtitleEntry[];
   setEntries: (entries: SubtitleEntry[]) => void;
   filePath: string;
+  inputPathsOverride?: string[];
   inputType: string;
   captionFolder: string | null;
   settings: {
@@ -1003,6 +1008,7 @@ export function useCaptionProcessing({
   entries,
   setEntries,
   filePath,
+  inputPathsOverride,
   inputType,
   captionFolder,
   settings,
@@ -1026,6 +1032,31 @@ export function useCaptionProcessing({
   const abortRef = useRef(false);
   const translateBatchProgressHandlerRef = useRef<((progress: TranslationProgress) => void | Promise<void>) | null>(null);
   const audioPreviewStopRequestedRef = useRef(false);
+  const baseInputPaths = useMemo(
+    () => getInputPaths(inputType as 'srt' | 'draft', filePath),
+    [filePath, inputType]
+  );
+  const resolvedInputPaths = useMemo(() => {
+    if (inputType !== 'draft' || !Array.isArray(inputPathsOverride)) {
+      return baseInputPaths;
+    }
+    const basePathKeys = new Set(baseInputPaths.map(normalizePathKey));
+    const nextPaths: string[] = [];
+    const seenKeys = new Set<string>();
+    for (const rawPath of inputPathsOverride) {
+      if (typeof rawPath !== 'string') continue;
+      const trimmedPath = rawPath.trim();
+      if (!trimmedPath) continue;
+      const normalizedKey = normalizePathKey(trimmedPath);
+      if (seenKeys.has(normalizedKey)) continue;
+      if (basePathKeys.size > 0 && !basePathKeys.has(normalizedKey)) continue;
+      seenKeys.add(normalizedKey);
+      nextPaths.push(trimmedPath);
+    }
+    return nextPaths;
+  }, [baseInputPaths, inputPathsOverride, inputType]);
+  const isDraftFilterApplied = inputType === 'draft' && Array.isArray(inputPathsOverride);
+  const isDraftFilterEmpty = isDraftFilterApplied && baseInputPaths.length > 0 && resolvedInputPaths.length === 0;
 
   const toggleStep = useCallback((step: Step) => {
     setEnabledSteps(prev => {
@@ -1065,10 +1096,14 @@ export function useCaptionProcessing({
       return;
     }
 
-    const inputPaths = getInputPaths(inputType as 'srt' | 'draft', filePath);
+    const inputPaths = resolvedInputPaths;
     if (inputPaths.length === 0) {
       setAudioPreviewStatus('error');
-      setAudioPreviewProgressText('Chưa có input để test audio.');
+      setAudioPreviewProgressText(
+        isDraftFilterEmpty
+          ? 'Không có folder nào thỏa điều kiện lọc để test audio.'
+          : 'Chưa có input để test audio.'
+      );
       return;
     }
 
@@ -1205,7 +1240,8 @@ export function useCaptionProcessing({
     status,
     audioPreviewStatus,
     inputType,
-    filePath,
+    resolvedInputPaths,
+    isDraftFilterEmpty,
     currentFolder?.path,
     projectId,
     settings.srtSpeed,
@@ -1224,7 +1260,7 @@ export function useCaptionProcessing({
   const handleStop = useCallback(async () => {
     abortRef.current = true;
     const stopAt = nowIso();
-    const paths = getInputPaths(inputType as 'srt' | 'draft', filePath);
+    const paths = resolvedInputPaths;
     const totalFolders = paths.length;
     const activeFolderPath = currentFolder?.path || paths[0] || '';
     const activeFolderIndex = currentFolder?.index || (activeFolderPath ? Math.max(1, paths.findIndex((p) => p === activeFolderPath) + 1) : 1);
@@ -1285,7 +1321,7 @@ export function useCaptionProcessing({
     setCurrentFolder(null);
     setCurrentStep(null);
     setProgress(p => ({ ...p, message: 'Đã dừng.' }));
-  }, [currentFolder?.index, currentFolder?.path, currentStep, filePath, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
+  }, [currentFolder?.index, currentFolder?.path, currentStep, resolvedInputPaths, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
@@ -1422,11 +1458,17 @@ export function useCaptionProcessing({
       setProgress({ current: Math.floor(p.percent || 0), total: 100, message: p.message || 'Đang render video...' });
     });
 
-    const inputPaths = getInputPaths(inputType as 'srt' | 'draft', filePath);
+    const inputPaths = resolvedInputPaths;
     const totalFolders = inputPaths.length;
     if (totalFolders === 0) {
       setStatus('error');
-      setProgress({ current: 0, total: 0, message: 'Chưa có input để xử lý.' });
+      setProgress({
+        current: 0,
+        total: 0,
+        message: isDraftFilterEmpty
+          ? 'Không có folder nào thỏa điều kiện lọc.'
+          : 'Chưa có input để xử lý.',
+      });
       return;
     }
     const isMulti = totalFolders > 1;
@@ -3413,8 +3455,8 @@ export function useCaptionProcessing({
     setCurrentStep(null);
     setCurrentFolder(null);
   }, [
-    projectId, enabledSteps, entries, filePath, inputType, captionFolder,
-    settings, audioFiles, stopStep7AudioPreview,
+    projectId, enabledSteps, entries, inputType, captionFolder,
+    settings, audioFiles, stopStep7AudioPreview, resolvedInputPaths, isDraftFilterEmpty,
   ]);
 
   return {

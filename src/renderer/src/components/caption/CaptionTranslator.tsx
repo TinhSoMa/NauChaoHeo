@@ -105,6 +105,7 @@ const AUDIO_VOLUME_PERCENT_MIN = 0;
 const AUDIO_VOLUME_PERCENT_MAX = 400;
 const VOLUME_MULTIPLIER_STEP = 0.1;
 const STEP4_VOICE_TEST_DEFAULT_TEXT = 'kiểm thử giọng đọc';
+const DRAFT_DURATION_FILTER_DEFAULT_MINUTES = 10;
 
 const DEFAULT_COVER_QUAD: CoverQuad = {
   tl: { x: 0, y: 0 },
@@ -204,6 +205,7 @@ type PersistThumbnailSessionOverrides = {
   thumbnailTextsSecondaryByOrder?: string[];
   thumbnailTextSecondaryOverrideFlags?: boolean[];
 };
+type DraftDurationFilterMode = 'all' | 'above' | 'below';
 
 const SENSITIVE_KEY_PATTERN = /(token|api[_-]?key|secret|password|authorization|cookie)/i;
 
@@ -1240,19 +1242,81 @@ export function CaptionTranslator() {
   const fileManager = useCaptionFileManagement({
     inputType: settings.inputType,
   });
+  const [draftDurationFilterMode, setDraftDurationFilterMode] = useState<DraftDurationFilterMode>('all');
+  const [draftDurationFilterMinutes, setDraftDurationFilterMinutes] = useState<number>(
+    DRAFT_DURATION_FILTER_DEFAULT_MINUTES
+  );
+  const selectedInputPaths = useMemo(
+    () => getInputPaths('draft', fileManager.filePath),
+    [fileManager.filePath]
+  );
+  const draftDurationFilterThresholdMinutes = useMemo(
+    () => (Number.isFinite(draftDurationFilterMinutes) && draftDurationFilterMinutes >= 0 ? draftDurationFilterMinutes : 0),
+    [draftDurationFilterMinutes]
+  );
+  const draftDurationFilterStats = useMemo(() => {
+    const nextFilteredPaths: string[] = [];
+    let missingDurationCount = 0;
+    let excludedByThresholdCount = 0;
+
+    if (draftDurationFilterMode === 'all') {
+      return {
+        filteredPaths: selectedInputPaths,
+        missingDurationCount: 0,
+        excludedByThresholdCount: 0,
+      };
+    }
+
+    for (const folderPath of selectedInputPaths) {
+      const durationSec = fileManager.folderVideos[folderPath]?.duration;
+      if (typeof durationSec !== 'number' || !Number.isFinite(durationSec) || durationSec <= 0) {
+        missingDurationCount += 1;
+        continue;
+      }
+      const durationMinutes = durationSec / 60;
+      const isMatched = draftDurationFilterMode === 'above'
+        ? durationMinutes >= draftDurationFilterThresholdMinutes
+        : durationMinutes <= draftDurationFilterThresholdMinutes;
+      if (isMatched) {
+        nextFilteredPaths.push(folderPath);
+      } else {
+        excludedByThresholdCount += 1;
+      }
+    }
+
+    return {
+      filteredPaths: nextFilteredPaths,
+      missingDurationCount,
+      excludedByThresholdCount,
+    };
+  }, [
+    draftDurationFilterMode,
+    draftDurationFilterThresholdMinutes,
+    fileManager.folderVideos,
+    selectedInputPaths,
+  ]);
+  const filteredDraftInputPaths = draftDurationFilterStats.filteredPaths;
+  const processingInputPaths = useMemo(
+    () => (settings.inputType === 'draft'
+      ? filteredDraftInputPaths
+      : getInputPaths(settings.inputType, fileManager.filePath)),
+    [settings.inputType, filteredDraftInputPaths, fileManager.filePath]
+  );
 
   const hardsubSettings = useHardsubSettings({
     inputType: settings.inputType,
     filePath: fileManager.filePath,
     folderVideos: fileManager.folderVideos,
     thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
-    thumbnailTextSecondaryGlobal: '',
+    thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary,
   });
   const thumbnailSessionHydrationKey = useMemo(
     () => `${projectId || ''}::${settings.inputType}::${fileManager.filePath || ''}`,
     [projectId, settings.inputType, fileManager.filePath]
   );
   const thumbnailSessionHydratedKeyRef = useRef<string | null>(null);
+  const thumbnailHydrationReadyTimerRef = useRef<number | null>(null);
+  const [isThumbnailSessionHydrating, setIsThumbnailSessionHydrating] = useState(false);
   const [thumbnailSessionHydrationRevision, setThumbnailSessionHydrationRevision] = useState(0);
   const [thumbnailManualSaveState, setThumbnailManualSaveState] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [thumbnailManualSaveMessage, setThumbnailManualSaveMessage] = useState('');
@@ -1391,7 +1455,13 @@ export function CaptionTranslator() {
   useEffect(() => {
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
     thumbnailSessionHydratedKeyRef.current = null;
+    if (thumbnailHydrationReadyTimerRef.current) {
+      window.clearTimeout(thumbnailHydrationReadyTimerRef.current);
+      thumbnailHydrationReadyTimerRef.current = null;
+    }
+    setIsThumbnailSessionHydrating(true);
     if (!inputPaths.length) {
+      setIsThumbnailSessionHydrating(false);
       return;
     }
     let cancelled = false;
@@ -1401,6 +1471,7 @@ export function CaptionTranslator() {
         const texts: string[] = [];
         const secondaryTexts: string[] = [];
         const secondaryOverrideFlags: boolean[] = [];
+        const secondaryGlobalCandidates: string[] = [];
         for (const inputPath of inputPaths) {
           const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
           const session = await readCaptionSession(sessionPath, {
@@ -1411,10 +1482,24 @@ export function CaptionTranslator() {
           });
           const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
           texts.push(resolveSharedPrimaryTextFromStep7(step7));
-          secondaryTexts.push(resolveSharedSecondaryTextFromStep7(step7));
-          secondaryOverrideFlags.push(step7.thumbnailTextSecondarySource === 'override');
+          const secondaryText = resolveSharedSecondaryTextFromStep7(step7);
+          const secondarySource = typeof step7.thumbnailTextSecondarySource === 'string'
+            ? step7.thumbnailTextSecondarySource
+            : '';
+          secondaryTexts.push(secondaryText);
+          secondaryOverrideFlags.push(secondarySource === 'override');
+          if (secondarySource !== 'override') {
+            secondaryGlobalCandidates.push(secondaryText);
+          }
         }
         if (!cancelled) {
+          const nonEmptyGlobal = secondaryGlobalCandidates.find((value) => value.trim().length > 0);
+          const globalFromSession = nonEmptyGlobal
+            ?? secondaryGlobalCandidates[0]
+            ?? settings.thumbnailTextSecondary
+            ?? '';
+          settings.setThumbnailTextSecondary(globalFromSession);
+          hardsubSettings.setThumbnailTextSecondary(globalFromSession);
           hardsubSettings.setThumbnailTextsByOrder(texts);
           hardsubSettings.setSecondaryStateFromSession(secondaryTexts, secondaryOverrideFlags);
         }
@@ -1432,7 +1517,9 @@ export function CaptionTranslator() {
       const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
       if (!cancelled) {
         hardsubSettings.setThumbnailText(resolveSharedPrimaryTextFromStep7(step7));
-        hardsubSettings.setThumbnailTextSecondary(resolveSharedSecondaryTextFromStep7(step7));
+        const globalFromSession = resolveSharedSecondaryTextFromStep7(step7);
+        settings.setThumbnailTextSecondary(globalFromSession);
+        hardsubSettings.setThumbnailTextSecondary(globalFromSession);
       }
     };
 
@@ -1444,9 +1531,20 @@ export function CaptionTranslator() {
         if (cancelled) return;
         thumbnailSessionHydratedKeyRef.current = currentHydrationKey;
         setThumbnailSessionHydrationRevision((prev) => prev + 1);
+        thumbnailHydrationReadyTimerRef.current = window.setTimeout(() => {
+          if (!cancelled) {
+            setIsThumbnailSessionHydrating(false);
+          }
+          thumbnailHydrationReadyTimerRef.current = null;
+        }, 0);
       });
     return () => {
       cancelled = true;
+      if (thumbnailHydrationReadyTimerRef.current) {
+        window.clearTimeout(thumbnailHydrationReadyTimerRef.current);
+        thumbnailHydrationReadyTimerRef.current = null;
+      }
+      setIsThumbnailSessionHydrating(false);
     };
   }, [fileManager.filePath, projectId, settings.inputType, thumbnailSessionHydrationKey]);
 
@@ -1518,7 +1616,7 @@ export function CaptionTranslator() {
     if (!inputPaths.length) return false;
     const isHydrated = thumbnailSessionHydratedKeyRef.current === thumbnailSessionHydrationKey;
     const isManualPersist = !!overrides;
-    if (!isHydrated && !isManualPersist) return false;
+    if ((!isHydrated || isThumbnailSessionHydrating) && !isManualPersist) return false;
 
     const multiFolderTexts = overrides?.thumbnailTextsByOrder ?? hardsubSettings.thumbnailTextsByOrder;
     const multiFolderSecondaryTexts = overrides?.thumbnailTextsSecondaryByOrder ?? hardsubSettings.thumbnailTextsSecondaryByOrder;
@@ -1668,6 +1766,7 @@ export function CaptionTranslator() {
     settings.portraitTextPrimaryPosition,
     settings.portraitTextSecondaryPosition,
     thumbnailSessionHydrationKey,
+    isThumbnailSessionHydrating,
   ]);
 
   // Persist thumbnail text theo folder (không ghi vào project default).
@@ -1690,8 +1789,58 @@ export function CaptionTranslator() {
     };
   }, [thumbnailManualSaveState]);
 
+  const step7ThumbnailPanelData = useMemo(() => {
+    const selectedSet = new Set(filteredDraftInputPaths);
+    const sourceItems = settings.inputType === 'draft'
+      ? hardsubSettings.thumbnailFolderItems.filter((item) => selectedSet.has(item.folderPath))
+      : hardsubSettings.thumbnailFolderItems;
+
+    const sourceIndexes: number[] = [];
+    const items = sourceItems.map((item, visibleIdx) => {
+      const sourceIdx = Math.max(0, item.index - 1);
+      sourceIndexes.push(sourceIdx);
+      return {
+        ...item,
+        index: visibleIdx + 1,
+      };
+    });
+
+    return { items, sourceIndexes };
+  }, [
+    filteredDraftInputPaths,
+    hardsubSettings.thumbnailFolderItems,
+    settings.inputType,
+  ]);
+  const step7VisibleFolderCount = step7ThumbnailPanelData.items.length;
+  const step7VisibleMissingThumbnailText = useMemo(
+    () => step7ThumbnailPanelData.items.some((item) => item.hasError),
+    [step7ThumbnailPanelData.items]
+  );
+  const mapStep7VisibleIndexToSourceIndex = useCallback((visibleIndexZeroBased: number) => {
+    if (!Number.isInteger(visibleIndexZeroBased) || visibleIndexZeroBased < 0) {
+      return -1;
+    }
+    const sourceIdx = step7ThumbnailPanelData.sourceIndexes[visibleIndexZeroBased];
+    return Number.isInteger(sourceIdx) && sourceIdx >= 0 ? sourceIdx : -1;
+  }, [step7ThumbnailPanelData.sourceIndexes]);
+  const handleStep7ItemTextChange = useCallback((visibleIndexZeroBased: number, value: string) => {
+    const sourceIdx = mapStep7VisibleIndexToSourceIndex(visibleIndexZeroBased);
+    if (sourceIdx < 0) return;
+    hardsubSettings.updateThumbnailTextByOrder(sourceIdx, value);
+  }, [hardsubSettings, mapStep7VisibleIndexToSourceIndex]);
+  const handleStep7ItemSecondaryTextChange = useCallback((visibleIndexZeroBased: number, value: string) => {
+    const sourceIdx = mapStep7VisibleIndexToSourceIndex(visibleIndexZeroBased);
+    if (sourceIdx < 0) return;
+    hardsubSettings.setThumbnailTextSecondaryByOrder(sourceIdx, value);
+  }, [hardsubSettings, mapStep7VisibleIndexToSourceIndex]);
+  const handleStep7ResetSecondaryOverride = useCallback((visibleIndexZeroBased: number) => {
+    const sourceIdx = mapStep7VisibleIndexToSourceIndex(visibleIndexZeroBased);
+    if (sourceIdx < 0) return;
+    hardsubSettings.resetThumbnailTextSecondaryOverride(sourceIdx);
+  }, [hardsubSettings, mapStep7VisibleIndexToSourceIndex]);
+
   const handleManualSaveThumbnailTexts = useCallback(() => {
-    const folderCount = hardsubSettings.thumbnailFolderItems.length;
+    const folderCount = step7VisibleFolderCount;
     setThumbnailManualSaveState('saving');
     setThumbnailManualSaveMessage('Đang lưu Text1/Text2...');
     void (async () => {
@@ -1717,12 +1866,59 @@ export function CaptionTranslator() {
       }
     })();
   }, [
-    hardsubSettings.thumbnailFolderItems.length,
+    step7VisibleFolderCount,
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
     hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     persistThumbnailTextToSessions,
     hardsubSettings.thumbnailTextSecondary,
+  ]);
+
+  const processingThumbnailPayload = useMemo(() => {
+    if (settings.inputType !== 'draft') {
+      return {
+        thumbnailText: hardsubSettings.thumbnailText,
+        thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
+        thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
+        thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
+        thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
+      };
+    }
+
+    const orderIndexByPath = new Map<string, number>();
+    hardsubSettings.selectedDraftPaths.forEach((path, idx) => {
+      orderIndexByPath.set(path, idx);
+    });
+
+    const thumbnailTextsByOrder = filteredDraftInputPaths.map((path) => {
+      const idx = orderIndexByPath.get(path);
+      return idx !== undefined ? (hardsubSettings.thumbnailTextsByOrder[idx] || '') : '';
+    });
+    const thumbnailTextsSecondaryByOrder = filteredDraftInputPaths.map((path) => {
+      const idx = orderIndexByPath.get(path);
+      return idx !== undefined ? (hardsubSettings.thumbnailTextsSecondaryByOrder[idx] || '') : '';
+    });
+    const thumbnailTextSecondaryOverrideFlags = filteredDraftInputPaths.map((path) => {
+      const idx = orderIndexByPath.get(path);
+      return idx !== undefined ? !!hardsubSettings.thumbnailTextSecondaryOverrideFlags[idx] : false;
+    });
+
+    return {
+      thumbnailText: thumbnailTextsByOrder[0] || hardsubSettings.thumbnailText,
+      thumbnailTextsByOrder,
+      thumbnailTextSecondary: thumbnailTextsSecondaryByOrder[0] || hardsubSettings.thumbnailTextSecondary,
+      thumbnailTextsSecondaryByOrder,
+      thumbnailTextSecondaryOverrideFlags,
+    };
+  }, [
+    filteredDraftInputPaths,
+    hardsubSettings.selectedDraftPaths,
+    hardsubSettings.thumbnailText,
+    hardsubSettings.thumbnailTextsByOrder,
+    hardsubSettings.thumbnailTextSecondary,
+    hardsubSettings.thumbnailTextsSecondaryByOrder,
+    hardsubSettings.thumbnailTextSecondaryOverrideFlags,
+    settings.inputType,
   ]);
 
   // 4. Processing Hook
@@ -1731,15 +1927,16 @@ export function CaptionTranslator() {
     entries: fileManager.entries,
     setEntries: fileManager.setEntries,
     filePath: fileManager.filePath,
+    inputPathsOverride: settings.inputType === 'draft' ? filteredDraftInputPaths : undefined,
     inputType: settings.inputType,
     captionFolder,
     settings: {
       ...settings,
-      thumbnailText: hardsubSettings.thumbnailText,
-      thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
-      thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
-      thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
-      thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
+      thumbnailText: processingThumbnailPayload.thumbnailText,
+      thumbnailTextsByOrder: processingThumbnailPayload.thumbnailTextsByOrder,
+      thumbnailTextSecondary: processingThumbnailPayload.thumbnailTextSecondary,
+      thumbnailTextsSecondaryByOrder: processingThumbnailPayload.thumbnailTextsSecondaryByOrder,
+      thumbnailTextSecondaryOverrideFlags: processingThumbnailPayload.thumbnailTextSecondaryOverrideFlags,
     },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
@@ -1983,15 +2180,25 @@ export function CaptionTranslator() {
   const [diskSubtitleDuration, setDiskSubtitleDuration] = useState<number | null>(null);
   const [diskSubtitleAlreadyScaled, setDiskSubtitleAlreadyScaled] = useState(false);
   const [sessionTimingSnapshot, setSessionTimingSnapshot] = useState<SessionTimingSnapshot | null>(null);
+  const [thumbnailPreviewFolderPath, setThumbnailPreviewFolderPath] = useState('');
 
-  // Section 6 (Cấu hình) luôn dùng folder đầu tiên làm tham chiếu cấu hình.
-  // Folder đang xử lý (processing.currentFolder) chỉ dùng cho progress badge ở Section 7.
+  // Section 6 (Cấu hình) ưu tiên folder người dùng đang focus khi idle.
+  // Khi pipeline chạy, luôn ưu tiên folder đang xử lý.
   const firstFolderPath = hardsubSettings.firstFolderPath;
   const isMultiFolder = hardsubSettings.isMultiFolder;
+  const idleFocusedFolderPath = useMemo(() => {
+    if (!thumbnailPreviewFolderPath) {
+      return processingInputPaths[0] || firstFolderPath;
+    }
+    if (processingInputPaths.includes(thumbnailPreviewFolderPath)) {
+      return thumbnailPreviewFolderPath;
+    }
+    return processingInputPaths[0] || firstFolderPath;
+  }, [firstFolderPath, processingInputPaths, thumbnailPreviewFolderPath]);
 
   // Khi đang xử lý multi-folder, dùng path của folder đang xử lý để hiển thị thông số video chính xác.
-  // Khi idle, hiển thị folder đầu tiên trong danh sách.
-  const displayPath = processing.currentFolder?.path ?? firstFolderPath;
+  // Khi idle, dùng folder người dùng đang focus (fallback folder đầu tiên trong danh sách đang xử lý).
+  const displayPath = processing.currentFolder?.path ?? idleFocusedFolderPath;
   const videoInfo = displayPath ? fileManager.folderVideos[displayPath] : null;
   const originalVideoDuration = videoInfo?.duration || 0;
   const livePreviewVideoPath = videoInfo?.fullPath || fileManager.firstVideoPath || null;
@@ -2039,7 +2246,6 @@ export function CaptionTranslator() {
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('live');
-  const [thumbnailPreviewFolderPath, setThumbnailPreviewFolderPath] = useState('');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
@@ -2061,8 +2267,8 @@ export function CaptionTranslator() {
       return;
     }
 
-    const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
-    const activeInputPath = processing.currentFolder?.path ?? inputPaths[0];
+    const inputPaths = processingInputPaths;
+    const activeInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? inputPaths[0];
     if (!activeInputPath) {
       setSessionTimingSnapshot(null);
       setSessionStep3BatchState(null);
@@ -2206,7 +2412,7 @@ export function CaptionTranslator() {
     return () => {
       cancelled = true;
     };
-  }, [fileManager.filePath, fileManager.entries, processing.currentFolder?.path, processing.currentStep, processing.status, projectId, settings.inputType]);
+  }, [fileManager.filePath, fileManager.entries, idleFocusedFolderPath, processing.currentFolder?.path, processing.currentStep, processing.status, processingInputPaths, projectId, settings.inputType]);
 
   useEffect(() => {
     if (previewMode === 'render' && !renderedPreviewVideoPath) {
@@ -2221,7 +2427,7 @@ export function CaptionTranslator() {
       }
       return;
     }
-    const selectedPaths = hardsubSettings.selectedDraftPaths;
+    const selectedPaths = processingInputPaths;
     if (!selectedPaths.length) {
       if (thumbnailPreviewFolderPath) {
         setThumbnailPreviewFolderPath('');
@@ -2240,7 +2446,7 @@ export function CaptionTranslator() {
       setThumbnailPreviewFolderPath(fallbackPath);
     }
   }, [
-    hardsubSettings.selectedDraftPaths,
+    processingInputPaths,
     processing.currentFolder?.path,
     settings.inputType,
     thumbnailPreviewFolderPath,
@@ -2424,7 +2630,7 @@ export function CaptionTranslator() {
   ]);
 
   const handleBulkApplyJsonLines = useCallback((raw: string): BulkApplyResult => {
-    const folderCount = hardsubSettings.thumbnailFolderItems.length;
+    const folderCount = step7VisibleFolderCount;
     if (!folderCount) {
       return {
         status: 'warning',
@@ -2432,7 +2638,7 @@ export function CaptionTranslator() {
       };
     }
 
-    const parsed = parseThumbnailBulkInput(raw || '', hardsubSettings.thumbnailFolderItems);
+    const parsed = parseThumbnailBulkInput(raw || '', step7ThumbnailPanelData.items);
     if (!parsed.ok) {
       return {
         status: 'error',
@@ -2451,11 +2657,18 @@ export function CaptionTranslator() {
 
     const rowsForApply = parsed.rows
       .filter((row) => row.indexZeroBased >= 0 && row.indexZeroBased < folderCount)
-      .map((row) => ({
-      indexZeroBased: row.indexZeroBased,
-      text1: row.text1,
-      ...(row.hasText2 ? { text2: row.text2 || '' } : {}),
-    }));
+      .map((row) => {
+        const sourceIdx = mapStep7VisibleIndexToSourceIndex(row.indexZeroBased);
+        if (sourceIdx < 0) {
+          return null;
+        }
+        return {
+          indexZeroBased: sourceIdx,
+          text1: row.text1,
+          ...(row.hasText2 ? { text2: row.text2 || '' } : {}),
+        };
+      })
+      .filter((row): row is { indexZeroBased: number; text1: string; text2?: string } => Boolean(row));
 
     if (!rowsForApply.length) {
       return {
@@ -2465,6 +2678,7 @@ export function CaptionTranslator() {
     }
 
     const applyResult = hardsubSettings.applyBulkThumbnailByOrder(rowsForApply);
+    const sourceFolderCount = hardsubSettings.thumbnailFolderItems.length;
     const normalizedRows = rowsForApply
       .map((row) => ({
         indexZeroBased: row.indexZeroBased,
@@ -2474,15 +2688,15 @@ export function CaptionTranslator() {
       }))
       .filter((row) => row.text1.length > 0);
     const text2Rows = normalizedRows.filter((row) => row.hasText2);
-    const nextTextsByOrder = hardsubSettings.thumbnailTextsByOrder.length === folderCount
+    const nextTextsByOrder = hardsubSettings.thumbnailTextsByOrder.length === sourceFolderCount
       ? [...hardsubSettings.thumbnailTextsByOrder]
-      : new Array(folderCount).fill('');
-    const nextSecondaryByOrder = hardsubSettings.thumbnailTextsSecondaryByOrder.length === folderCount
+      : new Array(sourceFolderCount).fill('');
+    const nextSecondaryByOrder = hardsubSettings.thumbnailTextsSecondaryByOrder.length === sourceFolderCount
       ? [...hardsubSettings.thumbnailTextsSecondaryByOrder]
-      : new Array(folderCount).fill(hardsubSettings.thumbnailTextSecondary || '');
-    const nextSecondaryOverrideFlags = hardsubSettings.thumbnailTextSecondaryOverrideFlags.length === folderCount
+      : new Array(sourceFolderCount).fill(hardsubSettings.thumbnailTextSecondary || '');
+    const nextSecondaryOverrideFlags = hardsubSettings.thumbnailTextSecondaryOverrideFlags.length === sourceFolderCount
       ? [...hardsubSettings.thumbnailTextSecondaryOverrideFlags]
-      : new Array(folderCount).fill(false);
+      : new Array(sourceFolderCount).fill(false);
     normalizedRows.forEach((row) => {
       nextTextsByOrder[row.indexZeroBased] = row.text1;
     });
@@ -2509,7 +2723,10 @@ export function CaptionTranslator() {
         notes.push(`Dư ${overflow} dòng đã bỏ qua.`);
       }
     } else {
-      const covered = new Set(rowsForApply.map((row) => row.indexZeroBased)).size;
+      const covered = new Set(parsed.rows
+        .filter((row) => row.indexZeroBased >= 0 && row.indexZeroBased < folderCount)
+        .map((row) => row.indexZeroBased)
+      ).size;
       if (covered < folderCount) {
         notes.push(`Đã map ${covered}/${folderCount} folder.`);
       }
@@ -2523,7 +2740,7 @@ export function CaptionTranslator() {
       summary: `[${modeLabel}] Đã áp dụng ${applyResult.appliedText1}/${folderCount} dòng (Text2: ${applyResult.appliedText2}).`,
       detail: notes.join(' '),
     };
-  }, [hardsubSettings, persistThumbnailTextToSessions]);
+  }, [hardsubSettings, mapStep7VisibleIndexToSourceIndex, persistThumbnailTextToSessions, step7ThumbnailPanelData.items, step7VisibleFolderCount]);
 
   // 6. Tính toán thời lượng Audio & Video cho Step 7
   // Reset khi chuyển folder cấu hình (firstFolderPath thay đổi)
@@ -3554,16 +3771,11 @@ export function CaptionTranslator() {
     7: 'Tiện ích Step 7 + thumbnail theo folder.',
   };
 
-  const selectedInputPaths = useMemo(
-    () => getInputPaths('draft', fileManager.filePath),
-    [fileManager.filePath]
-  );
-
   const stepInspectorInputPaths = useMemo(
-    () => getInputPaths(settings.inputType, fileManager.filePath),
-    [settings.inputType, fileManager.filePath]
+    () => processingInputPaths,
+    [processingInputPaths]
   );
-  const stepInspectorActiveInputPath = processing.currentFolder?.path ?? stepInspectorInputPaths[0] ?? '';
+  const stepInspectorActiveInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? stepInspectorInputPaths[0] ?? '';
   const stepInspectorFolderLabel = useMemo(() => {
     const currentFolderName = (processing.currentFolder?.name || '').trim();
     if (currentFolderName) {
@@ -5027,46 +5239,103 @@ export function CaptionTranslator() {
               ) : (
                 <div
                   className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
-                  onClick={() => {
-                    void fileManager.handleBrowseFile();
-                  }}
+                  onClick={!fileManager.filePath
+                    ? () => {
+                        void fileManager.handleBrowseFile();
+                      }
+                    : undefined}
                 >
                   {!fileManager.filePath ? (
                     <span className={styles.placeholderText}>Chưa chọn folder...</span>
                   ) : (
-                    <div className={styles.folderGrid}>
-                      {selectedInputPaths.map((path, idx) => {
-                        const folderName = path.split(/[/\\]/).pop() || path;
-                        const vInfo = fileManager.folderVideos[path];
-                        return (
-                          <div key={`${path}-${idx}`} className={styles.folderBox} title={path}>
-                            <div className={styles.folderBoxHeader}>
-                              <img src={folderIconUrl} alt="folder" className={`${styles.folderIcon} ${styles.folderIconCompact}`} />
-                              <span className={styles.folderName}>{folderName}</span>
-                            </div>
-                            {vInfo && (
-                              <div className={styles.folderBoxSubText}>
-                                <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
-                                {vInfo.name}
+                    filteredDraftInputPaths.length === 0 ? (
+                      <span className={styles.placeholderText}>Không có folder nào thỏa điều kiện lọc.</span>
+                    ) : (
+                      <div className={styles.folderGrid}>
+                        {filteredDraftInputPaths.map((path, idx) => {
+                          const folderName = path.split(/[/\\]/).pop() || path;
+                          const vInfo = fileManager.folderVideos[path];
+                          const isActiveFolder = displayPath === path;
+                          return (
+                            <div
+                              key={`${path}-${idx}`}
+                              className={`${styles.folderBox} ${isActiveFolder ? styles.folderBoxActive : ''}`}
+                              title={path}
+                              onClick={() => {
+                                if (processing.status === 'running') return;
+                                setThumbnailPreviewFolderPath(path);
+                              }}
+                            >
+                              <div className={styles.folderBoxHeader}>
+                                <img src={folderIconUrl} alt="folder" className={`${styles.folderIcon} ${styles.folderIconCompact}`} />
+                                <span className={styles.folderName}>{folderName}</span>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                              {vInfo && (
+                                <div className={styles.folderBoxSubText}>
+                                  <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
+                                  {vInfo.name}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
                   )}
                 </div>
               )}
               <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
             </div>
             {settings.inputType === 'draft' && (
+              <div className={styles.durationFilterControls}>
+                <select
+                  value={draftDurationFilterMode}
+                  onChange={(e) => setDraftDurationFilterMode(e.target.value as DraftDurationFilterMode)}
+                  className={`${styles.select} ${styles.durationFilterModeSelect}`}
+                  title="Lọc folder theo thời lượng video"
+                  disabled={processing.status === 'running'}
+                >
+                  <option value="all">Không lọc thời lượng</option>
+                  <option value="above">{'Lọc trên (>=)'}</option>
+                  <option value="below">{'Lọc dưới (<=)'}</option>
+                </select>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={draftDurationFilterMinutes}
+                  onChange={(e) => {
+                    const nextValue = Number(e.target.value);
+                    setDraftDurationFilterMinutes(Number.isFinite(nextValue) ? Math.max(0, nextValue) : 0);
+                  }}
+                  disabled={draftDurationFilterMode === 'all' || processing.status === 'running'}
+                  className={styles.durationFilterMinutesInput}
+                  placeholder="Số phút"
+                  title="Nhập ngưỡng phút để lọc folder"
+                />
+                <span className={styles.durationFilterUnit}>phút</span>
+              </div>
+            )}
+            {settings.inputType === 'draft' && (
               <div className={styles.stepCardHint}>
                 Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
+                {draftDurationFilterMode !== 'all'
+                  ? ` Đang lọc theo mốc ${draftDurationFilterThresholdMinutes} phút (bao gồm ngưỡng).`
+                  : ''}
               </div>
             )}
             <div className={styles.stepMetaPills}>
               {settings.inputType === 'draft' && (
-                <span className={styles.stepMetaPill}>Folders: {selectedInputPaths.length}</span>
+                <span className={styles.stepMetaPill}>Folders tổng: {selectedInputPaths.length}</span>
+              )}
+              {settings.inputType === 'draft' && (
+                <span className={styles.stepMetaPill}>Sau lọc: {filteredDraftInputPaths.length}</span>
+              )}
+              {settings.inputType === 'draft' && draftDurationFilterMode !== 'all' && (
+                <span className={styles.stepMetaPill}>Thiếu duration: {draftDurationFilterStats.missingDurationCount}</span>
+              )}
+              {settings.inputType === 'draft' && draftDurationFilterMode !== 'all' && (
+                <span className={styles.stepMetaPill}>Không đạt ngưỡng: {draftDurationFilterStats.excludedByThresholdCount}</span>
               )}
               <span className={styles.stepMetaPill}>Dòng đã load: {fileManager.entries.length}</span>
             </div>
@@ -5436,7 +5705,7 @@ export function CaptionTranslator() {
                 settings.inputType === 'draft' &&
                 isMultiFolder
               }
-              items={hardsubSettings.thumbnailFolderItems}
+              items={step7ThumbnailPanelData.items}
               videoNameByFolderPath={videoNameByFolderPath}
               autoStartValue={hardsubSettings.thumbnailAutoStartValue}
               onAutoStartValueChange={hardsubSettings.setThumbnailAutoStartValue}
@@ -5444,15 +5713,15 @@ export function CaptionTranslator() {
               onSecondaryGlobalTextChange={(value) => {
                 hardsubSettings.setThumbnailTextSecondaryGlobal(value);
               }}
-              onItemTextChange={hardsubSettings.updateThumbnailTextByOrder}
-              onItemSecondaryTextChange={hardsubSettings.setThumbnailTextSecondaryByOrder}
-              onResetSecondaryOverride={hardsubSettings.resetThumbnailTextSecondaryOverride}
+              onItemTextChange={handleStep7ItemTextChange}
+              onItemSecondaryTextChange={handleStep7ItemSecondaryTextChange}
+              onResetSecondaryOverride={handleStep7ResetSecondaryOverride}
               onBulkApplyJsonLines={handleBulkApplyJsonLines}
               onManualSaveTexts={handleManualSaveThumbnailTexts}
               manualSaveState={thumbnailManualSaveState}
               manualSaveMessage={thumbnailManualSaveMessage}
               manualSaveDisabled={false}
-              showMissingWarning={hardsubSettings.isThumbnailEnabled && hardsubSettings.hasMissingThumbnailText}
+              showMissingWarning={hardsubSettings.isThumbnailEnabled && step7VisibleMissingThumbnailText}
               dependencyWarning={step7DependencyWarning}
             />
           )}
@@ -5561,7 +5830,7 @@ export function CaptionTranslator() {
                   onChange={(e) => setThumbnailPreviewFolderPath(e.target.value)}
                   title="Chọn folder để chỉnh text thumbnail trực tiếp trên preview"
                 >
-                  {hardsubSettings.selectedDraftPaths.map((path, index) => (
+                  {processingInputPaths.map((path, index) => (
                     <option key={path} value={path}>
                       {index + 1}. {getPathBaseName(path)}
                     </option>
@@ -5753,7 +6022,7 @@ export function CaptionTranslator() {
             <div className={styles.commonHint} style={{ marginTop: 8 }} title={fileManager.filePath || undefined}>
               {inspectorPane === 'step'
                 ? (settings.inputType === 'draft'
-                  ? `Input: Draft ${selectedInputPaths.length} folder | ${fileManager.entries.length} dòng`
+                  ? `Input: Draft ${processingInputPaths.length} folder | ${fileManager.entries.length} dòng`
                   : `Input: SRT | ${fileManager.entries.length} dòng`)
                 : inspectorPane === 'common'
                   ? 'Common: Render / Typography / Audio dùng lại nhiều step. Voice giữ ở B4.'
