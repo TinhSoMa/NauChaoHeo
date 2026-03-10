@@ -835,12 +835,13 @@ function mergeTranslatedChunkIntoEntries(
     const rawText = typeof texts[i] === 'string' ? texts[i] : '';
     const hasTranslated = rawText.trim().length > 0;
     const current = nextEntries[targetIndex];
-    const fallbackText = (current.translatedText && current.translatedText.trim().length > 0)
+    // Nếu dịch thất bại: giữ bản dịch cũ nếu có, không fallback về text gốc
+    const fallbackTranslated = (current.translatedText && current.translatedText.trim().length > 0)
       ? current.translatedText
-      : current.text;
+      : undefined;
     nextEntries[targetIndex] = {
       ...current,
-      translatedText: hasTranslated ? rawText : fallbackText,
+      translatedText: hasTranslated ? rawText : fallbackTranslated,
     };
   }
 
@@ -850,9 +851,10 @@ function mergeTranslatedChunkIntoEntries(
 function normalizeEntriesForSession(entries: SubtitleEntry[]): SubtitleEntry[] {
   return entries.map((entry) => ({
     ...entry,
+    // Giữ undefined nếu chưa dịch, không gán text gốc để tránh mask lỗi dịch
     translatedText: entry.translatedText && entry.translatedText.trim().length > 0
       ? entry.translatedText
-      : entry.text,
+      : undefined,
   }));
 }
 
@@ -1974,7 +1976,8 @@ export function useCaptionProcessing({
         const sessionFallback = getSessionFallback(currentPath);
         const sessionBeforeStep = await readCaptionSession(sessionPath, sessionFallback);
         previousStepStateBeforeRun = sessionBeforeStep.steps[stepKey];
-        const guard = canRunStep(sessionBeforeStep, step as CaptionStepNumber);
+        // Truyền context các steps đang chạy để guard nhất quán với preflight check
+        const guard = canRunStep(sessionBeforeStep, step as CaptionStepNumber, steps as CaptionStepNumber[]);
         if (!guard.ok) {
           throw new Error(`[${folderName}] ${guard.reason || `Chưa chạy các bước phụ thuộc cho Step ${step}.`} (${guard.code || 'STEP_BLOCKED'})`);
         }

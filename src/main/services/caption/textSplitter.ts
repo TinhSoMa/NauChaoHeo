@@ -63,7 +63,8 @@ export function mergeTranslatedTexts(
   
   return entries.map((entry, index) => ({
     ...entry,
-    translatedText: translatedTexts[index] || entry.translatedText || entry.text,
+    // Giữ undefined nếu không có bản dịch, tránh mask lỗi bằng text gốc
+    translatedText: translatedTexts[index] || entry.translatedText || undefined,
   }));
 }
 
