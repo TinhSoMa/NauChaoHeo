@@ -200,10 +200,8 @@ type ThumbnailBulkParseResult =
 
 type PersistThumbnailSessionOverrides = {
   thumbnailText?: string;
-  thumbnailTextSecondaryGlobal?: string;
   thumbnailTextsByOrder?: string[];
   thumbnailTextsSecondaryByOrder?: string[];
-  thumbnailTextSecondaryOverrideFlags?: boolean[];
 };
 type DraftDurationFilterMode = 'all' | 'above' | 'below';
 
@@ -1308,7 +1306,6 @@ export function CaptionTranslator() {
     filePath: fileManager.filePath,
     folderVideos: fileManager.folderVideos,
     thumbnailEnabled: settings.thumbnailFrameTimeSec !== null && settings.thumbnailFrameTimeSec !== undefined,
-    thumbnailTextSecondaryGlobal: settings.thumbnailTextSecondary,
   });
   const thumbnailSessionHydrationKey = useMemo(
     () => `${projectId || ''}::${settings.inputType}::${fileManager.filePath || ''}`,
@@ -1470,8 +1467,6 @@ export function CaptionTranslator() {
       if (inputPaths.length > 1) {
         const texts: string[] = [];
         const secondaryTexts: string[] = [];
-        const secondaryOverrideFlags: boolean[] = [];
-        const secondaryGlobalCandidates: string[] = [];
         for (const inputPath of inputPaths) {
           const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
           const session = await readCaptionSession(sessionPath, {
@@ -1483,25 +1478,12 @@ export function CaptionTranslator() {
           const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
           texts.push(resolveSharedPrimaryTextFromStep7(step7));
           const secondaryText = resolveSharedSecondaryTextFromStep7(step7);
-          const secondarySource = typeof step7.thumbnailTextSecondarySource === 'string'
-            ? step7.thumbnailTextSecondarySource
-            : '';
           secondaryTexts.push(secondaryText);
-          secondaryOverrideFlags.push(secondarySource === 'override');
-          if (secondarySource !== 'override') {
-            secondaryGlobalCandidates.push(secondaryText);
-          }
         }
         if (!cancelled) {
-          const nonEmptyGlobal = secondaryGlobalCandidates.find((value) => value.trim().length > 0);
-          const globalFromSession = nonEmptyGlobal
-            ?? secondaryGlobalCandidates[0]
-            ?? settings.thumbnailTextSecondary
-            ?? '';
-          settings.setThumbnailTextSecondary(globalFromSession);
-          hardsubSettings.setThumbnailTextSecondary(globalFromSession);
+          hardsubSettings.setThumbnailTextSecondary('');
           hardsubSettings.setThumbnailTextsByOrder(texts);
-          hardsubSettings.setSecondaryStateFromSession(secondaryTexts, secondaryOverrideFlags);
+          hardsubSettings.setSecondaryStateFromSession(secondaryTexts);
         }
         return;
       }
@@ -1517,9 +1499,8 @@ export function CaptionTranslator() {
       const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
       if (!cancelled) {
         hardsubSettings.setThumbnailText(resolveSharedPrimaryTextFromStep7(step7));
-        const globalFromSession = resolveSharedSecondaryTextFromStep7(step7);
-        settings.setThumbnailTextSecondary(globalFromSession);
-        hardsubSettings.setThumbnailTextSecondary(globalFromSession);
+        const secondaryFromSession = resolveSharedSecondaryTextFromStep7(step7);
+        hardsubSettings.setThumbnailTextSecondary(secondaryFromSession);
       }
     };
 
@@ -1620,25 +1601,17 @@ export function CaptionTranslator() {
 
     const multiFolderTexts = overrides?.thumbnailTextsByOrder ?? hardsubSettings.thumbnailTextsByOrder;
     const multiFolderSecondaryTexts = overrides?.thumbnailTextsSecondaryByOrder ?? hardsubSettings.thumbnailTextsSecondaryByOrder;
-    const multiFolderSecondaryFlags = overrides?.thumbnailTextSecondaryOverrideFlags ?? hardsubSettings.thumbnailTextSecondaryOverrideFlags;
 
     if (inputPaths.length > 1) {
-      const secondaryGlobalFallback = (
-        overrides?.thumbnailTextSecondaryGlobal
-        ?? hardsubSettings.thumbnailTextSecondary
-        ?? ''
-      );
       const normalizedTexts = inputPaths.map((_, idx) => String(multiFolderTexts[idx] || '').trim());
       const normalizedSecondaryTexts = inputPaths.map((_, idx) => (
-        String(multiFolderSecondaryTexts[idx] ?? secondaryGlobalFallback).trim()
+        String(multiFolderSecondaryTexts[idx] ?? '').trim()
       ));
-      const normalizedSecondaryFlags = inputPaths.map((_, idx) => !!multiFolderSecondaryFlags[idx]);
 
       for (let i = 0; i < inputPaths.length; i++) {
         const inputPath = inputPaths[i];
         const text = normalizedTexts[i];
         const secondaryText = normalizedSecondaryTexts[i];
-        const secondarySource = normalizedSecondaryFlags[i] ? 'override' : 'global';
         const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
         await updateCaptionSession(
           sessionPath,
@@ -1654,7 +1627,6 @@ export function CaptionTranslator() {
                 hardsubTextSecondary: secondaryText,
                 hardsubPortraitTextPrimary: text,
                 hardsubPortraitTextSecondary: secondaryText,
-                thumbnailTextSecondarySource: secondarySource,
                 thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
                 thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
                 thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
@@ -1689,7 +1661,7 @@ export function CaptionTranslator() {
     const inputPath = inputPaths[0];
     const sessionPath = getSessionPathForInputPath(settings.inputType, inputPath);
     const sharedPrimaryText = ((overrides?.thumbnailText ?? hardsubSettings.thumbnailText) || '').trim();
-    const sharedSecondaryText = (overrides?.thumbnailTextSecondaryGlobal ?? (hardsubSettings.thumbnailTextSecondary || '')).trim();
+    const sharedSecondaryText = (hardsubSettings.thumbnailTextSecondary || '').trim();
     await updateCaptionSession(
       sessionPath,
       (session) => ({
@@ -1704,7 +1676,6 @@ export function CaptionTranslator() {
             hardsubTextSecondary: sharedSecondaryText,
             hardsubPortraitTextPrimary: sharedPrimaryText,
             hardsubPortraitTextSecondary: sharedSecondaryText,
-            thumbnailTextSecondarySource: 'single',
             thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
             thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
             thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
@@ -1740,7 +1711,6 @@ export function CaptionTranslator() {
     hardsubSettings.thumbnailText,
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
-    hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     hardsubSettings.thumbnailTextSecondary,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
@@ -1833,11 +1803,10 @@ export function CaptionTranslator() {
     if (sourceIdx < 0) return;
     hardsubSettings.setThumbnailTextSecondaryByOrder(sourceIdx, value);
   }, [hardsubSettings, mapStep7VisibleIndexToSourceIndex]);
-  const handleStep7ResetSecondaryOverride = useCallback((visibleIndexZeroBased: number) => {
-    const sourceIdx = mapStep7VisibleIndexToSourceIndex(visibleIndexZeroBased);
-    if (sourceIdx < 0) return;
-    hardsubSettings.resetThumbnailTextSecondaryOverride(sourceIdx);
-  }, [hardsubSettings, mapStep7VisibleIndexToSourceIndex]);
+  const handleApplySecondaryGlobalText = useCallback(() => {
+    const value = hardsubSettings.thumbnailTextSecondary || '';
+    hardsubSettings.applyText2GlobalToAll(value);
+  }, [hardsubSettings]);
 
   const handleManualSaveThumbnailTexts = useCallback(() => {
     const folderCount = step7VisibleFolderCount;
@@ -1848,8 +1817,6 @@ export function CaptionTranslator() {
         const saved = await persistThumbnailTextToSessions({
           thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
           thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
-          thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
-          thumbnailTextSecondaryGlobal: hardsubSettings.thumbnailTextSecondary || '',
         });
         if (!saved) {
           setThumbnailManualSaveState('error');
@@ -1869,9 +1836,7 @@ export function CaptionTranslator() {
     step7VisibleFolderCount,
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
-    hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     persistThumbnailTextToSessions,
-    hardsubSettings.thumbnailTextSecondary,
   ]);
 
   const processingThumbnailPayload = useMemo(() => {
@@ -1881,7 +1846,6 @@ export function CaptionTranslator() {
         thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
         thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
         thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
-        thumbnailTextSecondaryOverrideFlags: hardsubSettings.thumbnailTextSecondaryOverrideFlags,
       };
     }
 
@@ -1898,17 +1862,11 @@ export function CaptionTranslator() {
       const idx = orderIndexByPath.get(path);
       return idx !== undefined ? (hardsubSettings.thumbnailTextsSecondaryByOrder[idx] || '') : '';
     });
-    const thumbnailTextSecondaryOverrideFlags = filteredDraftInputPaths.map((path) => {
-      const idx = orderIndexByPath.get(path);
-      return idx !== undefined ? !!hardsubSettings.thumbnailTextSecondaryOverrideFlags[idx] : false;
-    });
-
     return {
       thumbnailText: thumbnailTextsByOrder[0] || hardsubSettings.thumbnailText,
       thumbnailTextsByOrder,
-      thumbnailTextSecondary: thumbnailTextsSecondaryByOrder[0] || hardsubSettings.thumbnailTextSecondary,
+      thumbnailTextSecondary: thumbnailTextsSecondaryByOrder[0] || '',
       thumbnailTextsSecondaryByOrder,
-      thumbnailTextSecondaryOverrideFlags,
     };
   }, [
     filteredDraftInputPaths,
@@ -1917,7 +1875,6 @@ export function CaptionTranslator() {
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextSecondary,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
-    hardsubSettings.thumbnailTextSecondaryOverrideFlags,
     settings.inputType,
   ]);
 
@@ -1936,7 +1893,6 @@ export function CaptionTranslator() {
       thumbnailTextsByOrder: processingThumbnailPayload.thumbnailTextsByOrder,
       thumbnailTextSecondary: processingThumbnailPayload.thumbnailTextSecondary,
       thumbnailTextsSecondaryByOrder: processingThumbnailPayload.thumbnailTextsSecondaryByOrder,
-      thumbnailTextSecondaryOverrideFlags: processingThumbnailPayload.thumbnailTextSecondaryOverrideFlags,
     },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
@@ -2490,7 +2446,7 @@ export function CaptionTranslator() {
     ? (
         thumbnailPreviewFolderIndex >= 0
           ? (hardsubSettings.thumbnailTextsSecondaryByOrder[thumbnailPreviewFolderIndex] || '')
-          : (hardsubSettings.thumbnailTextSecondary || '')
+          : ''
       )
     : (hardsubSettings.thumbnailTextSecondary || '');
   const videoNameByFolderPath = useMemo<Record<string, string>>(() => {
@@ -2690,21 +2646,16 @@ export function CaptionTranslator() {
       : new Array(sourceFolderCount).fill('');
     const nextSecondaryByOrder = hardsubSettings.thumbnailTextsSecondaryByOrder.length === sourceFolderCount
       ? [...hardsubSettings.thumbnailTextsSecondaryByOrder]
-      : new Array(sourceFolderCount).fill(hardsubSettings.thumbnailTextSecondary || '');
-    const nextSecondaryOverrideFlags = hardsubSettings.thumbnailTextSecondaryOverrideFlags.length === sourceFolderCount
-      ? [...hardsubSettings.thumbnailTextSecondaryOverrideFlags]
-      : new Array(sourceFolderCount).fill(false);
+      : new Array(sourceFolderCount).fill('');
     normalizedRows.forEach((row) => {
       nextTextsByOrder[row.indexZeroBased] = row.text1;
     });
     text2Rows.forEach((row) => {
       nextSecondaryByOrder[row.indexZeroBased] = row.text2 || '';
-      nextSecondaryOverrideFlags[row.indexZeroBased] = true;
     });
     void persistThumbnailTextToSessions({
       thumbnailTextsByOrder: nextTextsByOrder,
       thumbnailTextsSecondaryByOrder: nextSecondaryByOrder,
-      thumbnailTextSecondaryOverrideFlags: nextSecondaryOverrideFlags,
     }).catch((error) => {
       console.warn('[CaptionTranslator] Không thể lưu thumbnail text ngay sau bulk apply', error);
     });
@@ -5710,9 +5661,9 @@ export function CaptionTranslator() {
               onSecondaryGlobalTextChange={(value) => {
                 hardsubSettings.setThumbnailTextSecondaryGlobal(value);
               }}
+              onApplySecondaryGlobalText={handleApplySecondaryGlobalText}
               onItemTextChange={handleStep7ItemTextChange}
               onItemSecondaryTextChange={handleStep7ItemSecondaryTextChange}
-              onResetSecondaryOverride={handleStep7ResetSecondaryOverride}
               onBulkApplyJsonLines={handleBulkApplyJsonLines}
               onManualSaveTexts={handleManualSaveThumbnailTexts}
               manualSaveState={thumbnailManualSaveState}

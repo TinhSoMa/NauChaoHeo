@@ -682,10 +682,8 @@ const STEP7_RUNTIME_PRESERVE_KEYS = [
   'hardsubTextSecondary',
   'hardsubPortraitTextPrimary',
   'hardsubPortraitTextSecondary',
-  'thumbnailTextSecondarySource',
   'thumbnailTextsByOrder',
   'thumbnailTextsSecondaryByOrder',
-  'thumbnailTextSecondaryOverrideFlags',
 ] as const;
 
 function preserveStep7RuntimeFields(currentStep7: Record<string, unknown>): Record<string, unknown> {

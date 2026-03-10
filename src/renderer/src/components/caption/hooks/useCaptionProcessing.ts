@@ -276,7 +276,6 @@ interface UseCaptionProcessingProps {
     portraitTextSecondaryPosition?: { x: number; y: number };
     thumbnailTextsByOrder?: string[];
     thumbnailTextsSecondaryByOrder?: string[];
-    thumbnailTextSecondaryOverrideFlags?: boolean[];
     layoutProfiles?: CaptionProjectSettingsValues['layoutProfiles'];
     settingsRevision?: number;
     settingsUpdatedAt?: string;
@@ -1414,9 +1413,6 @@ export function useCaptionProcessing({
         : portraitTextSecondaryPositionForRun,
       thumbnailTextsByOrder: settings.thumbnailTextsByOrder ? [...settings.thumbnailTextsByOrder] : [],
       thumbnailTextsSecondaryByOrder: settings.thumbnailTextsSecondaryByOrder ? [...settings.thumbnailTextsSecondaryByOrder] : [],
-      thumbnailTextSecondaryOverrideFlags: settings.thumbnailTextSecondaryOverrideFlags
-        ? [...settings.thumbnailTextSecondaryOverrideFlags]
-        : [],
       thumbnailText: settings.thumbnailText || '',
       thumbnailTextSecondary: settings.thumbnailTextSecondary || '',
       layoutProfiles: cloneLayoutProfiles(settings.layoutProfiles),
@@ -1903,7 +1899,6 @@ export function useCaptionProcessing({
       portraitTextPrimaryPosition: cfg.portraitTextPrimaryPosition,
       portraitTextSecondaryPosition: cfg.portraitTextSecondaryPosition,
       thumbnailTextSecondaryByOrder: cfg.thumbnailTextsSecondaryByOrder,
-      thumbnailTextSecondaryOverrideFlags: cfg.thumbnailTextSecondaryOverrideFlags,
       subtitlePosition: cfg.subtitlePosition,
       thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
       thumbnailDurationSec: cfg.thumbnailDurationSec,

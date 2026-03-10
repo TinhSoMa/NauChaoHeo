@@ -16,9 +16,9 @@ interface ThumbnailListPanelProps {
   onAutoStartValueChange: (value: string) => void;
   secondaryGlobalText: string;
   onSecondaryGlobalTextChange: (value: string) => void;
+  onApplySecondaryGlobalText: () => void;
   onItemTextChange: (indexZeroBased: number, value: string) => void;
   onItemSecondaryTextChange: (indexZeroBased: number, value: string) => void;
-  onResetSecondaryOverride: (indexZeroBased: number) => void;
   onBulkApplyJsonLines: (raw: string) => BulkApplyResult;
   onManualSaveTexts: () => void;
   manualSaveState: 'idle' | 'saving' | 'success' | 'error';
@@ -208,15 +208,24 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
         </div>
 
         <div className={styles.thumbnailToolbarBlock}>
-          <div className={styles.thumbnailToolbarLabel}>Text2 global</div>
+          <div className={styles.thumbnailToolbarLabel}>Text2 apply</div>
           <div className={styles.thumbnailSecondaryGlobalRow}>
             <textarea
               className={`${styles.thumbnailAutoFillInput} ${styles.thumbnailGlobalTextarea}`}
               value={props.secondaryGlobalText}
               onChange={(e) => props.onSecondaryGlobalTextChange(e.target.value)}
               rows={2}
-              placeholder="Tên phim (áp dụng cho folder chưa override)..."
+              placeholder="Nhập Text2 rồi bấm Áp dụng..."
             />
+            <button
+              type="button"
+              className={styles.thumbnailAutoFillBtn}
+              onClick={props.onApplySecondaryGlobalText}
+              disabled={!props.secondaryGlobalText.trim() || props.items.length === 0}
+              title="Áp dụng Text2 cho tất cả folder"
+            >
+              Áp dụng Text2
+            </button>
           </div>
         </div>
 
@@ -302,21 +311,6 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
                     {item.videoName}
                   </div>
                 </div>
-              </div>
-              <div className={styles.thumbnailSecondarySyncCell}>
-                <span className={item.secondaryOverridden ? styles.thumbnailOverrideBadge : styles.thumbnailFollowBadge}>
-                  {item.secondaryOverridden ? 'Override' : 'Global'}
-                </span>
-                {item.secondaryOverridden && (
-                  <button
-                    type="button"
-                    className={styles.thumbnailResetOverrideBtn}
-                    onClick={() => props.onResetSecondaryOverride(item.index - 1)}
-                    title="Bỏ override, dùng lại text2 global"
-                  >
-                    Reset
-                  </button>
-                )}
               </div>
             </div>
 

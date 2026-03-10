@@ -63,7 +63,6 @@ export interface ThumbnailFolderItem {
   videoName: string;
   text: string;
   secondaryText: string;
-  secondaryOverridden: boolean;
   hasError: boolean;
 }
 

@@ -7,7 +7,6 @@ interface UseHardsubSettingsOptions {
   filePath: string;
   folderVideos: Record<string, { name: string; fullPath: string; duration: number }>;
   thumbnailEnabled: boolean;
-  thumbnailTextSecondaryGlobal: string;
 }
 
 type BulkThumbnailRow = {
@@ -16,16 +15,11 @@ type BulkThumbnailRow = {
   text2?: string;
 };
 
-function normalizeTextForCompare(value: string): string {
-  return (value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-}
-
 export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const [thumbnailText, setThumbnailText] = useState('');
   const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
-  const [thumbnailTextSecondary, setThumbnailTextSecondary] = useState(options.thumbnailTextSecondaryGlobal || '');
+  const [thumbnailTextSecondary, setThumbnailTextSecondary] = useState('');
   const [thumbnailTextsSecondaryByOrder, setThumbnailTextsSecondaryByOrder] = useState<string[]>([]);
-  const [thumbnailTextSecondaryOverrideFlags, setThumbnailTextSecondaryOverrideFlags] = useState<boolean[]>([]);
   const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
   const [thumbnailAutoStartValue, setThumbnailAutoStartValueState] = useState('');
 
@@ -36,10 +30,6 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const isMultiFolder = selectedDraftPaths.length > 1;
   const firstFolderPath = selectedDraftPaths[0] ?? '';
   const isThumbnailEnabled = options.thumbnailEnabled;
-
-  useEffect(() => {
-    setThumbnailTextSecondary(options.thumbnailTextSecondaryGlobal || '');
-  }, [options.thumbnailTextSecondaryGlobal]);
 
   useEffect(() => {
     const changed = selectedDraftPaths.length !== folderOrderSnapshot.length
@@ -58,38 +48,11 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
 
     setFolderOrderSnapshot(selectedDraftPaths);
     setThumbnailTextsByOrder((prev) => remapByPath(prev, ''));
-    setThumbnailTextSecondaryOverrideFlags((prev) => remapByPath(prev, false));
-    setThumbnailTextsSecondaryByOrder((prev) => {
-      const remappedTexts = remapByPath(prev, options.thumbnailTextSecondaryGlobal || '');
-      const remappedFlags = remapByPath(thumbnailTextSecondaryOverrideFlags, false);
-      return remappedTexts.map((value, idx) =>
-        remappedFlags[idx] ? value : (options.thumbnailTextSecondaryGlobal || '')
-      );
-    });
+    setThumbnailTextsSecondaryByOrder((prev) => remapByPath(prev, ''));
   }, [
     selectedDraftPaths,
     folderOrderSnapshot,
-    options.thumbnailTextSecondaryGlobal,
-    thumbnailTextSecondaryOverrideFlags,
   ]);
-
-  useEffect(() => {
-    if (!selectedDraftPaths.length) return;
-    setThumbnailTextsSecondaryByOrder((prev) => {
-      const flags = thumbnailTextSecondaryOverrideFlags.length === selectedDraftPaths.length
-        ? thumbnailTextSecondaryOverrideFlags
-        : new Array(selectedDraftPaths.length).fill(false);
-      const next = prev.length === selectedDraftPaths.length
-        ? [...prev]
-        : new Array(selectedDraftPaths.length).fill(options.thumbnailTextSecondaryGlobal || '');
-      for (let i = 0; i < selectedDraftPaths.length; i++) {
-        if (!flags[i]) {
-          next[i] = options.thumbnailTextSecondaryGlobal || '';
-        }
-      }
-      return next;
-    });
-  }, [options.thumbnailTextSecondaryGlobal, selectedDraftPaths, thumbnailTextSecondaryOverrideFlags]);
 
   const updateThumbnailTextByOrder = (idx: number, value: string) => {
     setThumbnailTextsByOrder(prev => {
@@ -102,35 +65,17 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   };
 
   const setThumbnailTextSecondaryGlobal = (value: string) => {
-    const prevGlobalNormalized = normalizeTextForCompare(thumbnailTextSecondary);
     setThumbnailTextSecondary(value);
+  };
+
+  const applyText2GlobalToAll = (value: string) => {
     if (!selectedDraftPaths.length) return;
-    setThumbnailTextSecondaryOverrideFlags((prev) => {
-      const nextFlags = prev.length === selectedDraftPaths.length
-        ? [...prev]
-        : new Array(selectedDraftPaths.length).fill(false);
-      for (let i = 0; i < nextFlags.length; i++) {
-        const currentText = thumbnailTextsSecondaryByOrder[i] || '';
-        // Backward-compat: nếu text đang trùng global cũ (khác chỉ do CRLF/trim),
-        // coi như không override để global mới được áp dụng.
-        if (normalizeTextForCompare(currentText) === prevGlobalNormalized) {
-          nextFlags[i] = false;
-        }
-      }
-      return nextFlags;
-    });
     setThumbnailTextsSecondaryByOrder((prev) => {
-      const flags = thumbnailTextSecondaryOverrideFlags.length === selectedDraftPaths.length
-        ? thumbnailTextSecondaryOverrideFlags
-        : new Array(selectedDraftPaths.length).fill(false);
       const next = prev.length === selectedDraftPaths.length
         ? [...prev]
         : new Array(selectedDraftPaths.length).fill('');
       for (let i = 0; i < next.length; i++) {
-        const isAutoBound = !flags[i] || normalizeTextForCompare(next[i] || '') === prevGlobalNormalized;
-        if (isAutoBound) {
-          next[i] = value;
-        }
+        next[i] = value;
       }
       return next;
     });
@@ -140,45 +85,15 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     setThumbnailTextsSecondaryByOrder((prev) => {
       const next = prev.length === selectedDraftPaths.length
         ? [...prev]
-        : new Array(selectedDraftPaths.length).fill(options.thumbnailTextSecondaryGlobal || '');
+        : new Array(selectedDraftPaths.length).fill('');
       next[idx] = value;
       return next;
     });
-    setThumbnailTextSecondaryOverrideFlags((prev) => {
-      const next = prev.length === selectedDraftPaths.length
-        ? [...prev]
-        : new Array(selectedDraftPaths.length).fill(false);
-      next[idx] = true;
-      return next;
-    });
   };
 
-  const resetThumbnailTextSecondaryOverride = (idx: number) => {
-    setThumbnailTextSecondaryOverrideFlags((prev) => {
-      const next = prev.length === selectedDraftPaths.length
-        ? [...prev]
-        : new Array(selectedDraftPaths.length).fill(false);
-      next[idx] = false;
-      return next;
-    });
-    setThumbnailTextsSecondaryByOrder((prev) => {
-      const next = prev.length === selectedDraftPaths.length
-        ? [...prev]
-        : new Array(selectedDraftPaths.length).fill(options.thumbnailTextSecondaryGlobal || '');
-      next[idx] = options.thumbnailTextSecondaryGlobal || '';
-      return next;
-    });
-  };
-
-  const setSecondaryStateFromSession = (texts: string[], overrideFlagsFromSession?: boolean[]) => {
+  const setSecondaryStateFromSession = (texts: string[]) => {
     const normalized = selectedDraftPaths.map((_, idx) => texts[idx] || '');
-    const global = options.thumbnailTextSecondaryGlobal || '';
-    const normalizedGlobal = normalizeTextForCompare(global);
-    const resolvedFlags = overrideFlagsFromSession && overrideFlagsFromSession.length === selectedDraftPaths.length
-      ? [...overrideFlagsFromSession]
-      : normalized.map((text) => normalizeTextForCompare(text) !== normalizedGlobal);
     setThumbnailTextsSecondaryByOrder(normalized);
-    setThumbnailTextSecondaryOverrideFlags(resolvedFlags);
   };
 
   const autoFillThumbnailByEpisode = (rawValue: string) => {
@@ -239,18 +154,9 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
       setThumbnailTextsSecondaryByOrder((prev) => {
         const next = prev.length === maxItems
           ? [...prev]
-          : new Array(maxItems).fill(options.thumbnailTextSecondaryGlobal || '');
+          : new Array(maxItems).fill('');
         text2Rows.forEach((row) => {
           next[row.indexZeroBased] = row.text2;
-        });
-        return next;
-      });
-      setThumbnailTextSecondaryOverrideFlags((prev) => {
-        const next = prev.length === maxItems
-          ? [...prev]
-          : new Array(maxItems).fill(false);
-        text2Rows.forEach((row) => {
-          next[row.indexZeroBased] = true;
         });
         return next;
       });
@@ -265,7 +171,6 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
         const videoName = options.folderVideos[folderPath]?.name || 'Chưa tìm thấy video';
         const text = thumbnailTextsByOrder[idx] || '';
         const secondaryText = thumbnailTextsSecondaryByOrder[idx] || '';
-        const secondaryOverridden = !!thumbnailTextSecondaryOverrideFlags[idx];
         return {
           index: idx + 1,
           folderPath,
@@ -273,7 +178,6 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
           videoName,
           text,
           secondaryText,
-          secondaryOverridden,
           hasError: isThumbnailEnabled && !text.trim(),
         };
       })
@@ -288,11 +192,10 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     thumbnailTextSecondary,
     setThumbnailTextSecondary,
     setThumbnailTextSecondaryGlobal,
+    applyText2GlobalToAll,
     thumbnailTextsSecondaryByOrder,
     setThumbnailTextsSecondaryByOrder,
     setSecondaryStateFromSession,
-    thumbnailTextSecondaryOverrideFlags,
-    setThumbnailTextSecondaryOverrideFlags,
     thumbnailAutoStartValue,
     setThumbnailAutoStartValue: handleThumbnailAutoStartValueChange,
     handleThumbnailAutoStartValueChange,
@@ -305,7 +208,6 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     updateThumbnailTextByOrder,
     setThumbnailTextSecondaryByOrder,
     applyBulkThumbnailByOrder,
-    resetThumbnailTextSecondaryOverride,
     handleAutoFillThumbnailByEpisode: () => autoFillThumbnailByEpisode(thumbnailAutoStartValue),
   };
 }
