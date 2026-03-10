@@ -517,6 +517,8 @@ interface AppSettings {
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
   geminiMinSendIntervalMs: number;
+  geminiMaxSendIntervalMs: number;
+  geminiSendIntervalMode: 'fixed' | 'random';
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;

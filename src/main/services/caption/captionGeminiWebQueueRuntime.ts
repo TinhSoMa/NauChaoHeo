@@ -3,6 +3,8 @@ import {
   AppSettingsService,
   GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
   normalizeGeminiMinSendIntervalMs,
+  normalizeGeminiMaxSendIntervalMs,
+  normalizeGeminiSendIntervalMode,
 } from '../appSettings';
 import {
   getQueueRuntimeOrCreate,
@@ -36,7 +38,11 @@ export function getCaptionStep3QueueGapMs(): number {
 
 export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRuntimeContext {
   const queue = getQueueRuntimeOrCreate(CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY);
-  const queueGapMs = getCaptionStep3QueueGapMs();
+  const settings = AppSettingsService.getAll();
+  const minIntervalMs = normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
+  const maxIntervalMs = normalizeGeminiMaxSendIntervalMs(settings.geminiMaxSendIntervalMs, minIntervalMs);
+  const intervalMode = normalizeGeminiSendIntervalMode(settings.geminiSendIntervalMode);
+  const queueGapMs = minIntervalMs;
   queue.registerPool({
     poolId: CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
     label: 'Caption GeminiWeb Accounts',
@@ -78,8 +84,8 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
       capabilities: ['caption_translate', 'gemini_webapi'],
       enabled,
       maxConcurrency: 1,
-      cooldownMinMs: 0,
-      cooldownMaxMs: 0,
+      cooldownMinMs: intervalMode === 'random' ? minIntervalMs : 0,
+      cooldownMaxMs: intervalMode === 'random' ? maxIntervalMs : 0,
       metadata: {
         accountName: label
       }

@@ -22,6 +22,8 @@ export interface AppSettings {
   createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
   geminiMinSendIntervalMs: number; // Khoảng chờ tối thiểu giữa mỗi lần gửi Gemini (ms)
+  geminiMaxSendIntervalMs: number; // Khoảng chờ tối đa giữa mỗi lần gửi Gemini (ms)
+  geminiSendIntervalMode: 'fixed' | 'random'; // Chế độ khoảng gửi: cố định hoặc ngẫu nhiên
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
   summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
   captionPromptId: string | null; // Prompt ID cho chức năng dịch caption (Step 3)
@@ -300,6 +302,31 @@ export function normalizeGeminiMinSendIntervalMs(value: unknown): number {
   return clamp(Math.floor(numeric), GEMINI_MIN_SEND_INTERVAL_MIN_MS, GEMINI_MIN_SEND_INTERVAL_MAX_MS);
 }
 
+export function normalizeGeminiSendIntervalMode(value: unknown): 'fixed' | 'random' {
+  return value === 'random' ? 'random' : 'fixed';
+}
+
+export function normalizeGeminiMaxSendIntervalMs(value: unknown, minMs: number): number {
+  let numeric: number;
+  if (typeof value === 'number') {
+    numeric = value;
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return minMs;
+    }
+    numeric = Number(trimmed);
+  } else {
+    return minMs;
+  }
+
+  if (!Number.isFinite(numeric)) {
+    return minMs;
+  }
+  const clamped = clamp(Math.floor(numeric), GEMINI_MIN_SEND_INTERVAL_MIN_MS, GEMINI_MIN_SEND_INTERVAL_MAX_MS);
+  return Math.max(minMs, clamped);
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
@@ -310,6 +337,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   createChatOnWeb: false,
   useStoredContextOnFirstSend: false,
   geminiMinSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
+  geminiMaxSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
+  geminiSendIntervalMode: 'fixed',
   translationPromptId: null, // Tự động tìm prompt dịch
   summaryPromptId: null, // Tự động tìm prompt tóm tắt
   captionPromptId: null, // Tự động dùng prompt mặc định
@@ -366,6 +395,11 @@ class AppSettingsServiceClass {
           ...DEFAULT_SETTINGS,
           ...loaded,
           geminiMinSendIntervalMs: normalizeGeminiMinSendIntervalMs(loaded?.geminiMinSendIntervalMs),
+          geminiMaxSendIntervalMs: normalizeGeminiMaxSendIntervalMs(
+            loaded?.geminiMaxSendIntervalMs,
+            normalizeGeminiMinSendIntervalMs(loaded?.geminiMinSendIntervalMs),
+          ),
+          geminiSendIntervalMode: normalizeGeminiSendIntervalMode(loaded?.geminiSendIntervalMode),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
@@ -425,6 +459,25 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {
       nextPartial.geminiMinSendIntervalMs = normalizeGeminiMinSendIntervalMs(partial.geminiMinSendIntervalMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'geminiMaxSendIntervalMs')) {
+      const minMs = Object.prototype.hasOwnProperty.call(nextPartial, 'geminiMinSendIntervalMs')
+        ? (nextPartial.geminiMinSendIntervalMs as number)
+        : this.settings.geminiMinSendIntervalMs;
+      nextPartial.geminiMaxSendIntervalMs = normalizeGeminiMaxSendIntervalMs(partial.geminiMaxSendIntervalMs, minMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'geminiSendIntervalMode')) {
+      nextPartial.geminiSendIntervalMode = normalizeGeminiSendIntervalMode(partial.geminiSendIntervalMode);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {
+      const minMs = nextPartial.geminiMinSendIntervalMs as number;
+      const currentMax = Object.prototype.hasOwnProperty.call(nextPartial, 'geminiMaxSendIntervalMs')
+        ? (nextPartial.geminiMaxSendIntervalMs as number)
+        : this.settings.geminiMaxSendIntervalMs;
+      if (currentMax < minMs) {
+        nextPartial.geminiMaxSendIntervalMs = minMs;
+      }
     }
     this.settings = { ...this.settings, ...nextPartial };
     this.save();

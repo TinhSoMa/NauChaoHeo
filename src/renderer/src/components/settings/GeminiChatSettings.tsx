@@ -59,6 +59,10 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
   const [useStoredContextOnFirstSend, setUseStoredContextOnFirstSend] = useState<boolean>(false);
   const [minSendIntervalSecInput, setMinSendIntervalSecInput] = useState<string>(String(DEFAULT_SEND_INTERVAL_SECONDS));
   const [savedMinSendIntervalSec, setSavedMinSendIntervalSec] = useState<number>(DEFAULT_SEND_INTERVAL_SECONDS);
+  const [sendIntervalMode, setSendIntervalMode] = useState<'fixed' | 'random'>('fixed');
+  const [savedSendIntervalMode, setSavedSendIntervalMode] = useState<'fixed' | 'random'>('fixed');
+  const [maxSendIntervalSecInput, setMaxSendIntervalSecInput] = useState<string>(String(DEFAULT_SEND_INTERVAL_SECONDS));
+  const [savedMaxSendIntervalSec, setSavedMaxSendIntervalSec] = useState<number>(DEFAULT_SEND_INTERVAL_SECONDS);
   const [isSavingMinSendInterval, setIsSavingMinSendInterval] = useState<boolean>(false);
 
   // Editing State
@@ -206,13 +210,21 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
         if (result.success && result.data) {
           setCreateChatOnWeb(!!result.data.createChatOnWeb);
           setUseStoredContextOnFirstSend(!!result.data.useStoredContextOnFirstSend);
-          const rawIntervalMs = Number(result.data.geminiMinSendIntervalMs);
-          const normalizedIntervalMs = Number.isFinite(rawIntervalMs)
-            ? Math.max(MIN_SEND_INTERVAL_SECONDS * 1000, Math.min(MAX_SEND_INTERVAL_SECONDS * 1000, Math.floor(rawIntervalMs)))
-            : DEFAULT_SEND_INTERVAL_SECONDS * 1000;
-          const intervalSec = Math.round(normalizedIntervalMs / 1000);
-          setMinSendIntervalSecInput(String(intervalSec));
-          setSavedMinSendIntervalSec(intervalSec);
+          const normalizeSecFromMs = (rawMs: number | null | undefined, fallbackSec: number) => {
+            const rawSec = Number.isFinite(Number(rawMs)) ? Math.round(Number(rawMs) / 1000) : fallbackSec;
+            return Math.max(MIN_SEND_INTERVAL_SECONDS, Math.min(MAX_SEND_INTERVAL_SECONDS, rawSec));
+          };
+          const minSec = normalizeSecFromMs(result.data.geminiMinSendIntervalMs, DEFAULT_SEND_INTERVAL_SECONDS);
+          const maxSecCandidate = normalizeSecFromMs(result.data.geminiMaxSendIntervalMs, minSec);
+          const maxSec = Math.max(minSec, maxSecCandidate);
+          const mode = result.data.geminiSendIntervalMode === 'random' ? 'random' : 'fixed';
+
+          setMinSendIntervalSecInput(String(minSec));
+          setSavedMinSendIntervalSec(minSec);
+          setMaxSendIntervalSecInput(String(maxSec));
+          setSavedMaxSendIntervalSec(maxSec);
+          setSendIntervalMode(mode);
+          setSavedSendIntervalMode(mode);
         }
       } catch (error) {
         console.error('Error loading app settings:', error);
@@ -283,19 +295,46 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
       return;
     }
 
+    let maxSec = nextSec;
+    if (sendIntervalMode === 'random') {
+      const trimmedMax = maxSendIntervalSecInput.trim();
+      if (!/^\d+$/.test(trimmedMax)) {
+        alert(`Khoảng gửi tối đa phải là số nguyên từ ${MIN_SEND_INTERVAL_SECONDS}-${MAX_SEND_INTERVAL_SECONDS} giây.`);
+        return;
+      }
+      const rawMax = Number(trimmedMax);
+      if (!Number.isFinite(rawMax) || rawMax < MIN_SEND_INTERVAL_SECONDS || rawMax > MAX_SEND_INTERVAL_SECONDS) {
+        alert(`Khoảng gửi tối đa phải nằm trong ${MIN_SEND_INTERVAL_SECONDS}-${MAX_SEND_INTERVAL_SECONDS} giây.`);
+        return;
+      }
+      if (rawMax < nextSec) {
+        alert('Khoảng gửi tối đa phải lớn hơn hoặc bằng khoảng gửi tối thiểu.');
+        return;
+      }
+      maxSec = rawMax;
+    }
+
     const nextMs = Math.floor(nextSec * 1000);
+    const nextMaxMs = Math.floor(maxSec * 1000);
     try {
       setIsSavingMinSendInterval(true);
-      const result = await window.electronAPI.appSettings.update({ geminiMinSendIntervalMs: nextMs });
+      const result = await window.electronAPI.appSettings.update({
+        geminiMinSendIntervalMs: nextMs,
+        geminiMaxSendIntervalMs: nextMaxMs,
+        geminiSendIntervalMode: sendIntervalMode
+      });
       if (result.success) {
         setSavedMinSendIntervalSec(nextSec);
         setMinSendIntervalSecInput(String(nextSec));
+        setSavedMaxSendIntervalSec(maxSec);
+        setMaxSendIntervalSecInput(String(maxSec));
+        setSavedSendIntervalMode(sendIntervalMode);
       } else {
-        alert('Lỗi cập nhật khoảng gửi tối thiểu');
+        alert('Lỗi cập nhật khoảng gửi');
       }
     } catch (error) {
       console.error('Error updating min send interval:', error);
-      alert('Lỗi cập nhật khoảng gửi tối thiểu');
+      alert('Lỗi cập nhật khoảng gửi');
     } finally {
       setIsSavingMinSendInterval(false);
     }
@@ -483,6 +522,16 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     return true;
   });
 
+  const minSendIntervalSecValue = Number(minSendIntervalSecInput);
+  const maxSendIntervalSecValue = Number(maxSendIntervalSecInput);
+  const effectiveMaxSendIntervalSec = sendIntervalMode === 'random' ? maxSendIntervalSecValue : minSendIntervalSecValue;
+  const savedEffectiveMaxSendIntervalSec = savedSendIntervalMode === 'random'
+    ? savedMaxSendIntervalSec
+    : savedMinSendIntervalSec;
+  const hasIntervalChanges = sendIntervalMode !== savedSendIntervalMode
+    || minSendIntervalSecValue !== savedMinSendIntervalSec
+    || effectiveMaxSendIntervalSec !== savedEffectiveMaxSendIntervalSec;
+
 
   // --- RENDER LIST VIEW ---
   if (mode === 'list') {
@@ -513,23 +562,60 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--color-surface) px-2 py-1">
-              <span className="text-xs text-(--color-text-secondary)">Khoảng gửi tối thiểu</span>
+              <span className="text-xs text-(--color-text-secondary)">Khoảng gửi</span>
+              <select
+                value={sendIntervalMode}
+                onChange={(e) => {
+                  const nextMode = e.target.value === 'random' ? 'random' : 'fixed';
+                  setSendIntervalMode(nextMode);
+                  if (nextMode === 'fixed') {
+                    setMaxSendIntervalSecInput(minSendIntervalSecInput);
+                  }
+                }}
+                className="text-xs rounded border border-(--color-border) bg-(--color-card) px-2 py-1"
+                title="Chế độ khoảng gửi"
+              >
+                <option value="fixed">Fixed</option>
+                <option value="random">Random</option>
+              </select>
+              <span className="text-xs text-(--color-text-secondary)">Min</span>
               <Input
                 type="number"
                 min={MIN_SEND_INTERVAL_SECONDS}
                 max={MAX_SEND_INTERVAL_SECONDS}
                 value={minSendIntervalSecInput}
-                onChange={(e) => setMinSendIntervalSecInput(e.target.value)}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setMinSendIntervalSecInput(nextValue);
+                  if (sendIntervalMode === 'fixed') {
+                    setMaxSendIntervalSecInput(nextValue);
+                  }
+                }}
                 onKeyDown={handleMinSendIntervalKeyDown}
                 className="w-16 text-center"
                 variant="small"
               />
+              {sendIntervalMode === 'random' && (
+                <>
+                  <span className="text-xs text-(--color-text-secondary)">Max</span>
+                  <Input
+                    type="number"
+                    min={MIN_SEND_INTERVAL_SECONDS}
+                    max={MAX_SEND_INTERVAL_SECONDS}
+                    value={maxSendIntervalSecInput}
+                    onChange={(e) => setMaxSendIntervalSecInput(e.target.value)}
+                    onKeyDown={handleMinSendIntervalKeyDown}
+                    className="w-16 text-center"
+                    variant="small"
+                  />
+                </>
+              )}
               <span className="text-xs text-(--color-text-secondary)">s</span>
               <button
                 onClick={() => void handleSaveMinSendInterval()}
-                disabled={isSavingMinSendInterval || Number(minSendIntervalSecInput) === savedMinSendIntervalSec}
+                disabled={isSavingMinSendInterval || !hasIntervalChanges}
                 className="text-xs px-2 py-1 rounded border border-(--color-border) text-(--color-text-secondary) hover:border-(--color-primary) disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Lưu khoảng gửi tối thiểu"
+                title="Lưu khoảng gửi"
               >
                 {isSavingMinSendInterval ? 'Đang lưu...' : 'Lưu'}
               </button>

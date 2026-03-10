@@ -13,7 +13,10 @@ import {
     AppSettingsService,
     GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
     normalizeGeminiMinSendIntervalMs,
+    normalizeGeminiMaxSendIntervalMs,
+    normalizeGeminiSendIntervalMode,
 } from '../appSettings';
+import { getRandomInt } from '../../../shared/utils/delayUtils';
 import { ProxyConfig } from '../../../shared/types/proxy';
 import { Impit } from 'impit';
 import { 
@@ -65,13 +68,16 @@ export class GeminiChatServiceClass {
         return GeminiChatServiceClass.instance;
     }
 
-    private getGeminiMinSendIntervalMs(): number {
+    private getGeminiSendIntervalConfig(): { mode: 'fixed' | 'random'; minMs: number; maxMs: number } {
         try {
             const settings = AppSettingsService.getAll();
-            return normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
+            const minMs = normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
+            const maxMs = normalizeGeminiMaxSendIntervalMs(settings.geminiMaxSendIntervalMs, minMs);
+            const mode = normalizeGeminiSendIntervalMode(settings.geminiSendIntervalMode);
+            return { mode, minMs, maxMs };
         } catch (error) {
-            console.warn('[GeminiChatService] Failed to read geminiMinSendIntervalMs. Using default.', error);
-            return GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+            console.warn('[GeminiChatService] Failed to read gemini send interval config. Using default.', error);
+            return { mode: 'fixed', minMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS, maxMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS };
         }
     }
 
@@ -117,13 +123,16 @@ export class GeminiChatServiceClass {
             return result;
         } finally {
             // 3. Scheduling Next: Fixed minimum interval AFTER completion
-            const intervalMs = this.getGeminiMinSendIntervalMs();
+            const intervalConfig = this.getGeminiSendIntervalConfig();
+            const intervalMs = intervalConfig.mode === 'random'
+                ? getRandomInt(intervalConfig.minMs, intervalConfig.maxMs)
+                : intervalConfig.minMs;
             
             const completionTime = Date.now();
             const nextTime = completionTime + intervalMs;
             
             this.nextAvailableTimeByTokenKey.set(tokenKey, nextTime);
-            console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${intervalMs}ms)`);
+            console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${intervalMs}ms, mode=${intervalConfig.mode})`);
             
             // Signal that this task is done
             if (typeof signalTaskDone === 'function') signalTaskDone();

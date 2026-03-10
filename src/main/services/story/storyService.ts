@@ -5,6 +5,8 @@ import {
   AppSettingsService,
   GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
   normalizeGeminiMinSendIntervalMs,
+  normalizeGeminiMaxSendIntervalMs,
+  normalizeGeminiSendIntervalMode,
 } from '../appSettings';
 import { getDatabase } from '../../database/schema';
 import { getGeminiWebApiRuntime } from '../geminiWebApi';
@@ -515,7 +517,11 @@ export class StoryService {
 
   private static ensureStoryGeminiWebQueueResources(): void {
     const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
-    const queueGapMs = this.getStoryWebQueueGapMs();
+    const settings = AppSettingsService.getAll();
+    const minIntervalMs = normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
+    const maxIntervalMs = normalizeGeminiMaxSendIntervalMs(settings.geminiMaxSendIntervalMs, minIntervalMs);
+    const intervalMode = normalizeGeminiSendIntervalMode(settings.geminiSendIntervalMode);
+    const queueGapMs = minIntervalMs;
     queue.registerPool({
       poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
       label: 'Story GeminiWeb Accounts',
@@ -561,8 +567,8 @@ export class StoryService {
         capabilities: ['story_translate', 'gemini_webapi'],
         enabled,
         maxConcurrency: 1,
-        cooldownMinMs: 0,
-        cooldownMaxMs: 0,
+        cooldownMinMs: intervalMode === 'random' ? minIntervalMs : 0,
+        cooldownMaxMs: intervalMode === 'random' ? maxIntervalMs : 0,
         metadata: {
           accountName: row.name?.trim() || row.id
         }
