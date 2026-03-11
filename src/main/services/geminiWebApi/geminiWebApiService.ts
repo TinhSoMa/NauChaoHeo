@@ -274,28 +274,40 @@ export class GeminiWebApiService {
       });
 
       if (!refresh.success) {
-        const failed: GeminiGenerateResult = {
-          success: false,
-          errorCode: this.normalizeGeminiErrorCode(refresh.errorCode, 'COOKIE_NOT_FOUND'),
-          error: refresh.error || 'Unable to refresh browser cookie',
-          cookieSource: refresh.cookieSource,
-          refreshed: false,
-        };
-        getGeminiWebApiOpsMonitor().recordRequestResult({
-          success: false,
-          accountConfigId,
-          cookieSource: failed.cookieSource,
-          refreshed: failed.refreshed,
-          errorCode: failed.errorCode,
-          error: failed.error
-        });
-        return failed;
+        const reResolved = this.cookieStore.resolveStoredCookie(accountConfigId);
+        if (reResolved.secure1psid && reResolved.secure1psidts) {
+          resolved = reResolved;
+          secure1psid = reResolved.secure1psid;
+          secure1psidts = reResolved.secure1psidts;
+          console.warn(
+            `[GeminiWebApiService] Cookie refresh failed but stored cookie is now available accountConfigId=${accountConfigId} source=${reResolved.source}`,
+          );
+        } else {
+          const failed: GeminiGenerateResult = {
+            success: false,
+            errorCode: this.normalizeGeminiErrorCode(refresh.errorCode, 'COOKIE_NOT_FOUND'),
+            error: refresh.error || 'Unable to refresh browser cookie',
+            cookieSource: refresh.cookieSource,
+            refreshed: false,
+          };
+          getGeminiWebApiOpsMonitor().recordRequestResult({
+            success: false,
+            accountConfigId,
+            cookieSource: failed.cookieSource,
+            refreshed: failed.refreshed,
+            errorCode: failed.errorCode,
+            error: failed.error
+          });
+          return failed;
+        }
       }
 
-      refreshed = true;
-      resolved = this.cookieStore.resolveStoredCookie(accountConfigId);
-      secure1psid = resolved.secure1psid || null;
-      secure1psidts = resolved.secure1psidts || null;
+      if (refresh.success) {
+        refreshed = true;
+        resolved = this.cookieStore.resolveStoredCookie(accountConfigId);
+        secure1psid = resolved.secure1psid || null;
+        secure1psidts = resolved.secure1psidts || null;
+      }
     }
 
     if (!secure1psid || !secure1psidts) {
@@ -336,6 +348,7 @@ export class GeminiWebApiService {
 
     const buildProxyTraceMetadata = (mode: ProxyMode, fallback: boolean) =>
       this.buildProxyTraceMetadata(proxySelection, mode, fallback);
+    const bridgeTimeoutMs = Math.max(timeoutMs + 5000, Math.floor(timeoutMs * 1.1));
     const invokeGenerate = async (proxyUrl: string | null) =>
       this.bridge.request<WorkerGeneratePayload>(
         'generate',
@@ -349,7 +362,7 @@ export class GeminiWebApiService {
           useChatSession,
           conversationMetadata: inputConversationMetadata,
         },
-        timeoutMs,
+        bridgeTimeoutMs,
       );
 
     let response;
@@ -593,15 +606,23 @@ export class GeminiWebApiService {
   }
 
   private extractConversationTraceId(metadata: GeminiConversationMetadata | null): string {
-    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    if (!metadata || typeof metadata !== 'object') {
+      return 'unknown';
+    }
+    if (Array.isArray(metadata)) {
+      for (const item of metadata) {
+        if (!item || typeof item !== 'object') continue;
+        const trace = this.extractConversationTraceId(item as GeminiConversationMetadata);
+        if (trace !== 'unknown') return trace;
+      }
       return 'unknown';
     }
     const candidates = [
-      metadata.conversationId,
-      metadata.conversation_id,
-      metadata.chatId,
-      metadata.chat_id,
-      metadata.id,
+      (metadata as Record<string, unknown>).conversationId,
+      (metadata as Record<string, unknown>).conversation_id,
+      (metadata as Record<string, unknown>).chatId,
+      (metadata as Record<string, unknown>).chat_id,
+      (metadata as Record<string, unknown>).id,
     ];
     const raw = candidates.find((item) => typeof item === 'string' && item.trim().length > 0);
     if (!raw || typeof raw !== 'string') {
@@ -618,7 +639,10 @@ export class GeminiWebApiService {
     if (!value || typeof value !== 'object') {
       return null;
     }
-    return value as GeminiConversationMetadata;
+    if (Array.isArray(value)) {
+      return value;
+    }
+    return value as Record<string, unknown>;
   }
 
   private selectProxyForRequest(accountConfigId: string, request: GeminiGenerateRequest): ProxySelectionResult {
