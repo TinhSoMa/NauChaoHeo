@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 
 /**
  * Lấy đường dẫn tới ffmpeg.exe
- * - Dev mode: resources/ffmpeg/win32/ffmpeg.exe
+ * - Dev mode: resources/ffmpeg/win64/ffmpeg.exe
  * - Production: resources/ffmpeg/ffmpeg.exe
  */
 export function getFFmpegPath(): string {
@@ -18,14 +18,14 @@ export function getFFmpegPath(): string {
     // Khi đóng gói: process.resourcesPath/ffmpeg/ffmpeg.exe
     return path.join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe');
   } else {
-    // Dev mode: app root/resources/ffmpeg/win32/ffmpeg.exe
-    return path.join(app.getAppPath(), 'resources', 'ffmpeg', 'win32', 'ffmpeg.exe');
+    // Dev mode: app root/resources/ffmpeg/win64/ffmpeg.exe
+    return path.join(app.getAppPath(), 'resources', 'ffmpeg', 'win64', 'ffmpeg.exe');
   }
 }
 
 /**
  * Lấy đường dẫn tới ffprobe.exe
- * - Dev mode: resources/ffmpeg/win32/ffprobe.exe
+ * - Dev mode: resources/ffmpeg/win64/ffprobe.exe
  * - Production: resources/ffmpeg/ffprobe.exe
  */
 export function getFFprobePath(): string {
@@ -34,7 +34,7 @@ export function getFFprobePath(): string {
   if (isPackaged) {
     return path.join(process.resourcesPath, 'ffmpeg', 'ffprobe.exe');
   } else {
-    return path.join(app.getAppPath(), 'resources', 'ffmpeg', 'win32', 'ffprobe.exe');
+    return path.join(app.getAppPath(), 'resources', 'ffmpeg', 'win64', 'ffprobe.exe');
   }
 }
 
