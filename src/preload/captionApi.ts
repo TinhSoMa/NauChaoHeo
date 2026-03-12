@@ -40,6 +40,7 @@ export interface CaptionAPI {
   parseSrt: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>;
   parseDraft: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>; // Parse draft_content.json
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
+  exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
 
   // Translation
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
@@ -104,6 +105,9 @@ export function createCaptionAPI(): CaptionAPI {
 
     exportSrt: (entries: SubtitleEntry[], outputPath: string) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.EXPORT_SRT, entries, outputPath),
+
+    exportPlainText: (content: string, outputPath: string) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.EXPORT_PLAIN_TEXT, content, outputPath),
 
     translate: (options: TranslationOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE, options),
@@ -180,6 +184,8 @@ import {
   CAPTION_VIDEO_IPC_CHANNELS,
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
+  RenderThumbnailFileOptions,
+  RenderThumbnailFileResult,
 } from '../shared/types/caption';
 
 /**
@@ -288,6 +294,11 @@ export interface CaptionVideoAPI {
     options: RenderThumbnailPreviewFrameOptions
   ) => Promise<IpcApiResponse<RenderThumbnailPreviewFrameResult>>;
 
+  // Render thumbnail file và lưu cạnh video gốc
+  renderThumbnailFile: (
+    options: RenderThumbnailFileOptions
+  ) => Promise<IpcApiResponse<RenderThumbnailFileResult>>;
+
   // Auto-detect best video in folders
   findBestVideoInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<{
     videoPath?: string;
@@ -348,6 +359,9 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
 
     renderThumbnailPreviewFrame: (options: RenderThumbnailPreviewFrameOptions) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_PREVIEW_FRAME, options),
+
+    renderThumbnailFile: (options: RenderThumbnailFileOptions) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_FILE, options),
 
     findBestVideoInFolders: (folderPaths: string[]) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO, folderPaths),

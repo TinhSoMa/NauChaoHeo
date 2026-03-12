@@ -14,6 +14,8 @@ import {
   RenderVideoPreviewFrameResult,
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
+  RenderThumbnailFileOptions,
+  RenderThumbnailFileResult,
   TranslationOptions,
   TranslationResult,
   SubtitleEntry,
@@ -482,6 +484,31 @@ export function registerCaptionHandlers(): void {
     }
   );
 
+  // ============================================
+  // EXPORT PLAIN TEXT
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.EXPORT_PLAIN_TEXT,
+    async (
+      _event: IpcMainInvokeEvent,
+      content: string,
+      outputPath: string
+    ): Promise<IpcResponse<string>> => {
+      console.log(`[CaptionHandlers] Export plain text -> ${outputPath}`);
+
+      try {
+        const result = await CaptionService.exportPlainText(content, outputPath);
+        if (result.success) {
+          return { success: true, data: outputPath };
+        }
+        return { success: false, error: result.error };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi export text thuần:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   ipcMain.handle(
     CAPTION_VIDEO_IPC_CHANNELS.RENDER_VIDEO_PREVIEW_FRAME,
     async (
@@ -746,6 +773,41 @@ export function registerCaptionHandlers(): void {
         return { success: false, error: result.error || 'Không thể render thumbnail preview frame' };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi render thumbnail preview frame:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // CAPTION VIDEO - RENDER THUMBNAIL FILE
+  // ============================================
+  ipcMain.handle(
+    CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_FILE,
+    async (
+      _event: IpcMainInvokeEvent,
+      options: RenderThumbnailFileOptions
+    ): Promise<IpcResponse<RenderThumbnailFileResult>> => {
+      const safeVideoPath = typeof options?.videoPath === 'string' ? options.videoPath : '';
+      const safeFileName = typeof options?.fileName === 'string' ? options.fileName.trim() : '';
+      if (!safeVideoPath || !safeFileName) {
+        return { success: false, error: 'Thiếu videoPath hoặc fileName.' };
+      }
+      try {
+        const path = await import('path');
+        const fs = await import('fs/promises');
+        const outputPath = path.join(path.dirname(safeVideoPath), path.basename(safeFileName));
+        const { fileName, ...renderOptions } = options;
+        const result = await CaptionService.renderThumbnailPreviewFrame(renderOptions);
+        if (!result.success || !result.frameData) {
+          return { success: false, error: result.error || 'Không thể render thumbnail.' };
+        }
+        const sanitizedBase64 = String(result.frameData || '').replace(/^data:[^;]+;base64,/, '');
+        const buffer = Buffer.from(sanitizedBase64, 'base64');
+        await fs.writeFile(outputPath, buffer);
+        console.log(`[CaptionHandlers] Render thumbnail file -> ${outputPath}`);
+        return { success: true, data: { success: true, outputPath } };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi render thumbnail file:', error);
         return { success: false, error: String(error) };
       }
     }

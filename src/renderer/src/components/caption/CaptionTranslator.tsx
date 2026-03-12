@@ -1317,6 +1317,11 @@ export function CaptionTranslator() {
   const [thumbnailSessionHydrationRevision, setThumbnailSessionHydrationRevision] = useState(0);
   const [thumbnailManualSaveState, setThumbnailManualSaveState] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [thumbnailManualSaveMessage, setThumbnailManualSaveMessage] = useState('');
+  const [thumbnailBulkExportState, setThumbnailBulkExportState] = useState<{
+    status: 'idle' | 'running' | 'success' | 'error';
+    message?: string;
+    detail?: string;
+  }>({ status: 'idle', message: '' });
 
   const projectSettingsSnapshot = useMemo<CaptionProjectSettingsValues>(() => ({
     fontSizeScaleVersion: settings.fontSizeScaleVersion,
@@ -1839,6 +1844,39 @@ export function CaptionTranslator() {
     persistThumbnailTextToSessions,
   ]);
 
+  const resolveThumbnailLayoutOverrides = useCallback((mode: 'landscape' | 'portrait') => {
+    const profile = settings.layoutProfiles?.[mode];
+    if (!profile || typeof profile !== 'object') {
+      return {
+        thumbnailTextPrimaryPosition: undefined,
+        thumbnailTextSecondaryPosition: undefined,
+        renderResolution: undefined,
+      };
+    }
+    const record = profile as Record<string, unknown>;
+    const readPoint = (value: unknown) => {
+      if (!value || typeof value !== 'object') return undefined;
+      const typed = value as { x?: unknown; y?: unknown };
+      if (typeof typed.x !== 'number' || typeof typed.y !== 'number') return undefined;
+      if (!Number.isFinite(typed.x) || !Number.isFinite(typed.y)) return undefined;
+      return { x: typed.x, y: typed.y };
+    };
+    const renderResolution = record.renderResolution;
+    const normalizedResolution =
+      renderResolution === 'original'
+      || renderResolution === '1080p'
+      || renderResolution === '720p'
+      || renderResolution === '540p'
+      || renderResolution === '360p'
+        ? renderResolution
+        : undefined;
+    return {
+      thumbnailTextPrimaryPosition: readPoint(record.thumbnailTextPrimaryPosition),
+      thumbnailTextSecondaryPosition: readPoint(record.thumbnailTextSecondaryPosition),
+      renderResolution: normalizedResolution,
+    };
+  }, [settings.layoutProfiles]);
+
   const processingThumbnailPayload = useMemo(() => {
     if (settings.inputType !== 'draft') {
       return {
@@ -1897,6 +1935,183 @@ export function CaptionTranslator() {
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
   });
+
+  const handleBulkExportThumbnails = useCallback(() => {
+    if (processing.status === 'running') {
+      return;
+    }
+    const frameTimeSec = settings.thumbnailFrameTimeSec;
+    if (frameTimeSec === null || frameTimeSec === undefined) {
+      setThumbnailBulkExportState({
+        status: 'error',
+        message: 'Chưa đặt thời điểm frame thumbnail.',
+      });
+      return;
+    }
+    const inputPaths = filteredDraftInputPaths;
+    if (inputPaths.length === 0) {
+      setThumbnailBulkExportState({
+        status: 'error',
+        message: 'Không có folder nào để xuất thumbnail.',
+      });
+      return;
+    }
+
+    setThumbnailBulkExportState({
+      status: 'running',
+      message: `Đang xuất 0/${inputPaths.length}...`,
+    });
+
+    void (async () => {
+      const errors: string[] = [];
+      let successCount = 0;
+      let processed = 0;
+
+      const landscapeOverrides = resolveThumbnailLayoutOverrides('landscape');
+      const portraitOverrides = resolveThumbnailLayoutOverrides('portrait');
+
+      for (const folderPath of inputPaths) {
+        processed += 1;
+        setThumbnailBulkExportState({
+          status: 'running',
+          message: `Đang xuất ${processed}/${inputPaths.length} folder... (OK ${successCount})`,
+        });
+
+        const folderIdx = hardsubSettings.selectedDraftPaths.findIndex((path) => path === folderPath);
+        if (folderIdx < 0) {
+          errors.push(`[${folderPath}] Không tìm thấy index folder trong session.`);
+          continue;
+        }
+
+        const videoInfo = fileManager.folderVideos[folderPath];
+        let videoPath = videoInfo?.fullPath || '';
+        let durationSec = videoInfo?.duration || 0;
+        if (!videoPath) {
+          try {
+            // @ts-ignore
+            const res = await window.electronAPI.captionVideo.findBestVideoInFolders([folderPath]);
+            if (res?.success && res.data?.videoPath) {
+              videoPath = res.data.videoPath;
+              durationSec = res.data.metadata?.duration || durationSec;
+            }
+          } catch (error) {
+            console.warn('[ThumbnailBulk] Không tìm được video:', folderPath, error);
+          }
+        }
+        if (videoPath && durationSec <= 0) {
+          try {
+            // @ts-ignore
+            const metaRes = await window.electronAPI.captionVideo.getVideoMetadata(videoPath);
+            if (metaRes?.success && metaRes.data?.duration) {
+              durationSec = metaRes.data.duration;
+            }
+          } catch (error) {
+            console.warn('[ThumbnailBulk] Không lấy được metadata video:', videoPath, error);
+          }
+        }
+        if (!videoPath) {
+          errors.push(`[${folderPath}] Không tìm thấy video gốc.`);
+          continue;
+        }
+
+        const textPrimary = (hardsubSettings.thumbnailTextsByOrder[folderIdx] || '').trim();
+        const textSecondary = ((hardsubSettings.thumbnailTextsSecondaryByOrder[folderIdx] || '').trim()
+          || (hardsubSettings.thumbnailTextSecondary || '').trim());
+        if (!textPrimary) {
+          errors.push(`[${folderPath}] Thiếu Text1.`);
+          continue;
+        }
+
+        const safeTimeSec = durationSec > 0
+          ? Math.max(0, Math.min(frameTimeSec, Math.max(0, durationSec - 0.1)))
+          : Math.max(0, frameTimeSec);
+
+        const baseOptions = {
+          videoPath,
+          thumbnailTimeSec: safeTimeSec,
+          thumbnailText: textPrimary,
+          thumbnailTextSecondary: textSecondary,
+          thumbnailFontName: settings.thumbnailFontName,
+          thumbnailFontSize: settings.thumbnailFontSize,
+          thumbnailTextPrimaryFontName: settings.thumbnailTextPrimaryFontName,
+          thumbnailTextPrimaryFontSize: settings.thumbnailTextPrimaryFontSize,
+          thumbnailTextPrimaryColor: settings.thumbnailTextPrimaryColor,
+          thumbnailTextSecondaryFontName: settings.thumbnailTextSecondaryFontName,
+          thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
+          thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
+          thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+        };
+
+        // @ts-ignore
+        const api = window.electronAPI.captionVideo;
+        const renderWithRetry = async (payload: any) => {
+          const first = await api.renderThumbnailFile(payload);
+          if (first?.success && first?.data?.success) {
+            return first;
+          }
+          return api.renderThumbnailFile(payload);
+        };
+
+        const render16x9 = await renderWithRetry({
+          ...baseOptions,
+          renderMode: 'hardsub',
+          renderResolution: landscapeOverrides.renderResolution || settings.renderResolution,
+          thumbnailTextPrimaryPosition: landscapeOverrides.thumbnailTextPrimaryPosition || settings.thumbnailTextPrimaryPosition,
+          thumbnailTextSecondaryPosition: landscapeOverrides.thumbnailTextSecondaryPosition || settings.thumbnailTextSecondaryPosition,
+          fileName: 'thumbnail_16x9.png',
+        });
+        if (!render16x9?.success || !render16x9?.data?.success) {
+          errors.push(`[${folderPath}] 16:9 lỗi: ${render16x9?.error || render16x9?.data?.error || 'unknown'}`);
+        }
+
+        const render9x16 = await renderWithRetry({
+          ...baseOptions,
+          renderMode: 'hardsub_portrait_9_16',
+          renderResolution: portraitOverrides.renderResolution || settings.renderResolution,
+          thumbnailTextPrimaryPosition: portraitOverrides.thumbnailTextPrimaryPosition || settings.thumbnailTextPrimaryPosition,
+          thumbnailTextSecondaryPosition: portraitOverrides.thumbnailTextSecondaryPosition || settings.thumbnailTextSecondaryPosition,
+          fileName: 'thumbnail_9x16.png',
+        });
+        if (!render9x16?.success || !render9x16?.data?.success) {
+          errors.push(`[${folderPath}] 9:16 lỗi: ${render9x16?.error || render9x16?.data?.error || 'unknown'}`);
+        }
+
+        if (render16x9?.success && render16x9?.data?.success && render9x16?.success && render9x16?.data?.success) {
+          successCount += 1;
+        }
+      }
+
+      const failedCount = inputPaths.length - successCount;
+      const summary = `Xuất xong: ${successCount}/${inputPaths.length} folder`;
+      setThumbnailBulkExportState({
+        status: failedCount > 0 ? 'error' : 'success',
+        message: failedCount > 0 ? `${summary} (lỗi ${failedCount})` : summary,
+        detail: errors.length > 0 ? errors.join('\n') : undefined,
+      });
+    })();
+  }, [
+    fileManager.folderVideos,
+    filteredDraftInputPaths,
+    hardsubSettings.selectedDraftPaths,
+    hardsubSettings.thumbnailTextsByOrder,
+    hardsubSettings.thumbnailTextsSecondaryByOrder,
+    hardsubSettings.thumbnailTextSecondary,
+    processing.status,
+    resolveThumbnailLayoutOverrides,
+    settings.renderResolution,
+    settings.thumbnailFontName,
+    settings.thumbnailFontSize,
+    settings.thumbnailFrameTimeSec,
+    settings.thumbnailLineHeightRatio,
+    settings.thumbnailTextPrimaryColor,
+    settings.thumbnailTextPrimaryFontName,
+    settings.thumbnailTextPrimaryFontSize,
+    settings.thumbnailTextPrimaryPosition,
+    settings.thumbnailTextSecondaryColor,
+    settings.thumbnailTextSecondaryFontName,
+    settings.thumbnailTextSecondaryFontSize,
+    settings.thumbnailTextSecondaryPosition,
+  ]);
 
   const handleStep4VoiceTest = useCallback(async () => {
     if (processing.status === 'running' || step4VoiceTestState === 'testing') {
@@ -2994,6 +3209,13 @@ export function CaptionTranslator() {
   const hasStep7AudioPreview = Boolean(processing.audioPreviewDataUri);
   const isStep7AudioError = processing.audioPreviewStatus === 'error' || Boolean(step7AudioButtonError);
   const isStep7AudioActionActive = isStep7AudioMixing || isStep7AudioPlaying;
+  const isBulkExportRunning = thumbnailBulkExportState.status === 'running';
+  const canBulkExportThumbnails = (
+    settings.inputType === 'draft'
+    && isMultiFolder
+    && (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16')
+    && filteredDraftInputPaths.length > 0
+  );
   const canQuickStep7Audio = isStep7AudioActionActive || hasStep7AudioPreview || (
     processing.enabledSteps.has(7) &&
     processing.status !== 'running' &&
@@ -3009,6 +3231,10 @@ export function CaptionTranslator() {
     : isStep7AudioPlaying
       ? 'Bấm để dừng phát audio preview'
       : 'Test mix 20s cho Step 7';
+  const bulkExportLabel = isBulkExportRunning ? 'Đang xuất thumbnail...' : 'Xuất thumbnail';
+  const bulkExportTitle = thumbnailBulkExportState.message
+    ? thumbnailBulkExportState.message
+    : 'Xuất thumbnail hàng loạt (16:9 + 9:16)';
 
   const handleQuickStep7AudioToggle = useCallback(() => {
     if (isStep7AudioPlaying) {
@@ -5666,9 +5892,12 @@ export function CaptionTranslator() {
               onItemSecondaryTextChange={handleStep7ItemSecondaryTextChange}
               onBulkApplyJsonLines={handleBulkApplyJsonLines}
               onManualSaveTexts={handleManualSaveThumbnailTexts}
+              onBulkExportThumbnails={handleBulkExportThumbnails}
               manualSaveState={thumbnailManualSaveState}
               manualSaveMessage={thumbnailManualSaveMessage}
               manualSaveDisabled={false}
+              bulkExportState={thumbnailBulkExportState}
+              bulkExportDisabled={processing.status === 'running'}
               showMissingWarning={hardsubSettings.isThumbnailEnabled && step7VisibleMissingThumbnailText}
               dependencyWarning={step7DependencyWarning}
             />
@@ -5723,6 +5952,17 @@ export function CaptionTranslator() {
           </div>
 
           <div className={styles.stepRailQuick}>
+            {canBulkExportThumbnails && (
+              <button
+                type="button"
+                className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn}`}
+                onClick={handleBulkExportThumbnails}
+                disabled={processing.status === 'running' || isBulkExportRunning}
+                title={bulkExportTitle}
+              >
+                <span className={styles.stepRailQuickBtnLabel}>{bulkExportLabel}</span>
+              </button>
+            )}
             <button
               type="button"
               className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${isStep7AudioActionActive ? styles.stepRailQuickBtnActive : ''} ${isStep7AudioError ? styles.stepRailQuickBtnError : ''}`}

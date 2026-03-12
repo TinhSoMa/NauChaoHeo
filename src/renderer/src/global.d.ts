@@ -357,6 +357,7 @@ interface CaptionAPI {
   parseSrt: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>;
   parseDraft: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>; // Parse draft_content.json
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
+  exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;

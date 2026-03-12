@@ -6,6 +6,7 @@
 export {
   parseSrtFile,
   exportToSrt,
+  exportPlainText,
   extractTextLines,
   srtTimeToMs,
   msToSrtTime,

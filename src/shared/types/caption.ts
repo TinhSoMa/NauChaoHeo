@@ -281,6 +281,7 @@ export const CAPTION_IPC_CHANNELS = {
   TRANSLATE: 'caption:translate',
   TRANSLATE_PROGRESS: 'caption:translateProgress',
   EXPORT_SRT: 'caption:exportSrt',
+  EXPORT_PLAIN_TEXT: 'caption:exportPlainText',
   SPLIT: 'caption:split',
   
   // TTS
@@ -749,6 +750,16 @@ export interface RenderThumbnailPreviewFrameResult {
   error?: string;
 }
 
+export interface RenderThumbnailFileOptions extends RenderThumbnailPreviewFrameOptions {
+  fileName: string;
+}
+
+export interface RenderThumbnailFileResult {
+  success: boolean;
+  outputPath?: string;
+  error?: string;
+}
+
 // ============================================
 // CAPTION SESSION (Single JSON Per Folder)
 // ============================================
@@ -1171,6 +1182,7 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   GET_VIDEO_METADATA: 'captionVideo:getVideoMetadata',
   EXTRACT_FRAME: 'captionVideo:extractFrame',
   RENDER_THUMBNAIL_PREVIEW_FRAME: 'captionVideo:renderThumbnailPreviewFrame',
+  RENDER_THUMBNAIL_FILE: 'captionVideo:renderThumbnailFile',
   FIND_BEST_VIDEO: 'captionVideo:findBestVideo',
   GET_AVAILABLE_FONTS: 'captionVideo:getAvailableFonts',
 } as const;

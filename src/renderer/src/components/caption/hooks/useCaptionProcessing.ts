@@ -720,6 +720,19 @@ function entriesToSrtText(entries: SubtitleEntry[]): string {
   return `${blocks.join('\n\n')}\n`;
 }
 
+function entriesToPlainText(entries: SubtitleEntry[]): string {
+  if (!entries.length) {
+    return '';
+  }
+  const lines = entries
+    .map((entry) => {
+      const raw = (entry.translatedText ?? entry.text ?? '').replace(/\r\n/g, '\n').trim();
+      return raw.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+    })
+    .filter((line) => line.length > 0);
+  return lines.length > 0 ? `${lines.join('\n')}\n` : '';
+}
+
 function resolveProcessOutputDir(inputType: string, currentPath: string): string {
   return inputType === 'draft'
     ? `${currentPath}/caption_output`
@@ -2446,6 +2459,33 @@ export function useCaptionProcessing({
         const translatedSrtContent = entriesToSrtText(currentEntries);
         // @ts-ignore
         await window.electronAPI.caption.exportSrt(currentEntries, srtFileForVideo);
+
+        const plainTextContent = entriesToPlainText(currentEntries);
+        if (plainTextContent) {
+          try {
+            const folderPathsToSearch = inputType === 'draft'
+              ? [currentPath]
+              : [currentPath.replace(/[^/\\]+$/, '')];
+            // @ts-ignore
+            const findBestRes = await window.electronAPI.captionVideo.findBestVideoInFolders(folderPathsToSearch);
+            const videoPath = findBestRes?.success ? findBestRes.data?.videoPath : undefined;
+            const videoDir = videoPath ? resolveParentDir(videoPath) : '';
+            if (videoDir) {
+              const plainTextPath = joinFilePath(videoDir, 'subtitle.txt');
+              // @ts-ignore
+              const plainTextResult = await window.electronAPI.caption.exportPlainText(plainTextContent, plainTextPath);
+              if (plainTextResult?.success) {
+                console.log(`[CaptionProcessing][Step3] Đã lưu text thuần: ${plainTextPath}`);
+              } else {
+                console.warn('[CaptionProcessing][Step3] Export text thuần thất bại:', plainTextResult?.error || 'unknown');
+              }
+            } else {
+              console.warn('[CaptionProcessing][Step3] Không tìm thấy video gốc để lưu text thuần.');
+            }
+          } catch (error) {
+            console.warn('[CaptionProcessing][Step3] Lỗi export text thuần:', error);
+          }
+        }
 
         const isStep3Complete = backendCallSucceeded && missingBatchIndexes.length === 0 && failedLines === 0;
         setProgress({

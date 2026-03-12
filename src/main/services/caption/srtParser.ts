@@ -160,6 +160,31 @@ export async function exportToSrt(
 }
 
 /**
+ * Export text thuần (không timing) ra file
+ */
+export async function exportPlainText(
+  content: string,
+  outputPath: string
+): Promise<{ success: boolean; error?: string }> {
+  console.log(`[SrtParser] Đang export text thuần ra: ${path.basename(outputPath)}`);
+
+  try {
+    const dir = path.dirname(outputPath);
+    await fs.mkdir(dir, { recursive: true });
+
+    const safeContent = typeof content === 'string' ? content : '';
+    await fs.writeFile(outputPath, safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`, 'utf-8');
+
+    console.log(`[SrtParser] Export text thuần thành công: ${outputPath}`);
+    return { success: true };
+  } catch (error) {
+    const errorMsg = `Lỗi export text thuần: ${error}`;
+    console.error(`[SrtParser] ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
  * Trích xuất danh sách text thuần từ entries (bỏ timing)
  */
 export function extractTextLines(entries: SubtitleEntry[]): string[] {

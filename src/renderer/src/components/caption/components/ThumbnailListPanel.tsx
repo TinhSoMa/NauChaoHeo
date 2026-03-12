@@ -21,11 +21,18 @@ interface ThumbnailListPanelProps {
   onItemSecondaryTextChange: (indexZeroBased: number, value: string) => void;
   onBulkApplyJsonLines: (raw: string) => BulkApplyResult;
   onManualSaveTexts: () => void;
+  onBulkExportThumbnails: () => void;
   manualSaveState: 'idle' | 'saving' | 'success' | 'error';
   manualSaveMessage: string;
   manualSaveDisabled?: boolean;
   showMissingWarning: boolean;
   dependencyWarning?: string;
+  bulkExportState?: {
+    status: 'idle' | 'running' | 'success' | 'error';
+    message?: string;
+    detail?: string;
+  };
+  bulkExportDisabled?: boolean;
 }
 
 const BULK_SAMPLE = `{
@@ -190,6 +197,20 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
           }`}
         >
           {props.manualSaveMessage}
+        </div>
+      )}
+      {!!props.bulkExportState?.message && (
+        <div
+          className={`${styles.thumbnailListCopyStatus} ${
+            props.bulkExportState.status === 'success'
+              ? styles.thumbnailListCopyStatusSuccess
+              : props.bulkExportState.status === 'error'
+                ? styles.thumbnailListCopyStatusError
+                : ''
+          }`}
+          title={props.bulkExportState.detail}
+        >
+          {props.bulkExportState.message}
         </div>
       )}
 
