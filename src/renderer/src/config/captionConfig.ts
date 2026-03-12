@@ -4,21 +4,21 @@
  */
 
 // ============================================
-// GEMINI MODELS
+// GEMINI MODELS - Import từ file tập trung
 // ============================================
 
-export interface GeminiModelOption {
-  value: string;
-  label: string;
-}
+import { 
+  GEMINI_MODEL_LIST, 
+  DEFAULT_GEMINI_MODEL as SHARED_DEFAULT_MODEL,
+  type GeminiModelInfo 
+} from '../../../shared/types/gemini';
 
-export const GEMINI_MODELS: GeminiModelOption[] = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh)' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Chất lượng)' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Dự phòng)' },
-];
+// Re-export để sử dụng trong UI components
+export { GEMINI_MODEL_LIST, type GeminiModelInfo };
 
-export const DEFAULT_GEMINI_MODEL = GEMINI_MODELS[0].value;
+// Alias cho compatibility
+export const GEMINI_MODELS = GEMINI_MODEL_LIST.map(m => ({ value: m.id, label: m.label }));
+export const DEFAULT_GEMINI_MODEL = SHARED_DEFAULT_MODEL;
 
 // ============================================
 // TTS VOICES
@@ -27,14 +27,39 @@ export const DEFAULT_GEMINI_MODEL = GEMINI_MODELS[0].value;
 export interface VoiceOption {
   value: string;
   label: string;
+  provider?: 'edge' | 'capcut';
+  tier?: 'free' | 'pro';
 }
 
 export const VOICES: VoiceOption[] = [
-  { value: 'vi-VN-HoaiMyNeural', label: 'Hoài My (Nữ)' },
-  { value: 'vi-VN-NamMinhNeural', label: 'Nam Minh (Nam)' },
+  { value: 'edge:vi-VN-HoaiMyNeural', label: 'Hoài My (Nữ)', provider: 'edge', tier: 'free' },
+  { value: 'edge:vi-VN-NamMinhNeural', label: 'Nam Minh (Nam)', provider: 'edge', tier: 'free' },
 ];
 
 export const DEFAULT_VOICE = VOICES[0].value;
+
+export function normalizeVoiceValue(value?: string | null): string {
+  if (typeof value !== 'string') {
+    return DEFAULT_VOICE;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_VOICE;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('edge:')) {
+    const voiceId = trimmed.slice(5).trim();
+    return voiceId ? `edge:${voiceId}` : DEFAULT_VOICE;
+  }
+  if (lower.startsWith('capcut:')) {
+    const voiceId = trimmed.slice(7).trim();
+    return voiceId ? `capcut:${voiceId}` : DEFAULT_VOICE;
+  }
+
+  return `edge:${trimmed}`;
+}
 
 // ============================================
 // TTS OPTIONS
@@ -68,7 +93,7 @@ export const DEFAULT_TARGET_LANGUAGE = 'Vietnamese';
 // STEP LABELS
 // ============================================
 
-export const STEP_LABELS = ['Input', 'Split', 'Dịch', 'TTS', 'Trim', 'Merge'];
+export const STEP_LABELS = ['Input', 'Split', 'Dịch', 'TTS', 'Trim', 'Merge', 'Render Video'];
 
-export const DEFAULT_INPUT_TYPE: 'srt' | 'draft' = 'draft';
-
+export type InputType = 'srt' | 'draft';
+export const DEFAULT_INPUT_TYPE: InputType = 'draft';

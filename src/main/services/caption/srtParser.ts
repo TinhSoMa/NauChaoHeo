@@ -69,8 +69,8 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
         const startMs = srtTimeToMs(startTime);
         const endMs = srtTimeToMs(endTime);
         
-        // Dòng 3+: Text (có thể nhiều dòng)
-        const text = lines.slice(2).join(' ').trim();
+        // Dòng 3+: Text (có thể nhiều dòng - giữ nguyên line breaks)
+        const text = lines.slice(2).join('\n').trim();
         
         if (text) {
           entries.push({
@@ -89,6 +89,9 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
       }
     }
     
+    // Sort entries theo startMs để đảm bảo thứ tự đúng
+    entries.sort((a, b) => a.startMs - b.startMs);
+    
     console.log(`[SrtParser] Parse thành công: ${entries.length} entries`);
     
     return {
@@ -100,7 +103,13 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
     
   } catch (error) {
     const errorMsg = `Lỗi đọc file SRT: ${error}`;
-    console.error(`[SrtParser] ${errorMsg}`);
+    // ENOENT = file chưa tồn tại (bình thường khi chưa chạy các bước trước) — dùng debug thay vì error
+    const isNotFound = String(error).includes('ENOENT');
+    if (isNotFound) {
+      console.debug(`[SrtParser] File chưa tồn tại (bỏ qua): ${filePath}`);
+    } else {
+      console.error(`[SrtParser] ${errorMsg}`);
+    }
     
     return {
       success: false,
@@ -146,6 +155,31 @@ export async function exportToSrt(
     const errorMsg = `Lỗi export SRT: ${error}`;
     console.error(`[SrtParser] ${errorMsg}`);
     
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Export text thuần (không timing) ra file
+ */
+export async function exportPlainText(
+  content: string,
+  outputPath: string
+): Promise<{ success: boolean; error?: string }> {
+  console.log(`[SrtParser] Đang export text thuần ra: ${path.basename(outputPath)}`);
+
+  try {
+    const dir = path.dirname(outputPath);
+    await fs.mkdir(dir, { recursive: true });
+
+    const safeContent = typeof content === 'string' ? content : '';
+    await fs.writeFile(outputPath, safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`, 'utf-8');
+
+    console.log(`[SrtParser] Export text thuần thành công: ${outputPath}`);
+    return { success: true };
+  } catch (error) {
+    const errorMsg = `Lỗi export text thuần: ${error}`;
+    console.error(`[SrtParser] ${errorMsg}`);
     return { success: false, error: errorMsg };
   }
 }
