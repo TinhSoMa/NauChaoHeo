@@ -8,6 +8,11 @@ import { Button } from '../common/Button';
 import styles from './Settings.module.css';
 import { EmbeddedAccount } from '@shared/types/gemini';
 
+const API_WORKER_MIN = 1;
+const API_WORKER_MAX = 10;
+const API_DELAY_MIN_SEC = 0;
+const API_DELAY_MAX_SEC = 30;
+
 interface ApiKeysSettingsProps {
   onBack: () => void;
 }
@@ -17,6 +22,12 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
   const [keysLocation, setKeysLocation] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const [apiWorkerInput, setApiWorkerInput] = useState('1');
+  const [savedApiWorkerCount, setSavedApiWorkerCount] = useState(1);
+  const [isSavingApiWorker, setIsSavingApiWorker] = useState(false);
+  const [apiDelayInput, setApiDelayInput] = useState('0.5');
+  const [savedApiDelaySec, setSavedApiDelaySec] = useState(0.5);
+  const [isSavingApiDelay, setIsSavingApiDelay] = useState(false);
 
   // Load API keys info
   const loadApiKeysInfo = useCallback(async () => {
@@ -30,6 +41,21 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
       const locRes = await window.electronAPI.gemini.getKeysLocation();
       if (locRes.success && locRes.data) {
         setKeysLocation(locRes.data);
+      }
+
+      const settingsRes = await window.electronAPI.appSettings.getAll();
+      if (settingsRes.success && settingsRes.data) {
+        const raw = Number(settingsRes.data.apiWorkerCount);
+        const normalized = Number.isFinite(raw) ? Math.min(API_WORKER_MAX, Math.max(API_WORKER_MIN, Math.floor(raw))) : API_WORKER_MIN;
+        setApiWorkerInput(String(normalized));
+        setSavedApiWorkerCount(normalized);
+        const rawDelayMs = Number(settingsRes.data.apiRequestDelayMs);
+        const normalizedDelayMs = Number.isFinite(rawDelayMs)
+          ? Math.min(API_DELAY_MAX_SEC * 1000, Math.max(API_DELAY_MIN_SEC * 1000, Math.floor(rawDelayMs)))
+          : 500;
+        const delaySec = Math.max(API_DELAY_MIN_SEC, Math.min(API_DELAY_MAX_SEC, normalizedDelayMs / 1000));
+        setApiDelayInput(String(delaySec));
+        setSavedApiDelaySec(delaySec);
       }
     } catch (err) {
       console.error('[ApiKeysSettings] Loi load API keys:', err);
@@ -119,6 +145,63 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
     });
   };
 
+  const handleSaveApiWorkerCount = async () => {
+    const trimmed = apiWorkerInput.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      alert(`Số worker API phải là số nguyên từ ${API_WORKER_MIN}-${API_WORKER_MAX}.`);
+      return;
+    }
+    const nextValue = Number(trimmed);
+    if (!Number.isFinite(nextValue) || nextValue < API_WORKER_MIN || nextValue > API_WORKER_MAX) {
+      alert(`Số worker API phải nằm trong ${API_WORKER_MIN}-${API_WORKER_MAX}.`);
+      return;
+    }
+    try {
+      setIsSavingApiWorker(true);
+      const result = await window.electronAPI.appSettings.update({ apiWorkerCount: nextValue });
+      if (result.success) {
+        setSavedApiWorkerCount(nextValue);
+        setApiWorkerInput(String(nextValue));
+      } else {
+        alert('Lỗi cập nhật số worker API.');
+      }
+    } catch (error) {
+      console.error('[ApiKeysSettings] Error updating apiWorkerCount:', error);
+      alert('Lỗi cập nhật số worker API.');
+    } finally {
+      setIsSavingApiWorker(false);
+    }
+  };
+
+  const handleSaveApiDelay = async () => {
+    const trimmed = apiDelayInput.trim();
+    if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+      alert(`Delay phải là số từ ${API_DELAY_MIN_SEC}-${API_DELAY_MAX_SEC} giây.`);
+      return;
+    }
+    const nextSec = Number(trimmed);
+    if (!Number.isFinite(nextSec) || nextSec < API_DELAY_MIN_SEC || nextSec > API_DELAY_MAX_SEC) {
+      alert(`Delay phải nằm trong ${API_DELAY_MIN_SEC}-${API_DELAY_MAX_SEC} giây.`);
+      return;
+    }
+    try {
+      setIsSavingApiDelay(true);
+      const nextMs = Math.floor(nextSec * 1000);
+      const result = await window.electronAPI.appSettings.update({ apiRequestDelayMs: nextMs });
+      if (result.success) {
+        setSavedApiDelaySec(nextSec);
+        setApiDelayInput(String(nextSec));
+      } else {
+        alert('Lỗi cập nhật delay API.');
+      }
+    } catch (error) {
+      console.error('[ApiKeysSettings] Error updating apiRequestDelayMs:', error);
+      alert('Lỗi cập nhật delay API.');
+    } finally {
+      setIsSavingApiDelay(false);
+    }
+  };
+
   // Format timestamp
   const formatTimestamp = (timestamp: string | null) => {
     if (!timestamp) return 'Chưa dùng';
@@ -194,6 +277,63 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
               </Button>
               <Button onClick={handleResetAllKeyStatus} variant="danger">
                 <RefreshCw size={16} /> Reset
+              </Button>
+            </div>
+          </div>
+
+          {/* API Worker Count */}
+          <div className={styles.row} style={{ marginTop: 12 }}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Số worker API song song</span>
+              <span className={styles.labelDesc}>
+                Áp dụng cho dịch truyện và caption Step 3 (API)
+              </span>
+            </div>
+            <div className={styles.flexRow}>
+              <input
+                type="number"
+                min={API_WORKER_MIN}
+                max={API_WORKER_MAX}
+                value={apiWorkerInput}
+                onChange={(e) => setApiWorkerInput(e.target.value)}
+                className={styles.input}
+                style={{ width: 120 }}
+              />
+              <Button
+                onClick={handleSaveApiWorkerCount}
+                variant="primary"
+                disabled={isSavingApiWorker || Number(apiWorkerInput) === savedApiWorkerCount}
+              >
+                Lưu
+              </Button>
+            </div>
+          </div>
+
+          {/* API Request Delay */}
+          <div className={styles.row} style={{ marginTop: 12 }}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Delay giữa request API</span>
+              <span className={styles.labelDesc}>
+                Áp dụng cho dịch truyện và caption Step 3 (API)
+              </span>
+            </div>
+            <div className={styles.flexRow}>
+              <input
+                type="number"
+                min={API_DELAY_MIN_SEC}
+                max={API_DELAY_MAX_SEC}
+                step="0.1"
+                value={apiDelayInput}
+                onChange={(e) => setApiDelayInput(e.target.value)}
+                className={styles.input}
+                style={{ width: 120 }}
+              />
+              <Button
+                onClick={handleSaveApiDelay}
+                variant="primary"
+                disabled={isSavingApiDelay || Number(apiDelayInput) === savedApiDelaySec}
+              >
+                Lưu
               </Button>
             </div>
           </div>

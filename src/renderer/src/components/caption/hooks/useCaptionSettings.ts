@@ -163,7 +163,7 @@ function clampPercent(value: number, min: number, max: number, fallback: number)
     return fallback;
   }
   const clamped = Math.min(max, Math.max(min, value));
-  return Math.round(clamped * 10) / 10;
+  return Math.round(clamped * 100) / 100;
 }
 
 function clamp(value: number, minValue: number, maxValue: number): number {

@@ -24,6 +24,8 @@ export interface AppSettings {
   geminiMinSendIntervalMs: number; // Khoảng chờ tối thiểu giữa mỗi lần gửi Gemini (ms)
   geminiMaxSendIntervalMs: number; // Khoảng chờ tối đa giữa mỗi lần gửi Gemini (ms)
   geminiSendIntervalMode: 'fixed' | 'random'; // Chế độ khoảng gửi: cố định hoặc ngẫu nhiên
+  apiWorkerCount: number; // Số worker API song song (Story + Caption Step3)
+  apiRequestDelayMs: number; // Delay giữa request API (ms)
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
   summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
   captionPromptId: string | null; // Prompt ID cho chức năng dịch caption (Step 3)
@@ -76,6 +78,12 @@ export interface CaptionTypographyDefaults {
 export const GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS = 20_000;
 export const GEMINI_MIN_SEND_INTERVAL_MIN_MS = 5_000;
 export const GEMINI_MIN_SEND_INTERVAL_MAX_MS = 120_000;
+export const API_WORKER_COUNT_DEFAULT = 1;
+export const API_WORKER_COUNT_MIN = 1;
+export const API_WORKER_COUNT_MAX = 10;
+export const API_REQUEST_DELAY_DEFAULT_MS = 500;
+export const API_REQUEST_DELAY_MIN_MS = 0;
+export const API_REQUEST_DELAY_MAX_MS = 30_000;
 
 const DEFAULT_TYPOGRAPHY_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
@@ -122,6 +130,22 @@ function isFiniteNumber(value: unknown): value is number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeApiWorkerCount(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return API_WORKER_COUNT_DEFAULT;
+  }
+  return clamp(Math.floor(numeric), API_WORKER_COUNT_MIN, API_WORKER_COUNT_MAX);
+}
+
+function normalizeApiRequestDelayMs(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return API_REQUEST_DELAY_DEFAULT_MS;
+  }
+  return clamp(Math.floor(numeric), API_REQUEST_DELAY_MIN_MS, API_REQUEST_DELAY_MAX_MS);
 }
 
 function normalizePoint(
@@ -339,6 +363,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiMinSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
   geminiMaxSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
   geminiSendIntervalMode: 'fixed',
+  apiWorkerCount: API_WORKER_COUNT_DEFAULT,
+  apiRequestDelayMs: API_REQUEST_DELAY_DEFAULT_MS,
   translationPromptId: null, // Tự động tìm prompt dịch
   summaryPromptId: null, // Tự động tìm prompt tóm tắt
   captionPromptId: null, // Tự động dùng prompt mặc định
@@ -400,6 +426,8 @@ class AppSettingsServiceClass {
             normalizeGeminiMinSendIntervalMs(loaded?.geminiMinSendIntervalMs),
           ),
           geminiSendIntervalMode: normalizeGeminiSendIntervalMode(loaded?.geminiSendIntervalMode),
+          apiWorkerCount: normalizeApiWorkerCount(loaded?.apiWorkerCount),
+          apiRequestDelayMs: normalizeApiRequestDelayMs(loaded?.apiRequestDelayMs),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
@@ -468,6 +496,12 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiSendIntervalMode')) {
       nextPartial.geminiSendIntervalMode = normalizeGeminiSendIntervalMode(partial.geminiSendIntervalMode);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'apiWorkerCount')) {
+      nextPartial.apiWorkerCount = normalizeApiWorkerCount(partial.apiWorkerCount);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'apiRequestDelayMs')) {
+      nextPartial.apiRequestDelayMs = normalizeApiRequestDelayMs(partial.apiRequestDelayMs);
     }
 
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {

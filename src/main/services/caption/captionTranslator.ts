@@ -12,6 +12,7 @@ import {
   TranslationQueuePacingMetadata,
 } from '../../../shared/types/caption';
 import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type GeminiModel } from '../gemini';
+import { AppSettingsService } from '../appSettings';
 import { type KeyInfo } from '../../../shared/types/gemini';
 import { getApiManager } from '../gemini/apiManager';
 import { callGeminiImpitAutoSelect } from '../shared';
@@ -580,8 +581,27 @@ export async function translateAll(
   const useGeminiWebQueue = options.translateMethod === 'gemini_webapi_queue';
   const projectId = (options.projectId || '').trim() || '__default_project__';
   const sourcePath = (options.sourcePath || '').trim() || '__unknown_source__';
-  const MAX_CONCURRENT = useImpit ? 3 : 5;
+  const apiWorkerCountSetting = (() => {
+    try {
+      const raw = Number(AppSettingsService.getAll().apiWorkerCount);
+      return Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
+    } catch (error) {
+      return 1;
+    }
+  })();
+  const apiRequestDelayMs = (() => {
+    try {
+      const raw = Number(AppSettingsService.getAll().apiRequestDelayMs);
+      return Number.isFinite(raw) ? Math.min(30000, Math.max(0, Math.floor(raw))) : 500;
+    } catch (error) {
+      return 500;
+    }
+  })();
+  const MAX_CONCURRENT = useImpit ? 3 : (useGeminiWebQueue ? 5 : apiWorkerCountSetting);
   let queueGapMs = getCaptionStep3QueueGapMs();
+  if (!useGeminiWebQueue && !useImpit) {
+    queueGapMs = apiRequestDelayMs;
+  }
   let lastDispatchTiming: TranslationQueuePacingMetadata | undefined;
   let nextDispatchAtMs = Date.now();
   let dispatchGateQueue: Promise<void> = Promise.resolve();

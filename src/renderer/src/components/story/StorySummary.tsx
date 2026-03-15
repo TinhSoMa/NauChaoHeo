@@ -787,14 +787,20 @@ export function StorySummary() {
     };
 
     // Worker function - xử lý từng chapter liên tục
-    // Logic: Random delay TRƯỚC → worker nào xong delay trước thì lấy chương tiếp theo
+    // Logic: API dùng delay cố định, token giữ random delay
     let isFirstChapterTaken = false;
     const worker = async (workerId: number, channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
       console.log(`[StorySummary] 🚀 Worker ${workerId} started`);
+      let hasDispatched = false;
       
       while (!shouldStopRef.current) {
         // 1. Chờ random TRƯỚC khi lấy chương (trừ chương đầu tiên)
-        if (isFirstChapterTaken) {
+        if (channel === 'api') {
+          if (hasDispatched && apiRequestDelayMs > 0) {
+            console.log(`[StorySummary] ⏳ Worker ${workerId} chờ ${Math.round(apiRequestDelayMs / 1000)}s trước khi lấy chương tiếp...`);
+            await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
+          }
+        } else if (isFirstChapterTaken) {
           const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
           console.log(`[StorySummary] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi lấy chương tiếp...`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -817,6 +823,7 @@ export function StorySummary() {
         } else {
           console.log(`[StorySummary] 📖 Worker ${workerId} lấy chương ${index + 1} sau khi chờ delay`);
         }
+        hasDispatched = true;
         
         const result = await translateChapter(chapter, index, workerId, channel, tokenConfig);
         results.push(result);
@@ -845,7 +852,24 @@ export function StorySummary() {
       return;
     }
 
-    const apiWorkerCount = translateMode === 'api' ? 5 : translateMode === 'both' ? 5 : 0;
+    let apiWorkerCountSetting = 1;
+    let apiRequestDelayMs = 500;
+    try {
+      const settingsResult = await window.electronAPI.appSettings.getAll();
+      if (settingsResult.success && settingsResult.data) {
+        const raw = Number(settingsResult.data.apiWorkerCount);
+        apiWorkerCountSetting = Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
+        const rawDelay = Number(settingsResult.data.apiRequestDelayMs);
+        apiRequestDelayMs = Number.isFinite(rawDelay) ? Math.min(30000, Math.max(0, Math.floor(rawDelay))) : 500;
+      }
+    } catch (error) {
+      console.warn('[StorySummary] Không lấy được apiWorkerCount, dùng mặc định 1', error);
+    }
+    const apiWorkerCount = translateMode === 'api'
+      ? apiWorkerCountSetting
+      : translateMode === 'both'
+        ? apiWorkerCountSetting
+        : 0;
     const tokenWorkerCount = translateMode === 'token'
       ? tokenConfigsForRun.length
       : translateMode === 'both'

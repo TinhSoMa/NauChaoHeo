@@ -84,6 +84,8 @@ export function useStorySummaryGeneration({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [batchSummaryProgress, setBatchSummaryProgress] = useState<{ current: number; total: number } | null>(null);
+  const [apiWorkerCountSetting, setApiWorkerCountSetting] = useState(1);
+  const [apiRequestDelayMs, setApiRequestDelayMs] = useState(500);
   const [, setTick] = useState(0); // Force re-render for elapsed time
   
   // Stop control
@@ -120,6 +122,25 @@ export function useStorySummaryGeneration({
     
     return () => clearInterval(interval);
   }, [isGenerating]);
+
+  useEffect(() => {
+    const loadAppSettings = async () => {
+      try {
+        const result = await window.electronAPI.appSettings.getAll();
+        if (result.success && result.data) {
+          const raw = Number(result.data.apiWorkerCount);
+          const normalized = Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
+          setApiWorkerCountSetting(normalized);
+          const rawDelay = Number(result.data.apiRequestDelayMs);
+          const delayMs = Number.isFinite(rawDelay) ? Math.min(30000, Math.max(0, Math.floor(rawDelay))) : 500;
+          setApiRequestDelayMs(delayMs);
+        }
+      } catch (error) {
+        console.error('[useStorySummaryGeneration] Error loading app settings:', error);
+      }
+    };
+    loadAppSettings();
+  }, []);
 
   const stopGeneration = () => {
     console.log('[useStorySummaryGeneration] Dừng tóm tắt thủ công...');
@@ -379,6 +400,8 @@ export function useStorySummaryGeneration({
     activeWorkerCountRef.current += 1;
     console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} started (${channel})`);
 
+    let hasDispatched = false;
+
     if (channel === 'token' && tokenConfig) {
         batchStateRef.current.activeWorkerConfigIds.add(tokenConfig.id);
     }
@@ -392,6 +415,11 @@ export function useStorySummaryGeneration({
 
             const index = batchStateRef.current.currentIndex++;
             const chapter = batchStateRef.current.chapters[index];
+
+            if (channel === 'api' && apiRequestDelayMs > 0 && hasDispatched) {
+              await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
+            }
+            hasDispatched = true;
 
             if (!batchStateRef.current.isFirstChapterTaken) {
                 batchStateRef.current.isFirstChapterTaken = true;
@@ -547,7 +575,11 @@ export function useStorySummaryGeneration({
       }
     }
 
-    const apiWorkerCount = translateMode === 'api' ? 5 : translateMode === 'both' ? 5 : 0;
+    const apiWorkerCount = translateMode === 'api'
+      ? apiWorkerCountSetting
+      : translateMode === 'both'
+        ? apiWorkerCountSetting
+        : 0;
     let tokenWorkerCount = tokenConfigsForRun.length;
     
     if (tokenWorkerCount > maxImpitBrowsers) {

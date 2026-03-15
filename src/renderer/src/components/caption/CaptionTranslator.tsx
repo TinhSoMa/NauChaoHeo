@@ -103,7 +103,7 @@ const VIDEO_VOLUME_PERCENT_MIN = 0;
 const VIDEO_VOLUME_PERCENT_MAX = 200;
 const AUDIO_VOLUME_PERCENT_MIN = 0;
 const AUDIO_VOLUME_PERCENT_MAX = 400;
-const VOLUME_MULTIPLIER_STEP = 0.1;
+const VOLUME_MULTIPLIER_STEP = 0.01;
 const STEP4_VOICE_TEST_DEFAULT_TEXT = 'kiểm thử giọng đọc';
 const DRAFT_DURATION_FILTER_DEFAULT_MINUTES = 10;
 
@@ -484,7 +484,7 @@ function formatPercentDisplay(value: number | undefined, fallback = 0): string {
 
 function percentToMultiplierDisplayValue(valuePercent: number | undefined, fallbackPercent = 100): number {
   const safePercent = Number.isFinite(valuePercent) ? (valuePercent as number) : fallbackPercent;
-  return Math.round((safePercent / 100) * 10) / 10;
+  return Math.round((safePercent / 100) * 100) / 100;
 }
 
 function multiplierToPercentValue(
@@ -494,15 +494,18 @@ function multiplierToPercentValue(
   fallbackPercent: number
 ): number {
   const safeMultiplier = Number.isFinite(multiplier) ? multiplier : fallbackPercent / 100;
-  const percent = Math.round(safeMultiplier * 1000) / 10;
+  const percent = Math.round(safeMultiplier * 10000) / 100;
   const bounded = Math.max(minPercent, Math.min(maxPercent, percent));
-  return Math.round(bounded * 10) / 10;
+  return Math.round(bounded * 100) / 100;
 }
 
 function formatMultiplierDisplay(multiplier: number | undefined, fallback = 1): string {
   const safe = Number.isFinite(multiplier) ? (multiplier as number) : fallback;
-  const rounded = Math.round(safe * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
+  const rounded = Math.round(safe * 100) / 100;
+  if (Number.isInteger(rounded)) {
+    return `${rounded}`;
+  }
+  return rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 function clampInteger(value: number, min: number, max: number, fallback: number): number {
@@ -1853,7 +1856,7 @@ export function CaptionTranslator() {
         renderResolution: undefined,
       };
     }
-    const record = profile as Record<string, unknown>;
+    const record = profile as unknown as Record<string, unknown>;
     const readPoint = (value: unknown) => {
       if (!value || typeof value !== 'object') return undefined;
       const typed = value as { x?: unknown; y?: unknown };
@@ -1903,7 +1906,7 @@ export function CaptionTranslator() {
     return {
       thumbnailText: thumbnailTextsByOrder[0] || hardsubSettings.thumbnailText,
       thumbnailTextsByOrder,
-      thumbnailTextSecondary: thumbnailTextsSecondaryByOrder[0] || '',
+      thumbnailTextSecondary: thumbnailTextsSecondaryByOrder[0] || hardsubSettings.thumbnailTextSecondary || '',
       thumbnailTextsSecondaryByOrder,
     };
   }, [
@@ -4935,9 +4938,9 @@ export function CaptionTranslator() {
                   type="number"
                   value={settings.renderAudioSpeed}
                   onChange={(e) => settings.setRenderAudioSpeed(Number(e.target.value))}
-                  min={0.5}
+                  min={0.1}
                   max={5}
-                  step={0.1}
+                  step={0.05}
                 />
               </div>
             </div>
@@ -5459,6 +5462,16 @@ export function CaptionTranslator() {
                 </div>
               )}
               <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
+              {settings.inputType === 'draft' && fileManager.filePath && (
+                <Button
+                  variant="secondary"
+                  disabled={processing.status === 'running'}
+                  onClick={() => fileManager.setFilePath('')}
+                  title="Bỏ chọn tất cả folder"
+                >
+                  Bỏ chọn tất cả
+                </Button>
+              )}
             </div>
             {settings.inputType === 'draft' && (
               <div className={styles.durationFilterControls}>
