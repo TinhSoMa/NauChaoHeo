@@ -8,6 +8,7 @@ interface UseStoryExportParams {
   chapters: Chapter[];
   sourceLang: string;
   targetLang: string;
+  filePath: string;
   projectId: string | null;
 }
 
@@ -22,6 +23,7 @@ export function useStoryExport(params: UseStoryExportParams) {
     chapters,
     sourceLang,
     targetLang,
+    filePath,
     projectId
   } = params;
 
@@ -91,7 +93,8 @@ export function useStoryExport(params: UseStoryExportParams) {
         translatedChapters,
         translatedTitles,
         summaries,
-        summaryTitles
+        summaryTitles,
+        sourceEpubPath: filePath.toLowerCase().endsWith('.epub') ? filePath : undefined
       });
 
       if (result.success && result.filePath) {

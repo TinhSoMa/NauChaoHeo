@@ -15,7 +15,8 @@ import {
   StoryGeminiWebQueueSnapshot,
   StoryGeminiWebQueueStreamEvent,
   StoryTranslateGeminiWebQueuePayload,
-  StoryTranslateGeminiWebQueueResult
+  StoryTranslateGeminiWebQueueResult,
+  CreateEbookPayload
 } from '../../shared/types';
 
 const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
@@ -353,7 +354,7 @@ export function registerStoryHandlers(): void {
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.CREATE_EBOOK,
-    async (_event: IpcMainInvokeEvent, options: any) => {
+    async (_event: IpcMainInvokeEvent, options: CreateEbookPayload) => {
         console.log('[StoryHandlers] Create ebook:', options.title);
         return await StoryService.StoryService.createEbook(options);
     }

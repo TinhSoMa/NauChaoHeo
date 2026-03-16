@@ -213,6 +213,7 @@ export function StoryTranslator() {
     chapters,
     sourceLang,
     targetLang,
+    filePath,
     projectId
   });
 

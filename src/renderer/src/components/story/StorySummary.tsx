@@ -46,6 +46,7 @@ export function StorySummary() {
   const [chapterMethods, setChapterMethods] = useState<Map<string, 'api' | 'token'>>(new Map());
   const [translatedTitles, setTranslatedTitles] = useState<Map<string, string>>(new Map());
   const [summaryTitles, setSummaryTitles] = useState<Map<string, string>>(new Map());
+  const [sourceFilePath, setSourceFilePath] = useState('');
   const [tokenConfigId, setTokenConfigId] = useState<string | null>(null);
   const [tokenConfigs, setTokenConfigs] = useState<GeminiChatConfigLite[]>([]);
   const [tokenContexts, setTokenContexts] = useState<Map<string, TokenContext>>(new Map());
@@ -326,6 +327,7 @@ export function StorySummary() {
 
       if (translatorRes?.success && translatorRes.data) {
         const translatorData = JSON.parse(translatorRes.data) as {
+          filePath?: string;
           sourceLang?: string;
           targetLang?: string;
           translatedEntries?: Array<[string, string]>;
@@ -339,6 +341,7 @@ export function StorySummary() {
           translatedTitlesCount: translatorData.translatedTitles?.length || 0
         });
 
+        if (translatorData.filePath) setSourceFilePath(translatorData.filePath);
         if (translatorData.sourceLang) setSourceLang(translatorData.targetLang || 'vi');
         if (translatorData.targetLang) setTargetLang(translatorData.targetLang || 'vi');
 
@@ -1090,7 +1093,8 @@ export function StorySummary() {
           title: filename,
           author: 'AI Translator',
           filename: filename,
-          outputDir: outputDir
+          outputDir: outputDir,
+          sourceEpubPath: sourceFilePath.toLowerCase().endsWith('.epub') ? sourceFilePath : undefined
         }
       ) as { success: boolean; filePath?: string; error?: string };
 

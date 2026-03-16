@@ -382,7 +382,8 @@ export function StoryTranslatorWeb() {
                   content: translatedChapters.get(c.id) || c.content 
               })),
               title: title,
-              filename: title
+              filename: title,
+              sourceEpubPath: filePath.toLowerCase().endsWith('.epub') ? filePath : undefined
           });
           console.log(`Đã đóng gói Ebook: ${title}`);
       } catch (e) {

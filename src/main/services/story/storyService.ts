@@ -638,14 +638,16 @@ export class StoryService {
       outputDir?: string,
       filename?: string,
       cover?: string
+    sourceEpubPath?: string;
   }): Promise<{ success: boolean; filePath?: string; error?: string }> {
     try {
         const nodepub = require('nodepub');
         const path = require('path');
         const os = require('os');
         const fs = require('fs');
+        const EPub = require('epub');
         
-        const { chapters, title, author, outputDir, filename, cover } = options;
+        const { chapters, title, author, outputDir, filename, cover, sourceEpubPath } = options;
         
         // Define output path
         const downloadDir = outputDir || path.join(os.homedir(), 'Downloads');
@@ -654,6 +656,84 @@ export class StoryService {
         // Create temporary cover file if needed
         let coverPath: string | undefined = cover;
         let tempCoverPath: string | undefined = undefined;
+        let sourceCoverTempPath: string | undefined = undefined;
+
+        const resolveSourceEpubMeta = async (epubPath: string): Promise<{ author?: string; coverPath?: string }> => {
+            return new Promise((resolve) => {
+                try {
+                    const epub = new EPub(epubPath);
+                    epub.on('error', () => resolve({}));
+                    epub.on('end', () => {
+                        const meta = epub.metadata || {};
+                        const normalizeAuthor = (value: any): string | undefined => {
+                            if (Array.isArray(value)) {
+                                return value.filter(Boolean).join(', ') || undefined;
+                            }
+                            if (value && typeof value === 'object') {
+                                return value.name || value.creator || value.author || undefined;
+                            }
+                            return typeof value === 'string' ? value : undefined;
+                        };
+                        const sourceAuthor = normalizeAuthor(meta.creator) || normalizeAuthor(meta.author);
+                        let coverId: any = meta.cover;
+
+                        if (coverId && typeof coverId === 'object' && coverId.id) {
+                            coverId = coverId.id;
+                        }
+
+                        if (!coverId && epub.manifest) {
+                            const items = Object.values(epub.manifest) as any[];
+                            const coverItem = items.find((item) => {
+                                const id = item?.id || item?.ID;
+                                const mediaType = item?.['media-type'] || item?.mediaType;
+                                return id && typeof mediaType === 'string' && mediaType.startsWith('image/') && /cover/i.test(id);
+                            });
+                            if (coverItem?.id) coverId = coverItem.id;
+                        }
+
+                        if (!coverId) {
+                            resolve({ author: sourceAuthor });
+                            return;
+                        }
+
+                        epub.getImage(coverId, (err: any, data: Buffer, mimeType: string) => {
+                            if (err || !data) {
+                                resolve({ author: sourceAuthor });
+                                return;
+                            }
+
+                            const ext =
+                                mimeType === 'image/png' ? '.png'
+                                : mimeType === 'image/jpeg' ? '.jpg'
+                                : mimeType === 'image/webp' ? '.webp'
+                                : '.img';
+                            const tempPath = path.join(os.tmpdir(), `cover_src_${Date.now()}${ext}`);
+                            try {
+                                fs.writeFileSync(tempPath, data);
+                                resolve({ author: sourceAuthor, coverPath: tempPath });
+                            } catch {
+                                resolve({ author: sourceAuthor });
+                            }
+                        });
+                    });
+                    epub.parse();
+                } catch {
+                    resolve({});
+                }
+            });
+        };
+
+        let sourceAuthor: string | undefined;
+        if (sourceEpubPath && fs.existsSync(sourceEpubPath) && path.extname(sourceEpubPath).toLowerCase() === '.epub') {
+            const sourceMeta = await resolveSourceEpubMeta(sourceEpubPath);
+            sourceAuthor = sourceMeta.author;
+            if (sourceMeta.coverPath) {
+                coverPath = sourceMeta.coverPath;
+                sourceCoverTempPath = sourceMeta.coverPath;
+            }
+        }
+
+        const finalAuthor = sourceAuthor || author || 'AI Translator';
         
         if (!coverPath) {
             // Create a simple 1x1 transparent PNG as temp cover
@@ -667,7 +747,7 @@ export class StoryService {
         const metadata = {
             id: safeTitle,
             title: title,
-            author: author || 'AI Translator',
+            author: finalAuthor,
             cover: coverPath
         };
 
@@ -687,17 +767,23 @@ export class StoryService {
                  await epub.writeEPUB(downloadDir, safeTitle);
                  
                  // Clean up temp cover file if created
-                 if (tempCoverPath && fs.existsSync(tempCoverPath)) {
-                     fs.unlinkSync(tempCoverPath);
-                 }
+                  const tempPaths = [tempCoverPath, sourceCoverTempPath].filter(Boolean) as string[];
+                  for (const tempPath of tempPaths) {
+                      if (fs.existsSync(tempPath)) {
+                          fs.unlinkSync(tempPath);
+                      }
+                  }
                  
                  // nodepub writes to [folder]/[filename].epub
                  resolve({ success: true, filePath: finalPath });
              } catch (e) {
                  // Clean up temp cover file on error too
-                 if (tempCoverPath && fs.existsSync(tempCoverPath)) {
-                     try { fs.unlinkSync(tempCoverPath); } catch {}
-                 }
+                  const tempPaths = [tempCoverPath, sourceCoverTempPath].filter(Boolean) as string[];
+                  for (const tempPath of tempPaths) {
+                      if (fs.existsSync(tempPath)) {
+                          try { fs.unlinkSync(tempPath); } catch {}
+                      }
+                  }
                  resolve({ success: false, error: String(e) });
              }
         });

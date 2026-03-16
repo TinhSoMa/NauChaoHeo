@@ -103,6 +103,21 @@ export interface StoryCancelGeminiWebQueueBatchResult {
   error?: string;
 }
 
+export interface EbookChapterPayload {
+  title: string;
+  content: string;
+}
+
+export interface CreateEbookPayload {
+  chapters: EbookChapterPayload[];
+  title: string;
+  author?: string;
+  filename?: string;
+  outputDir?: string;
+  cover?: string;
+  sourceEpubPath?: string;
+}
+
 export const STORY_IPC_CHANNELS = {
   PARSE: 'story:parse',
   PREPARE_PROMPT: 'story:preparePrompt',

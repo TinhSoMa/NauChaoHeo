@@ -10,6 +10,7 @@ export interface ExportOptions {
   translatedTitles: Map<string, string>;
   summaries?: Map<string, string>;
   summaryTitles?: Map<string, string>;
+  sourceEpubPath?: string;
 }
 
 export interface ExportResult {
@@ -31,7 +32,8 @@ export async function exportToEbook(options: ExportOptions): Promise<ExportResul
     translatedChapters,
     translatedTitles,
     summaries = new Map(),
-    summaryTitles = new Map()
+    summaryTitles = new Map(),
+    sourceEpubPath
   } = options;
 
   try {
@@ -128,7 +130,8 @@ export async function exportToEbook(options: ExportOptions): Promise<ExportResul
         title: filename,
         author: 'AI Translator',
         filename: filename,
-        outputDir: outputDir 
+        outputDir: outputDir,
+        sourceEpubPath
       }
     ) as { success: boolean; filePath?: string; error?: string };
 
