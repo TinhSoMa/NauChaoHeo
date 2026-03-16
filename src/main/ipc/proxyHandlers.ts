@@ -257,6 +257,20 @@ export function registerProxyHandlers(): void {
     }
   );
 
+  // Test rotating proxy endpoint (Webshare style)
+  ipcMain.handle(
+    'proxy:testRotatingEndpoint',
+    async (_event: IpcMainInvokeEvent, endpoint?: string): Promise<{ success: boolean; latency?: number; error?: string }> => {
+      try {
+        const result = await manager.testRotatingEndpoint(endpoint);
+        return result;
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi test rotating endpoint:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Reset all proxies (re-enable và reset failed counts)
   ipcMain.handle(
     PROXY_IPC_CHANNELS.RESET,

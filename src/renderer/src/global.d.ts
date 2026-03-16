@@ -515,6 +515,8 @@ interface AppSettings {
   recentProjectIds: string[];
   lastActiveProjectId: string | null;
   useProxy: boolean;
+  proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
+  rotatingProxyEndpoint: string | null;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
   geminiMinSendIntervalMs: number;
@@ -668,6 +670,7 @@ interface ProxyConfig {
   password?: string;
   type: 'http' | 'https' | 'socks5';
   enabled: boolean;
+  isRotatingEndpoint?: boolean;
   successCount?: number;
   failedCount?: number;
   lastUsedAt?: number;
@@ -703,6 +706,7 @@ interface ProxyAPI {
   import: (data: string) => Promise<{ success: boolean; added?: number; skipped?: number; error?: string }>;
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
   reset: () => Promise<{ success: boolean; error?: string }>;
+  testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
 }
 
 interface CreatePromptDTO {

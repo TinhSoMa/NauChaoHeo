@@ -17,6 +17,9 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
   const [checkingAll, setCheckingAll] = useState(false);
   const [useProxy, setUseProxy] = useState(true); // Global proxy toggle
+  const [proxyMode, setProxyMode] = useState<'off' | 'direct-list' | 'rotating-endpoint'>('direct-list');
+  const [rotatingProxyEndpoint, setRotatingProxyEndpoint] = useState('');
+  const [testingRotatingEndpoint, setTestingRotatingEndpoint] = useState(false);
   
   // Form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -71,7 +74,10 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     try {
       const result = await window.electronAPI.appSettings.getAll();
       if (result.success && result.data) {
-        setUseProxy(result.data.useProxy);
+        const mode = result.data.proxyMode || (result.data.useProxy === false ? 'off' : 'direct-list');
+        setUseProxy(result.data.useProxy !== false);
+        setProxyMode(mode as 'off' | 'direct-list' | 'rotating-endpoint');
+        setRotatingProxyEndpoint(result.data.rotatingProxyEndpoint || '');
       }
     } catch (error) {
       console.error('Lỗi load proxy setting:', error);
@@ -87,6 +93,79 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
       }
     } catch (error) {
       console.error('Lỗi toggle proxy:', error);
+    }
+  };
+
+  const handleProxyModeChange = async (mode: 'off' | 'direct-list' | 'rotating-endpoint') => {
+    try {
+      const isEnabled = mode !== 'off';
+      const result = await window.electronAPI.appSettings.update({
+        useProxy: isEnabled,
+        proxyMode: mode,
+      });
+      if (result.success) {
+        setProxyMode(mode);
+        setUseProxy(isEnabled);
+      } else {
+        alert(`Lỗi cập nhật mode proxy: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Lỗi cập nhật mode proxy:', error);
+      alert('Lỗi cập nhật mode proxy!');
+    }
+  };
+
+  const handleSaveRotatingEndpoint = async () => {
+    const endpoint = rotatingProxyEndpoint.trim();
+    if (!endpoint) {
+      alert('Vui lòng nhập Rotating Endpoint!');
+      return;
+    }
+    if (!/^https?:\/\//i.test(endpoint) && !/^socks5:\/\//i.test(endpoint)) {
+      alert('Endpoint phải bắt đầu bằng http://, https:// hoặc socks5://');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.appSettings.update({
+        useProxy: true,
+        proxyMode: 'rotating-endpoint',
+        rotatingProxyEndpoint: endpoint,
+      });
+      if (result.success) {
+        setUseProxy(true);
+        setProxyMode('rotating-endpoint');
+        setRotatingProxyEndpoint(endpoint);
+        alert('✅ Đã lưu Rotating Endpoint');
+      } else {
+        alert(`❌ Lỗi lưu endpoint: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Lỗi lưu rotating endpoint:', error);
+      alert('Lỗi lưu rotating endpoint!');
+    }
+  };
+
+  const handleTestRotatingEndpoint = async () => {
+    const endpoint = rotatingProxyEndpoint.trim();
+    if (!endpoint) {
+      alert('Vui lòng nhập Rotating Endpoint để test!');
+      return;
+    }
+
+    try {
+      setTestingRotatingEndpoint(true);
+      const result = await window.electronAPI.proxy.testRotatingEndpoint(endpoint);
+      if (result.success) {
+        alert(`✅ Test endpoint thành công!\n\nLatency: ${result.latency}ms`);
+      } else {
+        alert(`❌ Test endpoint thất bại!\n\nLỗi: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Lỗi test rotating endpoint:', error);
+      alert('Lỗi test rotating endpoint!');
+    } finally {
+      setTestingRotatingEndpoint(false);
     }
   };
 
@@ -335,6 +414,40 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
             >
               <div className={`${styles.toggleKnob} ${useProxy ? styles.toggleKnobActive : ''}`} />
             </button>
+          </div>
+          <div style={{ padding: '0 24px 16px 24px' }}>
+            <Select
+              label="Chế độ Proxy"
+              value={proxyMode}
+              onChange={(e) => handleProxyModeChange(e.target.value as 'off' | 'direct-list' | 'rotating-endpoint')}
+              options={[
+                { value: 'off', label: 'Tắt proxy (Off)' },
+                { value: 'direct-list', label: 'Danh sách proxy xoay vòng (Direct List)' },
+                { value: 'rotating-endpoint', label: 'Rotating Proxy Endpoint (Webshare)' },
+              ]}
+            />
+            {proxyMode === 'rotating-endpoint' && (
+              <div style={{ marginTop: '12px' }}>
+                <Input
+                  label="Rotating Endpoint"
+                  placeholder="socks5://user:pass@p.webshare.io:80/"
+                  value={rotatingProxyEndpoint}
+                  onChange={(e) => setRotatingProxyEndpoint(e.target.value)}
+                />
+                <div className={styles.flexRow} style={{ marginTop: '8px' }}>
+                  <Button onClick={handleSaveRotatingEndpoint} variant="primary">
+                    Lưu Endpoint
+                  </Button>
+                  <Button
+                    onClick={handleTestRotatingEndpoint}
+                    variant="secondary"
+                    disabled={testingRotatingEndpoint}
+                  >
+                    {testingRotatingEndpoint ? 'Đang test...' : 'Test Endpoint'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

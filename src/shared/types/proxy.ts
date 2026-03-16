@@ -11,6 +11,7 @@ export interface ProxyConfig {
   type: 'http' | 'https' | 'socks5';
   enabled: boolean;
   platform?: string; // Webshare, Bright Data, Smartproxy, etc.
+  isRotatingEndpoint?: boolean;
   country?: string; // US, GB, ES, etc.
   city?: string; // Los Angeles, London, etc.
   successCount?: number;
@@ -48,4 +49,5 @@ export const PROXY_IPC_CHANNELS = {
   IMPORT: 'proxy:import',
   EXPORT: 'proxy:export',
   RESET: 'proxy:reset', // Reset failed counts
+  TEST_ROTATING_ENDPOINT: 'proxy:testRotatingEndpoint',
 } as const;

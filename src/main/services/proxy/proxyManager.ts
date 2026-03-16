@@ -1,5 +1,11 @@
 import { ProxyConfig, ProxyStats } from '../../../shared/types/proxy';
 import { ProxyDatabase } from '../../database/proxyDatabase';
+import { AppSettingsService } from '../appSettings';
+
+type ProxyScope = 'generic' | 'tts' | 'gemini';
+type ProxyMode = 'off' | 'direct-list' | 'rotating-endpoint';
+
+const ROTATING_PROXY_ID = '__rotating_endpoint__';
 
 /**
  * ProxyManager - Quản lý pool proxy với rotation logic
@@ -29,13 +35,114 @@ export class ProxyManager {
     console.log('[ProxyManager] Initialized with database storage');
   }
 
+  private getAppProxyMode(): ProxyMode {
+    const settings = AppSettingsService.getAll();
+    if (settings.useProxy === false) {
+      return 'off';
+    }
+    if (settings.proxyMode === 'off' || settings.proxyMode === 'rotating-endpoint') {
+      return settings.proxyMode;
+    }
+    return 'direct-list';
+  }
+
+  private getRotatingEndpointRaw(): string | null {
+    const settings = AppSettingsService.getAll();
+    const endpoint = settings.rotatingProxyEndpoint;
+    if (typeof endpoint !== 'string') {
+      return null;
+    }
+    const trimmed = endpoint.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private parseRotatingEndpoint(endpoint: string): ProxyConfig | null {
+    try {
+      const parsed = new URL(endpoint);
+      const protocol = parsed.protocol.replace(':', '').toLowerCase();
+      let type: ProxyConfig['type'] | null = null;
+      if (protocol === 'socks5' || protocol === 'socks5h') {
+        type = 'socks5';
+      } else if (protocol === 'https') {
+        type = 'https';
+      } else if (protocol === 'http') {
+        type = 'http';
+      }
+      if (!type || !parsed.hostname) {
+        return null;
+      }
+      const numericPort = parsed.port ? Number(parsed.port) : (type === 'https' ? 443 : 80);
+      if (!Number.isFinite(numericPort) || numericPort <= 0 || numericPort > 65535) {
+        return null;
+      }
+
+      return {
+        id: ROTATING_PROXY_ID,
+        host: parsed.hostname,
+        port: numericPort,
+        username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
+        password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
+        type,
+        enabled: true,
+        platform: 'webshare-rotating',
+        isRotatingEndpoint: true,
+        createdAt: 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private getRotatingEndpointProxy(): ProxyConfig | null {
+    const endpoint = this.getRotatingEndpointRaw();
+    if (!endpoint) {
+      return null;
+    }
+    return this.parseRotatingEndpoint(endpoint);
+  }
+
+  private shouldUseRotatingForScope(scope: ProxyScope): boolean {
+    return this.getAppProxyMode() === 'rotating-endpoint' && (scope === 'tts' || scope === 'gemini');
+  }
+
+  getProxyContext(scope: ProxyScope = 'generic'): { mode: ProxyMode; rotatingEndpointMasked: string | null } {
+    const mode = this.getAppProxyMode();
+    if (mode !== 'rotating-endpoint' || !(scope === 'tts' || scope === 'gemini')) {
+      return { mode, rotatingEndpointMasked: null };
+    }
+    const endpoint = this.getRotatingEndpointRaw();
+    if (!endpoint) {
+      return { mode, rotatingEndpointMasked: null };
+    }
+    try {
+      const parsed = new URL(endpoint);
+      const user = parsed.username ? `${parsed.username.slice(0, 2)}***` : '';
+      const maskedAuth = parsed.username ? `${user}:***@` : '';
+      const masked = `${parsed.protocol}//${maskedAuth}${parsed.host}${parsed.pathname || ''}`;
+      return { mode, rotatingEndpointMasked: masked };
+    } catch {
+      return { mode, rotatingEndpointMasked: 'invalid-endpoint' };
+    }
+  }
+
   /**
    * Lấy proxy tiếp theo theo round-robin
    * @returns Proxy config hoặc null nếu không có proxy khả dụng
    */
-  getNextProxy(type?: ProxyConfig['type']): ProxyConfig | null {
-    if (!this.settings.enableRotation) {
+  getNextProxy(type?: ProxyConfig['type'], scope: ProxyScope = 'generic'): ProxyConfig | null {
+    const appMode = this.getAppProxyMode();
+    if (appMode === 'off' || !this.settings.enableRotation) {
       return null;
+    }
+
+    if (this.shouldUseRotatingForScope(scope)) {
+      const rotatingProxy = this.getRotatingEndpointProxy();
+      if (!rotatingProxy) {
+        console.warn('[ProxyManager] Rotating endpoint mode đang bật nhưng endpoint không hợp lệ/trống');
+        return null;
+      }
+      console.log(`[ProxyManager] Sử dụng rotating endpoint: ${rotatingProxy.host}:${rotatingProxy.port} (${rotatingProxy.type})`);
+      return rotatingProxy;
     }
 
     // Lọc các proxy được enable và chưa bị disable do lỗi quá nhiều
@@ -60,7 +167,14 @@ export class ProxyManager {
   /**
    * Lấy danh sách proxy khả dụng (có thể lọc theo type)
    */
-  getAvailableProxies(type?: ProxyConfig['type']): ProxyConfig[] {
+  getAvailableProxies(type?: ProxyConfig['type'], scope: ProxyScope = 'generic'): ProxyConfig[] {
+    if (this.shouldUseRotatingForScope(scope)) {
+      const rotatingProxy = this.getRotatingEndpointProxy();
+      if (!rotatingProxy) {
+        return [];
+      }
+      return (!type || rotatingProxy.type === type) ? [rotatingProxy] : [];
+    }
     const allProxies = ProxyDatabase.getAll();
     return allProxies.filter(p =>
       p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!type || p.type === type)
@@ -71,6 +185,9 @@ export class ProxyManager {
    * Đánh dấu proxy thành công
    */
   markProxySuccess(proxyId: string): void {
+    if (proxyId === ROTATING_PROXY_ID) {
+      return;
+    }
     try {
       ProxyDatabase.incrementSuccess(proxyId);
       const proxy = ProxyDatabase.getById(proxyId);
@@ -87,6 +204,10 @@ export class ProxyManager {
    * Đánh dấu proxy thất bại
    */
   markProxyFailed(proxyId: string, error?: string): void {
+    if (proxyId === ROTATING_PROXY_ID) {
+      console.warn('[ProxyManager] Rotating endpoint request failed', error || 'unknown error');
+      return;
+    }
     try {
       ProxyDatabase.incrementFailed(proxyId);
       const proxy = ProxyDatabase.getById(proxyId);
@@ -296,6 +417,37 @@ export class ProxyManager {
     }
 
     return { checked: proxies.length, passed, failed };
+  }
+
+  async testRotatingEndpoint(endpoint?: string): Promise<{ success: boolean; latency?: number; error?: string }> {
+    const resolved = (endpoint || this.getRotatingEndpointRaw() || '').trim();
+    if (!resolved) {
+      return { success: false, error: 'Rotating endpoint đang trống' };
+    }
+
+    const proxy = this.parseRotatingEndpoint(resolved);
+    if (!proxy) {
+      return { success: false, error: 'Rotating endpoint không hợp lệ' };
+    }
+
+    try {
+      const start = Date.now();
+      const { default: fetch } = await import('node-fetch');
+      const agent = await this.createProxyAgent(proxy);
+      const response = await fetch('https://ipv4.webshare.io/', {
+        method: 'GET',
+        agent: agent as any,
+        timeout: this.settings.timeout,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return { success: true, latency: Date.now() - start };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   }
 
   /**

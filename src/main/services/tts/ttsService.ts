@@ -1302,9 +1302,28 @@ export async function generateAsyncioAudioWithProvider(
 
   const useProxySetting = AppSettingsService.getAll().useProxy !== false;
   const proxyManager = getProxyManager();
-  const hasSocks5Proxy = useProxySetting && proxyManager.getAvailableProxies('socks5').length > 0;
-  console.log(`[TTS][EDGE][asyncio] useProxy=${useProxySetting}${hasSocks5Proxy ? ' (socks5-only)' : ''}`);
-  if (useProxySetting && !hasSocks5Proxy) {
+  const proxyContext = proxyManager.getProxyContext('tts');
+  const useRotatingEndpoint = useProxySetting && proxyContext.mode === 'rotating-endpoint';
+  if (useRotatingEndpoint && proxyManager.getAvailableProxies(undefined, 'tts').length === 0) {
+    return {
+      success: false,
+      audioFiles: [],
+      totalGenerated: 0,
+      totalFailed: entries.length,
+      outputDir,
+      errors: ['Rotating endpoint không hợp lệ hoặc không khả dụng cho Edge TTS'],
+    };
+  }
+  const hasSocks5Proxy = !useRotatingEndpoint
+    && useProxySetting
+    && proxyManager.getAvailableProxies('socks5', 'tts').length > 0;
+  console.log(
+    `[TTS][EDGE][asyncio] useProxy=${useProxySetting}`
+    + (useRotatingEndpoint
+      ? ` (rotating-endpoint=${proxyContext.rotatingEndpointMasked || 'configured'})`
+      : (hasSocks5Proxy ? ' (socks5-only)' : ''))
+  );
+  if (useProxySetting && !hasSocks5Proxy && !useRotatingEndpoint) {
     console.warn('[TTS][EDGE][asyncio] Không có SOCKS5 proxy khả dụng, fallback dùng proxy thường nếu có.');
   }
 
@@ -1315,7 +1334,11 @@ export async function generateAsyncioAudioWithProvider(
       const chunk = items.slice(i, i + effectiveBatchSize);
       let proxy: ProxyConfig | null = null;
       if (useProxySetting) {
-        proxy = hasSocks5Proxy ? proxyManager.getNextProxy('socks5') : proxyManager.getNextProxy();
+        if (useRotatingEndpoint) {
+          proxy = proxyManager.getNextProxy(undefined, 'tts');
+        } else {
+          proxy = hasSocks5Proxy ? proxyManager.getNextProxy('socks5', 'tts') : proxyManager.getNextProxy(undefined, 'tts');
+        }
       }
       if (proxy) {
         console.log(`[TTS][EDGE][asyncio] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`);

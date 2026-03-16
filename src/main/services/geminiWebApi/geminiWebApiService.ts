@@ -330,6 +330,8 @@ export class GeminiWebApiService {
     }
 
     const proxySelection = this.selectProxyForRequest(accountConfigId, request);
+    const proxyModeSetting = this.readProxyModeSetting();
+    const isRotatingSelection = !!proxySelection.proxyConfig?.isRotatingEndpoint;
     let proxyMode: ProxyMode = proxySelection.proxyUrl ? 'proxy' : 'direct';
     let fallbackUsed = false;
     if (proxySelection.source === 'manual' && proxySelection.proxyUrl) {
@@ -341,6 +343,25 @@ export class GeminiWebApiService {
         `[GeminiWebApiService] Proxy route mode=pool accountConfigId=${accountConfigId} assignment=${proxySelection.assignmentState} proxyId=${proxySelection.proxyConfig.id} endpoint=${proxySelection.proxyConfig.host}:${proxySelection.proxyConfig.port}`
       );
     } else if (proxySelection.useProxySetting && proxySelection.source === 'none') {
+      if (proxyModeSetting === 'rotating-endpoint') {
+        const failed: GeminiGenerateResult = {
+          success: false,
+          errorCode: 'GEMINI_REQUEST_FAILED',
+          error: 'Rotating endpoint không hợp lệ hoặc không khả dụng',
+          cookieSource: resolved.source,
+          refreshed,
+        };
+        getGeminiWebApiOpsMonitor().recordRequestResult({
+          success: false,
+          accountConfigId,
+          cookieSource: failed.cookieSource,
+          refreshed: failed.refreshed,
+          errorCode: failed.errorCode,
+          error: failed.error,
+          metadata: this.buildProxyTraceMetadata(proxySelection, proxyMode, fallbackUsed),
+        });
+        return failed;
+      }
       console.warn(
         `[GeminiWebApiService] Proxy enabled but no available proxy accountConfigId=${accountConfigId}. Falling back to direct request.`
       );
@@ -371,7 +392,7 @@ export class GeminiWebApiService {
         response = await invokeGenerate(proxySelection.proxyUrl);
       } catch (error) {
         const classified = this.classifyBridgeError(error);
-        const shouldFallback = this.shouldFallbackToDirect(classified.errorCode);
+        const shouldFallback = !isRotatingSelection && this.shouldFallbackToDirect(classified.errorCode);
         if (shouldFallback) {
           this.markProxyFailed(proxySelection, classified.error);
         }
@@ -426,7 +447,7 @@ export class GeminiWebApiService {
 
       if (response && !response.success) {
         const normalizedErrorCode = this.normalizeGeminiErrorCode(response.errorCode, 'GEMINI_REQUEST_FAILED');
-        if (this.shouldFallbackToDirect(normalizedErrorCode)) {
+        if (!isRotatingSelection && this.shouldFallbackToDirect(normalizedErrorCode)) {
           this.markProxyFailed(proxySelection, response.error || 'Gemini request failed via proxy');
           fallbackUsed = true;
           proxyMode = 'fallback_direct';
@@ -682,7 +703,7 @@ export class GeminiWebApiService {
       };
     }
 
-    const proxyConfig = getProxyManager().getNextProxy();
+    const proxyConfig = getProxyManager().getNextProxy(undefined, 'gemini');
     if (!proxyConfig) {
       return {
         accountConfigId,
@@ -694,10 +715,12 @@ export class GeminiWebApiService {
       };
     }
 
-    this.proxyAssignmentByAccount.set(accountConfigId, proxyConfig.id);
-    console.log(
-      `[GeminiWebApiService] Proxy assigned accountConfigId=${accountConfigId} proxyId=${proxyConfig.id} endpoint=${proxyConfig.host}:${proxyConfig.port}`
-    );
+    if (!proxyConfig.isRotatingEndpoint) {
+      this.proxyAssignmentByAccount.set(accountConfigId, proxyConfig.id);
+      console.log(
+        `[GeminiWebApiService] Proxy assigned accountConfigId=${accountConfigId} proxyId=${proxyConfig.id} endpoint=${proxyConfig.host}:${proxyConfig.port}`
+      );
+    }
 
     return {
       accountConfigId,
@@ -776,6 +799,18 @@ export class GeminiWebApiService {
     } catch (error) {
       console.warn('[GeminiWebApiService] Could not read useProxy setting, defaulting to false.', error);
       return false;
+    }
+  }
+
+  private readProxyModeSetting(): 'off' | 'direct-list' | 'rotating-endpoint' {
+    try {
+      const settings = AppSettingsService.getAll();
+      if (settings.useProxy === false || settings.proxyMode === 'off') {
+        return 'off';
+      }
+      return settings.proxyMode === 'rotating-endpoint' ? 'rotating-endpoint' : 'direct-list';
+    } catch {
+      return 'off';
     }
   }
 

@@ -530,6 +530,18 @@ export class GeminiChatServiceClass {
         }
     }
 
+    private getProxyModeSetting(): 'off' | 'direct-list' | 'rotating-endpoint' {
+        try {
+            const settings = AppSettingsService.getAll();
+            if (settings.useProxy === false || settings.proxyMode === 'off') {
+                return 'off';
+            }
+            return settings.proxyMode === 'rotating-endpoint' ? 'rotating-endpoint' : 'direct-list';
+        } catch {
+            return 'direct-list';
+        }
+    }
+
     private async createProxyAgent(proxy: ProxyConfig | null, timeoutMs: number): Promise<any | undefined> {
         if (!proxy) return undefined;
 
@@ -566,11 +578,20 @@ export class GeminiChatServiceClass {
 
         const proxyManager = getProxyManager();
         let currentProxy: ProxyConfig | null = null;
+        const proxyMode = this.getProxyModeSetting();
 
         if (useProxy) {
-            currentProxy = this.getOrAssignProxy(accountKey);
+            if (proxyMode === 'rotating-endpoint') {
+                currentProxy = proxyManager.getNextProxy(undefined, 'gemini');
+            } else {
+                currentProxy = this.getOrAssignProxy(accountKey);
+            }
             if (!currentProxy) {
-                throw new Error('Không còn proxy khả dụng');
+                throw new Error(
+                    proxyMode === 'rotating-endpoint'
+                        ? 'Rotating endpoint không hợp lệ hoặc không khả dụng'
+                        : 'Không còn proxy khả dụng'
+                );
             }
         }
 
@@ -583,7 +604,7 @@ export class GeminiChatServiceClass {
             if (response.ok) {
                 if (currentProxy) {
                     proxyManager.markProxySuccess(currentProxy.id);
-                    if (accountKey && accountKey !== 'legacy') {
+                    if (!currentProxy.isRotatingEndpoint && accountKey && accountKey !== 'legacy') {
                         this.setAssignedProxyId(accountKey, currentProxy.id);
                     }
                 }
@@ -592,20 +613,24 @@ export class GeminiChatServiceClass {
 
             if (currentProxy) {
                 proxyManager.markProxyFailed(currentProxy.id, `HTTP ${response.status}`);
-                if (accountKey && accountKey !== 'legacy') {
+                if (!currentProxy.isRotatingEndpoint && accountKey && accountKey !== 'legacy') {
                     this.setAssignedProxyId(accountKey, null);
                 }
-                this.releaseProxy(accountKey, currentProxy.id);
+                if (!currentProxy.isRotatingEndpoint) {
+                    this.releaseProxy(accountKey, currentProxy.id);
+                }
             }
 
             return { response, usedProxy: currentProxy };
         } catch (error: any) {
             if (currentProxy) {
                 proxyManager.markProxyFailed(currentProxy.id, error?.message || String(error));
-                if (accountKey && accountKey !== 'legacy') {
+                if (!currentProxy.isRotatingEndpoint && accountKey && accountKey !== 'legacy') {
                     this.setAssignedProxyId(accountKey, null);
                 }
-                this.releaseProxy(accountKey, currentProxy.id);
+                if (!currentProxy.isRotatingEndpoint) {
+                    this.releaseProxy(accountKey, currentProxy.id);
+                }
             }
 
             throw error;
@@ -1296,8 +1321,10 @@ export class GeminiChatServiceClass {
                      if (usedProxy) {
                         const proxyManager = getProxyManager();
                         proxyManager.markProxyFailed(usedProxy.id, `HTTP ${response.status}`);
-                        this.releaseProxy(config.id, usedProxy.id);
-                        this.setAssignedProxyId(config.id, null);
+                        if (!usedProxy.isRotatingEndpoint) {
+                            this.releaseProxy(config.id, usedProxy.id);
+                            this.setAssignedProxyId(config.id, null);
+                        }
                     }
                     return { success: false, error: `Impit HTTP ${response.status}`, configId: config.id, retryable: true };
                 }

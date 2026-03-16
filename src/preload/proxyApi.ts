@@ -15,6 +15,7 @@ export interface ProxyAPI {
   import: (data: string) => Promise<{ success: boolean; added?: number; skipped?: number; error?: string }>;
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
   reset: () => Promise<{ success: boolean; error?: string }>;
+  testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
 }
 
 /**
@@ -47,5 +48,9 @@ export const proxyApi: ProxyAPI = {
 
   reset: async () => {
     return ipcRenderer.invoke(PROXY_IPC_CHANNELS.RESET);
+  },
+
+  testRotatingEndpoint: async (endpoint?: string) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST_ROTATING_ENDPOINT, endpoint);
   },
 };

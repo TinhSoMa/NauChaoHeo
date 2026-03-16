@@ -43,6 +43,8 @@ export interface AppSettings {
   recentProjectIds: string[];
   lastActiveProjectId: string | null;
   useProxy: boolean;
+  proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
+  rotatingProxyEndpoint: string | null;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
   geminiMinSendIntervalMs: number;

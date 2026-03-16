@@ -19,6 +19,8 @@ export interface AppSettings {
   recentProjectIds: string[]; // IDs của các project gần đây, tối đa 10
   lastActiveProjectId: string | null; // Project cuối cùng được chọn
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
+  proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
+  rotatingProxyEndpoint: string | null;
   createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
   geminiMinSendIntervalMs: number; // Khoảng chờ tối thiểu giữa mỗi lần gửi Gemini (ms)
@@ -265,6 +267,18 @@ function normalizeStringOrNull(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeProxyMode(value: unknown): 'off' | 'direct-list' | 'rotating-endpoint' {
+  return value === 'off' || value === 'rotating-endpoint' ? value : 'direct-list';
+}
+
+function normalizeRotatingProxyEndpoint(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeCapcutExtraHeaders(value: unknown): Record<string, string> | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -358,6 +372,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   recentProjectIds: [],
   lastActiveProjectId: null,
   useProxy: true, // Mặc định bật proxy
+  proxyMode: 'direct-list',
+  rotatingProxyEndpoint: null,
   createChatOnWeb: false,
   useStoredContextOnFirstSend: false,
   geminiMinSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
@@ -420,6 +436,8 @@ class AppSettingsServiceClass {
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...loaded,
+          proxyMode: normalizeProxyMode(loaded?.proxyMode),
+          rotatingProxyEndpoint: normalizeRotatingProxyEndpoint(loaded?.rotatingProxyEndpoint),
           geminiMinSendIntervalMs: normalizeGeminiMinSendIntervalMs(loaded?.geminiMinSendIntervalMs),
           geminiMaxSendIntervalMs: normalizeGeminiMaxSendIntervalMs(
             loaded?.geminiMaxSendIntervalMs,
@@ -502,6 +520,12 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'apiRequestDelayMs')) {
       nextPartial.apiRequestDelayMs = normalizeApiRequestDelayMs(partial.apiRequestDelayMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'proxyMode')) {
+      nextPartial.proxyMode = normalizeProxyMode(partial.proxyMode);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'rotatingProxyEndpoint')) {
+      nextPartial.rotatingProxyEndpoint = normalizeRotatingProxyEndpoint(partial.rotatingProxyEndpoint);
     }
 
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {
