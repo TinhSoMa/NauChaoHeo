@@ -27,7 +27,10 @@ export interface WebshareProxyData {
  * 23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo
  * ```
  */
-export function parseWebshareProxies(input: string): Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>[] {
+export function parseWebshareProxies(
+  input: string,
+  preferredType: 'http' | 'https' | 'socks5' = 'http'
+): Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>[] {
   const lines = input.trim().split('\n');
   const proxies: Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>[] = [];
 
@@ -37,9 +40,43 @@ export function parseWebshareProxies(input: string): Omit<ProxyConfig, 'id' | 'c
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue; // Skip empty lines and comments
 
+    // Support full URL format: scheme://user:pass@host:port
+    if (trimmed.includes('://')) {
+      try {
+        const parsed = new URL(trimmed);
+        const type = parsed.protocol.replace(':', '') as 'http' | 'https' | 'socks5';
+        const host = parsed.hostname;
+        const port = Number(parsed.port);
+        const username = parsed.username || undefined;
+        const password = parsed.password || undefined;
+
+        if (!host || !Number.isFinite(port)) {
+          console.warn('[WebshareParser] Invalid URL proxy format:', trimmed);
+          continue;
+        }
+
+        proxies.push({
+          host,
+          port,
+          username,
+          password,
+          type: type === 'socks5' ? 'socks5' : type === 'https' ? 'https' : 'http',
+          enabled: true,
+          platform: 'Webshare',
+        });
+        continue;
+      } catch {
+        console.warn('[WebshareParser] Invalid URL proxy format:', trimmed);
+        continue;
+      }
+    }
+
     // Auto-detect separator: comma (,) or colon (:)
-    // Webshare format: ip,port,username,password,country,city
-    // Common proxy format: ip:port:username:password
+    // Formats supported:
+    // - ip,port,username,password,country,city
+    // - ip:port:username:password
+    // - socks5:ip:port:username:password
+    // - socks5,ip,port,username,password
     const separator = trimmed.includes(',') ? ',' : ':';
     const parts = trimmed.split(separator).map(p => p.trim());
     
@@ -49,7 +86,21 @@ export function parseWebshareProxies(input: string): Omit<ProxyConfig, 'id' | 'c
       continue;
     }
 
-    const [ip, portStr, username, password, country, city] = parts;
+    let type: 'http' | 'https' | 'socks5' = preferredType;
+    let ip = '';
+    let portStr = '';
+    let username = '';
+    let password = '';
+    let country: string | undefined;
+    let city: string | undefined;
+
+    const first = parts[0]?.toLowerCase();
+    if (first === 'http' || first === 'https' || first === 'socks5') {
+      type = first;
+      [ip, portStr, username, password, country, city] = parts.slice(1);
+    } else {
+      [ip, portStr, username, password, country, city] = parts;
+    }
     const port = parseInt(portStr);
 
     if (!ip || isNaN(port)) {
@@ -62,7 +113,7 @@ export function parseWebshareProxies(input: string): Omit<ProxyConfig, 'id' | 'c
       port: port,
       username: username || undefined,
       password: password || undefined,
-      type: 'http', // Webshare mặc định là HTTP
+      type,
       enabled: true,
       platform: 'Webshare',
       country: country || undefined,
@@ -109,7 +160,7 @@ export function getWebshareFreeProxies(): Omit<ProxyConfig, 'id' | 'createdAt' |
 23.27.208.120,5830,qfdakzos,7fvhf24fe3ud,US,Reston
   `.trim();
 
-  return parseWebshareProxies(hardcodedProxies);
+  return parseWebshareProxies(hardcodedProxies, 'socks5');
 }
 
 /**

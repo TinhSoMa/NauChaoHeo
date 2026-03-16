@@ -4,11 +4,15 @@
  */
 
 import { spawn } from 'child_process';
+import { app } from 'electron';
+import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import WebSocket, { RawData } from 'ws';
 import { AppSettingsService } from '../appSettings';
+import { getProxyManager } from '../proxy/proxyManager';
+import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import {
   AudioFile,
   DEFAULT_RATE,
@@ -24,6 +28,7 @@ import {
   TTS_VOICE_CATALOG,
   VoiceInfo,
 } from '../../../shared/types/caption';
+import type { ProxyConfig } from '../../../shared/types/proxy';
 
 const PROVIDER_PREFIX_PATTERN = /^(edge|capcut):(.*)$/i;
 const DEFAULT_CAPCUT_WS_URL = 'wss://sami-normal-sg.capcutapi.com/internal/api/v1/ws';
@@ -48,6 +53,25 @@ interface ResolvedVoiceSelection {
 interface SingleGenerateResult {
   success: boolean;
   error?: string;
+}
+
+interface EdgeAsyncioItem {
+  index: number;
+  text: string;
+  outputPath: string;
+  startMs: number;
+  durationMs: number;
+  filename: string;
+}
+
+interface EdgeAsyncioJob {
+  proxyId?: string | null;
+  proxyUrl?: string | null;
+  items: EdgeAsyncioItem[];
+  voice: string;
+  rate: string;
+  volume: string;
+  outputFormat: 'wav' | 'mp3';
 }
 
 interface TTSTestVoiceSampleOptions extends TTSTestVoiceRequest {
@@ -153,6 +177,25 @@ export function getSafeFilename(index: number, text: string, ext: string = 'wav'
   return `${index.toString().padStart(3, '0')}_${safeText || 'audio'}.${ext}`;
 }
 
+function sanitizeTextForTts(text: string): string {
+  if (!text) return '';
+  // Remove lone surrogate code units to avoid UTF-8 encode errors.
+  return text.replace(/[\uD800-\uDFFF]/g, '');
+}
+
+function fixMojibake(text: string): string {
+  if (!text) return text;
+  const suspect = /Ã|Â|á»/;
+  if (!suspect.test(text)) {
+    return text;
+  }
+  const fixed = Buffer.from(text, 'latin1').toString('utf8');
+  if (!suspect.test(fixed)) {
+    return fixed;
+  }
+  return text;
+}
+
 function parseExtraCapCutHeaders(envValue: string | undefined): Record<string, string> {
   if (!envValue) return {};
   try {
@@ -186,6 +229,33 @@ function normalizeHeaderMap(headers: Record<string, string> | null | undefined):
     normalized[cleanKey] = cleanValue;
   }
   return normalized;
+}
+
+function resolveEdgeTtsWorkerPath(): string {
+  const appPath = app.getAppPath();
+  const candidates = [
+    path.join(process.resourcesPath || '', 'tts', 'python', 'edge_tts_worker.py'),
+    path.join(appPath, 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
+    path.join(process.cwd(), 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
+    path.join(appPath, 'out', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
+    path.join(appPath, 'dist', 'main', 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
+function toProxyUrl(proxy: ProxyConfig): string {
+  const scheme = proxy.type === 'socks5' ? 'socks5' : proxy.type === 'https' ? 'https' : 'http';
+  if (proxy.username) {
+    const username = encodeURIComponent(proxy.username);
+    const password = encodeURIComponent(proxy.password || '');
+    return `${scheme}://${username}:${password}@${proxy.host}:${proxy.port}`;
+  }
+  return `${scheme}://${proxy.host}:${proxy.port}`;
 }
 
 function normalizeSecretValue(value: unknown): string | null {
@@ -996,20 +1066,393 @@ async function generateBatchAudioWithProvider(
   };
 }
 
+// export async function generateBatchAudioEdge(
+//   entries: SubtitleEntry[],
+//   options: Partial<TTSOptions>,
+//   progressCallback?: (progress: TTSProgress) => void
+// ): Promise<TTSResult> {
+//   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'edge' });
+//   return generateBatchAudioWithProvider(
+//     entries,
+//     options,
+//     voiceSelection,
+//     ({ text, outputPath, voiceId, rate, volume }) =>
+//       generateSingleAudioEdge({ text, outputPath, voiceId, rate, volume }),
+//     progressCallback
+//   );
+// }
+
 export async function generateBatchAudioEdge(
   entries: SubtitleEntry[],
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
+  return generateAsyncioAudioWithProvider(entries, options, progressCallback);
+}
+
+async function runEdgeTtsWorker(
+  jobs: EdgeAsyncioJob[],
+  runtime: { command: string; baseArgs: string[] },
+  workerPath: string,
+  timeoutMs?: number,
+): Promise<{ results: Map<number, { success: boolean; error?: string }>; errors: string[] }> {
+  const payload = { jobs, ...(timeoutMs ? { timeoutMs } : {}) };
+  const errors: string[] = [];
+  const results = new Map<number, { success: boolean; error?: string }>();
+
+  return new Promise((resolve) => {
+    let doneReceived = false;
+    let stderr = '';
+    let buffer = '';
+
+    console.log(`[TTS][EDGE][asyncio] Spawn worker: ${runtime.command} ${runtime.baseArgs.join(' ')} ${workerPath}`);
+    console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${jobs.reduce((sum, job) => sum + job.items.length, 0)}`);
+
+    const proc = spawn(runtime.command, [...runtime.baseArgs, workerPath], {
+      windowsHide: true,
+      shell: false,
+      env: {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+      },
+    });
+
+    proc.stdout?.on('data', (data) => {
+      buffer += data.toString();
+      let index: number;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index).trim();
+        buffer = buffer.slice(index + 1);
+        if (!line) continue;
+        try {
+          const event = JSON.parse(line);
+          if (event?.event === 'progress' && typeof event.index === 'number') {
+            // progress event: just capture last known error/success
+            if (typeof event.success === 'boolean') {
+              results.set(event.index, { success: event.success, error: event.error });
+              if (!event.success) {
+                console.warn(
+                  `[TTS][EDGE][asyncio] Failed index=${event.index} file=${event.filename || 'n/a'} ` +
+                  `proxyId=${event.proxyId || 'direct'} error=${event.error || 'unknown'}`
+                );
+              }
+            }
+            continue;
+          }
+          if (event?.event === 'done' && Array.isArray(event.results)) {
+            for (const item of event.results) {
+              if (typeof item.index === 'number') {
+                results.set(item.index, { success: !!item.success, error: item.error });
+              }
+            }
+            doneReceived = true;
+          }
+        } catch {
+          // Ignore non-JSON lines
+        }
+      }
+    });
+
+    proc.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (!doneReceived) {
+        const err = (stderr || `Python worker exited with code ${code ?? 'unknown'}`).trim();
+        if (err) errors.push(err);
+      }
+      if (stderr.trim()) {
+        console.warn(`[TTS][EDGE][asyncio] Worker stderr:\n${stderr.trim()}`);
+      }
+      console.log(`[TTS][EDGE][asyncio] Worker closed code=${code ?? 'unknown'} done=${doneReceived}`);
+      resolve({ results, errors });
+    });
+
+    proc.on('error', (err) => {
+      errors.push(`Spawn error: ${err.message}`);
+      resolve({ results, errors });
+    });
+
+    proc.stdin?.write(Buffer.from(JSON.stringify(payload), 'utf8'));
+    proc.stdin?.end();
+  });
+}
+
+export async function generateAsyncioAudioWithProvider(
+  entries: SubtitleEntry[],
+  options: Partial<TTSOptions>,
+  progressCallback?: (progress: TTSProgress) => void
+): Promise<TTSResult> {
   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'edge' });
-  return generateBatchAudioWithProvider(
-    entries,
-    options,
-    voiceSelection,
-    ({ text, outputPath, voiceId, rate, volume }) =>
-      generateSingleAudioEdge({ text, outputPath, voiceId, rate, volume }),
-    progressCallback
-  );
+  const outputFormat: 'wav' | 'mp3' = options.outputFormat === 'mp3' ? 'mp3' : 'wav';
+  const {
+    rate = DEFAULT_RATE,
+    volume = DEFAULT_VOLUME,
+    outputDir,
+  } = options;
+
+  console.log(`[TTS][EDGE][asyncio] Start entries=${entries.length}, voice=${voiceSelection.voiceId}, format=${outputFormat}`);
+
+  if (!outputDir) {
+    return {
+      success: false,
+      audioFiles: [],
+      totalGenerated: 0,
+      totalFailed: entries.length,
+      outputDir: '',
+      errors: ['outputDir is required'],
+    };
+  }
+
+  await fs.mkdir(outputDir, { recursive: true });
+
+  const availability = await checkPythonModuleAvailability(['edge_tts']);
+  if (!availability.success || !availability.runtime) {
+    const error = availability.error || 'Thiếu module Python edge_tts.';
+    console.error(`[TTS][EDGE][asyncio] Python runtime/module check failed: ${error}`);
+    return {
+      success: false,
+      audioFiles: entries.map((entry) => ({
+        index: entry.index,
+        path: path.join(outputDir, getSafeFilename(entry.index, entry.translatedText || entry.text, outputFormat)),
+        startMs: entry.startMs,
+        durationMs: entry.durationMs,
+        success: false,
+        error,
+      })),
+      totalGenerated: 0,
+      totalFailed: entries.length,
+      outputDir,
+      errors: [error],
+    };
+  }
+
+  const workerPath = resolveEdgeTtsWorkerPath();
+  if (!existsSync(workerPath)) {
+    console.error(`[TTS][EDGE][asyncio] Worker not found: ${workerPath}`);
+    return {
+      success: false,
+      audioFiles: [],
+      totalGenerated: 0,
+      totalFailed: entries.length,
+      outputDir,
+      errors: [`Không tìm thấy edge_tts_worker.py (${workerPath})`],
+    };
+  }
+
+  const providerLabel = 'EDGE';
+  const audioFiles: AudioFile[] = [];
+  const errors: string[] = [];
+  let completed = 0;
+
+  const pendingItems: EdgeAsyncioItem[] = [];
+  for (const entry of entries) {
+    const rawText = entry.translatedText || entry.text;
+    const normalizedText = fixMojibake(rawText);
+    const cleanText = sanitizeTextForTts(normalizedText);
+    const filename = getSafeFilename(entry.index, cleanText, outputFormat);
+    const outputPath = path.join(outputDir, filename);
+
+    try {
+      const existing = await fs.stat(outputPath);
+      if (existing.size > 0) {
+        audioFiles.push({
+          index: entry.index,
+          path: outputPath,
+          startMs: entry.startMs,
+          durationMs: entry.durationMs,
+          success: true,
+        });
+        completed++;
+        progressCallback?.({
+          current: completed,
+          total: entries.length,
+          status: 'generating',
+          currentFile: filename,
+          message: `[${providerLabel}] Skip (existed): ${filename}`,
+        });
+        continue;
+      }
+    } catch {
+      // File chưa tồn tại => đưa vào danh sách xử lý
+    }
+
+    pendingItems.push({
+      index: entry.index,
+      text: cleanText,
+      outputPath,
+      startMs: entry.startMs,
+      durationMs: entry.durationMs,
+      filename,
+    });
+    console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
+  }
+
+  const useProxySetting = AppSettingsService.getAll().useProxy !== false;
+  const proxyManager = getProxyManager();
+  const hasSocks5Proxy = useProxySetting && proxyManager.getAvailableProxies('socks5').length > 0;
+  console.log(`[TTS][EDGE][asyncio] useProxy=${useProxySetting}${hasSocks5Proxy ? ' (socks5-only)' : ''}`);
+  if (useProxySetting && !hasSocks5Proxy) {
+    console.warn('[TTS][EDGE][asyncio] Không có SOCKS5 proxy khả dụng, fallback dùng proxy thường nếu có.');
+  }
+
+  const buildJobs = (items: EdgeAsyncioItem[]): EdgeAsyncioJob[] => {
+    const jobs: EdgeAsyncioJob[] = [];
+    let i = 0;
+    while (i < items.length) {
+      const chunk = items.slice(i, i + 10);
+      let proxy: ProxyConfig | null = null;
+      if (useProxySetting) {
+        proxy = hasSocks5Proxy ? proxyManager.getNextProxy('socks5') : proxyManager.getNextProxy();
+      }
+      if (proxy) {
+        console.log(`[TTS][EDGE][asyncio] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`);
+      } else {
+        console.log(`[TTS][EDGE][asyncio] Assign direct (no proxy) -> items ${chunk.length}`);
+      }
+      jobs.push({
+        proxyId: proxy?.id || null,
+        proxyUrl: proxy ? toProxyUrl(proxy) : null,
+        items: chunk,
+        voice: voiceSelection.voiceId,
+        rate,
+        volume,
+        outputFormat,
+      });
+      i += 10;
+    }
+    if (jobs.length === 0 && items.length > 0) {
+      jobs.push({
+        proxyId: null,
+        proxyUrl: null,
+        items,
+        voice: voiceSelection.voiceId,
+        rate,
+        volume,
+        outputFormat,
+      });
+    }
+    return jobs;
+  };
+
+  let remaining = pendingItems.slice();
+  let attempt = 0;
+
+  while (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
+    attempt++;
+    console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`);
+    const jobs = buildJobs(remaining);
+    const runResult = await runEdgeTtsWorker(jobs, availability.runtime, workerPath);
+    if (runResult.errors.length > 0) {
+      console.warn(`[TTS][EDGE][asyncio] Worker errors: ${runResult.errors.join(' | ')}`);
+      errors.push(...runResult.errors);
+    }
+
+    const nextRemaining: EdgeAsyncioItem[] = [];
+    for (const job of jobs) {
+      let jobFailedReason: string | undefined;
+      let jobFailed = false;
+
+      for (const item of job.items) {
+        const result = runResult.results.get(item.index);
+        let itemSuccess = !!result?.success;
+        let itemError = result?.error;
+
+        if (itemSuccess) {
+          try {
+            const stats = await fs.stat(item.outputPath);
+            if (stats.size <= 0) {
+              throw new Error('file rỗng');
+            }
+          } catch (error) {
+            itemSuccess = false;
+            itemError = `Worker báo success nhưng file output không hợp lệ (${item.outputPath}): ${String(error)}`;
+          }
+        }
+
+        if (itemSuccess) {
+          audioFiles.push({
+            index: item.index,
+            path: item.outputPath,
+            startMs: item.startMs,
+            durationMs: item.durationMs,
+            success: true,
+          });
+          completed++;
+          progressCallback?.({
+            current: completed,
+            total: entries.length,
+            status: 'generating',
+            currentFile: item.filename,
+            message: `[${providerLabel}] Đã tạo: ${item.filename}`,
+          });
+        } else {
+          if (!jobFailedReason && itemError) {
+            jobFailedReason = itemError;
+          }
+          jobFailed = true;
+          if (attempt <= MAX_TTS_RETRIES) {
+            nextRemaining.push(item);
+          } else {
+            const errorText = itemError || 'Unknown error';
+            errors.push(`${item.filename}: ${errorText}`);
+            audioFiles.push({
+              index: item.index,
+              path: item.outputPath,
+              startMs: item.startMs,
+              durationMs: item.durationMs,
+              success: false,
+              error: errorText,
+            });
+            completed++;
+            progressCallback?.({
+              current: completed,
+              total: entries.length,
+              status: 'generating',
+              currentFile: item.filename,
+              message: `[${providerLabel}] Lỗi: ${item.filename}`,
+            });
+          }
+        }
+      }
+
+      if (job.proxyId) {
+        if (jobFailed) {
+          proxyManager.markProxyFailed(job.proxyId, jobFailedReason);
+        } else {
+          proxyManager.markProxySuccess(job.proxyId);
+        }
+      }
+    }
+
+    remaining = nextRemaining;
+    if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
+      console.log(`[TTS][EDGE][asyncio] Requeue ${remaining.length} items for next attempt.`);
+    }
+  }
+
+  audioFiles.sort((a, b) => a.startMs - b.startMs);
+  const totalGenerated = audioFiles.filter((file) => file.success).length;
+  const totalFailed = audioFiles.filter((file) => !file.success).length;
+
+  progressCallback?.({
+    current: entries.length,
+    total: entries.length,
+    status: 'completed',
+    currentFile: '',
+    message: `[${providerLabel}] Hoàn thành: ${totalGenerated}/${entries.length} files`,
+  });
+
+  return {
+    success: totalFailed === 0,
+    audioFiles,
+    totalGenerated,
+    totalFailed,
+    outputDir,
+    errors: errors.length > 0 ? errors : undefined,
+  };
 }
 
 export async function generateBatchAudioCapCut(
@@ -1068,7 +1511,7 @@ export async function generateBatchAudioCapCut(
   let completed = 0;
 
   for (const entry of entries) {
-    const text = entry.translatedText || entry.text;
+    const text = fixMojibake(entry.translatedText || entry.text);
     const filename = getSafeFilename(entry.index, text, outputFormat);
     const outputPath = path.join(outputDir, filename);
 

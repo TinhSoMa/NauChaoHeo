@@ -180,12 +180,18 @@ export function registerProxyHandlers(): void {
   // Bulk import Webshare proxies
   ipcMain.handle(
     'proxy:bulkImportWebshare',
-    async (_event: IpcMainInvokeEvent, text: string): Promise<{ success: boolean; added?: number; skipped?: number; error?: string }> => {
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: string | { text: string; type?: 'http' | 'https' | 'socks5' }
+    ): Promise<{ success: boolean; added?: number; skipped?: number; error?: string }> => {
       try {
         console.log('[ProxyHandlers] Bulk import Webshare proxies...');
         const { parseWebshareProxies } = await import('../utils/webshareParser');
+
+        const text = typeof payload === 'string' ? payload : payload?.text || '';
+        const preferredType = typeof payload === 'string' ? undefined : payload?.type;
         
-        const proxiesToAdd = parseWebshareProxies(text);
+        const proxiesToAdd = parseWebshareProxies(text, preferredType);
         
         if (proxiesToAdd.length === 0) {
           return { success: false, error: 'Không parse được proxy nào từ input' };

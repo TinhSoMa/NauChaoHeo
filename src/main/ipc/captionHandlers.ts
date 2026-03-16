@@ -195,6 +195,66 @@ function deepMergeRecord(target: Record<string, unknown>, source: Record<string,
   return output;
 }
 
+function decodeTextFromBuffer(buffer: Buffer): string {
+  if (!buffer || buffer.length === 0) {
+    return '';
+  }
+
+  if (buffer.length >= 2) {
+    const b0 = buffer[0];
+    const b1 = buffer[1];
+    if (b0 === 0xff && b1 === 0xfe) {
+      return buffer.slice(2).toString('utf16le');
+    }
+    if (b0 === 0xfe && b1 === 0xff) {
+      const swapped = Buffer.allocUnsafe(buffer.length - 2);
+      for (let i = 2; i < buffer.length; i += 2) {
+        swapped[i - 2] = buffer[i + 1] || 0;
+        swapped[i - 1] = buffer[i] || 0;
+      }
+      return swapped.toString('utf16le');
+    }
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.slice(3).toString('utf8');
+  }
+
+  const text = buffer.toString('utf8');
+  return maybeFixMojibake(text);
+}
+
+function maybeFixMojibake(text: string): string {
+  if (!text) return text;
+  const suspect = /Ã|Â|á»/;
+  if (!suspect.test(text)) {
+    return text;
+  }
+  const fixed = Buffer.from(text, 'latin1').toString('utf8');
+  if (!suspect.test(fixed)) {
+    return fixed;
+  }
+  return text;
+}
+
+function fixMojibakeDeep(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return maybeFixMojibake(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => fixMojibakeDeep(item));
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const next: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(record)) {
+      next[key] = fixMojibakeDeep(val);
+    }
+    return next;
+  }
+  return value;
+}
+
 /**
  * Đăng ký tất cả IPC handlers cho Caption
  */
@@ -856,8 +916,11 @@ export function registerCaptionHandlers(): void {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
         try {
-          const raw = await fs.readFile(sessionPath, 'utf-8');
-          return { success: true, data: JSON.parse(raw) };
+          const buffer = await fs.readFile(sessionPath);
+          const raw = decodeTextFromBuffer(buffer);
+          const parsed = JSON.parse(raw);
+          const fixed = fixMojibakeDeep(parsed);
+          return { success: true, data: fixed };
         } catch (error) {
           const err = String(error);
           if (err.includes('ENOENT')) {
@@ -922,10 +985,11 @@ export function registerCaptionHandlers(): void {
         let current: Record<string, unknown> = {};
         if (fsSync.existsSync(sessionPath)) {
           try {
-            const raw = await fs.readFile(sessionPath, 'utf-8');
+            const buffer = await fs.readFile(sessionPath);
+            const raw = decodeTextFromBuffer(buffer);
             const parsed = JSON.parse(raw);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              current = parsed as Record<string, unknown>;
+              current = fixMojibakeDeep(parsed) as Record<string, unknown>;
             }
           } catch {
             current = {};

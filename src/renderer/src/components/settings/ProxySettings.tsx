@@ -22,6 +22,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkImportText, setBulkImportText] = useState('');
+  const [bulkImportType, setBulkImportType] = useState<'http' | 'socks5'>('socks5');
   const [formData, setFormData] = useState({
     host: '',
     port: 8080,
@@ -274,7 +275,10 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
       }
 
       // Call IPC để parse và add proxies
-      const result = await window.electronAPI.invoke('proxy:bulkImportWebshare', bulkImportText) as { success: boolean; added?: number; skipped?: number; error?: string };
+      const result = await window.electronAPI.invoke('proxy:bulkImportWebshare', {
+        text: bulkImportText,
+        type: bulkImportType,
+      }) as { success: boolean; added?: number; skipped?: number; error?: string };
       
       if (result.success) {
         alert(`✅ Import thành công!\n\nĐã thêm: ${result.added}\nĐã bỏ qua (duplicate): ${result.skipped}`);
@@ -419,12 +423,24 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
             </div>
             <div style={{ padding: '16px 24px' }}>
               <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-                Paste danh sách proxy từ Webshare (mỗi dòng: ip,port,username,password,country,city)
+                Paste danh sách proxy (mỗi dòng: ip,port,username,password,country,city). 
+                Chọn loại mặc định bên dưới (HTTP/SOCKS5). Hỗ trợ prefix override: `socks5:ip:port:user:pass` hoặc `socks5://user:pass@ip:port`.
               </p>
+              <div style={{ marginBottom: '12px', maxWidth: '280px' }}>
+                <Select
+                  label="Loại proxy mặc định"
+                  value={bulkImportType}
+                  onChange={(e) => setBulkImportType(e.target.value as 'http' | 'socks5')}
+                  options={[
+                    { value: 'socks5', label: 'SOCKS5 (Webshare Proxy)' },
+                    { value: 'http', label: 'HTTP (Webshare Proxy)' },
+                  ]}
+                />
+              </div>
               <textarea
                 className={styles.select}
                 style={{ width: '100%', height: '120px', resize: 'none', marginBottom: '12px' }}
-                placeholder={`142.111.48.253,7030,qfdakzos,7fvhf24fe3ud,US,Los Angeles
+                placeholder={`socks5:142.111.48.253:7030:qfdakzos:7fvhf24fe3ud
 23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo`}
                 value={bulkImportText}
                 onChange={(e) => setBulkImportText(e.target.value)}
@@ -434,7 +450,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
                   <Upload size={16} />
                   Import ({bulkImportText.trim().split('\n').filter(l => l.trim()).length} proxies)
                 </Button>
-                <Button onClick={() => { setShowBulkImport(false); setBulkImportText(''); }} variant="secondary">
+                <Button onClick={() => { setShowBulkImport(false); setBulkImportText(''); setBulkImportType('socks5'); }} variant="secondary">
                   Hủy
                 </Button>
               </div>

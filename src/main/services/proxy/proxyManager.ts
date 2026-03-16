@@ -33,7 +33,7 @@ export class ProxyManager {
    * Lấy proxy tiếp theo theo round-robin
    * @returns Proxy config hoặc null nếu không có proxy khả dụng
    */
-  getNextProxy(): ProxyConfig | null {
+  getNextProxy(type?: ProxyConfig['type']): ProxyConfig | null {
     if (!this.settings.enableRotation) {
       return null;
     }
@@ -41,7 +41,7 @@ export class ProxyManager {
     // Lọc các proxy được enable và chưa bị disable do lỗi quá nhiều
     const allProxies = ProxyDatabase.getAll();
     const availableProxies = allProxies.filter(p => 
-      p.enabled && (p.failedCount || 0) < this.maxFailedCount
+      p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!type || p.type === type)
     );
 
     if (availableProxies.length === 0) {
@@ -55,6 +55,16 @@ export class ProxyManager {
 
     console.log(`[ProxyManager] Sử dụng proxy: ${proxy.host}:${proxy.port} (${proxy.type})`);
     return proxy;
+  }
+
+  /**
+   * Lấy danh sách proxy khả dụng (có thể lọc theo type)
+   */
+  getAvailableProxies(type?: ProxyConfig['type']): ProxyConfig[] {
+    const allProxies = ProxyDatabase.getAll();
+    return allProxies.filter(p =>
+      p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!type || p.type === type)
+    );
   }
 
   /**

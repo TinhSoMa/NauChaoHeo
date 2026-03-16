@@ -42,7 +42,8 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
     await fs.access(filePath);
     
     // Đọc nội dung file
-    const content = await fs.readFile(filePath, 'utf-8');
+    const buffer = await fs.readFile(filePath);
+    const content = decodeTextContent(buffer);
     const entries: SubtitleEntry[] = [];
     
     // Tách các block SRT (cách nhau bởi dòng trống)
@@ -157,6 +158,52 @@ export async function exportToSrt(
     
     return { success: false, error: errorMsg };
   }
+}
+
+function decodeTextContent(buffer: Buffer): string {
+  if (!buffer || buffer.length === 0) {
+    return '';
+  }
+
+  // BOM detection
+  if (buffer.length >= 2) {
+    const b0 = buffer[0];
+    const b1 = buffer[1];
+    // UTF-16LE BOM
+    if (b0 === 0xff && b1 === 0xfe) {
+      return buffer.slice(2).toString('utf16le');
+    }
+    // UTF-16BE BOM
+    if (b0 === 0xfe && b1 === 0xff) {
+      const swapped = Buffer.allocUnsafe(buffer.length - 2);
+      for (let i = 2; i < buffer.length; i += 2) {
+        swapped[i - 2] = buffer[i + 1] || 0;
+        swapped[i - 1] = buffer[i] || 0;
+      }
+      return swapped.toString('utf16le');
+    }
+  }
+
+  // UTF-8 BOM
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.slice(3).toString('utf8');
+  }
+
+  const text = buffer.toString('utf8');
+  return maybeFixMojibake(text);
+}
+
+function maybeFixMojibake(text: string): string {
+  if (!text) return text;
+  const suspect = /Ã|Â|á»/;
+  if (!suspect.test(text)) {
+    return text;
+  }
+  const fixed = Buffer.from(text, 'latin1').toString('utf8');
+  if (!suspect.test(fixed)) {
+    return fixed;
+  }
+  return text;
 }
 
 /**

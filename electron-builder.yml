@@ -44,6 +44,10 @@ extraResources:
     to: geminiWebApi/python
     filter:
       - "gemini_webapi_worker.py"
+  - from: src/main/services/tts/python
+    to: tts/python
+    filter:
+      - "edge_tts_worker.py"
 
 # Cấu hình Windows
 win:
