@@ -99,6 +99,8 @@ const THUMBNAIL_FONT_SIZE_MIN = 8;
 const THUMBNAIL_FONT_SIZE_MAX = 200;
 const THUMBNAIL_FONT_SIZE_DEFAULT = 48;
 const STEP3_DEFAULT_LINES_PER_BATCH = 50;
+const EDGE_TTS_BATCH_SIZE_MIN = 1;
+const EDGE_TTS_BATCH_SIZE_MAX = 500;
 const VIDEO_VOLUME_PERCENT_MIN = 0;
 const VIDEO_VOLUME_PERCENT_MAX = 200;
 const AUDIO_VOLUME_PERCENT_MIN = 0;
@@ -1335,6 +1337,7 @@ export function CaptionTranslator() {
     voice: settings.voice,
     rate: settings.rate,
     volume: settings.volume,
+    edgeTtsBatchSize: settings.edgeTtsBatchSize,
     srtSpeed: settings.srtSpeed,
     splitByLines: settings.splitByLines,
     linesPerFile: settings.linesPerFile,
@@ -1399,6 +1402,7 @@ export function CaptionTranslator() {
     settings.voice,
     settings.rate,
     settings.volume,
+    settings.edgeTtsBatchSize,
     settings.srtSpeed,
     settings.splitByLines,
     settings.linesPerFile,
@@ -5802,6 +5806,20 @@ export function CaptionTranslator() {
                     ))}
                   </select>
                 </div>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>Batch size (Edge)</label>
+                  <Input
+                    type="number"
+                    min={EDGE_TTS_BATCH_SIZE_MIN}
+                    max={EDGE_TTS_BATCH_SIZE_MAX}
+                    step={1}
+                    value={settings.edgeTtsBatchSize}
+                    onChange={(e) => settings.setEdgeTtsBatchSize(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+              <div className={styles.stepCardHint}>
+                Số caption xử lý mỗi lượt cho Edge TTS. Mặc định 50.
               </div>
             </div>
           )}

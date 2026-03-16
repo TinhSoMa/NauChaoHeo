@@ -6,6 +6,7 @@ import {
   DEFAULT_RATE,
   DEFAULT_VOLUME,
   DEFAULT_SRT_SPEED,
+  DEFAULT_EDGE_TTS_BATCH_SIZE,
   DEFAULT_SPLIT_BY_LINES,
   DEFAULT_LINES_PER_FILE,
   DEFAULT_NUMBER_OF_PARTS,
@@ -151,6 +152,8 @@ const MIN_VIDEO_VOLUME_PERCENT = 0;
 const MAX_VIDEO_VOLUME_PERCENT = 200;
 const MIN_TTS_VOLUME_PERCENT = 0;
 const MAX_TTS_VOLUME_PERCENT = 400;
+const MIN_EDGE_TTS_BATCH_SIZE = 1;
+const MAX_EDGE_TTS_BATCH_SIZE = 500;
 const MIN_COVER_FEATHER_PX = 0;
 const MAX_COVER_FEATHER_PX = 120;
 const DEFAULT_COVER_FEATHER_PX = 18;
@@ -1151,6 +1154,21 @@ export function useCaptionSettings() {
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
   const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
+  const [edgeTtsBatchSize, setEdgeTtsBatchSizeState] = useState(DEFAULT_EDGE_TTS_BATCH_SIZE);
+
+  const setEdgeTtsBatchSize = useCallback((value: number) => {
+    if (!Number.isFinite(value)) {
+      setEdgeTtsBatchSizeState(DEFAULT_EDGE_TTS_BATCH_SIZE);
+      return;
+    }
+    const rounded = Math.round(value);
+    if (rounded < MIN_EDGE_TTS_BATCH_SIZE) {
+      setEdgeTtsBatchSizeState(DEFAULT_EDGE_TTS_BATCH_SIZE);
+      return;
+    }
+    const normalized = clamp(rounded, MIN_EDGE_TTS_BATCH_SIZE, MAX_EDGE_TTS_BATCH_SIZE);
+    setEdgeTtsBatchSizeState(normalized);
+  }, []);
 
   const [splitByLines, setSplitByLines] = useState(DEFAULT_SPLIT_BY_LINES);
   const [linesPerFile, setLinesPerFile] = useState(DEFAULT_LINES_PER_FILE);
@@ -1782,6 +1800,7 @@ export function useCaptionSettings() {
       voice,
       rate,
       volume,
+      edgeTtsBatchSize,
       srtSpeed,
       splitByLines,
       linesPerFile,
@@ -1871,6 +1890,7 @@ export function useCaptionSettings() {
       voice,
       rate,
       volume,
+      edgeTtsBatchSize,
       srtSpeed,
       splitByLines,
       linesPerFile,
@@ -1898,6 +1918,7 @@ export function useCaptionSettings() {
     if (saved.voice) setVoice(saved.voice);
     if (saved.rate) setRate(String(saved.rate));
     if (saved.volume) setVolume(String(saved.volume));
+    if (typeof saved.edgeTtsBatchSize === 'number') setEdgeTtsBatchSize(saved.edgeTtsBatchSize);
     if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
     if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
     if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
@@ -2150,6 +2171,7 @@ export function useCaptionSettings() {
     voice, setVoice,
     rate, setRate,
     volume, setVolume,
+    edgeTtsBatchSize, setEdgeTtsBatchSize,
     srtSpeed, setSrtSpeed,
     splitByLines, setSplitByLines,
     linesPerFile, setLinesPerFile,
@@ -2295,3 +2317,6 @@ export function useCaptionSettings() {
     saveSettings,
   };
 }
+
+
+

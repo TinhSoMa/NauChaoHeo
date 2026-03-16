@@ -194,6 +194,7 @@ interface UseCaptionProcessingProps {
     voice: string;
     rate: string;
     volume: string;
+    edgeTtsBatchSize?: number;
     srtSpeed: number;
     audioDir: string;
     setAudioDir: (dir: string) => void;
@@ -1731,6 +1732,7 @@ export function useCaptionProcessing({
         voice: cfg.voice,
         rate: cfg.rate,
         volume: cfg.volume,
+        edgeTtsBatchSize: cfg.edgeTtsBatchSize,
         srtSpeed: cfg.srtSpeed,
         autoFitAudio: cfg.autoFitAudio,
       },
@@ -1838,7 +1840,8 @@ export function useCaptionProcessing({
       voice: cfg.voice,
       rate: cfg.rate,
       volume: cfg.volume,
-      srtSpeed: cfg.srtSpeed,
+        edgeTtsBatchSize: cfg.edgeTtsBatchSize,
+        srtSpeed: cfg.srtSpeed,
       splitByLines: cfg.splitByLines,
       linesPerFile: cfg.linesPerFile,
       numberOfParts: cfg.numberOfParts,
@@ -2604,6 +2607,7 @@ export function useCaptionProcessing({
         if (!isCapCutVoice) {
           ttsGenerateOptions.rate = cfg.rate;
           ttsGenerateOptions.volume = cfg.volume;
+          ttsGenerateOptions.edgeTtsBatchSize = cfg.edgeTtsBatchSize;
         }
         // @ts-ignore
         const result = await window.electronAPI.tts.generate(currentEntries, ttsGenerateOptions);
@@ -3644,3 +3648,4 @@ export function useCaptionProcessing({
     stepDependencyIssues,
   };
 }
+

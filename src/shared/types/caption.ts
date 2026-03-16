@@ -150,6 +150,7 @@ export interface TTSOptions {
   outputFormat: 'wav' | 'mp3';
   outputDir: string;      // Thư mục output
   maxConcurrent: number;  // Số file tạo song song (default: 5)
+  edgeTtsBatchSize?: number;  // Batch size for Edge TTS (default: 50), only for Edge provider
 }
 
 /**
@@ -912,6 +913,7 @@ export interface CaptionProjectSettingsValues {
   voice?: string;
   rate?: string;
   volume?: string;
+  edgeTtsBatchSize?: number;
   srtSpeed?: number;
   splitByLines?: boolean;
   linesPerFile?: number;
@@ -1192,4 +1194,6 @@ export const CAPTION_SESSION_IPC_CHANNELS = {
   WRITE_ATOMIC: 'captionSession:writeAtomic',
   PATCH: 'captionSession:patch',
 } as const;
+
+
 

@@ -594,6 +594,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       voice: settings.voice,
       rate: settings.rate,
       volume: settings.volume,
+      edgeTtsBatchSize: settings.edgeTtsBatchSize,
       srtSpeed: settings.srtSpeed,
       autoFitAudio: settings.autoFitAudio,
     },
@@ -759,3 +760,4 @@ export function scheduleSessionSettingsRetry(
   }, delay);
   sessionSyncRetryTimers.set(sessionPath, timer);
 }
+

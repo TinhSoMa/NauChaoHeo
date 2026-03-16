@@ -35,6 +35,9 @@ const DEFAULT_CAPCUT_WS_URL = 'wss://sami-normal-sg.capcutapi.com/internal/api/v
 const DEFAULT_CAPCUT_USER_AGENT = 'Cronet/TTNetVersion:e159bc05 2022-08-16 QuicVersion:68cae75d 2021-08-12';
 const DEFAULT_CAPCUT_X_SS_DP = '359289';
 const MAX_TTS_RETRIES = 3;
+const DEFAULT_EDGE_TTS_BATCH_SIZE = 50;
+const MIN_EDGE_TTS_BATCH_SIZE = 1;
+const MAX_EDGE_TTS_BATCH_SIZE = 500;
 
 interface CapCutRuntimeConfig {
   wsUrl: string;
@@ -264,6 +267,11 @@ function normalizeSecretValue(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeEdgeTtsBatchSize(value: number | undefined): number {
+  const raw = Number.isFinite(value) ? Math.round(value as number) : DEFAULT_EDGE_TTS_BATCH_SIZE;
+  return Math.min(MAX_EDGE_TTS_BATCH_SIZE, Math.max(MIN_EDGE_TTS_BATCH_SIZE, raw));
 }
 
 function shouldPersistCapcutSecrets(
@@ -1192,8 +1200,10 @@ export async function generateAsyncioAudioWithProvider(
     volume = DEFAULT_VOLUME,
     outputDir,
   } = options;
+  const effectiveBatchSize = normalizeEdgeTtsBatchSize(options.edgeTtsBatchSize);
 
   console.log(`[TTS][EDGE][asyncio] Start entries=${entries.length}, voice=${voiceSelection.voiceId}, format=${outputFormat}`);
+  console.log(`[TTS][EDGE][asyncio] Batch size=${effectiveBatchSize}`);
 
   if (!outputDir) {
     return {
@@ -1302,7 +1312,7 @@ export async function generateAsyncioAudioWithProvider(
     const jobs: EdgeAsyncioJob[] = [];
     let i = 0;
     while (i < items.length) {
-      const chunk = items.slice(i, i + 10);
+      const chunk = items.slice(i, i + effectiveBatchSize);
       let proxy: ProxyConfig | null = null;
       if (useProxySetting) {
         proxy = hasSocks5Proxy ? proxyManager.getNextProxy('socks5') : proxyManager.getNextProxy();
@@ -1321,7 +1331,7 @@ export async function generateAsyncioAudioWithProvider(
         volume,
         outputFormat,
       });
-      i += 10;
+      i += effectiveBatchSize;
     }
     if (jobs.length === 0 && items.length > 0) {
       jobs.push({
