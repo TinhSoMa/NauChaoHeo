@@ -39,6 +39,10 @@ export interface GeminiAPI {
   // Key Storage Management
   importKeys: (jsonString: string) => Promise<IpcApiResponse<{ count: number }>>;
   exportKeys: () => Promise<IpcApiResponse<string>>;
+  disableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
+  enableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
+  disableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
+  enableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
   hasKeys: () => Promise<IpcApiResponse<boolean>>;
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>; // Sử dụng any[] hoặc EmbeddedAccount[] nếu import được
@@ -80,6 +84,18 @@ export function createGeminiAPI(): GeminiAPI {
     // Key Storage Management
     importKeys: (jsonString: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_IMPORT, jsonString),
     exportKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_EXPORT),
+    disableAccount: (accountId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_DISABLE_ACCOUNT, accountId),
+    enableAccount: (accountId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_ENABLE_ACCOUNT, accountId),
+    disableProject: (accountId: string, projectIndex: number) => ipcRenderer.invoke(
+      GEMINI_IPC_CHANNELS.KEYS_DISABLE_PROJECT,
+      accountId,
+      projectIndex
+    ),
+    enableProject: (accountId: string, projectIndex: number) => ipcRenderer.invoke(
+      GEMINI_IPC_CHANNELS.KEYS_ENABLE_PROJECT,
+      accountId,
+      projectIndex
+    ),
     hasKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_HAS_KEYS),
     getKeysLocation: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION),
     getAllKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL),

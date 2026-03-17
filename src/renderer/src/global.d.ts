@@ -73,6 +73,10 @@ interface GeminiAPI {
   // Key Storage Management
   importKeys: (jsonString: string) => Promise<IpcApiResponse<{ count: number }>>;
   exportKeys: () => Promise<IpcApiResponse<string>>;
+  disableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
+  enableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
+  disableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
+  enableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
   hasKeys: () => Promise<IpcApiResponse<boolean>>;
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>;

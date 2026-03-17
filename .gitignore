@@ -45,3 +45,7 @@ src/main/services/geminiWebApi/USAGE.md
 src/main/services/geminiWebApi/USAGE.md
 PROXY_USAGE.md
 src/main/services/tts/python/__pycache__/edge_tts_worker.cpython-314.pyc
+api_state.json
+caption_session_srt.json
+caption_session.json
+translated.srt

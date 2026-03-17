@@ -304,6 +304,88 @@ export function registerGeminiHandlers(): void {
     }
   );
 
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_DISABLE_ACCOUNT,
+    async (_event: IpcMainInvokeEvent, accountId: string): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.disableAccount(accountId);
+        if (!updated) {
+          return { success: false, error: `Không tìm thấy account: ${accountId}` };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi disable account:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_ENABLE_ACCOUNT,
+    async (_event: IpcMainInvokeEvent, accountId: string): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.enableAccount(accountId);
+        if (!updated) {
+          return { success: false, error: `Không tìm thấy account: ${accountId}` };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi enable account:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_DISABLE_PROJECT,
+    async (
+      _event: IpcMainInvokeEvent,
+      accountId: string,
+      projectIndex: number
+    ): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.disableProject(accountId, projectIndex);
+        if (!updated) {
+          return {
+            success: false,
+            error: `Không tìm thấy project index=${projectIndex} trong account ${accountId}`,
+          };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi disable project:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_ENABLE_PROJECT,
+    async (
+      _event: IpcMainInvokeEvent,
+      accountId: string,
+      projectIndex: number
+    ): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.enableProject(accountId, projectIndex);
+        if (!updated) {
+          return {
+            success: false,
+            error: `Không tìm thấy project index=${projectIndex} trong account ${accountId}`,
+          };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi enable project:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Kiểm tra có keys không
   ipcMain.handle(
     GEMINI_IPC_CHANNELS.KEYS_HAS_KEYS,
@@ -360,7 +442,6 @@ export function registerGeminiHandlers(): void {
     async (): Promise<IpcApiResponse<any[]>> => {
       try {
         const manager = Gemini.getApiManager();
-        const stats = manager.getStats();
         const config = (manager as any).config;
         
         if (!config || !config.accounts) {
@@ -373,12 +454,15 @@ export function registerGeminiHandlers(): void {
           accountId: acc.accountId,
           accountStatus: acc.accountStatus || 'active',
           projects: acc.projects.map((p: any) => ({
+            projectIndex: p.projectIndex,
             projectName: p.projectName,
             status: p.status || 'available',
             apiKey: p.apiKey.substring(0, 8) + '...' + p.apiKey.substring(p.apiKey.length - 4),
             totalRequestsToday: p.stats?.totalRequestsToday || 0,
-            lastUsed: p.stats?.lastUsed || null,
-            errorMessage: p.stats?.lastError || null,
+            successCount: p.stats?.successCount || 0,
+            errorCount: p.stats?.errorCount || 0,
+            lastUsedTimestamp: p.limitTracking?.lastUsedTimestamp || null,
+            lastErrorMessage: p.stats?.lastErrorMessage || null,
           })),
         }));
         

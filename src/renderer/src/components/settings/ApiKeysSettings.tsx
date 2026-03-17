@@ -6,7 +6,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ArrowLeft, RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '../common/Button';
 import styles from './Settings.module.css';
-import { EmbeddedAccount } from '@shared/types/gemini';
+import { useMemo } from 'react';
 
 const API_WORKER_MIN = 1;
 const API_WORKER_MAX = 10;
@@ -17,11 +17,37 @@ interface ApiKeysSettingsProps {
   onBack: () => void;
 }
 
+type AccountFilter = 'all' | 'active' | 'disabled';
+type ProjectFilter = 'all' | 'available' | 'disabled';
+
+interface ApiProjectItem {
+  projectIndex: number;
+  projectName: string;
+  status: string;
+  apiKey: string;
+  totalRequestsToday: number;
+  successCount: number;
+  errorCount: number;
+  lastUsedTimestamp: string | null;
+  lastErrorMessage: string | null;
+}
+
+interface ApiAccountItem {
+  email: string;
+  accountId: string;
+  accountStatus: string;
+  projects: ApiProjectItem[];
+}
+
 export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
-  const [apiAccounts, setApiAccounts] = useState<EmbeddedAccount[]>([]);
+  const [apiAccounts, setApiAccounts] = useState<ApiAccountItem[]>([]);
   const [keysLocation, setKeysLocation] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+  const [pendingAccountIds, setPendingAccountIds] = useState<Set<string>>(new Set());
+  const [pendingProjectKeys, setPendingProjectKeys] = useState<Set<string>>(new Set());
+  const [accountFilter, setAccountFilter] = useState<AccountFilter>('all');
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>('all');
   const [apiWorkerInput, setApiWorkerInput] = useState('1');
   const [savedApiWorkerCount, setSavedApiWorkerCount] = useState(1);
   const [isSavingApiWorker, setIsSavingApiWorker] = useState(false);
@@ -35,7 +61,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
       setLoading(true);
       const accountsRes = await window.electronAPI.gemini.getAllKeysWithStatus();
       if (accountsRes.success && accountsRes.data) {
-        setApiAccounts(accountsRes.data);
+        setApiAccounts(accountsRes.data as ApiAccountItem[]);
       }
       
       const locRes = await window.electronAPI.gemini.getKeysLocation();
@@ -45,11 +71,15 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
 
       const settingsRes = await window.electronAPI.appSettings.getAll();
       if (settingsRes.success && settingsRes.data) {
-        const raw = Number(settingsRes.data.apiWorkerCount);
+        const appSettings = settingsRes.data as unknown as {
+          apiWorkerCount?: number;
+          apiRequestDelayMs?: number;
+        };
+        const raw = Number(appSettings.apiWorkerCount);
         const normalized = Number.isFinite(raw) ? Math.min(API_WORKER_MAX, Math.max(API_WORKER_MIN, Math.floor(raw))) : API_WORKER_MIN;
         setApiWorkerInput(String(normalized));
         setSavedApiWorkerCount(normalized);
-        const rawDelayMs = Number(settingsRes.data.apiRequestDelayMs);
+        const rawDelayMs = Number(appSettings.apiRequestDelayMs);
         const normalizedDelayMs = Number.isFinite(rawDelayMs)
           ? Math.min(API_DELAY_MAX_SEC * 1000, Math.max(API_DELAY_MIN_SEC * 1000, Math.floor(rawDelayMs)))
           : 500;
@@ -145,6 +175,66 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
     });
   };
 
+  const markAccountPending = (accountId: string, pending: boolean) => {
+    setPendingAccountIds((prev) => {
+      const next = new Set(prev);
+      if (pending) next.add(accountId);
+      else next.delete(accountId);
+      return next;
+    });
+  };
+
+  const markProjectPending = (projectKey: string, pending: boolean) => {
+    setPendingProjectKeys((prev) => {
+      const next = new Set(prev);
+      if (pending) next.add(projectKey);
+      else next.delete(projectKey);
+      return next;
+    });
+  };
+
+  const handleToggleAccountStatus = async (account: ApiAccountItem) => {
+    const accountId = account.accountId;
+    const shouldDisable = account.accountStatus !== 'disabled';
+    try {
+      markAccountPending(accountId, true);
+      const result = shouldDisable
+        ? await window.electronAPI.gemini.disableAccount(accountId)
+        : await window.electronAPI.gemini.enableAccount(accountId);
+      if (!result.success) {
+        alert(result.error || 'Không thể cập nhật trạng thái account.');
+        return;
+      }
+      await loadApiKeysInfo();
+    } catch (error) {
+      console.error('[ApiKeysSettings] Toggle account error:', error);
+      alert('Không thể cập nhật trạng thái account.');
+    } finally {
+      markAccountPending(accountId, false);
+    }
+  };
+
+  const handleToggleProjectStatus = async (account: ApiAccountItem, project: ApiProjectItem) => {
+    const projectKey = `${account.accountId}:${project.projectIndex}`;
+    const shouldDisable = project.status !== 'disabled';
+    try {
+      markProjectPending(projectKey, true);
+      const result = shouldDisable
+        ? await window.electronAPI.gemini.disableProject(account.accountId, project.projectIndex)
+        : await window.electronAPI.gemini.enableProject(account.accountId, project.projectIndex);
+      if (!result.success) {
+        alert(result.error || 'Không thể cập nhật trạng thái API key.');
+        return;
+      }
+      await loadApiKeysInfo();
+    } catch (error) {
+      console.error('[ApiKeysSettings] Toggle project error:', error);
+      alert('Không thể cập nhật trạng thái API key.');
+    } finally {
+      markProjectPending(projectKey, false);
+    }
+  };
+
   const handleSaveApiWorkerCount = async () => {
     const trimmed = apiWorkerInput.trim();
     if (!/^\d+$/.test(trimmed)) {
@@ -158,7 +248,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
     }
     try {
       setIsSavingApiWorker(true);
-      const result = await window.electronAPI.appSettings.update({ apiWorkerCount: nextValue });
+      const result = await window.electronAPI.appSettings.update({ apiWorkerCount: nextValue } as any);
       if (result.success) {
         setSavedApiWorkerCount(nextValue);
         setApiWorkerInput(String(nextValue));
@@ -187,7 +277,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
     try {
       setIsSavingApiDelay(true);
       const nextMs = Math.floor(nextSec * 1000);
-      const result = await window.electronAPI.appSettings.update({ apiRequestDelayMs: nextMs });
+      const result = await window.electronAPI.appSettings.update({ apiRequestDelayMs: nextMs } as any);
       if (result.success) {
         setSavedApiDelaySec(nextSec);
         setApiDelayInput(String(nextSec));
@@ -223,20 +313,51 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
       'rate_limited': { bg: '#f59e0b20', text: '#f59e0b', label: 'Giới hạn tốc độ', icon: Clock },
       'exhausted': { bg: '#6366f120', text: '#6366f1', label: 'Hết quota', icon: XCircle },
       'error': { bg: '#ef444420', text: '#ef4444', label: 'Lỗi', icon: AlertCircle },
+      'disabled': { bg: '#64748b30', text: '#64748b', label: 'Đã tắt', icon: XCircle },
     };
     return configs[status] || configs['available'];
   };
 
+  const getAccountStatusConfig = (status: string) => {
+    if (status === 'disabled') {
+      return { bg: '#64748b30', text: '#64748b', label: 'Account tắt' };
+    }
+    return { bg: '#10b98120', text: '#10b981', label: 'Account bật' };
+  };
+
+  const filteredAccounts = useMemo(() => {
+    return apiAccounts
+      .filter((acc) => {
+        if (accountFilter === 'all') return true;
+        return accountFilter === 'active'
+          ? acc.accountStatus !== 'disabled'
+          : acc.accountStatus === 'disabled';
+      })
+      .map((acc) => {
+        const projects = acc.projects.filter((project) => {
+          if (projectFilter === 'all') return true;
+          return projectFilter === 'disabled'
+            ? project.status === 'disabled'
+            : project.status !== 'disabled';
+        });
+        return { ...acc, projects };
+      })
+      .filter((acc) => acc.projects.length > 0 || projectFilter === 'all');
+  }, [accountFilter, apiAccounts, projectFilter]);
+
   // Calculate stats
   const totalProjects = apiAccounts.reduce((sum, acc) => sum + acc.projects.length, 0);
   const availableProjects = apiAccounts.reduce((sum, acc) => 
-    sum + acc.projects.filter((p: any) => p.status === 'available').length, 0
+    sum + acc.projects.filter((p) => p.status !== 'disabled').length, 0
+  );
+  const disabledProjects = apiAccounts.reduce((sum, acc) =>
+    sum + acc.projects.filter((p) => p.status === 'disabled').length, 0
   );
   const totalSuccess = apiAccounts.reduce((sum, acc) => 
-    sum + acc.projects.reduce((s: number, p: any) => s + (p.successCount || 0), 0), 0
+    sum + acc.projects.reduce((s, p) => s + (p.successCount || 0), 0), 0
   );
   const totalErrors = apiAccounts.reduce((sum, acc) => 
-    sum + acc.projects.reduce((s: number, p: any) => s + (p.errorCount || 0), 0), 0
+    sum + acc.projects.reduce((s, p) => s + (p.errorCount || 0), 0), 0
   );
 
   return (
@@ -342,7 +463,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
           {!loading && apiAccounts.length > 0 && (
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridTemplateColumns: 'repeat(5, 1fr)',
               gap: 12,
               marginTop: 16,
               marginBottom: 16,
@@ -367,10 +488,23 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                 border: '1px solid var(--border-color)',
               }}>
                 <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Keys sẵn sàng
+                  Keys đang bật
                 </div>
                 <div style={{ fontSize: '1.5em', fontWeight: 700, color: '#10b981' }}>
                   {availableProjects}/{totalProjects}
+                </div>
+              </div>
+              <div style={{
+                background: 'var(--bg-secondary)',
+                borderRadius: 8,
+                padding: 12,
+                border: '1px solid var(--border-color)',
+              }}>
+                <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Keys đã tắt
+                </div>
+                <div style={{ fontSize: '1.5em', fontWeight: 700, color: '#64748b' }}>
+                  {disabledProjects}
                 </div>
               </div>
               <div style={{
@@ -402,6 +536,33 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
             </div>
           )}
 
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Bộ lọc hiển thị</span>
+              <span className={styles.labelDesc}>Lọc nhanh theo account và trạng thái key</span>
+            </div>
+            <div className={styles.flexRow}>
+              <select
+                value={accountFilter}
+                onChange={(e) => setAccountFilter(e.target.value as AccountFilter)}
+                className={styles.select}
+              >
+                <option value="all">Tất cả account</option>
+                <option value="active">Account bật</option>
+                <option value="disabled">Account tắt</option>
+              </select>
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value as ProjectFilter)}
+                className={styles.select}
+              >
+                <option value="all">Tất cả key</option>
+                <option value="available">Key đang bật</option>
+                <option value="disabled">Key đã tắt</option>
+              </select>
+            </div>
+          </div>
+
           <div className={styles.divider} style={{ margin: '16px 0', borderTop: '1px solid var(--border-color)' }} />
 
           {/* Accounts List */}
@@ -422,14 +583,14 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                   <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite' }} />
                   <div style={{ marginTop: 8 }}>Đang tải...</div>
                 </div>
-              ) : apiAccounts.length === 0 ? (
+              ) : filteredAccounts.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>
                   <AlertCircle size={32} style={{ opacity: 0.5, marginBottom: 8 }} />
-                  <div style={{ marginBottom: 4 }}>Chưa có API key nào</div>
-                  <div style={{ fontSize: '0.85em' }}>Nhấn "Import" để thêm keys từ file JSON</div>
+                  <div style={{ marginBottom: 4 }}>Không có dữ liệu phù hợp bộ lọc</div>
+                  <div style={{ fontSize: '0.85em' }}>Thử đổi bộ lọc account/key ở trên</div>
                 </div>
               ) : (
-                apiAccounts.map((acc, index) => (
+                filteredAccounts.map((acc, index) => (
                   <div key={index} style={{ 
                     marginBottom: 8, 
                     padding: 10, 
@@ -443,30 +604,56 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       marginBottom: 8,
+                      gap: 8,
                     }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.9em' }}>{acc.email}</div>
-                      <div style={{ 
-                        fontSize: '0.75em',
-                        color: 'var(--text-secondary)',
-                        background: 'var(--bg-secondary)',
-                        padding: '2px 8px',
-                        borderRadius: 4,
-                      }}>
-                        {acc.projects.length} projects
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.9em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {acc.email}
+                        </div>
+                        <div style={{
+                          fontSize: '0.75em',
+                          padding: '2px 8px',
+                          borderRadius: 999,
+                          background: getAccountStatusConfig(acc.accountStatus).bg,
+                          color: getAccountStatusConfig(acc.accountStatus).text,
+                          fontWeight: 600,
+                        }}>
+                          {getAccountStatusConfig(acc.accountStatus).label}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ 
+                          fontSize: '0.75em',
+                          color: 'var(--text-secondary)',
+                          background: 'var(--bg-secondary)',
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                        }}>
+                          {acc.projects.length} projects
+                        </div>
+                        <Button
+                          variant={acc.accountStatus === 'disabled' ? 'primary' : 'secondary'}
+                          onClick={() => handleToggleAccountStatus(acc)}
+                          disabled={pendingAccountIds.has(acc.accountId)}
+                        >
+                          {pendingAccountIds.has(acc.accountId)
+                            ? 'Đang cập nhật...'
+                            : (acc.accountStatus === 'disabled' ? 'Bật account' : 'Tắt account')}
+                        </Button>
                       </div>
                     </div>
                     
                     {/* Projects List */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {acc.projects.map((p: any, pIndex: number) => {
+                      {acc.projects.map((p) => {
                         const statusConfig = getStatusConfig(p.status);
                         const StatusIcon = statusConfig.icon;
-                        const projectKey = `${acc.email}-${pIndex}`;
+                        const projectKey = `${acc.accountId}:${p.projectIndex}`;
                         const isErrorExpanded = expandedErrors.has(projectKey);
-                        const hasError = p.lastErrorMessage && p.errorCount > 0;
+                        const hasError = Boolean(p.lastErrorMessage) && p.errorCount > 0;
                         
                         return (
-                          <div key={pIndex} style={{ 
+                          <div key={projectKey} style={{ 
                             padding: '6px 8px',
                             borderRadius: 4,
                             background: 'var(--bg-secondary)',
@@ -507,6 +694,16 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                               }}>
                                 {p.projectName}
                               </span>
+
+                              <Button
+                                variant={p.status === 'disabled' ? 'primary' : 'secondary'}
+                                onClick={() => handleToggleProjectStatus(acc, p)}
+                                disabled={pendingProjectKeys.has(projectKey) || pendingAccountIds.has(acc.accountId)}
+                              >
+                                {pendingProjectKeys.has(projectKey)
+                                  ? 'Đang cập nhật...'
+                                  : (p.status === 'disabled' ? 'Bật key' : 'Tắt key')}
+                              </Button>
                               
                               {/* Stats Badges */}
                               <div style={{ display: 'flex', gap: 4, fontSize: '0.85em' }}>
@@ -517,10 +714,10 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                                   borderRadius: 3,
                                   fontFamily: 'monospace',
                                   fontWeight: 600,
-                                  minWidth: 28,
+                                  minWidth: 92,
                                   textAlign: 'center',
                                 }}>
-                                  ✓{p.successCount || 0}
+                                  Thành công: {p.successCount || 0}
                                 </span>
                                 <span style={{ 
                                   background: p.errorCount > 0 ? '#ef444410' : 'var(--bg-primary)',
@@ -529,10 +726,10 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                                   borderRadius: 3,
                                   fontFamily: 'monospace',
                                   fontWeight: 600,
-                                  minWidth: 28,
+                                  minWidth: 56,
                                   textAlign: 'center',
                                 }}>
-                                  ✗{p.errorCount || 0}
+                                  Lỗi: {p.errorCount || 0}
                                 </span>
                               </div>
                               
@@ -547,7 +744,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                                   fontFamily: 'monospace',
                                   fontWeight: 600,
                                 }}>
-                                  {p.totalRequestsToday}
+                                  Hôm nay: {p.totalRequestsToday}
                                 </span>
                               )}
                             </div>

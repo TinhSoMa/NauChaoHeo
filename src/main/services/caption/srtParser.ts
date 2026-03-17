@@ -5,6 +5,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as iconv from 'iconv-lite';
 import { SubtitleEntry, ParseSrtResult } from '../../../shared/types/caption';
 
 /**
@@ -71,7 +72,8 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
         const endMs = srtTimeToMs(endTime);
         
         // Dòng 3+: Text (có thể nhiều dòng - giữ nguyên line breaks)
-        const text = lines.slice(2).join('\n').trim();
+        const rawText = lines.slice(2).join('\n').trim();
+        const text = maybeFixMojibake(rawText);
         
         if (text) {
           entries.push({
@@ -189,21 +191,54 @@ function decodeTextContent(buffer: Buffer): string {
     return buffer.slice(3).toString('utf8');
   }
 
-  const text = buffer.toString('utf8');
-  return maybeFixMojibake(text);
+  const utf8Text = maybeFixMojibake(buffer.toString('utf8'));
+  const utf8Score = scoreDecodedText(utf8Text);
+  if (utf8Score === 0) {
+    return utf8Text;
+  }
+
+  const candidates: Array<{ encoding: string; text: string }> = [
+    { encoding: 'cp1258', text: iconv.decode(buffer, 'cp1258') },
+    { encoding: 'windows-1252', text: iconv.decode(buffer, 'windows-1252') },
+    { encoding: 'latin1', text: buffer.toString('latin1') },
+  ];
+  let bestText = utf8Text;
+  let bestScore = utf8Score;
+  for (const candidate of candidates) {
+    const candidateScore = scoreDecodedText(candidate.text);
+    if (candidateScore < bestScore) {
+      bestScore = candidateScore;
+      bestText = candidate.text;
+    }
+  }
+
+  return bestText;
 }
 
 function maybeFixMojibake(text: string): string {
   if (!text) return text;
-  const suspect = /Ã|Â|á»/;
-  if (!suspect.test(text)) {
+  const suspectCount = countMojibakeSuspects(text);
+  if (suspectCount === 0) {
     return text;
   }
   const fixed = Buffer.from(text, 'latin1').toString('utf8');
-  if (!suspect.test(fixed)) {
+  if (countMojibakeSuspects(fixed) < suspectCount) {
     return fixed;
   }
   return text;
+}
+
+function countMojibakeSuspects(text: string): number {
+  if (!text) return 0;
+  const matches = text.match(/Ã|Â|Ä|Æ|á»|áº/g);
+  return matches ? matches.length : 0;
+}
+
+function scoreDecodedText(text: string): number {
+  if (!text) return 0;
+  const replacementCount = (text.match(/\uFFFD/g) || []).length;
+  const controlCount = (text.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g) || []).length;
+  return replacementCount * 3 + controlCount;
 }
 
 /**

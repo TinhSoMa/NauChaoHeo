@@ -6,6 +6,20 @@ import { is } from '@electron-toolkit/utils'
 let dashboardWindow: BrowserWindow | null = null
 const editorWindows = new Map<string, BrowserWindow>()
 
+function shouldRedirectCloseToProjects(currentUrl: string): boolean {
+  if (!currentUrl) return false
+  const hashIndex = currentUrl.indexOf('#')
+  if (hashIndex < 0) return false
+
+  const hashPart = currentUrl.slice(hashIndex + 1) // e.g. /translator?projectId=...
+  const [routePath, search = ''] = hashPart.split('?')
+  if (routePath !== '/translator') return false
+
+  const params = new URLSearchParams(search)
+  const projectId = params.get('projectId')?.trim()
+  return !projectId
+}
+
 function buildRendererUrl(route: string, params?: Record<string, string>): string {
   const search = params ? new URLSearchParams(params).toString() : ''
   const hashPath = route.startsWith('/') ? route : `/${route}`
@@ -58,6 +72,14 @@ export function createDashboardWindow(): BrowserWindow {
 
   const url = buildRendererUrl('/projects')
   dashboardWindow.loadURL(url)
+
+  dashboardWindow.on('close', (event) => {
+    const currentUrl = dashboardWindow?.webContents.getURL() || ''
+    if (shouldRedirectCloseToProjects(currentUrl)) {
+      event.preventDefault()
+      dashboardWindow?.loadURL(buildRendererUrl('/projects'))
+    }
+  })
 
   dashboardWindow.on('closed', () => {
     dashboardWindow = null
