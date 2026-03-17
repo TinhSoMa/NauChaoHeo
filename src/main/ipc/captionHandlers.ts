@@ -948,23 +948,30 @@ export function registerCaptionHandlers(): void {
         if (!sessionPath || typeof sessionPath !== 'string') {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
+        const outputDir = path.dirname(sessionPath);
+        if (path.basename(outputDir).toLowerCase() === 'caption_output') {
+          const baseDir = path.dirname(outputDir);
+          if (!fsSync.existsSync(baseDir)) {
+            return { success: false, error: `SESSION_BASE_DIR_MISSING: ${baseDir}` };
+          }
+        }
         const dir = path.dirname(sessionPath);
         await fs.mkdir(dir, { recursive: true });
         const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
         const jsonPayload = JSON.stringify(payload?.data ?? {}, null, 2);
         await fs.writeFile(tmpPath, jsonPayload, 'utf-8');
         try {
-          if (fsSync.existsSync(sessionPath)) {
-            await fs.unlink(sessionPath);
+          if (!fsSync.existsSync(sessionPath)) {
+            await fs.rename(tmpPath, sessionPath);
+          } else {
+            await fs.copyFile(tmpPath, sessionPath);
+            await fs.unlink(tmpPath);
           }
-          await fs.rename(tmpPath, sessionPath);
         } catch (error) {
-          // Fallback: direct write when atomic replace fails (e.g. locked file on Windows)
+          // Fallback: direct write when replace fails (e.g. locked file on Windows)
           try {
-            await fs.writeFile(sessionPath, jsonPayload, 'utf-8');
-            if (fsSync.existsSync(tmpPath)) {
-              await fs.unlink(tmpPath);
-            }
+            await fs.copyFile(tmpPath, sessionPath);
+            await fs.unlink(tmpPath);
           } catch (fallbackError) {
             return { success: false, error: `SESSION_WRITE_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
           }
@@ -991,6 +998,13 @@ export function registerCaptionHandlers(): void {
         if (!sessionPath || typeof sessionPath !== 'string') {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
+        const outputDir = path.dirname(sessionPath);
+        if (path.basename(outputDir).toLowerCase() === 'caption_output') {
+          const baseDir = path.dirname(outputDir);
+          if (!fsSync.existsSync(baseDir)) {
+            return { success: false, error: `SESSION_BASE_DIR_MISSING: ${baseDir}` };
+          }
+        }
         if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
           return { success: false, error: 'SESSION_INVALID_INPUT: Patch không hợp lệ' };
         }
@@ -1013,10 +1027,21 @@ export function registerCaptionHandlers(): void {
         await fs.mkdir(dir, { recursive: true });
         const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
         await fs.writeFile(tmpPath, JSON.stringify(merged, null, 2), 'utf-8');
-        if (fsSync.existsSync(sessionPath)) {
-          await fs.unlink(sessionPath);
+        try {
+          if (!fsSync.existsSync(sessionPath)) {
+            await fs.rename(tmpPath, sessionPath);
+          } else {
+            await fs.copyFile(tmpPath, sessionPath);
+            await fs.unlink(tmpPath);
+          }
+        } catch (error) {
+          try {
+            await fs.copyFile(tmpPath, sessionPath);
+            await fs.unlink(tmpPath);
+          } catch (fallbackError) {
+            return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
+          }
         }
-        await fs.rename(tmpPath, sessionPath);
         return { success: true, data: merged };
       } catch (error) {
         return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)}` };

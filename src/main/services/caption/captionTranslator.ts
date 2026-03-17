@@ -606,6 +606,7 @@ export async function translateAll(
   let nextDispatchAtMs = Date.now();
   let dispatchGateQueue: Promise<void> = Promise.resolve();
   let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
+  const MAX_BATCH_RETRY = 2;
 
   const reserveDispatchSlot = (): Promise<DispatchTimingMetadata> => {
     const reservation = dispatchGateQueue
@@ -623,6 +624,29 @@ export async function translateAll(
       });
     dispatchGateQueue = reservation.then(() => undefined, () => undefined);
     return reservation;
+  };
+
+  const countTranslatedLines = (texts: string[]): number => (
+    texts.reduce((sum, text) => sum + (text && text.trim().length > 0 ? 1 : 0), 0)
+  );
+
+  const shouldRetryBatch = (
+    batchResult: BatchTranslationResult,
+    normalizedTexts: string[],
+    expectedCount: number
+  ): boolean => {
+    if (batchResult.success) {
+      return false;
+    }
+    const errorText = (batchResult.error || '').toLowerCase();
+    if (errorText.includes('error_count_mismatch')) {
+      return true;
+    }
+    if (errorText.includes('thiếu') && errorText.includes('dòng')) {
+      return true;
+    }
+    const translatedCount = countTranslatedLines(normalizedTexts);
+    return translatedCount < expectedCount;
   };
 
   if (useGeminiWebQueue) {
@@ -740,71 +764,104 @@ export async function translateAll(
       ? `dispatch mỗi ${queueGapSecLabel}s, không chờ batch trước`
       : `${MAX_CONCURRENT} song song, pacing ${queueGapSecLabel}s`;
     let progressTokenLabel = defaultTokenLabel;
+    const totalAttempts = Math.max(1, MAX_BATCH_RETRY + 1);
+    let attempt = 0;
+    let bestTexts: string[] = Array.from({ length: batch.texts.length }, () => '');
+    let bestTranslatedCount = -1;
+    let lastResult: BatchTranslationResult | null = null;
+    let lastDispatchTiming: DispatchTimingMetadata | null = null;
 
-    // Report progress khi batch đã vào hàng đợi pacing
-    if (progressCallback) {
-      progressCallback({
-        current: batch.startIndex,
-        total: entries.length,
-        batchIndex: i,
-        totalBatches: batches.length,
-        status: 'translating',
-        message: `Batch ${i + 1}/${batches.length} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`,
-        eventType: 'batch_started',
-        transport: methodLabel,
-        queuePacingMode: 'dispatch_spacing_global',
-        queueGapMs,
-        nextAllowedAt: nextDispatchAtMs,
-      });
+    while (attempt < totalAttempts) {
+      attempt += 1;
+      const isRetryAttempt = attempt > 1;
+      if (progressCallback) {
+        progressCallback({
+          current: batch.startIndex,
+          total: entries.length,
+          batchIndex: i,
+          totalBatches: batches.length,
+          status: 'translating',
+          message: isRetryAttempt
+            ? `Batch ${i + 1}/${batches.length} retry lần ${attempt}/${totalAttempts} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`
+            : `Batch ${i + 1}/${batches.length} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`,
+          eventType: isRetryAttempt ? 'batch_retry' : 'batch_started',
+          transport: methodLabel,
+          queuePacingMode: 'dispatch_spacing_global',
+          queueGapMs,
+          nextAllowedAt: nextDispatchAtMs,
+        });
+      }
+
+      const dispatchTiming = await reserveDispatchSlot();
+      lastDispatchTiming = dispatchTiming;
+
+      if (progressCallback) {
+        progressCallback({
+          current: batch.startIndex,
+          total: entries.length,
+          batchIndex: i,
+          totalBatches: batches.length,
+          status: 'translating',
+          message: isRetryAttempt
+            ? `Đang retry batch ${i + 1}/${batches.length} lần ${attempt}/${totalAttempts} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`
+            : `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`,
+          eventType: isRetryAttempt ? 'batch_retry' : 'batch_started',
+          transport: methodLabel,
+          ...dispatchTiming,
+        });
+      }
+
+      console.log(
+        `[CaptionTranslator] Dispatch batch #${i + 1}/${batches.length} attempt ${attempt}/${totalAttempts} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
+      );
+
+      const batchResult: BatchTranslationResult = useGeminiWebQueue
+        ? await translateBatchGeminiWebQueue(batch, targetLanguage, promptTemplate, projectId, sourcePath, geminiWebQueueContext!)
+        : useImpit
+          ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
+          : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
+
+      lastResult = batchResult;
+      lastDispatchTiming = dispatchTiming;
+      if (batchResult.resourceLabel || batchResult.resourceId) {
+        progressTokenLabel = batchResult.resourceLabel || batchResult.resourceId || progressTokenLabel;
+      }
+
+      const normalizedTexts = Array.from({ length: batch.texts.length }, (_, idx) => batchResult.translatedTexts?.[idx] ?? '');
+      const translatedLineCount = countTranslatedLines(normalizedTexts);
+      if (translatedLineCount > bestTranslatedCount) {
+        bestTranslatedCount = translatedLineCount;
+        bestTexts = normalizedTexts;
+      }
+
+      if (batchResult.success) {
+        bestTexts = normalizedTexts;
+        break;
+      }
+
+      const retryable = shouldRetryBatch(batchResult, normalizedTexts, batch.texts.length);
+      if (!retryable || attempt >= totalAttempts) {
+        break;
+      }
     }
 
-    const dispatchTiming = await reserveDispatchSlot();
-    lastDispatchTiming = dispatchTiming;
-
-    if (progressCallback) {
-      progressCallback({
-        current: batch.startIndex,
-        total: entries.length,
-        batchIndex: i,
-        totalBatches: batches.length,
-        status: 'translating',
-        message: `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`,
-        eventType: 'batch_started',
-        transport: methodLabel,
-        ...dispatchTiming,
-      });
-    }
-
-    console.log(
-      `[CaptionTranslator] Dispatch batch #${i + 1}/${batches.length} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
-    );
-
-    // Dịch batch 1 lần; retry do queue/transport tự quản lý
-    let batchResult: BatchTranslationResult = useGeminiWebQueue
-      ? await translateBatchGeminiWebQueue(batch, targetLanguage, promptTemplate, projectId, sourcePath, geminiWebQueueContext!)
-      : useImpit
-        ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
-        : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
-    const pacingMetadata = mergePacingMetadata(batchResult, dispatchTiming);
-
-    const normalizedTexts = Array.from({ length: batch.texts.length }, (_, idx) => batchResult.translatedTexts?.[idx] ?? '');
-    const isFullSuccess = !!batchResult.success;
-    if (batchResult.resourceLabel || batchResult.resourceId) {
-      progressTokenLabel = batchResult.resourceLabel || batchResult.resourceId || progressTokenLabel;
-    }
+    const finalTexts = bestTexts;
+    const isFullSuccess = !!lastResult?.success;
+    const attemptsUsed = attempt;
+    const pacingMetadata = mergePacingMetadata(lastResult || undefined, lastDispatchTiming || undefined);
     const report = buildBatchReport(
       batch,
-      normalizedTexts,
-      1,
+      finalTexts,
+      attemptsUsed,
       isFullSuccess ? 'success' : 'failed',
-      isFullSuccess ? undefined : (batchResult.error || 'BATCH_TRANSLATION_FAILED')
+      isFullSuccess ? undefined : (lastResult?.error || 'BATCH_TRANSLATION_FAILED')
     );
 
     batchReports.push(report);
 
     // Luôn giữ partial đã dịch được để renderer có thể lưu dần vào session
-    for (let j = 0; j < normalizedTexts.length; j++) {
-      allTranslatedTexts[batch.startIndex + j] = normalizedTexts[j];
+    for (let j = 0; j < finalTexts.length; j++) {
+      allTranslatedTexts[batch.startIndex + j] = finalTexts[j];
     }
 
     translatedCount += report.translatedLines;
@@ -812,7 +869,7 @@ export async function translateAll(
 
     if (!isFullSuccess) {
       const globalMissing = formatIndexRanges(report.missingGlobalLineIndexes);
-      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau 1 lần gửi (global: ${globalMissing})`;
+      const errorMsg = `Batch #${report.batchIndex} (dòng ${report.startIndex + 1}-${report.endIndex + 1}) thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng sau ${attemptsUsed} lần gửi (global: ${globalMissing})`;
       console.error(`[CaptionTranslator] ${errorMsg}`);
       errors.push(errorMsg);
     }
@@ -835,12 +892,12 @@ export async function translateAll(
         batchReport: report,
         translatedChunk: {
           startIndex: batch.startIndex,
-          texts: normalizedTexts,
+          texts: finalTexts,
         },
-        transport: batchResult.transport || methodLabel,
-        resourceId: batchResult.resourceId,
-        resourceLabel: batchResult.resourceLabel,
-        queueRuntimeKey: batchResult.queueRuntimeKey,
+        transport: lastResult?.transport || methodLabel,
+        resourceId: lastResult?.resourceId,
+        resourceLabel: lastResult?.resourceLabel,
+        queueRuntimeKey: lastResult?.queueRuntimeKey,
         ...pacingMetadata,
       });
     }
