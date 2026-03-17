@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, Plus, Settings as SettingsIcon, RefreshCw, FolderCog } from 'lucide-react'
+import { FolderOpen, Plus, Settings as SettingsIcon, RefreshCw, FolderCog, Subtitles } from 'lucide-react'
 import { useThemeEffect } from '../../hooks/useTheme'
 
 interface ProjectMetadata {
@@ -99,6 +99,10 @@ export function ProjectDashboard() {
     window.location.hash = '#/settings-standalone'
   }
 
+  const openCaptionWithoutProject = () => {
+    window.location.hash = '#/translator'
+  }
+
   return (
     <div className="min-h-screen bg-background text-text-primary">
       {/* Header */}
@@ -116,6 +120,14 @@ export function ProjectDashboard() {
             </div>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={openCaptionWithoutProject}
+              className="px-3 py-2 rounded-lg border border-border hover:bg-surface transition-colors text-sm flex items-center gap-2"
+              title="Mở Dịch Caption mà không cần chọn project"
+            >
+              <Subtitles size={16} />
+              <span>Dịch Caption</span>
+            </button>
             <button
               onClick={loadProjects}
               className="p-2 rounded-lg border border-border hover:bg-surface transition-colors"

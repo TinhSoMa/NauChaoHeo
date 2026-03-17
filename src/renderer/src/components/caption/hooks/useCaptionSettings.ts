@@ -2019,8 +2019,32 @@ export function useCaptionSettings() {
     });
   }, [setAudioVolume, setVideoVolume, setVoice]);
 
+  const parseStandaloneCaptionPayload = useCallback((raw: string | null | undefined): any | null => {
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.schemaVersion === 1 && parsed?.settings && typeof parsed.settings === 'object') {
+        return parsed;
+      }
+      if (parsed && typeof parsed === 'object') {
+        return {
+          schemaVersion: 1,
+          settingsRevision: 1,
+          source: 'standalone',
+          updatedAt: nowIso(),
+          settings: parsed,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
-    if (!projectId || !paths) {
+    if (projectId && !paths) {
       loadedRef.current = false;
       isHydratingRef.current = false;
       return;
@@ -2032,18 +2056,39 @@ export function useCaptionSettings() {
 
     const load = async () => {
       try {
-        const [appSettingsRes, projectSettingsRes] = await Promise.all([
-          window.electronAPI.appSettings.getAll(),
-          window.electronAPI.project.readFeatureFile({
-            projectId,
-            feature: 'caption',
-            fileName: PROJECT_SETTINGS_FILE,
-          }),
-        ]);
+        const appSettingsRes = await window.electronAPI.appSettings.getAll();
 
         const globalFallbackProfiles = buildGlobalFallbackProfiles(appSettingsRes?.data?.captionTypographyDefaults);
         const normalizedGlobalDefaults = buildTypographyDefaults(globalFallbackProfiles);
         lastSavedGlobalTypographyFingerprintRef.current = typographyDefaultsFingerprint(normalizedGlobalDefaults);
+
+        if (!projectId) {
+          const standalonePayload = parseStandaloneCaptionPayload(appSettingsRes?.data?.captionStandaloneSettings);
+          if (standalonePayload?.settings && typeof standalonePayload.settings === 'object') {
+            applyLoadedSettings(standalonePayload.settings, globalFallbackProfiles);
+            revisionRef.current = typeof standalonePayload.settingsRevision === 'number'
+              ? standalonePayload.settingsRevision
+              : 1;
+            if (!cancelled) {
+              setSettingsRevision(revisionRef.current);
+              setSettingsUpdatedAt(typeof standalonePayload.updatedAt === 'string' ? standalonePayload.updatedAt : nowIso());
+            }
+          } else {
+            setLayoutProfiles(globalFallbackProfiles);
+            revisionRef.current = 0;
+            if (!cancelled) {
+              setSettingsRevision(0);
+              setSettingsUpdatedAt(nowIso());
+            }
+          }
+          return;
+        }
+
+        const projectSettingsRes = await window.electronAPI.project.readFeatureFile({
+          projectId,
+          feature: 'caption',
+          fileName: PROJECT_SETTINGS_FILE,
+        });
 
         if (!projectSettingsRes?.success || !projectSettingsRes.data) {
           setLayoutProfiles(globalFallbackProfiles);
@@ -2086,10 +2131,9 @@ export function useCaptionSettings() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, paths, applyLoadedSettings]);
+  }, [projectId, paths, applyLoadedSettings, parseStandaloneCaptionPayload]);
 
   const saveSettings = useCallback(async (source: 'ui' | 'system' = 'ui') => {
-    if (!projectId) return;
     const nextRevision = revisionRef.current + 1;
     const updatedAt = nowIso();
     const payload: CaptionProjectSettings = {
@@ -2103,14 +2147,23 @@ export function useCaptionSettings() {
     const queued = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        const writeRes = await window.electronAPI.project.writeFeatureFile({
-          projectId,
-          feature: 'caption',
-          fileName: PROJECT_SETTINGS_FILE,
-          content: payload,
-        });
-        if (!writeRes?.success) {
-          throw new Error(writeRes?.error || 'Không thể lưu caption-settings.json');
+        if (!projectId) {
+          const updateRes = await window.electronAPI.appSettings.update({
+            captionStandaloneSettings: JSON.stringify(payload),
+          });
+          if (!updateRes?.success) {
+            throw new Error(updateRes?.error || 'Không thể lưu caption settings standalone vào AppData');
+          }
+        } else {
+          const writeRes = await window.electronAPI.project.writeFeatureFile({
+            projectId,
+            feature: 'caption',
+            fileName: PROJECT_SETTINGS_FILE,
+            content: payload,
+          });
+          if (!writeRes?.success) {
+            throw new Error(writeRes?.error || 'Không thể lưu caption-settings.json');
+          }
         }
         revisionRef.current = nextRevision;
         setSettingsRevision(nextRevision);
@@ -2121,7 +2174,8 @@ export function useCaptionSettings() {
   }, [projectId, settingsValues]);
 
   useEffect(() => {
-    if (!projectId || !paths || !loadedRef.current) return;
+    if (projectId && !paths) return;
+    if (!loadedRef.current) return;
     const timer = window.setTimeout(() => {
       saveSettings('ui').catch((error) => {
         console.error('[CaptionSettings] Lỗi auto-save:', error);
@@ -2133,7 +2187,7 @@ export function useCaptionSettings() {
   }, [projectId, paths, settingsValues, saveSettings]);
 
   useEffect(() => {
-    if (!projectId || !paths || !loadedRef.current || isHydratingRef.current) {
+    if ((projectId && !paths) || !loadedRef.current || isHydratingRef.current) {
       return;
     }
     if (!typographyDefaultsDirtyRef.current) {

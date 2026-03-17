@@ -36,6 +36,7 @@ export interface AppSettings {
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
+  captionStandaloneSettings: string | null;
   capcutTtsSecrets: CapcutTtsSecrets;
   geminiWebApiCookieFallback: GeminiWebApiCookieFallback;
 }
@@ -279,6 +280,14 @@ function normalizeRotatingProxyEndpoint(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeCaptionStandaloneSettings(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeCapcutExtraHeaders(value: unknown): Record<string, string> | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -388,6 +397,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   captionLogoPosition: null,
   captionLogoScale: 1.0,
   captionTypographyDefaults: null,
+  captionStandaloneSettings: null,
   capcutTtsSecrets: {
     appKey: null,
     token: null,
@@ -447,6 +457,7 @@ class AppSettingsServiceClass {
           apiWorkerCount: normalizeApiWorkerCount(loaded?.apiWorkerCount),
           apiRequestDelayMs: normalizeApiRequestDelayMs(loaded?.apiRequestDelayMs),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
+          captionStandaloneSettings: normalizeCaptionStandaloneSettings(loaded?.captionStandaloneSettings),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
         };
@@ -496,6 +507,9 @@ class AppSettingsServiceClass {
     const nextPartial: Partial<AppSettings> = { ...partial };
     if (Object.prototype.hasOwnProperty.call(partial, 'captionTypographyDefaults')) {
       nextPartial.captionTypographyDefaults = normalizeCaptionTypographyDefaults(partial.captionTypographyDefaults);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'captionStandaloneSettings')) {
+      nextPartial.captionStandaloneSettings = normalizeCaptionStandaloneSettings(partial.captionStandaloneSettings);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'capcutTtsSecrets')) {
       nextPartial.capcutTtsSecrets = normalizeCapcutTtsSecrets(partial.capcutTtsSecrets);

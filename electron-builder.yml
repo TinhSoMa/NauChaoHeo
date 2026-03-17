@@ -108,7 +108,7 @@ linux:
   # icon: resources/icons/icon.png  # Bỏ comment khi đã có icon
   category: Utility
   synopsis: Tool cá nhân siêu cấp vipro
-  description: Ứng dụng dịch thuật và công cụ AI cho cá nhân
+  description: Tính Vipro akn1
 
 # AppImage options
 appImage:

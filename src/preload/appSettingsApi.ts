@@ -59,6 +59,7 @@ export interface AppSettings {
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
+  captionStandaloneSettings: string | null;
   capcutTtsSecrets: {
     appKey: string | null;
     token: string | null;
