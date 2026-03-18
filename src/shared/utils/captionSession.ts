@@ -6,10 +6,40 @@ export function nowIso(): string {
 
 export function getCaptionOutputDirFromInput(inputType: 'srt' | 'draft', inputPath: string): string {
   if (!inputPath) return '';
-  if (inputType === 'draft') {
-    return `${inputPath}/caption_output`;
+  const sep = inputPath.includes('\\') ? '\\' : '/';
+  const prefix = inputPath.startsWith('\\\\')
+    ? '\\\\'
+    : (inputPath.startsWith('/') && sep === '/' ? '/' : '');
+  const normalized = prefix ? inputPath.slice(prefix.length) : inputPath;
+  const segments = normalized.split(/[/\\]+/).filter(Boolean);
+  if (segments.length === 0) {
+    return '';
   }
-  return inputPath.replace(/[^/\\]+$/, 'caption_output');
+
+  const joinPath = (parts: string[]): string => (prefix ? prefix : '') + parts.join(sep);
+
+  if (inputType === 'draft') {
+    return joinPath([...segments, 'caption_output']);
+  }
+
+  let captionIndex = -1;
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    if (segments[i].toLowerCase() === 'caption_output') {
+      captionIndex = i;
+      break;
+    }
+  }
+  if (captionIndex >= 0) {
+    const resolved = joinPath(segments.slice(0, captionIndex + 1));
+    if (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+      console.log('[CaptionSession] Resolved caption_output from SRT path:', {
+        inputPath,
+        outputDir: resolved,
+      });
+    }
+    return resolved;
+  }
+  return joinPath([...segments.slice(0, -1), 'caption_output']);
 }
 
 export function getCaptionSessionPathFromInput(inputType: 'srt' | 'draft', inputPath: string): string {

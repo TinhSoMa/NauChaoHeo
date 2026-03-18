@@ -99,7 +99,7 @@ function mergeCaptionSessionWithDefaults(
   if (!isPlainObject(parsed)) {
     return base;
   }
-  const parsedSession = parsed as CaptionSessionV1;
+  const parsedSession = parsed as unknown as CaptionSessionV1;
   return {
     ...base,
     ...parsedSession,

@@ -2405,6 +2405,11 @@ export function CaptionTranslator() {
   const [sessionStepSkipped, setSessionStepSkipped] = useState<Partial<Record<Step, boolean>>>({});
   const [sessionStepTimingMeta, setSessionStepTimingMeta] = useState<Partial<Record<Step, SessionStepTimingMeta>>>({});
   const [sessionStep3BatchState, setSessionStep3BatchState] = useState<Step3BatchState | null>(null);
+  const [sessionStep2BatchPlanCount, setSessionStep2BatchPlanCount] = useState<number | null>(null);
+  const [sessionEntryCounts, setSessionEntryCounts] = useState<{ translated: number; extracted: number }>({
+    translated: 0,
+    extracted: 0,
+  });
   const [uiNowMs, setUiNowMs] = useState<number>(() => Date.now());
   const [stepLiveStartMs, setStepLiveStartMs] = useState<Partial<Record<Step, number>>>({});
   const [step3BatchRuntimeMap, setStep3BatchRuntimeMap] = useState<Record<number, Step3BatchRuntimeEntry>>({});
@@ -2421,6 +2426,7 @@ export function CaptionTranslator() {
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('live');
+  const lastHydratedInputPathRef = useRef<string>('');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = settings.inputType === 'srt'
@@ -2433,6 +2439,8 @@ export function CaptionTranslator() {
       setSessionStepSkipped({});
       setSessionStepTimingMeta({});
       setSessionStep3BatchState(null);
+      setSessionStep2BatchPlanCount(null);
+      setSessionEntryCounts({ translated: 0, extracted: 0 });
       setStep3BatchRuntimeMap({});
       setStep3LiveTotalBatches(null);
       setSessionPreviewEntries(fileManager.entries);
@@ -2443,10 +2451,23 @@ export function CaptionTranslator() {
     }
 
     const inputPaths = processingInputPaths;
-    const activeInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? inputPaths[0];
+    const fallbackInputPath = inputPaths.length === 0
+      ? getInputPaths(settings.inputType, fileManager.filePath)[0]
+      : null;
+    const activeInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? inputPaths[0] ?? fallbackInputPath;
     if (!activeInputPath) {
+      if (import.meta?.env?.DEV) {
+        console.log('[CaptionTranslator][SessionHydrate] No active input path', {
+          inputType: settings.inputType,
+          filePath: fileManager.filePath,
+          processingInputPaths: inputPaths,
+          idleFocusedFolderPath,
+        });
+      }
       setSessionTimingSnapshot(null);
       setSessionStep3BatchState(null);
+      setSessionStep2BatchPlanCount(null);
+      setSessionEntryCounts({ translated: 0, extracted: 0 });
       setStep3BatchRuntimeMap({});
       setStep3LiveTotalBatches(null);
       return;
@@ -2456,6 +2477,15 @@ export function CaptionTranslator() {
     const hydratePreviewFromSession = async () => {
       try {
         const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
+        if (import.meta?.env?.DEV) {
+          console.log('[CaptionTranslator][SessionHydrate] Start', {
+            inputType: settings.inputType,
+            filePath: fileManager.filePath,
+            processingInputPaths: inputPaths,
+            activeInputPath,
+            sessionPath,
+          });
+        }
         const session = await readCaptionSession(sessionPath, {
           projectId,
           inputType: settings.inputType,
@@ -2465,6 +2495,19 @@ export function CaptionTranslator() {
             : activeInputPath.replace(/[^/\\]+$/, ''),
         });
         if (cancelled) return;
+        console.log('[CaptionTranslator][SessionHydrate]', {
+          sessionPath,
+          activeInputPath,
+          steps: {
+            step1: session.steps.step1?.status,
+            step2: session.steps.step2?.status,
+            step3: session.steps.step3?.status,
+            step4: session.steps.step4?.status,
+            step5: session.steps.step5?.status,
+            step6: session.steps.step6?.status,
+            step7: session.steps.step7?.status,
+          },
+        });
 
         const nextStepStatus: Partial<Record<Step, string>> = {
           1: session.steps.step1?.status,
@@ -2535,10 +2578,15 @@ export function CaptionTranslator() {
         setSessionStepSkipped(nextStepSkipped);
         setSessionStepTimingMeta(nextStepTimingMeta);
         setSessionStep3BatchState(session.data.step3BatchState ?? null);
+        setSessionStep2BatchPlanCount(
+          Array.isArray(session.data.step2BatchPlan) ? session.data.step2BatchPlan.length : null
+        );
         setSessionTimingSnapshot(readTimingSnapshotFromSession(session));
+        lastHydratedInputPathRef.current = activeInputPath;
 
         const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
         const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
+        setSessionEntryCounts({ translated: translated.length, extracted: extracted.length });
         const selectedEntries =
           (session.steps.step3?.status === 'success' && translated.length > 0)
             ? translated
@@ -2570,15 +2618,16 @@ export function CaptionTranslator() {
       } catch (error) {
         if (!cancelled) {
           console.warn('[CaptionTranslator] Không thể hydrate preview từ caption_session.json', error);
-          setSessionStepStatus({});
-          setSessionStepSkipped({});
-          setSessionStepTimingMeta({});
-          setSessionStep3BatchState(null);
-          setStep3BatchRuntimeMap({});
-          setStep3LiveTotalBatches(null);
-          setSessionPreviewEntries(fileManager.entries);
-          setRenderedPreviewVideoPath(null);
-          setSessionTimingSnapshot(null);
+          if (activeInputPath !== lastHydratedInputPathRef.current) {
+            setSessionStepStatus({});
+            setSessionStepSkipped({});
+            setSessionStepTimingMeta({});
+            setSessionPreviewEntries(fileManager.entries);
+            setRenderedPreviewVideoPath(null);
+            setSessionTimingSnapshot(null);
+          } else {
+            setSessionTimingSnapshot(null);
+          }
         }
       }
     };
@@ -3574,8 +3623,17 @@ export function CaptionTranslator() {
     const stateTotal = typeof safeState?.totalBatches === 'number' && Number.isFinite(safeState.totalBatches)
       ? Math.max(1, Math.floor(safeState.totalBatches))
       : 0;
-    const totalBatches = Math.max(stateTotal, liveTotal, maxReportIndex, maxRuntimeIndex);
-    const totalSourceLines = Math.max(0, fileManager.entries.length);
+    const planTotal = typeof sessionStep2BatchPlanCount === 'number'
+      ? Math.max(0, Math.floor(sessionStep2BatchPlanCount))
+      : 0;
+    const totalBatches = Math.max(stateTotal, liveTotal, maxReportIndex, maxRuntimeIndex, planTotal);
+    const totalSourceLines = Math.max(
+      0,
+      fileManager.entries.length,
+      sessionPreviewEntries.length,
+      sessionEntryCounts.translated,
+      sessionEntryCounts.extracted
+    );
     const maxExpectedFromReports = stateReports
       .map((report) => (typeof report?.expectedLines === 'number' && Number.isFinite(report.expectedLines) ? Math.floor(report.expectedLines) : 0))
       .reduce((max, current) => Math.max(max, current), 0);
@@ -3703,7 +3761,10 @@ export function CaptionTranslator() {
     };
   }, [
     fileManager.entries.length,
+    sessionPreviewEntries.length,
+    sessionEntryCounts,
     sessionStep3BatchState,
+    sessionStep2BatchPlanCount,
     step3BatchRuntimeMap,
     step3LiveTotalBatches,
     uiNowMs,

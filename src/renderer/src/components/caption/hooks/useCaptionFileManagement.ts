@@ -30,6 +30,13 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
       const saved = window.localStorage.getItem(storageKey);
       if (saved && saved.trim()) {
         setFilePath(saved);
+        if (import.meta?.env?.DEV) {
+          console.log('[CaptionFileManagement] Restore last input', {
+            inputType,
+            filePath: saved,
+            storageKey,
+          });
+        }
       }
     } catch (error) {
       console.warn('[CaptionFileManagement] Không đọc được localStorage last input', error);
@@ -168,6 +175,14 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     let cancelled = false;
 
     const hydrateFromSession = async () => {
+      if (import.meta?.env?.DEV) {
+        console.log('[CaptionFileManagement] Hydrate session', {
+          inputType,
+          filePath,
+          inputPaths: paths,
+          sessionPath,
+        });
+      }
       const session = await readCaptionSession(sessionPath, {
         projectId,
         inputType,

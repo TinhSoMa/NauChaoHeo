@@ -238,11 +238,44 @@ function decodeTextFromBuffer(buffer: Buffer): string {
   return maybeFixMojibake(text);
 }
 
+function decodeJsonTextFromBuffer(buffer: Buffer): string {
+  if (!buffer || buffer.length === 0) {
+    return '';
+  }
+
+  if (buffer.length >= 2) {
+    const b0 = buffer[0];
+    const b1 = buffer[1];
+    if (b0 === 0xff && b1 === 0xfe) {
+      return buffer.slice(2).toString('utf16le');
+    }
+    if (b0 === 0xfe && b1 === 0xff) {
+      const swapped = Buffer.allocUnsafe(buffer.length - 2);
+      for (let i = 2; i < buffer.length; i += 2) {
+        swapped[i - 2] = buffer[i + 1] || 0;
+        swapped[i - 1] = buffer[i] || 0;
+      }
+      return swapped.toString('utf16le');
+    }
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.slice(3).toString('utf8');
+  }
+
+  return buffer.toString('utf8');
+}
+
 function maybeFixMojibake(text: string): string {
   if (!text) return text;
-  const suspect = /Ã|Â|á»/;
+  const suspect = /Ã|Â/;
   if (!suspect.test(text)) {
     return text;
+  }
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) > 0xff) {
+      return text;
+    }
   }
   const fixed = Buffer.from(text, 'latin1').toString('utf8');
   if (!suspect.test(fixed)) {
@@ -925,21 +958,36 @@ export function registerCaptionHandlers(): void {
     ): Promise<IpcResponse<unknown | null>> => {
       try {
         const fs = await import('fs/promises');
+        const fsSync = await import('fs');
         const sessionPath = payload?.sessionPath;
         if (!sessionPath || typeof sessionPath !== 'string') {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
         return await withSessionLock(sessionPath, async () => {
+          const isDev = process?.env?.NODE_ENV !== 'production';
+          const exists = fsSync.existsSync(sessionPath);
+          if (isDev) {
+            console.log('[CaptionSession][READ] start', { sessionPath, exists });
+          }
           try {
             const buffer = await fs.readFile(sessionPath);
-            const raw = decodeTextFromBuffer(buffer);
+            const raw = decodeJsonTextFromBuffer(buffer);
             const parsed = JSON.parse(raw);
             const fixed = fixMojibakeDeep(parsed);
+            if (isDev) {
+              console.log('[CaptionSession][READ] success', { sessionPath });
+            }
             return { success: true, data: fixed };
           } catch (error) {
             const err = String(error);
             if (err.includes('ENOENT')) {
+              if (isDev) {
+                console.log('[CaptionSession][READ] not_found', { sessionPath });
+              }
               return { success: true, data: null };
+            }
+            if (isDev) {
+              console.warn('[CaptionSession][READ] failed', { sessionPath, error: err });
             }
             return { success: false, error: `SESSION_READ_FAILED: ${err}` };
           }
@@ -965,6 +1013,7 @@ export function registerCaptionHandlers(): void {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
         return await withSessionLock(sessionPath, async () => {
+          const isDev = process?.env?.NODE_ENV !== 'production';
           const outputDir = path.dirname(sessionPath);
           if (path.basename(outputDir).toLowerCase() === 'caption_output') {
             const baseDir = path.dirname(outputDir);
@@ -990,6 +1039,13 @@ export function registerCaptionHandlers(): void {
               await fs.copyFile(tmpPath, sessionPath);
               await fs.unlink(tmpPath);
             } catch (fallbackError) {
+              if (isDev) {
+                console.warn('[CaptionSession][WRITE] failed', {
+                  sessionPath,
+                  error: String(error),
+                  fallback: String(fallbackError),
+                });
+              }
               return { success: false, error: `SESSION_WRITE_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
             }
           }
@@ -1017,6 +1073,7 @@ export function registerCaptionHandlers(): void {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
         return await withSessionLock(sessionPath, async () => {
+          const isDev = process?.env?.NODE_ENV !== 'production';
           const outputDir = path.dirname(sessionPath);
           if (path.basename(outputDir).toLowerCase() === 'caption_output') {
             const baseDir = path.dirname(outputDir);
@@ -1032,11 +1089,11 @@ export function registerCaptionHandlers(): void {
           if (fsSync.existsSync(sessionPath)) {
             try {
               const buffer = await fs.readFile(sessionPath);
-              const raw = decodeTextFromBuffer(buffer);
-              const parsed = JSON.parse(raw);
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                current = fixMojibakeDeep(parsed) as Record<string, unknown>;
-              }
+            const raw = decodeJsonTextFromBuffer(buffer);
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              current = fixMojibakeDeep(parsed) as Record<string, unknown>;
+            }
             } catch {
               current = {};
             }
@@ -1058,6 +1115,13 @@ export function registerCaptionHandlers(): void {
               await fs.copyFile(tmpPath, sessionPath);
               await fs.unlink(tmpPath);
             } catch (fallbackError) {
+              if (isDev) {
+                console.warn('[CaptionSession][PATCH] failed', {
+                  sessionPath,
+                  error: String(error),
+                  fallback: String(fallbackError),
+                });
+              }
               return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
             }
           }
