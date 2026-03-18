@@ -473,6 +473,11 @@ function hasNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
@@ -562,7 +567,8 @@ export function validateStepOutputForSkip(
 
 export function shouldSkipStep(
   session: CaptionSessionV1,
-  step: CaptionStepNumber
+  step: CaptionStepNumber,
+  options?: { currentSrtSpeed?: number }
 ): { skip: boolean; reason?: string } {
   // Step 7 (render video) luôn cho phép chạy lại nhiều lần.
   if (step === 7) {
@@ -578,6 +584,15 @@ export function shouldSkipStep(
   }
   if (stepState.status !== 'success') {
     return { skip: false, reason: 'not_success_yet' };
+  }
+  if (step === 6 && typeof options?.currentSrtSpeed === 'number') {
+    const timingScale = toFiniteNumber(toRecord(session.timing).step4SrtScale);
+    const dataRecord = toRecord(session.data);
+    const mergeScale = toFiniteNumber(toRecord(dataRecord.mergeResult).srtSpeed);
+    const previousScale = mergeScale ?? timingScale;
+    if (previousScale !== null && Math.abs(previousScale - options.currentSrtSpeed) > 0.0005) {
+      return { skip: false, reason: 'srt_scale_changed' };
+    }
   }
   const outputCheck = validateStepOutputForSkip(session, step);
   if (!outputCheck.ok) {

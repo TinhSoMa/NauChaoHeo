@@ -2092,7 +2092,25 @@ export function useCaptionProcessing({
         if (step === 5 || step === 6) currentDataSource = 'session_tts_audio_files';
         if (step === 7) currentDataSource = 'session_translated_entries+session_merged_audio';
 
-        const skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber);
+        const currentSrtSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
+        const skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber, {
+          currentSrtSpeed,
+        });
+        if (step === 6 && skipDecision.reason === 'srt_scale_changed') {
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            steps: {
+              ...session.steps,
+              [stepKey]: {
+                ...session.steps[stepKey],
+                status: 'stale',
+                error: undefined,
+                metrics: undefined,
+                blockedReason: 'srt_scale_changed',
+              },
+            },
+          }));
+        }
         if (skipDecision.skip) {
           hydrateStepOutputContext();
           const skipReason = skipDecision.reason || 'session_output_ready';
