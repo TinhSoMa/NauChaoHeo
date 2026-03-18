@@ -77,7 +77,8 @@ export function StorySummary() {
     try {
       const result = await window.electronAPI.appSettings.getAll();
       if (result.success && result.data) {
-        setUseProxy(result.data.useProxy);
+        const mode = result.data.proxyScopes?.story?.mode || (result.data.useProxy === false ? 'off' : (result.data.proxyMode || 'direct-list'));
+        setUseProxy(mode !== 'off');
       }
     } catch (error) {
       console.error('[StorySummary] Error loading proxy setting:', error);

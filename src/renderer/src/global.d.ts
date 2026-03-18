@@ -521,6 +521,13 @@ interface AppSettings {
   useProxy: boolean;
   proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
   rotatingProxyEndpoint: string | null;
+  proxyScopes: {
+    caption: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+    story: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+    chat: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+    tts: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+    other: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+  };
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
   geminiMinSendIntervalMs: number;

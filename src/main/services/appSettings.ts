@@ -21,6 +21,7 @@ export interface AppSettings {
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
   proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
   rotatingProxyEndpoint: string | null;
+  proxyScopes: ProxyScopesSettings;
   createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
   geminiMinSendIntervalMs: number; // Khoảng chờ tối thiểu giữa mỗi lần gửi Gemini (ms)
@@ -55,6 +56,17 @@ export interface GeminiWebApiCookieFallback {
   sourceBrowser: 'chrome' | 'edge' | null;
   updatedAt: number | null;
 }
+
+export type ProxyScopeName = 'caption' | 'story' | 'chat' | 'tts' | 'other';
+export type ProxyScopeMode = 'off' | 'direct-list' | 'rotating-endpoint';
+export type ProxyTypePreference = 'any' | 'http' | 'https' | 'socks5';
+
+export interface ProxyScopeSettings {
+  mode: ProxyScopeMode;
+  typePreference: ProxyTypePreference;
+}
+
+export type ProxyScopesSettings = Record<ProxyScopeName, ProxyScopeSettings>;
 
 export interface CaptionTypographyLayoutDefaults {
   fontSizeScaleVersion?: number;
@@ -272,6 +284,14 @@ function normalizeProxyMode(value: unknown): 'off' | 'direct-list' | 'rotating-e
   return value === 'off' || value === 'rotating-endpoint' ? value : 'direct-list';
 }
 
+function normalizeProxyScopeMode(value: unknown): ProxyScopeMode {
+  return value === 'off' || value === 'rotating-endpoint' ? value : 'direct-list';
+}
+
+function normalizeProxyTypePreference(value: unknown): ProxyTypePreference {
+  return value === 'http' || value === 'https' || value === 'socks5' ? value : 'any';
+}
+
 function normalizeRotatingProxyEndpoint(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
@@ -329,6 +349,47 @@ function normalizeGeminiWebApiCookieFallback(value: unknown): GeminiWebApiCookie
   };
 }
 
+const PROXY_SCOPE_NAMES: ProxyScopeName[] = ['caption', 'story', 'chat', 'tts', 'other'];
+
+function buildProxyScopesFromLegacy(legacy: { useProxy?: boolean; proxyMode?: unknown } | null | undefined): ProxyScopesSettings {
+  const useProxy = legacy?.useProxy !== false;
+  const mode = useProxy ? normalizeProxyMode(legacy?.proxyMode) : 'off';
+  return {
+    caption: { mode, typePreference: 'any' },
+    story: { mode, typePreference: 'any' },
+    chat: { mode, typePreference: 'any' },
+    tts: { mode, typePreference: 'socks5' },
+    other: { mode, typePreference: 'any' },
+  };
+}
+
+function normalizeProxyScopeSettings(
+  value: unknown,
+  fallback: ProxyScopeSettings
+): ProxyScopeSettings {
+  if (!value || typeof value !== 'object') {
+    return { ...fallback };
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    mode: normalizeProxyScopeMode(raw.mode),
+    typePreference: normalizeProxyTypePreference(raw.typePreference),
+  };
+}
+
+function normalizeProxyScopes(
+  value: unknown,
+  fallbackSource: { proxyScopes?: ProxyScopesSettings; useProxy?: boolean; proxyMode?: unknown }
+): ProxyScopesSettings {
+  const fallbackScopes = fallbackSource.proxyScopes || buildProxyScopesFromLegacy(fallbackSource);
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const next = {} as ProxyScopesSettings;
+  for (const scope of PROXY_SCOPE_NAMES) {
+    next[scope] = normalizeProxyScopeSettings(raw[scope], fallbackScopes[scope]);
+  }
+  return next;
+}
+
 export function normalizeGeminiMinSendIntervalMs(value: unknown): number {
   let numeric: number;
   if (typeof value === 'number') {
@@ -383,6 +444,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   useProxy: true, // Mặc định bật proxy
   proxyMode: 'direct-list',
   rotatingProxyEndpoint: null,
+  proxyScopes: buildProxyScopesFromLegacy({ useProxy: true, proxyMode: 'direct-list' }),
   createChatOnWeb: false,
   useStoredContextOnFirstSend: false,
   geminiMinSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
@@ -443,11 +505,17 @@ class AppSettingsServiceClass {
       if (fs.existsSync(this.settingsPath)) {
         const content = fs.readFileSync(this.settingsPath, 'utf-8');
         const loaded = JSON.parse(content);
+        const proxyScopes = normalizeProxyScopes(loaded?.proxyScopes, {
+          proxyScopes: loaded?.proxyScopes,
+          useProxy: loaded?.useProxy,
+          proxyMode: loaded?.proxyMode,
+        });
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...loaded,
           proxyMode: normalizeProxyMode(loaded?.proxyMode),
           rotatingProxyEndpoint: normalizeRotatingProxyEndpoint(loaded?.rotatingProxyEndpoint),
+          proxyScopes,
           geminiMinSendIntervalMs: normalizeGeminiMinSendIntervalMs(loaded?.geminiMinSendIntervalMs),
           geminiMaxSendIntervalMs: normalizeGeminiMaxSendIntervalMs(
             loaded?.geminiMaxSendIntervalMs,
@@ -540,6 +608,13 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'rotatingProxyEndpoint')) {
       nextPartial.rotatingProxyEndpoint = normalizeRotatingProxyEndpoint(partial.rotatingProxyEndpoint);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'proxyScopes')) {
+      nextPartial.proxyScopes = normalizeProxyScopes(partial.proxyScopes, {
+        proxyScopes: this.settings.proxyScopes,
+        useProxy: this.settings.useProxy,
+        proxyMode: this.settings.proxyMode,
+      });
     }
 
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {

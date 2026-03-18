@@ -45,6 +45,7 @@ interface ProxySelectionResult {
   assignmentState: ProxyAssignmentState;
   proxyUrl: string | null;
   proxyConfig: ProxyConfig | null;
+  scope: 'caption' | 'story' | 'chat' | 'tts' | 'other';
 }
 
 export class GeminiWebApiService {
@@ -330,17 +331,17 @@ export class GeminiWebApiService {
     }
 
     const proxySelection = this.selectProxyForRequest(accountConfigId, request);
-    const proxyModeSetting = this.readProxyModeSetting();
+    const proxyModeSetting = this.readProxyModeSetting(proxySelection.scope);
     const isRotatingSelection = !!proxySelection.proxyConfig?.isRotatingEndpoint;
     let proxyMode: ProxyMode = proxySelection.proxyUrl ? 'proxy' : 'direct';
     let fallbackUsed = false;
     if (proxySelection.source === 'manual' && proxySelection.proxyUrl) {
       console.log(
-        `[GeminiWebApiService] Proxy route mode=manual accountConfigId=${accountConfigId} endpoint=${this.maskProxyForLog(proxySelection.proxyUrl)}`
+        `[GeminiWebApiService] Proxy route mode=manual scope=${proxySelection.scope} accountConfigId=${accountConfigId} endpoint=${this.maskProxyForLog(proxySelection.proxyUrl)}`
       );
     } else if (proxySelection.source === 'pool' && proxySelection.proxyConfig) {
       console.log(
-        `[GeminiWebApiService] Proxy route mode=pool accountConfigId=${accountConfigId} assignment=${proxySelection.assignmentState} proxyId=${proxySelection.proxyConfig.id} endpoint=${proxySelection.proxyConfig.host}:${proxySelection.proxyConfig.port}`
+        `[GeminiWebApiService] Proxy route mode=pool scope=${proxySelection.scope} accountConfigId=${accountConfigId} assignment=${proxySelection.assignmentState} proxyId=${proxySelection.proxyConfig.id} endpoint=${proxySelection.proxyConfig.host}:${proxySelection.proxyConfig.port}`
       );
     } else if (proxySelection.useProxySetting && proxySelection.source === 'none') {
       if (proxyModeSetting === 'rotating-endpoint') {
@@ -667,7 +668,21 @@ export class GeminiWebApiService {
   }
 
   private selectProxyForRequest(accountConfigId: string, request: GeminiGenerateRequest): ProxySelectionResult {
-    const useProxySetting = this.readUseProxySetting();
+    const scope = this.normalizeScope(request.proxyScope);
+    const manualProxy = this.normalizeProxy(request.proxy);
+    if (manualProxy) {
+      return {
+        accountConfigId,
+        useProxySetting: true,
+        source: 'manual',
+        assignmentState: 'none',
+        proxyUrl: manualProxy,
+        proxyConfig: null,
+        scope,
+      };
+    }
+
+    const useProxySetting = this.readUseProxySetting(scope);
     if (!useProxySetting) {
       return {
         accountConfigId,
@@ -676,18 +691,7 @@ export class GeminiWebApiService {
         assignmentState: 'none',
         proxyUrl: null,
         proxyConfig: null,
-      };
-    }
-
-    const manualProxy = this.normalizeProxy(request.proxy);
-    if (manualProxy) {
-      return {
-        accountConfigId,
-        useProxySetting,
-        source: 'manual',
-        assignmentState: 'none',
-        proxyUrl: manualProxy,
-        proxyConfig: null,
+        scope,
       };
     }
 
@@ -700,10 +704,11 @@ export class GeminiWebApiService {
         assignmentState: 'reused',
         proxyUrl: this.toProxyUrl(reusedProxy),
         proxyConfig: reusedProxy,
+        scope,
       };
     }
 
-    const proxyConfig = getProxyManager().getNextProxy(undefined, 'gemini');
+    const proxyConfig = getProxyManager().getNextProxy(undefined, scope);
     if (!proxyConfig) {
       return {
         accountConfigId,
@@ -712,6 +717,7 @@ export class GeminiWebApiService {
         assignmentState: 'none',
         proxyUrl: null,
         proxyConfig: null,
+        scope,
       };
     }
 
@@ -729,6 +735,7 @@ export class GeminiWebApiService {
       assignmentState: 'assigned_new',
       proxyUrl: this.toProxyUrl(proxyConfig),
       proxyConfig,
+      scope,
     };
   }
 
@@ -747,6 +754,7 @@ export class GeminiWebApiService {
       proxyAssignmentState: selection.assignmentState,
       proxyMode: mode,
       fallbackUsed,
+      proxyScope: selection.scope,
       proxyId: selection.proxyConfig?.id || null,
       proxyEndpoint: selection.proxyConfig
         ? `${selection.proxyConfig.host}:${selection.proxyConfig.port}`
@@ -793,25 +801,40 @@ export class GeminiWebApiService {
     );
   }
 
-  private readUseProxySetting(): boolean {
+  private readUseProxySetting(scope: 'caption' | 'story' | 'chat' | 'tts' | 'other'): boolean {
     try {
-      return !!AppSettingsService.getAll().useProxy;
+      const settings = AppSettingsService.getAll();
+      const scopeSettings = settings.proxyScopes?.[scope];
+      if (scopeSettings) {
+        return scopeSettings.mode !== 'off';
+      }
+      return settings.useProxy !== false && settings.proxyMode !== 'off';
     } catch (error) {
       console.warn('[GeminiWebApiService] Could not read useProxy setting, defaulting to false.', error);
       return false;
     }
   }
 
-  private readProxyModeSetting(): 'off' | 'direct-list' | 'rotating-endpoint' {
+  private readProxyModeSetting(scope: 'caption' | 'story' | 'chat' | 'tts' | 'other'): 'off' | 'direct-list' | 'rotating-endpoint' {
     try {
       const settings = AppSettingsService.getAll();
-      if (settings.useProxy === false || settings.proxyMode === 'off') {
-        return 'off';
+      const scopeSettings = settings.proxyScopes?.[scope];
+      if (!scopeSettings) {
+        if (settings.useProxy === false || settings.proxyMode === 'off') {
+          return 'off';
+        }
+        return settings.proxyMode === 'rotating-endpoint' ? 'rotating-endpoint' : 'direct-list';
       }
-      return settings.proxyMode === 'rotating-endpoint' ? 'rotating-endpoint' : 'direct-list';
+      return scopeSettings.mode;
     } catch {
       return 'off';
     }
+  }
+
+  private normalizeScope(scope: unknown): 'caption' | 'story' | 'chat' | 'tts' | 'other' {
+    return scope === 'caption' || scope === 'story' || scope === 'chat' || scope === 'tts'
+      ? scope
+      : 'other';
   }
 
   private normalizeProxy(value: unknown): string | null {

@@ -22,6 +22,8 @@ export interface GeminiImpitOptions {
   context?: { conversationId: string; responseId: string; choiceId: string };
   /** Override proxy setting. Nếu không truyền → đọc từ AppSettings. */
   useProxy?: boolean;
+  /** Proxy scope (caption/story/chat/tts/other). */
+  proxyScope?: 'caption' | 'story' | 'chat' | 'tts' | 'other';
   /** Metadata tùy ý (validationRegex, chapterId, featureId, ...). */
   metadata?: Record<string, any>;
   /** Callback khi retry. */
@@ -57,7 +59,13 @@ export async function callGeminiImpit(
   message: string,
   options: GeminiImpitOptions = {}
 ): Promise<GeminiImpitResult> {
-  const useProxy = options.useProxy ?? AppSettingsService.getAll().useProxy;
+  const scope = options.proxyScope ?? 'caption';
+  const settings = AppSettingsService.getAll();
+  const scopeSettings = settings.proxyScopes?.[scope];
+  const useProxySetting = scopeSettings
+    ? scopeSettings.mode !== 'off'
+    : (settings.useProxy !== false && settings.proxyMode !== 'off');
+  const useProxy = typeof options.useProxy === 'boolean' ? options.useProxy : useProxySetting;
 
   const raw = await GeminiChatService.sendMessageImpit(
     message,

@@ -15,6 +15,7 @@ export type GeminiConversationMetadata = Record<string, unknown> | unknown[];
 export interface GeminiGenerateRequest {
   prompt: string;
   proxy?: string | null;
+  proxyScope?: 'caption' | 'story' | 'chat' | 'tts' | 'other';
   timeoutMs?: number;
   forceCookieRefresh?: boolean;
   browserPriority?: GeminiBrowserType[];

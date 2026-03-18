@@ -12,6 +12,7 @@ interface RequestOptions {
   body?: any;
   timeout?: number;
   useProxy?: boolean; // Tùy chọn bật/tắt proxy cho request này
+  proxyScope?: 'caption' | 'story' | 'chat' | 'tts' | 'other';
 }
 
 interface RequestResult {
@@ -34,10 +35,14 @@ export async function makeRequestWithProxy(
     headers = {},
     body = null,
     timeout = 150000, // Tăng lên 15s (proxy chậm hơn direct)
-    useProxy = true,
+    useProxy: useProxyOverride,
+    proxyScope = 'other',
   } = options;
 
   const proxyManager = getProxyManager();
+  const proxyContext = proxyManager.getProxyContext(proxyScope);
+  const useProxySetting = proxyContext.mode !== 'off';
+  const useProxy = typeof useProxyOverride === 'boolean' ? useProxyOverride : useProxySetting;
   let lastError: string = '';
   let currentProxy: ProxyConfig | null = null;
 
@@ -46,10 +51,10 @@ export async function makeRequestWithProxy(
     try {
       // Lấy proxy nếu enabled
       if (useProxy) {
-        currentProxy = proxyManager.getNextProxy();
+        currentProxy = proxyManager.getNextProxy(undefined, proxyScope);
       }
 
-      console.log(`[ApiClient] Request ${method} ${url} (Attempt ${attempt + 1}/${maxRetries})${currentProxy ? ` via ${currentProxy.host}:${currentProxy.port}` : ' (direct)'}`);
+      console.log(`[ApiClient] Request ${method} ${url} scope=${proxyScope} (Attempt ${attempt + 1}/${maxRetries})${currentProxy ? ` via ${currentProxy.host}:${currentProxy.port}` : ' (direct)'}`);
 
       const result = await makeRequest(url, {
         method,

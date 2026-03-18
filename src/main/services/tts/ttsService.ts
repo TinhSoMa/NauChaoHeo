@@ -1300,9 +1300,9 @@ export async function generateAsyncioAudioWithProvider(
     console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
   }
 
-  const useProxySetting = AppSettingsService.getAll().useProxy !== false;
   const proxyManager = getProxyManager();
   const proxyContext = proxyManager.getProxyContext('tts');
+  const useProxySetting = proxyContext.mode !== 'off';
   const useRotatingEndpoint = useProxySetting && proxyContext.mode === 'rotating-endpoint';
   if (useRotatingEndpoint && proxyManager.getAvailableProxies(undefined, 'tts').length === 0) {
     return {
@@ -1314,17 +1314,18 @@ export async function generateAsyncioAudioWithProvider(
       errors: ['Rotating endpoint không hợp lệ hoặc không khả dụng cho Edge TTS'],
     };
   }
-  const hasSocks5Proxy = !useRotatingEndpoint
+  const preferredType = proxyContext.typePreference === 'any' ? undefined : proxyContext.typePreference;
+  const hasPreferredProxy = !useRotatingEndpoint
     && useProxySetting
-    && proxyManager.getAvailableProxies('socks5', 'tts').length > 0;
+    && proxyManager.getAvailableProxies(preferredType, 'tts').length > 0;
   console.log(
     `[TTS][EDGE][asyncio] useProxy=${useProxySetting}`
     + (useRotatingEndpoint
       ? ` (rotating-endpoint=${proxyContext.rotatingEndpointMasked || 'configured'})`
-      : (hasSocks5Proxy ? ' (socks5-only)' : ''))
+      : (preferredType ? ` (${preferredType}-only)` : (hasPreferredProxy ? ' (proxy)' : '')))
   );
-  if (useProxySetting && !hasSocks5Proxy && !useRotatingEndpoint) {
-    console.warn('[TTS][EDGE][asyncio] Không có SOCKS5 proxy khả dụng, fallback dùng proxy thường nếu có.');
+  if (useProxySetting && !hasPreferredProxy && !useRotatingEndpoint) {
+    console.warn('[TTS][EDGE][asyncio] Không có proxy theo typePreference khả dụng, fallback dùng proxy thường nếu có.');
   }
 
   const buildJobs = (items: EdgeAsyncioItem[]): EdgeAsyncioJob[] => {
@@ -1337,7 +1338,10 @@ export async function generateAsyncioAudioWithProvider(
         if (useRotatingEndpoint) {
           proxy = proxyManager.getNextProxy(undefined, 'tts');
         } else {
-          proxy = hasSocks5Proxy ? proxyManager.getNextProxy('socks5', 'tts') : proxyManager.getNextProxy(undefined, 'tts');
+          proxy = proxyManager.getNextProxy(preferredType, 'tts');
+          if (!proxy && preferredType) {
+            proxy = proxyManager.getNextProxy(undefined, 'tts');
+          }
         }
       }
       if (proxy) {

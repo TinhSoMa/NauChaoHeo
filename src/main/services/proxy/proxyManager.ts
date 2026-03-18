@@ -1,9 +1,9 @@
 import { ProxyConfig, ProxyStats } from '../../../shared/types/proxy';
 import { ProxyDatabase } from '../../database/proxyDatabase';
-import { AppSettingsService } from '../appSettings';
+import { AppSettingsService, ProxyScopeMode, ProxyScopeName, ProxyTypePreference, ProxyScopeSettings } from '../appSettings';
 
-type ProxyScope = 'generic' | 'tts' | 'gemini';
-type ProxyMode = 'off' | 'direct-list' | 'rotating-endpoint';
+type ProxyScope = ProxyScopeName;
+type ProxyMode = ProxyScopeMode;
 
 const ROTATING_PROXY_ID = '__rotating_endpoint__';
 
@@ -35,15 +35,17 @@ export class ProxyManager {
     console.log('[ProxyManager] Initialized with database storage');
   }
 
-  private getAppProxyMode(): ProxyMode {
+  private getScopeSettings(scope: ProxyScope = 'other'): ProxyScopeSettings {
     const settings = AppSettingsService.getAll();
-    if (settings.useProxy === false) {
-      return 'off';
+    const scopes = settings.proxyScopes;
+    if (scopes && scopes[scope]) {
+      return scopes[scope];
     }
-    if (settings.proxyMode === 'off' || settings.proxyMode === 'rotating-endpoint') {
-      return settings.proxyMode;
-    }
-    return 'direct-list';
+    const legacyMode = settings.useProxy === false || settings.proxyMode === 'off'
+      ? 'off'
+      : (settings.proxyMode === 'rotating-endpoint' ? 'rotating-endpoint' : 'direct-list');
+    const typePreference: ProxyTypePreference = scope === 'tts' ? 'socks5' : 'any';
+    return { mode: legacyMode, typePreference };
   }
 
   private getRotatingEndpointRaw(): string | null {
@@ -102,26 +104,27 @@ export class ProxyManager {
   }
 
   private shouldUseRotatingForScope(scope: ProxyScope): boolean {
-    return this.getAppProxyMode() === 'rotating-endpoint' && (scope === 'tts' || scope === 'gemini');
+    const scopeSettings = this.getScopeSettings(scope);
+    return scopeSettings.mode === 'rotating-endpoint';
   }
 
-  getProxyContext(scope: ProxyScope = 'generic'): { mode: ProxyMode; rotatingEndpointMasked: string | null } {
-    const mode = this.getAppProxyMode();
-    if (mode !== 'rotating-endpoint' || !(scope === 'tts' || scope === 'gemini')) {
-      return { mode, rotatingEndpointMasked: null };
+  getProxyContext(scope: ProxyScope = 'other'): { mode: ProxyMode; rotatingEndpointMasked: string | null; typePreference: ProxyTypePreference } {
+    const scopeSettings = this.getScopeSettings(scope);
+    if (scopeSettings.mode !== 'rotating-endpoint') {
+      return { mode: scopeSettings.mode, rotatingEndpointMasked: null, typePreference: scopeSettings.typePreference };
     }
     const endpoint = this.getRotatingEndpointRaw();
     if (!endpoint) {
-      return { mode, rotatingEndpointMasked: null };
+      return { mode: scopeSettings.mode, rotatingEndpointMasked: null, typePreference: scopeSettings.typePreference };
     }
     try {
       const parsed = new URL(endpoint);
       const user = parsed.username ? `${parsed.username.slice(0, 2)}***` : '';
       const maskedAuth = parsed.username ? `${user}:***@` : '';
       const masked = `${parsed.protocol}//${maskedAuth}${parsed.host}${parsed.pathname || ''}`;
-      return { mode, rotatingEndpointMasked: masked };
+      return { mode: scopeSettings.mode, rotatingEndpointMasked: masked, typePreference: scopeSettings.typePreference };
     } catch {
-      return { mode, rotatingEndpointMasked: 'invalid-endpoint' };
+      return { mode: scopeSettings.mode, rotatingEndpointMasked: 'invalid-endpoint', typePreference: scopeSettings.typePreference };
     }
   }
 
@@ -129,9 +132,9 @@ export class ProxyManager {
    * Lấy proxy tiếp theo theo round-robin
    * @returns Proxy config hoặc null nếu không có proxy khả dụng
    */
-  getNextProxy(type?: ProxyConfig['type'], scope: ProxyScope = 'generic'): ProxyConfig | null {
-    const appMode = this.getAppProxyMode();
-    if (appMode === 'off' || !this.settings.enableRotation) {
+  getNextProxy(type?: ProxyConfig['type'], scope: ProxyScope = 'other'): ProxyConfig | null {
+    const scopeSettings = this.getScopeSettings(scope);
+    if (scopeSettings.mode === 'off' || !this.settings.enableRotation) {
       return null;
     }
 
@@ -146,9 +149,10 @@ export class ProxyManager {
     }
 
     // Lọc các proxy được enable và chưa bị disable do lỗi quá nhiều
+    const effectiveType = type || (scopeSettings.typePreference === 'any' ? undefined : scopeSettings.typePreference);
     const allProxies = ProxyDatabase.getAll();
-    const availableProxies = allProxies.filter(p => 
-      p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!type || p.type === type)
+    const availableProxies = allProxies.filter(p =>
+      p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!effectiveType || p.type === effectiveType)
     );
 
     if (availableProxies.length === 0) {
@@ -167,7 +171,8 @@ export class ProxyManager {
   /**
    * Lấy danh sách proxy khả dụng (có thể lọc theo type)
    */
-  getAvailableProxies(type?: ProxyConfig['type'], scope: ProxyScope = 'generic'): ProxyConfig[] {
+  getAvailableProxies(type?: ProxyConfig['type'], scope: ProxyScope = 'other'): ProxyConfig[] {
+    const scopeSettings = this.getScopeSettings(scope);
     if (this.shouldUseRotatingForScope(scope)) {
       const rotatingProxy = this.getRotatingEndpointProxy();
       if (!rotatingProxy) {
@@ -175,9 +180,13 @@ export class ProxyManager {
       }
       return (!type || rotatingProxy.type === type) ? [rotatingProxy] : [];
     }
+    if (scopeSettings.mode === 'off') {
+      return [];
+    }
     const allProxies = ProxyDatabase.getAll();
+    const effectiveType = type || (scopeSettings.typePreference === 'any' ? undefined : scopeSettings.typePreference);
     return allProxies.filter(p =>
-      p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!type || p.type === type)
+      p.enabled && (p.failedCount || 0) < this.maxFailedCount && (!effectiveType || p.type === effectiveType)
     );
   }
 

@@ -55,6 +55,7 @@ export async function callGeminiApi(
         body: payload,
         timeout: 30000, // 30s cho translation
         useProxy: true,
+        proxyScope: 'other',
       });
 
       if (!result.success) {

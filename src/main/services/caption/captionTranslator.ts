@@ -335,6 +335,7 @@ async function translateBatchGeminiWebQueue(
           conversationKey,
           useChatSession: true,
           conversationMetadata: hasStoredConversation ? storedConversationMetadata : null,
+          proxyScope: 'caption',
         });
 
         if (!response.success) {
@@ -377,6 +378,7 @@ async function translateBatchGeminiWebQueue(
             useChatSession: true,
             resetConversation: true,
             conversationMetadata: null,
+            proxyScope: 'caption',
           });
 
           if (!response.success) {

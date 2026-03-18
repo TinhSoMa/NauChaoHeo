@@ -520,9 +520,13 @@ export class GeminiChatServiceClass {
         return assigned;
     }
 
-    private getUseProxySetting(): boolean {
+    private getUseProxySetting(scope: 'caption' | 'story' | 'chat' | 'tts' | 'other' = 'chat'): boolean {
         try {
             const settings = AppSettingsService.getAll();
+            const scopeSettings = settings.proxyScopes?.[scope];
+            if (scopeSettings) {
+                return scopeSettings.mode !== 'off';
+            }
             return settings.useProxy;
         } catch (error) {
             console.warn('[GeminiChatService] Không tải được cài đặt proxy, dùng mặc định (bật)');
@@ -530,9 +534,13 @@ export class GeminiChatServiceClass {
         }
     }
 
-    private getProxyModeSetting(): 'off' | 'direct-list' | 'rotating-endpoint' {
+    private getProxyModeSetting(scope: 'caption' | 'story' | 'chat' | 'tts' | 'other' = 'chat'): 'off' | 'direct-list' | 'rotating-endpoint' {
         try {
             const settings = AppSettingsService.getAll();
+            const scopeSettings = settings.proxyScopes?.[scope];
+            if (scopeSettings) {
+                return scopeSettings.mode;
+            }
             if (settings.useProxy === false || settings.proxyMode === 'off') {
                 return 'off';
             }
@@ -569,20 +577,21 @@ export class GeminiChatServiceClass {
         fetchOptions: any,
         timeoutMs: number,
         accountKey: string,
-        useProxyOverride?: boolean
+        useProxyOverride?: boolean,
+        proxyScope: 'caption' | 'story' | 'chat' | 'tts' | 'other' = 'chat'
     ): Promise<{ response: any; usedProxy: ProxyConfig | null }> {
-        const setting = this.getUseProxySetting();
+        const setting = this.getUseProxySetting(proxyScope);
         const useProxy = typeof useProxyOverride === 'boolean' ? useProxyOverride : setting;
         
         console.log(`[GeminiChatService] fetchWithProxy - Override: ${useProxyOverride}, Setting: ${setting}, Final: ${useProxy}`);
 
         const proxyManager = getProxyManager();
         let currentProxy: ProxyConfig | null = null;
-        const proxyMode = this.getProxyModeSetting();
+        const proxyMode = this.getProxyModeSetting(proxyScope);
 
         if (useProxy) {
             if (proxyMode === 'rotating-endpoint') {
-                currentProxy = proxyManager.getNextProxy(undefined, 'gemini');
+                currentProxy = proxyManager.getNextProxy(undefined, proxyScope);
             } else {
                 currentProxy = this.getOrAssignProxy(accountKey);
             }
@@ -777,7 +786,11 @@ export class GeminiChatServiceClass {
 
     private getAvailableProxies(): ProxyConfig[] {
         const proxyManager = getProxyManager();
-        const allProxies = proxyManager.getAllProxies();
+        const context = proxyManager.getProxyContext('chat');
+        if (context.mode === 'off') {
+            return [];
+        }
+        const allProxies = proxyManager.getAvailableProxies(undefined, 'chat');
         return allProxies.filter(p => p.enabled && (p.failedCount || 0) < this.proxyMaxFailedCount);
     }
 
@@ -1100,6 +1113,7 @@ export class GeminiChatServiceClass {
                   conversationKey,
                   useChatSession: true,
                   conversationMetadata,
+                  proxyScope: 'chat',
               });
 
               if (!response.success) {
@@ -1244,7 +1258,7 @@ export class GeminiChatServiceClass {
                 const fReq = buildRequestPayload(message, contextArray, createChatOnWeb);
 
                 // 3. Prepare Impit Client
-                const useProxy = this.getUseProxySetting();
+                const useProxy = this.getUseProxySetting('chat');
                 
                 let proxyUrl: string | undefined = undefined;
                 let usedProxy: ProxyConfig | null = null;

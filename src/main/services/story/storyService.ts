@@ -168,6 +168,7 @@ export class StoryService {
             conversationKey: options.conversationKey,
             resetConversation: options.resetConversation,
             useChatSession: !!options.conversationKey,
+            proxyScope: 'story',
           });
 
           if (!response.success) {

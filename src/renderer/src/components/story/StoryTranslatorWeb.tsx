@@ -17,6 +17,7 @@ export function StoryTranslatorWeb() {
   const { projectId, paths } = useProjectContext();
   const hasLoadedRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
+  const lastStoryProxyModeRef = useRef<'direct-list' | 'rotating-endpoint'>('direct-list');
 
   const [filePath, setFilePath] = useState('');
   const [sourceLang, setSourceLang] = useState('zh');
@@ -125,7 +126,11 @@ export function StoryTranslatorWeb() {
     try {
       const result = await window.electronAPI.appSettings.getAll();
       if (result.success && result.data) {
-        setUseProxy(result.data.useProxy);
+        const mode = result.data.proxyScopes?.story?.mode || (result.data.useProxy === false ? 'off' : (result.data.proxyMode || 'direct-list'));
+        if (mode !== 'off') {
+          lastStoryProxyModeRef.current = mode;
+        }
+        setUseProxy(mode !== 'off');
       }
     } catch (error) {
       console.error('[StoryTranslatorWeb] Lỗi load proxy setting:', error);
@@ -134,10 +139,26 @@ export function StoryTranslatorWeb() {
 
   const handleToggleUseProxy = async (enabled: boolean) => {
     try {
-      const result = await window.electronAPI.appSettings.update({ useProxy: enabled });
+      const current = await window.electronAPI.appSettings.getAll();
+      const currentScopes = current.success && current.data?.proxyScopes
+        ? current.data.proxyScopes
+        : {
+            caption: { mode: 'direct-list', typePreference: 'any' },
+            story: { mode: 'direct-list', typePreference: 'any' },
+            chat: { mode: 'direct-list', typePreference: 'any' },
+            tts: { mode: 'direct-list', typePreference: 'socks5' },
+            other: { mode: 'direct-list', typePreference: 'any' },
+          };
+      const nextMode = enabled ? lastStoryProxyModeRef.current : 'off';
+      const result = await window.electronAPI.appSettings.update({
+        proxyScopes: {
+          ...currentScopes,
+          story: { ...currentScopes.story, mode: nextMode },
+        },
+      });
       if (result.success) {
         setUseProxy(enabled);
-        console.log(`[StoryTranslatorWeb] Proxy ${enabled ? 'enabled' : 'disabled'} globally`);
+        console.log(`[StoryTranslatorWeb] Proxy ${enabled ? 'enabled' : 'disabled'} for Story scope`);
       }
     } catch (error) {
       console.error('[StoryTranslatorWeb] Lỗi toggle proxy:', error);
