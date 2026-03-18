@@ -13,7 +13,8 @@ import {
   MessageCircle,
   Network,
   FileText,
-  ListOrdered
+  ListOrdered,
+  Terminal
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -29,6 +30,7 @@ import { GeminiChatSettings } from './GeminiChatSettings';
 import { ProxySettings } from './ProxySettings';
 import { PromptSettings } from './PromptSettings';
 import { QueueMonitorSettings } from './QueueMonitorSettings';
+import { DebugLogsSettings } from './DebugLogsSettings';
 
 // Menu items configuration
 const menuItems: SettingsMenuItem[] = [
@@ -86,6 +88,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Quan sát hàng đợi, tài nguyên và luồng xử lý realtime',
     icon: ListOrdered
   },
+  {
+    id: 'debugLogs',
+    label: 'Debug Logs',
+    desc: 'Theo dõi log runtime (main + renderer) theo thời gian thực',
+    icon: Terminal
+  },
 ];
 
 export function Settings() {
@@ -119,6 +127,7 @@ export function Settings() {
       {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
       {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}
       {activeTab === 'queueMonitor' && <QueueMonitorSettings onBack={handleBack} />}
+      {activeTab === 'debugLogs' && <DebugLogsSettings onBack={handleBack} />}
     </div>
   );
 }

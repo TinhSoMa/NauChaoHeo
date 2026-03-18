@@ -1,0 +1,131 @@
+.headerInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.headerSubtitle {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  outline: none;
+  min-width: 140px;
+  cursor: pointer;
+}
+
+.logPanel {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.logPanelHeader {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.logPanelTitle {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.logPanelBody {
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+.logRow {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.logRow:last-child {
+  border-bottom: none;
+}
+
+.logMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badgeInfo {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.badgeWarn {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.badgeError {
+  background: rgba(239, 68, 68, 0.16);
+  color: #b91c1c;
+}
+
+.sourceChip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.message {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.emptyState {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.mono {
+  font-family: 'SFMono-Regular', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}

@@ -6,6 +6,9 @@ import { tryImportDevKeys } from './services/gemini/apiKeys'
 import { AppSettingsService } from './services/appSettings'
 import { createDashboardWindow } from './windowManager'
 import { cleanTempFiles } from './services/caption/garbageCollector'
+import { installMainConsoleCapture } from './services/logging/consoleCapture'
+
+installMainConsoleCapture()
 
 // Khởi tạo app khi Electron sẵn sàng
 app.whenReady().then(() => {

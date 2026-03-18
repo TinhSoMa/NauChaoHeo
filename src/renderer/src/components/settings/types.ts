@@ -15,7 +15,8 @@ export type SettingsTab =
   | 'geminichat'
   | 'proxy'
   | 'prompts'
-  | 'queueMonitor';
+  | 'queueMonitor'
+  | 'debugLogs';
 
 // Theme & Language types
 export type ThemeMode = 'light' | 'dark';

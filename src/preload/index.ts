@@ -9,6 +9,7 @@ import { proxyApi, ProxyAPI } from './proxyApi'
 import { promptApi, PromptAPI } from './promptApi'
 import { cutVideoApi, CutVideoAPI } from './cutVideoApi'
 import { createRotationQueueApi, RotationQueueAPI } from './rotationQueueApi'
+import { appLogsApi, AppLogsAPI } from './appLogsApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -53,6 +54,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Gemini WebAPI Ops API
   geminiWebApi: geminiWebApiApi,
 
+  // App Logs API
+  appLogs: appLogsApi,
+
   // Proxy API (quan ly proxy rotation)
   proxy: proxyApi,
 
@@ -86,6 +90,7 @@ declare global {
       appSettings: AppSettingsAPI
       geminiChat: GeminiChatAPI
       geminiWebApi: GeminiWebApiAPI
+      appLogs: AppLogsAPI
       proxy: ProxyAPI
       prompt: PromptAPI
       captionVideo: CaptionVideoAPI

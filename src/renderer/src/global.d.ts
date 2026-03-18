@@ -825,6 +825,31 @@ interface GeminiWebApiAPI {
   clearLogs: () => Promise<IpcApiResponse<void>>;
 }
 
+type AppLogLevel = 'info' | 'warn' | 'error';
+type AppLogSource = 'main' | 'renderer';
+
+interface AppLogEntry {
+  seq: number;
+  timestamp: number;
+  level: AppLogLevel;
+  source: AppLogSource;
+  message: string;
+  meta?: Record<string, unknown>;
+}
+
+interface AppLogsAPI {
+  getLogs: (limit?: number) => Promise<IpcApiResponse<AppLogEntry[]>>;
+  clearLogs: () => Promise<IpcApiResponse<void>>;
+  append: (payload: {
+    level: AppLogLevel;
+    source?: AppLogSource;
+    message: string;
+    timestamp?: number;
+    meta?: Record<string, unknown>;
+  }) => void;
+  onLog: (callback: (entry: AppLogEntry) => void) => () => void;
+}
+
 interface RotationQueueAPI {
   getStatus: () => Promise<IpcApiResponse<RotationQueueInspectorStatus>>;
   listRuntimes: () => Promise<IpcApiResponse<RotationQueueRuntimeInfo[]>>;
@@ -934,6 +959,9 @@ declare global {
 
       // Gemini WebAPI Ops API
       geminiWebApi: GeminiWebApiAPI;
+
+      // App Logs API
+      appLogs: AppLogsAPI;
 
       // Proxy API (quan ly proxy rotation)
       proxy: ProxyAPI;
