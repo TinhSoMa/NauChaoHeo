@@ -17,6 +17,10 @@ export type CaptionInputType = 'srt' | 'draft';
 const sessionWriteQueue = new Map<string, Promise<void>>();
 const sessionSyncRetryTimers = new Map<string, number>();
 
+type ReadSessionResult =
+  | { ok: true; session: CaptionSessionV1 }
+  | { ok: false; error: string };
+
 export function getInputPaths(inputType: CaptionInputType, filePath: string): string[] {
   if (!filePath) return [];
   if (inputType === 'draft') {
@@ -83,43 +87,101 @@ export function shouldSkipRealPreviewRequest(lastHash: string, nextHash: string)
   return lastHash === nextHash;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeCaptionSessionWithDefaults(
+  parsed: unknown,
+  fallback?: { projectId?: string | null; inputType?: CaptionInputType; sourcePath?: string; folderPath?: string }
+): CaptionSessionV1 {
+  const base = createDefaultCaptionSession(fallback);
+  if (!isPlainObject(parsed)) {
+    return base;
+  }
+  const parsedSession = parsed as CaptionSessionV1;
+  return {
+    ...base,
+    ...parsedSession,
+    projectContext: {
+      ...base.projectContext,
+      ...(parsedSession.projectContext || {}),
+    },
+    settings: {
+      ...(parsedSession.settings || {}),
+    },
+    steps: {
+      ...base.steps,
+      ...(parsedSession.steps || {}),
+    },
+    data: {
+      ...(parsedSession.data || {}),
+    },
+    artifacts: {
+      ...(parsedSession.artifacts || {}),
+    },
+    timing: {
+      ...(parsedSession.timing || {}),
+    },
+    runtime: {
+      ...base.runtime,
+      ...(parsedSession.runtime || {}),
+    },
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 export async function readCaptionSession(
   sessionPath: string,
   fallback?: { projectId?: string | null; inputType?: CaptionInputType; sourcePath?: string; folderPath?: string }
 ): Promise<CaptionSessionV1> {
   const res = await window.electronAPI.caption.readSession(sessionPath);
   if (res?.success && res.data) {
-    const parsed = res.data as CaptionSessionV1;
-    return {
-      ...createDefaultCaptionSession(fallback),
-      ...parsed,
-      projectContext: {
-        ...createDefaultCaptionSession(fallback).projectContext,
-        ...(parsed.projectContext || {}),
-      },
-      settings: {
-        ...(parsed.settings || {}),
-      },
-      steps: {
-        ...createDefaultCaptionSession(fallback).steps,
-        ...(parsed.steps || {}),
-      },
-      data: {
-        ...(parsed.data || {}),
-      },
-      artifacts: {
-        ...(parsed.artifacts || {}),
-      },
-      timing: {
-        ...(parsed.timing || {}),
-      },
-      runtime: {
-        ...createDefaultCaptionSession(fallback).runtime,
-        ...(parsed.runtime || {}),
-      },
-    };
+    return mergeCaptionSessionWithDefaults(res.data, fallback);
   }
   return createDefaultCaptionSession(fallback);
+}
+
+export async function readCaptionSessionStrict(
+  sessionPath: string,
+  fallback?: { projectId?: string | null; inputType?: CaptionInputType; sourcePath?: string; folderPath?: string }
+): Promise<ReadSessionResult> {
+  const res = await window.electronAPI.caption.readSession(sessionPath);
+  if (res?.success) {
+    if (res.data == null) {
+      return { ok: true, session: createDefaultCaptionSession(fallback) };
+    }
+    if (!isPlainObject(res.data)) {
+      return { ok: false, error: 'SESSION_INVALID_SHAPE' };
+    }
+    return { ok: true, session: mergeCaptionSessionWithDefaults(res.data, fallback) };
+  }
+  const error = typeof res?.error === 'string' ? res.error : 'SESSION_READ_FAILED';
+  return { ok: false, error };
+}
+
+async function readCaptionSessionStrictWithRetry(
+  sessionPath: string,
+  fallback?: { projectId?: string | null; inputType?: CaptionInputType; sourcePath?: string; folderPath?: string }
+): Promise<ReadSessionResult> {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await readCaptionSessionStrict(sessionPath, fallback);
+    if (result.ok) {
+      return result;
+    }
+    if (attempt < maxAttempts) {
+      await sleep(attempt * 120);
+    } else {
+      console.warn(`[CaptionSession] Read session failed after ${maxAttempts} attempts: ${result.error}`);
+    }
+  }
+  return { ok: false, error: 'SESSION_READ_FAILED' };
 }
 
 export async function writeCaptionSession(sessionPath: string, session: CaptionSessionV1): Promise<void> {
@@ -140,15 +202,19 @@ export async function updateCaptionSession(
   const queued = prevQueue
     .catch(() => undefined)
     .then(async () => {
-      const current = await readCaptionSession(sessionPath, fallback);
-      const next = updater(current);
+      const currentRes = await readCaptionSessionStrictWithRetry(sessionPath, fallback);
+      if (!currentRes.ok) {
+        nextSession = createDefaultCaptionSession(fallback);
+        return;
+      }
+      const next = updater(currentRes.session);
       await writeCaptionSession(sessionPath, next);
       nextSession = next;
     });
   sessionWriteQueue.set(sessionPath, queued);
   await queued;
   if (!nextSession) {
-    throw new Error('Không thể cập nhật caption session.');
+    return createDefaultCaptionSession(fallback);
   }
   return nextSession;
 }
@@ -760,4 +826,3 @@ export function scheduleSessionSettingsRetry(
   }, delay);
   sessionSyncRetryTimers.set(sessionPath, timer);
 }
-

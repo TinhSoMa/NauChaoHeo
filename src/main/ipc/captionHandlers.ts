@@ -36,6 +36,20 @@ interface IpcResponse<T = unknown> {
 }
 
 const SUPPORTED_CAPTION_FONT_EXTENSIONS = new Set(['.ttf', '.otf']);
+const sessionPathLocks = new Map<string, Promise<unknown>>();
+
+async function withSessionLock<T>(sessionPath: string, task: () => Promise<T>): Promise<T> {
+  const key = sessionPath;
+  const prev = sessionPathLocks.get(key) || Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  sessionPathLocks.set(key, next);
+  next.finally(() => {
+    if (sessionPathLocks.get(key) === next) {
+      sessionPathLocks.delete(key);
+    }
+  }).catch(() => undefined);
+  return next;
+}
 
 function getFileExtension(fileName: string): string {
   const idx = fileName.lastIndexOf('.');
@@ -915,19 +929,21 @@ export function registerCaptionHandlers(): void {
         if (!sessionPath || typeof sessionPath !== 'string') {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
-        try {
-          const buffer = await fs.readFile(sessionPath);
-          const raw = decodeTextFromBuffer(buffer);
-          const parsed = JSON.parse(raw);
-          const fixed = fixMojibakeDeep(parsed);
-          return { success: true, data: fixed };
-        } catch (error) {
-          const err = String(error);
-          if (err.includes('ENOENT')) {
-            return { success: true, data: null };
+        return await withSessionLock(sessionPath, async () => {
+          try {
+            const buffer = await fs.readFile(sessionPath);
+            const raw = decodeTextFromBuffer(buffer);
+            const parsed = JSON.parse(raw);
+            const fixed = fixMojibakeDeep(parsed);
+            return { success: true, data: fixed };
+          } catch (error) {
+            const err = String(error);
+            if (err.includes('ENOENT')) {
+              return { success: true, data: null };
+            }
+            return { success: false, error: `SESSION_READ_FAILED: ${err}` };
           }
-          return { success: false, error: `SESSION_READ_FAILED: ${err}` };
-        }
+        });
       } catch (error) {
         return { success: false, error: `SESSION_READ_FAILED: ${String(error)}` };
       }
@@ -948,35 +964,37 @@ export function registerCaptionHandlers(): void {
         if (!sessionPath || typeof sessionPath !== 'string') {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
-        const outputDir = path.dirname(sessionPath);
-        if (path.basename(outputDir).toLowerCase() === 'caption_output') {
-          const baseDir = path.dirname(outputDir);
-          if (!fsSync.existsSync(baseDir)) {
-            return { success: false, error: `SESSION_BASE_DIR_MISSING: ${baseDir}` };
+        return await withSessionLock(sessionPath, async () => {
+          const outputDir = path.dirname(sessionPath);
+          if (path.basename(outputDir).toLowerCase() === 'caption_output') {
+            const baseDir = path.dirname(outputDir);
+            if (!fsSync.existsSync(baseDir)) {
+              return { success: false, error: `SESSION_BASE_DIR_MISSING: ${baseDir}` };
+            }
           }
-        }
-        const dir = path.dirname(sessionPath);
-        await fs.mkdir(dir, { recursive: true });
-        const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
-        const jsonPayload = JSON.stringify(payload?.data ?? {}, null, 2);
-        await fs.writeFile(tmpPath, jsonPayload, 'utf-8');
-        try {
-          if (!fsSync.existsSync(sessionPath)) {
-            await fs.rename(tmpPath, sessionPath);
-          } else {
-            await fs.copyFile(tmpPath, sessionPath);
-            await fs.unlink(tmpPath);
-          }
-        } catch (error) {
-          // Fallback: direct write when replace fails (e.g. locked file on Windows)
+          const dir = path.dirname(sessionPath);
+          await fs.mkdir(dir, { recursive: true });
+          const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
+          const jsonPayload = JSON.stringify(payload?.data ?? {}, null, 2);
+          await fs.writeFile(tmpPath, jsonPayload, 'utf-8');
           try {
-            await fs.copyFile(tmpPath, sessionPath);
-            await fs.unlink(tmpPath);
-          } catch (fallbackError) {
-            return { success: false, error: `SESSION_WRITE_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
+            if (!fsSync.existsSync(sessionPath)) {
+              await fs.rename(tmpPath, sessionPath);
+            } else {
+              await fs.copyFile(tmpPath, sessionPath);
+              await fs.unlink(tmpPath);
+            }
+          } catch (error) {
+            // Fallback: direct write when replace fails (e.g. locked file on Windows)
+            try {
+              await fs.copyFile(tmpPath, sessionPath);
+              await fs.unlink(tmpPath);
+            } catch (fallbackError) {
+              return { success: false, error: `SESSION_WRITE_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
+            }
           }
-        }
-        return { success: true, data: sessionPath };
+          return { success: true, data: sessionPath };
+        });
       } catch (error) {
         return { success: false, error: `SESSION_WRITE_FAILED: ${String(error)}` };
       }
@@ -998,51 +1016,53 @@ export function registerCaptionHandlers(): void {
         if (!sessionPath || typeof sessionPath !== 'string') {
           return { success: false, error: 'SESSION_INVALID_INPUT: Thiếu sessionPath' };
         }
-        const outputDir = path.dirname(sessionPath);
-        if (path.basename(outputDir).toLowerCase() === 'caption_output') {
-          const baseDir = path.dirname(outputDir);
-          if (!fsSync.existsSync(baseDir)) {
-            return { success: false, error: `SESSION_BASE_DIR_MISSING: ${baseDir}` };
-          }
-        }
-        if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-          return { success: false, error: 'SESSION_INVALID_INPUT: Patch không hợp lệ' };
-        }
-
-        let current: Record<string, unknown> = {};
-        if (fsSync.existsSync(sessionPath)) {
-          try {
-            const buffer = await fs.readFile(sessionPath);
-            const raw = decodeTextFromBuffer(buffer);
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              current = fixMojibakeDeep(parsed) as Record<string, unknown>;
+        return await withSessionLock(sessionPath, async () => {
+          const outputDir = path.dirname(sessionPath);
+          if (path.basename(outputDir).toLowerCase() === 'caption_output') {
+            const baseDir = path.dirname(outputDir);
+            if (!fsSync.existsSync(baseDir)) {
+              return { success: false, error: `SESSION_BASE_DIR_MISSING: ${baseDir}` };
             }
-          } catch {
-            current = {};
           }
-        }
-        const merged = deepMergeRecord(current, patch);
-        const dir = path.dirname(sessionPath);
-        await fs.mkdir(dir, { recursive: true });
-        const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
-        await fs.writeFile(tmpPath, JSON.stringify(merged, null, 2), 'utf-8');
-        try {
-          if (!fsSync.existsSync(sessionPath)) {
-            await fs.rename(tmpPath, sessionPath);
-          } else {
-            await fs.copyFile(tmpPath, sessionPath);
-            await fs.unlink(tmpPath);
+          if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+            return { success: false, error: 'SESSION_INVALID_INPUT: Patch không hợp lệ' };
           }
-        } catch (error) {
+
+          let current: Record<string, unknown> = {};
+          if (fsSync.existsSync(sessionPath)) {
+            try {
+              const buffer = await fs.readFile(sessionPath);
+              const raw = decodeTextFromBuffer(buffer);
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                current = fixMojibakeDeep(parsed) as Record<string, unknown>;
+              }
+            } catch {
+              current = {};
+            }
+          }
+          const merged = deepMergeRecord(current, patch);
+          const dir = path.dirname(sessionPath);
+          await fs.mkdir(dir, { recursive: true });
+          const tmpPath = `${sessionPath}.tmp-${Date.now()}`;
+          await fs.writeFile(tmpPath, JSON.stringify(merged, null, 2), 'utf-8');
           try {
-            await fs.copyFile(tmpPath, sessionPath);
-            await fs.unlink(tmpPath);
-          } catch (fallbackError) {
-            return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
+            if (!fsSync.existsSync(sessionPath)) {
+              await fs.rename(tmpPath, sessionPath);
+            } else {
+              await fs.copyFile(tmpPath, sessionPath);
+              await fs.unlink(tmpPath);
+            }
+          } catch (error) {
+            try {
+              await fs.copyFile(tmpPath, sessionPath);
+              await fs.unlink(tmpPath);
+            } catch (fallbackError) {
+              return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)} | fallback: ${String(fallbackError)}` };
+            }
           }
-        }
-        return { success: true, data: merged };
+          return { success: true, data: merged };
+        });
       } catch (error) {
         return { success: false, error: `SESSION_PATCH_FAILED: ${String(error)}` };
       }
