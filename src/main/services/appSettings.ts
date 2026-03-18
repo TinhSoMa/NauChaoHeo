@@ -23,6 +23,7 @@ export interface AppSettings {
   rotatingProxyEndpoint: string | null;
   proxyScopes: ProxyScopesSettings;
   webshareApiKey: string | null;
+  capcutDraftsPath: string | null;
   createChatOnWeb: boolean; // Bật/tắt tạo hộp thoại chat trên web
   useStoredContextOnFirstSend: boolean; // Bật/tắt dùng ngữ cảnh cũ cho lần gửi đầu
   geminiMinSendIntervalMs: number; // Khoảng chờ tối thiểu giữa mỗi lần gửi Gemini (ms)
@@ -447,6 +448,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   rotatingProxyEndpoint: null,
   proxyScopes: buildProxyScopesFromLegacy({ useProxy: true, proxyMode: 'direct-list' }),
   webshareApiKey: null,
+  capcutDraftsPath: null,
   createChatOnWeb: false,
   useStoredContextOnFirstSend: false,
   geminiMinSendIntervalMs: GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,

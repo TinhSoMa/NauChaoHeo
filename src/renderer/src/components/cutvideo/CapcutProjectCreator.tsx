@@ -79,6 +79,41 @@ export const CapcutProjectCreator: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    const loadDraftsPath = async () => {
+      if (!window.electronAPI?.appSettings) return;
+      try {
+        const result = await window.electronAPI.appSettings.getAll();
+        if (!alive) return;
+        if (result?.success && result.data) {
+          const savedPath = typeof result.data.capcutDraftsPath === 'string' ? result.data.capcutDraftsPath.trim() : '';
+          if (savedPath) {
+            setCapcutDraftsPath(savedPath);
+          }
+        }
+      } catch (error) {
+        console.error('Lỗi tải cấu hình drafts path:', error);
+      }
+    };
+    loadDraftsPath();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const saveDraftsPath = async (nextPath: string) => {
+    if (!window.electronAPI?.appSettings) return;
+    try {
+      const result = await window.electronAPI.appSettings.update({ capcutDraftsPath: nextPath });
+      if (!result?.success) {
+        console.error('Lỗi lưu drafts path:', result?.error);
+      }
+    } catch (error) {
+      console.error('Lỗi lưu drafts path:', error);
+    }
+  };
+
   const handlePickSourceFolder = async () => {
     try {
       const result = await window.electronAPI.invoke('dialog:openFile', {
@@ -99,9 +134,11 @@ export const CapcutProjectCreator: React.FC = () => {
         properties: ['openDirectory'],
       }) as { canceled: boolean; filePaths: string[] };
       if (result?.canceled || !result?.filePaths?.length) return;
-      setCapcutDraftsPath(result.filePaths[0]);
+      const nextPath = result.filePaths[0];
+      setCapcutDraftsPath(nextPath);
+      void saveDraftsPath(nextPath);
     } catch (error) {
-      console.error('Lỗi chọn folder CapCut Drafts:', error);
+      console.error('Lỗi chọn folder drafts:', error);
     }
   };
 
@@ -155,7 +192,7 @@ export const CapcutProjectCreator: React.FC = () => {
       return;
     }
     if (!capcutDraftsPath) {
-      alert('Vui lòng chọn folder CapCut Drafts.');
+      alert('Vui lòng chọn folder drafts (chứa project CapCut).');
       return;
     }
     if (!scanItems.length) {
@@ -232,13 +269,14 @@ export const CapcutProjectCreator: React.FC = () => {
             </div>
           </div>
           <div>
-            <label className={styles.label}>Folder CapCut Drafts</label>
+            <label className={styles.label}>Folder drafts (project CapCut)</label>
             <div className={styles.inputGroup}>
               <input
                 className={styles.input}
                 value={capcutDraftsPath}
                 onChange={(e) => setCapcutDraftsPath(e.target.value)}
-                placeholder="D:\\User\\CongTinh\\Videos\\CapCut Drafts"
+                onBlur={() => void saveDraftsPath(capcutDraftsPath)}
+                placeholder="Chọn folder chứa project CapCut"
               />
               <Button variant="secondary" onClick={handlePickCapcutDraftsFolder} disabled={isCreating || isScanning}>
                 <FolderPlus size={14} />

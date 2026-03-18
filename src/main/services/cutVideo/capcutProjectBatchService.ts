@@ -274,10 +274,10 @@ class CapcutProjectBatchService {
       return { success: false, error: `Naming mode không hỗ trợ: ${namingMode}` };
     }
     if (!fs.existsSync(capcutDraftsPath)) {
-      return { success: false, error: `Folder CapCut Drafts không tồn tại: ${capcutDraftsPath}` };
+      return { success: false, error: `Folder drafts không tồn tại: ${capcutDraftsPath}` };
     }
     if (!fs.statSync(capcutDraftsPath).isDirectory()) {
-      return { success: false, error: `CapCut Drafts path không phải thư mục: ${capcutDraftsPath}` };
+      return { success: false, error: `Drafts path không phải thư mục: ${capcutDraftsPath}` };
     }
 
     const runtimeResult = await this.getPythonRuntime();
@@ -524,24 +524,37 @@ class CapcutProjectBatchService {
     sourceVideoPath: string;
     extractedAudioPath: string;
     capcutDraftsPath?: string;
+    capcutProjectPath?: string;
   }): Promise<CapcutAudioAttachResult> {
     const draftsPath = options.capcutDraftsPath || DEFAULT_CAPCUT_DRAFTS_PATH;
     if (!options.sourceVideoPath || !options.extractedAudioPath) {
       return { success: false, message: 'Thiếu sourceVideoPath hoặc extractedAudioPath.' };
     }
-    if (!fs.existsSync(draftsPath)) {
-      return { success: false, message: `Folder CapCut Drafts không tồn tại: ${draftsPath}` };
-    }
     if (!fs.existsSync(options.extractedAudioPath)) {
       return { success: false, message: `Audio đã tách không tồn tại: ${options.extractedAudioPath}` };
+    }
+    if (!fs.existsSync(draftsPath)) {
+      if (options.capcutProjectPath) {
+        return await this.attachAudioToProject({
+          capcutProjectPath: options.capcutProjectPath,
+          extractedAudioPath: options.extractedAudioPath,
+        });
+      }
+      return { success: false, message: `Folder drafts không tồn tại: ${draftsPath}` };
     }
 
     const mapped = await capcutProjectIndexStore.findBySourceVideoPath(draftsPath, options.sourceVideoPath);
     if (!mapped) {
+      if (options.capcutProjectPath) {
+        return await this.attachAudioToProject({
+          capcutProjectPath: options.capcutProjectPath,
+          extractedAudioPath: options.extractedAudioPath,
+        });
+      }
       return {
         success: false,
         skipped: true,
-        message: 'Chưa có project map cho video này. Hãy chạy tab CapCut Draft trước.',
+        message: 'Chưa có project map cho video này. Hãy chọn đúng folder project đã copy hoặc nhập drafts path mới.',
       };
     }
 

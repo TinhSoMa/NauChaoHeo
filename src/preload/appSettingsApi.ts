@@ -46,6 +46,7 @@ export interface AppSettings {
   proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
   rotatingProxyEndpoint: string | null;
   webshareApiKey: string | null;
+  capcutDraftsPath: string | null;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
   geminiMinSendIntervalMs: number;

@@ -5,6 +5,7 @@ import { videoSplitterService } from '../services/cutVideo/videoSplitterService'
 import { videoMergerService } from '../services/cutVideo/videoMergerService';
 import { videoAudioMixerService } from '../services/cutVideo/videoAudioMixerService';
 import { capcutProjectBatchService, DEFAULT_CAPCUT_DRAFTS_PATH } from '../services/cutVideo/capcutProjectBatchService';
+import { AppSettingsService } from '../services/appSettings';
 
 // To keep track of running extractions and allow stopping
 let activeExtractionProcess = false;
@@ -31,7 +32,9 @@ export function registerCutVideoHandlers(): void {
     activeExtractionProcess = true;
     const { folders, format, keepStructure, overwrite } = options;
     const capcutProjectPath = options.capcutProjectPath?.trim();
-    const capcutDraftsPath = options.capcutDraftsPath || DEFAULT_CAPCUT_DRAFTS_PATH;
+    const capcutDraftsPath = options.capcutDraftsPath
+      || AppSettingsService.getAll().capcutDraftsPath
+      || DEFAULT_CAPCUT_DRAFTS_PATH;
     const autoAttachToCapcut = options.autoAttachToCapcut !== false;
     const sender = event.sender;
 
@@ -325,13 +328,16 @@ export function registerCutVideoHandlers(): void {
 
   ipcMain.handle('cutVideo:startCapcutProjectBatch', async (event, options: {
     sourceFolderPath: string;
-    capcutDraftsPath: string;
+    capcutDraftsPath?: string;
     namingMode: 'index_plus_filename' | 'month_day_suffix';
   }) => {
     const sender = event.sender;
+    const draftsPath = options.capcutDraftsPath
+      || AppSettingsService.getAll().capcutDraftsPath
+      || DEFAULT_CAPCUT_DRAFTS_PATH;
     return await capcutProjectBatchService.createProjects({
       sourceFolderPath: options.sourceFolderPath,
-      capcutDraftsPath: options.capcutDraftsPath,
+      capcutDraftsPath: draftsPath,
       namingMode: options.namingMode,
       onProgress: (data) => sender.send('cutVideo:capcutProgress', data),
       onLog: (data) => sender.send('cutVideo:capcutLog', data),

@@ -316,7 +316,7 @@ interface CutVideoAPI {
   }>;
   startCapcutProjectBatch: (options: {
     sourceFolderPath: string;
-    capcutDraftsPath: string;
+    capcutDraftsPath?: string;
     namingMode: 'index_plus_filename' | 'month_day_suffix';
   }) => Promise<{
     success: boolean;
@@ -522,6 +522,7 @@ interface AppSettings {
   proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
   rotatingProxyEndpoint: string | null;
   webshareApiKey: string | null;
+  capcutDraftsPath: string | null;
   proxyScopes: {
     caption: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
     story: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
