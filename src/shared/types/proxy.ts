@@ -38,6 +38,25 @@ export interface ProxyTestResult {
   testedAt: number;
 }
 
+export interface RotatingProxyConfig {
+  scope: 'caption' | 'story' | 'chat' | 'tts' | 'other';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  protocol: 'http' | 'socks5';
+  updatedAt: number;
+}
+
+export interface RotatingProxyConfigInput {
+  scope: RotatingProxyConfig['scope'];
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  protocol: RotatingProxyConfig['protocol'];
+}
+
 export const PROXY_IPC_CHANNELS = {
   GET_ALL: 'proxy:getAll',
   ADD: 'proxy:add',
@@ -51,4 +70,8 @@ export const PROXY_IPC_CHANNELS = {
   RESET: 'proxy:reset', // Reset failed counts
   TEST_ROTATING_ENDPOINT: 'proxy:testRotatingEndpoint',
   WEBSHARE_SYNC: 'proxy:webshareSync',
+  GET_ROTATING_CONFIGS: 'proxy:getRotatingConfigs',
+  SAVE_ROTATING_CONFIG: 'proxy:saveRotatingConfig',
+  GET_WEBSHARE_API_KEY: 'proxy:getWebshareApiKey',
+  SAVE_WEBSHARE_API_KEY: 'proxy:saveWebshareApiKey',
 } as const;

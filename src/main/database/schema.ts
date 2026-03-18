@@ -51,6 +51,9 @@ export function initDatabase(): void {
   console.log('[Database] Initializing at:', dbPath);
   
   db = new Database(dbPath);
+  if (!db) {
+    throw new Error('Database initialization failed');
+  }
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
@@ -411,9 +414,98 @@ export function initDatabase(): void {
       failed_count INTEGER DEFAULT 0,
       last_used_at INTEGER,
       created_at INTEGER NOT NULL,
-      UNIQUE(host, port)
+      UNIQUE(host, port, type)
     );
   `);
+
+  // Create rotating_proxy_configs table - lưu cấu hình rotating endpoint theo scope
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rotating_proxy_configs (
+      scope TEXT PRIMARY KEY,
+      host TEXT,
+      port INTEGER,
+      username TEXT,
+      password TEXT,
+      protocol TEXT DEFAULT 'http' CHECK(protocol IN ('http', 'socks5')),
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Create webshare_api_keys table - lưu Webshare API Key
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS webshare_api_keys (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      api_key TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Migration: Update proxies unique constraint to include type
+  try {
+    const database = db;
+    if (!database) {
+      throw new Error('Database not initialized');
+    }
+    const indexList = database.pragma("index_list('proxies')") as any[];
+    const uniqueIndexes = indexList.filter((idx) => idx.unique);
+    const hasHostPortTypeUnique = uniqueIndexes.some((idx) => {
+      const cols = database.pragma(`index_info('${idx.name}')`) as any[];
+      const names = cols.map((c) => c.name);
+      return names.length === 3 && names.includes('host') && names.includes('port') && names.includes('type');
+    });
+    const hasHostPortUnique = uniqueIndexes.some((idx) => {
+      const cols = database.pragma(`index_info('${idx.name}')`) as any[];
+      const names = cols.map((c) => c.name);
+      return names.length === 2 && names.includes('host') && names.includes('port');
+    });
+
+    if (!hasHostPortTypeUnique && hasHostPortUnique) {
+      console.log('[Database] Migrating proxies unique constraint to include type...');
+      database.exec('BEGIN');
+      database.exec('ALTER TABLE proxies RENAME TO proxies_old');
+      database.exec(`
+        CREATE TABLE proxies (
+          id TEXT PRIMARY KEY,
+          host TEXT NOT NULL,
+          port INTEGER NOT NULL,
+          username TEXT,
+          password TEXT,
+          type TEXT DEFAULT 'http' CHECK(type IN ('http', 'https', 'socks5')),
+          enabled INTEGER DEFAULT 1,
+          platform TEXT,
+          country TEXT,
+          city TEXT,
+          success_count INTEGER DEFAULT 0,
+          failed_count INTEGER DEFAULT 0,
+          last_used_at INTEGER,
+          created_at INTEGER NOT NULL,
+          UNIQUE(host, port, type)
+        );
+      `);
+      database.exec(`
+        INSERT INTO proxies (
+          id, host, port, username, password, type, enabled,
+          platform, country, city, success_count, failed_count,
+          last_used_at, created_at
+        )
+        SELECT
+          id, host, port, username, password, type, enabled,
+          platform, country, city, success_count, failed_count,
+          last_used_at, created_at
+        FROM proxies_old
+      `);
+      database.exec('DROP TABLE proxies_old');
+      database.exec('COMMIT');
+      console.log('[Database] Proxies unique constraint migration completed');
+    }
+  } catch (e) {
+    try {
+      db?.exec('ROLLBACK');
+    } catch {
+      // ignore rollback errors
+    }
+    console.error('[Database] Proxies unique constraint migration failed:', e);
+  }
 
   // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
   // Chỉ có 1 dòng duy nhất (id = 1)

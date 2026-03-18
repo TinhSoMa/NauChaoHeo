@@ -524,11 +524,11 @@ interface AppSettings {
   webshareApiKey: string | null;
   capcutDraftsPath: string | null;
   proxyScopes: {
-    caption: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
-    story: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
-    chat: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
-    tts: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
-    other: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+    caption: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5'; rotatingEndpoint?: string | null };
+    story: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5'; rotatingEndpoint?: string | null };
+    chat: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5'; rotatingEndpoint?: string | null };
+    tts: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5'; rotatingEndpoint?: string | null };
+    other: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5'; rotatingEndpoint?: string | null };
   };
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
@@ -709,6 +709,25 @@ interface ProxyTestResult {
   testedAt: number;
 }
 
+interface RotatingProxyConfig {
+  scope: 'caption' | 'story' | 'chat' | 'tts' | 'other';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  protocol: 'http' | 'socks5';
+  updatedAt: number;
+}
+
+interface RotatingProxyConfigInput {
+  scope: RotatingProxyConfig['scope'];
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  protocol: RotatingProxyConfig['protocol'];
+}
+
 interface ProxyAPI {
   getAll: () => Promise<{ success: boolean; data?: ProxyConfig[]; error?: string }>;
   add: (config: Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>) => Promise<{ success: boolean; data?: ProxyConfig; error?: string }>;
@@ -721,7 +740,11 @@ interface ProxyAPI {
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
   reset: () => Promise<{ success: boolean; error?: string }>;
   testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
-  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
+  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' | 'both' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
+  getRotatingConfigs: () => Promise<{ success: boolean; data?: RotatingProxyConfig[]; error?: string }>;
+  saveRotatingConfig: (payload: RotatingProxyConfigInput) => Promise<{ success: boolean; data?: RotatingProxyConfig; error?: string }>;
+  getWebshareApiKey: () => Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number } | null; error?: string }>;
+  saveWebshareApiKey: (payload: { apiKey: string }) => Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number }; error?: string }>;
 }
 
 interface CreatePromptDTO {

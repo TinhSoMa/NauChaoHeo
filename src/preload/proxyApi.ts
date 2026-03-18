@@ -1,5 +1,5 @@
 import { ipcRenderer } from 'electron';
-import { ProxyConfig, ProxyStats, ProxyTestResult, PROXY_IPC_CHANNELS } from '../shared/types/proxy';
+import { ProxyConfig, ProxyStats, ProxyTestResult, PROXY_IPC_CHANNELS, RotatingProxyConfig, RotatingProxyConfigInput } from '../shared/types/proxy';
 
 /**
  * Proxy API cho renderer process
@@ -16,7 +16,11 @@ export interface ProxyAPI {
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
   reset: () => Promise<{ success: boolean; error?: string }>;
   testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
-  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
+  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' | 'both' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
+  getRotatingConfigs: () => Promise<{ success: boolean; data?: RotatingProxyConfig[]; error?: string }>;
+  saveRotatingConfig: (payload: RotatingProxyConfigInput) => Promise<{ success: boolean; data?: RotatingProxyConfig; error?: string }>;
+  getWebshareApiKey: () => Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number } | null; error?: string }>;
+  saveWebshareApiKey: (payload: { apiKey: string }) => Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number }; error?: string }>;
 }
 
 /**
@@ -57,5 +61,21 @@ export const proxyApi: ProxyAPI = {
 
   webshareSync: async (payload) => {
     return ipcRenderer.invoke(PROXY_IPC_CHANNELS.WEBSHARE_SYNC, payload);
+  },
+
+  getRotatingConfigs: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_ROTATING_CONFIGS);
+  },
+
+  saveRotatingConfig: async (payload) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.SAVE_ROTATING_CONFIG, payload);
+  },
+
+  getWebshareApiKey: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_WEBSHARE_API_KEY);
+  },
+
+  saveWebshareApiKey: async (payload) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.SAVE_WEBSHARE_API_KEY, payload);
   },
 };

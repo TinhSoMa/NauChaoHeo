@@ -66,6 +66,7 @@ export type ProxyTypePreference = 'any' | 'http' | 'https' | 'socks5';
 export interface ProxyScopeSettings {
   mode: ProxyScopeMode;
   typePreference: ProxyTypePreference;
+  rotatingEndpoint?: string | null;
 }
 
 export type ProxyScopesSettings = Record<ProxyScopeName, ProxyScopeSettings>;
@@ -353,15 +354,18 @@ function normalizeGeminiWebApiCookieFallback(value: unknown): GeminiWebApiCookie
 
 const PROXY_SCOPE_NAMES: ProxyScopeName[] = ['caption', 'story', 'chat', 'tts', 'other'];
 
-function buildProxyScopesFromLegacy(legacy: { useProxy?: boolean; proxyMode?: unknown } | null | undefined): ProxyScopesSettings {
+function buildProxyScopesFromLegacy(
+  legacy: { useProxy?: boolean; proxyMode?: unknown; rotatingProxyEndpoint?: unknown } | null | undefined
+): ProxyScopesSettings {
   const useProxy = legacy?.useProxy !== false;
   const mode = useProxy ? normalizeProxyMode(legacy?.proxyMode) : 'off';
+  const rotatingEndpoint = normalizeRotatingProxyEndpoint(legacy?.rotatingProxyEndpoint);
   return {
-    caption: { mode, typePreference: 'any' },
-    story: { mode, typePreference: 'any' },
-    chat: { mode, typePreference: 'any' },
-    tts: { mode, typePreference: 'socks5' },
-    other: { mode, typePreference: 'any' },
+    caption: { mode, typePreference: 'any', rotatingEndpoint },
+    story: { mode, typePreference: 'any', rotatingEndpoint },
+    chat: { mode, typePreference: 'any', rotatingEndpoint },
+    tts: { mode, typePreference: 'socks5', rotatingEndpoint },
+    other: { mode, typePreference: 'any', rotatingEndpoint },
   };
 }
 
@@ -373,15 +377,18 @@ function normalizeProxyScopeSettings(
     return { ...fallback };
   }
   const raw = value as Record<string, unknown>;
+  const hasEndpoint = Object.prototype.hasOwnProperty.call(raw, 'rotatingEndpoint');
+  const normalizedEndpoint = hasEndpoint ? normalizeRotatingProxyEndpoint(raw.rotatingEndpoint) : undefined;
   return {
     mode: normalizeProxyScopeMode(raw.mode),
     typePreference: normalizeProxyTypePreference(raw.typePreference),
+    rotatingEndpoint: hasEndpoint ? normalizedEndpoint : (fallback.rotatingEndpoint ?? null),
   };
 }
 
 function normalizeProxyScopes(
   value: unknown,
-  fallbackSource: { proxyScopes?: ProxyScopesSettings; useProxy?: boolean; proxyMode?: unknown }
+  fallbackSource: { proxyScopes?: ProxyScopesSettings; useProxy?: boolean; proxyMode?: unknown; rotatingProxyEndpoint?: unknown }
 ): ProxyScopesSettings {
   const fallbackScopes = fallbackSource.proxyScopes || buildProxyScopesFromLegacy(fallbackSource);
   const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
@@ -446,7 +453,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   useProxy: true, // Mặc định bật proxy
   proxyMode: 'direct-list',
   rotatingProxyEndpoint: null,
-  proxyScopes: buildProxyScopesFromLegacy({ useProxy: true, proxyMode: 'direct-list' }),
+  proxyScopes: buildProxyScopesFromLegacy({ useProxy: true, proxyMode: 'direct-list', rotatingProxyEndpoint: null }),
   webshareApiKey: null,
   capcutDraftsPath: null,
   createChatOnWeb: false,
@@ -513,6 +520,7 @@ class AppSettingsServiceClass {
           proxyScopes: loaded?.proxyScopes,
           useProxy: loaded?.useProxy,
           proxyMode: loaded?.proxyMode,
+          rotatingProxyEndpoint: loaded?.rotatingProxyEndpoint,
         });
         this.settings = {
           ...DEFAULT_SETTINGS,
@@ -618,6 +626,7 @@ class AppSettingsServiceClass {
         proxyScopes: this.settings.proxyScopes,
         useProxy: this.settings.useProxy,
         proxyMode: this.settings.proxyMode,
+        rotatingProxyEndpoint: this.settings.rotatingProxyEndpoint,
       });
     }
 

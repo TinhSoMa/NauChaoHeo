@@ -1,6 +1,8 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { getProxyManager } from '../services/proxy/proxyManager';
-import { PROXY_IPC_CHANNELS, ProxyConfig, ProxyStats, ProxyTestResult } from '../../shared/types/proxy';
+import { RotatingProxyDatabase } from '../database/rotatingProxyDatabase';
+import { WebshareApiKeyDatabase } from '../database/webshareApiKeyDatabase';
+import { PROXY_IPC_CHANNELS, ProxyConfig, ProxyStats, ProxyTestResult, RotatingProxyConfigInput, RotatingProxyConfig } from '../../shared/types/proxy';
 
 /**
  * Register IPC handlers cho proxy management
@@ -203,7 +205,7 @@ export function registerProxyHandlers(): void {
         for (const proxyConfig of proxiesToAdd) {
           // Check duplicate
           const allProxies = manager.getAllProxies();
-          const exists = allProxies.some(p => p.host === proxyConfig.host && p.port === proxyConfig.port);
+          const exists = allProxies.some(p => p.host === proxyConfig.host && p.port === proxyConfig.port && p.type === proxyConfig.type);
           
           if (exists) {
             skipped++;
@@ -238,7 +240,7 @@ export function registerProxyHandlers(): void {
         for (const proxyConfig of proxiesToAdd) {
           // Check duplicate
           const allProxies = manager.getAllProxies();
-          const exists = allProxies.some(p => p.host === proxyConfig.host && p.port === proxyConfig.port);
+          const exists = allProxies.some(p => p.host === proxyConfig.host && p.port === proxyConfig.port && p.type === proxyConfig.type);
           
           if (exists) {
             continue;
@@ -262,14 +264,16 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.WEBSHARE_SYNC,
     async (
       _event: IpcMainInvokeEvent,
-      payload: { apiKey?: string; typePreference?: 'http' | 'socks5' }
+      payload: { apiKey?: string; typePreference?: 'http' | 'socks5' | 'both' }
     ): Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }> => {
       try {
         const apiKey = (payload?.apiKey || '').trim();
         if (!apiKey) {
           return { success: false, error: 'Thiếu Webshare API key.' };
         }
-        const typePreference = payload?.typePreference === 'socks5' ? 'socks5' : 'http';
+        const typePreference = payload?.typePreference === 'both'
+          ? 'both'
+          : (payload?.typePreference === 'socks5' ? 'socks5' : 'http');
 
         let url: string | null = 'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=100';
         const allResults: Array<{
@@ -284,7 +288,12 @@ export function registerProxyHandlers(): void {
         }> = [];
 
         while (url) {
-          const response = await fetch(url, {
+          const response: {
+            ok: boolean;
+            status: number;
+            text: () => Promise<string>;
+            json: () => Promise<any>;
+          } = await fetch(url, {
             headers: { Authorization: `Token ${apiKey}` },
           });
           if (!response.ok) {
@@ -300,36 +309,40 @@ export function registerProxyHandlers(): void {
         const removed = manager.removeProxiesByPlatform('Webshare');
 
         const existingSet = new Set(
-          manager.getAllProxies().map((p) => `${p.host}:${p.port}`)
+          manager.getAllProxies().map((p) => `${p.host}:${p.port}:${p.type}`)
         );
 
         let added = 0;
         let skipped = 0;
+        const typesToAdd: Array<'http' | 'socks5'> = typePreference === 'both' ? ['http', 'socks5'] : [typePreference];
+
         for (const item of allResults) {
           const host = (item.proxy_address || '').trim();
           const port = Number(item.port);
           if (!host || !Number.isFinite(port)) {
-            skipped++;
+            skipped += typesToAdd.length;
             continue;
           }
-          const key = `${host}:${port}`;
-          if (existingSet.has(key)) {
-            skipped++;
-            continue;
+          for (const type of typesToAdd) {
+            const key = `${host}:${port}:${type}`;
+            if (existingSet.has(key)) {
+              skipped++;
+              continue;
+            }
+            manager.addProxy({
+              host,
+              port,
+              username: item.username || undefined,
+              password: item.password || undefined,
+              type,
+              enabled: true,
+              platform: 'Webshare',
+              country: item.country_code || undefined,
+              city: item.city_name || undefined,
+            });
+            existingSet.add(key);
+            added++;
           }
-          manager.addProxy({
-            host,
-            port,
-            username: item.username || undefined,
-            password: item.password || undefined,
-            type: typePreference,
-            enabled: true,
-            platform: 'Webshare',
-            country: item.country_code || undefined,
-            city: item.city_name || undefined,
-          });
-          existingSet.add(key);
-          added++;
         }
 
         return {
@@ -341,6 +354,72 @@ export function registerProxyHandlers(): void {
         };
       } catch (error) {
         console.error('[ProxyHandlers] Lỗi sync Webshare:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Get rotating proxy configs
+  ipcMain.handle(
+    PROXY_IPC_CHANNELS.GET_ROTATING_CONFIGS,
+    async (): Promise<{ success: boolean; data?: RotatingProxyConfig[]; error?: string }> => {
+      try {
+        const configs = RotatingProxyDatabase.getAll();
+        return { success: true, data: configs };
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi get rotating configs:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Save rotating proxy config
+  ipcMain.handle(
+    PROXY_IPC_CHANNELS.SAVE_ROTATING_CONFIG,
+    async (_event: IpcMainInvokeEvent, payload: RotatingProxyConfigInput): Promise<{ success: boolean; data?: RotatingProxyConfig; error?: string }> => {
+      try {
+        if (!payload || !payload.scope) {
+          return { success: false, error: 'Thiếu scope' };
+        }
+        if (!payload.host || !Number.isFinite(payload.port)) {
+          return { success: false, error: 'Host/port không hợp lệ' };
+        }
+        const saved = RotatingProxyDatabase.upsert(payload);
+        return { success: true, data: saved };
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi save rotating config:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Get Webshare API key
+  ipcMain.handle(
+    PROXY_IPC_CHANNELS.GET_WEBSHARE_API_KEY,
+    async (): Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number } | null; error?: string }> => {
+      try {
+        const data = WebshareApiKeyDatabase.get();
+        return { success: true, data: data || null };
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi get Webshare API key:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Save Webshare API key
+  ipcMain.handle(
+    PROXY_IPC_CHANNELS.SAVE_WEBSHARE_API_KEY,
+    async (_event: IpcMainInvokeEvent, payload: { apiKey?: string }): Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number }; error?: string }> => {
+      try {
+        const apiKey = (payload?.apiKey || '').trim();
+        if (!apiKey) {
+          return { success: false, error: 'Thiếu Webshare API key.' };
+        }
+        const data = WebshareApiKeyDatabase.upsert(apiKey);
+        return { success: true, data };
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi save Webshare API key:', error);
         return { success: false, error: String(error) };
       }
     }

@@ -11,23 +11,43 @@ interface ProxySettingsProps {
 }
 
 export function ProxySettings({ onBack }: ProxySettingsProps) {
+  type ScopeKey = 'caption' | 'story' | 'chat' | 'tts' | 'other';
+  type RotatingForm = {
+    protocol: 'http' | 'socks5';
+    host: string;
+    port: string;
+    username: string;
+    password: string;
+  };
   const [proxies, setProxies] = useState<ProxyConfig[]>([]);
   const [stats, setStats] = useState<ProxyStats[]>([]);
   const [loading, setLoading] = useState(false);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
   const [checkingAll, setCheckingAll] = useState(false);
   const [proxyScopes, setProxyScopes] = useState({
-    caption: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5' },
-    story: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5' },
-    chat: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5' },
-    tts: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'socks5' as 'any' | 'http' | 'https' | 'socks5' },
-    other: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5' },
+    caption: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
+    story: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
+    chat: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
+    tts: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'socks5' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
+    other: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
   });
-  const [rotatingProxyEndpoint, setRotatingProxyEndpoint] = useState('');
-  const [rotatingProxyProtocol, setRotatingProxyProtocol] = useState<'http' | 'socks5'>('http');
-  const [testingRotatingEndpoint, setTestingRotatingEndpoint] = useState(false);
+  const emptyRotatingForm: RotatingForm = {
+    protocol: 'http',
+    host: '',
+    port: '80',
+    username: '',
+    password: '',
+  };
+  const [rotatingForms, setRotatingForms] = useState<Record<ScopeKey, RotatingForm>>({
+    caption: { ...emptyRotatingForm },
+    story: { ...emptyRotatingForm },
+    chat: { ...emptyRotatingForm },
+    tts: { ...emptyRotatingForm, protocol: 'socks5' },
+    other: { ...emptyRotatingForm },
+  });
+  const [testingRotatingScopes, setTestingRotatingScopes] = useState<Set<string>>(new Set());
   const [webshareApiKey, setWebshareApiKey] = useState('');
-  const [webshareProxyType, setWebshareProxyType] = useState<'http' | 'socks5'>('socks5');
+  const [webshareProxyType, setWebshareProxyType] = useState<'http' | 'socks5' | 'both'>('socks5');
   const [savingWebshareKey, setSavingWebshareKey] = useState(false);
   const [syncingWebshare, setSyncingWebshare] = useState(false);
   
@@ -83,32 +103,139 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const buildScopesFromLegacy = (data?: any) => {
     const isEnabled = data?.useProxy !== false;
     const mode = isEnabled ? (data?.proxyMode || 'direct-list') : 'off';
+    const rotatingEndpoint = typeof data?.rotatingProxyEndpoint === 'string' ? data.rotatingProxyEndpoint : '';
     return {
-      caption: { mode, typePreference: 'any' as const },
-      story: { mode, typePreference: 'any' as const },
-      chat: { mode, typePreference: 'any' as const },
-      tts: { mode, typePreference: 'socks5' as const },
-      other: { mode, typePreference: 'any' as const },
+      caption: { mode, typePreference: 'any' as const, rotatingEndpoint },
+      story: { mode, typePreference: 'any' as const, rotatingEndpoint },
+      chat: { mode, typePreference: 'any' as const, rotatingEndpoint },
+      tts: { mode, typePreference: 'socks5' as const, rotatingEndpoint },
+      other: { mode, typePreference: 'any' as const, rotatingEndpoint },
     };
+  };
+
+  const normalizeProxyScopesFromSettings = (data?: any) => {
+    const legacyEndpoint = typeof data?.rotatingProxyEndpoint === 'string' ? data.rotatingProxyEndpoint : '';
+    const baseScopes = data?.proxyScopes || buildScopesFromLegacy(data);
+    const keys = ['caption', 'story', 'chat', 'tts', 'other'] as const;
+    const next = {} as typeof proxyScopes;
+    for (const key of keys) {
+      const scope = baseScopes[key] || buildScopesFromLegacy(data)[key];
+      const hasEndpoint = scope && Object.prototype.hasOwnProperty.call(scope, 'rotatingEndpoint');
+      const rotatingEndpoint = hasEndpoint
+        ? (typeof scope?.rotatingEndpoint === 'string' ? scope.rotatingEndpoint : '')
+        : legacyEndpoint;
+      next[key] = { ...scope, rotatingEndpoint };
+    }
+    return next;
+  };
+
+  const parseEndpointToForm = (endpoint: string, fallback: RotatingForm): RotatingForm => {
+    const trimmed = endpoint.trim();
+    if (!trimmed) return { ...fallback };
+    try {
+      const parsed = new URL(trimmed.includes('://') ? trimmed : `${fallback.protocol}://${trimmed}`);
+      const protocol = parsed.protocol.startsWith('socks5') ? 'socks5' : 'http';
+      const portValue = parsed.port || fallback.port || (protocol === 'socks5' ? '1080' : '80');
+      return {
+        protocol,
+        host: parsed.hostname || fallback.host,
+        port: portValue,
+        username: parsed.username ? decodeURIComponent(parsed.username) : '',
+        password: parsed.password ? decodeURIComponent(parsed.password) : '',
+      };
+    } catch {
+      return { ...fallback };
+    }
+  };
+
+  const buildEndpointFromForm = (form: RotatingForm): string => {
+    const host = form.host.trim();
+    const port = form.port.trim();
+    if (!host || !port) return '';
+    const authUser = form.username.trim();
+    const authPass = form.password.trim();
+    const auth = authUser ? `${encodeURIComponent(authUser)}:${encodeURIComponent(authPass)}@` : '';
+    return `${form.protocol}://${auth}${host}:${port}`;
+  };
+
+  const updateRotatingForm = (scope: ScopeKey, patch: Partial<RotatingForm>) => {
+    setRotatingForms(prev => ({
+      ...prev,
+      [scope]: {
+        ...prev[scope],
+        ...patch,
+      },
+    }));
   };
 
   const loadProxySetting = async () => {
     try {
       const result = await window.electronAPI.appSettings.getAll();
       if (result.success && result.data) {
-        const scopes = result.data.proxyScopes || buildScopesFromLegacy(result.data);
+        const scopes = normalizeProxyScopesFromSettings(result.data);
         setProxyScopes(scopes);
-        const endpoint = result.data.rotatingProxyEndpoint || '';
-        setRotatingProxyEndpoint(endpoint);
-        setWebshareApiKey(result.data.webshareApiKey || '');
-        if (/^socks5:\/\//i.test(endpoint)) {
-          setRotatingProxyProtocol('socks5');
-        } else if (/^https?:\/\//i.test(endpoint)) {
-          setRotatingProxyProtocol('http');
-        }
+        await loadWebshareApiKey(result.data.webshareApiKey || '');
+        await loadRotatingConfigs(result.data);
       }
     } catch (error) {
       console.error('Lỗi load proxy setting:', error);
+    }
+  };
+
+  const loadWebshareApiKey = async (legacyKey: string) => {
+    try {
+      const result = await window.electronAPI.proxy.getWebshareApiKey();
+      if (result.success && result.data?.apiKey) {
+        setWebshareApiKey(result.data.apiKey);
+        return;
+      }
+      if (legacyKey) {
+        const saveResult = await window.electronAPI.proxy.saveWebshareApiKey({ apiKey: legacyKey });
+        if (saveResult.success) {
+          setWebshareApiKey(saveResult.data?.apiKey || legacyKey);
+        } else {
+          setWebshareApiKey(legacyKey);
+        }
+      } else {
+        setWebshareApiKey('');
+      }
+    } catch (error) {
+      console.error('Lỗi load Webshare API key:', error);
+      setWebshareApiKey(legacyKey || '');
+    }
+  };
+
+  const loadRotatingConfigs = async (settingsData?: any) => {
+    try {
+      const result = await window.electronAPI.proxy.getRotatingConfigs();
+      const configs = result.success && result.data ? result.data : [];
+      const configMap = new Map(configs.map(config => [config.scope, config]));
+      const keys: ScopeKey[] = ['caption', 'story', 'chat', 'tts', 'other'];
+      setRotatingForms(prev => {
+        const next = { ...prev };
+        for (const key of keys) {
+          const stored = configMap.get(key);
+          if (stored) {
+            next[key] = {
+              protocol: stored.protocol,
+              host: stored.host || '',
+              port: stored.port ? String(stored.port) : prev[key].port,
+              username: stored.username || '',
+              password: stored.password || '',
+            };
+            continue;
+          }
+          const scopedEndpoint = settingsData?.proxyScopes?.[key]?.rotatingEndpoint;
+          const legacyEndpoint = settingsData?.rotatingProxyEndpoint;
+          const endpoint = typeof scopedEndpoint === 'string' && scopedEndpoint.trim()
+            ? scopedEndpoint
+            : (typeof legacyEndpoint === 'string' ? legacyEndpoint : '');
+          next[key] = parseEndpointToForm(endpoint || '', prev[key]);
+        }
+        return next;
+      });
+    } catch (error) {
+      console.error('Lỗi load rotating configs:', error);
     }
   };
 
@@ -126,35 +253,44 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     }
   };
 
-  const normalizeRotatingEndpoint = (raw: string, protocol: 'http' | 'socks5') => {
-    const trimmed = raw.trim();
-    if (!trimmed) return '';
-    if (/^socks5:\/\//i.test(trimmed)) {
-      return protocol === 'socks5' ? trimmed : trimmed.replace(/^socks5:\/\//i, 'http://');
-    }
-    if (/^https?:\/\//i.test(trimmed)) {
-      return protocol === 'socks5' ? trimmed.replace(/^https?:\/\//i, 'socks5://') : trimmed;
-    }
-    return `${protocol}://${trimmed}`;
-  };
-
-  const handleSaveRotatingEndpoint = async () => {
-    const endpoint = normalizeRotatingEndpoint(rotatingProxyEndpoint, rotatingProxyProtocol);
-    if (!endpoint) {
-      alert('Vui lòng nhập Rotating Endpoint!');
+  const handleSaveRotatingEndpoint = async (scope: ScopeKey) => {
+    const form = rotatingForms[scope];
+    const host = form.host.trim();
+    const port = Number(form.port);
+    if (!host || !Number.isFinite(port) || port <= 0 || port > 65535) {
+      alert('Vui lòng nhập Domain và Port hợp lệ!');
       return;
     }
-    if (!/^https?:\/\//i.test(endpoint) && !/^socks5:\/\//i.test(endpoint)) {
-      alert('Endpoint phải bắt đầu bằng http://, https:// hoặc socks5://');
+    const endpoint = buildEndpointFromForm(form);
+    if (!endpoint) {
+      alert('Rotating Endpoint không hợp lệ!');
       return;
     }
 
     try {
-      const result = await window.electronAPI.appSettings.update({
-        rotatingProxyEndpoint: endpoint,
+      const saveResult = await window.electronAPI.proxy.saveRotatingConfig({
+        scope,
+        host,
+        port,
+        username: form.username.trim() || undefined,
+        password: form.password.trim() || undefined,
+        protocol: form.protocol,
       });
+      if (!saveResult.success) {
+        alert(`❌ Lỗi lưu rotating config: ${saveResult.error}`);
+        return;
+      }
+
+      const nextScopes = {
+        ...proxyScopes,
+        [scope]: {
+          ...proxyScopes[scope],
+          rotatingEndpoint: endpoint,
+        },
+      };
+      const result = await window.electronAPI.appSettings.update({ proxyScopes: nextScopes });
       if (result.success) {
-        setRotatingProxyEndpoint(endpoint);
+        setProxyScopes(nextScopes);
         alert('✅ Đã lưu Rotating Endpoint');
       } else {
         alert(`❌ Lỗi lưu endpoint: ${result.error}`);
@@ -165,15 +301,15 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     }
   };
 
-  const handleTestRotatingEndpoint = async () => {
-    const endpoint = normalizeRotatingEndpoint(rotatingProxyEndpoint, rotatingProxyProtocol);
+  const handleTestRotatingEndpoint = async (scope: ScopeKey) => {
+    const endpoint = buildEndpointFromForm(rotatingForms[scope]);
     if (!endpoint) {
       alert('Vui lòng nhập Rotating Endpoint để test!');
       return;
     }
 
     try {
-      setTestingRotatingEndpoint(true);
+      setTestingRotatingScopes(prev => new Set(prev).add(scope));
       const result = await window.electronAPI.proxy.testRotatingEndpoint(endpoint);
       if (result.success) {
         alert(`✅ Test endpoint thành công!\n\nLatency: ${result.latency}ms`);
@@ -184,7 +320,11 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
       console.error('Lỗi test rotating endpoint:', error);
       alert('Lỗi test rotating endpoint!');
     } finally {
-      setTestingRotatingEndpoint(false);
+      setTestingRotatingScopes(prev => {
+        const next = new Set(prev);
+        next.delete(scope);
+        return next;
+      });
     }
   };
 
@@ -420,7 +560,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   ] as const;
 
   const handleScopeChange = (
-    scope: typeof scopeRows[number]['key'],
+    scope: ScopeKey,
     patch: Partial<{ mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' }>
   ) => {
     const next = {
@@ -441,13 +581,14 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     }
     try {
       setSavingWebshareKey(true);
-      const result = await window.electronAPI.appSettings.update({ webshareApiKey: key });
-      if (result.success) {
-        setWebshareApiKey(key);
-        alert('✅ Đã lưu Webshare API Key');
-      } else {
-        alert(`❌ Lỗi lưu API key: ${result.error}`);
+      const saveResult = await window.electronAPI.proxy.saveWebshareApiKey({ apiKey: key });
+      if (!saveResult.success) {
+        alert(`❌ Lỗi lưu API key: ${saveResult.error}`);
+        return;
       }
+      await window.electronAPI.appSettings.update({ webshareApiKey: key });
+      setWebshareApiKey(saveResult.data?.apiKey || key);
+      alert('✅ Đã lưu Webshare API Key');
     } catch (error) {
       console.error('Lỗi lưu Webshare API key:', error);
       alert('Lỗi lưu Webshare API key!');
@@ -487,14 +628,14 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   };
 
   const handleScopeTypeChange = (
-    scope: typeof scopeRows[number]['key'],
+    scope: ScopeKey,
     value: 'any' | 'http' | 'https' | 'socks5'
   ) => {
     const scopeMode = proxyScopes[scope].mode;
     if (scopeMode === 'rotating-endpoint') {
       const nextProtocol = value === 'socks5' ? 'socks5' : 'http';
-      setRotatingProxyProtocol(nextProtocol);
-      setRotatingProxyEndpoint((prev) => normalizeRotatingEndpoint(prev, nextProtocol));
+      updateRotatingForm(scope, { protocol: nextProtocol });
+      return;
     }
 
     const next = {
@@ -521,7 +662,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
           <div className={styles.row}>
             <div className={styles.label}>
               <span className={styles.labelText}>Proxy theo chức năng</span>
-              <span className={styles.labelDesc}>Mỗi chức năng có mode/type riêng. Rotating endpoint dùng chung.</span>
+              <span className={styles.labelDesc}>Mỗi chức năng có mode/type riêng. Rotating endpoint theo từng scope.</span>
             </div>
           </div>
           <div style={{ padding: '0 24px 16px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -529,7 +670,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
               const scopeMode = proxyScopes[scope.key].mode;
               const isDirectList = scopeMode === 'direct-list';
               const isOff = scopeMode === 'off';
-              const rotatingType = rotatingProxyProtocol === 'socks5' ? 'socks5' : 'http';
+              const rotatingType = rotatingForms[scope.key].protocol;
               const displayType = isDirectList ? proxyScopes[scope.key].typePreference : rotatingType;
               const typeOptions = isDirectList
                 ? [
@@ -544,66 +685,81 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
                 ];
 
               return (
-              <div key={scope.key} className={styles.flexRow} style={{ alignItems: 'center', gap: '12px' }}>
-                <div style={{ minWidth: '160px' }}>
-                  <div style={{ fontWeight: 600 }}>{scope.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{scope.desc}</div>
+              <div key={scope.key} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className={styles.flexRow} style={{ alignItems: 'center', gap: '12px' }}>
+                  <div style={{ minWidth: '160px' }}>
+                    <div style={{ fontWeight: 600 }}>{scope.label}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{scope.desc}</div>
+                  </div>
+                  <Select
+                    label="Mode"
+                    value={scopeMode}
+                    onChange={(e) => handleScopeChange(scope.key, { mode: e.target.value as 'off' | 'direct-list' | 'rotating-endpoint' })}
+                    options={[
+                      { value: 'off', label: 'Off' },
+                      { value: 'direct-list', label: 'Direct List' },
+                      { value: 'rotating-endpoint', label: 'Rotating Endpoint' },
+                    ]}
+                  />
+                  <Select
+                    label={isDirectList ? 'Proxy Type' : 'Rotating Protocol'}
+                    value={displayType}
+                    onChange={(e) => handleScopeTypeChange(scope.key, e.target.value as 'any' | 'http' | 'https' | 'socks5')}
+                    disabled={isOff}
+                    options={typeOptions}
+                  />
                 </div>
-                <Select
-                  label="Mode"
-                  value={scopeMode}
-                  onChange={(e) => handleScopeChange(scope.key, { mode: e.target.value as 'off' | 'direct-list' | 'rotating-endpoint' })}
-                  options={[
-                    { value: 'off', label: 'Off' },
-                    { value: 'direct-list', label: 'Direct List' },
-                    { value: 'rotating-endpoint', label: 'Rotating Endpoint' },
-                  ]}
-                />
-                <Select
-                  label={isDirectList ? 'Proxy Type' : 'Proxy Type (Rotating)'}
-                  value={displayType}
-                  onChange={(e) => handleScopeTypeChange(scope.key, e.target.value as 'any' | 'http' | 'https' | 'socks5')}
-                  disabled={isOff}
-                  options={typeOptions}
-                />
+                {scopeMode === 'rotating-endpoint' && (
+                  <div style={{ marginLeft: '172px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className={styles.flexRow} style={{ gap: '12px' }}>
+                      <Input
+                        label="Domain Name"
+                        placeholder="p.webshare.io"
+                        value={rotatingForms[scope.key].host}
+                        onChange={(e) => updateRotatingForm(scope.key, { host: e.target.value })}
+                      />
+                      <Input
+                        label="Proxy Port"
+                        type="number"
+                        placeholder="80"
+                        value={rotatingForms[scope.key].port}
+                        onChange={(e) => updateRotatingForm(scope.key, { port: e.target.value })}
+                      />
+                    </div>
+                    <div className={styles.flexRow} style={{ gap: '12px' }}>
+                      <Input
+                        label="Proxy Username"
+                        placeholder="qhnwfwys-rotate"
+                        value={rotatingForms[scope.key].username}
+                        onChange={(e) => updateRotatingForm(scope.key, { username: e.target.value })}
+                      />
+                      <Input
+                        label="Proxy Password"
+                        type="password"
+                        placeholder="wzaljgyi9l6x"
+                        value={rotatingForms[scope.key].password}
+                        onChange={(e) => updateRotatingForm(scope.key, { password: e.target.value })}
+                      />
+                    </div>
+                    <div className={styles.flexRow} style={{ gap: '12px' }}>
+                      <Button onClick={() => handleSaveRotatingEndpoint(scope.key)} variant="primary">
+                        Lưu Endpoint
+                      </Button>
+                      <Button
+                        onClick={() => handleTestRotatingEndpoint(scope.key)}
+                        variant="secondary"
+                        disabled={testingRotatingScopes.has(scope.key)}
+                      >
+                        {testingRotatingScopes.has(scope.key) ? 'Đang test...' : 'Test Endpoint'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
             })}
             <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
-              Khi dùng Rotating Endpoint, chọn HTTP/SOCKS5 ở scope sẽ đồng bộ Rotating Protocol chung.
-            </div>
-            <div style={{ marginTop: '4px' }}>
-              <Select
-                label="Rotating Protocol"
-                value={rotatingProxyProtocol}
-                onChange={(e) => {
-                  const nextProtocol = e.target.value as 'http' | 'socks5';
-                  setRotatingProxyProtocol(nextProtocol);
-                  setRotatingProxyEndpoint((prev) => normalizeRotatingEndpoint(prev, nextProtocol));
-                }}
-                options={[
-                  { value: 'http', label: 'HTTP' },
-                  { value: 'socks5', label: 'SOCKS5' },
-                ]}
-              />
-              <Input
-                label="Rotating Endpoint (dùng chung cho mọi scope)"
-                placeholder="http://user:pass@p.webshare.io:80/ hoặc socks5://user:pass@p.webshare.io:80/"
-                value={rotatingProxyEndpoint}
-                onChange={(e) => setRotatingProxyEndpoint(e.target.value)}
-              />
-              <div className={styles.flexRow} style={{ marginTop: '8px' }}>
-                <Button onClick={handleSaveRotatingEndpoint} variant="primary">
-                  Lưu Endpoint
-                </Button>
-                <Button
-                  onClick={handleTestRotatingEndpoint}
-                  variant="secondary"
-                  disabled={testingRotatingEndpoint}
-                >
-                  {testingRotatingEndpoint ? 'Đang test...' : 'Test Endpoint'}
-                </Button>
-              </div>
+              Rotating endpoint được cấu hình theo từng scope (không còn đồng bộ toàn cục).
             </div>
           </div>
         </div>
@@ -626,8 +782,9 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
             <Select
               label="Webshare Proxy Type"
               value={webshareProxyType}
-              onChange={(e) => setWebshareProxyType(e.target.value as 'http' | 'socks5')}
+              onChange={(e) => setWebshareProxyType(e.target.value as 'http' | 'socks5' | 'both')}
               options={[
+                { value: 'both', label: 'BOTH (HTTP + SOCKS5)' },
                 { value: 'socks5', label: 'SOCKS5' },
                 { value: 'http', label: 'HTTP' },
               ]}

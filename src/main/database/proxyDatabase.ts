@@ -180,8 +180,13 @@ export class ProxyDatabase {
   /**
    * Check if proxy exists by host:port
    */
-  static exists(host: string, port: number): boolean {
+  static exists(host: string, port: number, type?: ProxyConfig['type']): boolean {
     const db = getDatabase();
+    if (type) {
+      const stmt = db.prepare(`SELECT COUNT(*) as count FROM proxies WHERE host = ? AND port = ? AND type = ?`);
+      const result = stmt.get(host, port, type) as { count: number };
+      return result.count > 0;
+    }
     const stmt = db.prepare(`SELECT COUNT(*) as count FROM proxies WHERE host = ? AND port = ?`);
     const result = stmt.get(host, port) as { count: number };
     return result.count > 0;

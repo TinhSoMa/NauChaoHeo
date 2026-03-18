@@ -48,9 +48,11 @@ export class ProxyManager {
     return { mode: legacyMode, typePreference };
   }
 
-  private getRotatingEndpointRaw(): string | null {
+  private getRotatingEndpointRaw(scope: ProxyScope = 'other'): string | null {
     const settings = AppSettingsService.getAll();
-    const endpoint = settings.rotatingProxyEndpoint;
+    const scopeSettings = settings.proxyScopes?.[scope];
+    const hasEndpoint = scopeSettings && Object.prototype.hasOwnProperty.call(scopeSettings, 'rotatingEndpoint');
+    const endpoint = hasEndpoint ? scopeSettings?.rotatingEndpoint : settings.rotatingProxyEndpoint;
     if (typeof endpoint !== 'string') {
       return null;
     }
@@ -95,8 +97,8 @@ export class ProxyManager {
     }
   }
 
-  private getRotatingEndpointProxy(): ProxyConfig | null {
-    const endpoint = this.getRotatingEndpointRaw();
+  private getRotatingEndpointProxy(scope: ProxyScope = 'other'): ProxyConfig | null {
+    const endpoint = this.getRotatingEndpointRaw(scope);
     if (!endpoint) {
       return null;
     }
@@ -113,7 +115,7 @@ export class ProxyManager {
     if (scopeSettings.mode !== 'rotating-endpoint') {
       return { mode: scopeSettings.mode, rotatingEndpointMasked: null, typePreference: scopeSettings.typePreference };
     }
-    const endpoint = this.getRotatingEndpointRaw();
+    const endpoint = this.getRotatingEndpointRaw(scope);
     if (!endpoint) {
       return { mode: scopeSettings.mode, rotatingEndpointMasked: null, typePreference: scopeSettings.typePreference };
     }
@@ -139,7 +141,7 @@ export class ProxyManager {
     }
 
     if (this.shouldUseRotatingForScope(scope)) {
-      const rotatingProxy = this.getRotatingEndpointProxy();
+      const rotatingProxy = this.getRotatingEndpointProxy(scope);
       if (!rotatingProxy) {
         console.warn('[ProxyManager] Rotating endpoint mode đang bật nhưng endpoint không hợp lệ/trống');
         return null;
@@ -174,7 +176,7 @@ export class ProxyManager {
   getAvailableProxies(type?: ProxyConfig['type'], scope: ProxyScope = 'other'): ProxyConfig[] {
     const scopeSettings = this.getScopeSettings(scope);
     if (this.shouldUseRotatingForScope(scope)) {
-      const rotatingProxy = this.getRotatingEndpointProxy();
+      const rotatingProxy = this.getRotatingEndpointProxy(scope);
       if (!rotatingProxy) {
         return [];
       }
@@ -483,7 +485,7 @@ export class ProxyManager {
 
     for (const proxy of proxiesToImport) {
       // Check duplicate
-      const exists = ProxyDatabase.exists(proxy.host, proxy.port);
+      const exists = ProxyDatabase.exists(proxy.host, proxy.port, proxy.type);
       if (exists) {
         skipped++;
         continue;
