@@ -188,9 +188,14 @@ function sanitizeTextForTts(text: string): string {
 
 function fixMojibake(text: string): string {
   if (!text) return text;
-  const suspect = /Ã|Â|á»/;
+  const suspect = /Ã|Â/;
   if (!suspect.test(text)) {
     return text;
+  }
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) > 0xff) {
+      return text;
+    }
   }
   const fixed = Buffer.from(text, 'latin1').toString('utf8');
   if (!suspect.test(fixed)) {
@@ -1103,6 +1108,7 @@ async function runEdgeTtsWorker(
   runtime: { command: string; baseArgs: string[] },
   workerPath: string,
   timeoutMs?: number,
+  onProgress?: (event: { index: number; success?: boolean; error?: string; filename?: string; proxyId?: string }) => void,
 ): Promise<{ results: Map<number, { success: boolean; error?: string }>; errors: string[] }> {
   const payload = { jobs, ...(timeoutMs ? { timeoutMs } : {}) };
   const errors: string[] = [];
@@ -1145,6 +1151,15 @@ async function runEdgeTtsWorker(
                   `proxyId=${event.proxyId || 'direct'} error=${event.error || 'unknown'}`
                 );
               }
+            }
+            if (onProgress) {
+              onProgress({
+                index: event.index,
+                success: event.success,
+                error: event.error,
+                filename: event.filename,
+                proxyId: event.proxyId,
+              });
             }
             continue;
           }
@@ -1256,6 +1271,7 @@ export async function generateAsyncioAudioWithProvider(
   const audioFiles: AudioFile[] = [];
   const errors: string[] = [];
   let completed = 0;
+  const progressSeen = new Set<number>();
 
   const pendingItems: EdgeAsyncioItem[] = [];
   for (const entry of entries) {
@@ -1381,7 +1397,27 @@ export async function generateAsyncioAudioWithProvider(
     attempt++;
     console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`);
     const jobs = buildJobs(remaining);
-    const runResult = await runEdgeTtsWorker(jobs, availability.runtime, workerPath);
+    const runResult = await runEdgeTtsWorker(
+      jobs,
+      availability.runtime,
+      workerPath,
+      undefined,
+      (event) => {
+        if (event?.success !== true) return;
+        if (progressSeen.has(event.index)) return;
+        progressSeen.add(event.index);
+        completed++;
+        progressCallback?.({
+          current: completed,
+          total: entries.length,
+          status: 'generating',
+          currentFile: event.filename || '',
+          message: event.filename
+            ? `[${providerLabel}] Đã tạo: ${event.filename}`
+            : `[${providerLabel}] Đã tạo audio #${event.index}`,
+        });
+      }
+    );
     if (runResult.errors.length > 0) {
       console.warn(`[TTS][EDGE][asyncio] Worker errors: ${runResult.errors.join(' | ')}`);
       errors.push(...runResult.errors);
@@ -1417,14 +1453,17 @@ export async function generateAsyncioAudioWithProvider(
             durationMs: item.durationMs,
             success: true,
           });
-          completed++;
-          progressCallback?.({
-            current: completed,
-            total: entries.length,
-            status: 'generating',
-            currentFile: item.filename,
-            message: `[${providerLabel}] Đã tạo: ${item.filename}`,
-          });
+          if (!progressSeen.has(item.index)) {
+            progressSeen.add(item.index);
+            completed++;
+            progressCallback?.({
+              current: completed,
+              total: entries.length,
+              status: 'generating',
+              currentFile: item.filename,
+              message: `[${providerLabel}] Đã tạo: ${item.filename}`,
+            });
+          }
         } else {
           if (!jobFailedReason && itemError) {
             jobFailedReason = itemError;
@@ -1443,14 +1482,17 @@ export async function generateAsyncioAudioWithProvider(
               success: false,
               error: errorText,
             });
-            completed++;
-            progressCallback?.({
-              current: completed,
-              total: entries.length,
-              status: 'generating',
-              currentFile: item.filename,
-              message: `[${providerLabel}] Lỗi: ${item.filename}`,
-            });
+            if (!progressSeen.has(item.index)) {
+              progressSeen.add(item.index);
+              completed++;
+              progressCallback?.({
+                current: completed,
+                total: entries.length,
+                status: 'generating',
+                currentFile: item.filename,
+                message: `[${providerLabel}] Lỗi: ${item.filename}`,
+              });
+            }
           }
         }
       }
