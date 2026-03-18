@@ -257,6 +257,95 @@ export function registerProxyHandlers(): void {
     }
   );
 
+  // Sync Webshare proxies from API (replace platform=Webshare)
+  ipcMain.handle(
+    PROXY_IPC_CHANNELS.WEBSHARE_SYNC,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { apiKey?: string; typePreference?: 'http' | 'socks5' }
+    ): Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }> => {
+      try {
+        const apiKey = (payload?.apiKey || '').trim();
+        if (!apiKey) {
+          return { success: false, error: 'Thiếu Webshare API key.' };
+        }
+        const typePreference = payload?.typePreference === 'socks5' ? 'socks5' : 'http';
+
+        let url: string | null = 'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=100';
+        const allResults: Array<{
+          id?: string;
+          username?: string;
+          password?: string;
+          proxy_address?: string;
+          port?: number;
+          valid?: boolean;
+          country_code?: string;
+          city_name?: string;
+        }> = [];
+
+        while (url) {
+          const response = await fetch(url, {
+            headers: { Authorization: `Token ${apiKey}` },
+          });
+          if (!response.ok) {
+            const text = await response.text();
+            return { success: false, error: `Webshare API error ${response.status}: ${text}` };
+          }
+          const json = await response.json();
+          const results = Array.isArray(json?.results) ? json.results : [];
+          allResults.push(...results);
+          url = typeof json?.next === 'string' && json.next ? json.next : null;
+        }
+
+        const removed = manager.removeProxiesByPlatform('Webshare');
+
+        const existingSet = new Set(
+          manager.getAllProxies().map((p) => `${p.host}:${p.port}`)
+        );
+
+        let added = 0;
+        let skipped = 0;
+        for (const item of allResults) {
+          const host = (item.proxy_address || '').trim();
+          const port = Number(item.port);
+          if (!host || !Number.isFinite(port)) {
+            skipped++;
+            continue;
+          }
+          const key = `${host}:${port}`;
+          if (existingSet.has(key)) {
+            skipped++;
+            continue;
+          }
+          manager.addProxy({
+            host,
+            port,
+            username: item.username || undefined,
+            password: item.password || undefined,
+            type: typePreference,
+            enabled: true,
+            platform: 'Webshare',
+            country: item.country_code || undefined,
+            city: item.city_name || undefined,
+          });
+          existingSet.add(key);
+          added++;
+        }
+
+        return {
+          success: true,
+          removed,
+          added,
+          skipped,
+          totalFetched: allResults.length,
+        };
+      } catch (error) {
+        console.error('[ProxyHandlers] Lỗi sync Webshare:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Test rotating proxy endpoint (Webshare style)
   ipcMain.handle(
     'proxy:testRotatingEndpoint',

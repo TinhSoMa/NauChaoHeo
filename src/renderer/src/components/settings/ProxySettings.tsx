@@ -26,6 +26,10 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [rotatingProxyEndpoint, setRotatingProxyEndpoint] = useState('');
   const [rotatingProxyProtocol, setRotatingProxyProtocol] = useState<'http' | 'socks5'>('http');
   const [testingRotatingEndpoint, setTestingRotatingEndpoint] = useState(false);
+  const [webshareApiKey, setWebshareApiKey] = useState('');
+  const [webshareProxyType, setWebshareProxyType] = useState<'http' | 'socks5'>('socks5');
+  const [savingWebshareKey, setSavingWebshareKey] = useState(false);
+  const [syncingWebshare, setSyncingWebshare] = useState(false);
   
   // Form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -96,6 +100,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
         setProxyScopes(scopes);
         const endpoint = result.data.rotatingProxyEndpoint || '';
         setRotatingProxyEndpoint(endpoint);
+        setWebshareApiKey(result.data.webshareApiKey || '');
         if (/^socks5:\/\//i.test(endpoint)) {
           setRotatingProxyProtocol('socks5');
         } else if (/^https?:\/\//i.test(endpoint)) {
@@ -428,6 +433,59 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     updateProxyScopes(next);
   };
 
+  const handleSaveWebshareKey = async () => {
+    const key = webshareApiKey.trim();
+    if (!key) {
+      alert('Vui lòng nhập Webshare API Key!');
+      return;
+    }
+    try {
+      setSavingWebshareKey(true);
+      const result = await window.electronAPI.appSettings.update({ webshareApiKey: key });
+      if (result.success) {
+        setWebshareApiKey(key);
+        alert('✅ Đã lưu Webshare API Key');
+      } else {
+        alert(`❌ Lỗi lưu API key: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Lỗi lưu Webshare API key:', error);
+      alert('Lỗi lưu Webshare API key!');
+    } finally {
+      setSavingWebshareKey(false);
+    }
+  };
+
+  const handleSyncWebshare = async () => {
+    const key = webshareApiKey.trim();
+    if (!key) {
+      alert('Vui lòng nhập Webshare API Key trước khi cập nhật.');
+      return;
+    }
+    if (!confirm('Cập nhật Webshare sẽ xoá toàn bộ proxy Webshare cũ và thêm list mới. Tiếp tục?')) {
+      return;
+    }
+    try {
+      setSyncingWebshare(true);
+      const result = await window.electronAPI.proxy.webshareSync({
+        apiKey: key,
+        typePreference: webshareProxyType,
+      });
+      if (result.success) {
+        alert(`✅ Cập nhật Webshare thành công!\n\nRemoved: ${result.removed}\nAdded: ${result.added}\nSkipped: ${result.skipped}\nFetched: ${result.totalFetched}`);
+        loadProxies();
+        loadStats();
+      } else {
+        alert(`❌ Cập nhật Webshare thất bại!\n\nLỗi: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Lỗi sync Webshare:', error);
+      alert('Lỗi sync Webshare!');
+    } finally {
+      setSyncingWebshare(false);
+    }
+  };
+
   const handleScopeTypeChange = (
     scope: typeof scopeRows[number]['key'],
     value: 'any' | 'http' | 'https' | 'socks5'
@@ -546,6 +604,41 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
                   {testingRotatingEndpoint ? 'Đang test...' : 'Test Endpoint'}
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Webshare Sync</span>
+              <span className={styles.labelDesc}>Lấy list proxy Webshare mới và thay thế proxies Webshare hiện tại.</span>
+            </div>
+          </div>
+          <div style={{ padding: '0 24px 16px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <Input
+              label="Webshare API Key"
+              type="password"
+              placeholder="Token APIKEY"
+              value={webshareApiKey}
+              onChange={(e) => setWebshareApiKey(e.target.value)}
+            />
+            <Select
+              label="Webshare Proxy Type"
+              value={webshareProxyType}
+              onChange={(e) => setWebshareProxyType(e.target.value as 'http' | 'socks5')}
+              options={[
+                { value: 'socks5', label: 'SOCKS5' },
+                { value: 'http', label: 'HTTP' },
+              ]}
+            />
+            <div className={styles.flexRow}>
+              <Button onClick={handleSaveWebshareKey} variant="secondary" disabled={savingWebshareKey}>
+                {savingWebshareKey ? 'Đang lưu...' : 'Lưu API Key'}
+              </Button>
+              <Button onClick={handleSyncWebshare} variant="primary" disabled={syncingWebshare}>
+                {syncingWebshare ? 'Đang cập nhật...' : 'Cập nhật Webshare'}
+              </Button>
             </div>
           </div>
         </div>

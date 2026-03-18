@@ -45,6 +45,7 @@ export interface AppSettings {
   useProxy: boolean;
   proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
   rotatingProxyEndpoint: string | null;
+  webshareApiKey: string | null;
   createChatOnWeb: boolean;
   useStoredContextOnFirstSend: boolean;
   geminiMinSendIntervalMs: number;

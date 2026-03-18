@@ -16,6 +16,7 @@ export interface ProxyAPI {
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
   reset: () => Promise<{ success: boolean; error?: string }>;
   testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
+  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
 }
 
 /**
@@ -52,5 +53,9 @@ export const proxyApi: ProxyAPI = {
 
   testRotatingEndpoint: async (endpoint?: string) => {
     return ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST_ROTATING_ENDPOINT, endpoint);
+  },
+
+  webshareSync: async (payload) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.WEBSHARE_SYNC, payload);
   },
 };

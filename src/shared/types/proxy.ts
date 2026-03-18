@@ -50,4 +50,5 @@ export const PROXY_IPC_CHANNELS = {
   EXPORT: 'proxy:export',
   RESET: 'proxy:reset', // Reset failed counts
   TEST_ROTATING_ENDPOINT: 'proxy:testRotatingEndpoint',
+  WEBSHARE_SYNC: 'proxy:webshareSync',
 } as const;

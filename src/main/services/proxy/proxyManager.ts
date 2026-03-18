@@ -525,6 +525,27 @@ export class ProxyManager {
     });
     console.log('[ProxyManager] 🔄 Đã reset failed count của tất cả proxies');
   }
+
+  /**
+   * Xóa tất cả proxies theo platform
+   */
+  removeProxiesByPlatform(platform: string): number {
+    const target = platform.trim().toLowerCase();
+    if (!target) return 0;
+    const proxies = ProxyDatabase.getAll();
+    let removed = 0;
+    for (const proxy of proxies) {
+      const proxyPlatform = (proxy.platform || '').trim().toLowerCase();
+      if (proxyPlatform === target) {
+        const deleted = ProxyDatabase.delete(proxy.id);
+        if (deleted) removed++;
+      }
+    }
+    if (removed > 0) {
+      console.log(`[ProxyManager] 🧹 Removed ${removed} proxies for platform=${platform}`);
+    }
+    return removed;
+  }
 }
 
 // Singleton instance

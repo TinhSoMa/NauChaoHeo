@@ -521,6 +521,7 @@ interface AppSettings {
   useProxy: boolean;
   proxyMode: 'off' | 'direct-list' | 'rotating-endpoint';
   rotatingProxyEndpoint: string | null;
+  webshareApiKey: string | null;
   proxyScopes: {
     caption: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
     story: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
@@ -719,6 +720,7 @@ interface ProxyAPI {
   export: () => Promise<{ success: boolean; data?: string; error?: string }>;
   reset: () => Promise<{ success: boolean; error?: string }>;
   testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
+  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
 }
 
 interface CreatePromptDTO {
