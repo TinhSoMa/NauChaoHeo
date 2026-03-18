@@ -3221,6 +3221,10 @@ export function useCaptionProcessing({
           `text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
         );
 
+        const thumbnailEnabledForRender = true;
+        const thumbnailTimeSecForRender = cfg.thumbnailFrameTimeSec ?? 0;
+        const thumbnailDurationSecForRender = cfg.thumbnailDurationSec ?? 0.5;
+
         // @ts-ignore
         const renderRes = await window.electronAPI.captionVideo.renderVideo({
           srtPath: srtFileForVideo,
@@ -3259,9 +3263,9 @@ export function useCaptionProcessing({
           logoPosition: cfg.logoPosition,
           logoScale: cfg.logoScale,
           portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
-          thumbnailEnabled,
-          thumbnailDurationSec: cfg.thumbnailDurationSec,
-          thumbnailTimeSec: cfg.thumbnailFrameTimeSec ?? undefined,
+          thumbnailEnabled: thumbnailEnabledForRender,
+          thumbnailDurationSec: thumbnailDurationSecForRender,
+          thumbnailTimeSec: thumbnailTimeSecForRender,
           thumbnailText: thumbnailTextForRender,
           thumbnailTextSecondary: thumbnailTextSecondaryForRender,
           hardsubTextPrimary: sharedPrimaryTextForRender,

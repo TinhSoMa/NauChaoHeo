@@ -1180,19 +1180,41 @@ export async function renderHardsubVideo(
   const inlineMainAudioLabel = options.thumbnailEnabled
     ? ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_main_concat_hardsub')
     : (audioMix.mapAudioArg && audioMix.mapAudioArg.startsWith('[') ? audioMix.mapAudioArg : null);
-  const inlineThumbnail = await injectInlineThumbnailAtEnd({
-    options: renderOptions,
-    fps,
-    filterComplexParts,
-    mainVideoLabel: '[v_out]',
-    mainAudioLabel: inlineMainAudioLabel,
-    outputWidth: prep.renderWidth,
-    outputHeight: prep.renderHeight,
-    sourceWidth: prep.renderWidth,
-    sourceHeight: prep.renderHeight,
-    thumbnailVideoInputLabel,
-    thumbnailInputSeeked,
-  });
+  let inlineThumbnailError: string | null = null;
+  let inlineThumbnail: Awaited<ReturnType<typeof injectInlineThumbnailAtEnd>>;
+  try {
+    inlineThumbnail = await injectInlineThumbnailAtEnd({
+      options: renderOptions,
+      fps,
+      filterComplexParts,
+      mainVideoLabel: '[v_out]',
+      mainAudioLabel: inlineMainAudioLabel,
+      outputWidth: prep.renderWidth,
+      outputHeight: prep.renderHeight,
+      sourceWidth: prep.renderWidth,
+      sourceHeight: prep.renderHeight,
+      thumbnailVideoInputLabel,
+      thumbnailInputSeeked,
+    });
+  } catch (error) {
+    inlineThumbnailError = String(error);
+    console.warn('[VideoRenderer][ThumbnailInline] inline_failed', {
+      mode: options.renderMode || 'hardsub',
+      error: inlineThumbnailError,
+    });
+    inlineThumbnail = {
+      finalVideoLabel: '[v_out]',
+      finalAudioLabel: inlineMainAudioLabel || audioMix.mapAudioArg || null,
+      thumbnailDurationSec: 0,
+      cleanupFiles: [],
+    };
+  }
+  if (!inlineThumbnailError && options.thumbnailEnabled) {
+    console.log('[VideoRenderer][ThumbnailInline] inline_applied', {
+      mode: options.renderMode || 'hardsub',
+      durationSec: inlineThumbnail.thumbnailDurationSec,
+    });
+  }
   const outputDuration = mainOutputDuration + inlineThumbnail.thumbnailDurationSec;
   const finalDurationStr = outputDuration.toFixed(3);
   const audioStartInOutputSec = hasTtsAudio ? ((audioStartInOutputSecBase ?? 0) + inlineThumbnail.thumbnailDurationSec) : null;
@@ -1391,7 +1413,19 @@ export async function renderHardsubVideo(
       },
     } as Record<string, unknown>;
   }
-  return renderResult;
+  let finalResult = renderResult;
+  if (inlineThumbnailError && finalResult.success) {
+    console.warn('[VideoRenderer][ThumbnailInline] fallback_post_process', {
+      mode: options.renderMode || 'hardsub',
+    });
+    finalResult = await applyThumbnailPostProcess(options, finalResult);
+    if (finalResult.success) {
+      console.log('[VideoRenderer][ThumbnailInline] fallback_applied');
+    } else {
+      console.error('[VideoRenderer][ThumbnailInline] fallback_failed', finalResult.error);
+    }
+  }
+  return finalResult;
 }
 
 /**
@@ -1665,19 +1699,41 @@ export async function renderHardsubPortraitVideo(
   const inlineMainAudioLabel = options.thumbnailEnabled
     ? ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_main_concat_portrait')
     : (audioMix.mapAudioArg && audioMix.mapAudioArg.startsWith('[') ? audioMix.mapAudioArg : null);
-  const inlineThumbnail = await injectInlineThumbnailAtEnd({
-    options: renderOptions,
-    fps,
-    filterComplexParts,
-    mainVideoLabel: '[v_out]',
-    mainAudioLabel: inlineMainAudioLabel,
-    outputWidth: portraitCanvas.width,
-    outputHeight: portraitCanvas.height,
-    sourceWidth,
-    sourceHeight,
-    thumbnailVideoInputLabel,
-    thumbnailInputSeeked,
-  });
+  let inlineThumbnailError: string | null = null;
+  let inlineThumbnail: Awaited<ReturnType<typeof injectInlineThumbnailAtEnd>>;
+  try {
+    inlineThumbnail = await injectInlineThumbnailAtEnd({
+      options: renderOptions,
+      fps,
+      filterComplexParts,
+      mainVideoLabel: '[v_out]',
+      mainAudioLabel: inlineMainAudioLabel,
+      outputWidth: portraitCanvas.width,
+      outputHeight: portraitCanvas.height,
+      sourceWidth,
+      sourceHeight,
+      thumbnailVideoInputLabel,
+      thumbnailInputSeeked,
+    });
+  } catch (error) {
+    inlineThumbnailError = String(error);
+    console.warn('[VideoRenderer][ThumbnailInline] inline_failed', {
+      mode: options.renderMode || 'hardsub_portrait_9_16',
+      error: inlineThumbnailError,
+    });
+    inlineThumbnail = {
+      finalVideoLabel: '[v_out]',
+      finalAudioLabel: inlineMainAudioLabel || audioMix.mapAudioArg || null,
+      thumbnailDurationSec: 0,
+      cleanupFiles: [],
+    };
+  }
+  if (!inlineThumbnailError && options.thumbnailEnabled) {
+    console.log('[VideoRenderer][ThumbnailInline] inline_applied', {
+      mode: options.renderMode || 'hardsub_portrait_9_16',
+      durationSec: inlineThumbnail.thumbnailDurationSec,
+    });
+  }
   const outputDuration = mainOutputDuration + inlineThumbnail.thumbnailDurationSec;
   const finalDurationStr = outputDuration.toFixed(3);
   const audioStartInOutputSec = hasTtsAudio ? ((audioStartInOutputSecBase ?? 0) + inlineThumbnail.thumbnailDurationSec) : null;
@@ -1900,7 +1956,19 @@ export async function renderHardsubPortraitVideo(
       });
     }
   }
-  return renderResult;
+  let finalResult = renderResult;
+  if (inlineThumbnailError && finalResult.success) {
+    console.warn('[VideoRenderer][ThumbnailInline] fallback_post_process', {
+      mode: options.renderMode || 'hardsub_portrait_9_16',
+    });
+    finalResult = await applyThumbnailPostProcess(options, finalResult);
+    if (finalResult.success) {
+      console.log('[VideoRenderer][ThumbnailInline] fallback_applied');
+    } else {
+      console.error('[VideoRenderer][ThumbnailInline] fallback_failed', finalResult.error);
+    }
+  }
+  return finalResult;
 }
 
 /**

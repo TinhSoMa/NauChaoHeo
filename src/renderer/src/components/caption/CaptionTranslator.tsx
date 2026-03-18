@@ -3261,6 +3261,28 @@ export function CaptionTranslator() {
     if (!issue) return undefined;
     return `Step 7 đang bị chặn: ${issue.reason}`;
   })();
+  const step7RenderUiLog = useMemo(() => {
+    if (processing.status !== 'running' || processing.currentStep !== 7) {
+      return '';
+    }
+    const timeSec = settings.thumbnailFrameTimeSec ?? 0;
+    const durationSec = settings.thumbnailDurationSec ?? 0.5;
+    const timeLabel = (settings.thumbnailFrameTimeSec === null || settings.thumbnailFrameTimeSec === undefined)
+      ? 'auto(0s)'
+      : `${timeSec}s`;
+    const renderMode = settings.renderMode || 'black_bg';
+    const accel = settings.hardwareAcceleration || 'none';
+    const res = settings.renderResolution || 'original';
+    return `Step7 render: mode=${renderMode} | thumbnail=ON @${timeLabel}/${durationSec}s | accel=${accel} | res=${res}`;
+  }, [
+    processing.status,
+    processing.currentStep,
+    settings.thumbnailFrameTimeSec,
+    settings.thumbnailDurationSec,
+    settings.renderMode,
+    settings.hardwareAcceleration,
+    settings.renderResolution,
+  ]);
   const isStep7AudioMixing = processing.audioPreviewStatus === 'mixing';
   const hasStep7AudioPreview = Boolean(processing.audioPreviewDataUri);
   const isStep7AudioError = processing.audioPreviewStatus === 'error' || Boolean(step7AudioButtonError);
@@ -6615,6 +6637,11 @@ export function CaptionTranslator() {
               <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
                 Speed: {autoVideoSpeed.toFixed(2)}x
               </span>
+            </div>
+          )}
+          {step7RenderUiLog && (
+            <div className={styles.textMuted} style={{ fontSize: '11px', marginBottom: '4px' }}>
+              {step7RenderUiLog}
             </div>
           )}
           <div className={styles.progressHeader}>
