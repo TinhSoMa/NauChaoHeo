@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
 import { initDatabase } from './database/schema'
@@ -9,6 +9,7 @@ import { cleanTempFiles } from './services/caption/garbageCollector'
 import { installMainConsoleCapture } from './services/logging/consoleCapture'
 
 installMainConsoleCapture()
+let isQuitInProgress = false
 
 // Khởi tạo app khi Electron sẵn sàng
 app.whenReady().then(() => {
@@ -48,7 +49,40 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-// Dọn dẹp rác (ví dụ: các file .ass tạm thời) trước khi ứng dụng đóng
-app.on('before-quit', () => {
-  cleanTempFiles()
+
+// Dọn dẹp rác và flush caption settings trước khi ứng dụng đóng
+app.on('before-quit', (event) => {
+  if (isQuitInProgress) {
+    cleanTempFiles()
+    return
+  }
+
+  event.preventDefault()
+  isQuitInProgress = true
+
+  const windows = BrowserWindow.getAllWindows()
+  const finishQuit = () => {
+    cleanTempFiles()
+    app.quit()
+  }
+
+  if (windows.length === 0) {
+    finishQuit()
+    return
+  }
+
+  const timeout = setTimeout(() => {
+    finishQuit()
+  }, 1500)
+
+  ipcMain.once('app:flushCaptionSettings:done', () => {
+    clearTimeout(timeout)
+    finishQuit()
+  })
+
+  for (const win of windows) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('app:flushCaptionSettings')
+    }
+  }
 })

@@ -499,7 +499,8 @@ function normalizeProfile(
   const next = cloneProfile(fallback);
   if (!patch || typeof patch !== 'object') {
     const outputHeight = resolveOutputHeightByLayout(layoutKey, next.renderResolution);
-    const portraitOutputHeight = resolveOutputHeightByLayout('portrait', '1080p');
+    const portraitBaseResolution = layoutKey === 'portrait' ? next.renderResolution : '1080p';
+    const portraitOutputHeight = resolveOutputHeightByLayout('portrait', portraitBaseResolution);
     next.subtitleFontSizeRel = clamp(
       Number.isFinite(next.subtitleFontSizeRel)
         ? next.subtitleFontSizeRel
@@ -620,7 +621,8 @@ function normalizeProfile(
   }
   const outputSize = resolveOutputSizeByLayout(layoutKey, next.renderResolution);
   const outputHeight = outputSize.height;
-  const portraitOutputSize = resolveOutputSizeByLayout('portrait', '1080p');
+  const portraitBaseResolution = layoutKey === 'portrait' ? next.renderResolution : '1080p';
+  const portraitOutputSize = resolveOutputSizeByLayout('portrait', portraitBaseResolution);
   const portraitOutputHeight = portraitOutputSize.height;
 
   const style = patch.style as ASSStyleConfig | undefined;
@@ -1192,6 +1194,8 @@ export function useCaptionSettings() {
 
   const [settingsRevision, setSettingsRevision] = useState<number>(0);
   const [settingsUpdatedAt, setSettingsUpdatedAt] = useState<string>(nowIso());
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [hydrationSeq, setHydrationSeq] = useState(0);
 
   const loadedRef = useRef(false);
   const isHydratingRef = useRef(false);
@@ -1200,6 +1204,7 @@ export function useCaptionSettings() {
   const lastSavedGlobalTypographyFingerprintRef = useRef('');
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const revisionRef = useRef(0);
+  const saveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     saveQueueRef.current = Promise.resolve();
@@ -2047,10 +2052,12 @@ export function useCaptionSettings() {
     if (projectId && !paths) {
       loadedRef.current = false;
       isHydratingRef.current = false;
+      setIsHydrated(false);
       return;
     }
     loadedRef.current = false;
     isHydratingRef.current = true;
+    setIsHydrated(false);
     typographyDefaultsDirtyRef.current = false;
     let cancelled = false;
 
@@ -2123,6 +2130,8 @@ export function useCaptionSettings() {
         if (!cancelled) {
           isHydratingRef.current = false;
           loadedRef.current = true;
+          setIsHydrated(true);
+          setHydrationSeq((prev) => prev + 1);
         }
       }
     };
@@ -2173,18 +2182,58 @@ export function useCaptionSettings() {
     await queued;
   }, [projectId, settingsValues]);
 
+  const flushSettings = useCallback(async () => {
+    if ((projectId && !paths) || !loadedRef.current || isHydratingRef.current) {
+      return;
+    }
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    await saveSettings('system');
+    await saveQueueRef.current;
+  }, [projectId, paths, saveSettings]);
+
   useEffect(() => {
     if (projectId && !paths) return;
     if (!loadedRef.current) return;
-    const timer = window.setTimeout(() => {
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
       saveSettings('ui').catch((error) => {
         console.error('[CaptionSettings] Lỗi auto-save:', error);
       });
     }, 450);
     return () => {
-      window.clearTimeout(timer);
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
     };
   }, [projectId, paths, settingsValues, saveSettings]);
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onMessage('app:flushCaptionSettings', async () => {
+      try {
+        await flushSettings();
+      } catch (error) {
+        console.error('[CaptionSettings] Lỗi flush settings khi thoát app:', error);
+      } finally {
+        window.electronAPI.sendMessage('app:flushCaptionSettings:done', { ok: true });
+      }
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, [flushSettings]);
+
+  useEffect(() => {
+    return () => {
+      void flushSettings();
+    };
+  }, [flushSettings]);
 
   useEffect(() => {
     if ((projectId && !paths) || !loadedRef.current || isHydratingRef.current) {
@@ -2368,9 +2417,9 @@ export function useCaptionSettings() {
     processingMode, setProcessingMode,
     settingsRevision,
     settingsUpdatedAt,
+    isHydrated,
+    hydrationSeq,
     saveSettings,
+    flushSettings,
   };
 }
-
-
-

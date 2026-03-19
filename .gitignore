@@ -47,11 +47,6 @@ PROXY_USAGE.md
 src/main/services/tts/python/__pycache__/edge_tts_worker.cpython-314.pyc
 api_state.json
 caption_session_srt.json
-caption_session.json
 translated.srt
-# debug/file đang trong quá trình chạy.json
-# debug/file sau khi chạy thành công.json
-# debug/file sau khi tự dừng.json
-debug/filedangtrongquatrinhchay.json
-debug/filekhinguoidungdungthucong.json
-debug/filesaukhichaythanhcong.json
+
+debug/caption_session.json

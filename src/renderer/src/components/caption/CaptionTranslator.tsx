@@ -1543,6 +1543,9 @@ export function CaptionTranslator() {
 
   // Đồng bộ mirror settings revision từ project-default vào từng session folder.
   useEffect(() => {
+    if (!settings.isHydrated) {
+      return;
+    }
     const inputPaths = getInputPaths(settings.inputType, fileManager.filePath);
     if (!inputPaths.length) return;
 
@@ -1598,6 +1601,7 @@ export function CaptionTranslator() {
     fileManager.filePath,
     projectId,
     settings.inputType,
+    settings.isHydrated,
     settings.settingsRevision,
     settings.settingsUpdatedAt,
   ]);
@@ -6202,6 +6206,7 @@ export function CaptionTranslator() {
                   renderSnapshotMode={effectivePreviewMode === 'render'}
                   onSelectLogo={handleSelectLogo}
                   onRemoveLogo={handleRemoveLogo}
+                  hydrationSeq={settings.hydrationSeq}
                   interactiveDisabledReason={
                     effectivePreviewMode === 'render'
                       ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'

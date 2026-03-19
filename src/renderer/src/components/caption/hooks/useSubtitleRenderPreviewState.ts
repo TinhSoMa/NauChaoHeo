@@ -59,6 +59,7 @@ interface UseSubtitleRenderPreviewStateOptions {
   portraitTextSecondaryPosition?: { x: number; y: number };
   disabled?: boolean;
   disabledReason?: string;
+  hydrationSeq?: number;
 }
 
 interface RenderVideoPreviewFrameRequest {
@@ -302,8 +303,9 @@ export function useSubtitleRenderPreviewState(
     if (!visualPayloadHash) {
       return '';
     }
-    return `${visualPayloadHash}::t=${quantizedPreviewTimeSec.toFixed(3)}`;
-  }, [quantizedPreviewTimeSec, visualPayloadHash]);
+    const hydrationKey = options.hydrationSeq ?? 0;
+    return `${visualPayloadHash}::t=${quantizedPreviewTimeSec.toFixed(3)}::h=${hydrationKey}`;
+  }, [quantizedPreviewTimeSec, visualPayloadHash, options.hydrationSeq]);
 
   const insertCacheEntry = (key: string, value: { frameData: string; size: { width: number; height: number } | null }) => {
     const cache = cacheRef.current;

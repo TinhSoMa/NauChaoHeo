@@ -280,6 +280,8 @@ interface UseCaptionProcessingProps {
     layoutProfiles?: CaptionProjectSettingsValues['layoutProfiles'];
     settingsRevision?: number;
     settingsUpdatedAt?: string;
+    isHydrated?: boolean;
+    hydrationSeq?: number;
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
@@ -1396,7 +1398,12 @@ export function useCaptionProcessing({
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
     setStepDependencyIssues([]);
-    const renderLayoutOverrides = resolveRenderLayoutOverrides(settings);
+    if (settings.isHydrated === false) {
+      setProgress({ current: 0, total: 0, message: 'Settings đang load, vui lòng đợi 1–2s.' });
+      return;
+    }
+    const renderLayoutOverrides =
+      settings.isHydrated === false ? {} : resolveRenderLayoutOverrides(settings);
     const styleForRun = renderLayoutOverrides.style ?? settings.style;
     const subtitlePositionForRun =
       renderLayoutOverrides.subtitlePosition !== undefined
