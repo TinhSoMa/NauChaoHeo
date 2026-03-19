@@ -2187,11 +2187,7 @@ export async function renderVideoPreviewFrame(
       } catch {}
     }
   }
-
   const normalizedEntries = normalizePreviewEntries(options.entries || []);
-  if (normalizedEntries.length === 0) {
-    return { success: false, error: 'Không có subtitle để render preview.' };
-  }
 
   const ffmpegPath = getFFmpegPath();
   if (!existsSync(ffmpegPath)) {
@@ -2215,9 +2211,6 @@ export async function renderVideoPreviewFrame(
     : effectiveRequestedTime;
   const safePreviewTimeSec = Math.max(0, Math.min(seekUpperBound, effectiveRequestedTime));
   const previewEntries = selectPreviewEntriesAtTime(normalizedEntries, safePreviewTimeSec);
-  if (previewEntries.length === 0) {
-    return { success: false, error: 'Không tìm được subtitle hợp lệ để render preview.' };
-  }
   const previewHwaccelArgs = resolvePreviewHwaccelArgs(options.hardwareAcceleration, options.renderMode);
 
   let tempDirPath = '';

@@ -189,9 +189,6 @@ export function useSubtitleRenderPreviewState(
     if (!options.videoPath) {
       return null;
     }
-    if (normalizedEntries.length === 0) {
-      return null;
-    }
     return {
       videoPath: options.videoPath,
       entries: normalizedEntries,
@@ -371,13 +368,8 @@ export function useSubtitleRenderPreviewState(
     }
 
     if (!requestPayload) {
-      if (!options.videoPath) {
-        setRealStatus('error');
-        setRealMessage('Chưa có video nguồn để render preview thật.');
-      } else {
-        setRealStatus('error');
-        setRealMessage('Không có subtitle để render preview thật.');
-      }
+      setRealStatus('error');
+      setRealMessage('Chưa có video nguồn để render preview thật.');
       return;
     }
 
