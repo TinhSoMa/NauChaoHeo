@@ -817,6 +817,54 @@ function resolveSharedSecondaryTextFromStep7(step7: Record<string, unknown>): st
   return '';
 }
 
+type CaptionLayoutProfile = NonNullable<CaptionProjectSettingsValues['layoutProfiles']>['landscape'];
+
+function sanitizeCaptionLayoutProfile(profile?: CaptionLayoutProfile): CaptionLayoutProfile | undefined {
+  if (!profile) {
+    return profile;
+  }
+  const {
+    logoPath: _logoPath,
+    thumbnailTextSecondary: _thumbnailTextSecondary,
+    hardsubTextPrimary: _hardsubTextPrimary,
+    hardsubTextSecondary: _hardsubTextSecondary,
+    hardsubPortraitTextPrimary: _hardsubPortraitTextPrimary,
+    hardsubPortraitTextSecondary: _hardsubPortraitTextSecondary,
+    ...rest
+  } = profile;
+  return rest as CaptionLayoutProfile;
+}
+
+function sanitizeCaptionDefaults(settings: CaptionProjectSettingsValues): CaptionProjectSettingsValues {
+  const {
+    audioDir: _audioDir,
+    logoPath: _logoPath,
+    thumbnailText: _thumbnailText,
+    thumbnailTextSecondary: _thumbnailTextSecondary,
+    thumbnailTextsByOrder: _thumbnailTextsByOrder,
+    thumbnailTextsSecondaryByOrder: _thumbnailTextsSecondaryByOrder,
+    thumbnailTextSecondaryByOrder: _thumbnailTextSecondaryByOrder,
+    hardsubTextPrimary: _hardsubTextPrimary,
+    hardsubTextSecondary: _hardsubTextSecondary,
+    hardsubPortraitTextPrimary: _hardsubPortraitTextPrimary,
+    hardsubPortraitTextSecondary: _hardsubPortraitTextSecondary,
+    layoutProfiles,
+    ...rest
+  } = settings;
+
+  const sanitizedLayoutProfiles = layoutProfiles
+    ? {
+        landscape: sanitizeCaptionLayoutProfile(layoutProfiles.landscape),
+        portrait: sanitizeCaptionLayoutProfile(layoutProfiles.portrait),
+      }
+    : undefined;
+
+  return {
+    ...rest,
+    ...(sanitizedLayoutProfiles ? { layoutProfiles: sanitizedLayoutProfiles } : {}),
+  };
+}
+
 export function CaptionTranslator() {
   // Project output paths
   const { paths, projectId } = useProjectContext();
@@ -1374,7 +1422,14 @@ export function CaptionTranslator() {
     thumbnailTextSecondaryFontSizeRel: settings.thumbnailTextSecondaryFontSizeRel,
     thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+    thumbnailText: hardsubSettings.thumbnailText,
     thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
+    thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
+    thumbnailTextsSecondaryByOrder: hardsubSettings.thumbnailTextsSecondaryByOrder,
+    hardsubTextPrimary: hardsubSettings.thumbnailText,
+    hardsubTextSecondary: hardsubSettings.thumbnailTextSecondary,
+    hardsubPortraitTextPrimary: hardsubSettings.thumbnailText,
+    hardsubPortraitTextSecondary: hardsubSettings.thumbnailTextSecondary,
     thumbnailTextPrimaryPosition: settings.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
     portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
@@ -1390,6 +1445,9 @@ export function CaptionTranslator() {
     subtitlePosition: settings.subtitlePosition,
     thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
     thumbnailDurationSec: settings.thumbnailDurationSec,
+    logoPath: settings.logoPath,
+    logoPosition: settings.logoPosition,
+    logoScale: settings.logoScale,
     portraitForegroundCropPercent: settings.portraitForegroundCropPercent,
     layoutProfiles: settings.layoutProfiles,
     processingMode: settings.processingMode,
@@ -1439,7 +1497,10 @@ export function CaptionTranslator() {
     settings.thumbnailTextSecondaryFontSizeRel,
     settings.thumbnailTextSecondaryColor,
     settings.thumbnailLineHeightRatio,
+    hardsubSettings.thumbnailText,
     hardsubSettings.thumbnailTextSecondary,
+    hardsubSettings.thumbnailTextsByOrder,
+    hardsubSettings.thumbnailTextsSecondaryByOrder,
     settings.thumbnailTextPrimaryPosition,
     settings.thumbnailTextSecondaryPosition,
     settings.portraitTextPrimaryFontName,
@@ -1455,6 +1516,9 @@ export function CaptionTranslator() {
     settings.subtitlePosition,
     settings.thumbnailFrameTimeSec,
     settings.thumbnailDurationSec,
+    settings.logoPath,
+    settings.logoPosition,
+    settings.logoScale,
     settings.portraitForegroundCropPercent,
     settings.layoutProfiles,
     settings.processingMode,
@@ -3990,11 +4054,37 @@ export function CaptionTranslator() {
   const [inspectorLoading, setInspectorLoading] = useState(false);
   const [inspectorError, setInspectorError] = useState('');
   const [inspectorCopyNotice, setInspectorCopyNotice] = useState('');
+  const [defaultSaveState, setDefaultSaveState] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [defaultSaveMessage, setDefaultSaveMessage] = useState('');
   const inspectorCacheRef = useRef<StepInspectionCache | null>(null);
   const inspectorRequestSeqRef = useRef(0);
   const [preferredLandscapeRenderMode, setPreferredLandscapeRenderMode] = useState<'hardsub' | 'black_bg'>(
     settings.renderMode === 'black_bg' ? 'black_bg' : 'hardsub'
   );
+
+  const handleSaveCaptionDefaults = useCallback(async () => {
+    if (!projectSettingsSnapshot) {
+      setDefaultSaveState('error');
+      setDefaultSaveMessage('Không thể lấy snapshot settings.');
+      return;
+    }
+    setDefaultSaveState('saving');
+    setDefaultSaveMessage('Đang lưu mặc định...');
+    try {
+      const sanitizedSnapshot = sanitizeCaptionDefaults(projectSettingsSnapshot);
+      const res = await window.electronAPI.captionDefaults.save(sanitizedSnapshot as any);
+      if (!res?.success) {
+        throw new Error(res?.error || 'Lưu thất bại');
+      }
+      setDefaultSaveState('success');
+      setDefaultSaveMessage('Đã lưu mặc định.');
+    } catch (error) {
+      setDefaultSaveState('error');
+      setDefaultSaveMessage(
+        `Lưu thất bại: ${error instanceof Error ? error.message : String(error || 'Unknown error')}`
+      );
+    }
+  }, [projectSettingsSnapshot]);
 
   useEffect(() => {
     if (settings.renderMode === 'hardsub' || settings.renderMode === 'black_bg') {
@@ -4465,6 +4555,22 @@ export function CaptionTranslator() {
     <div className={styles.commonConfigBar}>
       <div className={styles.commonConfigTop}>
         <div className={styles.commonConfigTitle}>Common Config</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            className={styles.resetBtnLike}
+            onClick={handleSaveCaptionDefaults}
+            disabled={defaultSaveState === 'saving'}
+            title="Lưu cấu hình hiện tại làm mặc định"
+          >
+            {defaultSaveState === 'saving' ? 'Đang lưu...' : 'Save as default'}
+          </button>
+          {defaultSaveMessage && (
+            <span className={styles.textMuted} style={{ fontSize: '12px' }}>
+              {defaultSaveMessage}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className={styles.commonConfigTabs}>

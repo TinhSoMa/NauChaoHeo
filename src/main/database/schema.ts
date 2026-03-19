@@ -440,6 +440,16 @@ export function initDatabase(): void {
     );
   `);
 
+  // Create caption_default_settings table - lưu default settings caption
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS caption_default_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      schema_version INTEGER NOT NULL,
+      settings_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // Migration: Update proxies unique constraint to include type
   try {
     const database = db;

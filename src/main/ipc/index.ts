@@ -4,6 +4,7 @@
 
 import { registerGeminiHandlers } from './geminiHandlers';
 import { registerCaptionHandlers } from './captionHandlers';
+import { registerCaptionDefaultsHandlers } from './captionDefaultsHandlers';
 import { registerTTSHandlers } from './ttsHandlers';
 import { registerStoryHandlers } from './storyHandlers';
 import { registerPromptHandlers } from './promptHandlers';
@@ -27,6 +28,7 @@ export function registerAllHandlers(): void {
 
   // Đăng ký Caption handlers (dịch phụ đề)
   registerCaptionHandlers();
+  registerCaptionDefaultsHandlers();
 
   // Đăng ký TTS handlers (text-to-speech)
   registerTTSHandlers();
@@ -67,6 +69,7 @@ export function registerAllHandlers(): void {
 // Export individual handlers
 export { registerGeminiHandlers } from './geminiHandlers';
 export { registerCaptionHandlers } from './captionHandlers';
+export { registerCaptionDefaultsHandlers } from './captionDefaultsHandlers';
 export { registerTTSHandlers } from './ttsHandlers';
 export { registerStoryHandlers } from './storyHandlers';
 export { registerPromptHandlers } from './promptHandlers';

@@ -2098,7 +2098,12 @@ export function useCaptionSettings() {
         });
 
         if (!projectSettingsRes?.success || !projectSettingsRes.data) {
-          setLayoutProfiles(globalFallbackProfiles);
+          const defaultsRes = await window.electronAPI.captionDefaults?.get?.();
+          if (defaultsRes?.success && defaultsRes.data?.settings) {
+            applyLoadedSettings(defaultsRes.data.settings, globalFallbackProfiles);
+          } else {
+            setLayoutProfiles(globalFallbackProfiles);
+          }
           revisionRef.current = 0;
           if (!cancelled) {
             setSettingsRevision(0);
@@ -2419,6 +2424,7 @@ export function useCaptionSettings() {
     settingsUpdatedAt,
     isHydrated,
     hydrationSeq,
+    settingsSnapshot: settingsValues,
     saveSettings,
     flushSettings,
   };

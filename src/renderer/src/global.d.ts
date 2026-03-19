@@ -370,6 +370,11 @@ interface CaptionAPI {
   patchSession: (sessionPath: string, patch: any) => Promise<IpcApiResponse<any>>;
 }
 
+interface CaptionDefaultsAPI {
+  get: () => Promise<IpcApiResponse<{ schemaVersion: 1; settings: Record<string, unknown>; updatedAt: number } | null>>;
+  save: (settings: Record<string, unknown>) => Promise<IpcApiResponse<{ updatedAt: number }>>;
+}
+
 // ============================================
 // TTS TYPES
 // ============================================
@@ -944,6 +949,7 @@ declare global {
 
       // Caption API (dich phu de)
       caption: CaptionAPI;
+      captionDefaults: CaptionDefaultsAPI;
 
       // TTS API (text-to-speech)
       tts: TTSAPI;

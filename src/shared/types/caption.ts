@@ -990,7 +990,10 @@ export interface CaptionProjectSettingsValues {
   portraitTextSecondaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryByOrder?: string[];
   thumbnailTextSecondaryOverrideFlags?: boolean[];
+  thumbnailTextsByOrder?: string[];
+  thumbnailTextsSecondaryByOrder?: string[];
   thumbnailDurationSec?: number;
+  thumbnailText?: string;
   subtitlePosition?: { x: number; y: number } | null;
   thumbnailFrameTimeSec?: number | null;
   layoutProfiles?: {
@@ -1137,6 +1140,7 @@ export interface CaptionProjectSettingsValues {
       foregroundCropPercent?: number;
     };
   };
+  logoPath?: string;
   processingMode?: 'folder-first' | 'step-first';
 }
 
@@ -1193,6 +1197,11 @@ export const CAPTION_SESSION_IPC_CHANNELS = {
   READ: 'captionSession:read',
   WRITE_ATOMIC: 'captionSession:writeAtomic',
   PATCH: 'captionSession:patch',
+} as const;
+
+export const CAPTION_DEFAULTS_IPC_CHANNELS = {
+  GET: 'captionDefaults:get',
+  SAVE: 'captionDefaults:save',
 } as const;
 
 

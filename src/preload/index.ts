@@ -10,6 +10,7 @@ import { promptApi, PromptAPI } from './promptApi'
 import { cutVideoApi, CutVideoAPI } from './cutVideoApi'
 import { createRotationQueueApi, RotationQueueAPI } from './rotationQueueApi'
 import { appLogsApi, AppLogsAPI } from './appLogsApi'
+import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -38,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Caption API (dịch phụ đề)
   caption: createCaptionAPI(),
+  captionDefaults: captionDefaultsApi,
 
   // TTS API (text-to-speech)
   tts: createTTSAPI(),
@@ -85,6 +87,7 @@ declare global {
       }
       gemini: GeminiAPI
       caption: CaptionAPI
+      captionDefaults: CaptionDefaultsAPI
       tts: TTSAPI
       project: ProjectAPI
       appSettings: AppSettingsAPI
