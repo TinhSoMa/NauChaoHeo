@@ -9,6 +9,7 @@ export {
   generateBatchAudio,
   generateBatchAudioEdge,
   generateBatchAudioCapCut,
+  stopActiveTts,
   getAvailableVoices,
   normalizeVoiceSelection,
   resolveVoiceSelection,

@@ -49,6 +49,7 @@ export interface TranslationOptions {
   retryBatchIndexes?: number[];  // Chỉ dịch lại các batch index 1-based (Step 3 resume)
   projectId?: string;
   sourcePath?: string;
+  runId?: string;
 }
 
 export interface TranslationBatchReport {
@@ -151,6 +152,7 @@ export interface TTSOptions {
   outputDir: string;      // Thư mục output
   maxConcurrent: number;  // Số file tạo song song (default: 5)
   edgeTtsBatchSize?: number;  // Batch size for Edge TTS (default: 50), only for Edge provider
+  runId?: string;
 }
 
 /**
@@ -284,12 +286,14 @@ export const CAPTION_IPC_CHANNELS = {
   EXPORT_SRT: 'caption:exportSrt',
   EXPORT_PLAIN_TEXT: 'caption:exportPlainText',
   SPLIT: 'caption:split',
+  STOP_ALL: 'caption:stopAll',
   
   // TTS
   TTS_GENERATE: 'tts:generate',
   TTS_PROGRESS: 'tts:progress',
   TTS_GET_VOICES: 'tts:getVoices',
   TTS_TEST_VOICE: 'tts:testVoice',
+  TTS_STOP: 'tts:stop',
   TTS_TRIM_SILENCE: 'tts:trimSilence',
   TTS_TRIM_SILENCE_END: 'tts:trimSilenceEnd',
   TTS_FIT_AUDIO: 'tts:fitAudio',
@@ -1192,6 +1196,8 @@ export const CAPTION_VIDEO_IPC_CHANNELS = {
   FIND_BEST_VIDEO: 'captionVideo:findBestVideo',
   GET_AVAILABLE_FONTS: 'captionVideo:getAvailableFonts',
 } as const;
+
+export const CAPTION_PROCESS_STOP_SIGNAL = '__CAPTION_PROCESS_STOPPED__';
 
 export const CAPTION_SESSION_IPC_CHANNELS = {
   READ: 'captionSession:read',

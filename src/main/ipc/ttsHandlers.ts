@@ -107,6 +107,22 @@ export function registerTTSHandlers(): void {
   );
 
   // ============================================
+  // STOP TTS
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_STOP,
+    async (): Promise<IpcResponse<{ stopped: boolean; message?: string }>> => {
+      try {
+        const result = TTSService.stopActiveTts();
+        return { success: true, data: result };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi stop TTS:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  // ============================================
   // ANALYZE AUDIO
   // ============================================
   ipcMain.handle(

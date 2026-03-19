@@ -10,6 +10,7 @@ import {
   TranslationProgress,
   TranslationBatchReport,
   TranslationQueuePacingMetadata,
+  CAPTION_PROCESS_STOP_SIGNAL,
 } from '../../../shared/types/caption';
 import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type GeminiModel } from '../gemini';
 import { AppSettingsService } from '../appSettings';
@@ -42,6 +43,58 @@ import {
 } from './textSplitter';
 
 type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue';
+
+const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
+let activeTranslateRunId: string | null = null;
+let translateStopRequested = false;
+let translateStopRunId: string | null = null;
+
+const normalizeRunId = (value?: string | null): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const shouldStopTranslation = (runId?: string | null): boolean => {
+  if (!translateStopRequested) return false;
+  if (!translateStopRunId) return true;
+  const normalized = normalizeRunId(runId);
+  return !!normalized && normalized === translateStopRunId;
+};
+
+const throwIfTranslationStopped = (runId?: string | null): void => {
+  if (shouldStopTranslation(runId)) {
+    throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+  }
+};
+
+export function beginTranslationRun(runId?: string | null): void {
+  activeTranslateRunId = normalizeRunId(runId);
+}
+
+export function endTranslationRun(runId?: string | null): void {
+  const normalized = normalizeRunId(runId);
+  if (!normalized || activeTranslateRunId === normalized) {
+    activeTranslateRunId = null;
+  }
+  if (translateStopRunId && normalized && translateStopRunId === normalized) {
+    translateStopRequested = false;
+    translateStopRunId = null;
+  }
+}
+
+export function stopActiveTranslation(runId?: string | null): { stopped: boolean; message: string } {
+  const normalized = normalizeRunId(runId);
+  const targetRunId = normalized || activeTranslateRunId;
+  if (!targetRunId) {
+    translateStopRequested = false;
+    translateStopRunId = null;
+    return { stopped: false, message: 'Không có tiến trình dịch đang chạy.' };
+  }
+  translateStopRequested = true;
+  translateStopRunId = targetRunId;
+  return { stopped: true, message: STOP_TRANSLATION_MESSAGE };
+}
 
 interface BatchTranslationResult {
   success: boolean;
@@ -499,6 +552,12 @@ export async function translateAll(
     linesPerBatch = 50,
     promptTemplate,
   } = options;
+  const runId = normalizeRunId(options.runId);
+  const assertNotStopped = () => throwIfTranslationStopped(runId);
+  const isStopSignal = (error: unknown) =>
+    error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL;
+
+  assertNotStopped();
 
   console.log(`[CaptionTranslator] Bắt đầu dịch ${entries.length} entries`);
   console.log(`[CaptionTranslator] Model: ${model}, Target: ${targetLanguage}`);
@@ -614,12 +673,14 @@ export async function translateAll(
     const reservation = dispatchGateQueue
       .catch(() => undefined)
       .then(async () => {
+        assertNotStopped();
         const now = Date.now();
         const dispatchAt = Math.max(now, nextDispatchAtMs);
         const waitMs = dispatchAt - now;
         if (waitMs > 0) {
           await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         }
+        assertNotStopped();
         const timing = createDispatchTimingMetadata(Date.now(), queueGapMs);
         nextDispatchAtMs = timing.nextAllowedAt;
         return timing;
@@ -737,7 +798,7 @@ export async function translateAll(
     console.error(`[CaptionTranslator] ${errorMessage}`);
     errors.push(errorMessage);
 
-    if (progressCallback) {
+    if (progressCallback && !shouldStopTranslation(runId)) {
       const methodLabel: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
       progressCallback({
         current: Math.min(processedLines, entries.length),
@@ -759,6 +820,7 @@ export async function translateAll(
 
   // Dịch song song tối đa MAX_CONCURRENT batch cùng lúc
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
+    assertNotStopped();
     const methodLabel: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
     const defaultTokenLabel = useGeminiWebQueue ? 'queue_rr' : (useImpit ? 'impit_cookie' : (assignedKey?.keyInfo.name || 'rotation'));
     const queueGapSecLabel = Number((queueGapMs / 1000).toFixed(1)).toString().replace(/\.0$/, '');
@@ -774,9 +836,10 @@ export async function translateAll(
     let lastDispatchTiming: DispatchTimingMetadata | null = null;
 
     while (attempt < totalAttempts) {
+      assertNotStopped();
       attempt += 1;
       const isRetryAttempt = attempt > 1;
-      if (progressCallback) {
+      if (progressCallback && !shouldStopTranslation(runId)) {
         progressCallback({
           current: batch.startIndex,
           total: entries.length,
@@ -797,7 +860,8 @@ export async function translateAll(
       const dispatchTiming = await reserveDispatchSlot();
       lastDispatchTiming = dispatchTiming;
 
-      if (progressCallback) {
+      assertNotStopped();
+      if (progressCallback && !shouldStopTranslation(runId)) {
         progressCallback({
           current: batch.startIndex,
           total: entries.length,
@@ -823,6 +887,7 @@ export async function translateAll(
           ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
           : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
 
+      assertNotStopped();
       lastResult = batchResult;
       lastDispatchTiming = dispatchTiming;
       if (batchResult.resourceLabel || batchResult.resourceId) {
@@ -878,7 +943,7 @@ export async function translateAll(
 
     completedBatches++;
     processedLines += batch.texts.length;
-    if (progressCallback) {
+    if (progressCallback && !shouldStopTranslation(runId)) {
       const reportMissingGlobalRanges = formatIndexRanges(report.missingGlobalLineIndexes);
       const completionMessage = report.status === 'success'
         ? `Batch #${report.batchIndex} hoàn tất ${report.translatedLines}/${report.expectedLines} dòng, đã lưu partial. (${completedBatches}/${batches.length}) [${methodLabel}] [token:${progressTokenLabel}]`
@@ -908,14 +973,19 @@ export async function translateAll(
   // Chạy theo từng nhóm MAX_CONCURRENT batch
   const manager = getApiManager();
   if (useGeminiWebQueue) {
+    assertNotStopped();
     const dispatchPromises = batches.map((batch, index) =>
       processBatch(batch, index).catch((error) => {
+        if (isStopSignal(error)) {
+          throw error;
+        }
         registerUnexpectedBatchFailure(batch, error);
       })
     );
     await Promise.all(dispatchPromises);
   } else {
     for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
+      assertNotStopped();
       const chunk = batches.slice(i, i + MAX_CONCURRENT);
 
       // Pre-assign 1 key riêng biệt cho mỗi batch trong chunk (chỉ áp dụng cho API, không phải impit)
@@ -932,10 +1002,14 @@ export async function translateAll(
       // Stagger start: mỗi batch trong chunk delay 300ms để tránh burst cùng lúc
       await Promise.all(
         chunk.map((batch, offset) =>
-          new Promise<void>((resolve) =>
+          new Promise<void>((resolve, reject) =>
             setTimeout(() => {
               processBatch(batch, i + offset, assignedKeys[offset])
                 .catch((error) => {
+                  if (isStopSignal(error)) {
+                    reject(error);
+                    return;
+                  }
                   registerUnexpectedBatchFailure(batch, error);
                 })
                 .finally(resolve);
@@ -950,7 +1024,7 @@ export async function translateAll(
   const resultEntries = mergeTranslatedTexts(entries, allTranslatedTexts);
 
   // Report completion
-  if (progressCallback) {
+  if (progressCallback && !shouldStopTranslation(runId)) {
     const summaryTransport: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
     const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
     progressCallback({
@@ -966,6 +1040,8 @@ export async function translateAll(
       ...summaryPacingMetadata,
     });
   }
+
+  assertNotStopped();
 
   console.log(
     `[CaptionTranslator] Hoàn thành: ${translatedCount} dịch, ${failedCount} lỗi`

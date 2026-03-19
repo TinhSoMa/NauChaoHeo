@@ -14,6 +14,7 @@ import {
   CaptionSessionV1,
   CaptionStepNumber,
   CaptionProjectSettingsValues,
+  CAPTION_PROCESS_STOP_SIGNAL,
   CoverQuad,
   RenderAudioPreviewProgress,
   TranslationBatchReport as SharedTranslationBatchReport,
@@ -102,9 +103,8 @@ function normalizeSpeedLabel(speed: number): string {
   return fixed.replace(/\.?0+$/, '');
 }
 
-const PROCESS_STOP_SIGNAL = '__CAPTION_PROCESS_STOPPED__';
 function isProcessStopSignal(error: unknown): boolean {
-  return error instanceof Error && error.message === PROCESS_STOP_SIGNAL;
+  return error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL;
 }
 
 function pad2(value: number): string {
@@ -1102,6 +1102,7 @@ export function useCaptionProcessing({
 
   // Ref cho abort flag — cho phép handleStop() dừng vòng lặp đang chạy
   const abortRef = useRef(false);
+  const runIdRef = useRef<string | null>(null);
   const translateBatchProgressHandlerRef = useRef<((progress: TranslationProgress) => void | Promise<void>) | null>(null);
   const audioPreviewStopRequestedRef = useRef(false);
   const baseInputPaths = useMemo(
@@ -1388,18 +1389,34 @@ export function useCaptionProcessing({
     } catch (error) {
       console.warn('[CaptionProcessing] Không thể gửi stop render:', error);
     }
+    try {
+      // @ts-ignore
+      await window.electronAPI.caption?.stopAll?.({ runId: runIdRef.current || undefined });
+    } catch (error) {
+      console.warn('[CaptionProcessing] Không thể gửi stopAll caption:', error);
+    }
+    try {
+      // @ts-ignore
+      await window.electronAPI.tts?.stop?.();
+    } catch (error) {
+      console.warn('[CaptionProcessing] Không thể gửi stop TTS:', error);
+    }
     await stopStep7AudioPreview(true);
     setStatus('idle');
     setCurrentFolder(null);
     setCurrentStep(null);
     setProgress(p => ({ ...p, message: 'Đã dừng.' }));
+    runIdRef.current = null;
   }, [currentFolder?.index, currentFolder?.path, currentStep, resolvedInputPaths, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).sort() as Step[];
     setStepDependencyIssues([]);
+    const nextRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    runIdRef.current = nextRunId;
     if (settings.isHydrated === false) {
       setProgress({ current: 0, total: 0, message: 'Settings đang load, vui lòng đợi 1–2s.' });
+      runIdRef.current = null;
       return;
     }
     const renderLayoutOverrides =
@@ -1500,6 +1517,7 @@ export function useCaptionProcessing({
     const validation = validateSteps(steps);
     if (!validation.valid) {
       setProgress({ current: 0, total: 0, message: validation.error || 'Lỗi validation!' });
+      runIdRef.current = null;
       return;
     }
 
@@ -1510,6 +1528,9 @@ export function useCaptionProcessing({
     // Listen for progress — đăng ký 1 lần với replace (ghi đè listener cũ)
     // @ts-ignore
     window.electronAPI.caption.onTranslateProgress((p: TranslationProgress) => {
+      if (abortRef.current) {
+        return;
+      }
       setProgress({
         ...p,
         current: p.current,
@@ -2041,7 +2062,7 @@ export function useCaptionProcessing({
       };
 
       if (abortRef.current) {
-        throw new Error(PROCESS_STOP_SIGNAL);
+        throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
       }
 
       try {
@@ -2399,6 +2420,9 @@ export function useCaptionProcessing({
         });
 
         translateBatchProgressHandlerRef.current = async (progressEvent: TranslationProgress) => {
+          if (abortRef.current) {
+            return;
+          }
           if (progressEvent.eventType !== 'batch_completed' && progressEvent.eventType !== 'batch_failed') {
             return;
           }
@@ -2448,6 +2472,7 @@ export function useCaptionProcessing({
               retryBatchIndexes,
               projectId: projectId || undefined,
               sourcePath: currentPath,
+              runId: runIdRef.current || undefined,
             });
           } finally {
             translateBatchProgressHandlerRef.current = null;
@@ -2465,6 +2490,10 @@ export function useCaptionProcessing({
           };
         }
         await step3PersistQueue;
+
+        if (!result?.success && typeof result?.error === 'string' && result.error.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
+          throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+        }
 
         const backendCallSucceeded = result?.success === true;
         const backendErrorMessage = typeof result?.error === 'string' && result.error.trim().length > 0
@@ -2689,6 +2718,7 @@ export function useCaptionProcessing({
           voice: cfg.voice,
           outputDir: audioDir,
           outputFormat: 'wav',
+          runId: runIdRef.current || undefined,
         };
         if (!isCapCutVoice) {
           ttsGenerateOptions.rate = cfg.rate;
@@ -2752,6 +2782,9 @@ export function useCaptionProcessing({
             return nextSession;
           });
         } else {
+          if (typeof result.error === 'string' && result.error.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
+            throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+          }
           throw new Error(`[${folderName}] Lỗi tạo audio: ${result.error}`);
         }
       }
@@ -2988,7 +3021,7 @@ export function useCaptionProcessing({
       // ========== STEP 7: RENDER VIDEO ==========
       if (step === 7) {
         if (abortRef.current) {
-          throw new Error(PROCESS_STOP_SIGNAL);
+          throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
         }
         const sessionPathForStep7 = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
         const sessionFallback = {
@@ -3407,7 +3440,7 @@ export function useCaptionProcessing({
           const stopByUser = abortRef.current
             || (typeof renderRes.error === 'string' && renderRes.error.toLowerCase().includes('đã dừng render'));
           if (stopByUser) {
-            throw new Error(PROCESS_STOP_SIGNAL);
+            throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
           }
           throw new Error(`[${folderName}] Lỗi render video: ${renderRes.error}`);
         }
@@ -3714,6 +3747,7 @@ export function useCaptionProcessing({
     translateBatchProgressHandlerRef.current = null;
     setCurrentStep(null);
     setCurrentFolder(null);
+    runIdRef.current = null;
   }, [
     projectId, enabledSteps, entries, inputType, captionFolder,
     settings, audioFiles, stopStep7AudioPreview, resolvedInputPaths, isDraftFilterEmpty,

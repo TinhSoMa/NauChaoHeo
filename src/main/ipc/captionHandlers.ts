@@ -23,6 +23,7 @@ import {
   CAPTION_VIDEO_IPC_CHANNELS
 } from '../../shared/types/caption';
 import * as CaptionService from '../services/caption';
+import * as TTSService from '../services/tts';
 import { AppSettingsService } from '../services/appSettings';
 import { PromptService } from '../services/promptService';
 
@@ -398,6 +399,8 @@ export function registerCaptionHandlers(): void {
       console.log(`[CaptionHandlers] Translate: ${options.entries.length} entries`);
 
       try {
+        const runId = typeof options.runId === 'string' ? options.runId : undefined;
+        CaptionService.beginTranslationRun(runId);
         // Inject prompt from DB if captionPromptId is set and no client override
         if (!options.promptTemplate) {
           const appSettings = AppSettingsService.getAll();
@@ -422,6 +425,46 @@ export function registerCaptionHandlers(): void {
         return { success: result.success, data: result, error: result.errors?.join(', ') };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi translate:', error);
+        return { success: false, error: String(error) };
+      } finally {
+        const runId = typeof options.runId === 'string' ? options.runId : undefined;
+        CaptionService.endTranslationRun(runId);
+      }
+    }
+  );
+
+  // ============================================
+  // STOP ALL CAPTION PROCESSES
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.STOP_ALL,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload?: { runId?: string }
+    ): Promise<IpcResponse<{ stopped: boolean; message?: string }>> => {
+      try {
+        const runId = typeof payload?.runId === 'string' ? payload.runId : undefined;
+        const translateStop = CaptionService.stopActiveTranslation(runId);
+        const renderStop = CaptionService.stopActiveRender();
+        const audioPreviewStop = CaptionService.stopActiveAudioPreview();
+        const videoPreviewStop = CaptionService.stopActiveVideoPreviewFrame();
+        const ttsStop = TTSService.stopActiveTts();
+        const stopped = Boolean(
+          translateStop.stopped
+          || renderStop.stopped
+          || audioPreviewStop.stopped
+          || videoPreviewStop.stopped
+          || ttsStop.stopped
+        );
+        return {
+          success: true,
+          data: {
+            stopped,
+            message: stopped ? 'Đã gửi tín hiệu dừng.' : 'Không có tiến trình đang chạy.',
+          },
+        };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi stopAll:', error);
         return { success: false, error: String(error) };
       }
     }

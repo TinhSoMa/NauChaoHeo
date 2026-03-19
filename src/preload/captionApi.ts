@@ -49,6 +49,9 @@ export interface CaptionAPI {
   // Split text files
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
 
+  // Stop all caption-related processes
+  stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
+
   // Unified session (single JSON per folder)
   readSession: (sessionPath: string) => Promise<IpcApiResponse<CaptionSessionV1 | null>>;
   writeSessionAtomic: (sessionPath: string, data: CaptionSessionV1) => Promise<IpcApiResponse<string>>;
@@ -71,6 +74,7 @@ export interface TTSAPI {
     entries: SubtitleEntry[],
     options: Partial<TTSOptions>
   ) => Promise<IpcApiResponse<TTSResult>>;
+  stop: () => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   onProgress: (callback: (progress: TTSProgress) => void) => void;
 
   // Audio Merge
@@ -122,6 +126,9 @@ export function createCaptionAPI(): CaptionAPI {
     split: (options: SplitOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options),
 
+    stopAll: (payload?: { runId?: string }) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.STOP_ALL, payload ?? {}),
+
     readSession: (sessionPath: string) =>
       ipcRenderer.invoke(CAPTION_SESSION_IPC_CHANNELS.READ, { sessionPath }),
 
@@ -144,6 +151,8 @@ export function createTTSAPI(): TTSAPI {
 
     generate: (entries: SubtitleEntry[], options: Partial<TTSOptions>) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_GENERATE, entries, options),
+
+    stop: () => ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_STOP),
 
     onProgress: (callback: (progress: TTSProgress) => void) => {
       ipcRenderer.removeAllListeners(CAPTION_IPC_CHANNELS.TTS_PROGRESS);

@@ -116,6 +116,7 @@ interface TranslationOptions {
   retryBatchIndexes?: number[];
   projectId?: string;
   sourcePath?: string;
+  runId?: string;
 }
 
 interface TranslationResult {
@@ -365,6 +366,7 @@ interface CaptionAPI {
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
+  stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   readSession: (sessionPath: string) => Promise<IpcApiResponse<any | null>>;
   writeSessionAtomic: (sessionPath: string, data: any) => Promise<IpcApiResponse<string>>;
   patchSession: (sessionPath: string, patch: any) => Promise<IpcApiResponse<any>>;
@@ -388,6 +390,7 @@ interface TTSOptions {
   outputFormat?: 'wav' | 'mp3';
   outputDir: string;
   maxConcurrent?: number;
+  runId?: string;
 }
 
 interface AudioFile {
@@ -463,6 +466,7 @@ interface TTSAPI {
   getVoices: () => Promise<IpcApiResponse<VoiceInfo[]>>;
   testVoice: (request: TTSTestVoiceRequest) => Promise<IpcApiResponse<TTSTestVoiceResponse>>;
   generate: (entries: SubtitleEntry[], options: Partial<TTSOptions>) => Promise<IpcApiResponse<TTSResult>>;
+  stop: () => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   onProgress: (callback: (progress: TTSProgress) => void) => void;
   analyzeAudio: (audioFiles: AudioFile[], srtDuration: number) => Promise<IpcApiResponse<unknown>>;
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;

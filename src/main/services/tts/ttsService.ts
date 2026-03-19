@@ -3,7 +3,7 @@
  * Provider được xác định qua options.provider hoặc prefix của options.voice.
  */
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { app } from 'electron';
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
@@ -25,6 +25,7 @@ import {
   TTSResult,
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
+  CAPTION_PROCESS_STOP_SIGNAL,
   TTS_VOICE_CATALOG,
   VoiceInfo,
 } from '../../../shared/types/caption';
@@ -38,6 +39,48 @@ const MAX_TTS_RETRIES = 3;
 const DEFAULT_EDGE_TTS_BATCH_SIZE = 50;
 const MIN_EDGE_TTS_BATCH_SIZE = 1;
 const MAX_EDGE_TTS_BATCH_SIZE = 500;
+const TTS_STOP_MESSAGE = 'Đã gửi tín hiệu dừng TTS.';
+
+const activeTtsProcesses = new Set<ChildProcess>();
+let ttsStopRequested = false;
+
+function registerActiveTtsProcess(proc: ChildProcess): void {
+  activeTtsProcesses.add(proc);
+  const cleanup = () => activeTtsProcesses.delete(proc);
+  proc.once('close', cleanup);
+  proc.once('exit', cleanup);
+  proc.once('error', cleanup);
+}
+
+function clearTtsStopRequest(): void {
+  ttsStopRequested = false;
+}
+
+function throwIfTtsStopped(): void {
+  if (ttsStopRequested) {
+    throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+  }
+}
+
+export function stopActiveTts(): { stopped: boolean; message: string } {
+  ttsStopRequested = true;
+  let hadActive = false;
+  for (const proc of Array.from(activeTtsProcesses)) {
+    if (proc.killed) continue;
+    hadActive = true;
+    try {
+      proc.kill('SIGKILL');
+    } catch {
+      try {
+        proc.kill();
+      } catch {}
+    }
+  }
+  return {
+    stopped: hadActive || activeTtsProcesses.size > 0,
+    message: hadActive ? TTS_STOP_MESSAGE : 'Không có tiến trình TTS đang chạy.',
+  };
+}
 
 interface CapCutRuntimeConfig {
   wsUrl: string;
@@ -698,6 +741,10 @@ async function generateSingleAudioEdge(args: {
 }): Promise<SingleGenerateResult> {
   const { text, outputPath, voiceId, rate, volume } = args;
   return new Promise((resolve) => {
+    if (ttsStopRequested) {
+      resolve({ success: false, error: CAPTION_PROCESS_STOP_SIGNAL });
+      return;
+    }
     let settled = false;
     const settle = (result: SingleGenerateResult) => {
       if (settled) return;
@@ -719,6 +766,7 @@ async function generateSingleAudioEdge(args: {
       windowsHide: true,
       shell: true,
     });
+    registerActiveTtsProcess(proc);
 
     let stderr = '';
     proc.stderr?.on('data', (data) => {
@@ -726,6 +774,10 @@ async function generateSingleAudioEdge(args: {
     });
 
     proc.on('close', async (code) => {
+      if (ttsStopRequested) {
+        settle({ success: false, error: CAPTION_PROCESS_STOP_SIGNAL });
+        return;
+      }
       if (code === 0) {
         try {
           const stats = await fs.stat(outputPath);
@@ -743,6 +795,10 @@ async function generateSingleAudioEdge(args: {
     });
 
     proc.on('error', (err) => {
+      if (ttsStopRequested) {
+        settle({ success: false, error: CAPTION_PROCESS_STOP_SIGNAL });
+        return;
+      }
       settle({ success: false, error: `Spawn error: ${err.message}` });
     });
 
@@ -931,6 +987,7 @@ async function generateBatchAudioWithProvider(
   providerGenerator: SingleGenerator,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
+  throwIfTtsStopped();
   const {
     rate = DEFAULT_RATE,
     volume = DEFAULT_VOLUME,
@@ -951,6 +1008,7 @@ async function generateBatchAudioWithProvider(
   }
 
   await fs.mkdir(outputDir, { recursive: true });
+  throwIfTtsStopped();
 
   const providerLabel = voiceSelection.provider.toUpperCase();
   const audioFiles: AudioFile[] = [];
@@ -961,9 +1019,11 @@ async function generateBatchAudioWithProvider(
   console.log(`[TTS] Bắt đầu tạo ${entries.length} audio files`);
 
   for (let i = 0; i < entries.length; i += maxConcurrent) {
+    throwIfTtsStopped();
     const batch = entries.slice(i, i + maxConcurrent);
 
     const batchPromises = batch.map(async (entry) => {
+      throwIfTtsStopped();
       const text = entry.translatedText || entry.text;
       const filename = getSafeFilename(entry.index, text, outputFormat);
       const outputPath = path.join(outputDir, filename);
@@ -999,13 +1059,16 @@ async function generateBatchAudioWithProvider(
         volume,
         outputFormat,
       });
+      throwIfTtsStopped();
 
       let retryCount = 0;
       while (!result.success && retryCount < MAX_TTS_RETRIES) {
+        throwIfTtsStopped();
         retryCount++;
         const delay = Math.pow(2, retryCount) * 1000;
         console.log(`[TTS] [${providerLabel}] lỗi ${filename}, retry ${retryCount}/${MAX_TTS_RETRIES}`);
         await new Promise((resolve) => setTimeout(resolve, delay));
+        throwIfTtsStopped();
         result = await providerGenerator({
           text,
           outputPath,
@@ -1014,6 +1077,7 @@ async function generateBatchAudioWithProvider(
           volume,
           outputFormat,
         });
+        throwIfTtsStopped();
       }
 
       completed++;
@@ -1050,6 +1114,7 @@ async function generateBatchAudioWithProvider(
     });
 
     const batchResults = await Promise.all(batchPromises);
+    throwIfTtsStopped();
     audioFiles.push(...batchResults);
 
     if (i + maxConcurrent < entries.length) {
@@ -1110,6 +1175,7 @@ async function runEdgeTtsWorker(
   timeoutMs?: number,
   onProgress?: (event: { index: number; success?: boolean; error?: string; filename?: string; proxyId?: string }) => void,
 ): Promise<{ results: Map<number, { success: boolean; error?: string }>; errors: string[] }> {
+  throwIfTtsStopped();
   const payload = { jobs, ...(timeoutMs ? { timeoutMs } : {}) };
   const errors: string[] = [];
   const results = new Map<number, { success: boolean; error?: string }>();
@@ -1131,6 +1197,7 @@ async function runEdgeTtsWorker(
         PYTHONIOENCODING: 'utf-8',
       },
     });
+    registerActiveTtsProcess(proc);
 
     proc.stdout?.on('data', (data) => {
       buffer += data.toString();
@@ -1208,6 +1275,7 @@ export async function generateAsyncioAudioWithProvider(
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
+  throwIfTtsStopped();
   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'edge' });
   const outputFormat: 'wav' | 'mp3' = options.outputFormat === 'mp3' ? 'mp3' : 'wav';
   const {
@@ -1232,6 +1300,7 @@ export async function generateAsyncioAudioWithProvider(
   }
 
   await fs.mkdir(outputDir, { recursive: true });
+  throwIfTtsStopped();
 
   const availability = await checkPythonModuleAvailability(['edge_tts']);
   if (!availability.success || !availability.runtime) {
@@ -1253,6 +1322,7 @@ export async function generateAsyncioAudioWithProvider(
       errors: [error],
     };
   }
+  throwIfTtsStopped();
 
   const workerPath = resolveEdgeTtsWorkerPath();
   if (!existsSync(workerPath)) {
@@ -1266,6 +1336,7 @@ export async function generateAsyncioAudioWithProvider(
       errors: [`Không tìm thấy edge_tts_worker.py (${workerPath})`],
     };
   }
+  throwIfTtsStopped();
 
   const providerLabel = 'EDGE';
   const audioFiles: AudioFile[] = [];
@@ -1275,6 +1346,7 @@ export async function generateAsyncioAudioWithProvider(
 
   const pendingItems: EdgeAsyncioItem[] = [];
   for (const entry of entries) {
+    throwIfTtsStopped();
     const rawText = entry.translatedText || entry.text;
     const normalizedText = fixMojibake(rawText);
     const cleanText = sanitizeTextForTts(normalizedText);
@@ -1394,6 +1466,7 @@ export async function generateAsyncioAudioWithProvider(
   let attempt = 0;
 
   while (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
+    throwIfTtsStopped();
     attempt++;
     console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`);
     const jobs = buildJobs(remaining);
@@ -1418,6 +1491,7 @@ export async function generateAsyncioAudioWithProvider(
         });
       }
     );
+    throwIfTtsStopped();
     if (runResult.errors.length > 0) {
       console.warn(`[TTS][EDGE][asyncio] Worker errors: ${runResult.errors.join(' | ')}`);
       errors.push(...runResult.errors);
@@ -1539,6 +1613,7 @@ export async function generateBatchAudioCapCut(
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
+  throwIfTtsStopped();
   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'capcut' });
   const cfgResult = loadCapCutRuntimeConfig();
 
@@ -1576,6 +1651,7 @@ export async function generateBatchAudioCapCut(
   }
 
   await fs.mkdir(outputDir, { recursive: true });
+  throwIfTtsStopped();
 
   const providerLabel = 'CAPCUT';
   const audioFiles: AudioFile[] = [];
@@ -1590,6 +1666,7 @@ export async function generateBatchAudioCapCut(
   let completed = 0;
 
   for (const entry of entries) {
+    throwIfTtsStopped();
     const text = fixMojibake(entry.translatedText || entry.text);
     const filename = getSafeFilename(entry.index, text, outputFormat);
     const outputPath = path.join(outputDir, filename);
@@ -1630,6 +1707,7 @@ export async function generateBatchAudioCapCut(
     const missingSocketResponseIndexes: number[] = [];
 
     for (let attempt = 1; attempt <= maxBatchAttempts; attempt++) {
+      throwIfTtsStopped();
       if (unresolvedLocalIndexes.length === 0) {
         break;
       }
@@ -1645,6 +1723,7 @@ export async function generateBatchAudioCapCut(
         outputFormat,
         config: cfgResult.config,
       });
+      throwIfTtsStopped();
 
       if (batchResult.lastError) {
         lastBatchError = batchResult.lastError;
@@ -1670,6 +1749,7 @@ export async function generateBatchAudioCapCut(
     }
 
     for (let idx = 0; idx < pending.length; idx++) {
+      throwIfTtsStopped();
       const item = pending[idx];
       const audioBuffer = finalBuffers[idx];
       let success = false;
@@ -1755,6 +1835,9 @@ export async function generateBatchAudio(
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
+  if (activeTtsProcesses.size === 0) {
+    clearTtsStopRequest();
+  }
   const voiceSelection = resolveVoiceSelection(options);
   if (voiceSelection.provider === 'capcut') {
     return generateBatchAudioCapCut(entries, options, progressCallback);
