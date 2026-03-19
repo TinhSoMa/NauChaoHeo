@@ -834,7 +834,7 @@ interface GeminiWebApiAPI {
   clearLogs: () => Promise<IpcApiResponse<void>>;
 }
 
-type AppLogLevel = 'info' | 'warn' | 'error';
+type AppLogLevel = 'info' | 'warn' | 'error' | 'success';
 type AppLogSource = 'main' | 'renderer';
 
 interface AppLogEntry {

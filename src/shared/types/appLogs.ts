@@ -5,7 +5,7 @@ export const APP_LOG_IPC_CHANNELS = {
   ENTRY: 'appLogs:entry'
 } as const;
 
-export type AppLogLevel = 'info' | 'warn' | 'error';
+export type AppLogLevel = 'info' | 'warn' | 'error' | 'success';
 
 export type AppLogSource = 'main' | 'renderer';
 

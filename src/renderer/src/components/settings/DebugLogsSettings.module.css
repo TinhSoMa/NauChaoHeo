@@ -67,6 +67,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  border-left: 3px solid transparent;
 }
 
 .logRow:last-child {
@@ -79,7 +80,8 @@
   gap: 8px;
   align-items: center;
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+  opacity: 0.72;
 }
 
 .badge {
@@ -94,6 +96,11 @@
   color: #2563eb;
 }
 
+.badgeSuccess {
+  background: rgba(16, 185, 129, 0.16);
+  color: #047857;
+}
+
 .badgeWarn {
   background: rgba(245, 158, 11, 0.14);
   color: #b45309;
@@ -102,6 +109,26 @@
 .badgeError {
   background: rgba(239, 68, 68, 0.16);
   color: #b91c1c;
+}
+
+.rowInfo {
+  background: rgba(59, 130, 246, 0.03);
+  border-left-color: rgba(59, 130, 246, 0.35);
+}
+
+.rowSuccess {
+  background: rgba(16, 185, 129, 0.06);
+  border-left-color: rgba(16, 185, 129, 0.5);
+}
+
+.rowWarn {
+  background: rgba(245, 158, 11, 0.06);
+  border-left-color: rgba(245, 158, 11, 0.5);
+}
+
+.rowError {
+  background: rgba(239, 68, 68, 0.06);
+  border-left-color: rgba(239, 68, 68, 0.5);
 }
 
 .sourceChip {
@@ -118,6 +145,7 @@
   color: var(--color-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.5;
 }
 
 .emptyState {

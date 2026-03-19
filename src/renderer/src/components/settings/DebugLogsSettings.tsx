@@ -14,9 +14,17 @@ function formatTime(ts: number): string {
 }
 
 function getLevelClass(level: AppLogLevel): string {
+  if (level === 'success') return styles.badgeSuccess;
   if (level === 'error') return styles.badgeError;
   if (level === 'warn') return styles.badgeWarn;
   return styles.badgeInfo;
+}
+
+function getRowClass(level: AppLogLevel): string {
+  if (level === 'success') return styles.rowSuccess;
+  if (level === 'error') return styles.rowError;
+  if (level === 'warn') return styles.rowWarn;
+  return styles.rowInfo;
 }
 
 export function DebugLogsSettings({ onBack }: SettingsDetailProps) {
@@ -93,6 +101,7 @@ export function DebugLogsSettings({ onBack }: SettingsDetailProps) {
             >
               <option value="all">All levels</option>
               <option value="info">Info</option>
+              <option value="success">Success</option>
               <option value="warn">Warn</option>
               <option value="error">Error</option>
             </select>
@@ -124,7 +133,7 @@ export function DebugLogsSettings({ onBack }: SettingsDetailProps) {
           </div>
           <div className={styles.logPanelBody}>
             {filteredLogs.map((entry) => (
-              <div key={entry.seq} className={styles.logRow}>
+              <div key={entry.seq} className={`${styles.logRow} ${getRowClass(entry.level)}`}>
                 <div className={styles.logMeta}>
                   <span className={`${styles.badge} ${getLevelClass(entry.level)}`}>{entry.level}</span>
                   <span className={styles.sourceChip}>{entry.source}</span>
@@ -132,8 +141,8 @@ export function DebugLogsSettings({ onBack }: SettingsDetailProps) {
                   <span>{formatTime(entry.timestamp)}</span>
                 </div>
                 <div className={styles.message}>{entry.message}</div>
-                {entry.meta?.stack && (
-                  <div className={`${styles.message} ${styles.mono}`}>{String(entry.meta.stack)}</div>
+                {typeof entry.meta?.stack === 'string' && (
+                  <div className={`${styles.message} ${styles.mono}`}>{entry.meta.stack}</div>
                 )}
               </div>
             ))}
