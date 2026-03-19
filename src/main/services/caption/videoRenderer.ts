@@ -2259,6 +2259,7 @@ export async function renderVideoPreviewFrame(
       width: sourceWidth,
       height: sourceHeight,
       videoPath: renderMode === 'black_bg' ? undefined : options.videoPath,
+      allowEmptySubtitles: true,
       style: options.style,
       renderMode,
       renderResolution: options.renderResolution,

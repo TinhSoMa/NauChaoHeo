@@ -1347,11 +1347,67 @@ export function CaptionTranslator() {
     selectedInputPaths,
   ]);
   const filteredDraftInputPaths = draftDurationFilterStats.filteredPaths;
+  const prevFilteredDraftPathsRef = useRef<string[]>([]);
+  const prevDraftFilePathRef = useRef<string>('');
+  const [selectedDraftRunPaths, setSelectedDraftRunPaths] = useState<string[]>([]);
+  const selectedDraftRunSet = useMemo(() => new Set(selectedDraftRunPaths), [selectedDraftRunPaths]);
+
+  useEffect(() => {
+    if (settings.inputType !== 'draft') {
+      prevFilteredDraftPathsRef.current = [];
+      prevDraftFilePathRef.current = '';
+      setSelectedDraftRunPaths([]);
+      return;
+    }
+    const currentFilePath = fileManager.filePath || '';
+    const prevFilePath = prevDraftFilePathRef.current;
+    if (currentFilePath !== prevFilePath) {
+      prevDraftFilePathRef.current = currentFilePath;
+      prevFilteredDraftPathsRef.current = filteredDraftInputPaths;
+      setSelectedDraftRunPaths(filteredDraftInputPaths);
+      return;
+    }
+    setSelectedDraftRunPaths((prev) => {
+      const prevSelected = new Set(prev);
+      const prevFiltered = new Set(prevFilteredDraftPathsRef.current);
+      const next: string[] = [];
+      for (const path of filteredDraftInputPaths) {
+        if (prevFiltered.has(path)) {
+          if (prevSelected.has(path)) {
+            next.push(path);
+          }
+        } else {
+          next.push(path);
+        }
+      }
+      prevFilteredDraftPathsRef.current = filteredDraftInputPaths;
+      return next;
+    });
+  }, [filteredDraftInputPaths, settings.inputType, fileManager.filePath]);
+  
+  const toggleDraftRunPath = useCallback((path: string) => {
+    setSelectedDraftRunPaths((prev) => {
+      const prevSet = new Set(prev);
+      if (prevSet.has(path)) {
+        return prev.filter((item) => item !== path);
+      }
+      return [...prev, path];
+    });
+  }, []);
+
+  const handleSelectAllDraftRuns = useCallback(() => {
+    setSelectedDraftRunPaths([...filteredDraftInputPaths]);
+  }, [filteredDraftInputPaths]);
+
+  const handleClearDraftRuns = useCallback(() => {
+    setSelectedDraftRunPaths([]);
+  }, []);
+
   const processingInputPaths = useMemo(
     () => (settings.inputType === 'draft'
-      ? filteredDraftInputPaths
+      ? selectedDraftRunPaths
       : getInputPaths(settings.inputType, fileManager.filePath)),
-    [settings.inputType, filteredDraftInputPaths, fileManager.filePath]
+    [settings.inputType, selectedDraftRunPaths, fileManager.filePath]
   );
 
   const hardsubSettings = useHardsubSettings({
@@ -1840,7 +1896,7 @@ export function CaptionTranslator() {
   }, [thumbnailManualSaveState]);
 
   const step7ThumbnailPanelData = useMemo(() => {
-    const selectedSet = new Set(filteredDraftInputPaths);
+    const selectedSet = new Set(selectedDraftRunPaths);
     const sourceItems = settings.inputType === 'draft'
       ? hardsubSettings.thumbnailFolderItems.filter((item) => selectedSet.has(item.folderPath))
       : hardsubSettings.thumbnailFolderItems;
@@ -1857,7 +1913,7 @@ export function CaptionTranslator() {
 
     return { items, sourceIndexes };
   }, [
-    filteredDraftInputPaths,
+    selectedDraftRunPaths,
     hardsubSettings.thumbnailFolderItems,
     settings.inputType,
   ]);
@@ -1967,11 +2023,11 @@ export function CaptionTranslator() {
       orderIndexByPath.set(path, idx);
     });
 
-    const thumbnailTextsByOrder = filteredDraftInputPaths.map((path) => {
+    const thumbnailTextsByOrder = selectedDraftRunPaths.map((path) => {
       const idx = orderIndexByPath.get(path);
       return idx !== undefined ? (hardsubSettings.thumbnailTextsByOrder[idx] || '') : '';
     });
-    const thumbnailTextsSecondaryByOrder = filteredDraftInputPaths.map((path) => {
+    const thumbnailTextsSecondaryByOrder = selectedDraftRunPaths.map((path) => {
       const idx = orderIndexByPath.get(path);
       return idx !== undefined ? (hardsubSettings.thumbnailTextsSecondaryByOrder[idx] || '') : '';
     });
@@ -1982,7 +2038,7 @@ export function CaptionTranslator() {
       thumbnailTextsSecondaryByOrder,
     };
   }, [
-    filteredDraftInputPaths,
+    selectedDraftRunPaths,
     hardsubSettings.selectedDraftPaths,
     hardsubSettings.thumbnailText,
     hardsubSettings.thumbnailTextsByOrder,
@@ -1997,7 +2053,7 @@ export function CaptionTranslator() {
     entries: fileManager.entries,
     setEntries: fileManager.setEntries,
     filePath: fileManager.filePath,
-    inputPathsOverride: settings.inputType === 'draft' ? filteredDraftInputPaths : undefined,
+    inputPathsOverride: settings.inputType === 'draft' ? selectedDraftRunPaths : undefined,
     inputType: settings.inputType,
     captionFolder,
     settings: {
@@ -2023,7 +2079,7 @@ export function CaptionTranslator() {
       });
       return;
     }
-    const inputPaths = filteredDraftInputPaths;
+    const inputPaths = selectedDraftRunPaths;
     if (inputPaths.length === 0) {
       setThumbnailBulkExportState({
         status: 'error',
@@ -2166,7 +2222,7 @@ export function CaptionTranslator() {
     })();
   }, [
     fileManager.folderVideos,
-    filteredDraftInputPaths,
+    selectedDraftRunPaths,
     hardsubSettings.selectedDraftPaths,
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
@@ -3360,7 +3416,7 @@ export function CaptionTranslator() {
     settings.inputType === 'draft'
     && isMultiFolder
     && (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16')
-    && filteredDraftInputPaths.length > 0
+    && selectedDraftRunPaths.length > 0
   );
   const canQuickStep7Audio = isStep7AudioActionActive || hasStep7AudioPreview || (
     processing.enabledSteps.has(7) &&
@@ -5633,7 +5689,7 @@ export function CaptionTranslator() {
                           return (
                             <div
                               key={`${path}-${idx}`}
-                              className={`${styles.folderBox} ${isActiveFolder ? styles.folderBoxActive : ''}`}
+                              className={`${styles.folderBox} ${isActiveFolder ? styles.folderBoxActive : ''} ${!selectedDraftRunSet.has(path) ? styles.folderBoxDisabled : ''}` }
                               title={path}
                               onClick={() => {
                                 if (processing.status === 'running') return;
@@ -5641,6 +5697,18 @@ export function CaptionTranslator() {
                               }}
                             >
                               <div className={styles.folderBoxHeader}>
+                                <input
+                                  type="checkbox"
+                                  className={styles.folderSelectCheckbox}
+                                  checked={selectedDraftRunSet.has(path)}
+                                  disabled={processing.status === 'running'}
+                                  onChange={() => {
+                                    if (processing.status === 'running') return;
+                                    toggleDraftRunPath(path);
+                                  }}
+                                  onClick={(event) => event.stopPropagation()}
+                                  title="Chọn folder để chạy pipeline"
+                                />
                                 <img src={folderIconUrl} alt="folder" className={`${styles.folderIcon} ${styles.folderIconCompact}`} />
                                 <span className={styles.folderName}>{folderName}</span>
                               </div>
@@ -5701,6 +5769,26 @@ export function CaptionTranslator() {
               </div>
             )}
             {settings.inputType === 'draft' && (
+              <div className={styles.folderSelectActions}>
+                <Button
+                  variant="secondary"
+                  disabled={processing.status === 'running' || filteredDraftInputPaths.length === 0}
+                  onClick={handleSelectAllDraftRuns}
+                  title="Chọn tất cả folder đang hiển thị"
+                >
+                  Chọn tất cả
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={processing.status === 'running' || selectedDraftRunPaths.length === 0}
+                  onClick={handleClearDraftRuns}
+                  title="Bỏ chọn tất cả folder"
+                >
+                  Bỏ chọn
+                </Button>
+              </div>
+            )}
+            {settings.inputType === 'draft' && (
               <div className={styles.stepCardHint}>
                 Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
                 {draftDurationFilterMode !== 'all'
@@ -5714,6 +5802,9 @@ export function CaptionTranslator() {
               )}
               {settings.inputType === 'draft' && (
                 <span className={styles.stepMetaPill}>Sau lọc: {filteredDraftInputPaths.length}</span>
+              )}
+              {settings.inputType === 'draft' && (
+                <span className={styles.stepMetaPill}>Đã chọn: {selectedDraftRunPaths.length}</span>
               )}
               {settings.inputType === 'draft' && draftDurationFilterMode !== 'all' && (
                 <span className={styles.stepMetaPill}>Thiếu duration: {draftDurationFilterStats.missingDurationCount}</span>

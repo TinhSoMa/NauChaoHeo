@@ -303,8 +303,11 @@ async function prepareSubtitleAndDurationCore(
   const assMarginV = 0;
 
   const srtData = await parseSrtFile(srtPath);
-  if (!srtData.success || srtData.entries.length === 0) {
-    throw new Error(srtData.error || 'Không có subtitle entries');
+  if (!srtData.success) {
+    throw new Error(srtData.error || 'Không thể đọc subtitle entries');
+  }
+  if (srtData.entries.length === 0 && !options.allowEmptySubtitles) {
+    throw new Error('Không có subtitle entries');
   }
 
   for (let i = 0; i < srtData.entries.length - 1; i++) {

@@ -502,6 +502,7 @@ export interface RenderVideoOptions {
   width: number;          // Default: 1920
   height?: number;        // Optional - nếu không có sẽ tự tính từ style
   videoPath?: string;     // Đường dẫn video gốc để hardsub (nếu không có sẽ tạo nền đen)
+  allowEmptySubtitles?: boolean; // Cho phép render khi SRT không có entry (preview)
   targetDuration?: number; // Độ dài cố định (tuỳ chọn) cho nền đen
   hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
   style?: ASSStyleConfig;

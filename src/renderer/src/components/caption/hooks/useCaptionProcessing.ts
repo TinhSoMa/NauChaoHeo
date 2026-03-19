@@ -1174,7 +1174,7 @@ export function useCaptionProcessing({
       setAudioPreviewStatus('error');
       setAudioPreviewProgressText(
         isDraftFilterEmpty
-          ? 'Không có folder nào thỏa điều kiện lọc để test audio.'
+          ? 'Không có folder nào được chọn để test audio.'
           : 'Chưa có input để test audio.'
       );
       return;
@@ -1561,7 +1561,7 @@ export function useCaptionProcessing({
         current: 0,
         total: 0,
         message: isDraftFilterEmpty
-          ? 'Không có folder nào thỏa điều kiện lọc.'
+          ? 'Không có folder nào được chọn để chạy.'
           : 'Chưa có input để xử lý.',
       });
       return;

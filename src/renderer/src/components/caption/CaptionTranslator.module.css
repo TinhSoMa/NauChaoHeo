@@ -749,6 +749,18 @@
   width: 100%;
 }
 
+.folderSelectActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.folderSelectCheckbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
 /* Custom Scrollbar for inner grid */
 .folderGrid::-webkit-scrollbar {
   width: 6px;
@@ -771,6 +783,11 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
+.folderBoxDisabled {
+  opacity: 0.55;
+}
+
 
 .folderBoxHeader {
   display: flex;
