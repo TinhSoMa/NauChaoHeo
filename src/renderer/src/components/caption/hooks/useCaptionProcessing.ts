@@ -2438,6 +2438,19 @@ export function useCaptionProcessing({
               if (incomingBatchReport) {
                 batchReportsMap.set(incomingBatchReport.batchIndex, incomingBatchReport);
               }
+              const isGrokUi = (progressEvent.transport || cfg.translateMethod) === 'grok_ui';
+              if (isGrokUi) {
+                const chunkStart = progressEvent.translatedChunk?.startIndex ?? -1;
+                const chunkLines = Array.isArray(progressEvent.translatedChunk?.texts)
+                  ? progressEvent.translatedChunk?.texts.length
+                  : 0;
+                const reportStart = typeof incomingBatchReport?.startIndex === 'number'
+                  ? incomingBatchReport.startIndex
+                  : -1;
+                console.log(
+                  `[CaptionProcessing][GrokUI][Debug] progress batchIndex=${progressEvent.batchIndex} reportBatch=${incomingBatchReport?.batchIndex ?? 'n/a'} reportStart=${reportStart} chunkStart=${chunkStart} lines=${chunkLines}`
+                );
+              }
               const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
               const step3BatchState = buildStep3BatchState(totalBatches, batchReports);
               const translatedSnapshot = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
@@ -2456,7 +2469,7 @@ export function useCaptionProcessing({
                 },
               }));
               if (progressEvent.eventType === 'batch_completed' || progressEvent.eventType === 'batch_failed') {
-                const shouldAck = (progressEvent.transport || cfg.translateMethod) === 'grok_ui';
+                const shouldAck = isGrokUi;
                 if (!shouldAck) {
                   return;
                 }

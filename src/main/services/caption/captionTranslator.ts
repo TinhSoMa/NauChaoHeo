@@ -919,6 +919,8 @@ export async function translateAll(
     const methodLabel: TranslationTransport = useGeminiWebQueue
       ? 'gemini_webapi_queue'
       : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
+    const batchNumber = batch.batchIndex + 1;
+    const totalBatchCount = maxBatchIndex;
     const defaultTokenLabel = useGeminiWebQueue
       ? 'queue_rr'
       : (useImpit ? 'impit_cookie' : (useGrokUi ? 'grok_ui' : (assignedKey?.keyInfo.name || 'rotation')));
@@ -942,12 +944,12 @@ export async function translateAll(
         progressCallback({
           current: batch.startIndex,
           total: entries.length,
-          batchIndex: i,
-          totalBatches: batches.length,
+          batchIndex: batch.batchIndex,
+          totalBatches: totalBatchCount,
           status: 'translating',
           message: isRetryAttempt
-            ? `Batch ${i + 1}/${batches.length} retry lần ${attempt}/${totalAttempts} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`
-            : `Batch ${i + 1}/${batches.length} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`,
+            ? `Batch ${batchNumber}/${totalBatchCount} retry lần ${attempt}/${totalAttempts} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`
+            : `Batch ${batchNumber}/${totalBatchCount} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`,
           runId,
           eventType: isRetryAttempt ? 'batch_retry' : 'batch_started',
           transport: methodLabel,
@@ -965,12 +967,12 @@ export async function translateAll(
         progressCallback({
           current: batch.startIndex,
           total: entries.length,
-          batchIndex: i,
-          totalBatches: batches.length,
+          batchIndex: batch.batchIndex,
+          totalBatches: totalBatchCount,
           status: 'translating',
           message: isRetryAttempt
-            ? `Đang retry batch ${i + 1}/${batches.length} lần ${attempt}/${totalAttempts} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`
-            : `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`,
+            ? `Đang retry batch ${batchNumber}/${totalBatchCount} lần ${attempt}/${totalAttempts} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`
+            : `Đang dịch batch ${batchNumber}/${totalBatchCount} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`,
           runId,
           eventType: isRetryAttempt ? 'batch_retry' : 'batch_started',
           transport: methodLabel,
@@ -979,7 +981,7 @@ export async function translateAll(
       }
 
       console.log(
-        `[CaptionTranslator] Dispatch batch #${i + 1}/${batches.length} attempt ${attempt}/${totalAttempts} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
+        `[CaptionTranslator] Dispatch batch #${batchNumber}/${totalBatchCount} attempt ${attempt}/${totalAttempts} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
       );
 
       const batchResult: BatchTranslationResult = useGeminiWebQueue
@@ -1036,6 +1038,12 @@ export async function translateAll(
 
     batchReports.push(report);
 
+    if (useGrokUi) {
+      console.log(
+        `[CaptionTranslator][GrokUI] Batch #${report.batchIndex} mapping start=${report.startIndex} end=${report.endIndex} chunkStart=${batch.startIndex} lines=${report.expectedLines}`
+      );
+    }
+
     // Luôn giữ partial đã dịch được để renderer có thể lưu dần vào session
     for (let j = 0; j < finalTexts.length; j++) {
       allTranslatedTexts[batch.startIndex + j] = finalTexts[j];
@@ -1062,7 +1070,7 @@ export async function translateAll(
         current: Math.min(processedLines, entries.length),
         total: entries.length,
         batchIndex: report.batchIndex - 1,
-        totalBatches: batches.length,
+        totalBatches: totalBatchCount,
         status: report.status === 'success' ? 'translating' : 'error',
         message: completionMessage,
         runId,
@@ -1162,8 +1170,8 @@ export async function translateAll(
     progressCallback({
       current: entries.length,
       total: entries.length,
-      batchIndex: Math.max(0, batches.length - 1),
-      totalBatches: batches.length,
+      batchIndex: Math.max(0, maxBatchIndex - 1),
+      totalBatches: maxBatchIndex,
       status: 'completed',
       message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
       runId,
