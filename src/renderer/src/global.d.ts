@@ -112,7 +112,7 @@ interface TranslationOptions {
   model: string;
   linesPerBatch: number;
   promptTemplate?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
   retryBatchIndexes?: number[];
   projectId?: string;
   sourcePath?: string;
@@ -151,6 +151,7 @@ interface TranslationProgress {
   totalBatches: number;
   status: 'translating' | 'completed' | 'error';
   message: string;
+  runId?: string;
   eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
   batchReport?: TranslationBatchReport;
   translatedChunk?: {
@@ -158,7 +159,7 @@ interface TranslationProgress {
     texts: string[];
   };
   folderHint?: string;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue';
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
@@ -365,6 +366,7 @@ interface CaptionAPI {
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
+  ackTranslateProgress: (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => Promise<IpcApiResponse<void>>;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
   stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   readSession: (sessionPath: string) => Promise<IpcApiResponse<any | null>>;
@@ -547,6 +549,11 @@ interface AppSettings {
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;
+  grokUiProfileDir: string | null;
+  grokUiProfileName: string | null;
+  grokUiAnonymous: boolean;
+  grokUiTimeoutMs: number;
+  grokUiRequestDelayMs: number;
   // Caption logo (global)
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;
@@ -834,6 +841,30 @@ interface GeminiWebApiAPI {
   clearLogs: () => Promise<IpcApiResponse<void>>;
 }
 
+interface GrokUiHealthSnapshot {
+  checkedAt: number;
+  pythonOk: boolean;
+  modulesOk: boolean;
+  runtimeMode?: 'embedded' | 'system';
+  pythonPath?: string;
+  pythonVersion?: string;
+  modules?: Record<string, boolean>;
+  error?: string;
+}
+
+interface GrokUiProfileCreateResult {
+  profileDir: string;
+  profileName: string;
+  profilePath: string;
+}
+
+interface GrokUiAPI {
+  getHealth: () => Promise<IpcApiResponse<GrokUiHealthSnapshot>>;
+  testAsk: (payload: { prompt: string; timeoutMs?: number }) => Promise<IpcApiResponse<{ text: string }>>;
+  shutdown: () => Promise<IpcApiResponse<void>>;
+  createProfile: (payload: { profileDir?: string | null; profileName?: string | null; anonymous?: boolean }) => Promise<IpcApiResponse<GrokUiProfileCreateResult>>;
+}
+
 type AppLogLevel = 'info' | 'warn' | 'error' | 'success';
 type AppLogSource = 'main' | 'renderer';
 
@@ -969,6 +1000,9 @@ declare global {
 
       // Gemini WebAPI Ops API
       geminiWebApi: GeminiWebApiAPI;
+
+      // Grok UI API
+      grokUi: GrokUiAPI;
 
       // App Logs API
       appLogs: AppLogsAPI;

@@ -222,7 +222,7 @@ interface UseCaptionProcessingProps {
     logoScale?: number;
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
-    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
+    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
     thumbnailText?: string;
@@ -2455,6 +2455,30 @@ export function useCaptionProcessing({
                   lastMessage: msgCtx(progressEvent.message || `Bước 3: Cập nhật batch #${incomingBatchReport?.batchIndex || '?'}`),
                 },
               }));
+              if (progressEvent.eventType === 'batch_completed' || progressEvent.eventType === 'batch_failed') {
+                const shouldAck = (progressEvent.transport || cfg.translateMethod) === 'grok_ui';
+                if (!shouldAck) {
+                  return;
+                }
+                const ackBatchIndex = incomingBatchReport?.batchIndex ?? (progressEvent.batchIndex + 1);
+                const ackRunId = progressEvent.runId || runIdRef.current || undefined;
+                try {
+                  const ackResult = await window.electronAPI.caption.ackTranslateProgress({
+                    runId: ackRunId,
+                    batchIndex: ackBatchIndex,
+                    eventType: progressEvent.eventType,
+                  });
+                  if (!ackResult?.success) {
+                    console.warn('[CaptionProcessing][GrokUI] ACK thất bại:', ackResult?.error || 'UNKNOWN_ERROR');
+                  } else {
+                    console.log(
+                      `[CaptionProcessing][GrokUI] Đã gửi ACK (batch=${ackBatchIndex}, event=${progressEvent.eventType})`
+                    );
+                  }
+                } catch (error) {
+                  console.warn('[CaptionProcessing] Không thể ACK translate progress:', error);
+                }
+              }
             });
           await step3PersistQueue;
         };

@@ -45,7 +45,7 @@ export interface TranslationOptions {
   model: string;                 // "gemini-2.5-flash"
   linesPerBatch: number;         // Số dòng mỗi batch (default: 50)
   promptTemplate?: string;       // Custom prompt template
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue'; // Phương thức dịch (default: 'api')
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui'; // Phương thức dịch (default: 'api')
   retryBatchIndexes?: number[];  // Chỉ dịch lại các batch index 1-based (Step 3 resume)
   projectId?: string;
   sourcePath?: string;
@@ -98,6 +98,7 @@ export interface TranslationProgress extends TranslationQueuePacingMetadata {
   totalBatches: number;
   status: 'translating' | 'completed' | 'error';
   message: string;
+  runId?: string;
   eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
   batchReport?: TranslationBatchReport;
   translatedChunk?: {
@@ -105,7 +106,7 @@ export interface TranslationProgress extends TranslationQueuePacingMetadata {
     texts: string[];
   };
   folderHint?: string;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue';
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
@@ -283,6 +284,7 @@ export const CAPTION_IPC_CHANNELS = {
   PARSE_SRT: 'caption:parseSrt',
   TRANSLATE: 'caption:translate',
   TRANSLATE_PROGRESS: 'caption:translateProgress',
+  TRANSLATE_PROGRESS_ACK: 'caption:translateProgressAck',
   EXPORT_SRT: 'caption:exportSrt',
   EXPORT_PLAIN_TEXT: 'caption:exportPlainText',
   SPLIT: 'caption:split',
@@ -914,7 +916,7 @@ export interface CaptionProjectSettingsValues {
   subtitleFontSizeRel?: number;
   inputType?: 'srt' | 'draft';
   geminiModel?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
   voice?: string;
   rate?: string;
   volume?: string;

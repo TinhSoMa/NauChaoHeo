@@ -397,7 +397,7 @@ function parseStep3RuntimeHints(message: string): { apiLabel?: string; tokenLabe
   if (!text) {
     return {};
   }
-  const apiMatch = text.match(/\[(api|impit|gemini_webapi_queue)\]/i);
+  const apiMatch = text.match(/\[(api|impit|gemini_webapi_queue|grok_ui)\]/i);
   const tokenMatch = text.match(/\[token:([^\]]+)\]/i);
   return {
     apiLabel: apiMatch?.[1]?.toLowerCase(),
@@ -3556,13 +3556,17 @@ export function CaptionTranslator() {
       ? 'impit'
       : settings.translateMethod === 'gemini_webapi_queue'
         ? 'gemini_webapi_queue'
-        : 'api';
+        : settings.translateMethod === 'grok_ui'
+          ? 'grok_ui'
+          : 'api';
     const nextApiLabel = (hints.apiLabel || fallbackApi).toLowerCase();
     const fallbackToken = nextApiLabel === 'impit'
       ? 'impit_cookie'
       : nextApiLabel === 'gemini_webapi_queue'
         ? 'queue_rr'
-        : 'rotation';
+        : nextApiLabel === 'grok_ui'
+          ? 'grok_ui'
+          : 'rotation';
     const nextTokenLabel = (hints.tokenLabel || fallbackToken).trim();
 
     setStep3RuntimeTimer((prev) => {
@@ -3994,7 +3998,9 @@ export function CaptionTranslator() {
       : 'Off';
     return [
       { key: 'Input', value: settings.inputType === 'draft' ? 'Draft' : 'SRT' },
-      { key: 'Dịch', value: `${settings.translateMethod?.toUpperCase() || 'API'} / ${settings.geminiModel}` },
+      { key: 'Dịch', value: settings.translateMethod === 'api'
+        ? `${settings.translateMethod?.toUpperCase() || 'API'} / ${settings.geminiModel}`
+        : `${(settings.translateMethod || 'api').toUpperCase()}` },
       {
         key: 'TTS',
         value: isCapCutVoiceSelected
@@ -5914,6 +5920,12 @@ export function CaptionTranslator() {
                 onChange={() => settings.setTranslateMethod('gemini_webapi_queue')}
                 name="translateMethod"
               />
+              <RadioButton
+                label="Grok UI"
+                checked={settings.translateMethod === 'grok_ui'}
+                onChange={() => settings.setTranslateMethod('grok_ui')}
+                name="translateMethod"
+              />
             </div>
             <div className={styles.inputGroup}>
               <label className={styles.label}>Gemini model</label>
@@ -5936,7 +5948,9 @@ export function CaptionTranslator() {
                 ? 'Impit bỏ qua model API.'
                 : settings.translateMethod === 'gemini_webapi_queue'
                   ? 'GeminiWebApi Queue dùng account từ gemini_chat_config và xoay vòng qua queue.'
-                  : 'API sẽ dùng model đã chọn để dịch batch.'}
+                  : settings.translateMethod === 'grok_ui'
+                    ? 'Grok UI dùng Grok3API qua trình duyệt, không phụ thuộc Gemini model.'
+                    : 'API sẽ dùng model đã chọn để dịch batch.'}
             </div>
           </div>
           <div className={styles.stepCard}>
@@ -5955,6 +5969,8 @@ export function CaptionTranslator() {
                       ? 'impit'
                       : settings.translateMethod === 'gemini_webapi_queue'
                         ? 'gemini_webapi_queue'
+                        : settings.translateMethod === 'grok_ui'
+                          ? 'grok_ui'
                         : 'api'
                   )).toUpperCase()}
                 </span>
@@ -5968,6 +5984,8 @@ export function CaptionTranslator() {
                       ? 'impit_cookie'
                       : settings.translateMethod === 'gemini_webapi_queue'
                         ? 'queue_rr'
+                        : settings.translateMethod === 'grok_ui'
+                          ? 'grok_ui'
                         : 'rotation'
                   )}
                 </span>

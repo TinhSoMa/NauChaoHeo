@@ -31,6 +31,11 @@ export interface AppSettings {
   geminiSendIntervalMode: 'fixed' | 'random'; // Chế độ khoảng gửi: cố định hoặc ngẫu nhiên
   apiWorkerCount: number; // Số worker API song song (Story + Caption Step3)
   apiRequestDelayMs: number; // Delay giữa request API (ms)
+  grokUiProfileDir: string | null;
+  grokUiProfileName: string | null;
+  grokUiAnonymous: boolean;
+  grokUiTimeoutMs: number;
+  grokUiRequestDelayMs: number;
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
   summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
   captionPromptId: string | null; // Prompt ID cho chức năng dịch caption (Step 3)
@@ -102,6 +107,12 @@ export const API_WORKER_COUNT_MAX = 10;
 export const API_REQUEST_DELAY_DEFAULT_MS = 500;
 export const API_REQUEST_DELAY_MIN_MS = 0;
 export const API_REQUEST_DELAY_MAX_MS = 30_000;
+export const GROK_UI_TIMEOUT_DEFAULT_MS = 120_000;
+export const GROK_UI_TIMEOUT_MIN_MS = 10_000;
+export const GROK_UI_TIMEOUT_MAX_MS = 300_000;
+export const GROK_UI_REQUEST_DELAY_DEFAULT_MS = 5_000;
+export const GROK_UI_REQUEST_DELAY_MIN_MS = 0;
+export const GROK_UI_REQUEST_DELAY_MAX_MS = 30_000;
 
 const DEFAULT_TYPOGRAPHY_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
@@ -123,6 +134,14 @@ const DEFAULT_TYPOGRAPHY_LAYOUT: CaptionTypographyLayoutDefaults = {
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
+
+function getDefaultGrokUiProfileDir(): string {
+  try {
+    return path.join(app.getPath('userData'), 'grok3_profile');
+  } catch {
+    return path.join(process.cwd(), 'grok3_profile');
+  }
+}
 
 function cloneTypographyLayout(layout: CaptionTypographyLayoutDefaults): CaptionTypographyLayoutDefaults {
   return {
@@ -164,6 +183,22 @@ function normalizeApiRequestDelayMs(rawValue: unknown): number {
     return API_REQUEST_DELAY_DEFAULT_MS;
   }
   return clamp(Math.floor(numeric), API_REQUEST_DELAY_MIN_MS, API_REQUEST_DELAY_MAX_MS);
+}
+
+function normalizeGrokUiTimeoutMs(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return GROK_UI_TIMEOUT_DEFAULT_MS;
+  }
+  return clamp(Math.floor(numeric), GROK_UI_TIMEOUT_MIN_MS, GROK_UI_TIMEOUT_MAX_MS);
+}
+
+function normalizeGrokUiRequestDelayMs(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return GROK_UI_REQUEST_DELAY_DEFAULT_MS;
+  }
+  return clamp(Math.floor(numeric), GROK_UI_REQUEST_DELAY_MIN_MS, GROK_UI_REQUEST_DELAY_MAX_MS);
 }
 
 function normalizePoint(
@@ -463,6 +498,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiSendIntervalMode: 'fixed',
   apiWorkerCount: API_WORKER_COUNT_DEFAULT,
   apiRequestDelayMs: API_REQUEST_DELAY_DEFAULT_MS,
+  grokUiProfileDir: getDefaultGrokUiProfileDir(),
+  grokUiProfileName: 'Default',
+  grokUiAnonymous: false,
+  grokUiTimeoutMs: GROK_UI_TIMEOUT_DEFAULT_MS,
+  grokUiRequestDelayMs: GROK_UI_REQUEST_DELAY_DEFAULT_MS,
   translationPromptId: null, // Tự động tìm prompt dịch
   summaryPromptId: null, // Tự động tìm prompt tóm tắt
   captionPromptId: null, // Tự động dùng prompt mặc định
@@ -536,6 +576,11 @@ class AppSettingsServiceClass {
           geminiSendIntervalMode: normalizeGeminiSendIntervalMode(loaded?.geminiSendIntervalMode),
           apiWorkerCount: normalizeApiWorkerCount(loaded?.apiWorkerCount),
           apiRequestDelayMs: normalizeApiRequestDelayMs(loaded?.apiRequestDelayMs),
+          grokUiProfileDir: normalizeStringOrNull(loaded?.grokUiProfileDir) ?? DEFAULT_SETTINGS.grokUiProfileDir,
+          grokUiProfileName: normalizeStringOrNull(loaded?.grokUiProfileName) ?? DEFAULT_SETTINGS.grokUiProfileName,
+          grokUiAnonymous: loaded?.grokUiAnonymous === true,
+          grokUiTimeoutMs: normalizeGrokUiTimeoutMs(loaded?.grokUiTimeoutMs),
+          grokUiRequestDelayMs: normalizeGrokUiRequestDelayMs(loaded?.grokUiRequestDelayMs),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
           captionStandaloneSettings: normalizeCaptionStandaloneSettings(loaded?.captionStandaloneSettings),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
@@ -614,6 +659,18 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'apiRequestDelayMs')) {
       nextPartial.apiRequestDelayMs = normalizeApiRequestDelayMs(partial.apiRequestDelayMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'grokUiTimeoutMs')) {
+      nextPartial.grokUiTimeoutMs = normalizeGrokUiTimeoutMs(partial.grokUiTimeoutMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'grokUiRequestDelayMs')) {
+      nextPartial.grokUiRequestDelayMs = normalizeGrokUiRequestDelayMs(partial.grokUiRequestDelayMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'grokUiProfileDir')) {
+      nextPartial.grokUiProfileDir = normalizeStringOrNull(partial.grokUiProfileDir);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'grokUiProfileName')) {
+      nextPartial.grokUiProfileName = normalizeStringOrNull(partial.grokUiProfileName);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'proxyMode')) {
       nextPartial.proxyMode = normalizeProxyMode(partial.proxyMode);

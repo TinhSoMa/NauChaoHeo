@@ -17,6 +17,7 @@ import { AppSettingsService } from '../appSettings';
 import { type KeyInfo } from '../../../shared/types/gemini';
 import { getApiManager } from '../gemini/apiManager';
 import { callGeminiImpitAutoSelect } from '../shared';
+import { getGrokUiRuntime } from '../grokUi';
 import { getGeminiWebApiRuntime } from '../geminiWebApi';
 import { RotationJobExecutionError } from '../shared/universalRotationQueue';
 import {
@@ -42,17 +43,17 @@ import {
   TextBatch,
 } from './textSplitter';
 
-type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue';
+type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
 
 const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
-let activeTranslateRunId: string | null = null;
+let activeTranslateRunId: string | undefined;
 let translateStopRequested = false;
-let translateStopRunId: string | null = null;
+let translateStopRunId: string | undefined;
 
-const normalizeRunId = (value?: string | null): string | null => {
-  if (typeof value !== 'string') return null;
+const normalizeRunId = (value?: string | null): string | undefined => {
+  if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return trimmed.length > 0 ? trimmed : undefined;
 };
 
 const shouldStopTranslation = (runId?: string | null): boolean => {
@@ -75,11 +76,11 @@ export function beginTranslationRun(runId?: string | null): void {
 export function endTranslationRun(runId?: string | null): void {
   const normalized = normalizeRunId(runId);
   if (!normalized || activeTranslateRunId === normalized) {
-    activeTranslateRunId = null;
+    activeTranslateRunId = undefined;
   }
   if (translateStopRunId && normalized && translateStopRunId === normalized) {
     translateStopRequested = false;
-    translateStopRunId = null;
+    translateStopRunId = undefined;
   }
 }
 
@@ -88,7 +89,7 @@ export function stopActiveTranslation(runId?: string | null): { stopped: boolean
   const targetRunId = normalized || activeTranslateRunId;
   if (!targetRunId) {
     translateStopRequested = false;
-    translateStopRunId = null;
+    translateStopRunId = undefined;
     return { stopped: false, message: 'Không có tiến trình dịch đang chạy.' };
   }
   translateStopRequested = true;
@@ -344,6 +345,62 @@ async function translateBatchImpit(
   }
 }
 
+/**
+ * Dịch một batch text qua Grok UI (Grok3API UI mode)
+ */
+async function translateBatchGrokUi(
+  batch: TextBatch,
+  targetLanguage: string,
+  promptTemplate: string | undefined,
+  timeoutMs: number
+): Promise<BatchTranslationResult> {
+  console.log(`[CaptionTranslator] [GrokUI] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
+
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate);
+
+  try {
+    const result = await getGrokUiRuntime().ask({ prompt, timeoutMs });
+
+    if (!result.success || !result.text) {
+      return {
+        success: false,
+        translatedTexts: [],
+        error: result.error || 'Không có response từ Grok UI',
+        transport: 'grok_ui',
+      };
+    }
+
+    const parsed = parseJsonTranslationResponse(result.text, batch.texts.length);
+    const translatedTexts = parsed.translatedTexts;
+    if (!parsed.ok) {
+      return {
+        success: false,
+        translatedTexts,
+        error: `${parsed.errorCode || 'ERROR_PROCESSING_FAILED'}: ${parsed.errorMessage || 'JSON response không hợp lệ'}`,
+        transport: 'grok_ui',
+      };
+    }
+
+    const validCount = translatedTexts.filter((t) => t.trim()).length;
+    if (validCount < batch.texts.length) {
+      console.warn(
+        `[CaptionTranslator] [GrokUI] Batch ${batch.batchIndex + 1}: Thiếu dòng ${validCount}/${batch.texts.length} — sẽ retry`
+      );
+      return { success: false, translatedTexts, error: `Thiếu ${batch.texts.length - validCount} dòng`, transport: 'grok_ui' };
+    }
+
+    return { success: true, translatedTexts, transport: 'grok_ui' };
+  } catch (error) {
+    console.error(`[CaptionTranslator] [GrokUI] Lỗi dịch batch ${batch.batchIndex + 1}:`, error);
+    return {
+      success: false,
+      translatedTexts: [],
+      error: String(error),
+      transport: 'grok_ui',
+    };
+  }
+}
+
 async function translateBatchGeminiWebQueue(
   batch: TextBatch,
   targetLanguage: string,
@@ -543,7 +600,8 @@ async function translateBatchGeminiWebQueue(
  */
 export async function translateAll(
   options: TranslationOptions,
-  progressCallback?: (progress: TranslationProgress) => void
+  progressCallback?: (progress: TranslationProgress) => void,
+  progressAck?: (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => Promise<void>
 ): Promise<TranslationResult> {
   const {
     entries,
@@ -640,6 +698,7 @@ export async function translateAll(
 
   const useImpit = options.translateMethod === 'impit';
   const useGeminiWebQueue = options.translateMethod === 'gemini_webapi_queue';
+  const useGrokUi = options.translateMethod === 'grok_ui';
   const projectId = (options.projectId || '').trim() || '__default_project__';
   const sourcePath = (options.sourcePath || '').trim() || '__unknown_source__';
   const apiWorkerCountSetting = (() => {
@@ -658,9 +717,27 @@ export async function translateAll(
       return 500;
     }
   })();
-  const MAX_CONCURRENT = useImpit ? 3 : (useGeminiWebQueue ? 5 : apiWorkerCountSetting);
+  const grokUiRequestDelayMs = (() => {
+    try {
+      const raw = Number(AppSettingsService.getAll().grokUiRequestDelayMs);
+      return Number.isFinite(raw) ? Math.min(30000, Math.max(0, Math.floor(raw))) : 5000;
+    } catch (error) {
+      return 5000;
+    }
+  })();
+  const grokUiTimeoutMs = (() => {
+    try {
+      const raw = Number(AppSettingsService.getAll().grokUiTimeoutMs);
+      return Number.isFinite(raw) ? Math.min(300000, Math.max(10000, Math.floor(raw))) : 120000;
+    } catch (error) {
+      return 120000;
+    }
+  })();
+  const MAX_CONCURRENT = useGrokUi ? 1 : (useImpit ? 3 : (useGeminiWebQueue ? 5 : apiWorkerCountSetting));
   let queueGapMs = getCaptionStep3QueueGapMs();
-  if (!useGeminiWebQueue && !useImpit) {
+  if (useGrokUi) {
+    queueGapMs = grokUiRequestDelayMs;
+  } else if (!useGeminiWebQueue && !useImpit) {
     queueGapMs = apiRequestDelayMs;
   }
   let lastDispatchTiming: TranslationQueuePacingMetadata | undefined;
@@ -710,6 +787,20 @@ export async function translateAll(
     }
     const translatedCount = countTranslatedLines(normalizedTexts);
     return translatedCount < expectedCount;
+  };
+
+  const awaitProgressAckIfNeeded = async (
+    eventType: 'batch_completed' | 'batch_failed',
+    batchIndex: number
+  ): Promise<void> => {
+    if (!useGrokUi || !progressAck) {
+      return;
+    }
+    try {
+      await progressAck({ runId, batchIndex, eventType });
+    } catch (error) {
+      console.warn(`[CaptionTranslator] Grok UI ACK error: ${String(error)}`);
+    }
   };
 
   if (useGeminiWebQueue) {
@@ -775,7 +866,7 @@ export async function translateAll(
     };
   };
 
-  const registerUnexpectedBatchFailure = (batch: TextBatch, rawError: unknown): void => {
+  const registerUnexpectedBatchFailure = async (batch: TextBatch, rawError: unknown): Promise<void> => {
     const batchNumber = batch.batchIndex + 1;
     if (batchReports.some((report) => report.batchIndex === batchNumber)) {
       return;
@@ -799,7 +890,9 @@ export async function translateAll(
     errors.push(errorMessage);
 
     if (progressCallback && !shouldStopTranslation(runId)) {
-      const methodLabel: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
+      const methodLabel: TranslationTransport = useGeminiWebQueue
+        ? 'gemini_webapi_queue'
+        : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
       progressCallback({
         current: Math.min(processedLines, entries.length),
         total: entries.length,
@@ -807,6 +900,7 @@ export async function translateAll(
         totalBatches: batches.length,
         status: 'error',
         message: `Batch #${report.batchIndex} bị lỗi ngoài dự kiến, đã đánh dấu failed.`,
+        runId,
         eventType: 'batch_failed',
         batchReport: report,
         translatedChunk: {
@@ -816,13 +910,18 @@ export async function translateAll(
         transport: methodLabel,
       });
     }
+    await awaitProgressAckIfNeeded('batch_failed', report.batchIndex);
   };
 
   // Dịch song song tối đa MAX_CONCURRENT batch cùng lúc
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
     assertNotStopped();
-    const methodLabel: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
-    const defaultTokenLabel = useGeminiWebQueue ? 'queue_rr' : (useImpit ? 'impit_cookie' : (assignedKey?.keyInfo.name || 'rotation'));
+    const methodLabel: TranslationTransport = useGeminiWebQueue
+      ? 'gemini_webapi_queue'
+      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
+    const defaultTokenLabel = useGeminiWebQueue
+      ? 'queue_rr'
+      : (useImpit ? 'impit_cookie' : (useGrokUi ? 'grok_ui' : (assignedKey?.keyInfo.name || 'rotation')));
     const queueGapSecLabel = Number((queueGapMs / 1000).toFixed(1)).toString().replace(/\.0$/, '');
     const dispatchModeLabel = useGeminiWebQueue
       ? `dispatch mỗi ${queueGapSecLabel}s, không chờ batch trước`
@@ -849,6 +948,7 @@ export async function translateAll(
           message: isRetryAttempt
             ? `Batch ${i + 1}/${batches.length} retry lần ${attempt}/${totalAttempts} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`
             : `Batch ${i + 1}/${batches.length} đang chờ dispatch ${queueGapSecLabel}s [${methodLabel}] [token:${progressTokenLabel}]...`,
+          runId,
           eventType: isRetryAttempt ? 'batch_retry' : 'batch_started',
           transport: methodLabel,
           queuePacingMode: 'dispatch_spacing_global',
@@ -871,6 +971,7 @@ export async function translateAll(
           message: isRetryAttempt
             ? `Đang retry batch ${i + 1}/${batches.length} lần ${attempt}/${totalAttempts} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`
             : `Đang dịch batch ${i + 1}/${batches.length} [${methodLabel}] [token:${progressTokenLabel}] (${dispatchModeLabel})...`,
+          runId,
           eventType: isRetryAttempt ? 'batch_retry' : 'batch_started',
           transport: methodLabel,
           ...dispatchTiming,
@@ -885,7 +986,9 @@ export async function translateAll(
         ? await translateBatchGeminiWebQueue(batch, targetLanguage, promptTemplate, projectId, sourcePath, geminiWebQueueContext!)
         : useImpit
           ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
-          : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
+          : useGrokUi
+            ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, grokUiTimeoutMs)
+            : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
 
       assertNotStopped();
       lastResult = batchResult;
@@ -909,6 +1012,13 @@ export async function translateAll(
       const retryable = shouldRetryBatch(batchResult, normalizedTexts, batch.texts.length);
       if (!retryable || attempt >= totalAttempts) {
         break;
+      }
+      if (useGrokUi) {
+        const retryCooldownUntil = Date.now() + queueGapMs;
+        nextDispatchAtMs = Math.max(nextDispatchAtMs, retryCooldownUntil);
+        console.log(
+          `[CaptionTranslator] [GrokUI] Cooldown trước retry ${queueGapMs}ms (next=${new Date(nextDispatchAtMs).toISOString()})`
+        );
       }
     }
 
@@ -955,6 +1065,7 @@ export async function translateAll(
         totalBatches: batches.length,
         status: report.status === 'success' ? 'translating' : 'error',
         message: completionMessage,
+        runId,
         eventType: report.status === 'success' ? 'batch_completed' : 'batch_failed',
         batchReport: report,
         translatedChunk: {
@@ -968,6 +1079,25 @@ export async function translateAll(
         ...pacingMetadata,
       });
     }
+    await awaitProgressAckIfNeeded(
+      report.status === 'success' ? 'batch_completed' : 'batch_failed',
+      report.batchIndex
+    );
+    if (useGrokUi) {
+      const now = Date.now();
+      const cooldownUntil = now + queueGapMs;
+      nextDispatchAtMs = Math.max(nextDispatchAtMs, cooldownUntil);
+      lastDispatchTiming = {
+        queuePacingMode: 'dispatch_spacing_global',
+        queueGapMs,
+        startedAt: lastDispatchTiming?.startedAt ?? now,
+        endedAt: now,
+        nextAllowedAt: cooldownUntil,
+      };
+      console.log(
+        `[CaptionTranslator] [GrokUI] Cooldown sau ACK ${queueGapMs}ms (next=${new Date(nextDispatchAtMs).toISOString()})`
+      );
+    }
   };
 
   // Chạy theo từng nhóm MAX_CONCURRENT batch
@@ -975,11 +1105,11 @@ export async function translateAll(
   if (useGeminiWebQueue) {
     assertNotStopped();
     const dispatchPromises = batches.map((batch, index) =>
-      processBatch(batch, index).catch((error) => {
+      processBatch(batch, index).catch(async (error) => {
         if (isStopSignal(error)) {
           throw error;
         }
-        registerUnexpectedBatchFailure(batch, error);
+        await registerUnexpectedBatchFailure(batch, error);
       })
     );
     await Promise.all(dispatchPromises);
@@ -990,7 +1120,7 @@ export async function translateAll(
 
       // Pre-assign 1 key riêng biệt cho mỗi batch trong chunk (chỉ áp dụng cho API, không phải impit)
       const assignedKeys: Array<{ apiKey: string; keyInfo: KeyInfo } | undefined> = [];
-      if (!useImpit) {
+      if (!useImpit && !useGrokUi) {
         for (let k = 0; k < chunk.length; k++) {
           const { apiKey, keyInfo } = manager.getNextApiKey();
           assignedKeys.push(apiKey && keyInfo ? { apiKey, keyInfo } : undefined);
@@ -1005,12 +1135,12 @@ export async function translateAll(
           new Promise<void>((resolve, reject) =>
             setTimeout(() => {
               processBatch(batch, i + offset, assignedKeys[offset])
-                .catch((error) => {
+                .catch(async (error) => {
                   if (isStopSignal(error)) {
                     reject(error);
                     return;
                   }
-                  registerUnexpectedBatchFailure(batch, error);
+                  await registerUnexpectedBatchFailure(batch, error);
                 })
                 .finally(resolve);
             }, offset * 300)
@@ -1025,7 +1155,9 @@ export async function translateAll(
 
   // Report completion
   if (progressCallback && !shouldStopTranslation(runId)) {
-    const summaryTransport: TranslationTransport = useGeminiWebQueue ? 'gemini_webapi_queue' : (useImpit ? 'impit' : 'api');
+    const summaryTransport: TranslationTransport = useGeminiWebQueue
+      ? 'gemini_webapi_queue'
+      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
     const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
     progressCallback({
       current: entries.length,
@@ -1034,6 +1166,7 @@ export async function translateAll(
       totalBatches: batches.length,
       status: 'completed',
       message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
+      runId,
       eventType: 'summary',
       transport: summaryTransport,
       queueRuntimeKey: useGeminiWebQueue ? CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY : undefined,

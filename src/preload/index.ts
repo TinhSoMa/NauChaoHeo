@@ -11,6 +11,7 @@ import { cutVideoApi, CutVideoAPI } from './cutVideoApi'
 import { createRotationQueueApi, RotationQueueAPI } from './rotationQueueApi'
 import { appLogsApi, AppLogsAPI } from './appLogsApi'
 import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
+import { grokUiApi, GrokUiAPI } from './grokUiApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -56,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Gemini WebAPI Ops API
   geminiWebApi: geminiWebApiApi,
 
+  // Grok UI API
+  grokUi: grokUiApi,
+
   // App Logs API
   appLogs: appLogsApi,
 
@@ -93,6 +97,7 @@ declare global {
       appSettings: AppSettingsAPI
       geminiChat: GeminiChatAPI
       geminiWebApi: GeminiWebApiAPI
+      grokUi: GrokUiAPI
       appLogs: AppLogsAPI
       proxy: ProxyAPI
       prompt: PromptAPI

@@ -54,6 +54,11 @@ export interface AppSettings {
   geminiSendIntervalMode: 'fixed' | 'random';
   apiWorkerCount: number;
   apiRequestDelayMs: number;
+  grokUiProfileDir: string | null;
+  grokUiProfileName: string | null;
+  grokUiAnonymous: boolean;
+  grokUiTimeoutMs: number;
+  grokUiRequestDelayMs: number;
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;

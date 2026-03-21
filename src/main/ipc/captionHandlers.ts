@@ -38,6 +38,9 @@ interface IpcResponse<T = unknown> {
 
 const SUPPORTED_CAPTION_FONT_EXTENSIONS = new Set(['.ttf', '.otf']);
 const sessionPathLocks = new Map<string, Promise<unknown>>();
+const translateAckWaiters = new Map<string, { resolve: () => void; timer: NodeJS.Timeout }>();
+const translateAckEarly = new Map<string, number>();
+const TRANSLATE_ACK_TIMEOUT_MS = 30_000;
 
 async function withSessionLock<T>(sessionPath: string, task: () => Promise<T>): Promise<T> {
   const key = sessionPath;
@@ -239,6 +242,44 @@ function decodeTextFromBuffer(buffer: Buffer): string {
   return maybeFixMojibake(text);
 }
 
+function buildTranslateAckKey(payload: { runId?: string; batchIndex: number; eventType: string }): string {
+  const runId = (payload.runId || '__default_run__').trim();
+  return `${runId}:${payload.eventType}:${payload.batchIndex}`;
+}
+
+function recordEarlyTranslateAck(key: string): void {
+  translateAckEarly.set(key, Date.now());
+  if (translateAckEarly.size > 1000) {
+    const threshold = Date.now() - 5 * 60_000;
+    for (const [storedKey, ts] of translateAckEarly.entries()) {
+      if (ts < threshold) {
+        translateAckEarly.delete(storedKey);
+      }
+    }
+  }
+}
+
+async function waitForTranslateAck(payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }): Promise<boolean> {
+  const key = buildTranslateAckKey(payload);
+  if (translateAckEarly.has(key)) {
+    translateAckEarly.delete(key);
+    return true;
+  }
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      translateAckWaiters.delete(key);
+      resolve(false);
+    }, TRANSLATE_ACK_TIMEOUT_MS);
+    translateAckWaiters.set(key, {
+      resolve: () => {
+        clearTimeout(timer);
+        resolve(true);
+      },
+      timer,
+    });
+  });
+}
+
 function decodeJsonTextFromBuffer(buffer: Buffer): string {
   if (!buffer || buffer.length === 0) {
     return '';
@@ -391,6 +432,32 @@ export function registerCaptionHandlers(): void {
   // TRANSLATE
   // ============================================
   ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS_ACK,
+    async (_event: IpcMainInvokeEvent, payload?: { runId?: string; batchIndex?: number; eventType?: string }): Promise<IpcResponse<void>> => {
+      try {
+        if (!payload || typeof payload.batchIndex !== 'number' || !payload.eventType) {
+          return { success: false, error: 'INVALID_ACK_PAYLOAD' };
+        }
+        const key = buildTranslateAckKey({
+          runId: payload.runId,
+          batchIndex: payload.batchIndex,
+          eventType: payload.eventType,
+        });
+        const waiter = translateAckWaiters.get(key);
+        if (waiter) {
+          waiter.resolve();
+          translateAckWaiters.delete(key);
+        } else {
+          recordEarlyTranslateAck(key);
+        }
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
     CAPTION_IPC_CHANNELS.TRANSLATE,
     async (
       event: IpcMainInvokeEvent,
@@ -421,7 +488,27 @@ export function registerCaptionHandlers(): void {
           }
         };
 
-        const result = await CaptionService.translateAll(options, progressCallback);
+        const progressAck = async (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => {
+          if (options.translateMethod !== 'grok_ui') {
+            return;
+          }
+          const startedAt = Date.now();
+          console.log(
+            `[CaptionHandlers] Grok UI chờ ACK (runId=${payload.runId || 'n/a'}, batch=${payload.batchIndex}, event=${payload.eventType})`
+          );
+          const ok = await waitForTranslateAck(payload);
+          if (!ok) {
+            console.warn(
+              `[CaptionHandlers] Grok UI ACK timeout (runId=${payload.runId || 'n/a'}, batch=${payload.batchIndex}, event=${payload.eventType})`
+            );
+            return;
+          }
+          console.log(
+            `[CaptionHandlers] Grok UI đã nhận ACK sau ${Date.now() - startedAt}ms (runId=${payload.runId || 'n/a'}, batch=${payload.batchIndex})`
+          );
+        };
+
+        const result = await CaptionService.translateAll(options, progressCallback, progressAck);
         return { success: result.success, data: result, error: result.errors?.join(', ') };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi translate:', error);

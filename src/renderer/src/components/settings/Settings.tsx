@@ -14,7 +14,8 @@ import {
   Network,
   FileText,
   ListOrdered,
-  Terminal
+  Terminal,
+  Bot
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -27,6 +28,7 @@ import { TtsSettings } from './TtsSettings';
 import { AppSettings } from './AppSettings';
 import { ApiKeysSettings } from './ApiKeysSettings';
 import { GeminiChatSettings } from './GeminiChatSettings';
+import { GrokUiSettings } from './GrokUiSettings';
 import { ProxySettings } from './ProxySettings';
 import { PromptSettings } from './PromptSettings';
 import { QueueMonitorSettings } from './QueueMonitorSettings';
@@ -77,6 +79,12 @@ const menuItems: SettingsMenuItem[] = [
     icon: MessageCircle 
   },
   { 
+    id: 'grokUi', 
+    label: 'Grok UI', 
+    desc: 'Cấu hình Grok3API (UI mode) và profile trình duyệt',
+    icon: Bot 
+  },
+  { 
     id: 'proxy', 
     label: 'Proxy Rotation', 
     desc: 'Quản lý proxy rotation để tránh rate limit',
@@ -125,6 +133,7 @@ export function Settings() {
       {activeTab === 'app' && <AppSettings onBack={handleBack} />}
       {activeTab === 'apikeys' && <ApiKeysSettings onBack={handleBack} />}
       {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
+      {activeTab === 'grokUi' && <GrokUiSettings onBack={handleBack} />}
       {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}
       {activeTab === 'queueMonitor' && <QueueMonitorSettings onBack={handleBack} />}
       {activeTab === 'debugLogs' && <DebugLogsSettings onBack={handleBack} />}

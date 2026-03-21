@@ -45,6 +45,7 @@ export interface CaptionAPI {
   // Translation
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
   onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
+  ackTranslateProgress: (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => Promise<IpcApiResponse<void>>;
 
   // Split text files
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
@@ -122,6 +123,9 @@ export function createCaptionAPI(): CaptionAPI {
         callback(progress);
       });
     },
+
+    ackTranslateProgress: (payload) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS_ACK, payload),
 
     split: (options: SplitOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options),

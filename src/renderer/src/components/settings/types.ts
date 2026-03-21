@@ -13,6 +13,7 @@ export type SettingsTab =
   | 'app'
   | 'apikeys'
   | 'geminichat'
+  | 'grokUi'
   | 'proxy'
   | 'prompts'
   | 'queueMonitor'

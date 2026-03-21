@@ -21,6 +21,15 @@ Versions are pinned in `requirements-pycapcut-lock.txt`:
 - `numpy==2.3.4`
 - `pillow==11.3.0`
 
+## External Python Packages (Not Bundled)
+
+Các tính năng UI automation (Grok UI) sử dụng Python packages nằm ngoài embedded runtime:
+
+- `grok3api`
+- `undetected-chromedriver`
+
+Các package này được load từ `PYTHONPATH` (mặc định: `D:\Grok\Grok3API`) và cần sẵn Python + trình duyệt Chrome/Edge trên máy.
+
 ## License Collection
 
 During `npm run prepare:python-runtime`, license metadata is copied into:

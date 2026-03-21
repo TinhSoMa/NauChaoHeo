@@ -14,6 +14,7 @@ export interface TranslationProgress {
   current: number;
   total: number;
   message: string;
+  runId?: string;
   batchIndex?: number;
   totalBatches?: number;
   status?: 'translating' | 'completed' | 'error';
@@ -24,7 +25,7 @@ export interface TranslationProgress {
     texts: string[];
   };
   folderHint?: string;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue';
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;

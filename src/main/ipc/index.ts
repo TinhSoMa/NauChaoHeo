@@ -16,6 +16,7 @@ import { registerCutVideoHandlers } from './cutVideoHandlers';
 import { registerRotationQueueHandlers } from './rotationQueueHandlers';
 import { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 import { registerAppLogHandlers } from './appLogHandlers';
+import { registerGrokUiHandlers } from './grokUiHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -51,6 +52,9 @@ export function registerAllHandlers(): void {
   // Dang ky Gemini WebAPI ops handlers
   registerGeminiWebApiHandlers();
 
+  // Dang ky Grok UI handlers
+  registerGrokUiHandlers();
+
   // Dang ky App Logs handlers
   registerAppLogHandlers();
 
@@ -78,6 +82,7 @@ export { registerAppSettingsHandlers } from './appSettingsHandlers';
 export { registerGeminiChatHandlers } from './geminiChatHandlers';
 export { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 export { registerAppLogHandlers } from './appLogHandlers';
+export { registerGrokUiHandlers } from './grokUiHandlers';
 export { registerProxyHandlers } from './proxyHandlers';
 export { registerCutVideoHandlers } from './cutVideoHandlers';
 export { registerRotationQueueHandlers } from './rotationQueueHandlers';
