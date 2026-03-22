@@ -2532,6 +2532,10 @@ export function useCaptionProcessing({
         }
         await step3PersistQueue;
 
+        if (!result?.success && typeof result?.error === 'string' && result.error.includes('TRANSLATION_ALREADY_RUNNING')) {
+          throw new Error('Đang có phiên dịch đang chạy, vui lòng đợi dừng hoàn tất.');
+        }
+
         if (!result?.success && typeof result?.error === 'string' && result.error.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
           throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
         }

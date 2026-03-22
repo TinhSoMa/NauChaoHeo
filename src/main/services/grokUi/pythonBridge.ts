@@ -104,15 +104,23 @@ export class GrokUiPythonBridge {
     };
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(options?: { hard?: boolean }): Promise<void> {
     if (!this.proc) {
       return;
     }
 
+    const hard = options?.hard === true;
+
     try {
-      await this.request('shutdown', {}, 5000);
+      if (!hard) {
+        await this.request('shutdown', {}, 5000);
+      }
     } catch {
       // ignore
+    }
+
+    if (hard) {
+      this.failAllPending('Grok UI worker shutdown (hard).');
     }
 
     if (this.proc && !this.proc.killed) {
@@ -124,6 +132,7 @@ export class GrokUiPythonBridge {
     }
 
     this.cleanupProcess();
+    this.startPromise = null;
   }
 
   private async startInternal(): Promise<void> {

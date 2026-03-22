@@ -26,6 +26,7 @@ import * as CaptionService from '../services/caption';
 import * as TTSService from '../services/tts';
 import { AppSettingsService } from '../services/appSettings';
 import { PromptService } from '../services/promptService';
+import { getGrokUiRuntime } from '../services/grokUi';
 
 /**
  * Response chuẩn cho IPC
@@ -259,6 +260,19 @@ function recordEarlyTranslateAck(key: string): void {
   }
 }
 
+function flushTranslateAckWaiters(): void {
+  for (const [key, waiter] of translateAckWaiters.entries()) {
+    clearTimeout(waiter.timer);
+    try {
+      waiter.resolve();
+    } catch {
+      // ignore
+    }
+    translateAckWaiters.delete(key);
+  }
+  translateAckEarly.clear();
+}
+
 async function waitForTranslateAck(payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }): Promise<boolean> {
   const key = buildTranslateAckKey(payload);
   if (translateAckEarly.has(key)) {
@@ -467,6 +481,9 @@ export function registerCaptionHandlers(): void {
 
       try {
         const runId = typeof options.runId === 'string' ? options.runId : undefined;
+        if (CaptionService.isTranslationActive()) {
+          return { success: false, error: 'TRANSLATION_ALREADY_RUNNING' };
+        }
         CaptionService.beginTranslationRun(runId);
         // Inject prompt from DB if captionPromptId is set and no client override
         if (!options.promptTemplate) {
@@ -532,6 +549,12 @@ export function registerCaptionHandlers(): void {
       try {
         const runId = typeof payload?.runId === 'string' ? payload.runId : undefined;
         const translateStop = CaptionService.stopActiveTranslation(runId);
+        flushTranslateAckWaiters();
+        try {
+          await getGrokUiRuntime().shutdown({ hard: true });
+        } catch (error) {
+          console.warn('[CaptionHandlers] Không thể shutdown Grok UI:', error);
+        }
         const renderStop = CaptionService.stopActiveRender();
         const audioPreviewStop = CaptionService.stopActiveAudioPreview();
         const videoPreviewStop = CaptionService.stopActiveVideoPreviewFrame();

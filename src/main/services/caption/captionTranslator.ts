@@ -47,9 +47,11 @@ type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
 
 const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
 const GROK_UI_RATE_LIMIT_MESSAGE = 'Grok UI: tất cả profile bị rate limit, dừng dịch.';
+const GROK_UI_HARD_STOP_MESSAGE = 'Grok UI batch failed, stopped.';
 let activeTranslateRunId: string | undefined;
 let translateStopRequested = false;
 let translateStopRunId: string | undefined;
+const translateStopListeners = new Set<(runId?: string) => void>();
 
 const normalizeRunId = (value?: string | null): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -70,6 +72,43 @@ const throwIfTranslationStopped = (runId?: string | null): void => {
   }
 };
 
+const notifyTranslationStopped = (runId?: string): void => {
+  for (const listener of Array.from(translateStopListeners)) {
+    try {
+      listener(runId);
+    } catch {
+      // ignore listener errors
+    }
+  }
+};
+
+const createTranslationStopSignal = (runId?: string | null): { promise: Promise<void>; dispose: () => void } => {
+  const normalized = normalizeRunId(runId);
+  let disposed = false;
+  let resolveRef: (() => void) | null = null;
+  const listener = (stoppedRunId?: string) => {
+    if (disposed) return;
+    if (!stoppedRunId || !normalized || stoppedRunId === normalized) {
+      disposed = true;
+      translateStopListeners.delete(listener);
+      resolveRef?.();
+    }
+  };
+  const promise = new Promise<void>((resolve) => {
+    resolveRef = resolve;
+    translateStopListeners.add(listener);
+    if (shouldStopTranslation(normalized)) {
+      listener(normalized);
+    }
+  });
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    translateStopListeners.delete(listener);
+  };
+  return { promise, dispose };
+};
+
 export function beginTranslationRun(runId?: string | null): void {
   activeTranslateRunId = normalizeRunId(runId);
 }
@@ -85,6 +124,13 @@ export function endTranslationRun(runId?: string | null): void {
   }
 }
 
+export function isTranslationActive(runId?: string | null): boolean {
+  if (!activeTranslateRunId) return false;
+  const normalized = normalizeRunId(runId);
+  if (!normalized) return true;
+  return activeTranslateRunId === normalized;
+}
+
 export function stopActiveTranslation(runId?: string | null): { stopped: boolean; message: string } {
   const normalized = normalizeRunId(runId);
   const targetRunId = normalized || activeTranslateRunId;
@@ -95,6 +141,8 @@ export function stopActiveTranslation(runId?: string | null): { stopped: boolean
   }
   translateStopRequested = true;
   translateStopRunId = targetRunId;
+  notifyTranslationStopped(targetRunId);
+  void getGrokUiRuntime().shutdown({ hard: true }).catch(() => undefined);
   return { stopped: true, message: STOP_TRANSLATION_MESSAGE };
 }
 
@@ -621,149 +669,168 @@ export async function translateAll(
   const assertNotStopped = () => throwIfTranslationStopped(runId);
   const isStopSignal = (error: unknown) =>
     error instanceof Error
-    && (error.message === CAPTION_PROCESS_STOP_SIGNAL || error.message === GROK_UI_RATE_LIMIT_MESSAGE);
-
-  assertNotStopped();
-
-  console.log(`[CaptionTranslator] Bắt đầu dịch ${entries.length} entries`);
-  console.log(`[CaptionTranslator] Model: ${model}, Target: ${targetLanguage}`);
-
-  // Chia thành batches
-  const allBatches = splitForTranslation(entries, linesPerBatch);
-  const maxBatchIndex = allBatches.length;
-  const retryIndexesProvided = Array.isArray(options.retryBatchIndexes);
-  const retryBatchIndexesInput: number[] = retryIndexesProvided ? (options.retryBatchIndexes as number[]) : [];
-  const normalizedRetryBatchIndexes = retryIndexesProvided
-    ? retryBatchIndexesInput
-        .map((value) => Math.floor(Number(value)))
-        .filter((value) => Number.isFinite(value) && value > 0)
-    : [];
-  const requestedRetryBatchIndexes = Array.from(new Set(normalizedRetryBatchIndexes)).sort((a, b) => a - b);
-  const invalidRetryBatchIndexes = requestedRetryBatchIndexes.filter((value) => value > maxBatchIndex);
-  const validRetryBatchIndexes = requestedRetryBatchIndexes.filter((value) => value <= maxBatchIndex);
-  const retryBatchIndexSet = validRetryBatchIndexes.length > 0
-    ? new Set<number>(validRetryBatchIndexes)
-    : null;
-  const batches = retryBatchIndexSet
-    ? allBatches.filter((batch) => retryBatchIndexSet.has(batch.batchIndex + 1))
-    : allBatches;
-  const collectMissingGlobalLineIndexes = (targetBatches: TextBatch[]): number[] => Array.from(
-    new Set(
-      targetBatches.flatMap((batch) =>
-        Array.from({ length: batch.texts.length }, (_, offset) => batch.startIndex + offset + 1)
-      )
-    )
-  ).sort((a, b) => a - b);
-  if (retryIndexesProvided && (requestedRetryBatchIndexes.length === 0 || invalidRetryBatchIndexes.length > 0 || batches.length === 0)) {
-    const mappedRetryBatches = allBatches.filter((batch) => retryBatchIndexSet?.has(batch.batchIndex + 1));
-    const missingGlobalLineIndexes = collectMissingGlobalLineIndexes(mappedRetryBatches);
-    const errorMessage = invalidRetryBatchIndexes.length > 0
-      ? `ERROR_INVALID_RETRY_BATCH_INDEXES: out_of_range=${JSON.stringify(invalidRetryBatchIndexes)}, maxBatchIndex=${maxBatchIndex}`
-      : `ERROR_INVALID_RETRY_BATCH_INDEXES: ${JSON.stringify(options.retryBatchIndexes)}`;
-    return {
-      success: false,
-      entries,
-      totalLines: entries.length,
-      translatedLines: 0,
-      failedLines: missingGlobalLineIndexes.length,
-      errors: [errorMessage],
-      batchReports: [],
-      missingBatchIndexes: requestedRetryBatchIndexes,
-      missingGlobalLineIndexes,
-    };
-  }
-  if (retryBatchIndexSet) {
-    console.log(
-      `[CaptionTranslator] Step3 resume mode: chỉ dịch lại batch ${Array.from(retryBatchIndexSet).sort((a, b) => a - b).map((v) => `#${v}`).join(', ')}`
+    && (
+      error.message === CAPTION_PROCESS_STOP_SIGNAL
+      || error.message === GROK_UI_RATE_LIMIT_MESSAGE
+      || error.message === GROK_UI_HARD_STOP_MESSAGE
     );
-  }
+  const stopSignal = createTranslationStopSignal(runId);
+  const raceWithStop = async <T>(promise: Promise<T>): Promise<T> => (
+    Promise.race([
+      promise,
+      stopSignal.promise.then(() => {
+        throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+      }),
+    ])
+  );
+  const sleepWithStop = async (ms: number): Promise<void> => {
+    if (ms <= 0) return;
+    await raceWithStop(new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  };
 
-  const allTranslatedTexts: string[] = entries.map((entry) => (
-    typeof entry.translatedText === 'string' ? entry.translatedText : ''
-  ));
-  const preservedTranslatedCount = retryBatchIndexSet
-    ? allBatches.reduce((sum, batch) => {
-      const batchNumber = batch.batchIndex + 1;
-      if (retryBatchIndexSet.has(batchNumber)) {
-        return sum;
-      }
-      let batchTranslated = 0;
-      for (let i = batch.startIndex; i < batch.endIndex; i++) {
-        if ((allTranslatedTexts[i] || '').trim().length > 0) {
-          batchTranslated++;
+  try {
+    assertNotStopped();
+
+    console.log(`[CaptionTranslator] Bắt đầu dịch ${entries.length} entries`);
+    console.log(`[CaptionTranslator] Model: ${model}, Target: ${targetLanguage}`);
+
+    // Chia thành batches
+    const allBatches = splitForTranslation(entries, linesPerBatch);
+    const maxBatchIndex = allBatches.length;
+    const retryIndexesProvided = Array.isArray(options.retryBatchIndexes);
+    const retryBatchIndexesInput: number[] = retryIndexesProvided ? (options.retryBatchIndexes as number[]) : [];
+    const normalizedRetryBatchIndexes = retryIndexesProvided
+      ? retryBatchIndexesInput
+          .map((value) => Math.floor(Number(value)))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      : [];
+    const requestedRetryBatchIndexes = Array.from(new Set(normalizedRetryBatchIndexes)).sort((a, b) => a - b);
+    const invalidRetryBatchIndexes = requestedRetryBatchIndexes.filter((value) => value > maxBatchIndex);
+    const validRetryBatchIndexes = requestedRetryBatchIndexes.filter((value) => value <= maxBatchIndex);
+    const retryBatchIndexSet = validRetryBatchIndexes.length > 0
+      ? new Set<number>(validRetryBatchIndexes)
+      : null;
+    const batches = retryBatchIndexSet
+      ? allBatches.filter((batch) => retryBatchIndexSet.has(batch.batchIndex + 1))
+      : allBatches;
+    const collectMissingGlobalLineIndexes = (targetBatches: TextBatch[]): number[] => Array.from(
+      new Set(
+        targetBatches.flatMap((batch) =>
+          Array.from({ length: batch.texts.length }, (_, offset) => batch.startIndex + offset + 1)
+        )
+      )
+    ).sort((a, b) => a - b);
+    if (retryIndexesProvided && (requestedRetryBatchIndexes.length === 0 || invalidRetryBatchIndexes.length > 0 || batches.length === 0)) {
+      const mappedRetryBatches = allBatches.filter((batch) => retryBatchIndexSet?.has(batch.batchIndex + 1));
+      const missingGlobalLineIndexes = collectMissingGlobalLineIndexes(mappedRetryBatches);
+      const errorMessage = invalidRetryBatchIndexes.length > 0
+        ? `ERROR_INVALID_RETRY_BATCH_INDEXES: out_of_range=${JSON.stringify(invalidRetryBatchIndexes)}, maxBatchIndex=${maxBatchIndex}`
+        : `ERROR_INVALID_RETRY_BATCH_INDEXES: ${JSON.stringify(options.retryBatchIndexes)}`;
+      return {
+        success: false,
+        entries,
+        totalLines: entries.length,
+        translatedLines: 0,
+        failedLines: missingGlobalLineIndexes.length,
+        errors: [errorMessage],
+        batchReports: [],
+        missingBatchIndexes: requestedRetryBatchIndexes,
+        missingGlobalLineIndexes,
+      };
+    }
+    if (retryBatchIndexSet) {
+      console.log(
+        `[CaptionTranslator] Step3 resume mode: chỉ dịch lại batch ${Array.from(retryBatchIndexSet).sort((a, b) => a - b).map((v) => `#${v}`).join(', ')}`
+      );
+    }
+
+    const allTranslatedTexts: string[] = entries.map((entry) => (
+      typeof entry.translatedText === 'string' ? entry.translatedText : ''
+    ));
+    const preservedTranslatedCount = retryBatchIndexSet
+      ? allBatches.reduce((sum, batch) => {
+        const batchNumber = batch.batchIndex + 1;
+        if (retryBatchIndexSet.has(batchNumber)) {
+          return sum;
         }
+        let batchTranslated = 0;
+        for (let i = batch.startIndex; i < batch.endIndex; i++) {
+          if ((allTranslatedTexts[i] || '').trim().length > 0) {
+            batchTranslated++;
+          }
+        }
+        return sum + batchTranslated;
+      }, 0)
+      : 0;
+    const errors: string[] = [];
+    const batchReports: TranslationBatchReport[] = [];
+
+    let translatedCount = preservedTranslatedCount;
+    let failedCount = 0;
+    let completedBatches = 0;
+    let processedLines = 0;
+
+    const useImpit = options.translateMethod === 'impit';
+    const useGeminiWebQueue = options.translateMethod === 'gemini_webapi_queue';
+    const useGrokUi = options.translateMethod === 'grok_ui';
+    const projectId = (options.projectId || '').trim() || '__default_project__';
+    const sourcePath = (options.sourcePath || '').trim() || '__unknown_source__';
+    const apiWorkerCountSetting = (() => {
+      try {
+        const raw = Number(AppSettingsService.getAll().apiWorkerCount);
+        return Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
+      } catch (error) {
+        return 1;
       }
-      return sum + batchTranslated;
-    }, 0)
-    : 0;
-  const errors: string[] = [];
-  const batchReports: TranslationBatchReport[] = [];
+    })();
+    const apiRequestDelayMs = (() => {
+      try {
+        const raw = Number(AppSettingsService.getAll().apiRequestDelayMs);
+        return Number.isFinite(raw) ? Math.min(30000, Math.max(0, Math.floor(raw))) : 500;
+      } catch (error) {
+        return 500;
+      }
+    })();
+    const grokUiRequestDelayMs = (() => {
+      try {
+        const raw = Number(AppSettingsService.getAll().grokUiRequestDelayMs);
+        return Number.isFinite(raw) ? Math.min(30000, Math.max(0, Math.floor(raw))) : 5000;
+      } catch (error) {
+        return 5000;
+      }
+    })();
+    const grokUiTimeoutMs = (() => {
+      try {
+        const raw = Number(AppSettingsService.getAll().grokUiTimeoutMs);
+        return Number.isFinite(raw) ? Math.min(300000, Math.max(10000, Math.floor(raw))) : 120000;
+      } catch (error) {
+        return 120000;
+      }
+    })();
+    const MAX_CONCURRENT = useGrokUi ? 1 : (useImpit ? 3 : (useGeminiWebQueue ? 5 : apiWorkerCountSetting));
+    let queueGapMs = getCaptionStep3QueueGapMs();
+    if (useGrokUi) {
+      queueGapMs = grokUiRequestDelayMs;
+    } else if (!useGeminiWebQueue && !useImpit) {
+      queueGapMs = apiRequestDelayMs;
+    }
+    let lastDispatchTiming: TranslationQueuePacingMetadata | undefined;
+    let nextDispatchAtMs = Date.now();
+    let dispatchGateQueue: Promise<void> = Promise.resolve();
+    let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
+    const MAX_BATCH_RETRY_DEFAULT = 2;
+    const MAX_BATCH_RETRY = useGrokUi ? 2 : MAX_BATCH_RETRY_DEFAULT;
 
-  let translatedCount = preservedTranslatedCount;
-  let failedCount = 0;
-  let completedBatches = 0;
-  let processedLines = 0;
-
-  const useImpit = options.translateMethod === 'impit';
-  const useGeminiWebQueue = options.translateMethod === 'gemini_webapi_queue';
-  const useGrokUi = options.translateMethod === 'grok_ui';
-  const projectId = (options.projectId || '').trim() || '__default_project__';
-  const sourcePath = (options.sourcePath || '').trim() || '__unknown_source__';
-  const apiWorkerCountSetting = (() => {
-    try {
-      const raw = Number(AppSettingsService.getAll().apiWorkerCount);
-      return Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
-    } catch (error) {
-      return 1;
-    }
-  })();
-  const apiRequestDelayMs = (() => {
-    try {
-      const raw = Number(AppSettingsService.getAll().apiRequestDelayMs);
-      return Number.isFinite(raw) ? Math.min(30000, Math.max(0, Math.floor(raw))) : 500;
-    } catch (error) {
-      return 500;
-    }
-  })();
-  const grokUiRequestDelayMs = (() => {
-    try {
-      const raw = Number(AppSettingsService.getAll().grokUiRequestDelayMs);
-      return Number.isFinite(raw) ? Math.min(30000, Math.max(0, Math.floor(raw))) : 5000;
-    } catch (error) {
-      return 5000;
-    }
-  })();
-  const grokUiTimeoutMs = (() => {
-    try {
-      const raw = Number(AppSettingsService.getAll().grokUiTimeoutMs);
-      return Number.isFinite(raw) ? Math.min(300000, Math.max(10000, Math.floor(raw))) : 120000;
-    } catch (error) {
-      return 120000;
-    }
-  })();
-  const MAX_CONCURRENT = useGrokUi ? 1 : (useImpit ? 3 : (useGeminiWebQueue ? 5 : apiWorkerCountSetting));
-  let queueGapMs = getCaptionStep3QueueGapMs();
-  if (useGrokUi) {
-    queueGapMs = grokUiRequestDelayMs;
-  } else if (!useGeminiWebQueue && !useImpit) {
-    queueGapMs = apiRequestDelayMs;
-  }
-  let lastDispatchTiming: TranslationQueuePacingMetadata | undefined;
-  let nextDispatchAtMs = Date.now();
-  let dispatchGateQueue: Promise<void> = Promise.resolve();
-  let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
-  const MAX_BATCH_RETRY = 2;
-
-  const reserveDispatchSlot = (): Promise<DispatchTimingMetadata> => {
-    const reservation = dispatchGateQueue
-      .catch(() => undefined)
-      .then(async () => {
+    const reserveDispatchSlot = (): Promise<DispatchTimingMetadata> => {
+      const reservation = dispatchGateQueue
+        .catch(() => undefined)
+        .then(async () => {
         assertNotStopped();
         const now = Date.now();
         const dispatchAt = Math.max(now, nextDispatchAtMs);
         const waitMs = dispatchAt - now;
         if (waitMs > 0) {
-          await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+          await sleepWithStop(waitMs);
         }
         assertNotStopped();
         const timing = createDispatchTimingMetadata(Date.now(), queueGapMs);
@@ -805,8 +872,11 @@ export async function translateAll(
       return;
     }
     try {
-      await progressAck({ runId, batchIndex, eventType });
+      await raceWithStop(progressAck({ runId, batchIndex, eventType }));
     } catch (error) {
+      if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
+        throw error;
+      }
       console.warn(`[CaptionTranslator] Grok UI ACK error: ${String(error)}`);
     }
   };
@@ -1099,6 +1169,13 @@ export async function translateAll(
       report.status === 'success' ? 'batch_completed' : 'batch_failed',
       report.batchIndex
     );
+    if (useGrokUi && !isFullSuccess) {
+      console.warn(
+        `[CaptionTranslator] [GrokUI] Batch #${report.batchIndex} failed after ${attemptsUsed} attempts → hard stop (missing=${report.missingGlobalLineIndexes.length})`
+      );
+      throw new Error(GROK_UI_HARD_STOP_MESSAGE);
+    }
+    assertNotStopped();
     if (useGrokUi) {
       const now = Date.now();
       const cooldownUntil = now + queueGapMs;
@@ -1169,26 +1246,26 @@ export async function translateAll(
   // Merge kết quả vào entries
   const resultEntries = mergeTranslatedTexts(entries, allTranslatedTexts);
 
-  // Report completion
-  if (progressCallback && !shouldStopTranslation(runId)) {
-    const summaryTransport: TranslationTransport = useGeminiWebQueue
-      ? 'gemini_webapi_queue'
-      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
-    const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
-    progressCallback({
-      current: entries.length,
-      total: entries.length,
-      batchIndex: Math.max(0, maxBatchIndex - 1),
-      totalBatches: maxBatchIndex,
-      status: 'completed',
-      message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
-      runId,
-      eventType: 'summary',
-      transport: summaryTransport,
-      queueRuntimeKey: useGeminiWebQueue ? CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY : undefined,
-      ...summaryPacingMetadata,
-    });
-  }
+    // Report completion
+    if (progressCallback && !shouldStopTranslation(runId)) {
+      const summaryTransport: TranslationTransport = useGeminiWebQueue
+        ? 'gemini_webapi_queue'
+        : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
+      const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
+      progressCallback({
+        current: entries.length,
+        total: entries.length,
+        batchIndex: Math.max(0, maxBatchIndex - 1),
+        totalBatches: maxBatchIndex,
+        status: 'completed',
+        message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
+        runId,
+        eventType: 'summary',
+        transport: summaryTransport,
+        queueRuntimeKey: useGeminiWebQueue ? CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY : undefined,
+        ...summaryPacingMetadata,
+      });
+    }
 
   assertNotStopped();
 
@@ -1207,18 +1284,21 @@ export async function translateAll(
     )
   ).sort((a, b) => a - b);
 
-  return {
-    success: failedCount === 0,
-    entries: resultEntries,
-    totalLines: entries.length,
-    translatedLines: translatedCount,
-    failedLines: failedCount,
-    errors: errors.length > 0 ? errors : undefined,
-    batchReports,
-    missingBatchIndexes,
-    missingGlobalLineIndexes,
-    ...mergePacingMetadata(lastDispatchTiming),
-  };
+    return {
+      success: failedCount === 0,
+      entries: resultEntries,
+      totalLines: entries.length,
+      translatedLines: translatedCount,
+      failedLines: failedCount,
+      errors: errors.length > 0 ? errors : undefined,
+      batchReports,
+      missingBatchIndexes,
+      missingGlobalLineIndexes,
+      ...mergePacingMetadata(lastDispatchTiming),
+    };
+  } finally {
+    stopSignal.dispose();
+  }
 }
 
 /**

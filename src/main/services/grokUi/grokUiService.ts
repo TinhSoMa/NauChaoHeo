@@ -313,8 +313,8 @@ class GrokUiService {
     return { success: false, error: 'RATE_LIMIT_ALL_PROFILES', errorCode: 'rate_limited' };
   }
 
-  async shutdown(): Promise<void> {
-    await this.bridge.shutdown();
+  async shutdown(options?: { hard?: boolean }): Promise<void> {
+    await this.bridge.shutdown(options);
   }
 }
 

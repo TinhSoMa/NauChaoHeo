@@ -36,6 +36,7 @@ export {
   stopActiveTranslation,
   beginTranslationRun,
   endTranslationRun,
+  isTranslationActive,
 } from './captionTranslator';
 
 export {
