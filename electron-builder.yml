@@ -44,6 +44,10 @@ extraResources:
     to: geminiWebApi/python
     filter:
       - "gemini_webapi_worker.py"
+  - from: src/main/services/grokUi/python
+    to: grokUi/python
+    filter:
+      - "grok_ui_worker.py"
   - from: src/main/services/tts/python
     to: tts/python
     filter:

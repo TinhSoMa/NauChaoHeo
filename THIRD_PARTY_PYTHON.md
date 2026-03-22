@@ -20,15 +20,12 @@ Versions are pinned in `requirements-pycapcut-lock.txt`:
 - `comtypes==1.4.15`
 - `numpy==2.3.4`
 - `pillow==11.3.0`
+- `undetected-chromedriver==3.5.5`
+- `grok3api` (bundled từ local repo)
 
 ## External Python Packages (Not Bundled)
 
-Các tính năng UI automation (Grok UI) sử dụng Python packages nằm ngoài embedded runtime:
-
-- `grok3api`
-- `undetected-chromedriver`
-
-Các package này được load từ `PYTHONPATH` (mặc định: `D:\Grok\Grok3API`) và cần sẵn Python + trình duyệt Chrome/Edge trên máy.
+Không có package bắt buộc bên ngoài cho Grok UI trên Windows x64.
 
 ## License Collection
 
@@ -46,3 +43,4 @@ Packaged app location:
 
 - The bundled runtime is Windows x64 only.
 - If runtime files are missing or corrupted after installation, reinstall the app.
+- Grok3API được copy từ `D:\Grok\Grok3API\grok3api` vào embedded runtime khi chạy `npm run prepare:python-runtime`.

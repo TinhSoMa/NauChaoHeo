@@ -11,7 +11,7 @@ import {
 import { AppSettingsService } from '../appSettings';
 import { GrokUiProfileDatabase } from '../../database/grokUiProfileDatabase';
 
-const GROK_UI_PYTHONPATH = 'D:\\Grok\\Grok3API';
+const GROK_UI_DEV_PYTHONPATH = 'D:\\Grok\\Grok3API';
 
 interface WorkerRequestEnvelope {
   requestId: string;
@@ -237,11 +237,13 @@ export class GrokUiPythonBridge {
   }
 
   private buildPythonPath(): string {
+    const packagedSitePackages = path.join(process.resourcesPath || '', 'python', 'Lib', 'site-packages');
+    const basePath = app.isPackaged ? packagedSitePackages : GROK_UI_DEV_PYTHONPATH;
     const existing = process.env.PYTHONPATH;
     if (existing && existing.trim().length > 0) {
-      return `${GROK_UI_PYTHONPATH}${path.delimiter}${existing}`;
+      return `${basePath}${path.delimiter}${existing}`;
     }
-    return GROK_UI_PYTHONPATH;
+    return basePath;
   }
 
   private async withPythonPath<T>(pythonPath: string, task: () => Promise<T>): Promise<T> {
