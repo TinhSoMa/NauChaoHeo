@@ -552,6 +552,7 @@ interface AppSettings {
   grokUiProfileDir: string | null;
   grokUiProfileName: string | null;
   grokUiAnonymous: boolean;
+  grokUiProfiles: GrokUiProfileConfig[];
   grokUiTimeoutMs: number;
   grokUiRequestDelayMs: number;
   // Caption logo (global)
@@ -568,6 +569,14 @@ interface AppSettings {
     xSsDp: string | null;
     extraHeaders: Record<string, string> | null;
   };
+}
+
+interface GrokUiProfileConfig {
+  id: string;
+  profileDir: string | null;
+  profileName: string | null;
+  anonymous: boolean;
+  enabled: boolean;
 }
 
 interface CaptionTypographyLayoutDefaults {
@@ -853,16 +862,35 @@ interface GrokUiHealthSnapshot {
 }
 
 interface GrokUiProfileCreateResult {
+  id: string;
   profileDir: string;
   profileName: string;
   profilePath: string;
+}
+
+interface GrokUiProfileStatus {
+  state: 'ok' | 'rate_limited' | 'error';
+  lastErrorCode?: string;
+  lastError?: string;
+  updatedAt: number;
+}
+
+interface GrokUiProfileStatusEntry {
+  profile: GrokUiProfileConfig;
+  status: GrokUiProfileStatus;
 }
 
 interface GrokUiAPI {
   getHealth: () => Promise<IpcApiResponse<GrokUiHealthSnapshot>>;
   testAsk: (payload: { prompt: string; timeoutMs?: number }) => Promise<IpcApiResponse<{ text: string }>>;
   shutdown: () => Promise<IpcApiResponse<void>>;
-  createProfile: (payload: { profileDir?: string | null; profileName?: string | null; anonymous?: boolean }) => Promise<IpcApiResponse<GrokUiProfileCreateResult>>;
+  createProfile: (payload: { id?: string; profileDir?: string | null; profileName?: string | null; anonymous?: boolean }) => Promise<IpcApiResponse<GrokUiProfileCreateResult>>;
+  getProfileStatuses: () => Promise<IpcApiResponse<GrokUiProfileStatusEntry[]>>;
+  resetProfileStatuses: () => Promise<IpcApiResponse<void>>;
+  getProfiles: () => Promise<IpcApiResponse<GrokUiProfileConfig[]>>;
+  saveProfiles: (payload: { profiles: GrokUiProfileConfig[] }) => Promise<IpcApiResponse<void>>;
+  setProfileEnabled: (payload: { id: string; enabled: boolean }) => Promise<IpcApiResponse<void>>;
+  deleteProfile: (payload: { id: string }) => Promise<IpcApiResponse<void>>;
 }
 
 type AppLogLevel = 'info' | 'warn' | 'error' | 'success';

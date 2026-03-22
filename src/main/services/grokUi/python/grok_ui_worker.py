@@ -56,6 +56,23 @@ def _ensure_client(config: Dict[str, Any]):
         raise exc
 
 
+def _is_rate_limit_message(message: Optional[str]) -> bool:
+    if not message:
+        return False
+    text = str(message).lower()
+    return (
+        "message limit reached" in text
+        or "heavy usage" in text
+        or "too many requests" in text
+        or "rate limit" in text
+        or "đã đạt giới hạn" in text
+        or "vui lòng nâng cấp" in text
+        or "vui lòng thử lại" in text
+        or "quá tải" in text
+        or "giới hạn" in text
+    )
+
+
 def _cmd_health(_: Dict[str, Any]) -> Dict[str, Any]:
     if sys.version_info < MIN_SUPPORTED:
         return {
@@ -109,9 +126,27 @@ def _cmd_ask(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         client = _ensure_client(config)
         response = client.ask(message=prompt, timeout=timeout_sec, ui=True)
+        error_payload = getattr(response, "error_payload", None)
+        if isinstance(error_payload, dict) and error_payload:
+            return {"success": False, "error": error_payload}
         error_text = getattr(response, "error", None)
         if error_text:
-            return {"success": False, "error": str(error_text)}
+            if isinstance(error_text, dict):
+                return {"success": False, "error": error_text}
+            if _is_rate_limit_message(str(error_text)):
+                return {"success": False, "error": {"error_code": "rate_limited", "error": str(error_text)}}
+            error_payload = None
+            try:
+                error_code = getattr(error_text, "error_code", None)
+                error_message = getattr(error_text, "error", None)
+                if error_code or error_message:
+                    error_payload = {
+                        "error_code": error_code,
+                        "error": error_message,
+                    }
+            except Exception:
+                error_payload = None
+            return {"success": False, "error": error_payload or str(error_text)}
 
         text = ""
         model_response = getattr(response, "modelResponse", None)
@@ -122,6 +157,30 @@ def _cmd_ask(payload: Dict[str, Any]) -> Dict[str, Any]:
             return {"success": False, "error": "Empty response from Grok UI"}
 
         return {"success": True, "data": {"text": text}}
+    except Exception as exc:
+        return {"success": False, "error": _safe_error(exc)}
+
+
+def _cmd_create_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        from grok3api import driver
+        profile_dir = payload.get("profileDir") or None
+        profile_name = payload.get("profileName") or None
+        allow_existing = bool(payload.get("allowExisting", True))
+
+        created_dir, created_name = driver.create_profile(
+            profile_name=profile_name,
+            profile_dir=profile_dir,
+            allow_existing=allow_existing,
+        )
+        return {
+            "success": True,
+            "data": {
+                "profileDir": created_dir,
+                "profileName": created_name,
+                "profilePath": os.path.join(created_dir, created_name),
+            },
+        }
     except Exception as exc:
         return {"success": False, "error": _safe_error(exc)}
 
@@ -149,6 +208,8 @@ def main() -> None:
                 result = _cmd_health(payload)
             elif command == "ask":
                 result = _cmd_ask(payload)
+            elif command == "create_profile":
+                result = _cmd_create_profile(payload)
             elif command == "shutdown":
                 _reset_client()
                 result = {"success": True}

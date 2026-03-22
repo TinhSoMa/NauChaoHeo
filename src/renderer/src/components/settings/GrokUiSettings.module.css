@@ -80,3 +80,105 @@
   color: #f59e0b;
   font-weight: 600;
 }
+
+.profileToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.profileTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.profileToolbarActions {
+  display: flex;
+  gap: 8px;
+}
+
+.profileList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 24px 24px 24px;
+}
+
+.emptyProfiles {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.profileCard {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--color-surface);
+}
+
+.profileHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.profileHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profileHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profileCardTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.profileField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profileLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.profileDirRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profileActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profileError {
+  font-size: 12px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.statusWarn {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.35);
+}

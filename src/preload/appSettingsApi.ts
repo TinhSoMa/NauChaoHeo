@@ -57,6 +57,7 @@ export interface AppSettings {
   grokUiProfileDir: string | null;
   grokUiProfileName: string | null;
   grokUiAnonymous: boolean;
+  grokUiProfiles: GrokUiProfileConfig[];
   grokUiTimeoutMs: number;
   grokUiRequestDelayMs: number;
   translationPromptId: string | null;
@@ -75,6 +76,14 @@ export interface AppSettings {
     xSsDp: string | null;
     extraHeaders: Record<string, string> | null;
   };
+}
+
+export interface GrokUiProfileConfig {
+  id: string;
+  profileDir: string | null;
+  profileName: string | null;
+  anonymous: boolean;
+  enabled: boolean;
 }
 
 interface IpcApiResponse<T = unknown> {

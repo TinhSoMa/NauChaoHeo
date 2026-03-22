@@ -7,6 +7,7 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ASSStyleConfig } from '../../shared/types/caption';
+import type { GrokUiProfileConfig } from '../../shared/types/grokUi';
 
 // ============================================
 // TYPES
@@ -34,6 +35,7 @@ export interface AppSettings {
   grokUiProfileDir: string | null;
   grokUiProfileName: string | null;
   grokUiAnonymous: boolean;
+  grokUiProfiles: GrokUiProfileConfig[];
   grokUiTimeoutMs: number;
   grokUiRequestDelayMs: number;
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
@@ -141,6 +143,66 @@ function getDefaultGrokUiProfileDir(): string {
   } catch {
     return path.join(process.cwd(), 'grok3_profile');
   }
+}
+
+function createGrokUiProfileId(seed: string): string {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${seed}-${Date.now().toString(36)}-${suffix}`;
+}
+
+function buildLegacyGrokUiProfile(params: {
+  profileDir?: string | null;
+  profileName?: string | null;
+  anonymous?: boolean;
+}): GrokUiProfileConfig {
+  const anonymous = params.anonymous === true;
+  const profileDir = anonymous ? null : (normalizeStringOrNull(params.profileDir) ?? getDefaultGrokUiProfileDir());
+  const profileName = anonymous ? null : (normalizeStringOrNull(params.profileName) ?? 'Default');
+  return {
+    id: 'default',
+    profileDir,
+    profileName,
+    anonymous,
+    enabled: true,
+  };
+}
+
+function normalizeGrokUiProfiles(
+  value: unknown,
+  fallback: GrokUiProfileConfig
+): GrokUiProfileConfig[] {
+  const rawList = Array.isArray(value) ? value : [];
+  const normalized = rawList
+    .map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+      const raw = entry as Partial<GrokUiProfileConfig>;
+      const anonymous = raw.anonymous === true;
+      const profileDir = anonymous ? null : (normalizeStringOrNull(raw.profileDir) ?? null);
+      const profileName = anonymous ? null : (normalizeStringOrNull(raw.profileName) ?? 'Default');
+      const id = typeof raw.id === 'string' && raw.id.trim().length > 0
+        ? raw.id.trim()
+        : createGrokUiProfileId(`grok-${index + 1}`);
+      const enabled = raw.enabled === false
+        || (typeof raw.enabled === 'string' && raw.enabled.trim().toLowerCase() === 'false')
+        || raw.enabled === 0
+        ? false
+        : true;
+      return {
+        id,
+        profileDir,
+        profileName,
+        anonymous,
+        enabled,
+      } satisfies GrokUiProfileConfig;
+    })
+    .filter((item): item is GrokUiProfileConfig => Boolean(item));
+
+  if (normalized.length === 0) {
+    return [fallback];
+  }
+  return normalized;
 }
 
 function cloneTypographyLayout(layout: CaptionTypographyLayoutDefaults): CaptionTypographyLayoutDefaults {
@@ -479,6 +541,12 @@ export function normalizeGeminiMaxSendIntervalMs(value: unknown, minMs: number):
   return Math.max(minMs, clamped);
 }
 
+const DEFAULT_GROK_UI_PROFILE = buildLegacyGrokUiProfile({
+  profileDir: getDefaultGrokUiProfileDir(),
+  profileName: 'Default',
+  anonymous: false,
+});
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
@@ -498,9 +566,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiSendIntervalMode: 'fixed',
   apiWorkerCount: API_WORKER_COUNT_DEFAULT,
   apiRequestDelayMs: API_REQUEST_DELAY_DEFAULT_MS,
-  grokUiProfileDir: getDefaultGrokUiProfileDir(),
-  grokUiProfileName: 'Default',
-  grokUiAnonymous: false,
+  grokUiProfileDir: DEFAULT_GROK_UI_PROFILE.profileDir,
+  grokUiProfileName: DEFAULT_GROK_UI_PROFILE.profileName,
+  grokUiAnonymous: DEFAULT_GROK_UI_PROFILE.anonymous,
+  grokUiProfiles: [DEFAULT_GROK_UI_PROFILE],
   grokUiTimeoutMs: GROK_UI_TIMEOUT_DEFAULT_MS,
   grokUiRequestDelayMs: GROK_UI_REQUEST_DELAY_DEFAULT_MS,
   translationPromptId: null, // Tự động tìm prompt dịch
@@ -562,6 +631,11 @@ class AppSettingsServiceClass {
           proxyMode: loaded?.proxyMode,
           rotatingProxyEndpoint: loaded?.rotatingProxyEndpoint,
         });
+        const legacyGrokProfile = buildLegacyGrokUiProfile({
+          profileDir: loaded?.grokUiProfileDir,
+          profileName: loaded?.grokUiProfileName,
+          anonymous: loaded?.grokUiAnonymous,
+        });
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...loaded,
@@ -579,6 +653,7 @@ class AppSettingsServiceClass {
           grokUiProfileDir: normalizeStringOrNull(loaded?.grokUiProfileDir) ?? DEFAULT_SETTINGS.grokUiProfileDir,
           grokUiProfileName: normalizeStringOrNull(loaded?.grokUiProfileName) ?? DEFAULT_SETTINGS.grokUiProfileName,
           grokUiAnonymous: loaded?.grokUiAnonymous === true,
+          grokUiProfiles: normalizeGrokUiProfiles(loaded?.grokUiProfiles, legacyGrokProfile),
           grokUiTimeoutMs: normalizeGrokUiTimeoutMs(loaded?.grokUiTimeoutMs),
           grokUiRequestDelayMs: normalizeGrokUiRequestDelayMs(loaded?.grokUiRequestDelayMs),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
@@ -671,6 +746,21 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'grokUiProfileName')) {
       nextPartial.grokUiProfileName = normalizeStringOrNull(partial.grokUiProfileName);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'grokUiProfiles')) {
+      const fallbackProfile = buildLegacyGrokUiProfile({
+        profileDir: this.settings.grokUiProfileDir,
+        profileName: this.settings.grokUiProfileName,
+        anonymous: this.settings.grokUiAnonymous,
+      });
+      const normalizedProfiles = normalizeGrokUiProfiles(partial.grokUiProfiles, fallbackProfile);
+      nextPartial.grokUiProfiles = normalizedProfiles;
+      const primaryProfile = normalizedProfiles.find((profile) => profile.enabled) ?? normalizedProfiles[0];
+      if (primaryProfile) {
+        nextPartial.grokUiAnonymous = primaryProfile.anonymous;
+        nextPartial.grokUiProfileDir = primaryProfile.anonymous ? null : (primaryProfile.profileDir ?? this.settings.grokUiProfileDir);
+        nextPartial.grokUiProfileName = primaryProfile.anonymous ? null : (primaryProfile.profileName ?? this.settings.grokUiProfileName);
+      }
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'proxyMode')) {
       nextPartial.proxyMode = normalizeProxyMode(partial.proxyMode);

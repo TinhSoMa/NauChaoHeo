@@ -1096,29 +1096,29 @@ export function registerCaptionHandlers(): void {
         return await withSessionLock(sessionPath, async () => {
           const isDev = process?.env?.NODE_ENV !== 'production';
           const exists = fsSync.existsSync(sessionPath);
-          if (isDev) {
-            console.log('[CaptionSession][READ] start', { sessionPath, exists });
-          }
+          // if (isDev) {
+          //   console.log('[CaptionSession][READ] start', { sessionPath, exists });
+          // }
           try {
             const buffer = await fs.readFile(sessionPath);
             const raw = decodeJsonTextFromBuffer(buffer);
             const parsed = JSON.parse(raw);
             const fixed = fixMojibakeDeep(parsed);
-            if (isDev) {
-              console.log('[CaptionSession][READ] success', { sessionPath });
-            }
+            // if (isDev) {
+            //   console.log('[CaptionSession][READ] success', { sessionPath });
+            // }
             return { success: true, data: fixed };
           } catch (error) {
             const err = String(error);
             if (err.includes('ENOENT')) {
-              if (isDev) {
-                console.log('[CaptionSession][READ] not_found', { sessionPath });
-              }
+              // if (isDev) {
+              //   console.log('[CaptionSession][READ] not_found', { sessionPath });
+              // }
               return { success: true, data: null };
             }
-            if (isDev) {
-              console.warn('[CaptionSession][READ] failed', { sessionPath, error: err });
-            }
+            // if (isDev) {
+            //   console.warn('[CaptionSession][READ] failed', { sessionPath, error: err });
+            // }
             return { success: false, error: `SESSION_READ_FAILED: ${err}` };
           }
         });

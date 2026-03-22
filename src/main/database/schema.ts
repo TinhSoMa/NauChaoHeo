@@ -7,6 +7,8 @@ import Database from 'better-sqlite3';
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import type { GrokUiProfileConfig } from '../../shared/types/grokUi';
+import { AppSettingsService } from '../services/appSettings';
 
 const extractCookieKey = (cookie: string): string => {
   const trimmed = (cookie || '').trim();
@@ -22,6 +24,34 @@ const buildTokenKey = (cookie: string, atToken: string): string => {
   const combined = `${cookieKey}|${atKey}`;
   return combined === '|' ? '' : combined;
 };
+
+function getDefaultGrokUiProfileDir(): string {
+  try {
+    return path.join(app.getPath('userData'), 'grok3_profile');
+  } catch {
+    return path.join(process.cwd(), 'grok3_profile');
+  }
+}
+
+function buildLegacyGrokUiProfiles(settings: {
+  grokUiProfiles?: GrokUiProfileConfig[];
+  grokUiProfileDir?: string | null;
+  grokUiProfileName?: string | null;
+  grokUiAnonymous?: boolean;
+}): GrokUiProfileConfig[] {
+  const list = Array.isArray(settings.grokUiProfiles) ? settings.grokUiProfiles : [];
+  if (list.length > 0) {
+    return list;
+  }
+  const anonymous = settings.grokUiAnonymous === true;
+  return [{
+    id: 'default',
+    profileDir: anonymous ? null : (settings.grokUiProfileDir ?? getDefaultGrokUiProfileDir()),
+    profileName: anonymous ? null : (settings.grokUiProfileName ?? 'Default'),
+    anonymous,
+    enabled: true,
+  }];
+}
 
 let db: Database.Database | null = null;
 
@@ -449,6 +479,50 @@ export function initDatabase(): void {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Create grok_ui_profiles table - lưu profile Grok UI
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS grok_ui_profiles (
+      id TEXT PRIMARY KEY,
+      profile_dir TEXT,
+      profile_name TEXT,
+      anonymous INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      sort_order INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Seed grok_ui_profiles from appSettings if empty
+  try {
+    const countRow = db.prepare(`SELECT COUNT(*) as count FROM grok_ui_profiles`).get() as { count: number };
+    if ((countRow?.count ?? 0) === 0) {
+      const settings = AppSettingsService.getAll();
+      const seedProfiles = buildLegacyGrokUiProfiles(settings);
+      const now = Date.now();
+      const insert = db.prepare(`
+        INSERT INTO grok_ui_profiles (
+          id, profile_dir, profile_name, anonymous, enabled, sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      seedProfiles.forEach((profile, index) => {
+        insert.run(
+          profile.id,
+          profile.profileDir || null,
+          profile.profileName || null,
+          profile.anonymous ? 1 : 0,
+          profile.enabled ? 1 : 0,
+          index + 1,
+          now,
+          now
+        );
+      });
+      console.log('[Database] Seeded grok_ui_profiles from AppSettings');
+    }
+  } catch (e) {
+    console.error('[Database] Seed grok_ui_profiles failed:', e);
+  }
 
   // Migration: Update proxies unique constraint to include type
   try {

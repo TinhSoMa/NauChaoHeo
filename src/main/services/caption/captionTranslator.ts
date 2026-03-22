@@ -46,6 +46,7 @@ import {
 type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
 
 const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
+const GROK_UI_RATE_LIMIT_MESSAGE = 'Grok UI: tất cả profile bị rate limit, dừng dịch.';
 let activeTranslateRunId: string | undefined;
 let translateStopRequested = false;
 let translateStopRunId: string | undefined;
@@ -362,6 +363,9 @@ async function translateBatchGrokUi(
     const result = await getGrokUiRuntime().ask({ prompt, timeoutMs });
 
     if (!result.success || !result.text) {
+      if (result.errorCode === 'rate_limited' && result.error === 'RATE_LIMIT_ALL_PROFILES') {
+        throw new Error(GROK_UI_RATE_LIMIT_MESSAGE);
+      }
       return {
         success: false,
         translatedTexts: [],
@@ -391,6 +395,9 @@ async function translateBatchGrokUi(
 
     return { success: true, translatedTexts, transport: 'grok_ui' };
   } catch (error) {
+    if (error instanceof Error && error.message === GROK_UI_RATE_LIMIT_MESSAGE) {
+      throw error;
+    }
     console.error(`[CaptionTranslator] [GrokUI] Lỗi dịch batch ${batch.batchIndex + 1}:`, error);
     return {
       success: false,
@@ -613,7 +620,8 @@ export async function translateAll(
   const runId = normalizeRunId(options.runId);
   const assertNotStopped = () => throwIfTranslationStopped(runId);
   const isStopSignal = (error: unknown) =>
-    error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL;
+    error instanceof Error
+    && (error.message === CAPTION_PROCESS_STOP_SIGNAL || error.message === GROK_UI_RATE_LIMIT_MESSAGE);
 
   assertNotStopped();
 

@@ -9,6 +9,7 @@ import {
   type PythonRuntimeResolution,
 } from '../../utils/pythonRuntime';
 import { AppSettingsService } from '../appSettings';
+import { GrokUiProfileDatabase } from '../../database/grokUiProfileDatabase';
 
 const GROK_UI_PYTHONPATH = 'D:\\Grok\\Grok3API';
 
@@ -22,7 +23,7 @@ interface WorkerResponseEnvelope<T = unknown> {
   requestId: string;
   success: boolean;
   data?: T;
-  error?: string;
+  error?: unknown;
 }
 
 interface PendingRequest {
@@ -141,9 +142,15 @@ export class GrokUiPythonBridge {
     const args = [...availability.runtime.baseArgs, '-u', workerPath];
 
     const settings = AppSettingsService.getAll();
-    const isAnonymous = settings.grokUiAnonymous === true;
-    const profileDir = !isAnonymous ? settings.grokUiProfileDir?.trim() : '';
-    const profileName = !isAnonymous ? settings.grokUiProfileName?.trim() : '';
+    const profiles = GrokUiProfileDatabase.getAll();
+    const primaryProfile = profiles.find((profile) => profile.enabled === true) || profiles[0];
+    const isAnonymous = primaryProfile ? primaryProfile.anonymous === true : settings.grokUiAnonymous === true;
+    const profileDir = !isAnonymous
+      ? (primaryProfile?.profileDir || settings.grokUiProfileDir || '').trim()
+      : '';
+    const profileName = !isAnonymous
+      ? (primaryProfile?.profileName || settings.grokUiProfileName || '').trim()
+      : '';
 
     const env = {
       ...process.env,
