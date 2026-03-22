@@ -64,6 +64,8 @@ export interface ThumbnailFolderItem {
   videoName: string;
   text: string;
   secondaryText: string;
+  videoText: string;
+  videoSecondaryText: string;
   hasError: boolean;
 }
 

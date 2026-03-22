@@ -277,6 +277,8 @@ interface UseCaptionProcessingProps {
     portraitTextSecondaryPosition?: { x: number; y: number };
     thumbnailTextsByOrder?: string[];
     thumbnailTextsSecondaryByOrder?: string[];
+    hardsubTextsByOrder?: string[];
+    hardsubTextsSecondaryByOrder?: string[];
     layoutProfiles?: CaptionProjectSettingsValues['layoutProfiles'];
     settingsRevision?: number;
     settingsUpdatedAt?: string;
@@ -1789,16 +1791,24 @@ export function useCaptionProcessing({
       const thumbnailTextSecondaryForSnapshot = isMulti
         ? (cfg.thumbnailTextsSecondaryByOrder?.[folderIdx] || '').trim()
         : (cfg.thumbnailTextSecondary || '').trim();
-      const sharedTextPrimary = (
-        thumbnailTextForSnapshot
-        || cfg.hardsubTextPrimary
-        || cfg.hardsubPortraitTextPrimary
+      const hardsubTextPrimaryForSnapshot = (
+        isMulti
+          ? (cfg.hardsubTextsByOrder?.[folderIdx] || '')
+          : (cfg.hardsubTextPrimary || '')
+      ).trim();
+      const hardsubTextSecondaryForSnapshot = (
+        isMulti
+          ? (cfg.hardsubTextsSecondaryByOrder?.[folderIdx] || '')
+          : (cfg.hardsubTextSecondary || '')
+      ).trim();
+      const hardsubPortraitTextPrimaryForSnapshot = (
+        cfg.hardsubPortraitTextPrimary
+        || hardsubTextPrimaryForSnapshot
         || ''
       ).trim();
-      const sharedTextSecondary = (
-        thumbnailTextSecondaryForSnapshot
-        || cfg.hardsubTextSecondary
-        || cfg.hardsubPortraitTextSecondary
+      const hardsubPortraitTextSecondaryForSnapshot = (
+        cfg.hardsubPortraitTextSecondary
+        || hardsubTextSecondaryForSnapshot
         || ''
       ).trim();
       return ({
@@ -1855,8 +1865,10 @@ export function useCaptionProcessing({
         thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
         thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
         thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
-        hardsubTextPrimary: sharedTextPrimary,
-        hardsubTextSecondary: sharedTextSecondary,
+        hardsubTextPrimary: hardsubTextPrimaryForSnapshot,
+        hardsubTextSecondary: hardsubTextSecondaryForSnapshot,
+        hardsubTextsByOrder: cfg.hardsubTextsByOrder,
+        hardsubTextsSecondaryByOrder: cfg.hardsubTextsSecondaryByOrder,
         hardsubTextPrimaryFontName: cfg.hardsubTextPrimaryFontName,
         hardsubTextPrimaryFontSize: cfg.hardsubTextPrimaryFontSize,
         hardsubTextPrimaryFontSizeRel: cfg.hardsubTextPrimaryFontSizeRel,
@@ -1867,8 +1879,8 @@ export function useCaptionProcessing({
         hardsubTextSecondaryColor: cfg.hardsubTextSecondaryColor,
         hardsubTextPrimaryPosition: cfg.hardsubTextPrimaryPosition,
         hardsubTextSecondaryPosition: cfg.hardsubTextSecondaryPosition,
-        hardsubPortraitTextPrimary: sharedTextPrimary,
-        hardsubPortraitTextSecondary: sharedTextSecondary,
+        hardsubPortraitTextPrimary: hardsubPortraitTextPrimaryForSnapshot,
+        hardsubPortraitTextSecondary: hardsubPortraitTextSecondaryForSnapshot,
         hardsubPortraitTextPrimaryFontName: cfg.hardsubPortraitTextPrimaryFontName,
         hardsubPortraitTextPrimaryFontSize: cfg.hardsubPortraitTextPrimaryFontSize,
         hardsubPortraitTextPrimaryFontSizeRel: cfg.hardsubPortraitTextPrimaryFontSizeRel,
@@ -1901,18 +1913,8 @@ export function useCaptionProcessing({
     });
     };
 
-    const sharedPrimaryTextForProjectSettings = (
-      cfg.thumbnailText
-      || cfg.hardsubTextPrimary
-      || cfg.hardsubPortraitTextPrimary
-      || ''
-    ).trim();
-    const sharedSecondaryTextForProjectSettings = (
-      cfg.thumbnailTextSecondary
-      || cfg.hardsubTextSecondary
-      || cfg.hardsubPortraitTextSecondary
-      || ''
-    ).trim();
+    const sharedPrimaryTextForProjectSettings = (cfg.hardsubTextPrimary || '').trim();
+    const sharedSecondaryTextForProjectSettings = (cfg.hardsubTextSecondary || '').trim();
 
     const projectSettingsForRun: CaptionProjectSettingsValues = {
       fontSizeScaleVersion: cfg.fontSizeScaleVersion,
@@ -1965,6 +1967,8 @@ export function useCaptionProcessing({
       thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
       hardsubTextPrimary: sharedPrimaryTextForProjectSettings,
       hardsubTextSecondary: sharedSecondaryTextForProjectSettings,
+      hardsubTextsByOrder: cfg.hardsubTextsByOrder,
+      hardsubTextsSecondaryByOrder: cfg.hardsubTextsSecondaryByOrder,
       hardsubTextPrimaryFontName: cfg.hardsubTextPrimaryFontName,
       hardsubTextPrimaryFontSize: cfg.hardsubTextPrimaryFontSize,
       hardsubTextPrimaryFontSizeRel: cfg.hardsubTextPrimaryFontSizeRel,
@@ -1975,8 +1979,8 @@ export function useCaptionProcessing({
       hardsubTextSecondaryColor: cfg.hardsubTextSecondaryColor,
       hardsubTextPrimaryPosition: cfg.hardsubTextPrimaryPosition,
       hardsubTextSecondaryPosition: cfg.hardsubTextSecondaryPosition,
-      hardsubPortraitTextPrimary: sharedPrimaryTextForProjectSettings,
-      hardsubPortraitTextSecondary: sharedSecondaryTextForProjectSettings,
+      hardsubPortraitTextPrimary: cfg.hardsubPortraitTextPrimary,
+      hardsubPortraitTextSecondary: cfg.hardsubPortraitTextSecondary,
       hardsubPortraitTextPrimaryFontName: cfg.hardsubPortraitTextPrimaryFontName,
       hardsubPortraitTextPrimaryFontSize: cfg.hardsubPortraitTextPrimaryFontSize,
       hardsubPortraitTextPrimaryFontSizeRel: cfg.hardsubPortraitTextPrimaryFontSizeRel,
@@ -3157,16 +3161,24 @@ export function useCaptionProcessing({
         const thumbnailTextSecondaryForRender = isMulti
           ? (cfg.thumbnailTextsSecondaryByOrder?.[folderIdx] || '').trim()
           : (cfg.thumbnailTextSecondary || '').trim();
-        const sharedPrimaryTextForRender = (
-          thumbnailTextForRender
-          || cfg.hardsubTextPrimary
-          || cfg.hardsubPortraitTextPrimary
+        const hardsubTextPrimaryForRender = (
+          isMulti
+            ? (cfg.hardsubTextsByOrder?.[folderIdx] || '')
+            : (cfg.hardsubTextPrimary || '')
+        ).trim();
+        const hardsubTextSecondaryForRender = (
+          isMulti
+            ? (cfg.hardsubTextsSecondaryByOrder?.[folderIdx] || '')
+            : (cfg.hardsubTextSecondary || '')
+        ).trim();
+        const hardsubPortraitTextPrimaryForRender = (
+          cfg.hardsubPortraitTextPrimary
+          || hardsubTextPrimaryForRender
           || ''
         ).trim();
-        const sharedSecondaryTextForRender = (
-          thumbnailTextSecondaryForRender
-          || cfg.hardsubTextSecondary
-          || cfg.hardsubPortraitTextSecondary
+        const hardsubPortraitTextSecondaryForRender = (
+          cfg.hardsubPortraitTextSecondary
+          || hardsubTextSecondaryForRender
           || ''
         ).trim();
         const finalVideoFileName = buildRenderedVideoName(
@@ -3295,7 +3307,7 @@ export function useCaptionProcessing({
           `font2=${step7TextSecondaryFontName} size2=${step7TextSecondaryFontSize}, ` +
           `color2=${step7TextSecondaryColor.toUpperCase()}, ` +
           `lineHeight=${Number(cfg.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x, ` +
-          `text1="${thumbnailTextForRender}", text2="${thumbnailTextSecondaryForRender}"`
+          `videoText1="${hardsubTextPrimaryForRender}", videoText2="${hardsubTextSecondaryForRender}"`
         );
 
         const thumbnailEnabledForRender = true;
@@ -3345,10 +3357,10 @@ export function useCaptionProcessing({
           thumbnailTimeSec: thumbnailTimeSecForRender,
           thumbnailText: thumbnailTextForRender,
           thumbnailTextSecondary: thumbnailTextSecondaryForRender,
-          hardsubTextPrimary: sharedPrimaryTextForRender,
-          hardsubTextSecondary: sharedSecondaryTextForRender,
-          hardsubPortraitTextPrimary: sharedPrimaryTextForRender,
-          hardsubPortraitTextSecondary: sharedSecondaryTextForRender,
+          hardsubTextPrimary: hardsubTextPrimaryForRender,
+          hardsubTextSecondary: hardsubTextSecondaryForRender,
+          hardsubPortraitTextPrimary: hardsubPortraitTextPrimaryForRender,
+          hardsubPortraitTextSecondary: hardsubPortraitTextSecondaryForRender,
           thumbnailFontName: cfg.thumbnailFontName,
           thumbnailFontSize: cfg.thumbnailFontSize,
           thumbnailTextPrimaryFontName: cfg.thumbnailTextPrimaryFontName,

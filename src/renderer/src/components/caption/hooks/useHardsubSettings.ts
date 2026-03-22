@@ -20,6 +20,10 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
   const [thumbnailTextsByOrder, setThumbnailTextsByOrder] = useState<string[]>([]);
   const [thumbnailTextSecondary, setThumbnailTextSecondary] = useState('');
   const [thumbnailTextsSecondaryByOrder, setThumbnailTextsSecondaryByOrder] = useState<string[]>([]);
+  const [videoText, setVideoText] = useState('');
+  const [videoTextsByOrder, setVideoTextsByOrder] = useState<string[]>([]);
+  const [videoTextSecondary, setVideoTextSecondary] = useState('');
+  const [videoTextsSecondaryByOrder, setVideoTextsSecondaryByOrder] = useState<string[]>([]);
   const [folderOrderSnapshot, setFolderOrderSnapshot] = useState<string[]>([]);
   const [thumbnailAutoStartValue, setThumbnailAutoStartValueState] = useState('');
 
@@ -49,6 +53,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     setFolderOrderSnapshot(selectedDraftPaths);
     setThumbnailTextsByOrder((prev) => remapByPath(prev, ''));
     setThumbnailTextsSecondaryByOrder((prev) => remapByPath(prev, ''));
+    setVideoTextsByOrder((prev) => remapByPath(prev, ''));
+    setVideoTextsSecondaryByOrder((prev) => remapByPath(prev, ''));
   }, [
     selectedDraftPaths,
     folderOrderSnapshot,
@@ -89,6 +95,58 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
       next[idx] = value;
       return next;
     });
+  };
+
+  const updateVideoTextByOrder = (idx: number, value: string) => {
+    setVideoTextsByOrder((prev) => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill('');
+      next[idx] = value;
+      return next;
+    });
+  };
+
+  const setVideoTextSecondaryByOrder = (idx: number, value: string) => {
+    setVideoTextsSecondaryByOrder((prev) => {
+      const next = prev.length === selectedDraftPaths.length
+        ? [...prev]
+        : new Array(selectedDraftPaths.length).fill('');
+      next[idx] = value;
+      return next;
+    });
+  };
+
+  const syncVideoText1FromThumbnail = () => {
+    if (isMultiFolder) {
+      setVideoTextsByOrder((prev) => {
+        const next = prev.length === selectedDraftPaths.length
+          ? [...prev]
+          : new Array(selectedDraftPaths.length).fill('');
+        for (let i = 0; i < selectedDraftPaths.length; i++) {
+          next[i] = thumbnailTextsByOrder[i] || '';
+        }
+        return next;
+      });
+      return;
+    }
+    setVideoText(thumbnailText || '');
+  };
+
+  const syncVideoText2FromThumbnail = () => {
+    if (isMultiFolder) {
+      setVideoTextsSecondaryByOrder((prev) => {
+        const next = prev.length === selectedDraftPaths.length
+          ? [...prev]
+          : new Array(selectedDraftPaths.length).fill('');
+        for (let i = 0; i < selectedDraftPaths.length; i++) {
+          next[i] = thumbnailTextsSecondaryByOrder[i] || '';
+        }
+        return next;
+      });
+      return;
+    }
+    setVideoTextSecondary(thumbnailTextSecondary || '');
   };
 
   const setSecondaryStateFromSession = (texts: string[]) => {
@@ -171,6 +229,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
         const videoName = options.folderVideos[folderPath]?.name || 'Chưa tìm thấy video';
         const text = thumbnailTextsByOrder[idx] || '';
         const secondaryText = thumbnailTextsSecondaryByOrder[idx] || '';
+        const videoTextValue = videoTextsByOrder[idx] || '';
+        const videoSecondaryTextValue = videoTextsSecondaryByOrder[idx] || '';
         return {
           index: idx + 1,
           folderPath,
@@ -178,6 +238,8 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
           videoName,
           text,
           secondaryText,
+          videoText: videoTextValue,
+          videoSecondaryText: videoSecondaryTextValue,
           hasError: isThumbnailEnabled && !text.trim(),
         };
       })
@@ -195,6 +257,18 @@ export function useHardsubSettings(options: UseHardsubSettingsOptions) {
     applyText2GlobalToAll,
     thumbnailTextsSecondaryByOrder,
     setThumbnailTextsSecondaryByOrder,
+    videoText,
+    setVideoText,
+    videoTextSecondary,
+    setVideoTextSecondary,
+    videoTextsByOrder,
+    setVideoTextsByOrder,
+    videoTextsSecondaryByOrder,
+    setVideoTextsSecondaryByOrder,
+    updateVideoTextByOrder,
+    setVideoTextSecondaryByOrder,
+    syncVideoText1FromThumbnail,
+    syncVideoText2FromThumbnail,
     setSecondaryStateFromSession,
     thumbnailAutoStartValue,
     setThumbnailAutoStartValue: handleThumbnailAutoStartValueChange,

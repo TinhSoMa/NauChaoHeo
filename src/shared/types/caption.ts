@@ -999,6 +999,8 @@ export interface CaptionProjectSettingsValues {
   thumbnailTextSecondaryOverrideFlags?: boolean[];
   thumbnailTextsByOrder?: string[];
   thumbnailTextsSecondaryByOrder?: string[];
+  hardsubTextsByOrder?: string[];
+  hardsubTextsSecondaryByOrder?: string[];
   thumbnailDurationSec?: number;
   thumbnailText?: string;
   subtitlePosition?: { x: number; y: number } | null;

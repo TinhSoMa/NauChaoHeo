@@ -19,6 +19,10 @@ interface ThumbnailListPanelProps {
   onApplySecondaryGlobalText: () => void;
   onItemTextChange: (indexZeroBased: number, value: string) => void;
   onItemSecondaryTextChange: (indexZeroBased: number, value: string) => void;
+  onItemVideoTextChange: (indexZeroBased: number, value: string) => void;
+  onItemVideoSecondaryTextChange: (indexZeroBased: number, value: string) => void;
+  onSyncVideoText1: () => void;
+  onSyncVideoText2: () => void;
   onBulkApplyJsonLines: (raw: string) => BulkApplyResult;
   onManualSaveTexts: () => void;
   onBulkExportThumbnails: () => void;
@@ -251,6 +255,30 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
         </div>
 
         <div className={styles.thumbnailToolbarBlock}>
+          <div className={styles.thumbnailToolbarLabel}>Đồng bộ text → video</div>
+          <div className={styles.thumbnailAutoFillRow}>
+            <button
+              type="button"
+              className={styles.thumbnailAutoFillBtn}
+              onClick={props.onSyncVideoText1}
+              disabled={props.items.length === 0}
+              title="Copy toàn bộ Text1 thumbnail sang Video Text1"
+            >
+              Đồng bộ Text1 → Video
+            </button>
+            <button
+              type="button"
+              className={styles.thumbnailAutoFillBtn}
+              onClick={props.onSyncVideoText2}
+              disabled={props.items.length === 0}
+              title="Copy toàn bộ Text2 thumbnail sang Video Text2"
+            >
+              Đồng bộ Text2 → Video
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.thumbnailToolbarBlock}>
           <div className={styles.thumbnailToolbarLabel}>Bulk paste JSON (lines hoặc plan)</div>
           <div className={styles.thumbnailBulkSection}>
             <textarea
@@ -359,6 +387,28 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
                   onChange={(e) => props.onItemSecondaryTextChange(item.index - 1, e.target.value)}
                   rows={2}
                   placeholder="Text2 (tên phim)..."
+                />
+              </label>
+
+              <label className={styles.thumbnailListField}>
+                <span className={styles.thumbnailListFieldLabel}>Video Text1</span>
+                <textarea
+                  className={styles.thumbnailListTextarea}
+                  value={item.videoText}
+                  onChange={(e) => props.onItemVideoTextChange(item.index - 1, e.target.value)}
+                  rows={2}
+                  placeholder="Text1 hiển thị trong video..."
+                />
+              </label>
+
+              <label className={styles.thumbnailListField}>
+                <span className={styles.thumbnailListFieldLabel}>Video Text2</span>
+                <textarea
+                  className={styles.thumbnailListTextarea}
+                  value={item.videoSecondaryText}
+                  onChange={(e) => props.onItemVideoSecondaryTextChange(item.index - 1, e.target.value)}
+                  rows={2}
+                  placeholder="Text2 hiển thị trong video..."
                 />
               </label>
             </div>

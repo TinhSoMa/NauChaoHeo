@@ -707,6 +707,8 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       thumbnailTextSecondaryPosition: settings.thumbnailTextSecondaryPosition,
       hardsubTextPrimary: settings.hardsubTextPrimary,
       hardsubTextSecondary: settings.hardsubTextSecondary,
+      hardsubTextsByOrder: settings.hardsubTextsByOrder,
+      hardsubTextsSecondaryByOrder: settings.hardsubTextsSecondaryByOrder,
       hardsubTextPrimaryFontName: settings.hardsubTextPrimaryFontName,
       hardsubTextPrimaryFontSize: settings.hardsubTextPrimaryFontSize,
       hardsubTextPrimaryFontSizeRel: settings.hardsubTextPrimaryFontSizeRel,
@@ -766,6 +768,8 @@ const STEP7_RUNTIME_PRESERVE_KEYS = [
   'hardsubPortraitTextSecondary',
   'thumbnailTextsByOrder',
   'thumbnailTextsSecondaryByOrder',
+  'hardsubTextsByOrder',
+  'hardsubTextsSecondaryByOrder',
 ] as const;
 
 function preserveStep7RuntimeFields(currentStep7: Record<string, unknown>): Record<string, unknown> {
