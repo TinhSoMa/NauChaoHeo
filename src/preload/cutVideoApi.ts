@@ -67,6 +67,11 @@ export interface CutVideoAPI {
   
   getVideoInfo: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   getMediaInfo: (filePath: string) => Promise<{ success: boolean; data?: { duration: number; hasVideo: boolean; hasAudio: boolean; width?: number; height?: number }; error?: string }>;
+  detectSilences: (options: {
+    inputPath: string;
+    noiseDb?: number;
+    minDurationSec?: number;
+  }) => Promise<{ success: boolean; data?: { durationSec: number; silences: Array<{ startSec: number; endSec: number; durationSec: number }> }; error?: string }>;
   startVideoSplit: (options: {
     inputPath: string;
     clips: { name: string; startStr: string; durationStr: string }[];
@@ -188,6 +193,7 @@ export const cutVideoApi: CutVideoAPI = {
 
   getVideoInfo: (filePath: string) => ipcRenderer.invoke('cutVideo:getVideoInfo', filePath),
   getMediaInfo: (filePath: string) => ipcRenderer.invoke('cutVideo:getMediaInfo', filePath),
+  detectSilences: (options) => ipcRenderer.invoke('cutVideo:detectSilences', options),
   startVideoSplit: (options) => ipcRenderer.invoke('cutVideo:startVideoSplit', options),
   stopVideoSplit: () => ipcRenderer.invoke('cutVideo:stopVideoSplit'),
   onSplitProgress: (callback) => {

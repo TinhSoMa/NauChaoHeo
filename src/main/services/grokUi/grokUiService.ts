@@ -41,6 +41,11 @@ interface WorkerHealthPayload {
   modules?: Record<string, boolean>;
 }
 
+interface WorkerAskPayload {
+  rawText?: unknown;
+  text?: unknown;
+}
+
 const DEFAULT_PROFILE_NAME = 'Default';
 
 function buildLegacyProfile(settings: ReturnType<typeof AppSettingsService.getAll>): GrokUiProfileConfig {
@@ -112,6 +117,19 @@ function parseErrorCode(error: unknown): { errorCode?: string; errorMessage?: st
   return { errorMessage: String(error) };
 }
 
+function getWorkerRawText(data: WorkerAskPayload | undefined): string | undefined {
+  if (!data) {
+    return undefined;
+  }
+  if (typeof data.rawText === 'string') {
+    return data.rawText;
+  }
+  if (typeof data.text === 'string') {
+    return data.text;
+  }
+  return undefined;
+}
+
 class GrokUiService {
   private readonly bridge = new GrokUiPythonBridge();
   private readonly profileStatuses = new Map<string, GrokUiProfileStatus>();
@@ -172,7 +190,7 @@ class GrokUiService {
           checkedAt,
           pythonOk: false,
           modulesOk: false,
-          error: response.error || 'Worker health check failed',
+          error: normalizeErrorMessage(response.error) || 'Worker health check failed',
         };
       }
 
@@ -244,6 +262,7 @@ class GrokUiService {
       return status?.state !== 'rate_limited';
     });
     if (eligibleProfiles.length === 0) {
+      console.warn('[GrokUiService] RATE_LIMIT_ALL_PROFILES: no eligible profiles (all rate_limited).');
       return { success: false, error: 'RATE_LIMIT_ALL_PROFILES', errorCode: 'rate_limited' };
     }
     const timeoutMs = Number.isFinite(request.timeoutMs)
@@ -261,8 +280,11 @@ class GrokUiService {
         ? ''
         : (profile.profileDir ?? '');
       const profileName = anonymous ? '' : (profile.profileName || DEFAULT_PROFILE_NAME);
+      console.info(
+        `[GrokUiService] Sending prompt with profile=${profile.profileName || profile.id}${anonymous ? ' (anonymous)' : ''}`
+      );
 
-      const response = await this.bridge.request<{ text?: string }>(
+      const response = await this.bridge.request<WorkerAskPayload>(
         'ask',
         {
           prompt,
@@ -293,15 +315,29 @@ class GrokUiService {
           console.warn(
             `[GrokUiService] Rate limited${profileHint ? ` (profile=${profileHint})` : ''}${modeHint ? ` (mode=${modeHint})` : ''}: ${message}`
           );
+          console.warn(`[GrokUiService] Closing driver due to rate limit (profile=${profile.profileName || profile.id}).`);
+          try {
+            await this.closeDriver();
+          } catch (error) {
+            console.warn('[GrokUiService] Close driver failed after rate limit:', error);
+          }
           this.markProfileStatus(profile.id, 'rate_limited', errorCode, message);
+          const nextProfile = eligibleProfiles[(idx + 1) % eligibleProfiles.length];
+          if (nextProfile && nextProfile.id !== profile.id) {
+            console.info(`[GrokUiService] Switching to profile=${nextProfile.profileName || nextProfile.id}`);
+          }
           continue;
         }
         this.markProfileStatus(profile.id, 'error', errorCode, message);
         return { success: false, error: message, errorCode };
       }
 
-      const text = response.data?.text?.toString() || '';
-      if (!text.trim()) {
+      const text = getWorkerRawText(response.data);
+      if (text === undefined) {
+        this.markProfileStatus(profile.id, 'error', 'empty_response', 'Grok UI không trả về text dạng chuỗi.');
+        return { success: false, error: 'Grok UI không trả về text dạng chuỗi.', errorCode: 'empty_response' };
+      }
+      if (text.length === 0) {
         this.markProfileStatus(profile.id, 'error', 'empty_response', 'Grok UI trả về rỗng.');
         return { success: false, error: 'Grok UI trả về rỗng.', errorCode: 'empty_response' };
       }
@@ -310,11 +346,16 @@ class GrokUiService {
       return { success: true, text };
     }
 
+    console.warn('[GrokUiService] RATE_LIMIT_ALL_PROFILES: exhausted all profiles in failover.');
     return { success: false, error: 'RATE_LIMIT_ALL_PROFILES', errorCode: 'rate_limited' };
   }
 
   async shutdown(options?: { hard?: boolean }): Promise<void> {
     await this.bridge.shutdown(options);
+  }
+
+  async closeDriver(): Promise<void> {
+    await this.bridge.closeDriver();
   }
 }
 

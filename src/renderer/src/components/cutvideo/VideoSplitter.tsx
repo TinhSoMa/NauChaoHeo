@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styles from './CutVideo.module.css';
 import { Button } from '../common/Button';
 import { Play, Square, Scissors, FileVideo, X } from 'lucide-react';
@@ -18,6 +18,7 @@ interface SplitClip {
   start: string; // HH:MM:SS
   end: string;   // HH:MM:SS
   duration: string; // HH:MM:SS
+  selected: boolean;
 }
 
 interface SplitResultLog {
@@ -42,6 +43,10 @@ const parseTime = (timeStr: string) => {
   return 0;
 };
 
+const clamp = (value: number, minValue: number, maxValue: number) => {
+  return Math.min(maxValue, Math.max(minValue, value));
+};
+
 export const VideoSplitter: React.FC = () => {
   const { selectedFile, handleSelectVideoFile, handleRemoveVideoFile } = useFolderManager();
   const hasFile = !!selectedFile;
@@ -50,6 +55,9 @@ export const VideoSplitter: React.FC = () => {
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
   const [clips, setClips] = useState<SplitClip[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [segmentMinutes, setSegmentMinutes] = useState<number | ''>(6);
+  const lastSelectedIndexRef = useRef<number | null>(null);
   
   const [progress, setProgress] = useState({ totalPercent: 0, currentClipName: '', currentPercent: 0 });
   const [logs, setLogs] = useState<SplitResultLog[]>([]);
@@ -68,12 +76,14 @@ export const VideoSplitter: React.FC = () => {
         if (res.success && res.data) {
           setMetadata(res.data);
           // Auto add 1 default clip representing full video
+          lastSelectedIndexRef.current = null;
           setClips([{
             id: Date.now().toString(),
             name: `${selectedFile.split(/[/\\]/).pop()?.split('.')[0]}_part1`,
             start: '00:00:00',
             end: formatTime(res.data.duration),
-            duration: formatTime(res.data.duration)
+            duration: formatTime(res.data.duration),
+            selected: true,
           }]);
         } else {
           console.error("Failed to load video info:", res.error);
@@ -112,30 +122,138 @@ export const VideoSplitter: React.FC = () => {
   }, []);
 
   // 3. Actions
-  const handleChiaDeu = () => {
-    if (!metadata) return;
-    const partsStr = window.prompt('Nhập số đoạn muốn chia đều:', '3');
-    if (!partsStr) return;
-    const parts = parseInt(partsStr);
-    if (isNaN(parts) || parts <= 0) return;
-
-    const newClips: SplitClip[] = [];
-    const durPerPart = metadata.duration / parts;
-    const baseName = selectedFile?.split(/[/\\]/).pop()?.split('.')[0] || 'clip';
-
-    for (let i = 0; i < parts; i++) {
-        const startSec = i * durPerPart;
-        const endSec = (i === parts - 1) ? metadata.duration : (i + 1) * durPerPart;
-        
-        newClips.push({
-            id: `part_${i}_${Date.now()}`,
-            name: `${baseName}_part${i + 1}`,
-            start: formatTime(startSec),
-            end: formatTime(endSec),
-            duration: formatTime(endSec - startSec)
-        });
+  const buildClipsBySilence = (params: {
+    durationSec: number;
+    segmentLenSec: number;
+    silences: Array<{ startSec: number; endSec: number }>;
+    baseWindowSec: number;
+    maxDeviationSec: number;
+  }) => {
+    const { durationSec, segmentLenSec, silences, baseWindowSec, maxDeviationSec } = params;
+    const targets: number[] = [];
+    for (let t = segmentLenSec; t < durationSec; t += segmentLenSec) {
+      targets.push(t);
     }
-    setClips(newClips);
+
+    const findCut = (targetSec: number, windowSec: number) => {
+      const windowStart = targetSec - windowSec;
+      const windowEnd = targetSec + windowSec;
+      let bestCut: number | null = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+
+      for (const s of silences) {
+        if (s.endSec <= s.startSec) continue;
+        if (s.endSec < windowStart || s.startSec > windowEnd) continue;
+        const cutSec = (s.startSec + s.endSec) / 2;
+        const dist = Math.abs(cutSec - targetSec);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestCut = cutSec;
+        }
+      }
+      return bestCut;
+    };
+
+    const cutPoints: number[] = [];
+    let lastCut = 0;
+    const minGap = 1;
+
+    for (const targetSec of targets) {
+      let cutSec = findCut(targetSec, baseWindowSec);
+      if (cutSec == null) {
+        cutSec = findCut(targetSec, maxDeviationSec);
+      }
+      if (cutSec == null) {
+        cutSec = targetSec;
+      }
+
+      cutSec = clamp(cutSec, 0, durationSec);
+      if (cutSec <= lastCut + minGap) {
+        cutSec = Math.min(Math.max(targetSec, lastCut + minGap), durationSec - 1);
+      }
+      if (cutSec <= lastCut + minGap || cutSec >= durationSec - 0.5) {
+        continue;
+      }
+      cutPoints.push(cutSec);
+      lastCut = cutSec;
+    }
+
+    const baseName = selectedFile?.split(/[/\\]/).pop()?.split('.')[0] || 'clip';
+    const newClips: SplitClip[] = [];
+    let startSec = 0;
+    let idx = 1;
+    for (const endSec of cutPoints) {
+      if (endSec <= startSec) continue;
+      newClips.push({
+        id: `part_${idx}_${Date.now()}`,
+        name: `${baseName}_part${idx}`,
+        start: formatTime(startSec),
+        end: formatTime(endSec),
+        duration: formatTime(endSec - startSec),
+        selected: true,
+      });
+      startSec = endSec;
+      idx += 1;
+    }
+
+    if (durationSec > startSec + 0.5) {
+      newClips.push({
+        id: `part_${idx}_${Date.now()}`,
+        name: `${baseName}_part${idx}`,
+        start: formatTime(startSec),
+        end: formatTime(durationSec),
+        duration: formatTime(durationSec - startSec),
+        selected: true,
+      });
+    }
+
+    return newClips;
+  };
+
+  const handleChiaDeuTranhThoai = async () => {
+    if (!metadata || !selectedFile) return;
+    const minutes = typeof segmentMinutes === 'number' ? segmentMinutes : NaN;
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      alert('Vui lòng nhập thời lượng mỗi đoạn (phút) hợp lệ.');
+      return;
+    }
+
+    const segmentLenSec = minutes * 60;
+    const baseWindowSec = 20;
+    const maxDeviationSec = 120;
+
+    setIsDetecting(true);
+    try {
+      const res = await window.electronAPI.cutVideo.detectSilences({
+        inputPath: selectedFile,
+        noiseDb: -35,
+        minDurationSec: 0.4,
+      });
+      if (!res.success || !res.data) {
+        alert(`Lỗi dò khoảng lặng: ${res.error || 'Không rõ lỗi'}`);
+        return;
+      }
+
+      const durationSec = metadata.duration || res.data.durationSec;
+      const silences = res.data.silences || [];
+
+      const newClips = buildClipsBySilence({
+        durationSec,
+        segmentLenSec,
+        silences: silences.map(s => ({ startSec: s.startSec, endSec: s.endSec })),
+        baseWindowSec,
+        maxDeviationSec,
+      });
+
+      if (newClips.length > 0) {
+        lastSelectedIndexRef.current = null;
+        setClips(newClips);
+      }
+    } catch (err: any) {
+      alert(`Lỗi dò khoảng lặng: ${err?.message || String(err)}`);
+    } finally {
+      setIsDetecting(false);
+    }
   };
 
   const handleAddClip = () => {
@@ -144,12 +262,37 @@ export const VideoSplitter: React.FC = () => {
        name: 'clip_new',
        start: '00:00:00',
        end: '00:00:00',
-       duration: '00:00:00'
+       duration: '00:00:00',
+       selected: true,
     }]);
   };
 
   const handleRemoveClip = (id: string) => {
+    lastSelectedIndexRef.current = null;
     setClips(clips.filter(c => c.id !== id));
+  };
+
+  const handleToggleClip = (index: number, selected: boolean, isShift: boolean) => {
+    const lastIndex = lastSelectedIndexRef.current;
+    setClips(prev => {
+      if (isShift && lastIndex !== null) {
+        const start = Math.min(lastIndex, index);
+        const end = Math.max(lastIndex, index);
+        return prev.map((c, i) => {
+          if (i >= start && i <= end) {
+            return { ...c, selected };
+          }
+          return c;
+        });
+      }
+      return prev.map((c, i) => (i === index ? { ...c, selected } : c));
+    });
+    lastSelectedIndexRef.current = index;
+  };
+
+  const handleToggleAll = (selected: boolean) => {
+    lastSelectedIndexRef.current = null;
+    setClips(clips.map(c => ({ ...c, selected })));
   };
 
   const handleClipChange = (id: string, field: keyof SplitClip, value: string) => {
@@ -173,14 +316,15 @@ export const VideoSplitter: React.FC = () => {
   };
 
   const handleStart = async () => {
-    if (!selectedFile || clips.length === 0) return;
+    const selectedClips = clips.filter(c => c.selected);
+    if (!selectedFile || selectedClips.length === 0) return;
     setIsProcessing(true);
     setProgress({ totalPercent: 0, currentClipName: 'Bắt đầu...', currentPercent: 0 });
     setLogs([]);
 
     try {
       // Map clips to IPC format (durationStr is required explicitly for FFmpeg -t flag)
-      const mappedClips = clips.map(c => {
+      const mappedClips = selectedClips.map(c => {
          const durSecs = parseTime(c.duration);
          return {
             name: c.name,
@@ -253,13 +397,58 @@ export const VideoSplitter: React.FC = () => {
         <div className={styles.sectionHeader}>
           <h3 className={styles.sectionTitle}>Danh sách đoạn cắt</h3>
           <div className={styles.flexRow}>
-            <Button variant="secondary" className={styles.btnSmall} onClick={handleChiaDeu} disabled={!hasFile || isProcessing}>🎯 Chia đều</Button>
+            {isDetecting && <span className={styles.textMuted}>Đang dò khoảng lặng...</span>}
+            {clips.length > 0 && (
+              <Button
+                variant="secondary"
+                className={styles.btnSmall}
+                onClick={() => {
+                  const allSelected = clips.every(c => c.selected);
+                  handleToggleAll(!allSelected);
+                }}
+                disabled={isProcessing || isDetecting}
+              >
+                {clips.every(c => c.selected) ? 'Bỏ chọn' : 'Chọn tất cả'}
+              </Button>
+            )}
+            <label className={styles.textMuted} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              Thời lượng (phút):
+              <input
+                type="number"
+                min="0.1"
+                step="0.5"
+                className={`${styles.clipInput} ${styles.clipTimeInput}`}
+                style={{ width: '90px' }}
+                value={segmentMinutes}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === '') {
+                    setSegmentMinutes('');
+                    return;
+                  }
+                  const parsed = parseFloat(next);
+                  if (Number.isFinite(parsed)) {
+                    setSegmentMinutes(parsed);
+                  }
+                }}
+                disabled={isProcessing || isDetecting}
+              />
+            </label>
+            <Button
+              variant="secondary"
+              className={styles.btnSmall}
+              onClick={handleChiaDeuTranhThoai}
+              disabled={!hasFile || isProcessing || isDetecting || !(typeof segmentMinutes === 'number' && segmentMinutes > 0)}
+            >
+              🎬 Cắt video
+            </Button>
           </div>
         </div>
         <div className={styles.tableContainer}>
           <table className={styles.table}>
             <thead>
               <tr>
+                <th style={{ width: '60px' }}>Chọn</th>
                 <th style={{ width: '40px' }}>STT</th>
                 <th>Tên đoạn</th>
                 <th>Bắt đầu</th>
@@ -271,6 +460,17 @@ export const VideoSplitter: React.FC = () => {
             <tbody>
               {clips.map((clip, index) => (
                 <tr key={clip.id}>
+                  <td style={{ textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={clip.selected}
+                      onChange={(e) => {
+                        const isShift = (e.nativeEvent as MouseEvent).shiftKey;
+                        handleToggleClip(index, e.target.checked, isShift);
+                      }}
+                      disabled={isProcessing}
+                    />
+                  </td>
                   <td className={styles.textMuted}>{index + 1}</td>
                   <td>
                     <input type="text" className={styles.clipInput} value={clip.name} onChange={(e) => handleClipChange(clip.id, 'name', e.target.value)} disabled={isProcessing} />
@@ -354,7 +554,11 @@ export const VideoSplitter: React.FC = () => {
         <Button variant="danger" onClick={handleStop} disabled={!isProcessing}>
           <Square size={16} style={{ marginRight: '8px' }} /> Dừng
         </Button>
-        <Button variant="primary" onClick={handleStart} disabled={!hasFile || isProcessing || clips.length === 0}>
+        <Button
+          variant="primary"
+          onClick={handleStart}
+          disabled={!hasFile || isProcessing || clips.filter(c => c.selected).length === 0}
+        >
           <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu Cắt
         </Button>
       </div>

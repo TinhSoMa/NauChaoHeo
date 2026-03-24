@@ -135,8 +135,20 @@ export class GrokUiPythonBridge {
     this.startPromise = null;
   }
 
+  async closeDriver(): Promise<void> {
+    if (!this.proc) {
+      return;
+    }
+    try {
+      await this.request('close_driver', {}, 5000);
+    } catch (error) {
+      console.warn('[GrokUiPythonBridge] Close driver failed:', error);
+    }
+  }
+
   private async startInternal(): Promise<void> {
-    const pythonPath = this.buildPythonPath();
+    const devContext = this.getDevContext();
+    const pythonPath = this.buildPythonPath(devContext);
     const availability = await this.withPythonPath(pythonPath, () =>
       checkPythonModuleAvailability(['grok3api', 'undetected_chromedriver'], { preferredVersion: '3.12' })
     );
@@ -146,6 +158,20 @@ export class GrokUiPythonBridge {
     }
 
     this.runtime = availability.runtime;
+    // console.info('[GrokUiPythonBridge] DevContext', {
+    //   isPackaged: app.isPackaged,
+    //   isDev: devContext.isDev,
+    //   appPath: devContext.appPath,
+    //   hasAsar: devContext.hasAsar,
+    //   hasDevWorker: devContext.hasDevWorker,
+    //   hasDevServer: devContext.hasDevServer,
+    //   resourcesPath: devContext.resourcesPath,
+    // });
+    // console.info('[GrokUiPythonBridge] PythonPath', pythonPath);
+    // console.info('[GrokUiPythonBridge] PythonRuntime', {
+    //   command: availability.runtime.command,
+    //   mode: availability.runtime.mode,
+    // });
 
     const workerPath = this.resolveWorkerPath();
     const args = [...availability.runtime.baseArgs, '-u', workerPath];
@@ -166,6 +192,7 @@ export class GrokUiPythonBridge {
       PYTHONDONTWRITEBYTECODE: '1',
       PYTHONUTF8: '1',
       PYTHONPATH: pythonPath,
+      ...(devContext.isDev ? { GROK_UI_DEV_MODE: '1', GROK_UI_DEV_PYTHONPATH: pythonPath } : {}),
       ...(profileDir ? { GROK_CHROME_PROFILE_DIR: profileDir } : {}),
       ...(profileName ? { GROK_CHROME_PROFILE_NAME: profileName } : {}),
     };
@@ -204,10 +231,10 @@ export class GrokUiPythonBridge {
     }
 
     let parsed: WorkerResponseEnvelope;
-    try {
+    try { 
       parsed = JSON.parse(raw) as WorkerResponseEnvelope;
     } catch {
-      console.warn('[GrokUiPythonBridge] Non-JSON output from worker:', raw);
+      console.warn('[GrokUiPythonBridge]', raw);
       return;
     }
 
@@ -245,14 +272,67 @@ export class GrokUiPythonBridge {
     throw new Error(`Grok UI worker script not found. Checked: ${candidates.join(' | ')}`);
   }
 
-  private buildPythonPath(): string {
+  private buildPythonPath(devContext: { isDev: boolean }): string {
     const packagedSitePackages = path.join(process.resourcesPath || '', 'python', 'Lib', 'site-packages');
-    const basePath = app.isPackaged ? packagedSitePackages : GROK_UI_DEV_PYTHONPATH;
-    const existing = process.env.PYTHONPATH;
-    if (existing && existing.trim().length > 0) {
-      return `${basePath}${path.delimiter}${existing}`;
+    const existing = process.env.PYTHONPATH?.trim();
+    const override = process.env.GROK_UI_PYTHONPATH?.trim();
+    const hasDevPath = fs.existsSync(GROK_UI_DEV_PYTHONPATH);
+    const isDev = devContext.isDev;
+
+    if (override && override.length > 0) {
+      return override;
     }
-    return basePath;
+
+    if (!isDev) {
+      if (existing && existing.length > 0) {
+        return `${packagedSitePackages}${path.delimiter}${existing}`;
+      }
+      return packagedSitePackages;
+    }
+
+    if (hasDevPath) {
+      return GROK_UI_DEV_PYTHONPATH;
+    }
+
+    if (existing && existing.length > 0) {
+      const normalized = existing.replace(/\//g, '\\').toLowerCase();
+      const packagedHint = `${path.sep}resources${path.sep}python${path.sep}`.toLowerCase();
+      if (!normalized.includes(packagedHint)) {
+        return existing;
+      }
+    }
+
+    return GROK_UI_DEV_PYTHONPATH;
+  }
+
+  private getDevContext(): {
+    isDev: boolean;
+    appPath: string;
+    resourcesPath: string;
+    hasAsar: boolean;
+    hasDevWorker: boolean;
+    hasRepoWorker: boolean;
+    hasDevServer: boolean;
+  } {
+    const appPath = app.getAppPath();
+    const resourcesPath = process.resourcesPath || '';
+    const hasAsar = appPath.toLowerCase().endsWith('.asar');
+    const devWorkerPath = path.join(appPath, 'src', 'main', 'services', 'grokUi', 'python', 'grok_ui_worker.py');
+    const hasDevWorker = fs.existsSync(devWorkerPath);
+    const repoWorkerPath = path.join(process.cwd(), 'src', 'main', 'services', 'grokUi', 'python', 'grok_ui_worker.py');
+    const hasRepoWorker = fs.existsSync(repoWorkerPath);
+    const hasDevServer = Boolean(process.env.VITE_DEV_SERVER_URL) || Boolean(process.env.ELECTRON_RENDERER_URL);
+    const isDev = !app.isPackaged || !hasAsar || hasDevWorker || hasRepoWorker || hasDevServer || process.env.NODE_ENV === 'development';
+
+    return {
+      isDev,
+      appPath,
+      resourcesPath,
+      hasAsar,
+      hasDevWorker,
+      hasRepoWorker,
+      hasDevServer,
+    };
   }
 
   private async withPythonPath<T>(pythonPath: string, task: () => Promise<T>): Promise<T> {

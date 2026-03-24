@@ -4,6 +4,7 @@ import { audioExtractorService } from '../services/cutVideo/audioExtractorServic
 import { videoSplitterService } from '../services/cutVideo/videoSplitterService';
 import { videoMergerService } from '../services/cutVideo/videoMergerService';
 import { videoAudioMixerService } from '../services/cutVideo/videoAudioMixerService';
+import { detectSilences } from '../services/cutVideo/silenceDetectService';
 import { capcutProjectBatchService, DEFAULT_CAPCUT_DRAFTS_PATH } from '../services/cutVideo/capcutProjectBatchService';
 import { AppSettingsService } from '../services/appSettings';
 
@@ -189,6 +190,34 @@ export function registerCutVideoHandlers(): void {
 
   ipcMain.handle('cutVideo:getMediaInfo', async (_, filePath: string) => {
     return await videoAudioMixerService.getMediaInfo(filePath);
+  });
+
+  ipcMain.handle('cutVideo:detectSilences', async (_event, options: {
+    inputPath: string;
+    noiseDb?: number;
+    minDurationSec?: number;
+  }) => {
+    const inputPath = options?.inputPath;
+    if (!inputPath) {
+      return { success: false, error: 'Thiếu inputPath.' };
+    }
+
+    const info = await videoAudioMixerService.getMediaInfo(inputPath);
+    if (!info.success || !info.data) {
+      return { success: false, error: info.error || 'Không đọc được metadata.' };
+    }
+
+    const durationSec = info.data.duration;
+    if (!info.data.hasAudio) {
+      return { success: true, data: { durationSec, silences: [] } };
+    }
+
+    return await detectSilences({
+      inputPath,
+      noiseDb: options.noiseDb,
+      minDurationSec: options.minDurationSec,
+      durationSec,
+    });
   });
 
   ipcMain.handle('cutVideo:stopVideoSplit', async () => {

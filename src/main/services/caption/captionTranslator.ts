@@ -412,6 +412,7 @@ async function translateBatchGrokUi(
 
     if (!result.success || !result.text) {
       if (result.errorCode === 'rate_limited' && result.error === 'RATE_LIMIT_ALL_PROFILES') {
+        console.warn('[CaptionTranslator][GrokUI] All profiles rate limited → stopping translation.');
         throw new Error(GROK_UI_RATE_LIMIT_MESSAGE);
       }
       return {
@@ -422,9 +423,14 @@ async function translateBatchGrokUi(
       };
     }
 
+    console.log(`[CaptionTranslator][GrokUI] Response received (full):\n${result.text}`);
+
     const parsed = parseJsonTranslationResponse(result.text, batch.texts.length);
     const translatedTexts = parsed.translatedTexts;
     if (!parsed.ok) {
+      console.warn(
+        `[CaptionTranslator][GrokUI] Parse failed: code=${parsed.errorCode || 'unknown'} msg=${parsed.errorMessage || 'unknown'}`
+      );
       return {
         success: false,
         translatedTexts,

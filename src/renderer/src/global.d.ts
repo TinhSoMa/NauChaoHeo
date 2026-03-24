@@ -227,6 +227,18 @@ interface CutVideoAPI {
     };
     error?: string;
   }>;
+  detectSilences: (options: {
+    inputPath: string;
+    noiseDb?: number;
+    minDurationSec?: number;
+  }) => Promise<{
+    success: boolean;
+    data?: {
+      durationSec: number;
+      silences: Array<{ startSec: number; endSec: number; durationSec: number }>;
+    };
+    error?: string;
+  }>;
   startVideoSplit: (options: {
     inputPath: string;
     clips: { name: string; startStr: string; durationStr: string }[];

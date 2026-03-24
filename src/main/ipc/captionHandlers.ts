@@ -531,6 +531,14 @@ export function registerCaptionHandlers(): void {
         console.error('[CaptionHandlers] Lỗi translate:', error);
         return { success: false, error: String(error) };
       } finally {
+        if (options.translateMethod === 'grok_ui') {
+          try {
+            await getGrokUiRuntime().closeDriver();
+            console.log('[CaptionHandlers] Grok UI: close driver after translate.');
+          } catch (error) {
+            console.warn('[CaptionHandlers] Không thể close Grok UI driver:', error);
+          }
+        }
         const runId = typeof options.runId === 'string' ? options.runId : undefined;
         CaptionService.endTranslationRun(runId);
       }
@@ -916,11 +924,11 @@ export function registerCaptionHandlers(): void {
         }
         const deduped = Array.from(new Set(fonts)).filter(Boolean);
 
-        console.log('[CaptionHandlers][Font] getAvailableFonts', {
-          fontsDir,
-          count: deduped.length,
-          fonts: deduped,
-        });
+        // console.log('[CaptionHandlers][Font] getAvailableFonts', {
+        //   fontsDir,
+        //   count: deduped.length,
+        //   fonts: deduped,
+        // });
 
         return { success: true, data: deduped };
       } catch (error) {

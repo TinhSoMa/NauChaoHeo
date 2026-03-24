@@ -30,7 +30,7 @@ $cacheDir = Join-Path $pythonBaseDir "cache"
 $runtimeDir = Join-Path $pythonBaseDir "win32-x64\runtime"
 $licensesDir = Join-Path $resourcesDir "licenses\python"
 $requirementsPath = Join-Path $projectRoot "requirements-pycapcut-lock.txt"
-$grokRepoDir = "D:\Grok\Grok3API"
+$grokRepoDir = Join-Path $projectRoot "Grok3API"
 $grokPackageDir = Join-Path $grokRepoDir "grok3api"
 
 Ensure-Directory -PathValue $resourcesDir
@@ -125,6 +125,9 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @(
 if (-not (Test-Path -LiteralPath $grokPackageDir)) {
   throw "Missing Grok3API package folder: $grokPackageDir"
 }
+if (-not (Test-Path -LiteralPath (Join-Path $grokPackageDir "__init__.py"))) {
+  throw "Missing Grok3API __init__.py: $grokPackageDir"
+}
 
 $grokDestDir = Join-Path $sitePackages "grok3api"
 if (Test-Path -LiteralPath $grokDestDir) {
@@ -178,6 +181,9 @@ foreach ($pkg in $packages) {
 }
 
 $grokLicensePath = Join-Path $grokRepoDir "LICENSE"
+if (-not (Test-Path -LiteralPath $grokLicensePath)) {
+  $grokLicensePath = Join-Path $grokPackageDir "LICENSE"
+}
 if (Test-Path -LiteralPath $grokLicensePath) {
   Copy-Item -LiteralPath $grokLicensePath -Destination (Join-Path $licensesDir "grok3api\LICENSE") -Force
 }

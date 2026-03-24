@@ -1416,13 +1416,13 @@ export function useCaptionProcessing({
     setStepDependencyIssues([]);
     const nextRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     runIdRef.current = nextRunId;
-    if (settings.isHydrated === false) {
+    if (!settings.isHydrated) {
       setProgress({ current: 0, total: 0, message: 'Settings đang load, vui lòng đợi 1–2s.' });
       runIdRef.current = null;
       return;
     }
     const renderLayoutOverrides =
-      settings.isHydrated === false ? {} : resolveRenderLayoutOverrides(settings);
+      settings.isHydrated ? resolveRenderLayoutOverrides(settings) : {};
     const styleForRun = renderLayoutOverrides.style ?? settings.style;
     const subtitlePositionForRun =
       renderLayoutOverrides.subtitlePosition !== undefined
@@ -2451,8 +2451,11 @@ export function useCaptionProcessing({
                 const reportStart = typeof incomingBatchReport?.startIndex === 'number'
                   ? incomingBatchReport.startIndex
                   : -1;
+                const safeProgressBatchIndex = typeof progressEvent.batchIndex === 'number'
+                  ? progressEvent.batchIndex
+                  : null;
                 console.log(
-                  `[CaptionProcessing][GrokUI][Debug] progress batchIndex=${progressEvent.batchIndex} reportBatch=${incomingBatchReport?.batchIndex ?? 'n/a'} reportStart=${reportStart} chunkStart=${chunkStart} lines=${chunkLines}`
+                  `[CaptionProcessing][GrokUI][Debug] progress batchIndex=${safeProgressBatchIndex ?? 'n/a'} reportBatch=${incomingBatchReport?.batchIndex ?? 'n/a'} reportStart=${reportStart} chunkStart=${chunkStart} lines=${chunkLines}`
                 );
               }
               const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
@@ -2477,7 +2480,14 @@ export function useCaptionProcessing({
                 if (!shouldAck) {
                   return;
                 }
-                const ackBatchIndex = incomingBatchReport?.batchIndex ?? (progressEvent.batchIndex + 1);
+                const safeProgressBatchIndex = typeof progressEvent.batchIndex === 'number'
+                  ? progressEvent.batchIndex
+                  : null;
+                const ackBatchIndex = incomingBatchReport?.batchIndex ?? (safeProgressBatchIndex != null ? safeProgressBatchIndex + 1 : null);
+                if (ackBatchIndex == null) {
+                  console.warn('[CaptionProcessing][GrokUI] Bỏ qua ACK vì thiếu batchIndex.');
+                  return;
+                }
                 const ackRunId = progressEvent.runId || runIdRef.current || undefined;
                 try {
                   const ackResult = await window.electronAPI.caption.ackTranslateProgress({
@@ -2650,7 +2660,13 @@ export function useCaptionProcessing({
           }
         }
 
-        const isStep3Complete = backendCallSucceeded && missingBatchIndexes.length === 0 && failedLines === 0;
+        const isGrokUiMethod = (cfg.translateMethod || 'api') === 'grok_ui';
+        const isStep3Complete = isGrokUiMethod
+          ? (missingBatchIndexes.length === 0 && failedLines === 0)
+          : (backendCallSucceeded && missingBatchIndexes.length === 0 && failedLines === 0);
+        if (isGrokUiMethod && isStep3Complete && !backendCallSucceeded) {
+          console.warn('[CaptionProcessing][GrokUI] Backend failed but data saved → mark as success.');
+        }
         setProgress({
           current: translatedLines,
           total: currentEntries.length,
@@ -2688,16 +2704,23 @@ export function useCaptionProcessing({
                 outputFingerprint,
                 dependsOn: [1] as CaptionStepNumber[],
               }
-            : {
-                ...makeStepError(
-                  session.steps[stepKey],
-                  step3ErrorReason
-                ),
-                metrics: stepMetrics,
-                inputFingerprint,
-                outputFingerprint,
-                dependsOn: [1] as CaptionStepNumber[],
-              };
+            : (isGrokUiMethod
+              ? {
+                  ...makeStepStopped(session.steps[stepKey], 'GROK_UI_INCOMPLETE', stepMetrics),
+                  inputFingerprint,
+                  outputFingerprint,
+                  dependsOn: [1] as CaptionStepNumber[],
+                }
+              : {
+                  ...makeStepError(
+                    session.steps[stepKey],
+                    step3ErrorReason
+                  ),
+                  metrics: stepMetrics,
+                  inputFingerprint,
+                  outputFingerprint,
+                  dependsOn: [1] as CaptionStepNumber[],
+                });
 
           let nextSession: CaptionSessionV1 = {
             ...session,
@@ -2746,6 +2769,11 @@ export function useCaptionProcessing({
           const missingMessage = finalBatchReports.length > 0
             ? formatMissingBatchMessage(folderName, finalBatchReports)
             : `[${folderName}] Step 3 thiếu batch: ${fallbackMissingDetails || 'không rõ'} | tổng thiếu ${failedLines} dòng global: ${fallbackMissingRanges}`;
+          if (isGrokUiMethod) {
+            console.warn(`[CaptionProcessing][GrokUI] Incomplete batches → stopped (no error). ${missingMessage}`);
+            abortRef.current = true;
+            throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+          }
           throw new Error(missingMessage);
         }
       }

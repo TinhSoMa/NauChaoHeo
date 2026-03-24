@@ -212,7 +212,7 @@ export class GeminiWebApiPythonBridge {
     try {
       parsed = JSON.parse(raw) as WorkerResponseEnvelope;
     } catch {
-      console.warn('[GeminiWebApiPythonBridge] Non-JSON output from worker:', this.sanitize(raw));
+      console.warn('[GeminiWebApiPythonBridge] ', this.sanitize(raw));
       return;
     }
 
