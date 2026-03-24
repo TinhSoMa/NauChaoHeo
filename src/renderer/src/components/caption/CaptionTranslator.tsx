@@ -79,6 +79,7 @@ type Step3BatchViewRow = {
   timeMetaLabel: string;
   missingLabel: string;
   error?: string;
+  transportLabel: string;
 };
 type Step3BatchViewModel = {
   totalBatches: number;
@@ -2625,6 +2626,12 @@ export function CaptionTranslator() {
   const [sessionStepTimingMeta, setSessionStepTimingMeta] = useState<Partial<Record<Step, SessionStepTimingMeta>>>({});
   const [sessionStep3BatchState, setSessionStep3BatchState] = useState<Step3BatchState | null>(null);
   const [sessionStep2BatchPlanCount, setSessionStep2BatchPlanCount] = useState<number | null>(null);
+  const [sessionStep2BatchPlan, setSessionStep2BatchPlan] = useState<Array<{
+    batchIndex: number;
+    startIndex: number;
+    endIndex: number;
+    lineCount: number;
+  }>>([]);
   const [sessionEntryCounts, setSessionEntryCounts] = useState<{ translated: number; extracted: number }>({
     translated: 0,
     extracted: 0,
@@ -2659,6 +2666,7 @@ export function CaptionTranslator() {
       setSessionStepTimingMeta({});
       setSessionStep3BatchState(null);
       setSessionStep2BatchPlanCount(null);
+      setSessionStep2BatchPlan([]);
       setSessionEntryCounts({ translated: 0, extracted: 0 });
       setStep3BatchRuntimeMap({});
       setStep3LiveTotalBatches(null);
@@ -2686,6 +2694,7 @@ export function CaptionTranslator() {
       setSessionTimingSnapshot(null);
       setSessionStep3BatchState(null);
       setSessionStep2BatchPlanCount(null);
+      setSessionStep2BatchPlan([]);
       setSessionEntryCounts({ translated: 0, extracted: 0 });
       setStep3BatchRuntimeMap({});
       setStep3LiveTotalBatches(null);
@@ -2799,6 +2808,14 @@ export function CaptionTranslator() {
         setSessionStep3BatchState(session.data.step3BatchState ?? null);
         setSessionStep2BatchPlanCount(
           Array.isArray(session.data.step2BatchPlan) ? session.data.step2BatchPlan.length : null
+        );
+        setSessionStep2BatchPlan(
+          Array.isArray(session.data.step2BatchPlan) ? (session.data.step2BatchPlan as Array<{
+            batchIndex: number;
+            startIndex: number;
+            endIndex: number;
+            lineCount: number;
+          }>) : []
         );
         setSessionTimingSnapshot(readTimingSnapshotFromSession(session));
         lastHydratedInputPathRef.current = activeInputPath;
@@ -3879,14 +3896,30 @@ export function CaptionTranslator() {
 
   const step3BatchViewModel = useMemo<Step3BatchViewModel | null>(() => {
     const safeState = sessionStep3BatchState;
+    const step3Stopped = sessionStepStatus[3] === 'stopped';
     const stateReports = Array.isArray(safeState?.batches) ? safeState.batches : [];
     const reportMap = new Map<number, SharedTranslationBatchReport>();
     for (const report of stateReports) {
       if (!report || typeof report.batchIndex !== 'number') {
         continue;
       }
+      if (step3Stopped && report.status === 'failed' && report.error === 'NO_BATCH_REPORT') {
+        continue;
+      }
       const batchIndex = Math.max(1, Math.floor(report.batchIndex));
       reportMap.set(batchIndex, report);
+    }
+
+    const planMap = new Map<number, { startIndex: number; endIndex: number; lineCount: number }>();
+    for (const plan of sessionStep2BatchPlan) {
+      if (!plan || typeof plan.batchIndex !== 'number') {
+        continue;
+      }
+      const idx = Math.max(1, Math.floor(plan.batchIndex));
+      const startIndex = typeof plan.startIndex === 'number' ? Math.max(0, Math.floor(plan.startIndex)) : 0;
+      const endIndex = typeof plan.endIndex === 'number' ? Math.max(startIndex, Math.floor(plan.endIndex)) : startIndex;
+      const lineCount = typeof plan.lineCount === 'number' ? Math.max(0, Math.floor(plan.lineCount)) : (endIndex - startIndex + 1);
+      planMap.set(idx, { startIndex, endIndex, lineCount });
     }
 
     const runtimeIndexes = Object.keys(step3BatchRuntimeMap)
@@ -3900,9 +3933,11 @@ export function CaptionTranslator() {
     const stateTotal = typeof safeState?.totalBatches === 'number' && Number.isFinite(safeState.totalBatches)
       ? Math.max(1, Math.floor(safeState.totalBatches))
       : 0;
-    const planTotal = typeof sessionStep2BatchPlanCount === 'number'
-      ? Math.max(0, Math.floor(sessionStep2BatchPlanCount))
-      : 0;
+    const planTotal = sessionStep2BatchPlan.length > 0
+      ? sessionStep2BatchPlan.length
+      : (typeof sessionStep2BatchPlanCount === 'number'
+        ? Math.max(0, Math.floor(sessionStep2BatchPlanCount))
+        : 0);
     const totalBatches = Math.max(stateTotal, liveTotal, maxReportIndex, maxRuntimeIndex, planTotal);
     const totalSourceLines = Math.max(
       0,
@@ -3922,11 +3957,15 @@ export function CaptionTranslator() {
         .map((value) => Math.max(1, Math.floor(value)))
         .sort((a, b) => a - b)
       : [];
+    const filteredMissingBatchIndexes = step3Stopped
+      ? missingBatchIndexes.filter((value) => reportMap.has(value))
+      : missingBatchIndexes;
 
     const rows: Step3BatchViewRow[] = [];
     for (let batchIndex = 1; batchIndex <= totalBatches; batchIndex++) {
       const report = reportMap.get(batchIndex);
       const runtimeEntry = step3BatchRuntimeMap[batchIndex];
+      const planEntry = planMap.get(batchIndex);
       const fallbackStartIndex = Math.max(0, (batchIndex - 1) * step3BatchSize);
       const fallbackExpectedLines = totalSourceLines > fallbackStartIndex
         ? Math.min(step3BatchSize, totalSourceLines - fallbackStartIndex)
@@ -3951,27 +3990,31 @@ export function CaptionTranslator() {
       const endedAtMs = reportEndedAtMs ?? runtimeEntry?.completedAtMs ?? null;
       const queuedAtMs = runtimeEntry?.queuedAtMs ?? null;
       const nextAllowedAtMs = runtimeEntry?.nextAllowedAtMs ?? null;
+      const planExpectedLines = typeof planEntry?.lineCount === 'number' ? planEntry.lineCount : null;
+      const baseExpectedLines = typeof planExpectedLines === 'number' ? planExpectedLines : fallbackExpectedLines;
       const expectedLines = typeof report?.expectedLines === 'number' && Number.isFinite(report.expectedLines)
         ? Math.max(0, Math.floor(report.expectedLines))
-        : fallbackExpectedLines;
+        : baseExpectedLines;
       const translatedLines = typeof report?.translatedLines === 'number' && Number.isFinite(report.translatedLines)
         ? Math.max(0, Math.floor(report.translatedLines))
         : 0;
+      const baseStartLine = typeof planEntry?.startIndex === 'number' ? planEntry.startIndex : fallbackStartIndex;
+      const baseEndLine = typeof planEntry?.endIndex === 'number' ? planEntry.endIndex : fallbackEndIndex;
       const startLine = (typeof report?.startIndex === 'number' && Number.isFinite(report.startIndex))
         ? Math.max(0, Math.floor(report.startIndex))
-        : fallbackStartIndex;
+        : baseStartLine;
       const endLine = (typeof report?.endIndex === 'number' && Number.isFinite(report.endIndex))
         ? Math.max(startLine, Math.floor(report.endIndex))
-        : fallbackEndIndex;
-      const lineRangeLabel = expectedLines > 0 ? `dòng ${startLine + 1}-${endLine + 1}` : 'dòng --';
+        : baseEndLine;
+      const lineRangeLabel = expectedLines > 0 ? `${startLine + 1}–${endLine + 1}` : '--';
       const lineSummaryLabel = (() => {
         if (status === 'success') {
-          return `Dịch ${translatedLines}/${expectedLines} (${lineRangeLabel})`;
+          return `${translatedLines}/${expectedLines} (${lineRangeLabel})`;
         }
         if (status === 'failed') {
-          return `Nhận ${translatedLines}/${expectedLines} (${lineRangeLabel})`;
+          return `${translatedLines}/${expectedLines} (${lineRangeLabel})`;
         }
-        return `${expectedLines} dòng gốc (${lineRangeLabel})`;
+        return `${expectedLines} dòng (${lineRangeLabel})`;
       })();
 
       const timeLabel = (() => {
@@ -3990,6 +4033,10 @@ export function CaptionTranslator() {
         }
         return '--';
       })();
+      const transportLabel = report?.resourceLabel || report?.resourceId || report?.transport || '--';
+      const durationLabel = typeof report?.durationMs === 'number'
+        ? formatElapsedMs(report.durationMs)
+        : timeLabel;
       const timeMetaLabel = (() => {
         if (status === 'waiting') {
           return formatEtaDisplay(nextAllowedAtMs, uiNowMs);
@@ -4013,10 +4060,11 @@ export function CaptionTranslator() {
         missingLines,
         startedAtMs,
         endedAtMs,
-        timeLabel,
+        timeLabel: durationLabel,
         timeMetaLabel,
         missingLabel: missingLines > 0 ? formatNumberList(report?.missingGlobalLineIndexes || [], 16) : '--',
         error: report?.error || runtimeEntry?.error,
+        transportLabel,
       });
     }
 
@@ -4032,7 +4080,7 @@ export function CaptionTranslator() {
       completedBatches,
       failedBatches,
       runningBatchIndex,
-      missingBatchIndexes,
+      missingBatchIndexes: filteredMissingBatchIndexes,
       updatedAtLabel,
       rows,
     };
@@ -4041,6 +4089,8 @@ export function CaptionTranslator() {
     sessionPreviewEntries.length,
     sessionEntryCounts,
     sessionStep3BatchState,
+    sessionStepStatus,
+    sessionStep2BatchPlan,
     sessionStep2BatchPlanCount,
     step3BatchRuntimeMap,
     step3LiveTotalBatches,
@@ -5460,17 +5510,14 @@ export function CaptionTranslator() {
         <div className={styles.panelSection}>
           <div className={styles.step3BatchTableHeader}>
             <span>Batch</span>
-            <span>Status</span>
+            <span>Stat</span>
             <span>Time</span>
           </div>
           <div className={styles.step3BatchList}>
             {step3BatchViewModel.rows.map((row) => (
               <div key={`s3-batch-${row.batchIndex}`} className={styles.step3BatchRow}>
                 <div className={styles.step3BatchColMain}>
-                  <span className={styles.step3BatchTitle}>#{row.batchIndex}</span>
-                  <span className={styles.step3BatchSub}>
-                    {row.lineSummaryLabel}
-                  </span>
+                  <span className={styles.step3BatchTitle}>#{row.batchIndex} · {row.lineSummaryLabel}</span>
                 </div>
                 <div className={styles.step3BatchColStatus}>
                   <span
@@ -5485,22 +5532,19 @@ export function CaptionTranslator() {
                     }`}
                   >
                     {row.status === 'success'
-                      ? 'THÀNH CÔNG'
+                      ? 'OK'
                       : row.status === 'failed'
-                        ? 'LỖI'
+                        ? 'ERR'
                         : row.status === 'running'
-                          ? 'ĐANG XỬ LÝ'
-                          : 'ĐANG CHỜ'}
+                          ? 'RUN'
+                          : 'WAIT'}
                   </span>
-                  <span className={styles.step3BatchSub}>try {row.attempts || '--'}</span>
                 </div>
                 <div className={styles.step3BatchColTime}>
                   <span className={styles.step3BatchTime}>{row.timeLabel}</span>
-                  <span className={styles.step3BatchSub}>
-                    {row.timeMetaLabel}
-                  </span>
+                  <span className={styles.step3BatchSub}>try {row.attempts || '--'} · {row.transportLabel}</span>
                 </div>
-                {(row.missingLines > 0 || row.error) && (
+                {(row.status === 'failed' && (row.missingLines > 0 || row.error)) && (
                   <div className={styles.step3BatchErrorRow}>
                     {row.missingLines > 0 && (
                       <span>Missing: {row.missingLines} ({row.missingLabel})</span>

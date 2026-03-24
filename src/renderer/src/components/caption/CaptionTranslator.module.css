@@ -1910,9 +1910,9 @@
 
 .step3BatchTableHeader {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.5fr) minmax(0, 0.8fr);
   gap: 8px;
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-secondary);
@@ -1933,7 +1933,7 @@
   padding: 8px;
   background: var(--color-surface);
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.5fr) minmax(0, 0.8fr);
   gap: 8px;
   align-items: start;
 }
@@ -1942,7 +1942,7 @@
 .step3BatchColStatus,
 .step3BatchColTime {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
 }
 

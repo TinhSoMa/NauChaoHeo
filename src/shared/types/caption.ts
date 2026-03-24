@@ -63,6 +63,16 @@ export interface TranslationBatchReport {
   attempts: number;
   status: 'success' | 'failed';
   error?: string;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  resourceId?: string;
+  resourceLabel?: string;
+  queueRuntimeKey?: string;
+  queuePacingMode?: 'dispatch_spacing_global';
+  queueGapMs?: number;
+  nextAllowedAt?: number;
 }
 
 export interface TranslationQueuePacingMetadata {
@@ -808,6 +818,7 @@ export interface CaptionSessionData {
     lineCount: number;
     partPath?: string;
   }>;
+  step2BatchPlanFingerprint?: string;
   step3BatchState?: {
     totalBatches: number;
     completedBatches: number;
@@ -816,6 +827,7 @@ export interface CaptionSessionData {
     missingGlobalLineIndexes: number[];
     batches: TranslationBatchReport[];
     updatedAt: string;
+    planFingerprint?: string;
   };
   ttsAudioFiles?: AudioFile[];
   trimResults?: Record<string, unknown>;

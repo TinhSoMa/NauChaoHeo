@@ -919,7 +919,12 @@ export async function translateAll(
     translatedTexts: string[],
     attempts: number,
     status: 'success' | 'failed',
-    error?: string
+    error?: string,
+    timing?: TranslationQueuePacingMetadata,
+    transport?: TranslationTransport,
+    resourceId?: string,
+    resourceLabel?: string,
+    queueRuntimeKey?: string
   ): TranslationBatchReport => {
     const expectedLines = batch.texts.length;
     const normalized = Array.from({ length: expectedLines }, (_, index) => translatedTexts[index] ?? '');
@@ -936,6 +941,12 @@ export async function translateAll(
       }
     }
 
+    const startedAt = typeof timing?.startedAt === 'number' ? timing.startedAt : undefined;
+    const endedAt = typeof timing?.endedAt === 'number' ? timing.endedAt : undefined;
+    const durationMs = (typeof startedAt === 'number' && typeof endedAt === 'number' && endedAt >= startedAt)
+      ? (endedAt - startedAt)
+      : undefined;
+
     return {
       batchIndex: batch.batchIndex + 1,
       startIndex: batch.startIndex,
@@ -947,6 +958,16 @@ export async function translateAll(
       attempts,
       status,
       error,
+      startedAt,
+      endedAt,
+      durationMs,
+      transport,
+      resourceId,
+      resourceLabel,
+      queueRuntimeKey,
+      queuePacingMode: timing?.queuePacingMode,
+      queueGapMs: timing?.queueGapMs,
+      nextAllowedAt: timing?.nextAllowedAt,
     };
   };
 
@@ -961,7 +982,18 @@ export async function translateAll(
       (_, offset) => allTranslatedTexts[batch.startIndex + offset] ?? ''
     );
     const fallbackError = `UNEXPECTED_BATCH_EXCEPTION: ${String(rawError)}`;
-    const report = buildBatchReport(batch, fallbackTexts, 1, 'failed', fallbackError);
+    const report = buildBatchReport(
+      batch,
+      fallbackTexts,
+      1,
+      'failed',
+      fallbackError,
+      undefined,
+      methodLabel,
+      undefined,
+      undefined,
+      undefined
+    );
     batchReports.push(report);
     translatedCount += report.translatedLines;
     failedCount += report.missingGlobalLineIndexes.length;
@@ -1117,7 +1149,12 @@ export async function translateAll(
       finalTexts,
       attemptsUsed,
       isFullSuccess ? 'success' : 'failed',
-      isFullSuccess ? undefined : (lastResult?.error || 'BATCH_TRANSLATION_FAILED')
+      isFullSuccess ? undefined : (lastResult?.error || 'BATCH_TRANSLATION_FAILED'),
+      pacingMetadata,
+      lastResult?.transport || methodLabel,
+      lastResult?.resourceId,
+      lastResult?.resourceLabel,
+      lastResult?.queueRuntimeKey
     );
 
     batchReports.push(report);
