@@ -24,5 +24,7 @@ export {
   smartMerge,
   trimSilence,
   trimSilenceEnd,
+  trimSilenceToPath,
+  trimSilenceEndToPath,
   fitAudioToDuration,
 } from './audioMerger';

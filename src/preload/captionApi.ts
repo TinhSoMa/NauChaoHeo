@@ -17,6 +17,7 @@ import {
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
   MergeResult,
+  TrimSilencePathItem,
   TrimSilenceResult,
   VoiceInfo,
   AudioFile,
@@ -92,6 +93,8 @@ export interface TTSAPI {
   // Trim Silence
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
 
   // Fit Audio to Duration
   fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) => Promise<IpcApiResponse<TrimSilenceResult>>;
@@ -176,6 +179,12 @@ export function createTTSAPI(): TTSAPI {
 
     trimSilenceEnd: (audioPaths: string[]) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END, audioPaths),
+
+    trimSilenceToPaths: (targets: TrimSilencePathItem[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_TO_PATHS, targets),
+
+    trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END_TO_PATHS, targets),
 
     fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_FIT_AUDIO, audioItems),

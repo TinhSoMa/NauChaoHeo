@@ -328,9 +328,6 @@ const STEP_DEPENDENCIES: Record<CaptionStepNumber, CaptionStepNumber[]> = {
 
 function getDependenciesForStep(step: CaptionStepNumber, enabledSteps?: CaptionStepNumber[]): CaptionStepNumber[] {
   const base = [...STEP_DEPENDENCIES[step]];
-  if (step === 6 && enabledSteps?.includes(5) && !base.includes(5)) {
-    base.push(5);
-  }
   return base;
 }
 
@@ -568,7 +565,7 @@ export function validateStepOutputForSkip(
 export function shouldSkipStep(
   session: CaptionSessionV1,
   step: CaptionStepNumber,
-  options?: { currentSrtSpeed?: number }
+  options?: { currentSrtSpeed?: number; currentTrimAudioEnabled?: boolean }
 ): { skip: boolean; reason?: string } {
   // Step 7 (render video) luôn cho phép chạy lại nhiều lần.
   if (step === 7) {
@@ -592,6 +589,19 @@ export function shouldSkipStep(
     const previousScale = mergeScale ?? timingScale;
     if (previousScale !== null && Math.abs(previousScale - options.currentSrtSpeed) > 0.0005) {
       return { skip: false, reason: 'srt_scale_changed' };
+    }
+  }
+  if (step === 6 && typeof options?.currentTrimAudioEnabled === 'boolean') {
+    const metrics = toRecord(stepState?.metrics);
+    const previousTrimEnabled = typeof metrics.trimAudioEnabled === 'boolean'
+      ? metrics.trimAudioEnabled
+      : null;
+    if (previousTrimEnabled === null) {
+      if (options.currentTrimAudioEnabled) {
+        return { skip: false, reason: 'trim_flag_changed' };
+      }
+    } else if (previousTrimEnabled !== options.currentTrimAudioEnabled) {
+      return { skip: false, reason: 'trim_flag_changed' };
     }
   }
   const outputCheck = validateStepOutputForSkip(session, step);
@@ -678,6 +688,9 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       edgeTtsBatchSize: settings.edgeTtsBatchSize,
       srtSpeed: settings.srtSpeed,
       autoFitAudio: settings.autoFitAudio,
+    },
+    step6Merge: {
+      trimAudioEnabled: settings.trimAudioEnabled,
     },
     step7Render: {
       fontSizeScaleVersion: settings.fontSizeScaleVersion,

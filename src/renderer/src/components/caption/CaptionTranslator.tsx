@@ -1452,6 +1452,7 @@ export function CaptionTranslator() {
     enabledSteps: Array.from(settings.enabledSteps.values()),
     audioDir: settings.audioDir,
     autoFitAudio: settings.autoFitAudio,
+    trimAudioEnabled: settings.trimAudioEnabled,
     hardwareAcceleration: settings.hardwareAcceleration,
     style: settings.style,
     renderMode: settings.renderMode,
@@ -1529,6 +1530,7 @@ export function CaptionTranslator() {
     settings.enabledSteps,
     settings.audioDir,
     settings.autoFitAudio,
+    settings.trimAudioEnabled,
     settings.hardwareAcceleration,
     settings.style,
     settings.renderMode,
@@ -2731,7 +2733,6 @@ export function CaptionTranslator() {
             step2: session.steps.step2?.status,
             step3: session.steps.step3?.status,
             step4: session.steps.step4?.status,
-            step5: session.steps.step5?.status,
             step6: session.steps.step6?.status,
             step7: session.steps.step7?.status,
           },
@@ -2742,7 +2743,6 @@ export function CaptionTranslator() {
           2: session.steps.step2?.status,
           3: session.steps.step3?.status,
           4: session.steps.step4?.status,
-          5: session.steps.step5?.status,
           6: session.steps.step6?.status,
           7: session.steps.step7?.status,
         };
@@ -2761,7 +2761,6 @@ export function CaptionTranslator() {
           2: isSkipped(session.steps.step2),
           3: isSkipped(session.steps.step3),
           4: isSkipped(session.steps.step4),
-          5: isSkipped(session.steps.step5),
           6: isSkipped(session.steps.step6),
           7: isSkipped(session.steps.step7),
         };
@@ -2785,11 +2784,6 @@ export function CaptionTranslator() {
             status: session.steps.step4?.status,
             startedAt: session.steps.step4?.startedAt,
             endedAt: session.steps.step4?.endedAt,
-          },
-          5: {
-            status: session.steps.step5?.status,
-            startedAt: session.steps.step5?.startedAt,
-            endedAt: session.steps.step5?.endedAt,
           },
           6: {
             status: session.steps.step6?.status,
@@ -4164,7 +4158,7 @@ export function CaptionTranslator() {
     6: 'Ghép',
     7: 'Render',
   };
-  const STEP_INSPECTOR_LIST: Step[] = [1, 2, 3, 4, 5, 6, 7];
+  const STEP_INSPECTOR_LIST: Step[] = [1, 2, 3, 4, 6, 7];
 
   const configSummaryRows = useMemo(() => {
     const subtitlePos = settings.subtitlePosition
@@ -4363,8 +4357,8 @@ export function CaptionTranslator() {
     2: 'Tách subtitle theo dòng hoặc theo số phần.',
     3: 'Thiết lập phương thức dịch và model.',
     4: 'Thiết lập voice TTS (tham số render/audio ở Common).',
-    5: 'Step 5 chưa có cấu hình riêng.',
-    6: 'Step 6 dùng cấu hình audio ở các bước trước.',
+    5: 'Step 5 đã được gộp vào Step 6 (Trim + Merge).',
+    6: 'Step 6: Trim audio (tùy chọn) + ghép audio.',
     7: 'Tiện ích Step 7 + thumbnail theo folder.',
   };
 
@@ -4601,18 +4595,6 @@ export function CaptionTranslator() {
         stepItems.push({ label: 'Failed Files', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
         break;
       }
-      case 5: {
-        const trimResults = (stepData.trimResults && typeof stepData.trimResults === 'object')
-          ? stepData.trimResults as Record<string, unknown>
-          : null;
-        const trimKeys = trimResults ? Object.keys(trimResults) : [];
-        stepItems.push({ label: 'Trim Result Keys', value: trimKeys.length > 0 ? trimKeys.join(', ') : '--' });
-        const failedCount = typeof trimResults?.failedCount === 'number'
-          ? trimResults.failedCount
-          : (Array.isArray(trimResults?.errors) ? trimResults.errors.length : 0);
-        stepItems.push({ label: 'Failed Count', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
-        break;
-      }
       case 6: {
         const mergeResult = (stepData.mergeResult && typeof stepData.mergeResult === 'object')
           ? stepData.mergeResult as Record<string, unknown>
@@ -4621,6 +4603,32 @@ export function CaptionTranslator() {
           ? inspectorSessionData.artifacts.mergedAudioPath
           : '';
         const mergeOutputPath = typeof mergeResult.outputPath === 'string' ? mergeResult.outputPath : '';
+        const trimResults = (stepData.trimResults && typeof stepData.trimResults === 'object')
+          ? stepData.trimResults as Record<string, unknown>
+          : null;
+        const trimAudioEnabled = metrics.trimAudioEnabled === true || !!trimResults;
+        stepItems.push({ label: 'Trim Enabled', value: trimAudioEnabled ? 'true' : 'false' });
+        if (trimAudioEnabled) {
+          const trimOutputDir = typeof trimResults?.trimOutputDir === 'string'
+            ? (trimResults.trimOutputDir as string)
+            : '';
+          const trimFiles = Array.isArray(trimResults?.trimFiles)
+            ? trimResults?.trimFiles as string[]
+            : [];
+          const trimmedEnd = (trimResults?.trimmedEnd && typeof trimResults.trimmedEnd === 'object')
+            ? trimResults.trimmedEnd as Record<string, unknown>
+            : null;
+          const trimmedCount = typeof trimmedEnd?.trimmedCount === 'number'
+            ? trimmedEnd.trimmedCount
+            : (typeof trimResults?.trimmedCount === 'number' ? trimResults.trimmedCount as number : 0);
+          const failedCount = typeof trimmedEnd?.failedCount === 'number'
+            ? trimmedEnd.failedCount
+            : (Array.isArray(trimResults?.errors) ? trimResults.errors.length : 0);
+          stepItems.push({ label: 'Trim Output Dir', value: trimOutputDir || '--', mono: true });
+          stepItems.push({ label: 'Trimmed Count', value: `${trimmedCount}` });
+          stepItems.push({ label: 'Trim Failed', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
+          stepItems.push({ label: 'Trimmed Files', value: `${trimFiles.length}` });
+        }
         stepItems.push({ label: 'Merge Success', value: mergeResult.success === true ? 'true' : mergeResult.success === false ? 'false' : '--' });
         stepItems.push({ label: 'Merged Audio Path', value: mergedAudioPath || mergeOutputPath || '--', mono: true });
         break;
@@ -4667,14 +4675,11 @@ export function CaptionTranslator() {
           return {
             ttsAudioFiles: stepData.ttsAudioFiles || [],
           };
-        case 5:
-          return {
-            trimResults: stepData.trimResults || null,
-          };
         case 6:
           return {
             mergeResult: stepData.mergeResult || null,
             mergedAudioPath: inspectorSessionData.artifacts.mergedAudioPath || null,
+            trimResults: stepData.trimResults || null,
           };
         case 7:
           return {
@@ -6348,22 +6353,26 @@ export function CaptionTranslator() {
       );
     }
 
-    if (activeStep === 5) {
-      return (
-        <div className={styles.stepInspectorStack}>
-          <div className={styles.stepInfoCard}>
-            Step 5 hiện không có cấu hình riêng.
-          </div>
-          <div className={styles.stepInfoNote}>
-            Dùng Common Config để chỉnh Typography/Render/Audio trước khi chạy.
-          </div>
-        </div>
-      );
-    }
-
     if (activeStep === 6) {
       return (
         <div className={styles.stepInspectorStack}>
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Trim audio (tuỳ chọn)</div>
+              <span className={styles.stepMetaPill}>{settings.trimAudioEnabled ? 'ON' : 'OFF'}</span>
+            </div>
+            <div className={styles.stepOptionRow}>
+              <Checkbox
+                label="Trim silence trước khi ghép"
+                checked={!!settings.trimAudioEnabled}
+                onChange={(checked) => settings.setTrimAudioEnabled(checked)}
+                disabled={processing.status === 'running'}
+              />
+            </div>
+            <div className={styles.stepCardHint}>
+              Khi bật, audio sẽ được trim vào thư mục <span className={styles.stepDataMono}>audio_trimmed/</span> rồi mới ghép.
+            </div>
+          </div>
           <div className={styles.stepInfoCard}>
             Step 6 dùng cấu hình audio ở các bước trước.
           </div>
@@ -6469,7 +6478,7 @@ export function CaptionTranslator() {
             <div className={styles.stepRailCurrent}>B{activeStep}</div>
           </div>
           <div className={styles.stepStatusList}>
-            {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => {
+            {([1, 2, 3, 4, 6, 7] as Step[]).map((step) => {
               const badge = getStepBadge(step);
               const toneClass = getStepToneClass(badge.label);
               const compactStatus = getStepStatusCompactLabel(badge.label);
@@ -6640,7 +6649,7 @@ export function CaptionTranslator() {
                   interactiveDisabledReason={
                     effectivePreviewMode === 'render'
                       ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
-                      : (!processing.enabledSteps.has(7) ? 'Chưa bật B7 Render' : undefined)
+                      : undefined
                   }
                   realPreviewDisabledReason={
                     processing.status === 'running'
@@ -6968,7 +6977,7 @@ export function CaptionTranslator() {
 
         <div className={styles.runBarControls}>
           <div className={styles.stepCheckboxes}>
-            {([1, 2, 3, 4, 5, 6, 7] as Step[]).map((step) => (
+            {([1, 2, 3, 4, 6, 7] as Step[]).map((step) => (
               <Checkbox
                 key={step}
                 label={`B${step} ${STEP_SHORT_LABELS[step]}`}

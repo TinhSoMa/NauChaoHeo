@@ -1177,6 +1177,7 @@ export function useCaptionSettings() {
   const [numberOfParts, setNumberOfParts] = useState(DEFAULT_NUMBER_OF_PARTS);
 
   const [audioDir, setAudioDir] = useState('');
+  const [trimAudioEnabled, setTrimAudioEnabled] = useState(true);
   const [autoFitAudio, setAutoFitAudio] = useState(false);
 
   const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv' | 'nvenc'>('qsv');
@@ -1188,7 +1189,7 @@ export function useCaptionSettings() {
 
   const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>(createDefaultLayoutProfiles);
 
-  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 5, 6, 7]));
+  const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 6, 7]));
   const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui'>('api');
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
 
@@ -1812,6 +1813,7 @@ export function useCaptionSettings() {
       numberOfParts,
       enabledSteps: Array.from(enabledSteps.values()),
       audioDir,
+      trimAudioEnabled,
       autoFitAudio,
       hardwareAcceleration,
       style: activeProfile.style,
@@ -1902,6 +1904,7 @@ export function useCaptionSettings() {
       numberOfParts,
       enabledSteps,
       audioDir,
+      trimAudioEnabled,
       autoFitAudio,
       hardwareAcceleration,
       activeProfile,
@@ -1930,8 +1933,12 @@ export function useCaptionSettings() {
     if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
     if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
     if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
-    if (saved.enabledSteps) setEnabledSteps(new Set(saved.enabledSteps as Step[]));
+    if (saved.enabledSteps) {
+      const filtered = (saved.enabledSteps as Step[]).filter((step) => step !== 5);
+      setEnabledSteps(new Set(filtered));
+    }
     if (saved.audioDir) setAudioDir(saved.audioDir);
+    if (typeof saved.trimAudioEnabled === 'boolean') setTrimAudioEnabled(saved.trimAudioEnabled);
     if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
     if (saved.hardwareAcceleration === 'none' || saved.hardwareAcceleration === 'qsv' || saved.hardwareAcceleration === 'nvenc') {
       setHardwareAcceleration(saved.hardwareAcceleration);
@@ -2288,6 +2295,7 @@ export function useCaptionSettings() {
     numberOfParts, setNumberOfParts,
     enabledSteps, setEnabledSteps,
     audioDir, setAudioDir,
+    trimAudioEnabled, setTrimAudioEnabled,
     autoFitAudio, setAutoFitAudio,
     hardwareAcceleration, setHardwareAcceleration,
     fontSizeScaleVersion: FONT_SIZE_SCALE_VERSION,

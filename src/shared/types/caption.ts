@@ -276,6 +276,14 @@ export interface MergeResult {
 }
 
 /**
+ * Input/output mapping for trim silence
+ */
+export interface TrimSilencePathItem {
+  inputPath: string;
+  outputPath: string;
+}
+
+/**
  * Kết quả trim silence
  */
 export interface TrimSilenceResult {
@@ -308,6 +316,8 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_STOP: 'tts:stop',
   TTS_TRIM_SILENCE: 'tts:trimSilence',
   TTS_TRIM_SILENCE_END: 'tts:trimSilenceEnd',
+  TTS_TRIM_SILENCE_TO_PATHS: 'tts:trimSilenceToPaths',
+  TTS_TRIM_SILENCE_END_TO_PATHS: 'tts:trimSilenceEndToPaths',
   TTS_FIT_AUDIO: 'tts:fitAudio',
   
   // Audio Merge
@@ -939,6 +949,7 @@ export interface CaptionProjectSettingsValues {
   numberOfParts?: number;
   enabledSteps?: number[];
   audioDir?: string;
+  trimAudioEnabled?: boolean;
   autoFitAudio?: boolean;
   hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
   style?: ASSStyleConfig;

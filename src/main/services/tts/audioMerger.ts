@@ -714,6 +714,98 @@ export async function trimSilenceEnd(inputPath: string): Promise<boolean> {
   });
 }
 
+async function runTrimToPath(
+  inputPath: string,
+  outputPath: string,
+  filter: string
+): Promise<boolean> {
+  const normalizedInput = inputPath.trim();
+  const normalizedOutput = outputPath.trim();
+  if (!normalizedInput || !normalizedOutput) {
+    return false;
+  }
+  const samePath = path.resolve(normalizedInput) === path.resolve(normalizedOutput);
+  const tempOutput = samePath
+    ? (/\.(wav|mp3)$/i.test(normalizedOutput)
+      ? normalizedOutput.replace(/\.(wav|mp3)$/i, '_temp.$1')
+      : `${normalizedOutput}_temp`)
+    : '';
+
+  return new Promise((resolve) => {
+    const targetOutput = samePath ? tempOutput : normalizedOutput;
+    const isWav = targetOutput.toLowerCase().endsWith('.wav')
+      || normalizedInput.toLowerCase().endsWith('.wav');
+    const args = [
+      '-y',
+      '-i', normalizedInput,
+      '-af', filter,
+    ];
+
+    if (isWav) {
+      args.push('-c:a', 'pcm_s16le');
+    } else {
+      args.push('-c:a', 'libmp3lame', '-b:a', '192k');
+    }
+
+    args.push(targetOutput);
+
+    const proc = spawn('ffmpeg', args, {
+      windowsHide: true,
+      shell: false,
+    });
+
+    proc.on('close', async (code) => {
+      if (code === 0) {
+        if (samePath) {
+          try {
+            await fs.unlink(normalizedOutput);
+            await fs.rename(targetOutput, normalizedOutput);
+            resolve(true);
+            return;
+          } catch {
+            try { await fs.unlink(targetOutput); } catch {}
+            resolve(false);
+            return;
+          }
+        }
+        resolve(true);
+        return;
+      }
+      try { await fs.unlink(targetOutput); } catch {}
+      resolve(false);
+    });
+
+    proc.on('error', async () => {
+      try { await fs.unlink(targetOutput); } catch {}
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Cắt khoảng im lặng đầu file audio, ghi ra file mới (không đụng file gốc)
+ */
+export async function trimSilenceToPath(
+  inputPath: string,
+  outputPath: string
+): Promise<boolean> {
+  return runTrimToPath(inputPath, outputPath, 'silenceremove=start_periods=1:start_threshold=-50dB');
+}
+
+/**
+ * Cắt khoảng im lặng cuối file audio, ghi ra file mới (không đụng file gốc)
+ */
+export async function trimSilenceEndToPath(
+  inputPath: string,
+  outputPath: string
+): Promise<boolean> {
+  return runTrimToPath(
+    inputPath,
+    outputPath,
+    'areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse'
+  );
+}
+
 /**
  * Kết quả fit audio
  */

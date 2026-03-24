@@ -462,6 +462,11 @@ interface TrimSilenceResult {
   errors?: string[];
 }
 
+interface TrimSilencePathItem {
+  inputPath: string;
+  outputPath: string;
+}
+
 interface VoiceInfo {
   name: string;
   provider: 'edge' | 'capcut';
@@ -486,6 +491,8 @@ interface TTSAPI {
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) => Promise<IpcApiResponse<TrimSilenceResult>>;
 }
 

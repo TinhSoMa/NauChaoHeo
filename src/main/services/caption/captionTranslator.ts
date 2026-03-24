@@ -972,6 +972,9 @@ export async function translateAll(
   };
 
   const registerUnexpectedBatchFailure = async (batch: TextBatch, rawError: unknown): Promise<void> => {
+    const methodLabel: TranslationTransport = useGeminiWebQueue
+      ? 'gemini_webapi_queue'
+      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
     const batchNumber = batch.batchIndex + 1;
     if (batchReports.some((report) => report.batchIndex === batchNumber)) {
       return;
@@ -1006,9 +1009,6 @@ export async function translateAll(
     errors.push(errorMessage);
 
     if (progressCallback && !shouldStopTranslation(runId)) {
-      const methodLabel: TranslationTransport = useGeminiWebQueue
-        ? 'gemini_webapi_queue'
-        : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
       progressCallback({
         current: Math.min(processedLines, entries.length),
         total: entries.length,

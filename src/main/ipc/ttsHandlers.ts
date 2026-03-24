@@ -3,6 +3,8 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import {
   CAPTION_IPC_CHANNELS,
   SubtitleEntry,
@@ -11,6 +13,7 @@ import {
   TTSOptions,
   TTSResult,
   MergeResult,
+  TrimSilencePathItem,
   TrimSilenceResult,
   VoiceInfo,
 } from '../../shared/types/caption';
@@ -244,6 +247,118 @@ export function registerTTSHandlers(): void {
         return { success: result.success, data: result, error: result.errors?.join(', ') };
       } catch (error) {
         console.error('[TTSHandlers] Lỗi trim silence end:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // TRIM SILENCE TO PATHS
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_TO_PATHS,
+    async (
+      _event: IpcMainInvokeEvent,
+      trimTargets: TrimSilencePathItem[]
+    ): Promise<IpcResponse<TrimSilenceResult>> => {
+      const safeTargets = Array.isArray(trimTargets) ? trimTargets : [];
+      console.log(`[TTSHandlers] Trim silence to paths: ${safeTargets.length} files`);
+
+      try {
+        let trimmedCount = 0;
+        let failedCount = 0;
+        const errors: string[] = [];
+
+        for (const target of safeTargets) {
+          const inputPath = (target?.inputPath || '').trim();
+          const outputPath = (target?.outputPath || '').trim();
+          if (!inputPath || !outputPath) {
+            failedCount++;
+            errors.push('Thiếu input/output path khi trim.');
+            continue;
+          }
+          try {
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+          } catch (error) {
+            failedCount++;
+            errors.push(`Không tạo được thư mục output: ${outputPath}`);
+            continue;
+          }
+          const success = await TTSService.trimSilenceToPath(inputPath, outputPath);
+          if (success) {
+            trimmedCount++;
+          } else {
+            failedCount++;
+            errors.push(`Không thể trim: ${inputPath}`);
+          }
+        }
+
+        const result: TrimSilenceResult = {
+          success: failedCount === 0,
+          trimmedCount,
+          failedCount,
+          errors: errors.length > 0 ? errors : undefined,
+        };
+
+        return { success: result.success, data: result, error: result.errors?.join(', ') };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi trim silence to paths:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // TRIM SILENCE END TO PATHS
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END_TO_PATHS,
+    async (
+      _event: IpcMainInvokeEvent,
+      trimTargets: TrimSilencePathItem[]
+    ): Promise<IpcResponse<TrimSilenceResult>> => {
+      const safeTargets = Array.isArray(trimTargets) ? trimTargets : [];
+      console.log(`[TTSHandlers] Trim silence end to paths: ${safeTargets.length} files`);
+
+      try {
+        let trimmedCount = 0;
+        let failedCount = 0;
+        const errors: string[] = [];
+
+        for (const target of safeTargets) {
+          const inputPath = (target?.inputPath || '').trim();
+          const outputPath = (target?.outputPath || '').trim();
+          if (!inputPath || !outputPath) {
+            failedCount++;
+            errors.push('Thiếu input/output path khi trim end.');
+            continue;
+          }
+          try {
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+          } catch (error) {
+            failedCount++;
+            errors.push(`Không tạo được thư mục output: ${outputPath}`);
+            continue;
+          }
+          const success = await TTSService.trimSilenceEndToPath(inputPath, outputPath);
+          if (success) {
+            trimmedCount++;
+          } else {
+            failedCount++;
+            errors.push(`Không thể trim end: ${inputPath}`);
+          }
+        }
+
+        const result: TrimSilenceResult = {
+          success: failedCount === 0,
+          trimmedCount,
+          failedCount,
+          errors: errors.length > 0 ? errors : undefined,
+        };
+
+        return { success: result.success, data: result, error: result.errors?.join(', ') };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi trim silence end to paths:', error);
         return { success: false, error: String(error) };
       }
     }

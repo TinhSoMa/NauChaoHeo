@@ -198,6 +198,7 @@ interface UseCaptionProcessingProps {
     srtSpeed: number;
     audioDir: string;
     setAudioDir: (dir: string) => void;
+    trimAudioEnabled?: boolean;
     hardwareAcceleration: 'none' | 'qsv' | 'nvenc';
     style?: any;
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
@@ -1412,7 +1413,7 @@ export function useCaptionProcessing({
   }, [currentFolder?.index, currentFolder?.path, currentStep, resolvedInputPaths, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
 
   const handleStart = useCallback(async () => {
-    const steps = Array.from(enabledSteps).sort() as Step[];
+    const steps = Array.from(enabledSteps).filter((step) => step !== 5).sort() as Step[];
     setStepDependencyIssues([]);
     const nextRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     runIdRef.current = nextRunId;
@@ -1613,7 +1614,7 @@ export function useCaptionProcessing({
       const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
       const fallback = getSessionFallback(currentPath);
       const session = await readCaptionSession(sessionPath, fallback);
-      const runningSteps = ([1, 2, 3, 4, 5, 6, 7] as CaptionStepNumber[]).filter((stepNo) => {
+      const runningSteps = ([1, 2, 3, 4, 6, 7] as CaptionStepNumber[]).filter((stepNo) => {
         const key = toStepKey(stepNo);
         return session.steps[key]?.status === 'running';
       });
@@ -1933,6 +1934,7 @@ export function useCaptionProcessing({
       enabledSteps: steps,
       audioDir: cfg.audioDir,
       autoFitAudio: cfg.autoFitAudio,
+      trimAudioEnabled: cfg.trimAudioEnabled,
       hardwareAcceleration: cfg.hardwareAcceleration,
       style: cfg.style,
       renderMode: cfg.renderMode,
@@ -2079,10 +2081,6 @@ export function useCaptionProcessing({
         if (!guard.ok) {
           throw new Error(`[${folderName}] ${guard.reason || `Chưa chạy các bước phụ thuộc cho Step ${step}.`} (${guard.code || 'STEP_BLOCKED'})`);
         }
-        if (step === 6 && steps.includes(5) && sessionBeforeStep.steps.step5?.status !== 'success') {
-          throw new Error(`[${folderName}] Step 6 yêu cầu Step 5 đã hoàn thành trong session khi bạn bật Step 5.`);
-        }
-
         const stepInputs = resolveStepInputsFromSession(sessionBeforeStep, step as CaptionStepNumber);
         const hydrateStepInputContext = () => {
           if (step === 2 || step === 3) {
@@ -2121,12 +2119,13 @@ export function useCaptionProcessing({
         let currentDataSource = 'session';
         if (step === 2 || step === 3) currentDataSource = 'session_extracted_entries';
         if (step === 4) currentDataSource = 'session_translated_entries';
-        if (step === 5 || step === 6) currentDataSource = 'session_tts_audio_files';
+        if (step === 6) currentDataSource = 'session_tts_audio_files';
         if (step === 7) currentDataSource = 'session_translated_entries+session_merged_audio';
 
         const currentSrtSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
         const skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber, {
           currentSrtSpeed,
+          currentTrimAudioEnabled: !!cfg.trimAudioEnabled,
         });
         if (step === 6 && skipDecision.reason === 'srt_scale_changed') {
           await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
@@ -2517,7 +2516,7 @@ export function useCaptionProcessing({
                   ...(existing || {}),
                   ...(incomingBatchReport || {}),
                   error: incomingBatchReport?.error ?? existing?.error,
-                  status: incomingBatchReport?.status ?? existing?.status,
+                  status: incomingBatchReport?.status ?? existing?.status ?? 'failed',
                   attempts: typeof incomingBatchReport?.attempts === 'number'
                     ? incomingBatchReport.attempts
                     : (existing?.attempts ?? 0),
@@ -3017,102 +3016,59 @@ export function useCaptionProcessing({
         }
       }
 
-      // ========== STEP 5: TRIM SILENCE ==========
-      if (step === 5) {
-        const filesToTrim = currentAudioFiles;
-        if (filesToTrim.length > 0) {
-          setProgress({ current: 0, total: filesToTrim.length, message: msgCtx('Bước 5: Đang cắt khoảng lặng...') });
-          // @ts-ignore
-          const result = await window.electronAPI.tts.trimSilence(filesToTrim.map(f => f.path));
-          // @ts-ignore
-          const resultEnd = await window.electronAPI.tts.trimSilenceEnd(filesToTrim.map(f => f.path));
-          if (result.success && result.data && resultEnd.success && resultEnd.data) {
-            const trimmedMiddleData = result.data;
-            const trimmedEndData = resultEnd.data;
-            const trimmedCount = trimmedEndData.trimmedCount;
-            setProgress({ current: trimmedCount, total: filesToTrim.length, message: msgCtx(`Bước 5: Đã trim ${trimmedCount} files`) });
-            await updateSessionForStep(currentPath, step, folderIdx, (session) => {
-              const stepArtifacts: CaptionArtifactFile[] = [];
-              for (const file of filesToTrim) {
-                pushArtifact(stepArtifacts, 'trimmed_audio_clip', file.path, 'file');
-              }
-              const inputFingerprint = buildObjectFingerprint(
-                filesToTrim.map((file) => ({
-                  path: file.path,
-                  startMs: file.startMs,
-                  durationMs: file.durationMs,
-                }))
-              );
-              const outputFingerprint = buildObjectFingerprint({
-                trimmedMiddle: trimmedMiddleData,
-                trimmedEnd: trimmedEndData,
-              });
-              const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
-              let nextSession: CaptionSessionV1 = {
-                ...session,
-                data: {
-                  ...session.data,
-                  trimResults: {
-                    trimmedMiddle: trimmedMiddleData,
-                    trimmedEnd: trimmedEndData,
-                  },
-                },
-                steps: {
-                  ...session.steps,
-                  [stepKey]: {
-                    ...makeStepSuccess(session.steps[stepKey], {
-                      totalFiles: filesToTrim.length,
-                      trimmedCount,
-                    }),
-                    inputFingerprint,
-                    outputFingerprint,
-                    dependsOn: [4],
-                  },
-                },
-              };
-              nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
-              if (prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
-                nextSession = markFollowingStepsStale(
-                  nextSession,
-                  step,
-                  'STEP5_OUTPUT_CHANGED',
-                  steps as CaptionStepNumber[]
-                );
-              }
-              return nextSession;
-            });
-          } else {
-            throw new Error(`[${folderName}] Lỗi trim silence: ${result.error || resultEnd.error}`);
-          }
-        } else {
-          await updateSessionForStep(currentPath, step, folderIdx, (session) => {
-            let nextSession: CaptionSessionV1 = {
-              ...session,
-              steps: {
-                ...session.steps,
-                [stepKey]: {
-                  ...makeStepSuccess(session.steps[stepKey], {
-                    totalFiles: 0,
-                    skipped: true,
-                  }),
-                  inputFingerprint: buildObjectFingerprint([]),
-                  outputFingerprint: buildObjectFingerprint({ skipped: true }),
-                  dependsOn: [4],
-                },
-              },
-            };
-            nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, []);
-            return nextSession;
-          });
-        }
-      }
-
       // ========== STEP 6: MERGE AUDIO ==========
       if (step === 6) {
         let filesToMerge = normalizeAudioFiles(currentAudioFiles);
 
         if (filesToMerge.length === 0) {
           throw new Error(`[${folderName}] Chưa có dữ liệu audio từ Step 4 trong caption_session.json. Hãy chạy Step 4 trước.`);
+        }
+
+        let trimResults: Record<string, unknown> | null = null;
+        let trimOutputDir = '';
+        let trimTargets: Array<{ inputPath: string; outputPath: string }> = [];
+        let trimmedCount = 0;
+        let trimFailedCount = 0;
+        let trimErrors: string[] = [];
+        if (cfg.trimAudioEnabled) {
+          trimOutputDir = `${processOutputDir}/audio_trimmed`;
+          trimTargets = filesToMerge.map((file) => {
+            const fileName = file.path.split(/[/\\]/).pop() || `audio_${file.index}.wav`;
+            return {
+              inputPath: file.path,
+              outputPath: joinFilePath(trimOutputDir, fileName),
+            };
+          });
+          setProgress({ current: 0, total: trimTargets.length, message: msgCtx('Bước 6: Đang trim audio...') });
+          const trimEndTargets = trimTargets.map((item) => ({
+            inputPath: item.outputPath,
+            outputPath: item.outputPath,
+          }));
+          // @ts-ignore
+          const trimResult = await window.electronAPI.tts.trimSilenceToPaths(trimTargets);
+          // @ts-ignore
+          const trimEndResult = await window.electronAPI.tts.trimSilenceEndToPaths(trimEndTargets);
+          if (trimResult.success && trimResult.data && trimEndResult.success && trimEndResult.data) {
+            const trimmedMiddleData = trimResult.data;
+            const trimmedEndData = trimEndResult.data;
+            trimmedCount = trimmedEndData.trimmedCount;
+            trimFailedCount = trimmedEndData.failedCount;
+            trimErrors = Array.isArray(trimmedEndData.errors) ? trimmedEndData.errors : [];
+            setProgress({ current: trimmedCount, total: trimTargets.length, message: msgCtx(`Bước 6: Đã trim ${trimmedCount} files`) });
+            trimResults = {
+              trimmedMiddle: trimmedMiddleData,
+              trimmedEnd: trimmedEndData,
+              trimOutputDir,
+              trimFiles: trimTargets.map((item) => item.outputPath),
+            };
+            const outputMap = new Map(trimTargets.map((item) => [item.inputPath, item.outputPath]));
+            filesToMerge = filesToMerge.map((file) => {
+              const outputPath = outputMap.get(file.path);
+              return outputPath ? { ...file, path: outputPath, success: true } : file;
+            });
+          } else {
+            throw new Error(`[${folderName}] Lỗi trim silence: ${trimResult.error || trimEndResult.error}`);
+          }
         }
 
         if (cfg.autoFitAudio) {
@@ -3189,11 +3145,20 @@ export function useCaptionProcessing({
             for (const file of filesToMerge) {
               pushArtifact(stepArtifacts, 'merge_input_audio', file.path, 'file');
             }
+            if (cfg.trimAudioEnabled && trimTargets.length > 0) {
+              pushArtifact(stepArtifacts, 'trimmed_audio_dir', trimOutputDir, 'dir');
+              for (const target of trimTargets) {
+                pushArtifact(stepArtifacts, 'trimmed_audio_clip', target.outputPath, 'file');
+              }
+            }
             const outputFingerprint = buildObjectFingerprint({
               mergedPath: actualMergedOutputPath,
               filesCount: filesToMerge.length,
               srtSpeed: safeSrtSpeed,
               speedLabel,
+              trimAudioEnabled: !!cfg.trimAudioEnabled,
+              trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
+              trimFiles: cfg.trimAudioEnabled ? trimTargets.map((item) => item.outputPath) : undefined,
             });
             const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
             let nextSession: CaptionSessionV1 = {
@@ -3201,6 +3166,7 @@ export function useCaptionProcessing({
               data: {
                 ...session.data,
                 mergeResult: mergeResultPayload,
+                trimResults: trimResults || undefined,
               },
               artifacts: {
                 ...session.artifacts,
@@ -3219,6 +3185,11 @@ export function useCaptionProcessing({
                     filesCount: filesToMerge.length,
                     srtSpeed: safeSrtSpeed,
                     speedLabel,
+                    trimAudioEnabled: !!cfg.trimAudioEnabled,
+                    trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
+                    trimmedCount: trimmedCount,
+                    trimFailedCount: trimFailedCount,
+                    trimErrors: trimErrors.length > 0 ? trimErrors : undefined,
                   }),
                   inputFingerprint: buildObjectFingerprint(filesToMerge.map((file) => ({
                     path: file.path,
@@ -3226,7 +3197,7 @@ export function useCaptionProcessing({
                     durationMs: file.durationMs,
                   }))),
                   outputFingerprint,
-                  dependsOn: steps.includes(5) ? [4, 5] : [4],
+                  dependsOn: [4],
                 },
               },
             };
