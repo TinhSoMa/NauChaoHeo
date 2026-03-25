@@ -5,6 +5,11 @@
 // ============================================
 const DOM = {
   // Inputs
+  modeFile: null,
+  modeFolder: null,
+  fileInputWrapper: null,
+  folderInputWrapper: null,
+  folderInput: null,
   batchLimitInput: null,
   promptDelayInput: null,
   fileInput: null,
@@ -28,6 +33,12 @@ const DOM = {
   fileSummary: null,
 
   init() {
+    this.modeFile = document.getElementById("modeFile");
+    this.modeFolder = document.getElementById("modeFolder");
+    this.fileInputWrapper = document.getElementById("fileInputWrapper");
+    this.folderInputWrapper = document.getElementById("folderInputWrapper");
+    this.folderInput = document.getElementById("folderInput");
+
     this.batchLimitInput = document.getElementById("batchLimit");
     this.promptDelayInput = document.getElementById("promptDelay");
     this.fileInput = document.getElementById("fileInput");
@@ -84,8 +95,9 @@ const UIManager = {
     };
     DOM.fileList.innerHTML = batchFiles.map((bf, idx) => {
       const st = bf.status || (bf.completed ? 'done' : 'pending');
+      const projectTag = bf.projectName && bf.projectName !== "Mixed_Files" ? `[${bf.projectName}] ` : "";
       return `<div class="file-item">
-        <span class="file-name">#${idx + 1}: ${bf.name}</span>
+        <span class="file-name" title="${bf.name}">#${idx + 1}: ${projectTag}${bf.name}</span>
         <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
       </div>`;
     }).join('');
@@ -139,32 +151,89 @@ function parseLinesFromText(text) {
 // EVENT HANDLERS
 // ============================================
 const EventHandlers = {
-  async onFileSelect(fileList) {
+  async onFolderSelect(fileList) {
     if (!fileList || fileList.length === 0) return;
 
     try {
-      const files = Array.from(fileList);
-      const batchFiles = [];
+      // Lọc ra các file txt nằm trong "/caption_output/text/"
+      const files = Array.from(fileList).filter(f => {
+         const path = f.webkitRelativePath || "";
+         return path.match(/\/caption_output\/text\/.*\.txt$/i);
+      });
+
+      if (files.length === 0) {
+        UIManager.setFileStatus(`⚠️ Không tìm thấy file .txt nào theo chuẩn [dự án]/caption_output/text/`, '#ff9800');
+        return;
+      }
+
+      const data = await chrome.storage.local.get(['batchFiles']);
+      const existingBatchFiles = data.batchFiles || [];
+      const newBatchFiles = [];
 
       for (const file of files) {
+        // Tách path để lấy tên thư mục dự án
+        const pathParts = file.webkitRelativePath.split('/');
+        const captionIdx = pathParts.findIndex(p => p === 'caption_output');
+        const projectName = captionIdx > 0 ? pathParts[captionIdx - 1] : "Unknown_Project";
+
         const text = await file.text();
         const lines = parseLinesFromText(text);
-        batchFiles.push({
+        
+        newBatchFiles.push({
           name: file.name,
+          projectName: projectName,
           lines: lines,
           completed: false,
           status: 'pending'
         });
       }
 
-      await StorageManager.saveBatchFiles(batchFiles);
+      const combinedBatchFiles = [...existingBatchFiles, ...newBatchFiles];
+      await StorageManager.saveBatchFiles(combinedBatchFiles);
 
-      UIManager.setFileStatus(`✓ Đã chọn ${batchFiles.length} file`, '#4CAF50');
-      UIManager.displayFileList(batchFiles);
+      UIManager.setFileStatus(`✓ Đã thêm ${newBatchFiles.length} file (Tổng: ${combinedBatchFiles.length})`, '#4CAF50');
+      UIManager.displayFileList(combinedBatchFiles);
 
-      // Auto set batch limit if user chưa chỉnh
       if (!DOM.batchLimitInput.dataset.userSet) {
-        DOM.batchLimitInput.value = batchFiles.length;
+        DOM.batchLimitInput.value = combinedBatchFiles.length;
+      }
+
+    } catch (error) {
+      UIManager.setFileStatus(`❌ Lỗi đọc folder: ${error.message}`, '#f44336');
+      console.error("Lỗi đọc folder:", error);
+    }
+  },
+
+  async onFileSelect(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    try {
+      const files = Array.from(fileList);
+      const data = await chrome.storage.local.get(['batchFiles']);
+      const existingBatchFiles = data.batchFiles || [];
+      const newBatchFiles = [];
+
+      for (const file of files) {
+        const text = await file.text();
+        const lines = parseLinesFromText(text);
+        newBatchFiles.push({
+          name: file.name,
+          projectName: "Mixed_Files", // Nếu tải file lẻ thì gom vào thư mục mặc định
+          lines: lines,
+          completed: false,
+          status: 'pending'
+        });
+      }
+
+      const combinedBatchFiles = [...existingBatchFiles, ...newBatchFiles];
+      await StorageManager.saveBatchFiles(combinedBatchFiles);
+
+      UIManager.setFileStatus(`✓ Đã thêm ${newBatchFiles.length} file (Tổng: ${combinedBatchFiles.length})`, '#4CAF50');
+      UIManager.displayFileList(combinedBatchFiles);
+
+      // Auto set batch limit
+      if (!DOM.batchLimitInput.dataset.userSet) {
+        DOM.batchLimitInput.value = combinedBatchFiles.length;
       }
 
     } catch (error) {
@@ -219,18 +288,26 @@ const EventHandlers = {
   },
 
   async onClear() {
-    if (confirm("Bạn có chắc muốn xóa toàn bộ dữ liệu đã dịch trước đó không?")) {
-      const filesData = await chrome.storage.local.get(['batchFiles']);
-      const batchFiles = (filesData.batchFiles || []).map(f => ({ ...f, completed: false, status: 'pending', result: undefined }));
+    if (confirm("Bạn có chắc muốn làm sạch TẤT CẢ danh sách file đang chọn và lịch sử dịch không?")) {
       await chrome.storage.local.set({
-        batchFiles,
+        batchFiles: [],
         translatedBatches: [],
         batchCount: 0,
         currentBatchIndex: 0
       });
-      UIManager.displayFileList(batchFiles);
+      
+      // Reset input value để OS cho phép chọn lại cùng 1 cục file/thư mục
+      if (DOM.fileInput) DOM.fileInput.value = "";
+      if (DOM.folderInput) DOM.folderInput.value = "";
+      if (DOM.batchLimitInput) {
+        DOM.batchLimitInput.value = 1;
+        delete DOM.batchLimitInput.dataset.userSet;
+      }
+
+      UIManager.displayFileList([]);
       chrome.runtime.sendMessage({ action: "CLEAR_DATA" });
-      UIManager.setStatus("Đã xóa dữ liệu cũ. Tất cả file đã reset.");
+      UIManager.setFileStatus("Chưa chọn file/folder", '#777');
+      UIManager.setStatus("Đã làm sạch danh sách. Hãy chọn file mới.");
     }
   }
 };
@@ -341,6 +418,21 @@ async function initializePopup() {
 }
 
 function setupEventListeners() {
+  DOM.modeFile.addEventListener("change", () => {
+    DOM.fileInputWrapper.style.display = "block";
+    DOM.folderInputWrapper.style.display = "none";
+  });
+
+  DOM.modeFolder.addEventListener("change", () => {
+    DOM.fileInputWrapper.style.display = "none";
+    DOM.folderInputWrapper.style.display = "block";
+  });
+
+  DOM.folderInput.addEventListener("change", async (e) => {
+    const files = e.target.files;
+    await EventHandlers.onFolderSelect(files);
+  });
+
   DOM.fileInput.addEventListener("change", async (e) => {
     const files = e.target.files;
     await EventHandlers.onFileSelect(files);

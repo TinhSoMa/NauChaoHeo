@@ -320,16 +320,19 @@ const BatchProcessor = {
     },
 
     parseGeminiJson(text) {
-        if (!text) return { ok: false, error: 'Empty response' };
+        if (!text) return { ok: true, data: null, rawText: '{"status": "error", "message": "Rỗng"}' };
         let cleaned = text.trim();
         if (cleaned.startsWith('```')) {
             cleaned = cleaned.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
         }
+        let jsonObj = null;
         try {
-            return { ok: true, data: JSON.parse(cleaned), rawText: cleaned };
+            jsonObj = JSON.parse(cleaned);
         } catch (e) {
-            return { ok: false, error: e.message, responseText: text };
+            Utils.log(`Cảnh báo: AI trả về JSON lỗi cú pháp, nhưng vẫn được lưu RAW text.`, 'warning');
         }
+        // LUÔN LUÔN trả về OK để ép hệ thống nhận Raw Text, không bắt lỗi cú pháp dừng tiến trình
+        return { ok: true, data: jsonObj, rawText: cleaned };
     },
 
     async saveTranslation(batchResult) {
@@ -432,23 +435,33 @@ async function processLoop() {
     }
 
     try {
-        Utils.log(`\n========== BATCH ${State.batchCount + 1}/${State.batchLimit} ==========`, 'info');
+        const data = await chrome.storage.local.get(['batchFiles', 'currentBatchIndex']);
+        const batchFiles = data.batchFiles || [];
+        const currentIndex = data.currentBatchIndex || 0;
 
-        Utils.log("BƯỚC 1: Lấy nội dung batch...");
-        await Utils.sendProgressUpdate("Đang lấy nội dung batch...");
+        if (currentIndex >= batchFiles.length) {
+            Utils.log("Đã hết file để xử lý.");
+            State.isRunning = false;
+            await chrome.storage.local.set({ isRunning: false });
+            return;
+        }
 
-        const data = await chrome.storage.local.get([
-            'batchFiles', 'currentBatchIndex', 'totalBatches'
-        ]);
+        const batchData = batchFiles[currentIndex];
 
-        const batchData = await BatchProcessor.getBatchData(data);
-        Utils.log(`✓ Đã lấy: "${batchData.name}"`, 'success');
-        await Utils.sendProgressUpdate(`Đang dịch: ${batchData.name}`);
+        if (batchData.completed) {
+            Utils.log(`Batch ${batchData.name} đã completed, bỏ qua...`);
+            await BatchProcessor.moveToNextBatch(currentIndex);
+            processLoop();
+            return;
+        }
 
-        // Đánh dấu file đang được xử lý
-        const filesForStatus = (await chrome.storage.local.get(['batchFiles'])).batchFiles || [];
-        if (filesForStatus[batchData.index]) {
-            filesForStatus[batchData.index].status = 'translating';
+        Utils.log(`\n=== Bắt đầu xử lý: ${batchData.name} (Batch ${currentIndex + 1}/${batchFiles.length}) ===`);
+        await Utils.sendProgressUpdate(`Đang dịch batch ${currentIndex + 1}/${batchFiles.length}: ${batchData.name}`);
+
+        Utils.log("BƯỚC 1: Đánh dấu file đang chạy...");
+        const filesForStatus = await chrome.storage.local.get('batchFiles').then(d => d.batchFiles || []);
+        if (filesForStatus[currentIndex]) {
+            filesForStatus[currentIndex].status = 'translating';
             await chrome.storage.local.set({ batchFiles: filesForStatus });
         }
 
@@ -472,6 +485,7 @@ async function processLoop() {
                     match: true
                 }
             };
+            rawResponseText = JSON.stringify(responseObject);
 
             Utils.log("✓ Đã tạo response copy-only", 'success');
         } else {
@@ -488,10 +502,11 @@ async function processLoop() {
 
             const parsed = BatchProcessor.parseGeminiJson(result.text);
             if (parsed.ok) {
-                responseObject = parsed.data;
+                // Object này giờ có thể bị null nếu AI sinh sai JSON, nhưng không quan trọng vì mình sẽ lưu `rawText`.
+                responseObject = parsed.data || {};
                 rawResponseText = parsed.rawText;
             } else {
-                // KHÔNG lưu câu trả lời bị lỗi - DỪNG lại để tránh gửi prompt tiếp theo
+                // Sẽ không bao giờ rơi vào if này nữa vì parseGeminiJson luôn ok:true
                 Utils.log(`❌ Không thể parse JSON từ ${providerName}. Dừng lại để tránh mất dữ liệu.`, 'error');
                 Utils.log(`Parse error: ${parsed.error}`, 'error');
                 Utils.log(`Response preview: ${(parsed.responseText || result.text || '').slice(0, 200)}`, 'error');
@@ -503,7 +518,7 @@ async function processLoop() {
         await Utils.sendProgressUpdate("Đang lưu kết quả...");
 
         const batchResult = {
-            batchIndex: batchData.index + 1,
+            batchIndex: currentIndex + 1,
             fileName: batchData.name,
             response: responseObject,
             rawText: rawResponseText
@@ -519,9 +534,9 @@ async function processLoop() {
             return;
         }
 
-        Utils.log("BƯỚC 4: Chuyển sang batch tiếp theo...");
+        Utils.log("BƯỚC 4: Rút script & đánh dấu chỉ mục...");
         await Utils.sendProgressUpdate("Đang chuyển sang batch tiếp theo...");
-        await BatchProcessor.moveToNextBatch(batchData.index);
+        await BatchProcessor.moveToNextBatch(currentIndex);
         Utils.log("✓ Đã chuyển batch", 'success');
 
         if (!State.copyOnlyMode) {
@@ -612,53 +627,74 @@ async function downloadFullStory() {
     const batchFiles = data.batchFiles || [];
     const count = data.batchCount || 0;
 
-    const completedFiles = batchFiles.filter(f => f.completed && f.result);
+    const completedFiles = batchFiles.filter(f => f.completed && (f.rawText || f.result));
     if (completedFiles.length === 0) {
         Utils.log("Chưa có nội dung. Hãy chạy dịch trước.", 'warning');
         return;
     }
 
-    // Tạo JSONL (hoặc file chứa các JSON strings nối tiếp)
-    const jsonl = batchFiles
-        .map((f, idx) => {
-            if (f.completed && f.result) {
-                // Sắp xếp lại thứ tự key cho đúng yêu cầu (Chrome Storage tự động sort theo alphabet khi lưu)
-                // 1. "status" 2. "data"
-                // Trong data: 1. "translations" 2. "summary" (xuống dưới cùng)
-                const responseData = f.result.data || {};
-                const orderedResponse = {
-                    status: f.result.status || "success",
-                    data: {
-                        translations: responseData.translations || [],
-                        summary: responseData.summary || {}
-                    }
-                };
-                
-                // Trả về trên 1 dòng duy nhất để giảm kích thước (JSON.stringify mặc định)
-                return JSON.stringify({ batchIndex: idx + 1, response: orderedResponse });
-            }
-            return null;
-        })
-        .filter(line => line !== null)
-        .join('\n');
-    const docUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonl);
-    const date = new Date().toISOString().slice(0,10);
-    const filename = `SubtitleBatch_${count}batch_${date}.jsonl`;
+    // Nhóm các file theo projectName
+    const projects = {};
+    batchFiles.forEach((f, idx) => {
+        if (f.completed && (f.rawText || f.result)) {
+            const pName = f.projectName || 'Khong_Ro_Ten';
+            if (!projects[pName]) projects[pName] = [];
+            projects[pName].push({ file: f, originalIndex: idx });
+        }
+    });
 
-    try {
-        chrome.downloads.download({
-            url: docUrl,
-            filename: filename,
-            saveAs: true
-        }, (downloadId) => {
-            if (chrome.runtime.lastError) {
-                Utils.log(`Lỗi tải: ${chrome.runtime.lastError}`, 'error');
+    const date = new Date().toISOString().slice(0, 10);
+
+    for (const ObjectName of Object.keys(projects)) {
+        const pName = ObjectName;
+        const projectItems = projects[pName];
+        
+        // Tạo JSONL cho project hiện tại
+        const jsonl = projectItems.map(item => {
+            const f = item.file;
+            const originalIndex = item.originalIndex;
+            
+            let finalResponseStr = "";
+            if (f.rawText) {
+                // CHỈ xài chuỗi RAW AI trả về, không sử dụng JSON.parse để tránh lỗi. Đồng thời ép trên 1 dòng.
+                finalResponseStr = f.rawText.replace(/\r?\n|\r/g, " ");
             } else {
-                Utils.log(`Đã bắt đầu tải, ID: ${downloadId}`, 'success');
+                // Xử lý đồ cũ nếu lỡ không có rawText
+                finalResponseStr = JSON.stringify(f.result);
             }
-        });
-    } catch (error) {
-        Utils.log(`Lỗi: ${error}`, 'error');
+            
+            // Xây dựng chuỗi tĩnh chuẩn JSONL
+            return `{"batchIndex": ${originalIndex + 1}, "response": ${finalResponseStr}}`;
+        }).join('\n');
+
+        const docUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonl);
+        
+        let filename;
+        if (pName === "Mixed_Files" || pName === "Unknown_Project" || pName === "Khong_Ro_Ten") {
+            // Nếu là tập tin chắp vá từ chế độ Chọn file lẻ hoặc trước bản cập nhật
+            filename = `SubtitleBatch_${projectItems.length}batch_${date}.jsonl`;
+        } else {
+            // Cấu trúc thư mục mới: NauChaoHeo_Translations/[0324]/caption_output/
+            filename = `NauChaoHeo_Translations/${pName}/caption_output/SubtitleBatch_${pName}_${date}.jsonl`;
+        }
+
+        try {
+            chrome.downloads.download({
+                url: docUrl,
+                filename: filename,
+                saveAs: false // Không saveAs để tự chui vào đúng folder mà không spam popup
+            }, (downloadId) => {
+                if (chrome.runtime.lastError) {
+                    Utils.log(`Lỗi tải thư mục ${pName}: ${chrome.runtime.lastError.message}`, 'error');
+                } else {
+                    Utils.log(`Đã bắt đầu tải thư mục ${pName}`, 'success');
+                }
+            });
+            // Thêm delay nhẹ giữa các lượt download để tránh Chrome rate-limit
+            await Utils.sleep(400);
+        } catch (error) {
+            Utils.log(`Exception tải ${pName}: ${error}`, 'error');
+        }
     }
 }
 
