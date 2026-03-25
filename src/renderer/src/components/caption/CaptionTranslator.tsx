@@ -7274,7 +7274,7 @@ export function CaptionTranslator() {
               className={styles.input}
               rows={10}
               placeholder={step3ManualModal.mode === 'single'
-                ? 'Dán JSON response (JSON-only) giống như AI trả về...'
+                ? 'Dán JSON response (JSON-only) giống như AI trả về (không cần original)...'
                 : 'Dán JSON array hoặc NDJSON: {\"batchIndex\":2,\"response\":{...}}'}
               value={step3ManualInput}
               onChange={(e) => setStep3ManualInput(e.target.value)}
@@ -7285,7 +7285,7 @@ export function CaptionTranslator() {
             )}
             <div className={styles.modalHint}>
               {step3ManualModal.mode === 'single'
-                ? 'Input phải là JSON response đúng schema Step 3.'
+                ? 'Input phải là JSON response đúng schema Step 3. original là tùy chọn.'
                 : 'Mỗi item: {batchIndex, response}. response có thể là JSON object hoặc string.'}
             </div>
           </div>

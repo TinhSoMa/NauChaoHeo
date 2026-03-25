@@ -1036,12 +1036,22 @@ function parseJsonTranslationResponseForManual(
     if (seenIndexes.has(parsedIndex)) {
       return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', `Trùng index trong translations: ${parsedIndex}`);
     }
-    if (typeof typed.translated !== 'string') {
-      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', `Schema không hợp lệ tại index ${parsedIndex}: thiếu translated string`);
+    const translatedValue =
+      typeof typed.translated === 'string'
+        ? typed.translated
+        : (typeof typed.translation === 'string'
+            ? typed.translation
+            : (typeof typed.text === 'string' ? typed.text : null));
+    if (translatedValue === null) {
+      return failManualParse(
+        translatedTexts,
+        'ERROR_INVALID_INPUT',
+        `Schema không hợp lệ tại index ${parsedIndex}: thiếu translated string`
+      );
     }
 
     seenIndexes.add(parsedIndex);
-    translatedTexts[parsedIndex - 1] = typed.translated.trim();
+    translatedTexts[parsedIndex - 1] = translatedValue.trim();
   }
 
   if (seenIndexes.size !== safeExpectedCount) {
