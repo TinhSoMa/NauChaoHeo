@@ -142,23 +142,7 @@
       <label for="copyOnlyMode" style="margin: 0; display: inline;">📋 Chỉ copy (không dịch qua Gemini/Grok)</label>
     </div>
 
-    <label>Prompt mẫu ({{TEXT}} là nội dung batch):</label>
-    <textarea id="promptTemplate">
-Bạn là một dịch giả chuyên nghiệp. Hãy dịch sang tiếng Việt.
 
-QUY TẮC:
-- Chỉ trả về JSON thuần (không thêm giải thích).
-- Schema JSON:
-{
-  "translations": [
-    {"index": 1, "original": "...", "translated": "..."}
-  ]
-}
-
-Dữ liệu cần dịch (đã đánh số):
-
-{{TEXT}}
-    </textarea>
 
     <label>Số batch muốn dịch:</label>
     <input

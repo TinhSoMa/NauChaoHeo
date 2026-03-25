@@ -1,0 +1,420 @@
+{
+    "task": "subtitle_translation_{{FILE_NAME}}",
+    "version": "7.1_JSON_WITH_EXAMPLES",
+    "content_detection": {
+        "auto_detect": true,
+        "types": {
+            "comedy": "Hài hước, bựa, 18+, parody",
+            "drama": "Chính kịch, bi thương, nghiêm túc",
+            "action": "Hành động, võ thuật, gay cấn",
+            "romance": "Lãng mạn, tình cảm",
+            "documentary": "Phim tài liệu, giáo dục",
+            "animation": "Hoạt hình, anime",
+            "other": "Nội dung khác"
+        }
+    },
+    "output_format": {
+        "type": "json_object",
+        "strict_rule": "CHỈ trả về JSON thuần túy, bắt đầu bằng { kết thúc bằng }, KHÔNG có ```json, KHÔNG có text thừa",
+        "structure": {
+            "status": "success hoặc error",
+            "data": {
+                "translations": "Array of objects với index và translated",
+                "summary": "Thông tin tổng quan"
+            }
+        }
+    },
+    "RESPONSE_SCHEMA": {
+        "success_response": {
+            "status": "success",
+            "data": {
+                "translations": [
+                    {
+                        "index": 1,
+                        "translated": "Câu dịch thứ 1"
+                    },
+                    {
+                        "index": 2,
+                        "translated": "Câu dịch thứ 2"
+                    },
+                    {
+                        "index": 3,
+                        "translated": "Câu dịch thứ 3"
+                    }
+                ],
+                "summary": {
+                    "total_sentences": "{{COUNT}}",
+                    "input_count": "{{COUNT}}",
+                    "output_count": "{{COUNT}}",
+                    "match": true,
+                    "detected_type": "comedy/drama/action/romance/animation/documentary/other",
+                    "language_style": "genz/casual/formal/children"
+                }
+            }
+        },
+        "error_response": {
+            "status": "error",
+            "error": {
+                "code": "ERROR_POLICY_VIOLATION | ERROR_UNSAFE_CONTENT | ERROR_PROCESSING_FAILED | ERROR_INVALID_INPUT",
+                "message": "Mô tả lỗi bằng tiếng Việt",
+                "details": {
+                    "violation_type": "child_content/sexual_violence/hate_speech/terrorism",
+                    "problematic_sentences": [
+                        {
+                            "index": 5,
+                            "content": "Câu gốc vi phạm",
+                            "reason": "Lý do"
+                        }
+                    ],
+                    "suggestion": "Đề xuất xử lý"
+                }
+            }
+        }
+    },
+    "OUTPUT_EXAMPLES": {
+        "example_1_simple": {
+            "description": "3 câu đơn giản, comedy style",
+            "input": {
+                "COUNT": 3,
+                "TEXT": "你好，我是张三\n今天天气真好啊\n我们去玩吧"
+            },
+            "CORRECT_output": {
+                "status": "success",
+                "data": {
+                    "translations": [
+                        {
+                            "index": 1,
+                            "translated": "Xin chào, tao là Trương Tam"
+                        },
+                        {
+                            "index": 2,
+                            "translated": "Hôm nay trời đẹp vãi luôn á"
+                        },
+                        {
+                            "index": 3,
+                            "translated": "Đi chơi nào"
+                        }
+                    ],
+                    "summary": {
+                        "total_sentences": "3",
+                        "input_count": "3",
+                        "output_count": "3",
+                        "match": true,
+                        "detected_type": "comedy",
+                        "language_style": "genz"
+                    }
+                }
+            },
+            "WRONG_outputs": [
+                "```json\n{\"status\": \"success\", ...}\n```",
+                "{\n  // Comment here\n  \"status\": \"success\"\n}",
+                "Đây là kết quả dịch:\n{\"status\": \"success\", ...}",
+                "{\"translations\": [...]}  // Missing status and data wrapper"
+            ]
+        },
+        "example_2_multi_speaker": {
+            "description": "Hội thoại nam-nữ, có nhiều người nói trong 1 sub",
+            "input": {
+                "COUNT": 5,
+                "TEXT": "美女去哪啊\n我就叫你跟我一起去棉北做销售\n你不是在年美做销售吗\n回来处理一些事情\n顺便进进想见的人"
+            },
+            "CORRECT_output": {
+                "status": "success",
+                "data": {
+                    "translations": [
+                        {
+                            "index": 1,
+                            "translated": "Em đẹp đi đâu đấy"
+                        },
+                        {
+                            "index": 2,
+                            "translated": "Anh đã bảo em đi cùng anh lên miền Bắc bán hàng"
+                        },
+                        {
+                            "index": 3,
+                            "translated": "Anh không phải đang bán hàng ở Niên Mỹ à"
+                        },
+                        {
+                            "index": 4,
+                            "translated": "Về xử lý chút việc"
+                        },
+                        {
+                            "index": 5,
+                            "translated": "Thuận tiện gặp gặp người muốn gặp"
+                        }
+                    ],
+                    "summary": {
+                        "total_sentences": "5",
+                        "input_count": "5",
+                        "output_count": "5",
+                        "match": true,
+                        "detected_type": "romance",
+                        "language_style": "casual"
+                    }
+                }
+            },
+            "notes": [
+                "Sub 1: Nam (刘子棠) gọi Nữ (小兰) → 'Em'",
+                "Sub 2: Nam tự xưng → 'Anh', gọi Nữ → 'em'",
+                "Sub 3: Nữ hỏi Nam → 'Anh' (KHÔNG phải 'Em')",
+                "Giữ nhất quán 'anh/em' từ đầu đến cuối"
+            ]
+        },
+        "example_3_comedy_18+": {
+            "description": "Comedy 18+, ẩn dụ hài",
+            "input": {
+                "COUNT": 4,
+                "TEXT": "我真的好喜欢你的腰子哦\n那这样的话\n我就不客气了哎呦是谁\n谁呀"
+            },
+            "CORRECT_output": {
+                "status": "success",
+                "data": {
+                    "translations": [
+                        {
+                            "index": 1,
+                            "translated": "Tao thật sự thích... thận của mày lắm luôn đấy"
+                        },
+                        {
+                            "index": 2,
+                            "translated": "Vậy thì..."
+                        },
+                        {
+                            "index": 3,
+                            "translated": "Tao không khách sáo nữa đâu nhé - Ối, ai đấy?"
+                        },
+                        {
+                            "index": 4,
+                            "translated": "Ai vậy?"
+                        }
+                    ],
+                    "summary": {
+                        "total_sentences": "4",
+                        "input_count": "4",
+                        "output_count": "4",
+                        "match": true,
+                        "detected_type": "comedy",
+                        "language_style": "genz"
+                    }
+                }
+            },
+            "notes": [
+                "Sub 1: Dùng ... tạo hiệu ứng twist bất ngờ",
+                "Sub 2: Câu chưa hoàn chỉnh, dùng ...",
+                "Sub 3: 2 người (nói + gõ cửa), dùng -",
+                "Sub 4: Thêm ? cho câu hỏi"
+            ]
+        },
+        "example_4_action": {
+            "description": "Phim hành động, thuật ngữ võ thuật",
+            "input": {
+                "COUNT": 3,
+                "TEXT": "九阳神功第九层\n你竟敢伤我兄弟\n今天我要你血债血偿"
+            },
+            "CORRECT_output": {
+                "status": "success",
+                "data": {
+                    "translations": [
+                        {
+                            "index": 1,
+                            "translated": "Cửu Dương Thần Công tầng chín"
+                        },
+                        {
+                            "index": 2,
+                            "translated": "Mày dám làm thương anh em tao"
+                        },
+                        {
+                            "index": 3,
+                            "translated": "Hôm nay tao bắt mày trả nợ máu bằng máu"
+                        }
+                    ],
+                    "summary": {
+                        "total_sentences": "3",
+                        "input_count": "3",
+                        "output_count": "3",
+                        "match": true,
+                        "detected_type": "action",
+                        "language_style": "casual"
+                    }
+                }
+            },
+            "notes": [
+                "Thuật ngữ Hán Việt: 九阳神功 → Cửu Dương Thần Công",
+                "Ngắn gọn, mạnh mẽ",
+                "Xưng hô nam-nam: tao/mày"
+            ]
+        },
+        "example_5_error": {
+            "description": "Trường hợp vi phạm nội dung",
+            "input": {
+                "COUNT": 2,
+                "TEXT": "这个小孩子真可爱\n我要把他带回家"
+            },
+            "CORRECT_output": {
+                "status": "error",
+                "error": {
+                    "code": "ERROR_POLICY_VIOLATION",
+                    "message": "Nội dung vi phạm chính sách về an toàn trẻ em",
+                    "details": {
+                        "violation_type": "child_content",
+                        "problematic_sentences": [
+                            {
+                                "index": 2,
+                                "content": "我要把他带回家",
+                                "reason": "Nội dung liên quan đến trẻ em không phù hợp"
+                            }
+                        ],
+                        "suggestion": "Vui lòng kiểm tra lại nội dung đầu vào"
+                    }
+                }
+            }
+        },
+        "example_6_drama": {
+            "description": "Phim chính kịch, nghiêm túc",
+            "input": {
+                "COUNT": 3,
+                "TEXT": "你为什么要离开我\n因为我们不合适\n我会永远记得你的"
+            },
+            "CORRECT_output": {
+                "status": "success",
+                "data": {
+                    "translations": [
+                        {
+                            "index": 1,
+                            "translated": "Tại sao anh lại bỏ em?"
+                        },
+                        {
+                            "index": 2,
+                            "translated": "Vì chúng ta không hợp nhau"
+                        },
+                        {
+                            "index": 3,
+                            "translated": "Em sẽ nhớ anh mãi mãi"
+                        }
+                    ],
+                    "summary": {
+                        "total_sentences": "3",
+                        "input_count": "3",
+                        "output_count": "3",
+                        "match": true,
+                        "detected_type": "drama",
+                        "language_style": "formal"
+                    }
+                }
+            },
+            "notes": [
+                "Tone nghiêm túc, cảm xúc",
+                "Không dùng slang GenZ",
+                "Xưng hô lịch sự: anh/em"
+            ]
+        }
+    },
+    "UNIVERSAL_RULES": [
+        "🚨 1 INPUT = 1 OUTPUT OBJECT - Index 1→{{COUNT}}, KHÔNG gộp, KHÔNG tách",
+        "🎯 Tự phân tích: Loại content + Giới tính nhân vật → Chọn xưng hô + style",
+        "👥 1 sub nhiều người → Dùng /, -, hoặc dấu câu TRONG 1 object",
+        "🔍 Đọc KỸ → Dịch CHÍNH XÁC 100%",
+        "💬 Dấu câu: ? (hỏi), ! (cảm thán), ... (chờ đợi/twist), - (tách người)",
+        "✅ JSON thuần: {bắt đầu}...{kết thúc}, KHÔNG ```json, KHÔNG comment"
+    ],
+    "GENDER_DETECTION": {
+        "CRITICAL": "Phân tích giới tính TRƯỚC → Chọn xưng hô → Giữ NHẤT QUÁN",
+        "clues": {
+            "male": "Tên: 伟/强/军/刚 | Xưng: 哥/兄弟/小伙子 | Vai: 司机/保安 | Giọng: 粗/低沉",
+            "female": "Tên: 兰/美/丽/婷 | Xưng: 姐/美女/小姐 | Vai: 26号/红浪漫 | Giọng: 温柔/细"
+        },
+        "pronouns": {
+            "male_to_male": "Formal: Tôi/anh | Casual: Tao/mày | Comedy: Tao/mày",
+            "male_to_female": "Formal: Anh/em | Romance: Anh/em | Comedy: Anh/em hoặc tao/mày",
+            "female_to_male": "Formal: Em/anh | Romance: Em/anh | Comedy: Em/anh hoặc tao/mày",
+            "female_to_female": "Formal: Tôi/chị, em/chị | Casual: Tớ/cậu | Comedy: Tao/mày"
+        },
+        "workflow": "Đọc 5-10 sub đầu → Xác định giới tính → Chọn xưng hô → Giữ nhất quán đến hết"
+    },
+    "content_moderation": {
+        "comedy_18+": "Độ hài > Kiểm duyệt | Allowed: Hài 18+, từ tục nhẹ, ẩn dụ | Handle: thận, vận động, đ*t, đ*o",
+        "drama": "Formal, trang trọng | No slang",
+        "family": "An toàn, lành mạnh | No tục",
+        "REJECT": "Trẻ em, bạo lực tình dục, thù hận, khủng bố"
+    },
+    "multi_speaker": {
+        "detect": "Xưng hô đối lập, chuyển ngữ cảnh, phong cách khác",
+        "handle": "Slash (/) cho 2 người ngắn | Dash (-) cho 2 người dài | Dấu phẩy tự nhiên | Giữ nguyên 1 người",
+        "rule": "Dù nhiều người, VẪN 1 OBJECT"
+    },
+    "translation_by_type": {
+        "comedy": "Tone: GenZ, bựa | Slang: vãi, vcl, wtf, đỉnh | Priority: Độ hài > Nghĩa | Pronouns: Phân tích giới tính trước",
+        "drama": "Tone: Nghiêm túc | Priority: Nghĩa > Cảm xúc | Pronouns: Formal, đúng giới tính",
+        "romance": "Tone: Ngọt ngào | Priority: Cảm xúc > Từng chữ | Pronouns: Nam=anh, Nữ=em",
+        "action": "Tone: Mạnh mẽ, nhanh | Terms: Hán Việt | Priority: Ngắn gọn",
+        "animation": "Tone: Vui vẻ | Pronouns: Cậu/tớ | Priority: Dễ hiểu, an toàn"
+    },
+    "workflow": [
+        "1. Đếm input = {{COUNT}}",
+        "2. Đọc 5-10 câu đầu → Xác định giới tính + loại content",
+        "3. Chọn xưng hô: Giới tính + Content type + Mối quan hệ",
+        "4. Dịch từng câu → Mỗi câu = 1 object {index, translated}",
+        "5. Giữ NHẤT QUÁN xưng hô từ đầu đến cuối",
+        "6. Validate: {{COUNT}} objects, index 1→{{COUNT}}, xưng hô nhất quán",
+        "7. Return JSON theo EXACT format trong OUTPUT_EXAMPLES"
+    ],
+    "validation_checklist": [
+        "✓ {{COUNT}} objects trong translations array?",
+        "✓ Index chạy 1→{{COUNT}} liên tục?",
+        "✓ Không gộp? Không tách?",
+        "✓ ĐÃ phân tích giới tính?",
+        "✓ Xưng hô NHẤT QUÁN?",
+        "✓ Xưng hô PHÙ HỢP giới tính?",
+        "✓ Nghĩa khớp 100%?",
+        "✓ summary.match = true?",
+        "✓ summary.input_count = summary.output_count = {{COUNT}}?",
+        "✓ JSON format ĐÚNG như examples?",
+        "✓ KHÔNG có ```json wrapper?",
+        "✓ KHÔNG có comment (//) trong JSON?"
+    ],
+    "common_mistakes": {
+        "mistake_1": "Thêm ```json wrapper",
+        "correct_1": "Chỉ JSON thuần, bắt đầu {, kết thúc }",
+        "mistake_2": "Thiếu status hoặc data wrapper",
+        "correct_2": "Phải có {status: 'success', data: {...}}",
+        "mistake_3": "Nữ hỏi Nam dùng 'Em không phải...'",
+        "correct_3": "'Anh không phải...' (Nữ gọi Nam = Anh)",
+        "mistake_4": "Xưng hô không nhất quán",
+        "correct_4": "Chọn 1 kiểu → giữ đến hết",
+        "mistake_5": "Gộp/tách objects",
+        "correct_5": "1 input = 1 output object, LUÔN",
+        "mistake_6": "summary.match = false hoặc thiếu",
+        "correct_6": "match phải = true nếu input_count = output_count",
+        "mistake_7": "Thêm comment trong JSON",
+        "correct_7": "JSON thuần, KHÔNG có // comment"
+    },
+    "JSON_FORMAT_RULES": [
+        "⚠️ Bắt đầu bằng { kết thúc bằng }",
+        "⚠️ KHÔNG có ```json hoặc ``` wrapper",
+        "⚠️ KHÔNG có text giải thích trước/sau JSON",
+        "⚠️ KHÔNG có comment (//) trong JSON",
+        "⚠️ Phải có status: 'success' hoặc 'error'",
+        "⚠️ Success → Phải có data.translations và data.summary",
+        "⚠️ Error → Phải có error.code, error.message, error.details",
+        "⚠️ translations phải là array of objects",
+        "⚠️ Mỗi object có: index (number), translated (string)",
+        "⚠️ summary.match phải là boolean (true/false)",
+        "⚠️ Tất cả index, counts phải là number, KHÔNG phải string"
+    ],
+    "final_check": [
+        "🎯 ĐÃ phân tích giới tính từ 5-10 sub đầu?",
+        "👫 Xưng hô ĐÚNG giới tính? NHẤT QUÁN?",
+        "🎨 Style phù hợp content type?",
+        "🚨 {{COUNT}} in = {{COUNT}} objects out",
+        "📝 JSON format ĐÚNG như examples?",
+        "✅ Parse được bằng JSON.parse()?"
+    ],
+    "source_text": {
+        "language": "zh",
+        "target_language": "vi",
+        "total_lines": {
+            {COUNT
+            }
+        },
+        "content": "{{TEXT}}"
+    }
+}

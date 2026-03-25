@@ -5,7 +5,6 @@
 // ============================================
 const DOM = {
   // Inputs
-  promptInput: null,
   batchLimitInput: null,
   fileInput: null,
   copyOnlyMode: null,
@@ -28,7 +27,6 @@ const DOM = {
   fileSummary: null,
 
   init() {
-    this.promptInput = document.getElementById("promptTemplate");
     this.batchLimitInput = document.getElementById("batchLimit");
     this.fileInput = document.getElementById("fileInput");
     this.copyOnlyMode = document.getElementById("copyOnlyMode");
@@ -174,7 +172,6 @@ const EventHandlers = {
   },
 
   async onStart() {
-    const template = DOM.promptInput.value;
     const batchLimit = parseInt(DOM.batchLimitInput.value) || 1;
     const alwaysOnTop = document.getElementById("alwaysOnTop").checked;
     const copyOnly = DOM.copyOnlyMode.checked;
@@ -187,7 +184,6 @@ const EventHandlers = {
     }
 
     const settings = {
-      promptTemplate: template,
       batchLimit: batchLimit,
       isRunning: true,
       // KHÔNG reset batchCount/currentBatchIndex - sẽ được tính lại trong START_PROCESS
@@ -306,10 +302,6 @@ async function initializePopup() {
   DOM.init();
 
   const result = await StorageManager.loadSettings();
-
-  if (result.promptTemplate) {
-    DOM.promptInput.value = result.promptTemplate;
-  }
 
   if (result.batchLimit) {
     DOM.batchLimitInput.value = result.batchLimit;

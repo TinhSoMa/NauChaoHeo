@@ -214,7 +214,12 @@ const BatchProcessor = {
         await Utils.sleep(500);
 
         const payload = this.buildBatchPrompt(batchData.lines);
-        const finalPrompt = State.promptTemplate.replace("{{TEXT}}", payload);
+        const escapedPayload = JSON.stringify(payload).slice(1, -1);
+        
+        let finalPrompt = State.promptTemplate;
+        finalPrompt = finalPrompt.replace(/\{\{COUNT\}\}/g, batchData.lines.length);
+        finalPrompt = finalPrompt.replace(/\{\{FILE_NAME\}\}/g, batchData.name);
+        finalPrompt = finalPrompt.replace("{{TEXT}}", escapedPayload);
 
         if (!State.isRunning) {
             throw new Error("STOPPED_BY_USER");
@@ -264,7 +269,12 @@ const BatchProcessor = {
         await Utils.sleep(500);
 
         const payload = this.buildBatchPrompt(batchData.lines);
-        const finalPrompt = State.promptTemplate.replace("{{TEXT}}", payload);
+        const escapedPayload = JSON.stringify(payload).slice(1, -1);
+        
+        let finalPrompt = State.promptTemplate;
+        finalPrompt = finalPrompt.replace(/\{\{COUNT\}\}/g, batchData.lines.length);
+        finalPrompt = finalPrompt.replace(/\{\{FILE_NAME\}\}/g, batchData.name);
+        finalPrompt = finalPrompt.replace("{{TEXT}}", escapedPayload);
 
         if (!State.isRunning) {
             throw new Error("STOPPED_BY_USER");
@@ -476,10 +486,11 @@ async function processLoop() {
             if (parsed.ok) {
                 responseObject = parsed.data;
             } else {
-                responseObject = {
-                    responseText: parsed.responseText || result.text,
-                    parseError: parsed.error
-                };
+                // KHÔNG lưu câu trả lời bị lỗi - DỪNG lại để tránh gửi prompt tiếp theo
+                Utils.log(`❌ Không thể parse JSON từ ${providerName}. Dừng lại để tránh mất dữ liệu.`, 'error');
+                Utils.log(`Parse error: ${parsed.error}`, 'error');
+                Utils.log(`Response preview: ${(parsed.responseText || result.text || '').slice(0, 200)}`, 'error');
+                throw new Error(`PARSE_FAILED: ${providerName} trả về nội dung không hợp lệ. Kiểm tra console để xem response.`);
             }
         }
 
@@ -550,6 +561,10 @@ async function processLoop() {
 async function loadSettingsAndStart() {
     try {
         const data = await State.loadFromStorage();
+        
+        // Load prompt template trực tiếp từ file promt.json
+        const promptUrl = chrome.runtime.getURL('promt.json');
+        State.promptTemplate = await (await fetch(promptUrl)).text();
 
         Utils.log(`Cài đặt: Dịch ${State.batchLimit} batch (Đã dịch: ${State.batchCount})`);
 
