@@ -520,7 +520,7 @@ function createProgressDisplay(win) {
     
     // Tạo HTML content (clone từ progress.html)
     container.innerHTML = `
-        <div class="header">📖 Tiến độ dịch</div>
+        <div class="header">🎬 Tiến độ dịch subtitle</div>
         
         <div class="progress-container">
             <div class="progress-header">
@@ -547,7 +547,7 @@ function createProgressDisplay(win) {
         </div>
         
         <div class="current-chapter">
-            <div class="chapter-label">Chương hiện tại</div>
+            <div class="chapter-label">Batch hiện tại</div>
             <div class="chapter-name" id="pip-currentChapter">Đang khởi động...</div>
         </div>
         

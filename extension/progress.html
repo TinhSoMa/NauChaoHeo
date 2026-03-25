@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tiến độ dịch truyện</title>
+    <title>Tiến độ dịch subtitle</title>
     <style>
         * {
             margin: 0;
@@ -201,7 +201,7 @@
 </head>
 
 <body>
-    <div class="header">📖 Tiến độ dịch</div>
+    <div class="header">🎬 Tiến độ dịch subtitle</div>
 
     <div class="progress-container">
         <div class="progress-header">
@@ -228,14 +228,13 @@
     </div>
 
     <div class="current-chapter">
-        <div class="chapter-label">Chương hiện tại</div>
+        <div class="chapter-label">Batch hiện tại</div>
         <div class="chapter-name" id="currentChapter">Đang khởi động...</div>
     </div>
 
     <div class="status" id="status">Sẵn sàng</div>
 
     <script>
-        // Lắng nghe message từ background script
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (request.action === "UPDATE_PROGRESS") {
                 updateProgress(request.data);
@@ -245,26 +244,21 @@
         function updateProgress(data) {
             const { completed, total, currentChapter, status } = data;
 
-            // Update progress bar
             const percentage = Math.round((completed / total) * 100);
             document.getElementById('progressFill').style.width = percentage + '%';
             document.getElementById('progressText').textContent = percentage + '%';
             document.getElementById('progressPercent').textContent = percentage + '%';
 
-            // Update stats
             document.getElementById('completedCount').textContent = completed;
             document.getElementById('totalCount').textContent = total;
 
-            // Update current chapter
             if (currentChapter) {
                 document.getElementById('currentChapter').textContent = currentChapter;
             }
 
-            // Update status
             const statusEl = document.getElementById('status');
             statusEl.textContent = status || 'Đang dịch...';
 
-            // Update status color
             statusEl.className = 'status';
             if (status && status.includes('dịch')) {
                 statusEl.classList.add('translating');
@@ -275,7 +269,6 @@
             }
         }
 
-        // Request initial data
         chrome.runtime.sendMessage({ action: "GET_PROGRESS" }, (response) => {
             if (response) {
                 updateProgress(response);

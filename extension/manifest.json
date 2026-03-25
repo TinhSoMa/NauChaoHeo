@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "1 Auto Translator via Gemini",
     "version": "2.1",
-    "description": "Dịch truyện từ file .txt qua Gemini - Hỗ trợ chạy nền",
+    "description": "Dịch subtitle theo batch file .txt qua Gemini",
     "permissions": [
         "activeTab",
         "tabs",
@@ -14,10 +14,7 @@
         "windows"
     ],
     "host_permissions": [
-        "https://gemini.google.com/*",
-        "https://*.69shuba.com/*",
-        "https://*.69shu.me/*",
-        "https://*.novel543.com/*"
+        "https://gemini.google.com/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -29,17 +26,6 @@
             ],
             "js": [
                 "content-script-gemini.js"
-            ],
-            "run_at": "document_idle"
-        },
-        {
-            "matches": [
-                "https://*.69shuba.com/*",
-                "https://*.69shu.me/*",
-                "https://*.novel543.com/*"
-            ],
-            "js": [
-                "content-script-story.js"
             ],
             "run_at": "document_idle"
         }
