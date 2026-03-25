@@ -7,11 +7,13 @@ const State = {
     isRunning: false,
     geminiTabId: null,
     geminiWindowId: null,
+    grokTabId: null,
     promptTemplate: "",
     batchLimit: 0,
     batchCount: 0,
     keepAliveIntervalId: null,
     copyOnlyMode: false,
+    provider: "gemini",
     currentBatchName: "Starting...",
     currentStatus: "Ready",
 
@@ -28,12 +30,14 @@ const State = {
             'copyOnlyMode',
             'batchFiles',
             'totalBatches',
-            'currentBatchIndex'
+            'currentBatchIndex',
+            'provider'
         ]);
 
         this.promptTemplate = data.promptTemplate || "Dịch sang tiếng Việt: {{TEXT}}";
         this.batchCount = data.batchCount || 0;
         this.copyOnlyMode = data.copyOnlyMode || false;
+        this.provider = data.provider || "gemini";
 
         const total = data.totalBatches || (data.batchFiles ? data.batchFiles.length : 0);
         const limit = data.batchLimit || total || 1;
@@ -97,6 +101,12 @@ const Utils = {
                     data: progressData
                 }).catch(() => {});
             }
+            if (tab.url && tab.url.includes('grok.com')) {
+                chrome.tabs.sendMessage(tab.id, {
+                    action: "UPDATE_PROGRESS",
+                    data: progressData
+                }).catch(() => {});
+            }
         }
     }
 };
@@ -112,6 +122,10 @@ const TabManager = {
 
     async findGeminiTab() {
         return this.findTab("gemini.google.com");
+    },
+    
+    async findGrokTab() {
+        return this.findTab("grok.com");
     },
 
     async injectScript(tabId, scriptPath) {
@@ -160,17 +174,30 @@ const BatchProcessor = {
             throw new Error("ĐÃ DỊCH HẾT FILE");
         }
 
-        const batch = data.batchFiles[currentIndex];
-        State.currentBatchName = batch.name || `Batch ${currentIndex + 1}`;
+        // Bỏ qua các file đã completed
+        let startIndex = currentIndex;
+        while (startIndex < totalBatches && data.batchFiles[startIndex].completed) {
+            Utils.log(`Bỏ qua file đã dịch: ${data.batchFiles[startIndex].name}`);
+            startIndex++;
+        }
+        if (startIndex >= totalBatches) {
+            throw new Error("ĐÃ DỊCH HẾT FILE");
+        }
+        if (startIndex !== currentIndex) {
+            await chrome.storage.local.set({ currentBatchIndex: startIndex });
+        }
 
-        Utils.log(`Batch ${State.batchCount + 1}/${State.batchLimit} (${currentIndex + 1}/${totalBatches})`);
+        const batch = data.batchFiles[startIndex];
+        State.currentBatchName = batch.name || `Batch ${startIndex + 1}`;
+
+        Utils.log(`Batch ${State.batchCount + 1}/${State.batchLimit} (${startIndex + 1}/${totalBatches})`);
         Utils.log(`Tên file: ${State.currentBatchName}`);
         Utils.log(`Số dòng: ${batch.lines.length}`);
 
         return {
             name: batch.name,
             lines: batch.lines,
-            index: currentIndex
+            index: startIndex
         };
     },
 
@@ -230,6 +257,56 @@ const BatchProcessor = {
         return geminiResult;
     },
 
+    async translateWithGrok(batchData) {
+        Utils.log("Gửi yêu cầu dịch tới Grok...");
+
+        await chrome.tabs.update(State.grokTabId, { active: true });
+        await Utils.sleep(500);
+
+        const payload = this.buildBatchPrompt(batchData.lines);
+        const finalPrompt = State.promptTemplate.replace("{{TEXT}}", payload);
+
+        if (!State.isRunning) {
+            throw new Error("STOPPED_BY_USER");
+        }
+
+        Utils.log("Đang gửi prompt và đợi Grok trả lời...");
+        Utils.log(`Độ dài prompt: ${finalPrompt.length} ký tự`);
+
+        const grokResult = await Utils.sendMessageToTab(State.grokTabId, {
+            action: "PASTE_AND_SEND",
+            prompt: finalPrompt
+        });
+
+        if (!State.isRunning) {
+            throw new Error("STOPPED_BY_USER");
+        }
+
+        if (!grokResult) {
+            throw new Error("Grok không phản hồi");
+        }
+
+        if (grokResult.status === "TIMEOUT") {
+            throw new Error("Timeout: Grok mất quá nhiều thời gian");
+        }
+
+        if (grokResult.status === "ERROR") {
+            throw new Error(`Grok lỗi: ${grokResult.message || 'Unknown error'}`);
+        }
+
+        if (grokResult.status !== "DONE") {
+            throw new Error(`Grok trả về status không mong đợi: ${grokResult.status}`);
+        }
+
+        Utils.log("Dịch thành công!", 'success');
+        Utils.log(`Độ dài response: ${grokResult.text ? grokResult.text.length : 0} ký tự`);
+
+        Utils.log("Đợi 2 giây để Grok ổn định...");
+        await Utils.sleep(2000);
+
+        return grokResult;
+    },
+
     parseGeminiJson(text) {
         if (!text) return { ok: false, error: 'Empty response' };
         let cleaned = text.trim();
@@ -254,6 +331,18 @@ const BatchProcessor = {
             translatedBatches: translatedBatches,
             batchCount: State.batchCount
         });
+
+        // Gắn kết quả trực tiếp vào file và đánh dấu done
+        const filesData = await chrome.storage.local.get(['batchFiles']);
+        const batchFiles = filesData.batchFiles || [];
+        const fileIdx = batchResult.batchIndex - 1;
+        if (batchFiles[fileIdx]) {
+            batchFiles[fileIdx].completed = true;
+            batchFiles[fileIdx].status = 'done';
+            batchFiles[fileIdx].result = batchResult.response;
+            await chrome.storage.local.set({ batchFiles });
+            Utils.log(`Đã đánh dấu ${batchFiles[fileIdx].name} là done`, 'success');
+        }
 
         Utils.log(`Đã lưu batch ${batchResult.batchIndex}`, 'success');
         Utils.log(`Tiến độ: ${State.batchCount}/${State.batchLimit} batch`);
@@ -286,6 +375,22 @@ const Initializer = {
         await TabManager.injectScript(State.geminiTabId, 'content-script-gemini.js');
 
         await TabManager.keepAlive(State.geminiTabId);
+    },
+
+    async setupGrokTab() {
+        const grokTab = await TabManager.findGrokTab();
+
+        if (!grokTab) {
+            throw new Error("Không tìm thấy tab Grok! Hãy mở tab Grok trước khi chạy.");
+        }
+
+        State.grokTabId = grokTab.id;
+        Utils.log(`Tìm thấy tab Grok (Tab ${State.grokTabId})`, 'success');
+
+        await TabManager.injectScript(State.grokTabId, 'pip-script.js');
+        await TabManager.injectScript(State.grokTabId, 'content-script-grok.js');
+
+        await TabManager.keepAlive(State.grokTabId);
     },
 
     async validateFileMode(data) {
@@ -325,7 +430,14 @@ async function processLoop() {
 
         const batchData = await BatchProcessor.getBatchData(data);
         Utils.log(`✓ Đã lấy: "${batchData.name}"`, 'success');
-        await Utils.sendProgressUpdate(`Đã lấy: ${batchData.name}`);
+        await Utils.sendProgressUpdate(`Đang dịch: ${batchData.name}`);
+
+        // Đánh dấu file đang được xử lý
+        const filesForStatus = (await chrome.storage.local.get(['batchFiles'])).batchFiles || [];
+        if (filesForStatus[batchData.index]) {
+            filesForStatus[batchData.index].status = 'translating';
+            await chrome.storage.local.set({ batchFiles: filesForStatus });
+        }
 
         let responseObject;
 
@@ -349,19 +461,23 @@ async function processLoop() {
 
             Utils.log("✓ Đã tạo response copy-only", 'success');
         } else {
-            Utils.log("BƯỚC 2: Gửi qua Gemini để dịch...");
-            await Utils.sendProgressUpdate("Đang dịch với Gemini...");
+            const providerName = State.provider === 'grok' ? 'Grok' : 'Gemini';
+            Utils.log(`BƯỚC 2: Gửi qua ${providerName} để dịch...`);
+            await Utils.sendProgressUpdate(`Đang dịch với ${providerName}...`);
 
-            const geminiResult = await BatchProcessor.translateWithGemini(batchData);
-            Utils.log("✓ Gemini đã hoàn thành dịch", 'success');
-            await Utils.sendProgressUpdate("Gemini đã hoàn thành dịch");
+            const result = State.provider === 'grok'
+                ? await BatchProcessor.translateWithGrok(batchData)
+                : await BatchProcessor.translateWithGemini(batchData);
 
-            const parsed = BatchProcessor.parseGeminiJson(geminiResult.text);
+            Utils.log(`✓ ${providerName} đã hoàn thành dịch`, 'success');
+            await Utils.sendProgressUpdate(`${providerName} đã hoàn thành dịch`);
+
+            const parsed = BatchProcessor.parseGeminiJson(result.text);
             if (parsed.ok) {
                 responseObject = parsed.data;
             } else {
                 responseObject = {
-                    responseText: parsed.responseText || geminiResult.text,
+                    responseText: parsed.responseText || result.text,
                     parseError: parsed.error
                 };
             }
@@ -402,6 +518,10 @@ async function processLoop() {
             State.isRunning = false;
             await chrome.storage.local.set({ isRunning: false });
             await Utils.sendProgressUpdate("Đã dừng bởi người dùng");
+            // Reset file đang translating về pending
+            const fd = await chrome.storage.local.get(['batchFiles']);
+            const bf = (fd.batchFiles || []).map(f => f.status === 'translating' ? { ...f, status: 'pending' } : f);
+            await chrome.storage.local.set({ batchFiles: bf });
         } else if (error.message === "ĐÃ DỊCH HẾT FILE") {
             console.log("\n🎉 " + error.message);
             Utils.log("Đã hoàn thành toàn bộ batch files!", 'success');
@@ -412,6 +532,14 @@ async function processLoop() {
             console.error("Chi tiết lỗi:", error);
             State.isRunning = false;
             await chrome.storage.local.set({ isRunning: false });
+            // Đánh dấu file bị lỗi
+            const fd2 = await chrome.storage.local.get(['batchFiles', 'currentBatchIndex']);
+            const bf2 = fd2.batchFiles || [];
+            const errIdx = fd2.currentBatchIndex || 0;
+            if (bf2[errIdx]) {
+                bf2[errIdx].status = 'error';
+                await chrome.storage.local.set({ batchFiles: bf2 });
+            }
         }
     }
 }
@@ -426,10 +554,15 @@ async function loadSettingsAndStart() {
         Utils.log(`Cài đặt: Dịch ${State.batchLimit} batch (Đã dịch: ${State.batchCount})`);
 
         if (!State.copyOnlyMode) {
-            Utils.log("Chế độ dịch: Cần tab Gemini...");
-            await Initializer.setupGeminiTab();
+            if (State.provider === 'grok') {
+                Utils.log("Chế độ dịch: Cần tab Grok...");
+                await Initializer.setupGrokTab();
+            } else {
+                Utils.log("Chế độ dịch: Cần tab Gemini...");
+                await Initializer.setupGeminiTab();
+            }
         } else {
-            Utils.log("Chế độ Copy Only: KHÔNG cần tab Gemini", 'success');
+            Utils.log("Chế độ Copy Only: KHÔNG cần tab dịch", 'success');
         }
 
         await Initializer.validateFileMode(data);
@@ -448,16 +581,20 @@ async function loadSettingsAndStart() {
 // ============================================
 async function downloadFullStory() {
     Utils.log("Bắt đầu tải JSONL...");
-    const data = await chrome.storage.local.get(['translatedBatches', 'batchCount']);
-    const translatedBatches = data.translatedBatches || [];
+    const data = await chrome.storage.local.get(['batchFiles', 'batchCount']);
+    const batchFiles = data.batchFiles || [];
     const count = data.batchCount || 0;
 
-    if (!translatedBatches || translatedBatches.length === 0) {
+    const completedFiles = batchFiles.filter(f => f.completed && f.result);
+    if (completedFiles.length === 0) {
         Utils.log("Chưa có nội dung. Hãy chạy dịch trước.", 'warning');
         return;
     }
 
-    const jsonl = translatedBatches.map(line => JSON.stringify(line)).join('\n');
+    // Tạo JSONL từ batchFiles[].result theo đúng thứ tự file gốc
+    const jsonl = completedFiles
+        .map(f => JSON.stringify({ fileName: f.name, response: f.result }))
+        .join('\n');
     const docUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonl);
     const date = new Date().toISOString().slice(0,10);
     const filename = `SubtitleBatch_${count}batch_${date}.jsonl`;
@@ -486,10 +623,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "START_PROCESS") {
         State.isRunning = true;
         (async () => {
+            // Resume: tìm file đầu tiên chưa completed thay vì reset về 0
+            const existing = await chrome.storage.local.get(['batchFiles', 'translatedBatches']);
+            const batchFiles = existing.batchFiles || [];
+            const completedCount = batchFiles.filter(f => f.completed).length;
+            const nextIndex = completedCount; // index của file tiếp theo chưa dịch
             await chrome.storage.local.set({
-                translatedBatches: [],
-                batchCount: 0,
-                currentBatchIndex: 0
+                currentBatchIndex: nextIndex,
+                batchCount: completedCount
+                // translatedBatches GIỮ LẠI - không reset
             });
             loadSettingsAndStart();
         })();
@@ -498,8 +640,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         Utils.log("Đã nhận lệnh DỪNG. Đang hủy các tác vụ...");
 
         if (State.geminiTabId) {
-            chrome.tabs.sendMessage(State.geminiTabId, { action: "CANCEL_POLLING" })
-                .catch(() => {});
+            chrome.tabs.sendMessage(State.geminiTabId, { action: "CANCEL_POLLING" }, () => {
+                void chrome.runtime.lastError; // suppress port error
+            });
+        }
+        if (State.grokTabId) {
+            chrome.tabs.sendMessage(State.grokTabId, { action: "CANCEL_POLLING" }, () => {
+                void chrome.runtime.lastError; // suppress port error
+            });
         }
 
         Utils.sendProgressUpdate("Đã dừng bởi người dùng");

@@ -9,6 +9,7 @@ const DOM = {
   batchLimitInput: null,
   fileInput: null,
   copyOnlyMode: null,
+  providerSelect: null,
 
   // Buttons
   btnStart: null,
@@ -31,6 +32,7 @@ const DOM = {
     this.batchLimitInput = document.getElementById("batchLimit");
     this.fileInput = document.getElementById("fileInput");
     this.copyOnlyMode = document.getElementById("copyOnlyMode");
+    this.providerSelect = document.getElementById("providerSelect");
 
     this.btnStart = document.getElementById("btnStart");
     this.btnStop = document.getElementById("btnStop");
@@ -72,10 +74,22 @@ const UIManager = {
     }
 
     DOM.fileListContainer.style.display = 'block';
-    DOM.fileList.innerHTML = batchFiles.map((bf, idx) =>
-      `<div class="file-item">#${idx + 1}: ${bf.name} (${bf.lines.length} dòng)</div>`
-    ).join('');
-    DOM.fileSummary.textContent = `Tổng batch: ${batchFiles.length}`;
+    const completedCount = batchFiles.filter(f => f.completed).length;
+    const errorCount = batchFiles.filter(f => f.status === 'error').length;
+    const badgeLabel = {
+      pending: '⏳ Chờ',
+      translating: '🔄 Đang dịch',
+      done: '✅ Xong',
+      error: '❌ Lỗi'
+    };
+    DOM.fileList.innerHTML = batchFiles.map((bf, idx) => {
+      const st = bf.status || (bf.completed ? 'done' : 'pending');
+      return `<div class="file-item">
+        <span class="file-name">#${idx + 1}: ${bf.name}</span>
+        <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
+      </div>`;
+    }).join('');
+    DOM.fileSummary.textContent = `Tổng: ${batchFiles.length} | ✅ ${completedCount} | ❌ ${errorCount} | ⏳ ${batchFiles.length - completedCount - errorCount}`;
   }
 };
 
@@ -93,7 +107,8 @@ const StorageManager = {
       'totalBatches',
       'currentBatchIndex',
       'copyOnlyMode',
-      'alwaysOnTop'
+      'alwaysOnTop',
+      'provider'
     ]);
   },
 
@@ -136,7 +151,9 @@ const EventHandlers = {
         const lines = parseLinesFromText(text);
         batchFiles.push({
           name: file.name,
-          lines: lines
+          lines: lines,
+          completed: false,
+          status: 'pending'
         });
       }
 
@@ -161,6 +178,7 @@ const EventHandlers = {
     const batchLimit = parseInt(DOM.batchLimitInput.value) || 1;
     const alwaysOnTop = document.getElementById("alwaysOnTop").checked;
     const copyOnly = DOM.copyOnlyMode.checked;
+    const provider = DOM.providerSelect.value || 'gemini';
 
     const data = await StorageManager.loadSettings();
     if (!data.batchFiles || data.batchFiles.length === 0) {
@@ -172,19 +190,16 @@ const EventHandlers = {
       promptTemplate: template,
       batchLimit: batchLimit,
       isRunning: true,
-      batchCount: 0,
-      currentBatchIndex: 0,
+      // KHÔNG reset batchCount/currentBatchIndex - sẽ được tính lại trong START_PROCESS
       alwaysOnTop: alwaysOnTop,
-      copyOnlyMode: copyOnly
+      copyOnlyMode: copyOnly,
+      provider: provider
     };
 
-    await StorageManager.saveSettings({
-      ...settings,
-      translatedBatches: []
-    });
+    await StorageManager.saveSettings(settings);
 
     if (alwaysOnTop && !copyOnly) {
-      const pipSuccess = await PiPManager.openPiP();
+      const pipSuccess = await PiPManager.openPiP(provider);
       if (!pipSuccess) return;
     }
 
@@ -203,10 +218,19 @@ const EventHandlers = {
     UIManager.setStatus("Đang tải JSONL...");
   },
 
-  onClear() {
+  async onClear() {
     if (confirm("Bạn có chắc muốn xóa toàn bộ dữ liệu đã dịch trước đó không?")) {
+      const filesData = await chrome.storage.local.get(['batchFiles']);
+      const batchFiles = (filesData.batchFiles || []).map(f => ({ ...f, completed: false, status: 'pending', result: undefined }));
+      await chrome.storage.local.set({
+        batchFiles,
+        translatedBatches: [],
+        batchCount: 0,
+        currentBatchIndex: 0
+      });
+      UIManager.displayFileList(batchFiles);
       chrome.runtime.sendMessage({ action: "CLEAR_DATA" });
-      UIManager.setStatus("Đã xóa dữ liệu cũ.");
+      UIManager.setStatus("Đã xóa dữ liệu cũ. Tất cả file đã reset.");
     }
   }
 };
@@ -215,15 +239,20 @@ const EventHandlers = {
 // PIP MANAGER
 // ============================================
 const PiPManager = {
-  async openPiP() {
+  async openPiP(provider) {
     try {
       UIManager.setStatus("Đang mở PiP window...");
 
       const tabs = await chrome.tabs.query({});
-      const geminiTab = tabs.find(t => t.url && t.url.includes("gemini.google.com"));
+      const targetTab = tabs.find(t => {
+        if (!t.url) return false;
+        if (provider === 'grok') return t.url.includes("grok.com");
+        return t.url.includes("gemini.google.com");
+      });
 
-      if (!geminiTab) {
-        UIManager.setStatus("⚠️ Không tìm thấy tab Gemini!", "#ff9800");
+      if (!targetTab) {
+        const name = provider === 'grok' ? 'Grok' : 'Gemini';
+        UIManager.setStatus(`⚠️ Không tìm thấy tab ${name}!`, "#ff9800");
         document.getElementById("alwaysOnTop").checked = false;
         await StorageManager.saveSettings({ alwaysOnTop: false });
         return false;
@@ -231,7 +260,7 @@ const PiPManager = {
 
       try {
         await chrome.scripting.executeScript({
-          target: { tabId: geminiTab.id },
+          target: { tabId: targetTab.id },
           files: ['pip-script.js']
         });
       } catch (e) {
@@ -240,7 +269,7 @@ const PiPManager = {
 
       await new Promise(r => setTimeout(r, 500));
 
-      const response = await chrome.tabs.sendMessage(geminiTab.id, {
+      const response = await chrome.tabs.sendMessage(targetTab.id, {
         action: "OPEN_PIP"
       });
 
@@ -250,7 +279,8 @@ const PiPManager = {
         return true;
       } else if (response && response.status === "ERROR") {
         if (response.message.includes("conversation")) {
-          UIManager.setStatus("⚠️ Vui lòng mở một conversation trong Gemini trước!", "#ff9800");
+          const name = provider === 'grok' ? 'Grok' : 'Gemini';
+          UIManager.setStatus(`⚠️ Vui lòng mở một conversation trong ${name} trước!`, "#ff9800");
         } else {
           UIManager.setStatus("⚠️ Lỗi: " + response.message);
         }
@@ -296,6 +326,11 @@ async function initializePopup() {
   if (result.copyOnlyMode !== undefined) {
     DOM.copyOnlyMode.checked = result.copyOnlyMode;
   }
+  if (result.provider) {
+    DOM.providerSelect.value = result.provider;
+  } else {
+    DOM.providerSelect.value = 'gemini';
+  }
 
   if (result.batchFiles && result.batchFiles.length > 0) {
     UIManager.setFileStatus(`File đã chọn: ${result.batchFiles.length}`, '#4CAF50');
@@ -311,6 +346,9 @@ function setupEventListeners() {
     await EventHandlers.onFileSelect(files);
   });
 
+  DOM.providerSelect.addEventListener("change", async () => {
+    await StorageManager.saveSettings({ provider: DOM.providerSelect.value });
+  });
   DOM.batchLimitInput.addEventListener("input", () => {
     DOM.batchLimitInput.dataset.userSet = 'true';
   });
@@ -319,6 +357,13 @@ function setupEventListeners() {
   DOM.btnStop.addEventListener("click", () => EventHandlers.onStop());
   DOM.btnDownload.addEventListener("click", () => EventHandlers.onDownload());
   DOM.btnClear.addEventListener("click", () => EventHandlers.onClear());
+
+  // Live update: khi background thay đổi batchFiles -> tự động render lại danh sách
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.batchFiles) {
+      UIManager.displayFileList(changes.batchFiles.newValue);
+    }
+  });
 }
 
 // ============================================

@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "1 Auto Translator via Gemini",
+    "name": "Dịch subtitle",
     "version": "2.1",
     "description": "Dịch subtitle theo batch file .txt qua Gemini",
     "permissions": [
@@ -14,7 +14,8 @@
         "windows"
     ],
     "host_permissions": [
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://grok.com/*"
     ],
     "background": {
         "service_worker": "background.js"
@@ -26,6 +27,15 @@
             ],
             "js": [
                 "content-script-gemini.js"
+            ],
+            "run_at": "document_idle"
+        },
+        {
+            "matches": [
+                "https://grok.com/*"
+            ],
+            "js": [
+                "content-script-grok.js"
             ],
             "run_at": "document_idle"
         }

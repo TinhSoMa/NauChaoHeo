@@ -1,3 +1,5 @@
+if (!window._geminiScriptLoaded) {
+window._geminiScriptLoaded = true;
 console.log("----> Gemini Content Script đã load (Optimized Version)");
 
 // ============================================
@@ -51,13 +53,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.log("----> 🛑 ĐÃ HỦY POLLING - Dừng ngay lập tức!");
         }
         sendResponse({ status: "CANCELLED" });
-        return true;
+        // Synchronous response - NOT returning true
     } else if (request.action === "UPDATE_PIP_STATUS") {
         // Chuyển tiếp message này đến pip-script.js
         window.postMessage({
             type: "UPDATE_PIP_STATUS",
             data: request.data
         }, "*");
+        sendResponse({ status: "OK" });
+        return true;
+    } else if (request.action === "UPDATE_PROGRESS") {
         sendResponse({ status: "OK" });
         return true;
     }
@@ -383,3 +388,4 @@ function sleep(ms) {
 // ============================================
 console.log("----> Content Script Gemini đã sẵn sàng!");
 console.log("----> Hỗ trợ: PiP Mode (MOVE strategy), Polling mechanism, Multi-selector extraction");
+} // End of window._geminiScriptLoaded check
