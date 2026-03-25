@@ -119,6 +119,10 @@ function normalizePathKey(value: string): string {
   return value.trim().replace(/[\\/]+$/, '').toLowerCase();
 }
 
+function resolveFolderPathForInput(currentPath: string, inputType: string): string {
+  return inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '');
+}
+
 function toSafeThumbSlug(thumbnailText?: string): string {
   const raw = (thumbnailText || '').trim();
   if (!raw) {
@@ -910,6 +914,258 @@ function collectBatchMissingInfo(
   };
 }
 
+type ManualParseResult =
+  | { ok: true; translatedTexts: string[] }
+  | { ok: false; errorCode: string; errorMessage: string };
+
+function parseCount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.floor(value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function failManualParse(
+  _translatedTexts: string[],
+  errorCode: string,
+  errorMessage: string
+): ManualParseResult {
+  return {
+    ok: false,
+    errorCode,
+    errorMessage,
+  };
+}
+
+function parseJsonTranslationResponseForManual(
+  response: string,
+  expectedCount: number
+): ManualParseResult {
+  const safeExpectedCount = Math.max(0, Math.floor(expectedCount));
+  const translatedTexts = new Array<string>(safeExpectedCount).fill('');
+  const raw = typeof response === 'string' ? response.trim() : '';
+
+  if (!raw) {
+    return failManualParse(translatedTexts, 'JSON_PARSE_FAILED', 'Response rỗng');
+  }
+  if (!raw.startsWith('{') || !raw.endsWith('}')) {
+    return failManualParse(
+      translatedTexts,
+      'JSON_PARSE_FAILED',
+      'Response không phải JSON thuần túy (có text thừa ngoài JSON)'
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return failManualParse(
+      translatedTexts,
+      'JSON_PARSE_FAILED',
+      `JSON.parse thất bại: ${String(error)}`
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: root phải là object');
+  }
+
+  const root = parsed as Record<string, unknown>;
+  const status = typeof root.status === 'string' ? root.status.trim() : '';
+
+  if (status === 'error') {
+    const errorNode =
+      root.error && typeof root.error === 'object' && !Array.isArray(root.error)
+        ? (root.error as Record<string, unknown>)
+        : {};
+    const upstreamCode = typeof errorNode.code === 'string' ? errorNode.code.trim() : '';
+    const upstreamMessage = typeof errorNode.message === 'string' ? errorNode.message.trim() : '';
+    return failManualParse(
+      translatedTexts,
+      upstreamCode || 'ERROR_PROCESSING_FAILED',
+      upstreamMessage || 'Model trả về status=error'
+    );
+  }
+
+  if (status !== 'success') {
+    return failManualParse(
+      translatedTexts,
+      'ERROR_INVALID_INPUT',
+      'Schema không hợp lệ: status phải là "success" hoặc "error"'
+    );
+  }
+
+  const dataNode =
+    root.data && typeof root.data === 'object' && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : null;
+  if (!dataNode) {
+    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data object');
+  }
+
+  const translations = Array.isArray(dataNode.translations) ? dataNode.translations : null;
+  if (!translations) {
+    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data.translations[]');
+  }
+
+  const seenIndexes = new Set<number>();
+
+  for (const item of translations) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: item translations phải là object');
+    }
+    const typed = item as Record<string, unknown>;
+    const parsedIndex = parseCount(typed.index);
+    if (parsedIndex === null || parsedIndex <= 0) {
+      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: index phải là số nguyên >= 1');
+    }
+    if (parsedIndex > safeExpectedCount) {
+      return failManualParse(
+        translatedTexts,
+        'ERROR_COUNT_MISMATCH',
+        `Index ngoài phạm vi: ${parsedIndex} > ${safeExpectedCount}`
+      );
+    }
+    if (seenIndexes.has(parsedIndex)) {
+      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', `Trùng index trong translations: ${parsedIndex}`);
+    }
+    if (typeof typed.translated !== 'string') {
+      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', `Schema không hợp lệ tại index ${parsedIndex}: thiếu translated string`);
+    }
+
+    seenIndexes.add(parsedIndex);
+    translatedTexts[parsedIndex - 1] = typed.translated.trim();
+  }
+
+  if (seenIndexes.size !== safeExpectedCount) {
+    return failManualParse(
+      translatedTexts,
+      'ERROR_COUNT_MISMATCH',
+      `Số dòng dịch không khớp: nhận ${seenIndexes.size}/${safeExpectedCount}`
+    );
+  }
+
+  const summaryNode =
+    dataNode.summary && typeof dataNode.summary === 'object' && !Array.isArray(dataNode.summary)
+      ? (dataNode.summary as Record<string, unknown>)
+      : null;
+  if (!summaryNode) {
+    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data.summary object');
+  }
+
+  const totalSentences = parseCount(summaryNode.total_sentences);
+  const inputCount = parseCount(summaryNode.input_count);
+  const outputCount = parseCount(summaryNode.output_count);
+  const match = summaryNode.match;
+  const languageStyle = summaryNode.language_style;
+
+  if (
+    totalSentences !== safeExpectedCount ||
+    inputCount !== safeExpectedCount ||
+    outputCount !== safeExpectedCount ||
+    match !== true
+  ) {
+    return failManualParse(
+      translatedTexts,
+      'ERROR_COUNT_MISMATCH',
+      `Summary mismatch: total=${String(totalSentences)}, input=${String(inputCount)}, output=${String(outputCount)}, match=${String(match)}`
+    );
+  }
+
+  if (typeof languageStyle !== 'string' || !languageStyle.trim()) {
+    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: summary.language_style phải là string');
+  }
+
+  return {
+    ok: true,
+    translatedTexts,
+  };
+}
+
+type ManualBatchInput = {
+  batchIndex: number;
+  responseJson: string;
+};
+
+type ManualBulkParseResult =
+  | { ok: true; items: ManualBatchInput[] }
+  | { ok: false; errorMessage: string };
+
+function parseManualBulkInput(raw: string): ManualBulkParseResult {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) {
+    return { ok: false, errorMessage: 'Input rỗng.' };
+  }
+
+  const normalizeItem = (item: Record<string, unknown>): ManualBatchInput | null => {
+    const batchIndexRaw = item.batchIndex;
+    const batchIndex = typeof batchIndexRaw === 'number' ? Math.floor(batchIndexRaw) : null;
+    if (!batchIndex || batchIndex <= 0) {
+      return null;
+    }
+    const response = item.response;
+    if (typeof response === 'string') {
+      return { batchIndex, responseJson: response.trim() };
+    }
+    if (response && typeof response === 'object') {
+      return { batchIndex, responseJson: JSON.stringify(response) };
+    }
+    return null;
+  };
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      const items: ManualBatchInput[] = [];
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return { ok: false, errorMessage: 'JSON array phải chứa object {batchIndex, response}.' };
+        }
+        const normalized = normalizeItem(item as Record<string, unknown>);
+        if (!normalized) {
+          return { ok: false, errorMessage: 'Thiếu batchIndex hoặc response trong JSON array.' };
+        }
+        items.push(normalized);
+      }
+      return { ok: true, items };
+    }
+  } catch {
+    // fallback to NDJSON
+  }
+
+  const lines = trimmed.split(/\r?\n/);
+  const items: ManualBatchInput[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let parsedLine: unknown;
+    try {
+      parsedLine = JSON.parse(line);
+    } catch (error) {
+      return { ok: false, errorMessage: `Line ${i + 1}: JSON không hợp lệ.` };
+    }
+    if (!parsedLine || typeof parsedLine !== 'object' || Array.isArray(parsedLine)) {
+      return { ok: false, errorMessage: `Line ${i + 1}: cần object {batchIndex, response}.` };
+    }
+    const normalized = normalizeItem(parsedLine as Record<string, unknown>);
+    if (!normalized) {
+      return { ok: false, errorMessage: `Line ${i + 1}: thiếu batchIndex hoặc response.` };
+    }
+    items.push(normalized);
+  }
+
+  return items.length > 0
+    ? { ok: true, items }
+    : { ok: false, errorMessage: 'Không có dòng hợp lệ.' };
+}
+
 function buildFailedBatchReportFromEntries(
   batchPlan: StepBatchPlanItem,
   entries: SubtitleEntry[],
@@ -1133,6 +1389,10 @@ export function useCaptionProcessing({
   }, [baseInputPaths, inputPathsOverride, inputType]);
   const isDraftFilterApplied = inputType === 'draft' && Array.isArray(inputPathsOverride);
   const isDraftFilterEmpty = isDraftFilterApplied && baseInputPaths.length > 0 && resolvedInputPaths.length === 0;
+  const resolveFolderPath = useCallback(
+    (currentPath: string) => resolveFolderPathForInput(currentPath, inputType),
+    [inputType]
+  );
 
   const toggleStep = useCallback((step: Step) => {
     setEnabledSteps(prev => {
@@ -1412,6 +1672,305 @@ export function useCaptionProcessing({
     runIdRef.current = null;
   }, [currentFolder?.index, currentFolder?.path, currentStep, resolvedInputPaths, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
 
+  type ManualApplyResult = {
+    success: boolean;
+    error?: string;
+    updatedBatchIndexes?: number[];
+    completed?: boolean;
+    missingBatches?: number;
+  };
+
+  const applyManualBatchUpdates = useCallback(async (
+    inputPath: string,
+    updates: Array<{ batchIndex: number; translatedTexts: string[] }>
+  ): Promise<ManualApplyResult> => {
+    const trimmedPath = inputPath?.trim();
+    if (!trimmedPath) {
+      return { success: false, error: 'Thiếu input path để cập nhật.' };
+    }
+    if (!updates.length) {
+      return { success: false, error: 'Không có batch để cập nhật.' };
+    }
+
+    const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+    const folderPath = resolveFolderPath(trimmedPath);
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: trimmedPath, folderPath };
+
+    let result: ManualApplyResult = { success: true, updatedBatchIndexes: [] };
+
+    try {
+      await updateCaptionSession(sessionPath, (session) => {
+        const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+          ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+          : [];
+        if (step2BatchPlan.length === 0) {
+          throw new Error('Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.');
+        }
+        const planMap = new Map<number, StepBatchPlanItem>();
+        for (const plan of step2BatchPlan) {
+          if (typeof plan.batchIndex === 'number') {
+            planMap.set(Math.floor(plan.batchIndex), plan);
+          }
+        }
+
+        const baseEntries = Array.isArray(session.data.translatedEntries) && session.data.translatedEntries.length > 0
+          ? (session.data.translatedEntries as SubtitleEntry[])
+          : (Array.isArray(session.data.extractedEntries) ? (session.data.extractedEntries as SubtitleEntry[]) : entries);
+        const workingEntries = normalizeEntriesForSession(compactEntries(baseEntries));
+
+        const existingReports = new Map<number, SharedTranslationBatchReport>();
+        const step3BatchStateRaw = session.data.step3BatchState;
+        if (step3BatchStateRaw && Array.isArray(step3BatchStateRaw.batches)) {
+          for (const report of step3BatchStateRaw.batches as SharedTranslationBatchReport[]) {
+            if (report && typeof report.batchIndex === 'number') {
+              existingReports.set(Math.floor(report.batchIndex), { ...report, batchIndex: Math.floor(report.batchIndex) });
+            }
+          }
+        }
+
+        const nowMs = Date.now();
+        const updatedIndexes: number[] = [];
+
+        for (const update of updates) {
+          const batchIndex = Math.max(1, Math.floor(update.batchIndex));
+          const plan = planMap.get(batchIndex);
+          if (!plan) {
+            continue;
+          }
+          const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+          const translatedTexts = Array.from({ length: expectedLines }, (_, idx) => update.translatedTexts[idx] ?? '');
+          for (let i = 0; i < expectedLines; i++) {
+            const entryIndex = plan.startIndex + i;
+            if (entryIndex < 0 || entryIndex >= workingEntries.length) {
+              continue;
+            }
+            const rawText = typeof translatedTexts[i] === 'string' ? translatedTexts[i].trim() : '';
+            workingEntries[entryIndex] = {
+              ...workingEntries[entryIndex],
+              translatedText: rawText.length > 0 ? rawText : undefined,
+            };
+          }
+
+          const missingInfo = collectBatchMissingInfo(workingEntries, plan);
+          const isSuccess = missingInfo.missingGlobalLineIndexes.length === 0;
+          const existing = existingReports.get(batchIndex);
+          const attempts = typeof existing?.attempts === 'number' ? existing.attempts + 1 : 1;
+          const nextReport: SharedTranslationBatchReport = {
+            batchIndex: plan.batchIndex,
+            startIndex: plan.startIndex,
+            endIndex: plan.endIndex,
+            expectedLines: missingInfo.expectedLines,
+            translatedLines: missingInfo.translatedLines,
+            missingLinesInBatch: missingInfo.missingLinesInBatch,
+            missingGlobalLineIndexes: missingInfo.missingGlobalLineIndexes,
+            attempts,
+            status: isSuccess ? 'success' : 'failed',
+            error: isSuccess ? undefined : 'MANUAL_MISSING_LINES',
+            startedAt: nowMs,
+            endedAt: nowMs,
+            durationMs: 0,
+            transport: existing?.transport,
+            resourceId: existing?.resourceId,
+            resourceLabel: 'manual',
+            queueRuntimeKey: existing?.queueRuntimeKey,
+          };
+          existingReports.set(batchIndex, nextReport);
+          updatedIndexes.push(batchIndex);
+        }
+
+        const batchReports = Array.from(existingReports.values()).sort((a, b) => a.batchIndex - b.batchIndex);
+        const totalBatches = step2BatchPlan.length;
+        const planFingerprint = typeof session.data.step2BatchPlanFingerprint === 'string'
+          ? session.data.step2BatchPlanFingerprint
+          : buildObjectFingerprint(step2BatchPlan);
+        const generatedStep3BatchState = {
+          ...buildStep3BatchState(totalBatches, batchReports),
+          planFingerprint,
+        };
+        const missingBatchIndexes = generatedStep3BatchState.missingBatchIndexes;
+        const missingGlobalLineIndexes = generatedStep3BatchState.missingGlobalLineIndexes;
+        const hasAllBatchReports = batchReports.length >= totalBatches;
+        const translatedSrtContent = entriesToSrtText(workingEntries);
+        const translatedLines = batchReports.reduce((sum, report) => sum + report.translatedLines, 0);
+
+        const inputFingerprint = buildEntriesFingerprint((session.data.extractedEntries || []) as SubtitleEntry[]);
+        const outputFingerprint = buildEntriesFingerprint(workingEntries);
+        const prevOutputFingerprint = session.steps.step3?.outputFingerprint;
+        const stepMetrics = {
+          totalLines: workingEntries.length,
+          translatedLines,
+          failedLines: missingGlobalLineIndexes.length,
+          failedBatches: generatedStep3BatchState.failedBatches,
+          missingBatchIndexes,
+          missingGlobalLineIndexes,
+        };
+        const isComplete = hasAllBatchReports && missingBatchIndexes.length === 0 && missingGlobalLineIndexes.length === 0;
+
+        let nextStepState = session.steps.step3;
+        if (isComplete) {
+          nextStepState = {
+            ...makeStepSuccess(session.steps.step3, stepMetrics),
+            inputFingerprint,
+            outputFingerprint,
+            dependsOn: [1] as CaptionStepNumber[],
+          };
+        } else if (nextStepState?.status === 'stopped') {
+          nextStepState = {
+            ...makeStepStopped(session.steps.step3, nextStepState?.error || 'STOPPED_BY_USER', stepMetrics),
+            inputFingerprint,
+            outputFingerprint,
+            dependsOn: [1] as CaptionStepNumber[],
+          };
+        } else {
+          nextStepState = {
+            ...makeStepError(session.steps.step3, 'STEP3_MANUAL_INCOMPLETE'),
+            metrics: stepMetrics,
+            inputFingerprint,
+            outputFingerprint,
+            dependsOn: [1] as CaptionStepNumber[],
+          };
+        }
+
+        let nextSession: CaptionSessionV1 = {
+          ...session,
+          data: {
+            ...session.data,
+            translatedEntries: workingEntries,
+            translatedSrtContent,
+            step3BatchState: generatedStep3BatchState,
+          },
+          runtime: {
+            ...session.runtime,
+            lastMessage: isComplete
+              ? 'Bước 3: Manual update hoàn tất.'
+              : 'Bước 3: Manual update đã ghi nhận.',
+          },
+          steps: {
+            ...session.steps,
+            step3: nextStepState,
+          },
+        };
+
+        if (isComplete && prevOutputFingerprint && prevOutputFingerprint !== outputFingerprint) {
+          nextSession = markFollowingStepsStale(
+            nextSession,
+            3,
+            'STEP3_OUTPUT_CHANGED',
+            [1, 2, 3, 4, 5, 6, 7] as CaptionStepNumber[]
+          );
+        }
+
+        result = {
+          success: true,
+          updatedBatchIndexes: updatedIndexes,
+          completed: isComplete,
+          missingBatches: missingBatchIndexes.length,
+        };
+        return nextSession;
+      }, fallback);
+
+      return result;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [entries, inputType, projectId]);
+
+  const applyManualBatchResponse = useCallback(async (payload: {
+    inputPath: string;
+    batchIndex: number;
+    responseJson: string;
+  }): Promise<ManualApplyResult> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { success: false, error: 'Thiếu input path để cập nhật.' };
+    }
+    const batchIndex = Math.max(1, Math.floor(payload.batchIndex));
+    const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+    const folderPath = resolveFolderPath(trimmedPath);
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: trimmedPath, folderPath };
+
+    try {
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      if (step2BatchPlan.length === 0) {
+        return { success: false, error: 'Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.' };
+      }
+      const plan = step2BatchPlan.find((item) => Math.floor(item.batchIndex) === batchIndex);
+      if (!plan) {
+        return { success: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+      }
+      const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+      const parsed = parseJsonTranslationResponseForManual(payload.responseJson, expectedLines);
+      if (!parsed.ok) {
+        return { success: false, error: `${parsed.errorCode}: ${parsed.errorMessage}` };
+      }
+
+      return await applyManualBatchUpdates(trimmedPath, [{
+        batchIndex,
+        translatedTexts: parsed.translatedTexts,
+      }]);
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [applyManualBatchUpdates, inputType, projectId]);
+
+  const applyManualBulkResponses = useCallback(async (payload: {
+    inputPath: string;
+    raw: string;
+  }): Promise<ManualApplyResult> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { success: false, error: 'Thiếu input path để cập nhật.' };
+    }
+
+    const bulkParsed = parseManualBulkInput(payload.raw);
+    if (!bulkParsed.ok) {
+      return { success: false, error: bulkParsed.errorMessage };
+    }
+
+    const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+    const folderPath = resolveFolderPath(trimmedPath);
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: trimmedPath, folderPath };
+
+    try {
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      if (step2BatchPlan.length === 0) {
+        return { success: false, error: 'Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.' };
+      }
+
+      const planMap = new Map<number, StepBatchPlanItem>();
+      for (const plan of step2BatchPlan) {
+        if (typeof plan.batchIndex === 'number') {
+          planMap.set(Math.floor(plan.batchIndex), plan);
+        }
+      }
+
+      const updates: Array<{ batchIndex: number; translatedTexts: string[] }> = [];
+      for (const item of bulkParsed.items) {
+        const batchIndex = Math.max(1, Math.floor(item.batchIndex));
+        const plan = planMap.get(batchIndex);
+        if (!plan) {
+          return { success: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+        }
+        const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+        const parsed = parseJsonTranslationResponseForManual(item.responseJson, expectedLines);
+        if (!parsed.ok) {
+          return { success: false, error: `Batch #${batchIndex} ${parsed.errorCode}: ${parsed.errorMessage}` };
+        }
+        updates.push({ batchIndex, translatedTexts: parsed.translatedTexts });
+      }
+
+      return await applyManualBatchUpdates(trimmedPath, updates);
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [applyManualBatchUpdates, inputType, projectId]);
+
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).filter((step) => step !== 5).sort() as Step[];
     setStepDependencyIssues([]);
@@ -1573,14 +2132,11 @@ export function useCaptionProcessing({
     const step7Enabled = steps.includes(7);
     const thumbnailEnabled = cfg.thumbnailFrameTimeSec !== null && cfg.thumbnailFrameTimeSec !== undefined;
 
-    const getFolderPath = (currentPath: string) => (
-      inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '')
-    );
     const getSessionFallback = (currentPath: string) => ({
       projectId,
       inputType: inputType as 'srt' | 'draft',
       sourcePath: currentPath,
-      folderPath: getFolderPath(currentPath),
+      folderPath: resolveFolderPath(currentPath),
     });
     const setRunStateForAllSessions = async (
       runState: 'running' | 'stopping' | 'stopped' | 'completed' | 'error',
@@ -2019,7 +2575,7 @@ export function useCaptionProcessing({
       updater: (session: CaptionSessionV1) => CaptionSessionV1
     ) => {
       const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
-      const folderPath = getFolderPath(currentPath);
+      const folderPath = resolveFolderPath(currentPath);
       await updateCaptionSession(
         sessionPath,
         (session) => updater({
@@ -3965,6 +4521,8 @@ export function useCaptionProcessing({
     toggleStep,
     handleStart,
     handleStop,
+    applyManualBatchResponse,
+    applyManualBulkResponses,
     handleStep7AudioPreview,
     stopStep7AudioPreview,
     status,

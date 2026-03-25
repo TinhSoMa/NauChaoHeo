@@ -2642,6 +2642,10 @@ export function CaptionTranslator() {
   const [stepLiveStartMs, setStepLiveStartMs] = useState<Partial<Record<Step, number>>>({});
   const [step3BatchRuntimeMap, setStep3BatchRuntimeMap] = useState<Record<number, Step3BatchRuntimeEntry>>({});
   const [step3LiveTotalBatches, setStep3LiveTotalBatches] = useState<number | null>(null);
+  const [step3ManualModal, setStep3ManualModal] = useState<{ mode: 'single' | 'bulk'; batchIndex?: number } | null>(null);
+  const [step3ManualInput, setStep3ManualInput] = useState('');
+  const [step3ManualError, setStep3ManualError] = useState('');
+  const [step3ManualBusy, setStep3ManualBusy] = useState(false);
   const [step3RuntimeTimer, setStep3RuntimeTimer] = useState<Step3RuntimeTimer>({
     apiLabel: '',
     tokenLabel: '',
@@ -2661,7 +2665,8 @@ export function CaptionTranslator() {
     ? (displayPath ? displayPath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
     : (displayPath ? `${displayPath}/caption_output` : '');
 
-  useEffect(() => {
+  const refreshActiveSession = useCallback(async (cancelRef?: { current: boolean }) => {
+    const isCancelled = () => !!cancelRef?.current;
     if (!fileManager.filePath) {
       setSessionStepStatus({});
       setSessionStepSkipped({});
@@ -2703,170 +2708,259 @@ export function CaptionTranslator() {
       return;
     }
 
-    let cancelled = false;
-    const hydratePreviewFromSession = async () => {
-      try {
-        const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
-        if (import.meta?.env?.DEV) {
-          console.log('[CaptionTranslator][SessionHydrate] Start', {
-            inputType: settings.inputType,
-            filePath: fileManager.filePath,
-            processingInputPaths: inputPaths,
-            activeInputPath,
-            sessionPath,
-          });
-        }
-        const session = await readCaptionSession(sessionPath, {
-          projectId,
+    try {
+      const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
+      if (import.meta?.env?.DEV) {
+        console.log('[CaptionTranslator][SessionHydrate] Start', {
           inputType: settings.inputType,
-          sourcePath: activeInputPath,
-          folderPath: settings.inputType === 'draft'
-            ? activeInputPath
-            : activeInputPath.replace(/[^/\\]+$/, ''),
-        });
-        if (cancelled) return;
-        console.log('[CaptionTranslator][SessionHydrate]', {
-          sessionPath,
+          filePath: fileManager.filePath,
+          processingInputPaths: inputPaths,
           activeInputPath,
-          steps: {
-            step1: session.steps.step1?.status,
-            step2: session.steps.step2?.status,
-            step3: session.steps.step3?.status,
-            step4: session.steps.step4?.status,
-            step6: session.steps.step6?.status,
-            step7: session.steps.step7?.status,
-          },
+          sessionPath,
         });
+      }
+      const session = await readCaptionSession(sessionPath, {
+        projectId,
+        inputType: settings.inputType,
+        sourcePath: activeInputPath,
+        folderPath: settings.inputType === 'draft'
+          ? activeInputPath
+          : activeInputPath.replace(/[^/\\]+$/, ''),
+      });
+      if (isCancelled()) return;
+      console.log('[CaptionTranslator][SessionHydrate]', {
+        sessionPath,
+        activeInputPath,
+        steps: {
+          step1: session.steps.step1?.status,
+          step2: session.steps.step2?.status,
+          step3: session.steps.step3?.status,
+          step4: session.steps.step4?.status,
+          step6: session.steps.step6?.status,
+          step7: session.steps.step7?.status,
+        },
+      });
 
-        const nextStepStatus: Partial<Record<Step, string>> = {
-          1: session.steps.step1?.status,
-          2: session.steps.step2?.status,
-          3: session.steps.step3?.status,
-          4: session.steps.step4?.status,
-          6: session.steps.step6?.status,
-          7: session.steps.step7?.status,
-        };
-        const isSkipped = (stepState: unknown): boolean => {
-          const record = (stepState && typeof stepState === 'object')
-            ? (stepState as Record<string, unknown>)
-            : {};
-          const metrics = (record.metrics && typeof record.metrics === 'object')
-            ? (record.metrics as Record<string, unknown>)
-            : {};
-          return record.status === 'success'
-            && (metrics.skipped === true || metrics.skipBy === 'session_contract');
-        };
-        const nextStepSkipped: Partial<Record<Step, boolean>> = {
-          1: isSkipped(session.steps.step1),
-          2: isSkipped(session.steps.step2),
-          3: isSkipped(session.steps.step3),
-          4: isSkipped(session.steps.step4),
-          6: isSkipped(session.steps.step6),
-          7: isSkipped(session.steps.step7),
-        };
-        const nextStepTimingMeta: Partial<Record<Step, SessionStepTimingMeta>> = {
-          1: {
-            status: session.steps.step1?.status,
-            startedAt: session.steps.step1?.startedAt,
-            endedAt: session.steps.step1?.endedAt,
-          },
-          2: {
-            status: session.steps.step2?.status,
-            startedAt: session.steps.step2?.startedAt,
-            endedAt: session.steps.step2?.endedAt,
-          },
-          3: {
-            status: session.steps.step3?.status,
-            startedAt: session.steps.step3?.startedAt,
-            endedAt: session.steps.step3?.endedAt,
-          },
-          4: {
-            status: session.steps.step4?.status,
-            startedAt: session.steps.step4?.startedAt,
-            endedAt: session.steps.step4?.endedAt,
-          },
-          6: {
-            status: session.steps.step6?.status,
-            startedAt: session.steps.step6?.startedAt,
-            endedAt: session.steps.step6?.endedAt,
-          },
-          7: {
-            status: session.steps.step7?.status,
-            startedAt: session.steps.step7?.startedAt,
-            endedAt: session.steps.step7?.endedAt,
-          },
-        };
-        setSessionStepStatus(nextStepStatus);
-        setSessionStepSkipped(nextStepSkipped);
-        setSessionStepTimingMeta(nextStepTimingMeta);
-        setSessionStep3BatchState(session.data.step3BatchState ?? null);
-        setSessionStep2BatchPlanCount(
-          Array.isArray(session.data.step2BatchPlan) ? session.data.step2BatchPlan.length : null
-        );
-        setSessionStep2BatchPlan(
-          Array.isArray(session.data.step2BatchPlan) ? (session.data.step2BatchPlan as Array<{
-            batchIndex: number;
-            startIndex: number;
-            endIndex: number;
-            lineCount: number;
-          }>) : []
-        );
-        setSessionTimingSnapshot(readTimingSnapshotFromSession(session));
-        lastHydratedInputPathRef.current = activeInputPath;
+      const nextStepStatus: Partial<Record<Step, string>> = {
+        1: session.steps.step1?.status,
+        2: session.steps.step2?.status,
+        3: session.steps.step3?.status,
+        4: session.steps.step4?.status,
+        6: session.steps.step6?.status,
+        7: session.steps.step7?.status,
+      };
+      const isSkipped = (stepState: unknown): boolean => {
+        const record = (stepState && typeof stepState === 'object')
+          ? (stepState as Record<string, unknown>)
+          : {};
+        const metrics = (record.metrics && typeof record.metrics === 'object')
+          ? (record.metrics as Record<string, unknown>)
+          : {};
+        return record.status === 'success'
+          && (metrics.skipped === true || metrics.skipBy === 'session_contract');
+      };
+      const nextStepSkipped: Partial<Record<Step, boolean>> = {
+        1: isSkipped(session.steps.step1),
+        2: isSkipped(session.steps.step2),
+        3: isSkipped(session.steps.step3),
+        4: isSkipped(session.steps.step4),
+        6: isSkipped(session.steps.step6),
+        7: isSkipped(session.steps.step7),
+      };
+      const nextStepTimingMeta: Partial<Record<Step, SessionStepTimingMeta>> = {
+        1: {
+          status: session.steps.step1?.status,
+          startedAt: session.steps.step1?.startedAt,
+          endedAt: session.steps.step1?.endedAt,
+        },
+        2: {
+          status: session.steps.step2?.status,
+          startedAt: session.steps.step2?.startedAt,
+          endedAt: session.steps.step2?.endedAt,
+        },
+        3: {
+          status: session.steps.step3?.status,
+          startedAt: session.steps.step3?.startedAt,
+          endedAt: session.steps.step3?.endedAt,
+        },
+        4: {
+          status: session.steps.step4?.status,
+          startedAt: session.steps.step4?.startedAt,
+          endedAt: session.steps.step4?.endedAt,
+        },
+        6: {
+          status: session.steps.step6?.status,
+          startedAt: session.steps.step6?.startedAt,
+          endedAt: session.steps.step6?.endedAt,
+        },
+        7: {
+          status: session.steps.step7?.status,
+          startedAt: session.steps.step7?.startedAt,
+          endedAt: session.steps.step7?.endedAt,
+        },
+      };
+      setSessionStepStatus(nextStepStatus);
+      setSessionStepSkipped(nextStepSkipped);
+      setSessionStepTimingMeta(nextStepTimingMeta);
+      setSessionStep3BatchState(session.data.step3BatchState ?? null);
+      setSessionStep2BatchPlanCount(
+        Array.isArray(session.data.step2BatchPlan) ? session.data.step2BatchPlan.length : null
+      );
+      setSessionStep2BatchPlan(
+        Array.isArray(session.data.step2BatchPlan) ? (session.data.step2BatchPlan as Array<{
+          batchIndex: number;
+          startIndex: number;
+          endIndex: number;
+          lineCount: number;
+        }>) : []
+      );
+      setSessionTimingSnapshot(readTimingSnapshotFromSession(session));
+      lastHydratedInputPathRef.current = activeInputPath;
 
-        const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
-        const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
-        setSessionEntryCounts({ translated: translated.length, extracted: extracted.length });
-        const selectedEntries =
-          (session.steps.step3?.status === 'success' && translated.length > 0)
-            ? translated
-            : (translated.length > 0 ? translated : extracted);
-        setSessionPreviewEntries(selectedEntries.length > 0 ? selectedEntries : fileManager.entries);
-        setPreviewSourceLabel(
-          session.steps.step3?.status === 'success' && translated.length > 0
-            ? 'session_translated_entries'
-            : 'session_extracted_entries'
-        );
+      const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
+      const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
+      setSessionEntryCounts({ translated: translated.length, extracted: extracted.length });
+      const selectedEntries =
+        (session.steps.step3?.status === 'success' && translated.length > 0)
+          ? translated
+          : (translated.length > 0 ? translated : extracted);
+      setSessionPreviewEntries(selectedEntries.length > 0 ? selectedEntries : fileManager.entries);
+      setPreviewSourceLabel(
+        session.steps.step3?.status === 'success' && translated.length > 0
+          ? 'session_translated_entries'
+          : 'session_extracted_entries'
+      );
 
-        const finalVideoPathRaw =
-          typeof session.artifacts.finalVideoPath === 'string' && session.artifacts.finalVideoPath.trim().length > 0
-            ? session.artifacts.finalVideoPath
-            : (typeof (session.data.renderResult as Record<string, unknown> | undefined)?.outputPath === 'string'
-              ? ((session.data.renderResult as Record<string, unknown>).outputPath as string)
-              : null);
+      const finalVideoPathRaw =
+        typeof session.artifacts.finalVideoPath === 'string' && session.artifacts.finalVideoPath.trim().length > 0
+          ? session.artifacts.finalVideoPath
+          : (typeof (session.data.renderResult as Record<string, unknown> | undefined)?.outputPath === 'string'
+            ? ((session.data.renderResult as Record<string, unknown>).outputPath as string)
+            : null);
 
-        if (finalVideoPathRaw) {
-          const verifyRes = await (window.electronAPI as any).captionVideo.getVideoMetadata(finalVideoPathRaw);
-          if (!cancelled && verifyRes?.success) {
-            setRenderedPreviewVideoPath(finalVideoPathRaw);
-          } else if (!cancelled) {
-            setRenderedPreviewVideoPath(null);
-          }
-        } else {
+      if (finalVideoPathRaw) {
+        const verifyRes = await (window.electronAPI as any).captionVideo.getVideoMetadata(finalVideoPathRaw);
+        if (!isCancelled() && verifyRes?.success) {
+          setRenderedPreviewVideoPath(finalVideoPathRaw);
+        } else if (!isCancelled()) {
           setRenderedPreviewVideoPath(null);
         }
-      } catch (error) {
-        if (!cancelled) {
-          console.warn('[CaptionTranslator] Không thể hydrate preview từ caption_session.json', error);
-          if (activeInputPath !== lastHydratedInputPathRef.current) {
-            setSessionStepStatus({});
-            setSessionStepSkipped({});
-            setSessionStepTimingMeta({});
-            setSessionPreviewEntries(fileManager.entries);
-            setRenderedPreviewVideoPath(null);
-            setSessionTimingSnapshot(null);
-          } else {
-            setSessionTimingSnapshot(null);
-          }
+      } else {
+        setRenderedPreviewVideoPath(null);
+      }
+    } catch (error) {
+      if (!isCancelled()) {
+        console.warn('[CaptionTranslator] Không thể hydrate preview từ caption_session.json', error);
+        if (activeInputPath !== lastHydratedInputPathRef.current) {
+          setSessionStepStatus({});
+          setSessionStepSkipped({});
+          setSessionStepTimingMeta({});
+          setSessionPreviewEntries(fileManager.entries);
+          setRenderedPreviewVideoPath(null);
+          setSessionTimingSnapshot(null);
+        } else {
+          setSessionTimingSnapshot(null);
         }
       }
-    };
+    }
+  }, [
+    fileManager.filePath,
+    fileManager.entries,
+    idleFocusedFolderPath,
+    processing.currentFolder?.path,
+    processingInputPaths,
+    projectId,
+    settings.inputType,
+  ]);
 
-    hydratePreviewFromSession();
+  useEffect(() => {
+    const cancelRef = { current: false };
+    void refreshActiveSession(cancelRef);
     return () => {
-      cancelled = true;
+      cancelRef.current = true;
     };
-  }, [fileManager.filePath, fileManager.entries, idleFocusedFolderPath, processing.currentFolder?.path, processing.currentStep, processing.status, processingInputPaths, projectId, settings.inputType]);
+  }, [refreshActiveSession, processing.currentStep, processing.status]);
+
+  const resolveActiveInputPath = useCallback(() => {
+    const inputPaths = processingInputPaths;
+    const fallbackInputPath = inputPaths.length === 0
+      ? getInputPaths(settings.inputType, fileManager.filePath)[0]
+      : null;
+    return processing.currentFolder?.path ?? idleFocusedFolderPath ?? inputPaths[0] ?? fallbackInputPath ?? '';
+  }, [
+    processing.currentFolder?.path,
+    idleFocusedFolderPath,
+    processingInputPaths,
+    settings.inputType,
+    fileManager.filePath,
+  ]);
+
+  const openStep3ManualSingle = useCallback((batchIndex: number) => {
+    setStep3ManualModal({ mode: 'single', batchIndex });
+    setStep3ManualInput('');
+    setStep3ManualError('');
+  }, []);
+
+  const openStep3ManualBulk = useCallback(() => {
+    setStep3ManualModal({ mode: 'bulk' });
+    setStep3ManualInput('');
+    setStep3ManualError('');
+  }, []);
+
+  const closeStep3ManualModal = useCallback(() => {
+    if (step3ManualBusy) return;
+    setStep3ManualModal(null);
+    setStep3ManualInput('');
+    setStep3ManualError('');
+  }, [step3ManualBusy]);
+
+  const handleSubmitStep3Manual = useCallback(async () => {
+    if (!step3ManualModal || step3ManualBusy || processing.status === 'running') {
+      return;
+    }
+    const activeInputPath = resolveActiveInputPath();
+    if (!activeInputPath) {
+      setStep3ManualError('Không tìm thấy input path để cập nhật.');
+      return;
+    }
+    const raw = step3ManualInput.trim();
+    if (!raw) {
+      setStep3ManualError('Input rỗng.');
+      return;
+    }
+    setStep3ManualBusy(true);
+    setStep3ManualError('');
+    try {
+      const result = step3ManualModal.mode === 'single'
+        ? await processing.applyManualBatchResponse({
+            inputPath: activeInputPath,
+            batchIndex: step3ManualModal.batchIndex || 1,
+            responseJson: raw,
+          })
+        : await processing.applyManualBulkResponses({
+            inputPath: activeInputPath,
+            raw,
+          });
+      if (!result.success) {
+        setStep3ManualError(result.error || 'Không thể áp dụng manual response.');
+        return;
+      }
+      await refreshActiveSession();
+      setStep3ManualModal(null);
+      setStep3ManualInput('');
+    } catch (error) {
+      setStep3ManualError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStep3ManualBusy(false);
+    }
+  }, [
+    step3ManualModal,
+    step3ManualBusy,
+    step3ManualInput,
+    processing,
+    resolveActiveInputPath,
+    refreshActiveSession,
+  ]);
 
   useEffect(() => {
     if (previewMode === 'render' && !renderedPreviewVideoPath) {
@@ -5484,7 +5578,18 @@ export function CaptionTranslator() {
     return (
       <div className={styles.step3BatchPane}>
         <div className={styles.panelSection}>
-          <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
+          <div className={styles.step3BatchHeaderRow}>
+            <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
+            <button
+              type="button"
+              className={styles.step3BatchActionBtn}
+              onClick={openStep3ManualBulk}
+              disabled={processing.status === 'running'}
+              title="Nhập JSON cho nhiều batch"
+            >
+              Bulk JSON
+            </button>
+          </div>
           <div className={styles.step3BatchSummaryGrid}>
             <div className={styles.step3BatchStatCard}>
               <span className={styles.step3BatchStatLabel}>Đang chờ</span>
@@ -5517,6 +5622,7 @@ export function CaptionTranslator() {
             <span>Batch</span>
             <span>Stat</span>
             <span>Time</span>
+            <span>Action</span>
           </div>
           <div className={styles.step3BatchList}>
             {step3BatchViewModel.rows.map((row) => (
@@ -5548,6 +5654,17 @@ export function CaptionTranslator() {
                 <div className={styles.step3BatchColTime}>
                   <span className={styles.step3BatchTime}>{row.timeLabel}</span>
                   <span className={styles.step3BatchSub}>try {row.attempts || '--'} · {row.transportLabel}</span>
+                </div>
+                <div className={styles.step3BatchColAction}>
+                  <button
+                    type="button"
+                    className={styles.step3BatchActionBtn}
+                    onClick={() => openStep3ManualSingle(row.batchIndex)}
+                    disabled={processing.status === 'running'}
+                    title={`Nhập JSON cho batch #${row.batchIndex}`}
+                  >
+                    Nhập tay
+                  </button>
                 </div>
                 {(row.status === 'failed' && (row.missingLines > 0 || row.error)) && (
                   <div className={styles.step3BatchErrorRow}>
@@ -6470,7 +6587,8 @@ export function CaptionTranslator() {
   })();
 
   return (
-    <div className={styles.container}>
+    <>
+      <div className={styles.container}>
       <div className={styles.workspace}>
         <aside className={styles.stepRail}>
           <div className={styles.stepRailHeader}>
@@ -7121,6 +7239,77 @@ export function CaptionTranslator() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+
+      {step3ManualModal && (
+      <div
+        className={styles.modalBackdrop}
+        onClick={() => {
+          closeStep3ManualModal();
+        }}
+      >
+        <div
+          className={styles.modalCard}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          <div className={styles.modalHeader}>
+            <div className={styles.modalTitle}>
+              {step3ManualModal.mode === 'single'
+                ? `Nhập JSON batch #${step3ManualModal.batchIndex ?? ''}`
+                : 'Bulk JSON cho nhiều batch'}
+            </div>
+            <button
+              type="button"
+              className={styles.modalCloseBtn}
+              onClick={closeStep3ManualModal}
+              disabled={step3ManualBusy}
+            >
+              ✕
+            </button>
+          </div>
+          <div className={styles.modalBody}>
+            <textarea
+              className={styles.input}
+              rows={10}
+              placeholder={step3ManualModal.mode === 'single'
+                ? 'Dán JSON response (JSON-only) giống như AI trả về...'
+                : 'Dán JSON array hoặc NDJSON: {\"batchIndex\":2,\"response\":{...}}'}
+              value={step3ManualInput}
+              onChange={(e) => setStep3ManualInput(e.target.value)}
+              disabled={step3ManualBusy}
+            />
+            {step3ManualError && (
+              <div className={styles.modalError}>{step3ManualError}</div>
+            )}
+            <div className={styles.modalHint}>
+              {step3ManualModal.mode === 'single'
+                ? 'Input phải là JSON response đúng schema Step 3.'
+                : 'Mỗi item: {batchIndex, response}. response có thể là JSON object hoặc string.'}
+            </div>
+          </div>
+          <div className={styles.modalActions}>
+            <button
+              type="button"
+              className={styles.modalSecondaryBtn}
+              onClick={closeStep3ManualModal}
+              disabled={step3ManualBusy}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className={styles.modalPrimaryBtn}
+              onClick={handleSubmitStep3Manual}
+              disabled={step3ManualBusy}
+            >
+              {step3ManualBusy ? 'Đang áp dụng...' : 'Áp dụng'}
+            </button>
+          </div>
+        </div>
+      </div>
+      )}
+    </>
   );
 }

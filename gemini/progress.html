@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiến độ dịch truyện</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            padding: clamp(10px, 3vw, 20px);
+            display: flex;
+            flex-direction: column;
+            gap: clamp(8px, 2vw, 15px);
+        }
+
+        .header {
+            font-size: clamp(16px, 4vw, 24px);
+            font-weight: bold;
+            text-align: center;
+            padding: clamp(5px, 1vw, 10px) 0;
+        }
+
+        .progress-container {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: clamp(6px, 1.5vw, 10px);
+            padding: clamp(10px, 2vw, 15px);
+            backdrop-filter: blur(10px);
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: clamp(6px, 1.5vw, 10px);
+        }
+
+        .progress-label {
+            font-size: clamp(11px, 2.5vw, 14px);
+            opacity: 0.9;
+        }
+
+        .progress-percent {
+            font-size: clamp(14px, 3vw, 18px);
+            font-weight: bold;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: clamp(16px, 3vw, 24px);
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: clamp(8px, 1.5vw, 12px);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.4s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: clamp(9px, 2vw, 12px);
+            box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.3);
+        }
+
+        .stats {
+            display: flex;
+            gap: clamp(6px, 1.5vw, 10px);
+            margin-top: clamp(8px, 2vw, 12px);
+        }
+
+        .stat-item {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.15);
+            padding: clamp(6px, 1.5vw, 10px);
+            border-radius: clamp(4px, 1vw, 8px);
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: clamp(9px, 2vw, 11px);
+            opacity: 0.8;
+            margin-bottom: clamp(2px, 0.5vw, 4px);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: clamp(16px, 4vw, 22px);
+            font-weight: bold;
+            color: #8BC34A;
+        }
+
+        .current-chapter {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: clamp(6px, 1.5vw, 10px);
+            padding: clamp(8px, 2vw, 12px);
+        }
+
+        .chapter-label {
+            font-size: clamp(9px, 2vw, 11px);
+            opacity: 0.8;
+            margin-bottom: clamp(3px, 0.8vw, 5px);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .chapter-name {
+            font-size: clamp(12px, 2.8vw, 16px);
+            font-weight: 600;
+            word-wrap: break-word;
+            line-height: 1.3;
+        }
+
+        .status {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: clamp(6px, 1.5vw, 10px);
+            padding: clamp(8px, 2vw, 12px);
+            text-align: center;
+            font-size: clamp(11px, 2.5vw, 14px);
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .status.translating {
+            background: rgba(76, 175, 80, 0.3);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
+        }
+
+        .status.waiting {
+            background: rgba(255, 152, 0, 0.3);
+            box-shadow: 0 0 15px rgba(255, 152, 0, 0.2);
+        }
+
+        .status.error {
+            background: rgba(244, 67, 54, 0.3);
+            box-shadow: 0 0 15px rgba(244, 67, 54, 0.2);
+        }
+
+        /* Compact mode cho màn hình nhỏ */
+        @media (max-width: 400px) {
+            body {
+                gap: 6px;
+                padding: 8px;
+            }
+
+            .header {
+                padding: 3px 0;
+            }
+
+            .progress-container,
+            .current-chapter,
+            .status {
+                padding: 8px;
+            }
+
+            .stats {
+                gap: 5px;
+            }
+
+            .stat-item {
+                padding: 5px;
+            }
+        }
+
+        /* Ultra compact cho PiP window rất nhỏ */
+        @media (max-width: 280px) {
+            .progress-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 3px;
+            }
+
+            .stats {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Animation cho progress bar */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        .progress-fill {
+            animation: pulse 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">📖 Tiến độ dịch</div>
+
+    <div class="progress-container">
+        <div class="progress-header">
+            <span class="progress-label">Tiến độ</span>
+            <span class="progress-percent" id="progressPercent">0%</span>
+        </div>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%">
+                <span id="progressText">0%</span>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-label">Đã dịch</div>
+                <div class="stat-value" id="completedCount">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Tổng số</div>
+                <div class="stat-value" id="totalCount">50</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="current-chapter">
+        <div class="chapter-label">Chương hiện tại</div>
+        <div class="chapter-name" id="currentChapter">Đang khởi động...</div>
+    </div>
+
+    <div class="status" id="status">Sẵn sàng</div>
+
+    <script>
+        // Lắng nghe message từ background script
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === "UPDATE_PROGRESS") {
+                updateProgress(request.data);
+            }
+        });
+
+        function updateProgress(data) {
+            const { completed, total, currentChapter, status } = data;
+
+            // Update progress bar
+            const percentage = Math.round((completed / total) * 100);
+            document.getElementById('progressFill').style.width = percentage + '%';
+            document.getElementById('progressText').textContent = percentage + '%';
+            document.getElementById('progressPercent').textContent = percentage + '%';
+
+            // Update stats
+            document.getElementById('completedCount').textContent = completed;
+            document.getElementById('totalCount').textContent = total;
+
+            // Update current chapter
+            if (currentChapter) {
+                document.getElementById('currentChapter').textContent = currentChapter;
+            }
+
+            // Update status
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = status || 'Đang dịch...';
+
+            // Update status color
+            statusEl.className = 'status';
+            if (status && status.includes('dịch')) {
+                statusEl.classList.add('translating');
+            } else if (status && status.includes('đợi')) {
+                statusEl.classList.add('waiting');
+            } else if (status && (status.includes('lỗi') || status.includes('Lỗi'))) {
+                statusEl.classList.add('error');
+            }
+        }
+
+        // Request initial data
+        chrome.runtime.sendMessage({ action: "GET_PROGRESS" }, (response) => {
+            if (response) {
+                updateProgress(response);
+            }
+        });
+    </script>
+</body>
+
+</html>

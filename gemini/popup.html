@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        width: 300px;
+        padding: 10px;
+        font-family: sans-serif;
+      }
+      textarea {
+        width: 100%;
+        height: 100px;
+        margin-bottom: 10px;
+        box-sizing: border-box;
+      }
+      button {
+        width: 48%;
+        padding: 8px;
+        cursor: pointer;
+      }
+      #btnStop {
+        background-color: #ff4444;
+        color: white;
+        border: none;
+      }
+      #btnStart {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+      }
+      #btnDownload {
+        color: white;
+        border: none;
+      }
+      #btnClear {
+        color: white;
+        border: none;
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #666;
+      }
+      label {
+        display: block;
+        margin-top: 5px;
+        margin-bottom: 3px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Cấu hình Dịch</h3>
+
+    <!-- Chọn nguồn dữ liệu -->
+    <label>Nguồn dữ liệu:</label>
+    <div style="margin-bottom: 15px;">
+      <div style="margin-bottom: 5px;">
+        <input type="radio" id="sourceFile" name="dataSource" value="file" checked>
+        <label for="sourceFile" style="display: inline; margin: 0;">📄 Từ file .txt (local)</label>
+      </div>
+      <div>
+        <input type="radio" id="sourceWeb" name="dataSource" value="web">
+        <label for="sourceWeb" style="display: inline; margin: 0;">🌐 Từ trang web</label>
+      </div>
+    </div>
+
+    <!-- Phần chọn file (hiện khi chọn File) -->
+    <div id="fileSection">
+      <label>Chọn file truyện (.txt):</label>
+      <input
+        type="file"
+        id="fileInput"
+        accept=".txt"
+        style="width: 100%; margin-bottom: 10px"
+    </div>
+
+      <div
+        id="fileStatus"
+        style="font-size: 11px; color: #666; margin-bottom: 10px"
+      >
+        Chưa chọn file
+      </div>
+
+      <!-- Chọn định dạng tách chương -->
+      <label>Định dạng tách chương:</label>
+      <select
+        id="chapterFormat"
+        style="
+          width: 100%;
+          padding: 5px;
+          margin-bottom: 10px;
+          box-sizing: border-box;
+        "
+      >
+        <option value="format1">第X章 Title (ví dụ: 第1章 车队第一铁律)</option>
+        <option value="format2">STT X: Chương X - Title (ví dụ: STT 1: Chương 1 - Cuồng hóa)</option>
+      </select>
+
+      <!-- Danh sách chương sau khi load file -->
+      <div id="chapterListContainer" style="display: none; margin-bottom: 10px;">
+        <label>Danh sách chương đã phát hiện:</label>
+        <div 
+          id="chapterList" 
+          style="
+            max-height: 150px; 
+            overflow-y: auto; 
+            border: 1px solid #ddd; 
+            padding: 5px; 
+            font-size: 11px;
+            background: #f9f9f9;
+            margin-bottom: 10px;
+          "
+        ></div>
+      </div>
+    </div>
+
+    <!-- Phần chọn website (ẩn khi chọn File) -->
+    <div id="webSection" style="display: none;">
+      <label>Chọn trang web:</label>
+      <select
+        id="websiteSelect"
+        style="
+          width: 100%;
+          padding: 5px;
+          margin-bottom: 10px;
+          box-sizing: border-box;
+        "
+      >
+        <option value="69shuba">69shuba.com</option>
+        <option value="novel543">novel543.com</option>
+        <option value="thienloitruc">thienloitruc.com</option>
+      </select>
+      <div
+        id="webStatus"
+        style="font-size: 11px; color: #666; margin-bottom: 10px"
+      >
+        Hãy mở tab trang web trước khi bắt đầu
+      </div>
+    </div>
+
+    <!-- Copy Only Mode (không dịch, chỉ lưu text gốc) -->
+    <div style="margin-bottom: 10px; display: flex; align-items: center;">
+      <input type="checkbox" id="copyOnlyMode" style="margin-right: 5px;">
+      <label for="copyOnlyMode" style="margin: 0; display: inline;">📋 Chỉ copy (không dịch qua Gemini)</label>
+    </div>
+
+    <label>Prompt mẫu ({{TEXT}} là nội dung truyện):</label>
+    <textarea id="promptTemplate">
+Bạn là một dịch giả chuyên nghiệp dịch tiểu thuyết Trung Quốc sang tiếng Việt. Nhiệm vụ của bạn là dịch văn bản một cách chính xác, mạch lạc và giữ được văn phong phù hợp.
+
+## QUY TẮC DỊCH TÊN RIÊNG
+
+### Tên nhân vật Trung Quốc
+- LUÔN LUÔN dịch theo Hán Việt đầy đủ (Họ + Tên)
+- VÍ DỤ: 
+  * 朱平安 → Chu Bình An (ĐÚNG)
+  * Zhu Ping'an → SAI
+  * 徐海 → Từ Hải (ĐÚNG)
+  * Xu Hai → SAI
+
+### Tên nhân vật Nhật Bản
+- Giữ nguyên phiên âm tiếng Nhật
+- VÍ DỤ:
+  * 松浦茂业 → Matsuura Shigeyoshi (ĐÚNG)
+  * Tùng Phố Mậu Nghiệp → SAI
+
+### Địa danh
+- Dịch Hán Việt + loại hình địa lý
+- VÍ DỤ:
+  * 松江府 → Tùng Giang Phủ
+  * 浙江 → Chiết Giang
+  * 北京城 → thành Bắc Kinh
+
+### Chức vị & quan hàm
+- Dịch Hán Việt
+- VÍ DỤ:
+  * 知府 → tri phủ
+  * 总兵 → tổng binh
+  * 将军 → tướng quân
+
+## QUY TẮC DỊCH THUẬT NGỮ
+
+### Vũ khí
+- 火铳 → hỏa súng
+- 虎蹲炮 → Hổ Tồn Pháo (giữ nguyên tên riêng)
+- 倭刀 → đao Nhật
+- 刺刀 → lưỡi lê
+- 弓箭 → cung tên
+
+### Đội hình quân sự
+- 空心方阵 → phương trận không tâm
+- 线列阵 → trận hình tuyến liệt
+- 鸳鸯阵 → Uyên Ương Trận
+- 变阵 → biến trận
+
+### Xưng hô
+- 本官 → bản quan (tự xưng của quan lại)
+- 本将 → bản tướng (tự xưng của võ tướng)
+- 大人 → đại nhân
+- 诸位/诸君 → chư vị/chư quân
+- 儿郎们 → các nhi lang, các trai tráng
+
+## QUY TẮC VỀ VĂN PHONG
+
+### Dịch thành ngữ
+- Ưu tiên dịch sát nghĩa Hán Việt, kèm ý nghĩa nếu cần
+- VÍ DỤ:
+  * 势如破竹 → thế như phá trúc (tiến rất nhanh)
+  * 兵败如山倒 → quân bại như núi đổ
+  * 杀鸡儆猴 → giết gà dọa khỉ
+
+### Âm thanh hiệu ứng
+- 砰砰砰 → Bùng! Bùng! Bùng!
+- 轰轰轰 → Rầm! Rầm! Rầm!
+- 咚咚咚 → Đồng! Đồng! Đồng!
+
+### Khẩu hiệu chiến đấu (tiếng Nhật)
+- 杀给给 → "Giết!" hoặc có thể giữ "Kirigigi!"
+- 八嘎 → "Baka!" hoặc "Đồ ngốc!"
+- 死啦死啦地 → "Chết hết!"
+
+## QUY TẮC VỀ CẤU TRÚC
+
+1. **Bổ sung chủ ngữ**: Văn Trung thường lược bỏ chủ ngữ, cần bổ sung cho rõ nghĩa
+
+2. **Cân bằng cổ - kim**: 
+   - Hội thoại: dùng Hán Việt vừa phải (ví dụ: "Đại nhân, tại hạ xin lĩnh mệnh")
+   - Mô tả hành động: có thể hiện đại hơn (ví dụ: "Anh ta rút kiếm ra chém")
+
+3. **Nhất quán thuật ngữ**: Một thuật ngữ chỉ dịch MỘT CÁCH xuyên suốt toàn bộ truyện
+
+## CHECKLIST TRƯỚC KHI DỊCH
+
+- [ ] Xác định và ghi nhớ tên các nhân vật chính
+- [ ] Phân biệt nhân vật Trung Quốc vs Nhật Bản
+- [ ] Chú ý ngữ cảnh (lịch sử, quân sự, triều đình...)
+- [ ] Giữ văn phong nhất quán
+
+## LỖI CẦN TRÁNH
+
+❌ Dịch tên hỗn loạn (lúc Hán Việt, lúc Pinyin)
+❌ Lạm dụng Hán Việt khó hiểu
+❌ Dịch sát từng chữ mất nghĩa
+❌ Thay đổi thuật ngữ giữa chừng
+❌ Dùng ngôn ngữ hiện đại cho ngữ cảnh cổ đại
+
+## YÊU CẦU ĐẦU RA
+- Đầu chương phải có số chương và tên chương
+- Dịch CHÍNH XÁC, MẠCH LẠC, DỄ ĐỌC
+- Giữ được văn phong và không khí của tác phẩm gốc
+- Không thêm, bớt, hoặc diễn giải quá mức
+- Đảm bảo tính nhất quán xuyên suốt
+
+Bây giờ hãy dịch đoạn văn bản sau:
+
+{{TEXT}}</textarea
+    >
+
+    <label>Số chương muốn dịch:</label>
+    <input
+      type="number"
+      id="chapterLimit"
+      value="50"
+      min="1"
+      max="1000"
+      style="
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 10px;
+        box-sizing: border-box;
+      "
+    />
+
+    <label>Thời gian chờ trang load (giây):</label>
+    <input
+      type="number"
+      id="pageLoadDelay"
+      value="2"
+      min="1"
+      max="10"
+      step="0.5"
+      style="
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 10px;
+        box-sizing: border-box;
+      "
+    />
+    <div style="font-size: 11px; color: #666; margin-top: -8px; margin-bottom: 10px">
+      💡 Mạng chậm hoặc Angular app → tăng lên 3-5s
+    </div>
+
+
+    <!-- Phần chỉ hiện khi chọn File -->
+    <div id="startChapterSection">
+      <label>Bắt đầu từ chương:</label>
+      <select
+        id="startChapter"
+        style="
+          width: 100%;
+          padding: 5px;
+          margin-bottom: 10px;
+          box-sizing: border-box;
+        "
+      >
+        <option value="0">Chương 1 (Đầu tiên)</option>
+      </select>
+    </div>
+
+    <div id="alwaysOnTopSection" style="margin-bottom: 10px; display: flex; align-items: center;">
+      <input type="checkbox" id="alwaysOnTop" checked style="margin-right: 5px;">
+      <label for="alwaysOnTop" style="margin: 0; display: inline;">Luôn giữ cửa sổ trên cùng (Always On Top)</label>
+    </div>
+
+    <div
+      style="display: flex; justify-content: space-between; margin-bottom: 5px"
+    >
+      <button id="btnStart">Bắt đầu chạy</button>
+      <button id="btnStop">Dừng lại</button>
+    </div>
+
+    <hr />
+    <div style="display: flex; justify-content: space-between">
+      <button id="btnDownload" style="background: #2196f3">
+        Tải Ebook (.txt)
+      </button>
+      <button id="btnClear" style="background: #ff9800">Xóa bộ nhớ</button>
+    </div>
+
+    <div class="status" id="statusLog">Trạng thái: Sẵn sàng</div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
