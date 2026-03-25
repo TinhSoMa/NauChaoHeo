@@ -6,6 +6,7 @@
 const DOM = {
   // Inputs
   batchLimitInput: null,
+  promptDelayInput: null,
   fileInput: null,
   copyOnlyMode: null,
   providerSelect: null,
@@ -28,6 +29,7 @@ const DOM = {
 
   init() {
     this.batchLimitInput = document.getElementById("batchLimit");
+    this.promptDelayInput = document.getElementById("promptDelay");
     this.fileInput = document.getElementById("fileInput");
     this.copyOnlyMode = document.getElementById("copyOnlyMode");
     this.providerSelect = document.getElementById("providerSelect");
@@ -173,6 +175,7 @@ const EventHandlers = {
 
   async onStart() {
     const batchLimit = parseInt(DOM.batchLimitInput.value) || 1;
+    const promptDelay = parseInt(DOM.promptDelayInput.value) || 10;
     const alwaysOnTop = document.getElementById("alwaysOnTop").checked;
     const copyOnly = DOM.copyOnlyMode.checked;
     const provider = DOM.providerSelect.value || 'gemini';
@@ -185,6 +188,7 @@ const EventHandlers = {
 
     const settings = {
       batchLimit: batchLimit,
+      promptDelay: promptDelay,
       isRunning: true,
       // KHÔNG reset batchCount/currentBatchIndex - sẽ được tính lại trong START_PROCESS
       alwaysOnTop: alwaysOnTop,
@@ -305,6 +309,10 @@ async function initializePopup() {
 
   if (result.batchLimit) {
     DOM.batchLimitInput.value = result.batchLimit;
+  }
+
+  if (result.promptDelay !== undefined) {
+    DOM.promptDelayInput.value = result.promptDelay;
   }
 
   if (result.isRunning) {

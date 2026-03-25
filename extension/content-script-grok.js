@@ -8,6 +8,30 @@ console.log("----> Grok Content Script đã load (Optimized Version)");
 let pollingIntervalId = null; // Quản lý interval để có thể hủy khi cần
 
 // ============================================
+// CLIPBOARD INTERCEPTOR (Grok)
+// ============================================
+function injectClipboardInterceptor() {
+    const script = document.createElement('script');
+    script.textContent = `
+        const originalWriteText = navigator.clipboard.writeText;
+        navigator.clipboard.writeText = async function(text) {
+            window.postMessage({ type: 'GROK_COPIED_TEXT', text: text }, '*');
+            return originalWriteText.apply(this, arguments);
+        };
+    `;
+    document.documentElement.appendChild(script);
+    script.remove();
+}
+injectClipboardInterceptor();
+
+let lastCopiedText = null;
+window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'GROK_COPIED_TEXT') {
+        lastCopiedText = event.data.text;
+    }
+});
+
+// ============================================
 // STRIP ?rid= FROM URL (Grok thêm sau mỗi response)
 // ============================================
 (function () {
@@ -289,12 +313,28 @@ function waitForReplyCompletion(sendResponse) {
         pollingIntervalId = null;
     }
 
-    pollingIntervalId = setInterval(() => {
+    let isExtracting = false;
+
+    pollingIntervalId = setInterval(async () => {
+        if (isExtracting) return;
         checkCount++;
         const usingPiP = isUsingPiP();
         const doc = getDocumentContext();
 
         console.log(`----> [${checkCount}/${maxChecks}] Kiểm tra trạng thái Grok (${usingPiP ? 'PiP' : 'Tab gốc'})...`);
+
+        // Kiểm tra giới hạn tin nhắn (Rate Limit)
+        const rateLimitSvg = doc.querySelector('svg.text-warning');
+        if (rateLimitSvg) {
+            const container = rateLimitSvg.closest('.flex');
+            if (container && (container.textContent.toLowerCase().includes('giới hạn') || container.textContent.toLowerCase().includes('limit'))) {
+                clearInterval(pollingIntervalId);
+                pollingIntervalId = null;
+                console.error("----> ❌ Lỗi: Grok đã đạt giới hạn tin nhắn.");
+                sendResponse({ status: "ERROR", message: "Grok đã đạt giới hạn tin nhắn (Rate Limit)." });
+                return;
+            }
+        }
 
         let stopButton = null;
         for (const selector of GROK_SELECTORS.stopButton) {
@@ -311,7 +351,8 @@ function waitForReplyCompletion(sendResponse) {
         if (hasStartedGenerating || checkCount > 3) {
             console.log(`----> [${checkCount}] ✓ Không thấy nút Stop. Grok có thể đã dịch xong.`);
 
-            const responseText = extractGrokResponse();
+            isExtracting = true;
+            const responseText = await extractGrokResponse();
             if (responseText && responseText.length > 50) {
                 clearInterval(pollingIntervalId);
                 pollingIntervalId = null;
@@ -323,6 +364,7 @@ function waitForReplyCompletion(sendResponse) {
                 });
             } else {
                 console.log(`----> [${checkCount}] ⚠️ Response quá ngắn (${responseText ? responseText.length : 0} ký tự) hoăc đang render, đợi thêm...`);
+                isExtracting = false;
             }
         } else {
             console.log(`----> [${checkCount}] Chưa thấy nút Stop, tiếp tục thăm dò...`);
@@ -342,19 +384,58 @@ function waitForReplyCompletion(sendResponse) {
 // RESPONSE EXTRACTION
 // ============================================
 function extractGrokResponse() {
-    try {
-        const doc = getDocumentContext();
+    return new Promise(async (resolve) => {
+        try {
+            const doc = getDocumentContext();
 
-        for (const selector of GROK_SELECTORS.response) {
-            const nodes = doc.querySelectorAll(selector);
-            if (nodes.length === 0) continue;
-            const lastNode = nodes[nodes.length - 1];
-            const text = lastNode.innerText || lastNode.textContent;
-            if (text && text.trim().length > 0) {
-                console.log(`----> ✓ Đã lấy response từ selector: ${selector}`);
-                return text.trim();
+            for (const selector of GROK_SELECTORS.response) {
+                const nodes = doc.querySelectorAll(selector);
+                if (nodes.length === 0) continue;
+                const lastNode = nodes[nodes.length - 1];
+
+                // 1. TÌM NÚT COPY
+                const buttons = lastNode.querySelectorAll('button');
+                let copyBtn = null;
+                for (const btn of buttons) {
+                    if (btn.querySelector('svg') && btn.classList.contains('bg-transparent')) {
+                        copyBtn = btn;
+                        break;
+                    }
+                }
+
+                if (copyBtn) {
+                    console.log("----> ✓ Tìm thấy nút Copy, đang bấm để lấy text...");
+                    lastCopiedText = null;
+                    copyBtn.click();
+                    
+                    let wait = 0;
+                    while (!lastCopiedText && wait < 500) {
+                        await sleep(50);
+                        wait += 50;
+                    }
+
+                    if (lastCopiedText) {
+                        console.log("----> ✓ Đã lấy response chuẩn từ nút Copy!");
+                        return resolve(lastCopiedText.trim());
+                    }
+                }
+
+                // 2. FALLBACK ƯU TIÊN THẺ PRE
+                const pre = lastNode.querySelector('pre');
+                if (pre) {
+                    console.log("----> ✓ Fallback: Đã lấy response từ thẻ <pre>");
+                    return resolve(pre.textContent.trim());
+                }
+
+                // 3. FALLBACK INNER TEXT
+                const text = lastNode.innerText || lastNode.textContent;
+                if (text && text.trim().length > 0) {
+                    console.log(`----> ✓ Đã lấy response từ selector: ${selector} (InnerText)`);
+                    return resolve(text.trim());
+                }
             }
-        }
+
+        // Removed the extra }
 
         console.warn("----> ⚠️ Không tìm thấy response content qua selector chuẩn, thử generic fallback...");
         const paragraphs = doc.querySelectorAll('p');
@@ -370,16 +451,17 @@ function extractGrokResponse() {
                 const text = parent.innerText || parent.textContent;
                 if (text && text.trim().length > 0) {
                     console.log(`----> ✓ Đã lấy response từ generic fallback`);
-                    return text.trim();
+                    return resolve(text.trim());
                 }
             }
         }
 
-        return null;
+        return resolve(null);
     } catch (error) {
         console.error("----> ❌ Lỗi khi extract response:", error);
-        return null;
+        return resolve(null);
     }
+    });
 }
 
 // ============================================

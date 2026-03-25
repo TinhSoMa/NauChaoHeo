@@ -12,8 +12,8 @@ const State = {
     batchLimit: 0,
     batchCount: 0,
     keepAliveIntervalId: null,
-    copyOnlyMode: false,
     provider: "gemini",
+    promptDelay: 10,
     currentBatchName: "Starting...",
     currentStatus: "Ready",
 
@@ -31,13 +31,15 @@ const State = {
             'batchFiles',
             'totalBatches',
             'currentBatchIndex',
-            'provider'
+            'provider',
+            'promptDelay'
         ]);
 
         this.promptTemplate = data.promptTemplate || "Dịch sang tiếng Việt: {{TEXT}}";
         this.batchCount = data.batchCount || 0;
         this.copyOnlyMode = data.copyOnlyMode || false;
         this.provider = data.provider || "gemini";
+        if (data.promptDelay !== undefined) this.promptDelay = parseInt(data.promptDelay);
 
         const total = data.totalBatches || (data.batchFiles ? data.batchFiles.length : 0);
         const limit = data.batchLimit || total || 1;
@@ -324,7 +326,7 @@ const BatchProcessor = {
             cleaned = cleaned.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
         }
         try {
-            return { ok: true, data: JSON.parse(cleaned) };
+            return { ok: true, data: JSON.parse(cleaned), rawText: cleaned };
         } catch (e) {
             return { ok: false, error: e.message, responseText: text };
         }
@@ -350,6 +352,7 @@ const BatchProcessor = {
             batchFiles[fileIdx].completed = true;
             batchFiles[fileIdx].status = 'done';
             batchFiles[fileIdx].result = batchResult.response;
+            if (batchResult.rawText) batchFiles[fileIdx].rawText = batchResult.rawText;
             await chrome.storage.local.set({ batchFiles });
             Utils.log(`Đã đánh dấu ${batchFiles[fileIdx].name} là done`, 'success');
         }
@@ -450,6 +453,7 @@ async function processLoop() {
         }
 
         let responseObject;
+        let rawResponseText = null;
 
         if (State.copyOnlyMode) {
             Utils.log("BƯỚC 2: Chế độ Copy Only - Bỏ qua Gemini");
@@ -485,6 +489,7 @@ async function processLoop() {
             const parsed = BatchProcessor.parseGeminiJson(result.text);
             if (parsed.ok) {
                 responseObject = parsed.data;
+                rawResponseText = parsed.rawText;
             } else {
                 // KHÔNG lưu câu trả lời bị lỗi - DỪNG lại để tránh gửi prompt tiếp theo
                 Utils.log(`❌ Không thể parse JSON từ ${providerName}. Dừng lại để tránh mất dữ liệu.`, 'error');
@@ -500,7 +505,8 @@ async function processLoop() {
         const batchResult = {
             batchIndex: batchData.index + 1,
             fileName: batchData.name,
-            response: responseObject
+            response: responseObject,
+            rawText: rawResponseText
         };
 
         await BatchProcessor.saveTranslation(batchResult);
@@ -518,9 +524,15 @@ async function processLoop() {
         await BatchProcessor.moveToNextBatch(batchData.index);
         Utils.log("✓ Đã chuyển batch", 'success');
 
-        await Utils.sleep(1000);
+        if (!State.copyOnlyMode) {
+            Utils.log(`BƯỚC 5: Nghỉ ${State.promptDelay} giây tránh rate limit...`);
+            await Utils.sendProgressUpdate(`Đang nghỉ ${State.promptDelay} giây...`);
+            await Utils.sleep(State.promptDelay * 1000);
+        } else {
+            await Utils.sleep(1000);
+        }
 
-        Utils.log("BƯỚC 5: Tiếp tục với batch tiếp theo...\n");
+        Utils.log("BƯỚC 6: Tiếp tục với batch tiếp theo...\n");
         processLoop();
 
     } catch (error) {
@@ -606,9 +618,28 @@ async function downloadFullStory() {
         return;
     }
 
-    // Tạo JSONL từ batchFiles[].result theo đúng thứ tự file gốc
-    const jsonl = completedFiles
-        .map(f => JSON.stringify({ fileName: f.name, response: f.result }))
+    // Tạo JSONL (hoặc file chứa các JSON strings nối tiếp)
+    const jsonl = batchFiles
+        .map((f, idx) => {
+            if (f.completed && f.result) {
+                // Sắp xếp lại thứ tự key cho đúng yêu cầu (Chrome Storage tự động sort theo alphabet khi lưu)
+                // 1. "status" 2. "data"
+                // Trong data: 1. "translations" 2. "summary" (xuống dưới cùng)
+                const responseData = f.result.data || {};
+                const orderedResponse = {
+                    status: f.result.status || "success",
+                    data: {
+                        translations: responseData.translations || [],
+                        summary: responseData.summary || {}
+                    }
+                };
+                
+                // Trả về trên 1 dòng duy nhất để giảm kích thước (JSON.stringify mặc định)
+                return JSON.stringify({ batchIndex: idx + 1, response: orderedResponse });
+            }
+            return null;
+        })
+        .filter(line => line !== null)
         .join('\n');
     const docUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonl);
     const date = new Date().toISOString().slice(0,10);
