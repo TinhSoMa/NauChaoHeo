@@ -2144,6 +2144,162 @@
   cursor: not-allowed;
 }
 
+.step3BulkMultiActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step3BulkMultiFileInput {
+  display: none;
+}
+
+.step3BulkMultiBtn {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-primary);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.step3BulkMultiBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.step3BulkMultiCount {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.step3BulkMultiWarning {
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent);
+  color: var(--color-warning, #f59e0b);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.step3BulkMultiMessage {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.step3BulkMultiGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .step3BulkMultiGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.step3BulkMultiColumn {
+  display: grid;
+  gap: 6px;
+}
+
+.step3BulkMultiColumnTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.step3BulkMultiList {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: 6px;
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.step3BulkMultiRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--color-card);
+  border: 1px solid transparent;
+}
+
+.step3BulkMultiFileRow {
+  cursor: grab;
+}
+
+.step3BulkMultiRowDragging {
+  opacity: 0.6;
+  cursor: grabbing;
+}
+
+.step3BulkMultiRowOver {
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.step3BulkMultiBadge {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 22%, transparent);
+  color: var(--color-accent, #4a9eff);
+}
+
+.step3BulkMultiText {
+  font-size: 11px;
+  color: var(--color-text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step3BulkMultiMeta {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.step3BulkMultiEmpty {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  padding: 4px;
+}
+
+.step3BulkMultiMapping {
+  border-top: 1px dashed color-mix(in srgb, var(--color-border) 75%, transparent);
+  padding-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.step3BulkMultiMappingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+}
+
+.step3BulkMultiArrow {
+  color: var(--color-text-secondary);
+}
+
 .stepDataDrawerBackdrop {
   position: fixed;
   inset: 0;

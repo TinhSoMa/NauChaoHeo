@@ -38,6 +38,7 @@ import {
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { BulkApplyResult, ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
+import { Step3BulkFileItem, Step3BulkMultiFolderModal } from './components/Step3BulkMultiFolderModal';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { AlertCircle, Download, Eye } from 'lucide-react';
@@ -1412,6 +1413,7 @@ export function CaptionTranslator() {
       : getInputPaths(settings.inputType, fileManager.filePath)),
     [settings.inputType, selectedDraftRunPaths, fileManager.filePath]
   );
+  const isStep3MultiFolderMode = settings.inputType === 'draft' && processingInputPaths.length > 1;
 
   const hardsubSettings = useHardsubSettings({
     inputType: settings.inputType,
@@ -2646,6 +2648,11 @@ export function CaptionTranslator() {
   const [step3ManualInput, setStep3ManualInput] = useState('');
   const [step3ManualError, setStep3ManualError] = useState('');
   const [step3ManualBusy, setStep3ManualBusy] = useState(false);
+  const [step3BulkMultiModalOpen, setStep3BulkMultiModalOpen] = useState(false);
+  const [step3BulkMultiFiles, setStep3BulkMultiFiles] = useState<Step3BulkFileItem[]>([]);
+  const [step3BulkMultiError, setStep3BulkMultiError] = useState('');
+  const [step3BulkMultiMessage, setStep3BulkMultiMessage] = useState('');
+  const [step3BulkMultiBusy, setStep3BulkMultiBusy] = useState(false);
   const [step3RuntimeTimer, setStep3RuntimeTimer] = useState<Step3RuntimeTimer>({
     apiLabel: '',
     tokenLabel: '',
@@ -2902,10 +2909,16 @@ export function CaptionTranslator() {
   }, []);
 
   const openStep3ManualBulk = useCallback(() => {
+    if (isStep3MultiFolderMode) {
+      setStep3BulkMultiModalOpen(true);
+      setStep3BulkMultiError('');
+      setStep3BulkMultiMessage('');
+      return;
+    }
     setStep3ManualModal({ mode: 'bulk' });
     setStep3ManualInput('');
     setStep3ManualError('');
-  }, []);
+  }, [isStep3MultiFolderMode]);
 
   const closeStep3ManualModal = useCallback(() => {
     if (step3ManualBusy) return;
@@ -2959,6 +2972,107 @@ export function CaptionTranslator() {
     step3ManualInput,
     processing,
     resolveActiveInputPath,
+    refreshActiveSession,
+  ]);
+
+  const closeStep3BulkMultiModal = useCallback(() => {
+    if (step3BulkMultiBusy) return;
+    setStep3BulkMultiModalOpen(false);
+    setStep3BulkMultiError('');
+    setStep3BulkMultiMessage('');
+  }, [step3BulkMultiBusy]);
+
+  const handleStep3BulkMultiPickFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const accepted = Array.from(files).filter((file) => {
+      const name = file.name.toLowerCase();
+      return name.endsWith('.txt') || name.endsWith('.json');
+    });
+    if (accepted.length === 0) {
+      setStep3BulkMultiError('Không có file TXT/JSON hợp lệ.');
+      return;
+    }
+    const items: Step3BulkFileItem[] = accepted.map((file) => ({
+      id: `${file.name}::${file.size}::${file.lastModified}`,
+      file,
+    }));
+    setStep3BulkMultiFiles(items);
+    setStep3BulkMultiError('');
+    setStep3BulkMultiMessage('');
+  }, []);
+
+  const handleStep3BulkMultiClearFiles = useCallback(() => {
+    setStep3BulkMultiFiles([]);
+    setStep3BulkMultiError('');
+    setStep3BulkMultiMessage('');
+  }, []);
+
+  const handleStep3BulkMultiMoveFile = useCallback((fromIndex: number, toIndex: number) => {
+    setStep3BulkMultiFiles((prev) => {
+      if (
+        fromIndex < 0
+        || toIndex < 0
+        || fromIndex >= prev.length
+        || toIndex >= prev.length
+        || fromIndex === toIndex
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, []);
+
+  const handleApplyStep3BulkMultiFolder = useCallback(async () => {
+    if (step3BulkMultiBusy || processing.status === 'running') {
+      return;
+    }
+    const folderPaths = processingInputPaths;
+    if (!folderPaths.length) {
+      setStep3BulkMultiError('Không có folder đang chọn để áp dụng.');
+      return;
+    }
+    if (step3BulkMultiFiles.length !== folderPaths.length) {
+      setStep3BulkMultiError('Số file không khớp số folder đang chọn.');
+      return;
+    }
+    setStep3BulkMultiBusy(true);
+    setStep3BulkMultiError('');
+    setStep3BulkMultiMessage('');
+    try {
+      for (let i = 0; i < folderPaths.length; i += 1) {
+        const folderPath = folderPaths[i];
+        const item = step3BulkMultiFiles[i];
+        if (!item) {
+          setStep3BulkMultiError(`Thiếu file cho folder #${i + 1}.`);
+          return;
+        }
+        setStep3BulkMultiMessage(`Đang áp dụng ${i + 1}/${folderPaths.length}: ${item.file.name}`);
+        const raw = await item.file.text();
+        const result = await processing.applyManualBulkResponses({ inputPath: folderPath, raw });
+        if (!result.success) {
+          setStep3BulkMultiError(`Folder #${i + 1}: ${result.error || 'Không thể áp dụng.'}`);
+          setStep3BulkMultiMessage('');
+          return;
+        }
+      }
+      await refreshActiveSession();
+      setStep3BulkMultiModalOpen(false);
+      setStep3BulkMultiFiles([]);
+      setStep3BulkMultiMessage('');
+    } catch (error) {
+      setStep3BulkMultiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStep3BulkMultiBusy(false);
+    }
+  }, [
+    step3BulkMultiBusy,
+    step3BulkMultiFiles,
+    processing.status,
+    processing,
+    processingInputPaths,
     refreshActiveSession,
   ]);
 
@@ -7240,6 +7354,23 @@ export function CaptionTranslator() {
         </div>
       </div>
       </div>
+
+      {step3BulkMultiModalOpen && (
+        <Step3BulkMultiFolderModal
+          visible={step3BulkMultiModalOpen}
+          folders={processingInputPaths}
+          files={step3BulkMultiFiles}
+          busy={step3BulkMultiBusy}
+          error={step3BulkMultiError}
+          message={step3BulkMultiMessage}
+          autoPickOnOpen={step3BulkMultiFiles.length === 0}
+          onClose={closeStep3BulkMultiModal}
+          onPickFiles={handleStep3BulkMultiPickFiles}
+          onClearFiles={handleStep3BulkMultiClearFiles}
+          onMoveFile={handleStep3BulkMultiMoveFile}
+          onApply={handleApplyStep3BulkMultiFolder}
+        />
+      )}
 
       {step3ManualModal && (
       <div
