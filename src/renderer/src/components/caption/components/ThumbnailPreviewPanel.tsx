@@ -27,10 +27,12 @@ interface ThumbnailPreviewPanelProps {
   thumbnailTextSecondaryFontSize?: number;
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
+  thumbnailTextConstrainTo34?: boolean;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;
   onThumbnailTextSecondaryPositionChange: (pos: { x: number; y: number }) => void;
+  onThumbnailTextConstrainTo34Change: (value: boolean) => void;
   contextKey: ThumbnailPreviewContextKey | null;
   inputType: 'srt' | 'draft';
 }
@@ -122,6 +124,19 @@ function hitRect(rect: DrawRect | null, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
+function resolveLandscapeSafeRegion43(outputW: number, outputH: number): DrawRect {
+  const safeH = Math.max(2, outputH);
+  const targetW = Math.min(outputW, safeH * 4 / 3);
+  const safeW = Math.max(2, targetW);
+  const x = (outputW - safeW) / 2;
+  return {
+    x,
+    y: 0,
+    width: safeW,
+    height: safeH,
+  };
+}
+
 function sanitizeFileName(value: string): string {
   const cleaned = value
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
@@ -158,21 +173,25 @@ export function ThumbnailPreviewPanel({
   thumbnailTextSecondaryFontSize,
   thumbnailTextSecondaryColor,
   thumbnailLineHeightRatio,
+  thumbnailTextConstrainTo34,
   thumbnailTextPrimaryPosition,
   thumbnailTextSecondaryPosition,
   onThumbnailTextPrimaryPositionChange,
   onThumbnailTextSecondaryPositionChange,
+  onThumbnailTextConstrainTo34Change,
   contextKey,
   inputType,
 }: ThumbnailPreviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [editContainerEl, setEditContainerEl] = useState<HTMLDivElement | null>(null);
+  const realContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const drawStateRef = useRef<DrawState | null>(null);
   const dragRef = useRef<{ layer: ThumbnailPreviewLayer; offsetX: number; offsetY: number } | null>(null);
 
   const [videoSourceSize, setVideoSourceSize] = useState<{ width: number; height: number }>({ width: 1920, height: 1080 });
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [realContainerSize, setRealContainerSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [truncationState, setTruncationState] = useState<TruncationState>({ primary: false, secondary: false });
   const [frameImageRevision, setFrameImageRevision] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -196,6 +215,7 @@ export function ThumbnailPreviewPanel({
     thumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     onThumbnailTextPrimaryPositionChange,
@@ -266,8 +286,10 @@ export function ThumbnailPreviewPanel({
     const srcW = Math.max(2, img.naturalWidth || img.width);
     const srcH = Math.max(2, img.naturalHeight || img.height);
 
+    const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
+    const shouldConstrainTo43 = !isPortraitMode && !!thumbnailTextConstrainTo34;
     let regionRect = { ...outputRect };
-    if (renderMode === 'hardsub_portrait_9_16') {
+    if (isPortraitMode) {
       const cropW = ensureEven(Math.min(srcW, srcH * 3 / 4));
       const cropX = Math.max(0, Math.floor((srcW - cropW) / 2));
       const cropH = srcH;
@@ -297,6 +319,22 @@ export function ThumbnailPreviewPanel({
       ctx.setLineDash([]);
     } else {
       ctx.drawImage(img, outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+      if (shouldConstrainTo43) {
+        const safeRegion = resolveLandscapeSafeRegion43(outW, outH);
+        const scaleX = outputRect.width / outW;
+        const scaleY = outputRect.height / outH;
+        regionRect = {
+          x: outputRect.x + safeRegion.x * scaleX,
+          y: outputRect.y + safeRegion.y * scaleY,
+          width: safeRegion.width * scaleX,
+          height: safeRegion.height * scaleY,
+        };
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(regionRect.x, regionRect.y, regionRect.width, regionRect.height);
+        ctx.setLineDash([]);
+      }
     }
 
     const scale = outputRect.width / Math.max(1, outW);
@@ -307,6 +345,30 @@ export function ThumbnailPreviewPanel({
     const lineHeightRatio = Math.min(4, Math.max(0, Number.isFinite(thumbnailLineHeightRatio) ? (thumbnailLineHeightRatio as number) : 1.16));
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    const fitFontPxToRegion = (text: string, fontPx: number, fontName: string) => {
+      if (!shouldConstrainTo43) return fontPx;
+      const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+      if (!normalized) return fontPx;
+      const lines = normalized.split('\n').map((line) => line.trim());
+      const lineCount = Math.min(lines.length, 3);
+      if (lineCount <= 0) return fontPx;
+      ctx.font = `bold ${fontPx}px "${fontName}", sans-serif`;
+      let maxLineWidth = 0;
+      for (let i = 0; i < lineCount; i += 1) {
+        const width = ctx.measureText(lines[i]).width;
+        if (width > maxLineWidth) maxLineWidth = width;
+      }
+      const maxWidth = regionRect.width * 0.92;
+      const widthScale = maxLineWidth > 0 ? maxWidth / maxLineWidth : 1;
+      const heightScale = regionRect.height / Math.max(1, lineCount * fontPx * lineHeightRatio);
+      const scaleToFit = Math.min(1, widthScale, heightScale);
+      if (!Number.isFinite(scaleToFit) || scaleToFit <= 0) return fontPx;
+      return Math.max(10, fontPx * scaleToFit);
+    };
+
+    const fittedPrimaryFontPx = fitFontPxToRegion(thumbnailText, primaryFontPx, primaryFontName);
+    const fittedSecondaryFontPx = fitFontPxToRegion(thumbnailTextSecondary, secondaryFontPx, secondaryFontName);
 
     const drawTextBox = (
       text: string,
@@ -373,7 +435,7 @@ export function ThumbnailPreviewPanel({
       previewState.draftPrimaryPosition,
       'primary',
       primaryFontName,
-      primaryFontPx,
+      fittedPrimaryFontPx,
       thumbnailTextPrimaryColor || '#FFFF00'
     );
     const secondaryResult = drawTextBox(
@@ -381,7 +443,7 @@ export function ThumbnailPreviewPanel({
       previewState.draftSecondaryPosition,
       'secondary',
       secondaryFontName,
-      secondaryFontPx,
+      fittedSecondaryFontPx,
       thumbnailTextSecondaryColor || '#FFFF00'
     );
     const nextTruncation: TruncationState = {
@@ -421,6 +483,7 @@ export function ThumbnailPreviewPanel({
     thumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34,
     thumbnailText,
     thumbnailTextSecondary,
   ]);
@@ -430,8 +493,7 @@ export function ThumbnailPreviewPanel({
   }, [drawEditCanvas]);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (!editContainerEl) return;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setContainerSize({
@@ -440,9 +502,32 @@ export function ThumbnailPreviewPanel({
         });
       }
     });
+    observer.observe(editContainerEl);
+    return () => observer.disconnect();
+  }, [editContainerEl]);
+
+  useEffect(() => {
+    const container = realContainerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setRealContainerSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (previewState.tab !== 'edit') return;
+    const raf = window.requestAnimationFrame(() => {
+      drawEditCanvas();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [drawEditCanvas, previewState.tab]);
 
   const updateLayerPositionFromPointer = useCallback((layer: ThumbnailPreviewLayer, pointerX: number, pointerY: number) => {
     const drawState = drawStateRef.current;
@@ -508,6 +593,32 @@ export function ThumbnailPreviewPanel({
 
   const hasPrimaryText = thumbnailText.trim().length > 0;
   const hasSecondaryText = thumbnailTextSecondary.trim().length > 0;
+  const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
+  const showConstrainToggle = !isPortraitMode;
+  const realOverlayRect = useMemo(() => {
+    if (!showConstrainToggle || !thumbnailTextConstrainTo34) return null;
+    const output = previewState.realSize || outputSize;
+    const cw = realContainerSize.width;
+    const ch = realContainerSize.height;
+    if (!output || cw <= 0 || ch <= 0) return null;
+    const outputRect = fitRect(cw, ch, output.width, output.height);
+    const safeRegion = resolveLandscapeSafeRegion43(output.width, output.height);
+    const scaleX = outputRect.width / Math.max(1, output.width);
+    const scaleY = outputRect.height / Math.max(1, output.height);
+    return {
+      x: outputRect.x + safeRegion.x * scaleX,
+      y: outputRect.y + safeRegion.y * scaleY,
+      width: safeRegion.width * scaleX,
+      height: safeRegion.height * scaleY,
+    };
+  }, [
+    outputSize,
+    previewState.realSize,
+    realContainerSize.height,
+    realContainerSize.width,
+    showConstrainToggle,
+    thumbnailTextConstrainTo34,
+  ]);
 
   const handleDownloadThumbnail = useCallback(async () => {
     if (!videoPath || isDownloading) {
@@ -536,6 +647,7 @@ export function ThumbnailPreviewPanel({
         thumbnailTextSecondaryFontSize,
         thumbnailTextSecondaryColor,
         thumbnailLineHeightRatio,
+        thumbnailTextConstrainTo34,
         thumbnailTextPrimaryPosition: previewState.draftPrimaryPosition,
         thumbnailTextSecondaryPosition: previewState.draftSecondaryPosition,
       });
@@ -589,6 +701,7 @@ export function ThumbnailPreviewPanel({
     thumbnailTextSecondaryFontName,
     thumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryColor,
+    thumbnailTextConstrainTo34,
     videoPath,
   ]);
 
@@ -662,9 +775,20 @@ export function ThumbnailPreviewPanel({
                   Text2
                 </button>
               </div>
+              {showConstrainToggle && (
+                <label className={styles.toggleRow}>
+                  <input
+                    type="checkbox"
+                    className={styles.toggleInput}
+                    checked={!!thumbnailTextConstrainTo34}
+                    onChange={(event) => onThumbnailTextConstrainTo34Change(event.target.checked)}
+                  />
+                  <span className={styles.toggleLabel}>Giới hạn 4:3</span>
+                </label>
+              )}
             </div>
 
-            <div className={styles.box} ref={containerRef}>
+            <div className={styles.box} ref={setEditContainerEl}>
               <canvas
                 ref={canvasRef}
                 className={styles.canvas}
@@ -687,6 +811,9 @@ export function ThumbnailPreviewPanel({
               {renderMode === 'hardsub_portrait_9_16' && (
                 <div className={styles.hint}>Mode 9:16: Text được clamp trong vùng foreground 3:4.</div>
               )}
+              {!isPortraitMode && thumbnailTextConstrainTo34 && (
+                <div className={styles.hint}>Giới hạn 4:3 bật: Text chỉ di chuyển trong khung 4:3 ở giữa.</div>
+              )}
             </div>
           </section>
         </div>
@@ -694,9 +821,22 @@ export function ThumbnailPreviewPanel({
 
       {previewState.tab === 'real' && (
         <div className={styles.realShell}>
-          <div className={styles.box}>
+          <div className={styles.box} ref={realContainerRef}>
             {previewState.realFrameData ? (
-              <img src={previewState.realFrameData} className={styles.realImage} alt="Thumbnail preview thật" />
+              <>
+                <img src={previewState.realFrameData} className={styles.realImage} alt="Thumbnail preview thật" />
+                {realOverlayRect && (
+                  <div
+                    className={styles.realOverlay}
+                    style={{
+                      left: `${realOverlayRect.x}px`,
+                      top: `${realOverlayRect.y}px`,
+                      width: `${realOverlayRect.width}px`,
+                      height: `${realOverlayRect.height}px`,
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <div className={styles.placeholder}>Chưa có preview thật.</div>
             )}

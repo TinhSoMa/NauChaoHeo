@@ -10,7 +10,7 @@ import {
   RenderThumbnailPreviewFrameResult,
   RenderVideoOptions,
 } from '../../../../shared/types/caption';
-import { layoutThumbnailText, ThumbnailTextLayoutResult } from '../../../../shared/utils/thumbnailTextLayout';
+import { estimateTextWidthPx, layoutThumbnailText, ThumbnailTextLayoutResult } from '../../../../shared/utils/thumbnailTextLayout';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
 import { summarizeThumbnailTextForLog } from './timingDebugWriter';
@@ -37,6 +37,7 @@ interface ThumbnailClipOptions {
   thumbnailTextSecondaryFontSize?: number;
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
+  thumbnailTextConstrainTo34?: boolean;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
   width: number;
@@ -89,6 +90,45 @@ function normalizeThumbnailLineHeightRatio(value?: number): number {
     return THUMBNAIL_TEXT_LINE_HEIGHT_RATIO;
   }
   return Math.min(MAX_THUMBNAIL_LINE_HEIGHT_RATIO, Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, value as number));
+}
+
+function fitThumbnailFontSizeToRegion(params: {
+  text?: string;
+  baseFontSize: number;
+  regionWidth: number;
+  regionHeight: number;
+  lineHeightRatio: number;
+  maxLines: number;
+}): number {
+  const normalized = typeof params.text === 'string'
+    ? params.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+    : '';
+  if (!normalized) {
+    return params.baseFontSize;
+  }
+
+  const lines = normalized.split('\n').map((line) => line.trim());
+  const lineCount = Math.min(lines.length, Math.max(1, params.maxLines));
+  if (lineCount <= 0) {
+    return params.baseFontSize;
+  }
+
+  let maxLineWidth = 0;
+  for (let i = 0; i < lineCount; i += 1) {
+    const width = estimateTextWidthPx(lines[i], params.baseFontSize);
+    if (width > maxLineWidth) {
+      maxLineWidth = width;
+    }
+  }
+
+  const maxWidth = params.regionWidth * 0.92;
+  const widthScale = maxLineWidth > 0 ? maxWidth / maxLineWidth : 1;
+  const heightScale = params.regionHeight / Math.max(1, lineCount * params.baseFontSize * params.lineHeightRatio);
+  const scale = Math.min(1, widthScale, heightScale);
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return params.baseFontSize;
+  }
+  return Math.max(1, Math.round(params.baseFontSize * scale));
 }
 
 function normalizeThumbnailTextColor(value: unknown, fallback: string): string {
@@ -152,18 +192,48 @@ function computePortraitForegroundRect(
   };
 }
 
+function computeLandscapeSafeRegion43(
+  outputWidth: number,
+  outputHeight: number
+): { x: number; y: number; width: number; height: number } {
+  const safeH = Math.max(2, outputHeight);
+  const targetW = Math.min(outputWidth, safeH * 4 / 3);
+  const safeW = ensureEven(Math.max(2, targetW));
+  const x = Math.max(0, Math.floor((outputWidth - safeW) / 2));
+  return {
+    x,
+    y: 0,
+    width: safeW,
+    height: safeH,
+  };
+}
+
 function resolveThumbnailTextRegion(
   renderMode: RenderVideoOptions['renderMode'] | undefined,
   outputWidth: number,
   outputHeight: number,
   sourceWidth: number,
-  sourceHeight: number
-): { x: number; y: number; width: number; height: number; mode: 'landscape_full' | 'portrait_fg_3_4' } {
+  sourceHeight: number,
+  constrainTo34?: boolean
+): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  mode: 'landscape_full' | 'portrait_fg_3_4' | 'landscape_safe_4_3';
+} {
   if (renderMode === 'hardsub_portrait_9_16') {
     const fgRect = computePortraitForegroundRect(outputWidth, outputHeight, sourceWidth, sourceHeight);
     return {
       ...fgRect,
       mode: 'portrait_fg_3_4',
+    };
+  }
+  if (constrainTo34) {
+    const safeRect = computeLandscapeSafeRegion43(outputWidth, outputHeight);
+    return {
+      ...safeRect,
+      mode: 'landscape_safe_4_3',
     };
   }
   return {
@@ -481,6 +551,7 @@ export async function buildThumbnailDrawTextFilter(options: {
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
+  thumbnailTextConstrainTo34?: boolean;
   renderMode?: RenderVideoOptions['renderMode'];
   outputWidth: number;
   outputHeight: number;
@@ -501,7 +572,13 @@ export async function buildThumbnailDrawTextFilter(options: {
   primaryLineSpacing: number;
   secondaryLineSpacing: number;
   textFilePaths: string[];
-  textRegion: { x: number; y: number; width: number; height: number; mode: 'landscape_full' | 'portrait_fg_3_4' };
+  textRegion: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    mode: 'landscape_full' | 'portrait_fg_3_4' | 'landscape_safe_4_3';
+  };
   primaryPosition: { x: number; y: number };
   secondaryPosition: { x: number; y: number };
   primaryLayout: ThumbnailTextLayoutResult;
@@ -519,10 +596,10 @@ export async function buildThumbnailDrawTextFilter(options: {
   );
   const primaryTextColor = toFfmpegDrawTextColor(primaryTextColorHex);
   const secondaryTextColor = toFfmpegDrawTextColor(secondaryTextColorHex);
-  const primaryFontSize = normalizeThumbnailFontSize(
+  let primaryFontSize = normalizeThumbnailFontSize(
     options.thumbnailTextPrimaryFontSize ?? options.thumbnailFontSize
   );
-  const secondaryFontSize = normalizeThumbnailFontSize(
+  let secondaryFontSize = normalizeThumbnailFontSize(
     options.thumbnailTextSecondaryFontSize ?? options.thumbnailFontSize ?? primaryFontSize
   );
   const lineHeightRatio = normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio);
@@ -533,7 +610,8 @@ export async function buildThumbnailDrawTextFilter(options: {
     options.outputWidth,
     options.outputHeight,
     options.sourceWidth,
-    options.sourceHeight
+    options.sourceHeight,
+    options.thumbnailTextConstrainTo34
   );
   const primaryPosition = normalizeThumbnailTextPosition(
     options.thumbnailTextPrimaryPosition,
@@ -543,6 +621,27 @@ export async function buildThumbnailDrawTextFilter(options: {
     options.thumbnailTextSecondaryPosition,
     DEFAULT_THUMBNAIL_TEXT2_POSITION
   );
+  const shouldConstrainTo34 = !!options.thumbnailTextConstrainTo34
+    && options.renderMode !== 'hardsub_portrait_9_16';
+  if (shouldConstrainTo34) {
+    primaryFontSize = fitThumbnailFontSizeToRegion({
+      text: options.thumbnailText,
+      baseFontSize: primaryFontSize,
+      regionWidth: textRegion.width,
+      regionHeight: textRegion.height,
+      lineHeightRatio,
+      maxLines: THUMBNAIL_TEXT_MAX_LINES,
+    });
+    secondaryFontSize = fitThumbnailFontSizeToRegion({
+      text: options.thumbnailTextSecondary,
+      baseFontSize: secondaryFontSize,
+      regionWidth: textRegion.width,
+      regionHeight: textRegion.height,
+      lineHeightRatio,
+      maxLines: THUMBNAIL_TEXT_MAX_LINES,
+    });
+  }
+
   const primaryLineSpacing = Math.round(primaryFontSize * (lineHeightRatio - 1));
   const secondaryLineSpacing = Math.round(secondaryFontSize * (lineHeightRatio - 1));
   const layoutInputBase = {
@@ -909,6 +1008,7 @@ export async function buildInlineThumbnailVideoFilter(
     thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+    thumbnailTextConstrainTo34: options.thumbnailTextConstrainTo34,
     renderMode: options.renderMode,
     outputWidth: safeW,
     outputHeight: safeH,
@@ -1065,6 +1165,7 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     thumbnailLineHeightRatio: opts.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: opts.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: opts.thumbnailTextSecondaryPosition,
+    thumbnailTextConstrainTo34: opts.thumbnailTextConstrainTo34,
     renderMode: opts.renderMode,
     outputWidth: safeW,
     outputHeight: safeH,
@@ -1292,6 +1393,7 @@ export async function renderThumbnailPreviewFrame(
       thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
       thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+      thumbnailTextConstrainTo34: options.thumbnailTextConstrainTo34,
       renderMode: options.renderMode,
       outputWidth: safeW,
       outputHeight: safeH,
@@ -1459,6 +1561,7 @@ export async function applyThumbnailPostProcess(
         options.thumbnailTextSecondaryFontSize ?? options.thumbnailFontSize
       ),
       textLineHeightRatio: normalizeThumbnailLineHeightRatio(options.thumbnailLineHeightRatio),
+      textConstrainTo34: !!options.thumbnailTextConstrainTo34,
       thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition || DEFAULT_THUMBNAIL_TEXT1_POSITION,
       thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition || DEFAULT_THUMBNAIL_TEXT2_POSITION,
     }
@@ -1481,6 +1584,7 @@ export async function applyThumbnailPostProcess(
     thumbnailLineHeightRatio: options.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
+    thumbnailTextConstrainTo34: options.thumbnailTextConstrainTo34,
     width: outputMeta.metadata.width,
     height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
     renderMode: options.renderMode,

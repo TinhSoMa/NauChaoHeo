@@ -68,6 +68,7 @@ interface LayoutProfile {
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
+  thumbnailTextConstrainTo34: boolean;
   portraitTextPrimaryFontName: string;
   portraitTextPrimaryFontSize: number;
   portraitTextPrimaryFontSizeRel: number;
@@ -101,6 +102,7 @@ interface CaptionTypographyLayoutDefaults {
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
+  thumbnailTextConstrainTo34: boolean;
   portraitTextPrimaryFontName: string;
   portraitTextPrimaryFontSize: number;
   portraitTextPrimaryFontSizeRel: number;
@@ -369,6 +371,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
+  thumbnailTextConstrainTo34: false,
   portraitTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
   portraitTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
   portraitTextPrimaryFontSizeRel: pxToRelativeFontSize(
@@ -453,6 +456,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   thumbnailLineHeightRatio: DEFAULT_THUMBNAIL_LINE_HEIGHT_RATIO,
   thumbnailTextPrimaryPosition: { x: 0.5, y: 0.5 },
   thumbnailTextSecondaryPosition: { x: 0.5, y: 0.64 },
+  thumbnailTextConstrainTo34: false,
   portraitTextPrimaryFontName: DEFAULT_THUMBNAIL_FONT_NAME,
   portraitTextPrimaryFontSize: DEFAULT_THUMBNAIL_FONT_SIZE,
   portraitTextPrimaryFontSizeRel: pxToRelativeFontSize(
@@ -897,6 +901,9 @@ function normalizeProfile(
       Math.max(MIN_THUMBNAIL_LINE_HEIGHT_RATIO, patch.thumbnailLineHeightRatio)
     );
   }
+  if (typeof patch.thumbnailTextConstrainTo34 === 'boolean') {
+    next.thumbnailTextConstrainTo34 = patch.thumbnailTextConstrainTo34;
+  }
   if (patch.thumbnailTextPrimaryPosition && typeof patch.thumbnailTextPrimaryPosition === 'object') {
     const p = patch.thumbnailTextPrimaryPosition as { x?: number; y?: number };
     if (typeof p.x === 'number' && typeof p.y === 'number') {
@@ -1098,6 +1105,7 @@ function toTypographyLayoutDefaults(profile: LayoutProfile): CaptionTypographyLa
     thumbnailLineHeightRatio: profile.thumbnailLineHeightRatio,
     thumbnailTextPrimaryPosition: { ...profile.thumbnailTextPrimaryPosition },
     thumbnailTextSecondaryPosition: { ...profile.thumbnailTextSecondaryPosition },
+    thumbnailTextConstrainTo34: profile.thumbnailTextConstrainTo34,
     portraitTextPrimaryFontName: profile.portraitTextPrimaryFontName,
     portraitTextPrimaryFontSize: profile.portraitTextPrimaryFontSize,
     portraitTextPrimaryFontSizeRel: profile.portraitTextPrimaryFontSizeRel,
@@ -1566,6 +1574,14 @@ export function useCaptionSettings() {
     }));
   }, [markTypographyDefaultsDirty, updateActiveProfile]);
 
+  const setThumbnailTextConstrainTo34 = useCallback((value: boolean) => {
+    markTypographyDefaultsDirty();
+    updateActiveProfile((current) => ({
+      ...current,
+      thumbnailTextConstrainTo34: !!value,
+    }));
+  }, [markTypographyDefaultsDirty, updateActiveProfile]);
+
   // Legacy setters giữ hành vi font chung cho cả 2 text.
   const setThumbnailFontName = useCallback((value: string) => {
     const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
@@ -1848,6 +1864,7 @@ export function useCaptionSettings() {
       thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
       thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition: activeProfile.thumbnailTextSecondaryPosition,
+      thumbnailTextConstrainTo34: activeProfile.thumbnailTextConstrainTo34,
       hardsubTextPrimaryFontName: activeProfile.thumbnailTextPrimaryFontName,
       hardsubTextPrimaryFontSize: activeProfile.thumbnailTextPrimaryFontSize,
       hardsubTextPrimaryFontSizeRel: activeProfile.thumbnailTextPrimaryFontSizeRel,
@@ -2360,6 +2377,8 @@ export function useCaptionSettings() {
     setThumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: activeProfile.thumbnailLineHeightRatio,
     setThumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34: activeProfile.thumbnailTextConstrainTo34,
+    setThumbnailTextConstrainTo34,
     thumbnailTextSecondary: activeProfile.thumbnailTextSecondary,
     setThumbnailTextSecondary,
     thumbnailTextPrimaryPosition: activeProfile.thumbnailTextPrimaryPosition,

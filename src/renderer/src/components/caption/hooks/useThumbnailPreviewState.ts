@@ -47,6 +47,7 @@ interface UseThumbnailPreviewStateOptions {
   thumbnailTextSecondaryFontSize?: number;
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
+  thumbnailTextConstrainTo34?: boolean;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;
@@ -131,6 +132,7 @@ export function useThumbnailPreviewState(
     thumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     onThumbnailTextPrimaryPositionChange,
@@ -529,6 +531,7 @@ export function useThumbnailPreviewState(
       thumbnailTextSecondaryFontSize,
       thumbnailTextSecondaryColor,
       thumbnailLineHeightRatio,
+      thumbnailTextConstrainTo34,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
     });
@@ -545,6 +548,7 @@ export function useThumbnailPreviewState(
     thumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34,
     thumbnailText,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
@@ -601,6 +605,7 @@ export function useThumbnailPreviewState(
           thumbnailTextSecondaryFontSize,
           thumbnailTextSecondaryColor,
           thumbnailLineHeightRatio,
+          thumbnailTextConstrainTo34,
           thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition,
         });
@@ -672,6 +677,7 @@ export function useThumbnailPreviewState(
     thumbnailTextSecondaryFontSize,
     thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34,
     thumbnailText,
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondary,

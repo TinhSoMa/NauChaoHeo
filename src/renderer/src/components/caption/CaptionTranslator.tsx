@@ -1484,6 +1484,7 @@ export function CaptionTranslator() {
     thumbnailTextSecondaryFontSizeRel: settings.thumbnailTextSecondaryFontSizeRel,
     thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
     thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+    thumbnailTextConstrainTo34: settings.thumbnailTextConstrainTo34,
     thumbnailText: hardsubSettings.thumbnailText,
     thumbnailTextSecondary: hardsubSettings.thumbnailTextSecondary,
     thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
@@ -2066,6 +2067,9 @@ export function CaptionTranslator() {
       thumbnailTextPrimaryPosition: readPoint(record.thumbnailTextPrimaryPosition),
       thumbnailTextSecondaryPosition: readPoint(record.thumbnailTextSecondaryPosition),
       renderResolution: normalizedResolution,
+      thumbnailTextConstrainTo34: typeof record.thumbnailTextConstrainTo34 === 'boolean'
+        ? record.thumbnailTextConstrainTo34
+        : undefined,
     };
   }, [settings.layoutProfiles]);
 
@@ -2271,6 +2275,7 @@ export function CaptionTranslator() {
           thumbnailTextSecondaryFontSize: settings.thumbnailTextSecondaryFontSize,
           thumbnailTextSecondaryColor: settings.thumbnailTextSecondaryColor,
           thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+          thumbnailTextConstrainTo34: landscapeOverrides.thumbnailTextConstrainTo34 ?? settings.thumbnailTextConstrainTo34,
         };
 
         // @ts-ignore
@@ -2334,6 +2339,7 @@ export function CaptionTranslator() {
     settings.thumbnailFontSize,
     settings.thumbnailFrameTimeSec,
     settings.thumbnailLineHeightRatio,
+    settings.thumbnailTextConstrainTo34,
     settings.thumbnailTextPrimaryColor,
     settings.thumbnailTextPrimaryFontName,
     settings.thumbnailTextPrimaryFontSize,
@@ -6911,6 +6917,8 @@ export function CaptionTranslator() {
                   thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
                   thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
                   thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
+                  thumbnailTextConstrainTo34={settings.thumbnailTextConstrainTo34}
+                  onThumbnailTextConstrainTo34Change={settings.setThumbnailTextConstrainTo34}
                   thumbnailTextPrimaryPosition={settings.thumbnailTextPrimaryPosition}
                   thumbnailTextSecondaryPosition={settings.thumbnailTextSecondaryPosition}
                   onThumbnailTextPrimaryPositionChange={settings.setThumbnailTextPrimaryPosition}

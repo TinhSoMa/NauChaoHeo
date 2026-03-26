@@ -454,6 +454,9 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
   const subtitlePosition = readPointOrNull(profile, 'subtitlePosition');
   const thumbnailTextPrimaryPosition = readPoint(profile, 'thumbnailTextPrimaryPosition');
   const thumbnailTextSecondaryPosition = readPoint(profile, 'thumbnailTextSecondaryPosition');
+  const thumbnailTextConstrainTo34 = typeof profile.thumbnailTextConstrainTo34 === 'boolean'
+    ? profile.thumbnailTextConstrainTo34
+    : undefined;
   const hardsubTextPrimaryPosition = readPoint(profile, 'hardsubTextPrimaryPosition');
   const hardsubTextSecondaryPosition = readPoint(profile, 'hardsubTextSecondaryPosition');
   const hardsubPortraitTextPrimaryPosition = readPoint(profile, 'hardsubPortraitTextPrimaryPosition');
@@ -515,6 +518,10 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
       settings.thumbnailFrameTimeSec
     ),
     thumbnailDurationSec: withFallback(readNumber(profile, 'thumbnailDurationSec'), settings.thumbnailDurationSec),
+    thumbnailTextConstrainTo34: withFallback(
+      thumbnailTextConstrainTo34,
+      settings.thumbnailTextConstrainTo34
+    ),
     logoPath: withFallback(readString(profile, 'logoPath'), settings.logoPath),
     logoPosition: withFallback(
       logoPosition,
@@ -4096,6 +4103,7 @@ export function useCaptionProcessing({
           thumbnailLineHeightRatio: cfg.thumbnailLineHeightRatio,
           thumbnailTextPrimaryPosition: cfg.thumbnailTextPrimaryPosition,
           thumbnailTextSecondaryPosition: cfg.thumbnailTextSecondaryPosition,
+          thumbnailTextConstrainTo34: cfg.thumbnailTextConstrainTo34,
           hardsubTextPrimaryFontName: cfg.hardsubTextPrimaryFontName,
           hardsubTextPrimaryFontSize: cfg.hardsubTextPrimaryFontSize,
           hardsubTextPrimaryColor: cfg.hardsubTextPrimaryColor,

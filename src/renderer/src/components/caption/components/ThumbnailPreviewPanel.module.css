@@ -296,6 +296,28 @@
   cursor: not-allowed;
 }
 
+.toggleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-card) 80%, transparent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggleInput {
+  cursor: pointer;
+}
+
+.toggleLabel {
+  font-weight: 600;
+}
+
 .stageInfo {
   font-size: 11px;
   color: var(--color-text-secondary);
@@ -501,6 +523,13 @@
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+.realOverlay {
+  position: absolute;
+  border: 1.5px dashed rgba(56, 189, 248, 0.9);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
 }
 
 .placeholder {

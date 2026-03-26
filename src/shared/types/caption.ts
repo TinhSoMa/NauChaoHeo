@@ -570,6 +570,7 @@ export interface RenderVideoOptions {
   thumbnailLineHeightRatio?: number; // Khoảng cách dòng cho text thumbnail (áp dụng cho Enter + wrap)
   thumbnailTextPrimaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text1 trong vùng hợp lệ
   thumbnailTextSecondaryPosition?: { x: number; y: number }; // Vị trí normalized (0..1) của text2 trong vùng hợp lệ
+  thumbnailTextConstrainTo34?: boolean; // Giới hạn text trong khung 4:3 (áp dụng cho thumbnail 16:9)
   hardsubTextPrimary?: string; // Text1 cho main video mode hardsub 16:9
   hardsubTextSecondary?: string; // Text2 cho main video mode hardsub 16:9
   hardsubTextPrimaryFontName?: string; // Font Text1 cho main video mode hardsub 16:9
@@ -699,6 +700,7 @@ export interface RenderVideoPreviewFrameOptions {
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
+  thumbnailTextConstrainTo34?: boolean;
   hardsubTextPrimary?: string;
   hardsubTextSecondary?: string;
   hardsubTextPrimaryFontName?: string;
@@ -767,6 +769,7 @@ export interface RenderThumbnailPreviewFrameOptions {
   thumbnailLineHeightRatio?: number;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
+  thumbnailTextConstrainTo34?: boolean;
 }
 
 export interface RenderThumbnailPreviewFrameResult {
@@ -1064,6 +1067,7 @@ export interface CaptionProjectSettingsValues {
       thumbnailTextSecondary?: string;
       thumbnailTextPrimaryPosition?: { x: number; y: number };
       thumbnailTextSecondaryPosition?: { x: number; y: number };
+      thumbnailTextConstrainTo34?: boolean;
       hardsubTextPrimary?: string;
       hardsubTextSecondary?: string;
       hardsubTextPrimaryFontName?: string;
