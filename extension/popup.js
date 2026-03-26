@@ -147,6 +147,127 @@ function parseLinesFromText(text) {
     .filter(line => line.length > 0);
 }
 
+const SPECIAL_PROJECTS = new Set(["Mixed_Files", "Unknown_Project", "Khong_Ro_Ten"]);
+const nameCollator = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+
+function isSpecialProject(name) {
+  return !name || SPECIAL_PROJECTS.has(name);
+}
+
+function getPartNumber(fileName) {
+  if (!fileName) return null;
+  const match = /part[_-]?(\d+)/i.exec(fileName);
+  if (!match) return null;
+  const num = parseInt(match[1], 10);
+  return Number.isNaN(num) ? null : num;
+}
+
+function sortBatchFiles(files) {
+  const list = [...files];
+  list.sort((a, b) => {
+    const aProject = a?.projectName || "";
+    const bProject = b?.projectName || "";
+    const aSpecial = isSpecialProject(aProject);
+    const bSpecial = isSpecialProject(bProject);
+    if (aSpecial !== bSpecial) return aSpecial ? 1 : -1;
+
+    const projectCmp = nameCollator.compare(aProject, bProject);
+    if (projectCmp !== 0) return projectCmp;
+
+    const aPart = getPartNumber(a?.name);
+    const bPart = getPartNumber(b?.name);
+    if (aPart !== null && bPart !== null && aPart !== bPart) return aPart - bPart;
+    if (aPart !== null && bPart === null) return -1;
+    if (aPart === null && bPart !== null) return 1;
+
+    return nameCollator.compare(a?.name || "", b?.name || "");
+  });
+  return list;
+}
+
+function sanitizeFilenamePart(input) {
+  if (!input) return "";
+  return String(input).replace(/[\\\/:*?"<>|]+/g, "_").trim();
+}
+
+function sortProjectNames(projectsMap) {
+  const names = Object.keys(projectsMap);
+  return names.sort((a, b) => {
+    const aSpecial = isSpecialProject(a);
+    const bSpecial = isSpecialProject(b);
+    if (aSpecial !== bSpecial) return aSpecial ? 1 : -1;
+    return nameCollator.compare(a, b);
+  });
+}
+
+async function downloadFullStoryInPopup() {
+  UIManager.setStatus("Đang tải JSONL...");
+  const data = await chrome.storage.local.get(['batchFiles', 'batchCount']);
+  const batchFiles = data.batchFiles || [];
+
+  const completedFiles = batchFiles.filter(f => f.completed && (f.rawText || f.result));
+  if (completedFiles.length === 0) {
+    UIManager.setStatus("⚠️ Chưa có nội dung. Hãy chạy dịch trước.", "#ff9800");
+    return;
+  }
+
+  const projects = {};
+  batchFiles.forEach((f, idx) => {
+    if (f.completed && (f.rawText || f.result)) {
+      const pName = f.projectName || 'Khong_Ro_Ten';
+      if (!projects[pName]) projects[pName] = [];
+      projects[pName].push({ file: f, originalIndex: idx });
+    }
+  });
+
+  const date = new Date().toISOString().slice(0, 10);
+
+  const orderedProjects = sortProjectNames(projects);
+  const padWidth = String(orderedProjects.length).length;
+
+  for (let i = 0; i < orderedProjects.length; i++) {
+    const pName = orderedProjects[i];
+    const projectItems = projects[pName];
+    const rootFolder = projectItems[0]?.file?.rootFolder || "";
+    const safeRoot = sanitizeFilenamePart(rootFolder);
+    const prefix = safeRoot ? `${safeRoot}_` : "";
+    const orderPrefix = `${String(i + 1).padStart(padWidth, "0")}_`;
+
+    const jsonl = projectItems.map((item, idx) => {
+      const f = item.file;
+      let finalResponseStr = "";
+      if (f.rawText) {
+        finalResponseStr = f.rawText.replace(/\r?\n|\r/g, " ");
+      } else {
+        finalResponseStr = JSON.stringify(f.result);
+      }
+      return `{"batchIndex": ${idx + 1}, "response": ${finalResponseStr}}`;
+    }).join('\n');
+
+    let filename;
+    if (pName === "Mixed_Files" || pName === "Unknown_Project" || pName === "Khong_Ro_Ten") {
+      filename = `${prefix}${orderPrefix}SubtitleBatch_${projectItems.length}batch_${date}.jsonl`;
+    } else {
+      filename = `${prefix}${orderPrefix}SubtitleBatch_${pName}_${date}.jsonl`;
+    }
+
+    const blob = new Blob([jsonl], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    // nhẹ delay để tránh browser chặn nhiều downloads cùng lúc
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  UIManager.setStatus("✓ Đã tạo file JSONL để tải xuống.");
+}
+
 // ============================================
 // EVENT HANDLERS
 // ============================================
@@ -173,6 +294,7 @@ const EventHandlers = {
       for (const file of files) {
         // Tách path để lấy tên thư mục dự án
         const pathParts = file.webkitRelativePath.split('/');
+        const rootFolder = pathParts[0] || null;
         const captionIdx = pathParts.findIndex(p => p === 'caption_output');
         const projectName = captionIdx > 0 ? pathParts[captionIdx - 1] : "Unknown_Project";
 
@@ -181,6 +303,7 @@ const EventHandlers = {
         
         newBatchFiles.push({
           name: file.name,
+          rootFolder: rootFolder,
           projectName: projectName,
           lines: lines,
           completed: false,
@@ -188,7 +311,7 @@ const EventHandlers = {
         });
       }
 
-      const combinedBatchFiles = [...existingBatchFiles, ...newBatchFiles];
+      const combinedBatchFiles = sortBatchFiles([...existingBatchFiles, ...newBatchFiles]);
       await StorageManager.saveBatchFiles(combinedBatchFiles);
 
       UIManager.setFileStatus(`✓ Đã thêm ${newBatchFiles.length} file (Tổng: ${combinedBatchFiles.length})`, '#4CAF50');
@@ -218,6 +341,7 @@ const EventHandlers = {
         const lines = parseLinesFromText(text);
         newBatchFiles.push({
           name: file.name,
+          rootFolder: null,
           projectName: "Mixed_Files", // Nếu tải file lẻ thì gom vào thư mục mặc định
           lines: lines,
           completed: false,
@@ -225,7 +349,7 @@ const EventHandlers = {
         });
       }
 
-      const combinedBatchFiles = [...existingBatchFiles, ...newBatchFiles];
+      const combinedBatchFiles = sortBatchFiles([...existingBatchFiles, ...newBatchFiles]);
       await StorageManager.saveBatchFiles(combinedBatchFiles);
 
       UIManager.setFileStatus(`✓ Đã thêm ${newBatchFiles.length} file (Tổng: ${combinedBatchFiles.length})`, '#4CAF50');
@@ -283,8 +407,7 @@ const EventHandlers = {
   },
 
   onDownload() {
-    chrome.runtime.sendMessage({ action: "DOWNLOAD_FULL" });
-    UIManager.setStatus("Đang tải JSONL...");
+    downloadFullStoryInPopup();
   },
 
   async onClear() {

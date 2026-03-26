@@ -142,7 +142,7 @@ export function Step3BulkMultiFolderModal(props: Step3BulkMultiFolderModalProps)
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,application/json"
+              accept=".txt,.json,.jsonl,application/json"
               multiple
               className={styles.step3BulkMultiFileInput}
               onChange={handleFileInputChange}

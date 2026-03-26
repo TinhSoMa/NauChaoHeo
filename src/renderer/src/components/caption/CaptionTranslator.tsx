@@ -2986,10 +2986,10 @@ export function CaptionTranslator() {
     if (!files || files.length === 0) return;
     const accepted = Array.from(files).filter((file) => {
       const name = file.name.toLowerCase();
-      return name.endsWith('.txt') || name.endsWith('.json');
+      return name.endsWith('.txt') || name.endsWith('.json') || name.endsWith('.jsonl');
     });
     if (accepted.length === 0) {
-      setStep3BulkMultiError('Không có file TXT/JSON hợp lệ.');
+      setStep3BulkMultiError('Không có file TXT/JSON/JSONL hợp lệ.');
       return;
     }
     const items: Step3BulkFileItem[] = accepted.map((file) => ({
@@ -7363,7 +7363,7 @@ export function CaptionTranslator() {
           busy={step3BulkMultiBusy}
           error={step3BulkMultiError}
           message={step3BulkMultiMessage}
-          autoPickOnOpen={step3BulkMultiFiles.length === 0}
+          autoPickOnOpen={false}
           onClose={closeStep3BulkMultiModal}
           onPickFiles={handleStep3BulkMultiPickFiles}
           onClearFiles={handleStep3BulkMultiClearFiles}

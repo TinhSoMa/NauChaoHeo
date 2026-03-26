@@ -621,6 +621,41 @@ async function loadSettingsAndStart() {
 // ============================================
 // DOWNLOAD FUNCTION
 // ============================================
+const downloadNameByUrl = new Map();
+
+function sanitizeFilenamePart(input) {
+    if (!input) return "";
+    // Replace characters that are invalid in Windows filenames
+    return String(input).replace(/[\\\/:*?"<>|]+/g, "_").trim();
+}
+
+function isSpecialProject(name) {
+    return !name || name === "Mixed_Files" || name === "Unknown_Project" || name === "Khong_Ro_Ten";
+}
+
+function sortProjectNames(projectsMap) {
+    const collator = new Intl.Collator('vi', { numeric: true, sensitivity: 'base' });
+    const names = Object.keys(projectsMap);
+    return names.sort((a, b) => {
+        const aSpecial = isSpecialProject(a);
+        const bSpecial = isSpecialProject(b);
+        if (aSpecial !== bSpecial) return aSpecial ? 1 : -1;
+        return collator.compare(a, b);
+    });
+}
+
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    try {
+        if (item.byExtensionId !== chrome.runtime.id) return;
+        const desired = downloadNameByUrl.get(item.url);
+        if (!desired) return;
+        suggest({ filename: desired, conflictAction: "uniquify" });
+        downloadNameByUrl.delete(item.url);
+    } catch (e) {
+        // No-op: if anything goes wrong, let Chrome handle the default name
+    }
+});
+
 async function downloadFullStory() {
     Utils.log("Bắt đầu tải JSONL...");
     const data = await chrome.storage.local.get(['batchFiles', 'batchCount']);
@@ -645,14 +680,20 @@ async function downloadFullStory() {
 
     const date = new Date().toISOString().slice(0, 10);
 
-    for (const ObjectName of Object.keys(projects)) {
-        const pName = ObjectName;
+    const orderedProjects = sortProjectNames(projects);
+    const padWidth = String(orderedProjects.length).length;
+
+    for (let i = 0; i < orderedProjects.length; i++) {
+        const pName = orderedProjects[i];
         const projectItems = projects[pName];
+        const rootFolder = projectItems[0]?.file?.rootFolder || "";
+        const safeRoot = sanitizeFilenamePart(rootFolder);
+        const prefix = safeRoot ? `${safeRoot}_` : "";
+        const orderPrefix = `${String(i + 1).padStart(padWidth, "0")}_`;
         
         // Tạo JSONL cho project hiện tại
-        const jsonl = projectItems.map(item => {
+        const jsonl = projectItems.map((item, idx) => {
             const f = item.file;
-            const originalIndex = item.originalIndex;
             
             let finalResponseStr = "";
             if (f.rawText) {
@@ -664,7 +705,7 @@ async function downloadFullStory() {
             }
             
             // Xây dựng chuỗi tĩnh chuẩn JSONL
-            return `{"batchIndex": ${originalIndex + 1}, "response": ${finalResponseStr}}`;
+            return `{"batchIndex": ${idx + 1}, "response": ${finalResponseStr}}`;
         }).join('\n');
 
         const docUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonl);
@@ -672,13 +713,14 @@ async function downloadFullStory() {
         let filename;
         if (pName === "Mixed_Files" || pName === "Unknown_Project" || pName === "Khong_Ro_Ten") {
             // Nếu là tập tin chắp vá từ chế độ Chọn file lẻ hoặc trước bản cập nhật
-            filename = `SubtitleBatch_${projectItems.length}batch_${date}.jsonl`;
+            filename = `${prefix}${orderPrefix}SubtitleBatch_${projectItems.length}batch_${date}.jsonl`;
         } else {
             // Cấu trúc thư mục mới: NauChaoHeo_Translations/[0324]/caption_output/
-            filename = `NauChaoHeo_Translations/${pName}/caption_output/SubtitleBatch_${pName}_${date}.jsonl`;
+            filename = `NauChaoHeo_Translations/${pName}/caption_output/${prefix}${orderPrefix}SubtitleBatch_${pName}_${date}.jsonl`;
         }
 
         try {
+            downloadNameByUrl.set(docUrl, filename);
             chrome.downloads.download({
                 url: docUrl,
                 filename: filename,
