@@ -44,6 +44,8 @@ interface SubtitlePreviewProps {
   hardsubPortraitTextSecondaryFontName?: string;
   hardsubPortraitTextSecondaryFontSize?: number;
   hardsubPortraitTextSecondaryColor?: string;
+  hardsubTextPrimaryPosition?: { x: number; y: number };
+  hardsubTextSecondaryPosition?: { x: number; y: number };
   hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
   hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
   portraitTextPrimaryFontName?: string;
@@ -64,6 +66,8 @@ interface SubtitlePreviewProps {
   onPreviewLayoutChange?: (value: 'landscape' | 'portrait') => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  onHardsubTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
+  onHardsubTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
   onPortraitTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   onSelectLogo?: () => void;
@@ -74,7 +78,7 @@ interface SubtitlePreviewProps {
   hydrationSeq?: number;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
   const preview = useSubtitlePreview({
@@ -105,6 +109,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     hardsubPortraitTextSecondaryFontName,
     hardsubPortraitTextSecondaryFontSize,
     hardsubPortraitTextSecondaryColor,
+    hardsubTextPrimaryPosition,
+    hardsubTextSecondaryPosition,
     hardsubPortraitTextPrimaryPosition,
     hardsubPortraitTextSecondaryPosition,
     portraitTextPrimaryFontName,
@@ -122,6 +128,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     onCoverQuadChange,
     onLogoPositionChange,
     onLogoScaleChange,
+    onHardsubTextPrimaryPositionChange,
+    onHardsubTextSecondaryPositionChange,
     onPortraitTextPrimaryPositionChange,
     onPortraitTextSecondaryPositionChange,
     renderSnapshotMode,
@@ -473,18 +481,13 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           <span className={styles.positionInfo}>{resolutionInfo}</span>
         </div>
         <div className={styles.actionRow}>
-          {preview.mode === 'subtitle' && (
-            <>
-              <button className={styles.resetBtn} onClick={preview.resetToCenter}>
-                <RotateCcw size={12} /> Căn giữa
-              </button>
-            </>
-          )}
-          {(preview.mode === 'text_primary' || preview.mode === 'text_secondary') && (
-            <button className={styles.resetBtn} onClick={preview.resetTextLayerToCenter} disabled={isInteractionDisabled}>
-              <RotateCcw size={12} /> Căn giữa
-            </button>
-          )}
+          <button
+            className={styles.resetBtn}
+            onClick={preview.resetToCenter}
+            disabled={isInteractionDisabled}
+          >
+            <RotateCcw size={12} /> Căn giữa
+          </button>
 
           {onPreviewLayoutChange && (
             <select

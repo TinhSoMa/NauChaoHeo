@@ -60,6 +60,8 @@ export interface UseSubtitlePreviewOptions {
   hardsubPortraitTextSecondaryFontName?: string;
   hardsubPortraitTextSecondaryFontSize?: number;
   hardsubPortraitTextSecondaryColor?: string;
+  hardsubTextPrimaryPosition?: { x: number; y: number };
+  hardsubTextSecondaryPosition?: { x: number; y: number };
   hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
   hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
   portraitTextPrimaryFontName?: string;
@@ -77,6 +79,8 @@ export interface UseSubtitlePreviewOptions {
   onCoverQuadChange?: (quad: CoverQuad) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  onHardsubTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
+  onHardsubTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
   onPortraitTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   renderSnapshotMode?: boolean; // true = chỉ hiển thị frame video đã render, không vẽ layer local
@@ -467,6 +471,8 @@ export function useSubtitlePreview({
   hardsubPortraitTextSecondaryFontName,
   hardsubPortraitTextSecondaryFontSize,
   hardsubPortraitTextSecondaryColor,
+  hardsubTextPrimaryPosition,
+  hardsubTextSecondaryPosition,
   hardsubPortraitTextPrimaryPosition,
   hardsubPortraitTextSecondaryPosition,
   portraitTextPrimaryFontName,
@@ -484,6 +490,8 @@ export function useSubtitlePreview({
   onCoverQuadChange,
   onLogoPositionChange,
   onLogoScaleChange,
+  onHardsubTextPrimaryPositionChange,
+  onHardsubTextSecondaryPositionChange,
   onPortraitTextPrimaryPositionChange,
   onPortraitTextSecondaryPositionChange,
   renderSnapshotMode,
@@ -2318,7 +2326,63 @@ export function useSubtitlePreview({
       
       return { ...prev, subtitlePosition: center };
     });
-  }, [onPositionChange]);
+
+    if (localCoverMode === 'copy_from_above') {
+      const currentQuad = localCoverQuadRef.current;
+      if (currentQuad) {
+        const bbox = quadBoundingBox(currentQuad);
+        const centerX = (bbox.minX + bbox.maxX) / 2;
+        const dx = 0.5 - centerX;
+        const moved = translateQuad(currentQuad, dx, 0);
+        setLocalCoverQuadSynced(moved);
+        onCoverQuadChange?.(moved);
+      }
+    }
+
+    const portraitPrimary = localTextPrimaryPositionRef.current;
+    if (portraitPrimary) {
+      const centered = { x: 0.5, y: clamp01(portraitPrimary.y) };
+      setLocalTextPrimaryPositionSynced(centered);
+      onPortraitTextPrimaryPositionChange?.(centered);
+    }
+    const portraitSecondary = localTextSecondaryPositionRef.current;
+    if (portraitSecondary) {
+      const centered = { x: 0.5, y: clamp01(portraitSecondary.y) };
+      setLocalTextSecondaryPositionSynced(centered);
+      onPortraitTextSecondaryPositionChange?.(centered);
+    }
+
+    if (renderMode !== 'hardsub_portrait_9_16') {
+      if (hardsubTextPrimaryPosition) {
+        const centered = {
+          x: 0.5,
+          y: clamp01(hardsubTextPrimaryPosition.y),
+        };
+        onHardsubTextPrimaryPositionChange?.(centered);
+      }
+      if (hardsubTextSecondaryPosition) {
+        const centered = {
+          x: 0.5,
+          y: clamp01(hardsubTextSecondaryPosition.y),
+        };
+        onHardsubTextSecondaryPositionChange?.(centered);
+      }
+    }
+  }, [
+    hardsubTextPrimaryPosition,
+    hardsubTextSecondaryPosition,
+    localCoverMode,
+    onPortraitTextPrimaryPositionChange,
+    onPortraitTextSecondaryPositionChange,
+    onCoverQuadChange,
+    onHardsubTextPrimaryPositionChange,
+    onHardsubTextSecondaryPositionChange,
+    onPositionChange,
+    renderMode,
+    setLocalCoverQuadSynced,
+    setLocalTextPrimaryPositionSynced,
+    setLocalTextSecondaryPositionSynced,
+  ]);
 
   const resetTextLayerToCenter = useCallback(() => {
     if (mode === 'text_primary') {

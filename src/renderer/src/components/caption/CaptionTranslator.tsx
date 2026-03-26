@@ -6867,6 +6867,8 @@ export function CaptionTranslator() {
                   portraitTextSecondaryFontSize={settings.portraitTextSecondaryFontSize}
                   portraitTextSecondaryColor={settings.portraitTextSecondaryColor}
                   thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
+                  hardsubTextPrimaryPosition={settings.hardsubTextPrimaryPosition}
+                  hardsubTextSecondaryPosition={settings.hardsubTextSecondaryPosition}
                   hardsubPortraitTextPrimaryPosition={settings.hardsubPortraitTextPrimaryPosition || settings.portraitTextPrimaryPosition}
                   hardsubPortraitTextSecondaryPosition={settings.hardsubPortraitTextSecondaryPosition || settings.portraitTextSecondaryPosition}
                   portraitTextPrimaryPosition={settings.portraitTextPrimaryPosition}
@@ -6878,6 +6880,8 @@ export function CaptionTranslator() {
                   onRenderResolutionChange={settings.setRenderResolution}
                   onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
                   onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+                  onHardsubTextPrimaryPositionChange={settings.setHardsubTextPrimaryPosition}
+                  onHardsubTextSecondaryPositionChange={settings.setHardsubTextSecondaryPosition}
                   onPortraitTextPrimaryPositionChange={settings.setPortraitTextPrimaryPosition}
                   onPortraitTextSecondaryPositionChange={settings.setPortraitTextSecondaryPosition}
                   renderSnapshotMode={effectivePreviewMode === 'render'}
