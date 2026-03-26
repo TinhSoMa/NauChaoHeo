@@ -233,20 +233,15 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     ? '1080p'
     : (renderResolution || 'original');
 
-  const blackoutPct = preview.blackoutTop !== null
-    ? Math.round((1 - preview.blackoutTop) * 100)
-    : 0;
-  let mainInfo = `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`;
+  let mainInfo: string | null = `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`;
   if (preview.mode === 'text_primary') {
     mainInfo = `Text1 Rel ${preview.textPrimaryPositionRel.x.toFixed(3)}, ${preview.textPrimaryPositionRel.y.toFixed(3)}`;
   } else if (preview.mode === 'text_secondary') {
     mainInfo = `Text2 Rel ${preview.textSecondaryPositionRel.x.toFixed(3)}, ${preview.textSecondaryPositionRel.y.toFixed(3)}`;
   } else if (preview.mode === 'logo') {
     mainInfo = `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`;
-  } else if (preview.mode !== 'subtitle') {
-    mainInfo = preview.coverMode === 'copy_from_above'
-      ? `Copy mode · offset ${preview.copyOffsetPx}px · feather LR ${Math.round(preview.coverFeatherHorizontalPercent ?? 20)}% / TB ${Math.round(preview.coverFeatherVerticalPercent ?? 20)}% · ${preview.coverQuadValid ? 'Quad OK' : 'Quad lỗi'}`
-      : `${isPortraitMode ? 'Blur' : 'Mask'} ${blackoutPct}%`;
+  } else if (preview.mode === 'blackout') {
+    mainInfo = null;
   }
   const resolutionInfo = `${preview.videoSize.width}×${preview.videoSize.height} · ${isPortraitMode ? '9:16' : '16:9'} ${displayRenderResolution}`;
 
@@ -477,7 +472,9 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
 
       <div className={styles.infoBar}>
         <div className={styles.infoPills}>
-          <span className={`${styles.positionInfo} ${styles.positionInfoPrimary}`}>{mainInfo}</span>
+          {mainInfo && (
+            <span className={`${styles.positionInfo} ${styles.positionInfoPrimary}`}>{mainInfo}</span>
+          )}
           <span className={styles.positionInfo}>{resolutionInfo}</span>
         </div>
         <div className={styles.actionRow}>

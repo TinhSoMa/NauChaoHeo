@@ -1879,11 +1879,19 @@ export function useSubtitlePreview({
 
   const resizeCoverRectByEdge = useCallback((rect: CoverRect, edge: CoverDragEdge, point: CoverQuadPoint): CoverRect => {
     let next = { ...rect };
-    if (edge === 'left') {
-      next.left = Math.max(0, Math.min(point.x, next.right - MIN_COVER_RECT_SIZE));
-    } else if (edge === 'right') {
-      next.right = Math.min(1, Math.max(point.x, next.left + MIN_COVER_RECT_SIZE));
-    } else if (edge === 'top') {
+    if (edge === 'left' || edge === 'right') {
+      const centerX = (rect.left + rect.right) / 2;
+      const maxHalfWidth = Math.min(centerX, 1 - centerX);
+      const minHalfWidth = Math.min(MIN_COVER_RECT_SIZE / 2, maxHalfWidth);
+      const desiredHalfWidth = edge === 'left'
+        ? centerX - point.x
+        : point.x - centerX;
+      const halfWidth = clampNumber(desiredHalfWidth, minHalfWidth, maxHalfWidth);
+      next.left = centerX - halfWidth;
+      next.right = centerX + halfWidth;
+      return next;
+    }
+    if (edge === 'top') {
       next.top = Math.max(0, Math.min(point.y, next.bottom - MIN_COVER_RECT_SIZE));
     } else if (edge === 'bottom') {
       next.bottom = Math.min(1, Math.max(point.y, next.top + MIN_COVER_RECT_SIZE));
