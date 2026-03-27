@@ -32,7 +32,7 @@ export const AppLayout = () => {
     <ProjectProvider projectId={projectId}>
       <div className="flex h-screen w-screen overflow-hidden bg-background text-text-primary">
         <Sidebar />
-        <main className="flex-1 overflow-auto relative">
+        <main className="flex-1 overflow-hidden relative">
           <header className="absolute top-0 right-0 p-4 z-10">
             {/* Header Controls (Minimize, Close) if needed, or user profile */}
           </header>
