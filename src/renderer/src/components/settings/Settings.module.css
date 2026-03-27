@@ -5,7 +5,7 @@
 .container {
   width: 100%;
   height: 100%;
-  background-color: var(--color-background);
+  background-color: transparent;
   color: var(--color-text-primary);
   overflow: hidden;
   display: flex;
@@ -15,40 +15,49 @@
 /* Overview Mode (Grid) */
 .overviewContainer {
   flex: 1;
-  padding: 40px 60px;
+  padding: 28px 40px;
   overflow-y: auto;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   width: 100%;
+  background: transparent;
+
+  --glass-bg: color-mix(in srgb, var(--color-card) 65%, transparent);
+  --glass-border: color-mix(in srgb, var(--color-border) 55%, transparent);
+  --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.14);
+  --glass-highlight: color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
 .pageHeader {
-  margin-bottom: 32px;
+  margin-bottom: 20px;
 }
 
 .pageTitle {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--color-text-primary);
   margin-bottom: 8px;
+  text-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
 }
 
 .pageDesc {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--color-text-secondary);
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
 }
 
 .card {
-  background-color: var(--color-card);
-  border: 1px solid var(--color-border);
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-radius: 16px;
-  padding: 24px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -56,19 +65,30 @@
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
   position: relative;
   overflow: hidden;
+  box-shadow: var(--glass-shadow);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.22), transparent 45%);
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .card:hover {
   transform: translateY(-4px);
-  border-color: var(--color-primary);
-  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.1);
+  border-color: var(--glass-highlight);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
 }
 
 .cardIcon {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
-  background-color: var(--color-surface);
+  background-color: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  border: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -81,8 +101,14 @@
   color: var(--color-text-invert);
 }
 
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card {
+    background-color: color-mix(in srgb, var(--color-card) 92%, transparent);
+  }
+}
+
 .cardTitle {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary);
 }

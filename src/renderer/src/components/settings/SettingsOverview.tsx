@@ -16,7 +16,7 @@ export function SettingsOverview({ menuItems, onTabChange }: SettingsOverviewPro
     <div className={styles.overviewContainer}>
       <div className={styles.pageHeader}>
         <div className={styles.pageTitle}>Cài đặt</div>
-        <div className={styles.pageDesc}>Quản lý tất cả cấu hình của ứng dụng tại đây</div>
+        {/* <div className={styles.pageDesc}>Quản lý tất cả cấu hình của ứng dụng tại đây</div> */}
       </div>
       
       <div className={styles.grid}>
