@@ -40,9 +40,11 @@
   --color-info:    #3b82f6;
 
   --app-background:
-    radial-gradient(600px 280px at 15% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 60%),
-    radial-gradient(500px 240px at 85% 10%, color-mix(in srgb, var(--color-success) 10%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 96%, white) 0%, var(--color-background) 100%);
+    radial-gradient(720px 340px at 12% 0%, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 62%),
+    radial-gradient(620px 300px at 86% 12%, color-mix(in srgb, var(--color-success) 14%, transparent), transparent 62%),
+    radial-gradient(520px 260px at 50% 0%, color-mix(in srgb, var(--color-primary-light) 10%, transparent), transparent 70%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 1px, transparent 1px, transparent 10px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 94%, white) 0%, var(--color-background) 100%);
 }
 
 /* Dark Mode (Deep Ocean) */
@@ -70,9 +72,11 @@
   --color-border-hover: #475569; /* Slate 600 */
 
   --app-background:
-    radial-gradient(600px 280px at 15% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 60%),
-    radial-gradient(500px 240px at 85% 10%, color-mix(in srgb, var(--color-success) 10%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 96%, white) 0%, var(--color-background) 100%);
+    radial-gradient(720px 340px at 12% 0%, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 62%),
+    radial-gradient(620px 300px at 86% 12%, color-mix(in srgb, var(--color-success) 14%, transparent), transparent 62%),
+    radial-gradient(520px 260px at 50% 0%, color-mix(in srgb, var(--color-primary-light) 10%, transparent), transparent 70%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0px, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 12px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 94%, white) 0%, var(--color-background) 100%);
 }
 
 
