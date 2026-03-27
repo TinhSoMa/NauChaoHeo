@@ -837,9 +837,9 @@ export async function fitAudioToDuration(
 
   // Nếu audio không bị tràn, không cần scale → dùng file gốc
   if (actualDurationMs <= allowedDurationMs) {
-    console.log(
-      `[AudioMerger] fitAudio SKIP: ${fileName} actual=${actualDurationMs}ms <= allowed=${allowedDurationMs}ms`
-    );
+    // console.log(
+    //   `[AudioMerger] fitAudio SKIP: ${fileName} actual=${actualDurationMs}ms <= allowed=${allowedDurationMs}ms`
+    // );
     return { scaled: false, outputPath: audioPath };
   }
 
@@ -861,11 +861,19 @@ export async function fitAudioToDuration(
 
   const filterChain = atempoFilters.join(',');
 
-  // Lưu bản scale vào thư mục audio_scaled/ (cùng cấp với audio/)
+  // Lưu bản scale vào thư mục audio_fit/ (tránh lẫn audio gốc/trim)
   const audioDir = path.dirname(audioPath);
-  const scaledDir = path.join(path.dirname(audioDir), 'audio_scaled');
-  await fs.mkdir(scaledDir, { recursive: true });
-  const scaledPath = path.join(scaledDir, fileName);
+  const audioDirName = path.basename(audioDir);
+  let fitDir = audioDir;
+  if (audioDirName === 'audio_fit') {
+    fitDir = audioDir;
+  } else if (audioDirName === 'audio' || audioDirName === 'audio_trimmed' || audioDirName === 'audio_scaled') {
+    fitDir = path.join(path.dirname(audioDir), 'audio_fit');
+  } else {
+    fitDir = path.join(audioDir, 'audio_fit');
+  }
+  await fs.mkdir(fitDir, { recursive: true });
+  const scaledPath = path.join(fitDir, fileName);
 
   return new Promise((resolve) => {
     const args = [

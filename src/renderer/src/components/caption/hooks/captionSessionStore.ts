@@ -565,7 +565,7 @@ export function validateStepOutputForSkip(
 export function shouldSkipStep(
   session: CaptionSessionV1,
   step: CaptionStepNumber,
-  options?: { currentSrtSpeed?: number; currentTrimAudioEnabled?: boolean }
+  options?: { currentSrtSpeed?: number; currentTrimAudioEnabled?: boolean; currentAutoFitAudio?: boolean }
 ): { skip: boolean; reason?: string } {
   // Step 7 (render video) luôn cho phép chạy lại nhiều lần.
   if (step === 7) {
@@ -602,6 +602,19 @@ export function shouldSkipStep(
       }
     } else if (previousTrimEnabled !== options.currentTrimAudioEnabled) {
       return { skip: false, reason: 'trim_flag_changed' };
+    }
+  }
+  if (step === 6 && typeof options?.currentAutoFitAudio === 'boolean') {
+    const metrics = toRecord(stepState?.metrics);
+    const previousAutoFit = typeof metrics.autoFitAudio === 'boolean'
+      ? metrics.autoFitAudio
+      : null;
+    if (previousAutoFit === null) {
+      if (options.currentAutoFitAudio) {
+        return { skip: false, reason: 'autofit_flag_changed' };
+      }
+    } else if (previousAutoFit !== options.currentAutoFitAudio) {
+      return { skip: false, reason: 'autofit_flag_changed' };
     }
   }
   const outputCheck = validateStepOutputForSkip(session, step);

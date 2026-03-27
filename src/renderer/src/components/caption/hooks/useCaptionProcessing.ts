@@ -2699,6 +2699,7 @@ export function useCaptionProcessing({
         const skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber, {
           currentSrtSpeed,
           currentTrimAudioEnabled: !!cfg.trimAudioEnabled,
+          currentAutoFitAudio: !!cfg.autoFitAudio,
         });
         if (step === 6 && skipDecision.reason === 'srt_scale_changed') {
           await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
@@ -3603,44 +3604,84 @@ export function useCaptionProcessing({
         let trimmedCount = 0;
         let trimFailedCount = 0;
         let trimErrors: string[] = [];
+        let fitOutputDir = '';
+        let fitScaledCount = 0;
+        let fitOutputPaths: string[] = [];
         if (cfg.trimAudioEnabled) {
-          trimOutputDir = `${processOutputDir}/audio_trimmed`;
-          trimTargets = filesToMerge.map((file) => {
-            const fileName = file.path.split(/[/\\]/).pop() || `audio_${file.index}.wav`;
-            return {
-              inputPath: file.path,
-              outputPath: joinFilePath(trimOutputDir, fileName),
-            };
-          });
-          setProgress({ current: 0, total: trimTargets.length, message: msgCtx('Bước 6: Đang trim audio...') });
-          const trimEndTargets = trimTargets.map((item) => ({
-            inputPath: item.outputPath,
-            outputPath: item.outputPath,
-          }));
-          // @ts-ignore
-          const trimResult = await window.electronAPI.tts.trimSilenceToPaths(trimTargets);
-          // @ts-ignore
-          const trimEndResult = await window.electronAPI.tts.trimSilenceEndToPaths(trimEndTargets);
-          if (trimResult.success && trimResult.data && trimEndResult.success && trimEndResult.data) {
-            const trimmedMiddleData = trimResult.data;
-            const trimmedEndData = trimEndResult.data;
-            trimmedCount = trimmedEndData.trimmedCount;
-            trimFailedCount = trimmedEndData.failedCount;
-            trimErrors = Array.isArray(trimmedEndData.errors) ? trimmedEndData.errors : [];
-            setProgress({ current: trimmedCount, total: trimTargets.length, message: msgCtx(`Bước 6: Đã trim ${trimmedCount} files`) });
-            trimResults = {
-              trimmedMiddle: trimmedMiddleData,
-              trimmedEnd: trimmedEndData,
-              trimOutputDir,
-              trimFiles: trimTargets.map((item) => item.outputPath),
-            };
-            const outputMap = new Map(trimTargets.map((item) => [item.inputPath, item.outputPath]));
+          const previousTrimResults = toRecord(sessionBeforeStep.data?.trimResults);
+          const previousTrimFiles = Array.isArray(previousTrimResults.trimFiles)
+            ? previousTrimResults.trimFiles.filter((filePath) => typeof filePath === 'string' && filePath.trim().length > 0)
+            : [];
+          const previousTrimOutputDir = readString(previousTrimResults, 'trimOutputDir') || '';
+          const trimmedByName = new Map<string, string>();
+          for (const filePath of previousTrimFiles) {
+            const fileName = String(filePath).split(/[/\\]/).pop() || '';
+            if (fileName) {
+              trimmedByName.set(fileName, String(filePath));
+            }
+          }
+          const canReuseTrim = previousTrimFiles.length > 0
+            && filesToMerge.every((file) => {
+              const fileName = file.path.split(/[/\\]/).pop() || '';
+              return fileName && trimmedByName.has(fileName);
+            });
+
+          if (canReuseTrim) {
+            trimTargets = filesToMerge.map((file) => {
+              const fileName = file.path.split(/[/\\]/).pop() || '';
+              const outputPath = trimmedByName.get(fileName) || file.path;
+              return { inputPath: file.path, outputPath };
+            });
             filesToMerge = filesToMerge.map((file) => {
-              const outputPath = outputMap.get(file.path);
+              const fileName = file.path.split(/[/\\]/).pop() || '';
+              const outputPath = trimmedByName.get(fileName);
               return outputPath ? { ...file, path: outputPath, success: true } : file;
             });
+            trimOutputDir = previousTrimOutputDir || (trimTargets[0]?.outputPath ? resolveParentDir(trimTargets[0].outputPath) : '');
+            trimmedCount = trimTargets.length;
+            trimFailedCount = 0;
+            trimErrors = [];
+            trimResults = previousTrimResults;
+            setProgress({ current: trimmedCount, total: trimTargets.length, message: msgCtx('Bước 6: Dùng lại audio đã trim') });
           } else {
-            throw new Error(`[${folderName}] Lỗi trim silence: ${trimResult.error || trimEndResult.error}`);
+            trimOutputDir = `${processOutputDir}/audio_trimmed`;
+            trimTargets = filesToMerge.map((file) => {
+              const fileName = file.path.split(/[/\\]/).pop() || `audio_${file.index}.wav`;
+              return {
+                inputPath: file.path,
+                outputPath: joinFilePath(trimOutputDir, fileName),
+              };
+            });
+            setProgress({ current: 0, total: trimTargets.length, message: msgCtx('Bước 6: Đang trim audio...') });
+            const trimEndTargets = trimTargets.map((item) => ({
+              inputPath: item.outputPath,
+              outputPath: item.outputPath,
+            }));
+            // @ts-ignore
+            const trimResult = await window.electronAPI.tts.trimSilenceToPaths(trimTargets);
+            // @ts-ignore
+            const trimEndResult = await window.electronAPI.tts.trimSilenceEndToPaths(trimEndTargets);
+            if (trimResult.success && trimResult.data && trimEndResult.success && trimEndResult.data) {
+              const trimmedMiddleData = trimResult.data;
+              const trimmedEndData = trimEndResult.data;
+              trimmedCount = trimmedEndData.trimmedCount;
+              trimFailedCount = trimmedEndData.failedCount;
+              trimErrors = Array.isArray(trimmedEndData.errors) ? trimmedEndData.errors : [];
+              setProgress({ current: trimmedCount, total: trimTargets.length, message: msgCtx(`Bước 6: Đã trim ${trimmedCount} files`) });
+              trimResults = {
+                trimmedMiddle: trimmedMiddleData,
+                trimmedEnd: trimmedEndData,
+                trimOutputDir,
+                trimFiles: trimTargets.map((item) => item.outputPath),
+              };
+              const outputMap = new Map(trimTargets.map((item) => [item.inputPath, item.outputPath]));
+              filesToMerge = filesToMerge.map((file) => {
+                const outputPath = outputMap.get(file.path);
+                return outputPath ? { ...file, path: outputPath, success: true } : file;
+              });
+            } else {
+              throw new Error(`[${folderName}] Lỗi trim silence: ${trimResult.error || trimEndResult.error}`);
+            }
           }
         }
 
@@ -3648,14 +3689,18 @@ export function useCaptionProcessing({
           if (currentEntries.length === 0) {
             throw new Error(`[${folderName}] Thiếu dữ liệu subtitle dịch trong session để fit audio. Hãy chạy Step 3 trước.`);
           }
-          setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang scale audio vừa thời lượng...') });
+          setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang fit audio...') });
+          const fitSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
           const fitItems = filesToMerge
             .map(f => {
               const entryByIndex = currentEntries.find(e => e.index === f.index);
               const entryByStart = currentEntries.find(e => e.startMs === f.startMs);
-              const allowedDurationMs = f.durationMs > 0
+              const baseDurationMs = f.durationMs > 0
                 ? f.durationMs
                 : (entryByIndex?.durationMs || entryByStart?.durationMs || 0);
+              const allowedDurationMs = baseDurationMs > 0
+                ? Math.round(baseDurationMs * fitSpeed)
+                : 0;
               return { path: f.path, durationMs: allowedDurationMs };
             })
             .filter(item => item.durationMs > 0);
@@ -3670,12 +3715,19 @@ export function useCaptionProcessing({
               };
               const scaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
               const pathMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
-              setProgress({ current: scaledCount, total: fitItems.length, message: msgCtx(`Bước 6: Đã fit ${scaledCount}/${fitItems.length} files`) });
+              setProgress({ current: scaledCount, total: fitItems.length, message: msgCtx(`Bước 6: Đã fit ${scaledCount}/${fitItems.length} audio`) });
+              fitScaledCount = scaledCount;
               for (const mapping of pathMapping) {
                 const idx = filesToMerge.findIndex(f => f.path === mapping.originalPath);
                 if (idx !== -1 && mapping.outputPath !== mapping.originalPath) {
                   filesToMerge[idx] = { ...filesToMerge[idx], path: mapping.outputPath, success: true };
+                  fitOutputPaths.push(mapping.outputPath);
                 }
+              }
+              if (fitOutputPaths.length > 0) {
+                const normalized = fitOutputPaths[0].replace(/[/\\]+$/, '');
+                const match = normalized.match(/^(.*)[\\/][^\\/]+$/);
+                fitOutputDir = match ? match[1] : '';
               }
             } else {
               console.warn(`[${folderName}] Cảnh báo fit audio: ${fitResult.error}`);
@@ -3724,6 +3776,12 @@ export function useCaptionProcessing({
                 pushArtifact(stepArtifacts, 'trimmed_audio_clip', target.outputPath, 'file');
               }
             }
+            if (fitOutputDir && fitOutputPaths.length > 0) {
+              pushArtifact(stepArtifacts, 'fit_audio_dir', fitOutputDir, 'dir');
+              for (const outputPath of fitOutputPaths) {
+                pushArtifact(stepArtifacts, 'fit_audio_clip', outputPath, 'file');
+              }
+            }
             const outputFingerprint = buildObjectFingerprint({
               mergedPath: actualMergedOutputPath,
               filesCount: filesToMerge.length,
@@ -3732,6 +3790,9 @@ export function useCaptionProcessing({
               trimAudioEnabled: !!cfg.trimAudioEnabled,
               trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
               trimFiles: cfg.trimAudioEnabled ? trimTargets.map((item) => item.outputPath) : undefined,
+              autoFitAudio: !!cfg.autoFitAudio,
+              fitOutputDir: fitOutputDir || undefined,
+              fitScaledCount,
             });
             const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
             let nextSession: CaptionSessionV1 = {
@@ -3763,6 +3824,9 @@ export function useCaptionProcessing({
                     trimmedCount: trimmedCount,
                     trimFailedCount: trimFailedCount,
                     trimErrors: trimErrors.length > 0 ? trimErrors : undefined,
+                    autoFitAudio: !!cfg.autoFitAudio,
+                    fitOutputDir: fitOutputDir || undefined,
+                    fitCount: fitScaledCount || undefined,
                   }),
                   inputFingerprint: buildObjectFingerprint(filesToMerge.map((file) => ({
                     path: file.path,

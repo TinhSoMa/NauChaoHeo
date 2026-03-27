@@ -5600,14 +5600,6 @@ export function CaptionTranslator() {
               </div>
             </div>
 
-            <div style={{ marginTop: '8px' }}>
-              <Checkbox
-                label="Auto fit audio"
-                checked={settings.autoFitAudio}
-                onChange={() => settings.setAutoFitAudio(!settings.autoFitAudio)}
-              />
-            </div>
-
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
                 <span className={styles.label}>Âm lượng video (x)</span>
@@ -6603,6 +6595,14 @@ export function CaptionTranslator() {
                 label="Trim silence trước khi ghép"
                 checked={!!settings.trimAudioEnabled}
                 onChange={(checked) => settings.setTrimAudioEnabled(checked)}
+                disabled={processing.status === 'running'}
+              />
+            </div>
+            <div className={styles.stepOptionRow}>
+              <Checkbox
+                label="Auto fit audio"
+                checked={settings.autoFitAudio}
+                onChange={(checked) => settings.setAutoFitAudio(checked)}
                 disabled={processing.status === 'running'}
               />
             </div>
