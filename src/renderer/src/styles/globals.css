@@ -38,6 +38,11 @@
   --color-warning: #f59e0b;
   --color-error:   #ef4444;
   --color-info:    #3b82f6;
+
+  --app-background:
+    radial-gradient(600px 280px at 15% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 60%),
+    radial-gradient(500px 240px at 85% 10%, color-mix(in srgb, var(--color-success) 10%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 96%, white) 0%, var(--color-background) 100%);
 }
 
 /* Dark Mode (Deep Ocean) */
@@ -63,6 +68,11 @@
 
   --color-border:       #334155; /* Slate 700 */
   --color-border-hover: #475569; /* Slate 600 */
+
+  --app-background:
+    radial-gradient(600px 280px at 15% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 60%),
+    radial-gradient(500px 240px at 85% 10%, color-mix(in srgb, var(--color-success) 10%, transparent), transparent 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 96%, white) 0%, var(--color-background) 100%);
 }
 
 
@@ -74,6 +84,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
   /* @apply selection:bg-primary-light/30 selection:text-primary; - removed due to build error with opacity modifier on var */
   transition: background-color 0.3s, color 0.3s;
+}
+
+.appShell {
+  background-color: var(--color-background);
+  background-image: var(--app-background);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 ::selection {

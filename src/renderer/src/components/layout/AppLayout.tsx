@@ -30,7 +30,7 @@ export const AppLayout = () => {
 
   return (
     <ProjectProvider projectId={projectId}>
-      <div className="flex h-screen w-screen overflow-hidden bg-background text-text-primary">
+      <div className="appShell flex h-screen w-screen overflow-hidden text-text-primary">
         <Sidebar />
         <main className="flex-1 overflow-hidden relative">
           <header className="absolute top-0 right-0 p-4 z-10">
