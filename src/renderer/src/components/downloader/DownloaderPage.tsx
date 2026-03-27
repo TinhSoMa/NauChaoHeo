@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Download, FileText, Link2, RefreshCcw, Scissors, Image, StopCircle, Video,
+  Download, FileText, Link2, RefreshCcw, Scissors, StopCircle, Video,
   Cookie, Plus, Trash2, FolderOpen, ChevronDown, ChevronRight, Loader2,
   ListOrdered, CheckCircle2,
 } from 'lucide-react'
@@ -239,6 +239,7 @@ export const DownloaderPage = () => {
   const [previewDirectUrl, setPreviewDirectUrl] = useState('')
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewTab, setPreviewTab] = useState<'video' | 'thumbnail'>('video')
   const lastPreviewUrlRef = useRef<string>('')
 
   // Download type toggles
@@ -398,6 +399,12 @@ export const DownloaderPage = () => {
       }
     }
   }, [mode, multiUrls, previewUrl, fetchInfoForUrl])
+
+  useEffect(() => {
+    if (!downloadThumbnail) {
+      setPreviewTab('video')
+    }
+  }, [downloadThumbnail])
 
   const allLangs = useMemo(() => {
     if (!videoInfo) return []
@@ -707,6 +714,8 @@ export const DownloaderPage = () => {
   }, [progressInfo?.stage, status])
 
   const embedInfo = useMemo(() => resolveEmbedUrl(activeUrl || videoInfo?.webpage_url || ''), [activeUrl, videoInfo?.webpage_url])
+  const hasThumbnailPreview = Boolean(videoInfo?.thumbnail)
+  const activePreviewTab = downloadThumbnail ? previewTab : 'video'
 
   useEffect(() => {
     const target = (activeUrl || '').trim()
@@ -740,303 +749,22 @@ export const DownloaderPage = () => {
     <div className={styles.page}>
       {showCookieManager && <CookieManager onClose={() => setShowCookieManager(false)} />}
 
-      {/* Header */}
-      <div className={styles.headerRow}>
-        <div className={styles.headerLeft}>
-          <div className={styles.headerIcon}>
-            <Download size={18} className={styles.iconAccent} />
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
+          <div className={styles.brandBadge}>
+            <Download size={16} />
           </div>
           <div>
-            <h1 className={styles.headerTitle}>Downloader</h1>
-            <p className={styles.headerSubtitle}>Tải video, subtitle và thumbnail qua yt-dlp</p>
+            <div className={styles.brandTitle}>Downloader</div>
+            <div className={styles.brandSubtitle}>Tải video, subtitle và thumbnail qua yt-dlp</div>
           </div>
         </div>
-        <span className={`${styles.statusBadge} ${statusColor}`}>
-          {isFetching ? <span className={styles.statusFetching}><Loader2 size={11} className={styles.spin} />Đang lấy...</span> : statusLabel}
-        </span>
-      </div>
-
-      <div className={styles.mainGrid}>
-        {/* Main Card */}
-        <div className={styles.card}>
-
-        {/* URL Input */}
-        <div className={styles.urlSection}>
-          <div className={styles.urlHeaderRow}>
-            <label className={styles.urlLabel}>
-              <Link2 size={13} /> Link video
-            </label>
-            <div className={styles.modeSwitch}>
-              <button
-                className={`${styles.modeButton} ${mode === 'single' ? styles.modeButtonActive : ''}`}
-                onClick={() => setMode('single')}
-              >
-                Single
-              </button>
-              <button
-                className={`${styles.modeButton} ${mode === 'multi' ? styles.modeButtonActive : ''}`}
-                onClick={() => setMode('multi')}
-              >
-                Multi
-              </button>
-            </div>
-          </div>
-
-          {mode === 'single' ? (
-            <div className={styles.urlInputRow}>
-              <Input
-                value={url}
-                onChange={e => handleUrlChange(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=… hoặc bilibili.com/video/…"
-              />
-              <Button onClick={handlePaste} variant="secondary">Paste</Button>
-            </div>
-          ) : (
-            <div className={styles.urlTextareaRow}>
-              <textarea
-                className={styles.urlTextarea}
-                rows={4}
-                value={multiText}
-                onChange={e => setMultiText(e.target.value)}
-                placeholder="Mỗi dòng 1 link..."
-              />
-              <div className={styles.urlTextareaMeta}>
-                <Button onClick={handlePaste} variant="secondary">Paste</Button>
-                <span className={styles.helperTextMuted}>{multiUrls.length} link</span>
-              </div>
-            </div>
-          )}
-
-          {fetchError && <p className={styles.errorText}>{fetchError}</p>}
-          {cookieFoundDomain && (
-            <p className={styles.warningText}>🍪 Cookie cho <b>{cookieFoundDomain}</b> sẽ được dùng nếu bật</p>
-          )}
+        <div className={styles.toolbarStatus}>
+          <span className={`${styles.statusChip} ${statusColor}`}>
+            {isFetching ? <span className={styles.statusFetching}><Loader2 size={11} className={styles.spin} />Đang lấy...</span> : statusLabel}
+          </span>
         </div>
-
-        {/* Output dir */}
-        <div className={styles.outputSection}>
-          <label className={styles.sectionLabel}>Thư mục lưu</label>
-          <div className={styles.outputRow}>
-            <Input
-              value={outputDir}
-              onChange={e => setOutputDir(e.target.value)}
-              placeholder="D:\Downloads\..."
-            />
-            <Button variant="secondary" onClick={handleOpenDir} title="Mở thư mục">
-              <FolderOpen size={14} />
-            </Button>
-          </div>
-          {mode === 'single' && lastResolvedOutputDir && (
-            <div className={styles.outputActualRow}>
-              <span>Thư mục thực tế:</span>
-              <span className={styles.monoText}>{lastResolvedOutputDir}</span>
-              <Button variant="secondary" onClick={() => api().openOutputDir(lastResolvedOutputDir)}>
-                <FolderOpen size={12} />
-              </Button>
-            </div>
-          )}
-          {mode === 'multi' && (
-            <div className={styles.helperTextMuted}>Mỗi link sẽ lưu vào một thư mục con riêng.</div>
-          )}
-        </div>
-
-        {mode === 'multi' && (
-          <div className={styles.queueSection}>
-            <div className={styles.sectionLabel}>Danh sách link</div>
-            <div className={styles.queueList}>
-              {(queue.length > 0 ? queue : (multiUrls.map((u, idx) => ({
-                id: `draft_${idx}`,
-                url: u,
-                status: 'queued' as QueueStatus,
-              })) as QueueItem[])).map(item => {
-                const isActive = item.url === previewUrl
-                const statusColor = item.status === 'done'
-                  ? styles.queueStatusDone
-                  : item.status === 'error'
-                    ? styles.queueStatusError
-                    : item.status === 'running'
-                      ? styles.queueStatusRunning
-                      : item.status === 'stopped'
-                        ? styles.queueStatusStopped
-                        : styles.queueStatusQueued
-
-                return (
-                  <div key={item.id} className={`${styles.queueItem} ${isActive ? styles.queueItemActive : ''}`}>
-                    <div className={styles.queueItemInfo}>
-                      <div className={styles.queueItemTitle}>{item.title || item.url}</div>
-                      {item.outputDir && <div className={styles.queueItemOutput}>{item.outputDir}</div>}
-                      {item.progress?.percent != null && item.status === 'running' && (
-                        <div className={styles.queueItemPercent}>{Math.round(item.progress.percent)}%</div>
-                      )}
-                      {item.error && <div className={styles.queueItemError}>{item.error}</div>}
-                    </div>
-                    <div className={styles.queueItemActions}>
-                      <span className={`${styles.queueStatus} ${statusColor}`}>{item.status}</span>
-                      <Button variant="secondary" onClick={() => handlePreviewUrlChange(item.url)} disabled={status === 'running'}>
-                        Preview
-                      </Button>
-                      {item.outputDir && (
-                        <Button variant="secondary" onClick={() => api().openOutputDir(item.outputDir!)}>
-                          <FolderOpen size={12} />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        <div className={styles.sectionDivider} />
-
-        {/* Download types */}
-        <div className={styles.downloadTypeSection}>
-          <div className={styles.sectionLabel}>Loại tải</div>
-          <div className={styles.downloadTypeRow}>
-            <Checkbox label="Video" checked={downloadVideo} onChange={setDownloadVideo} />
-            <Checkbox label="Subtitles" checked={downloadSubtitle} onChange={setDownloadSubtitle} />
-            <Checkbox label="Thumbnail" checked={downloadThumbnail} onChange={setDownloadThumbnail} />
-          </div>
-        </div>
-
-        {/* Playlist */}
-        <div className={styles.subSection}>
-          <div className={styles.cookieRow}>
-            <Checkbox label="Tải playlist (nếu có)" checked={allowPlaylist} onChange={setAllowPlaylist} />
-            <Button
-              variant="secondary"
-              onClick={handleCheckPlaylist}
-              disabled={!activeUrl.trim().startsWith('http') || isCheckingPlaylist || status === 'running'}
-            >
-              {isCheckingPlaylist ? <Loader2 size={13} className={styles.spin} /> : <ListOrdered size={13} />}
-              Kiểm tra playlist
-            </Button>
-            {playlistInfo && playlistInfo.entryCount > 1 && (
-              <span className={styles.successRow}>
-                <CheckCircle2 size={12} /> Playlist: {playlistInfo.entryCount} video
-              </span>
-            )}
-          </div>
-          {playlistInfo && (
-            <div className={styles.playlistInfoBox}>
-              <div className={styles.playlistTitle}>{playlistInfo.title}</div>
-              {playlistInfo.entries.length > 0 && (
-                <div className={styles.playlistEntries}>
-                  {playlistInfo.entries.map((e, idx) => (
-                    <div key={`${e.id || idx}`} className={styles.playlistEntry}>• {e.title || e.id || e.url || 'item'}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {playlistError && <p className={styles.errorText}>{playlistError}</p>}
-        </div>
-
-        {/* Video format (dynamic from fetchInfo) */}
-        {downloadVideo && (
-          <div className={styles.outputSection}>
-            <label className={styles.sectionLabel}>Chất lượng video</label>
-            {videoInfo && videoInfo.formats.length > 0 ? (
-              <select
-                className={styles.selectInput}
-                value={selectedFormatId}
-                onChange={e => setSelectedFormatId(e.target.value)}
-              >
-                {videoInfo.formats.map((f: VideoFormat) => (
-                  <option key={f.id} value={f.id}>
-                    {f.resolution} — {f.ext.toUpperCase()}{f.note ? ` (${f.note})` : ''}{formatSize(f.filesize)}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <select className={styles.selectDisabled} disabled>
-                <option>{isFetching ? 'Đang tải danh sách...' : 'Nhập link để xem chất lượng'}</option>
-              </select>
-            )}
-          </div>
-        )}
-
-        {/* Subtitles (dynamic) */}
-        {downloadSubtitle && (
-          <div className={styles.subSection}>
-            <label className={styles.subHeader}>
-              <Scissors size={13} /> Subtitles
-            </label>
-            <div className={styles.subAllRow}>
-              <Checkbox label="Tải tất cả (all)" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
-              {downloadAllSubs && (
-                <span className={styles.successText}>Sub sẽ tải: all</span>
-              )}
-            </div>
-
-            {!downloadAllSubs && allLangs.length > 0 ? (
-              <div className={styles.subLangsRow}>
-                {allLangs.map(lang => (
-                  <button
-                    key={lang}
-                    onClick={() => toggleLang(lang)}
-                    className={`${styles.subLangButton} ${selectedSubLangs.includes(lang) ? styles.subLangButtonActive : ''}`}
-                  >
-                    {lang}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {!downloadAllSubs && allLangs.length === 0 && (
-              <div className={styles.subManualRow}>
-                <Input
-                  value={manualSubLangs}
-                  onChange={e => setManualSubLangs(e.target.value)}
-                  placeholder="vd: vi,en,all"
-                />
-                <p className={styles.helperTextMuted}>
-                  Không lấy được danh sách subtitle. Nhập tay ngôn ngữ để tải.
-                </p>
-              </div>
-            )}
-
-            {allLangs.length === 0 && (
-              <p className={styles.helperTextMuted}>{isFetching ? 'Đang tải...' : 'Nhập link để xem subtitle có sẵn'}</p>
-            )}
-            <div className={styles.subFormatRow}>
-              <label className={styles.subFormatLabel}>Định dạng:</label>
-              <select
-                className={styles.subFormatSelect}
-                value={convertSubs}
-                onChange={e => setConvertSubs(e.target.value)}
-              >
-                <option value="srt">srt</option>
-                <option value="vtt">vtt</option>
-                <option value="ass">ass</option>
-              </select>
-            </div>
-            <div className={styles.subDanmakuRow}>
-              <Checkbox
-                label="Bỏ qua danmaku khi convert"
-                checked={skipDanmakuConvert}
-                onChange={setSkipDanmakuConvert}
-              />
-              {skipDanmakuConvert && (resolvedSubLangs.includes('danmaku') || resolvedSubLangs.includes('all')) && (
-                <span className={styles.warningText}>Có danmaku → bỏ convert để tránh lỗi</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Cookie + Actions */}
-        <div className={styles.cookieRow}>
-          <Checkbox label="Dùng cookie" checked={useCookie} onChange={setUseCookie} />
-          <button
-            onClick={() => setShowCookieManager(true)}
-            className={styles.cookieLink}
-          >
-            <Cookie size={12} /> Quản lý cookie
-          </button>
-        </div>
-
-        <div className={styles.actionRow}>
+        <div className={styles.toolbarActions}>
           {status === 'running' ? (
             <Button variant="danger" onClick={handleStop}>
               <StopCircle size={15} /> Dừng
@@ -1050,139 +778,472 @@ export const DownloaderPage = () => {
             <RefreshCcw size={15} /> Clear
           </Button>
         </div>
+      </div>
 
-        {/* Progress */}
-        <div className={styles.progressCard}>
-          <div className={styles.progressHeader}>
-            <span className={styles.sectionLabel}>Tiến trình</span>
-            <span className={styles.stageLabel}>{stageLabel}</span>
-          </div>
-          {mode === 'multi' && (
-            <div className={styles.progressMeta}>
-              Link hiện tại: {activeQueueId ? (queue.findIndex(i => i.id === activeQueueId) + 1) : 0}/{queue.length || multiUrls.length}
-            </div>
-          )}
-          {progressInfo?.currentFile && (
-            <div className={styles.helperTextMuted}>
-              File: {progressInfo.currentFile}
-            </div>
-          )}
-          <div className={styles.progressBar}>
-            <div
-              className={styles.progressBarFill}
-              style={{ width: `${Math.max(0, Math.min(100, progressInfo?.percent ?? 0))}%` }}
-            />
-          </div>
-          <div className={styles.progressDetailRow}>
-            {progressInfo?.percent != null && (
-              <span>{Math.round(progressInfo.percent)}%</span>
-            )}
-            {progressInfo?.downloadedBytes != null && progressInfo?.totalBytes != null && (
-              <span>{formatBytes(progressInfo.downloadedBytes)} / {formatBytes(progressInfo.totalBytes)}</span>
-            )}
-            {progressInfo?.speedBytes
-              ? <span>{formatBytes(progressInfo.speedBytes)}/s</span>
-              : (progressInfo?.speed ? <span>{progressInfo.speed}</span> : null)}
-            {progressInfo?.eta && <span>ETA {progressInfo.eta}</span>}
-            {progressInfo?.message && <span>{progressInfo.message}</span>}
-          </div>
-        </div>
-
-        {/* Logs */}
-        {logs.length > 0 && (
-          <div className={styles.logsSection}>
-            <button
-              onClick={() => setShowLogs(p => !p)}
-              className={styles.logsToggle}
-            >
-              {showLogs ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              Nhật ký ({logs.length} dòng)
-            </button>
-            {showLogs && (
-              <div className={styles.logScroll}>
-                {logs.map((l, i) => (
-                  <div key={i} className={l.startsWith('ERROR') ? styles.logError : ''}>{l}</div>
-                ))}
-                <div ref={logsEndRef} />
+      <div className={styles.shell}>
+        <div className={styles.leftPane}>
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitle}><Link2 size={14} /> Nguồn tải</div>
+              <div className={styles.modeSwitch}>
+                <button
+                  className={`${styles.modeButton} ${mode === 'single' ? styles.modeButtonActive : ''}`}
+                  onClick={() => setMode('single')}
+                >
+                  Single
+                </button>
+                <button
+                  className={`${styles.modeButton} ${mode === 'multi' ? styles.modeButtonActive : ''}`}
+                  onClick={() => setMode('multi')}
+                >
+                  Multi
+                </button>
               </div>
-            )}
+            </div>
+            <div className={styles.panelBody}>
+              {mode === 'single' ? (
+                <div className={styles.fieldRow}>
+                  <Input
+                    value={url}
+                    onChange={e => handleUrlChange(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=… hoặc bilibili.com/video/…"
+                  />
+                  <Button onClick={handlePaste} variant="secondary">Paste</Button>
+                </div>
+              ) : (
+                <div className={styles.textareaRow}>
+                  <textarea
+                    className={styles.urlTextarea}
+                    rows={5}
+                    value={multiText}
+                    onChange={e => setMultiText(e.target.value)}
+                    placeholder="Mỗi dòng 1 link..."
+                  />
+                  <div className={styles.inlineRow}>
+                    <Button onClick={handlePaste} variant="secondary">Paste</Button>
+                    <span className={styles.helperTextMuted}>{multiUrls.length} link</span>
+                  </div>
+                </div>
+              )}
+              {fetchError && <p className={styles.errorText}>{fetchError}</p>}
+              {cookieFoundDomain && (
+                <p className={styles.warningText}>Cookie cho <b>{cookieFoundDomain}</b> sẽ được dùng nếu bật</p>
+              )}
+            </div>
           </div>
-        )}
+
+          {mode === 'multi' && (
+            <div className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div className={styles.panelTitle}><ListOrdered size={14} /> Queue</div>
+                <span className={styles.panelMeta}>{multiUrls.length} link</span>
+              </div>
+              <div className={styles.queueTable}>
+                <div className={styles.queueHeader}>
+                  <span>Trạng thái</span>
+                  <span>Video</span>
+                  <span>Thư mục</span>
+                  <span>Hành động</span>
+                </div>
+                <div className={styles.queueBody}>
+                  {(queue.length > 0 ? queue : (multiUrls.map((u, idx) => ({
+                    id: `draft_${idx}`,
+                    url: u,
+                    status: 'queued' as QueueStatus,
+                  })) as QueueItem[])).map(item => {
+                    const isActive = item.url === previewUrl
+                    const statusTone = item.status === 'done'
+                      ? styles.queueStatusDone
+                      : item.status === 'error'
+                        ? styles.queueStatusError
+                        : item.status === 'running'
+                          ? styles.queueStatusRunning
+                          : item.status === 'stopped'
+                            ? styles.queueStatusStopped
+                            : styles.queueStatusQueued
+
+                    return (
+                      <div key={item.id} className={`${styles.queueRow} ${isActive ? styles.queueRowActive : ''}`}>
+                        <span className={`${styles.queueStatus} ${statusTone}`}>{item.status}</span>
+                        <div className={styles.queueMain}>
+                          <div className={styles.queueTitle}>{item.title || item.url}</div>
+                          {item.progress?.percent != null && item.status === 'running' && (
+                            <div className={styles.queueProgress}>{Math.round(item.progress.percent)}%</div>
+                          )}
+                          {item.error && <div className={styles.queueError}>{item.error}</div>}
+                        </div>
+                        <div className={styles.queueOutput}>{item.outputDir || '—'}</div>
+                        <div className={styles.queueActions}>
+                          <Button variant="secondary" onClick={() => handlePreviewUrlChange(item.url)} disabled={status === 'running'}>
+                            Preview
+                          </Button>
+                          {item.outputDir && (
+                            <Button variant="secondary" onClick={() => api().openOutputDir(item.outputDir!)}>
+                              <FolderOpen size={12} />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitle}><Cookie size={14} /> Cookie</div>
+            </div>
+            <div className={styles.panelBody}>
+              <div className={styles.inlineRow}>
+                <Checkbox label="Dùng cookie" checked={useCookie} onChange={setUseCookie} />
+                <button
+                  onClick={() => setShowCookieManager(true)}
+                  className={styles.linkButton}
+                >
+                  Quản lý cookie
+                </button>
+              </div>
+              {cookieFoundDomain && (
+                <p className={styles.helperTextMuted}>Đã phát hiện cookie cho {cookieFoundDomain}</p>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Preview Column */}
-        <div className={styles.previewColumn}>
-          <div className={styles.previewCard}>
-            <div className={styles.previewHeader}>
-              <Video size={14} /> Preview
+        <div className={styles.centerPane}>
+          <div className={`${styles.panel} ${styles.optionPanel}`}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitle}><Download size={14} /> Tuỳ chọn tải</div>
+              <span className={styles.panelMeta}>{mode === 'multi' ? `${multiUrls.length} link` : 'Single'}</span>
             </div>
-            {mode === 'multi' && activeUrl && (
-              <div className={styles.previewUrl}>{activeUrl}</div>
-            )}
-            {embedInfo.embedUrl ? (
-              <div className={styles.previewEmbedWrap}>
-                <iframe
-                  src={embedInfo.embedUrl}
-                  className={styles.iframeFill}
-                  allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  title="Video preview"
+            <div className={`${styles.panelBody} ${styles.optionPanelBody}`}>
+              <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Thư mục lưu</label>
+                <div className={styles.fieldRow}>
+                  <Input
+                    value={outputDir}
+                    onChange={e => setOutputDir(e.target.value)}
+                    placeholder="D:\Downloads\..."
+                  />
+                  <Button variant="secondary" onClick={handleOpenDir} title="Mở thư mục">
+                    <FolderOpen size={14} />
+                  </Button>
+                </div>
+                {mode === 'single' && lastResolvedOutputDir && (
+                  <div className={styles.outputActualRow}>
+                    <span className={styles.helperTextMuted}>Thư mục thực tế:</span>
+                    <span className={styles.monoText}>{lastResolvedOutputDir}</span>
+                    <Button variant="secondary" onClick={() => api().openOutputDir(lastResolvedOutputDir)}>
+                      <FolderOpen size={12} />
+                    </Button>
+                  </div>
+                )}
+                {mode === 'multi' && (
+                  <div className={styles.helperTextMuted}>Mỗi link sẽ lưu vào một thư mục con riêng.</div>
+                )}
+              </div>
+
+              <div className={styles.sectionDivider} />
+
+              <div className={styles.fieldGroup}>
+                <div className={styles.fieldLabel}>Loại tải</div>
+                <div className={styles.toggleRow}>
+                  <Checkbox label="Video" checked={downloadVideo} onChange={setDownloadVideo} />
+                  <Checkbox label="Subtitles" checked={downloadSubtitle} onChange={setDownloadSubtitle} />
+                  <Checkbox label="Thumbnail" checked={downloadThumbnail} onChange={setDownloadThumbnail} />
+                </div>
+              </div>
+
+              <div className={styles.fieldGroup}>
+                <div className={styles.inlineRow}>
+                  <Checkbox label="Tải playlist (nếu có)" checked={allowPlaylist} onChange={setAllowPlaylist} />
+                  <Button
+                    variant="secondary"
+                    onClick={handleCheckPlaylist}
+                    disabled={!activeUrl.trim().startsWith('http') || isCheckingPlaylist || status === 'running'}
+                  >
+                    {isCheckingPlaylist ? <Loader2 size={13} className={styles.spin} /> : <ListOrdered size={13} />}
+                    Kiểm tra playlist
+                  </Button>
+                  {playlistInfo && playlistInfo.entryCount > 1 && (
+                    <span className={styles.successText}>
+                      <CheckCircle2 size={12} /> Playlist: {playlistInfo.entryCount} video
+                    </span>
+                  )}
+                </div>
+                {playlistInfo && (
+                  <div className={styles.playlistInfoBox}>
+                    <div className={styles.playlistTitle}>{playlistInfo.title}</div>
+                    {playlistInfo.entries.length > 0 && (
+                      <div className={styles.playlistEntries}>
+                        {playlistInfo.entries.map((e, idx) => (
+                          <div key={`${e.id || idx}`} className={styles.playlistEntry}>• {e.title || e.id || e.url || 'item'}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {playlistError && <p className={styles.errorText}>{playlistError}</p>}
+              </div>
+
+              {downloadVideo && (
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Chất lượng video</label>
+                  {videoInfo && videoInfo.formats.length > 0 ? (
+                    <select
+                      className={styles.selectInput}
+                      value={selectedFormatId}
+                      onChange={e => setSelectedFormatId(e.target.value)}
+                    >
+                      {videoInfo.formats.map((f: VideoFormat) => (
+                        <option key={f.id} value={f.id}>
+                          {f.resolution} — {f.ext.toUpperCase()}{f.note ? ` (${f.note})` : ''}{formatSize(f.filesize)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select className={styles.selectDisabled} disabled>
+                      <option>{isFetching ? 'Đang tải danh sách...' : 'Nhập link để xem chất lượng'}</option>
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {downloadSubtitle && (
+                <div className={styles.fieldGroup}>
+                  <div className={styles.fieldLabel}>
+                    <Scissors size={13} /> Subtitles
+                  </div>
+                  <div className={styles.inlineRow}>
+                    <Checkbox label="Tải tất cả (all)" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
+                    {downloadAllSubs && (
+                      <span className={styles.successText}>Sub sẽ tải: all</span>
+                    )}
+                  </div>
+
+                  {!downloadAllSubs && allLangs.length > 0 ? (
+                    <div className={styles.subLangsRow}>
+                      {allLangs.map(lang => (
+                        <button
+                          key={lang}
+                          onClick={() => toggleLang(lang)}
+                          className={`${styles.subLangButton} ${selectedSubLangs.includes(lang) ? styles.subLangButtonActive : ''}`}
+                        >
+                          {lang}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {!downloadAllSubs && allLangs.length === 0 && (
+                    <div className={styles.subManualRow}>
+                      <Input
+                        value={manualSubLangs}
+                        onChange={e => setManualSubLangs(e.target.value)}
+                        placeholder="vd: vi,en,all"
+                      />
+                      <p className={styles.helperTextMuted}>
+                        Không lấy được danh sách subtitle. Nhập tay ngôn ngữ để tải.
+                      </p>
+                    </div>
+                  )}
+
+                  {allLangs.length === 0 && (
+                    <p className={styles.helperTextMuted}>{isFetching ? 'Đang tải...' : 'Nhập link để xem subtitle có sẵn'}</p>
+                  )}
+                  <div className={styles.subFormatRow}>
+                    <label className={styles.subFormatLabel}>Định dạng:</label>
+                    <select
+                      className={styles.subFormatSelect}
+                      value={convertSubs}
+                      onChange={e => setConvertSubs(e.target.value)}
+                    >
+                      <option value="srt">srt</option>
+                      <option value="vtt">vtt</option>
+                      <option value="ass">ass</option>
+                    </select>
+                  </div>
+                  <div className={styles.inlineRow}>
+                    <Checkbox
+                      label="Bỏ qua danmaku khi convert"
+                      checked={skipDanmakuConvert}
+                      onChange={setSkipDanmakuConvert}
+                    />
+                    {skipDanmakuConvert && (resolvedSubLangs.includes('danmaku') || resolvedSubLangs.includes('all')) && (
+                      <span className={styles.warningText}>Có danmaku → bỏ convert để tránh lỗi</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitle}><Loader2 size={14} /> Tiến trình</div>
+              <span className={styles.stageLabel}>{stageLabel}</span>
+            </div>
+            <div className={styles.panelBody}>
+              {mode === 'multi' && (
+                <div className={styles.progressMeta}>
+                  Link hiện tại: {activeQueueId ? (queue.findIndex(i => i.id === activeQueueId) + 1) : 0}/{queue.length || multiUrls.length}
+                </div>
+              )}
+              {progressInfo?.currentFile && (
+                <div className={styles.helperTextMuted}>
+                  File: {progressInfo.currentFile}
+                </div>
+              )}
+              <div className={styles.progressBar}>
+                <div
+                  className={styles.progressBarFill}
+                  style={{ width: `${Math.max(0, Math.min(100, progressInfo?.percent ?? 0))}%` }}
                 />
               </div>
-            ) : (
-              <div className={styles.subSection}>
-                {previewLoading && (
-                  <div className={styles.previewPlaceholder}>
-                    <Loader2 size={14} className={styles.spin} />
-                    <span>Đang tải preview...</span>
-                  </div>
+              <div className={styles.progressDetailRow}>
+                {progressInfo?.percent != null && (
+                  <span>{Math.round(progressInfo.percent)}%</span>
                 )}
-                {!previewLoading && previewDirectUrl && (
-                  <video
-                    className={styles.previewEmbedWrap}
-                    src={previewDirectUrl}
-                    controls
-                    preload="metadata"
-                  />
+                {progressInfo?.downloadedBytes != null && progressInfo?.totalBytes != null && (
+                  <span>{formatBytes(progressInfo.downloadedBytes)} / {formatBytes(progressInfo.totalBytes)}</span>
                 )}
-                {!previewLoading && !previewDirectUrl && (
-                  <div className={styles.previewPlaceholder}>
-                    <span>{previewError ? 'Không thể preview video' : 'Không hỗ trợ nhúng preview'}</span>
-                    {previewError && <span className={styles.errorText}>{previewError}</span>}
-                    <div className={styles.actionRow}>
-                      <Button variant="secondary" onClick={() => loadPreviewUrl(activeUrl)} disabled={!activeUrl.trim()}>
-                        Thử lại preview
-                      </Button>
-                      <Button variant="secondary" onClick={handleOpenLink} disabled={!activeUrl.trim()}>
-                        Mở link
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                {progressInfo?.speedBytes
+                  ? <span>{formatBytes(progressInfo.speedBytes)}/s</span>
+                  : (progressInfo?.speed ? <span>{progressInfo.speed}</span> : null)}
+                {progressInfo?.eta && <span>ETA {progressInfo.eta}</span>}
+                {progressInfo?.message && <span>{progressInfo.message}</span>}
               </div>
-            )}
-            {videoInfo && (
-              <div className={styles.previewInfo}>
-                <div className={styles.previewTitle}>{videoInfo.title}</div>
-                {videoInfo.uploader && <div>{videoInfo.uploader}</div>}
-                {videoInfo.duration && <div>{formatDuration(videoInfo.duration)}</div>}
-              </div>
-            )}
+            </div>
           </div>
 
-          {downloadThumbnail && videoInfo?.thumbnail && (
-            <div className={styles.thumbnailCard}>
-              <div className={styles.previewHeader}>
-                <Image size={14} /> Thumbnail
+          {logs.length > 0 && (
+            <div className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div className={styles.panelTitle}>Nhật ký</div>
+                <button
+                  onClick={() => setShowLogs(p => !p)}
+                  className={styles.linkButton}
+                >
+                  {showLogs ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {showLogs ? 'Ẩn log' : `Xem log (${logs.length})`}
+                </button>
               </div>
-              <img
-                src={videoInfo.thumbnail}
-                alt="thumbnail"
-                className={styles.thumbnailImage}
-              />
-              <div className={styles.helperTextMuted}>Thumbnail sẽ được tải</div>
+              {showLogs && (
+                <div className={styles.logScroll}>
+                  {logs.map((l, i) => (
+                    <div key={i} className={l.startsWith('ERROR') ? styles.logError : ''}>{l}</div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              )}
             </div>
           )}
+        </div>
+
+        <div className={styles.rightPane}>
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitle}><Video size={14} /> Preview</div>
+              {downloadThumbnail && (
+                <div className={styles.tabRow}>
+                  <button
+                    className={`${styles.tabButton} ${activePreviewTab === 'video' ? styles.tabButtonActive : ''}`}
+                    onClick={() => setPreviewTab('video')}
+                  >
+                    Video
+                  </button>
+                  <button
+                    className={`${styles.tabButton} ${activePreviewTab === 'thumbnail' ? styles.tabButtonActive : ''} ${!hasThumbnailPreview ? styles.tabButtonDisabled : ''}`}
+                    onClick={() => setPreviewTab('thumbnail')}
+                    disabled={!hasThumbnailPreview}
+                  >
+                    Thumbnail
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className={styles.panelBody}>
+              {mode === 'multi' && activeUrl && (
+                <div className={styles.helperTextMuted}>{activeUrl}</div>
+              )}
+              {activePreviewTab === 'thumbnail' ? (
+                hasThumbnailPreview ? (
+                  <img
+                    src={videoInfo?.thumbnail}
+                    alt="thumbnail"
+                    className={styles.thumbnailImage}
+                  />
+                ) : (
+                  <div className={styles.previewPlaceholder}>Chưa có thumbnail để hiển thị</div>
+                )
+              ) : (
+                <>
+                  {embedInfo.embedUrl ? (
+                    <div className={styles.previewFrame}>
+                      <iframe
+                        src={embedInfo.embedUrl}
+                        className={styles.iframeFill}
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title="Video preview"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {previewLoading && (
+                        <div className={styles.previewPlaceholder}>
+                          <Loader2 size={14} className={styles.spin} />
+                          <span>Đang tải preview...</span>
+                        </div>
+                      )}
+                      {!previewLoading && previewDirectUrl && (
+                        <video
+                          className={styles.previewFrame}
+                          src={previewDirectUrl}
+                          controls
+                          preload="metadata"
+                        />
+                      )}
+                      {!previewLoading && !previewDirectUrl && (
+                        <div className={styles.previewPlaceholder}>
+                          <span>{previewError ? 'Không thể preview video' : 'Không hỗ trợ nhúng preview'}</span>
+                          {previewError && <span className={styles.errorText}>{previewError}</span>}
+                          <div className={styles.actionRow}>
+                            <Button variant="secondary" onClick={() => loadPreviewUrl(activeUrl)} disabled={!activeUrl.trim()}>
+                              Thử lại preview
+                            </Button>
+                            <Button variant="secondary" onClick={handleOpenLink} disabled={!activeUrl.trim()}>
+                              Mở link
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              <div className={styles.metaGrid}>
+                <div className={styles.metaRow}>
+                  <span className={styles.metaLabel}>Title</span>
+                  <span className={styles.metaValue}>{videoInfo?.title || '—'}</span>
+                </div>
+                <div className={styles.metaRow}>
+                  <span className={styles.metaLabel}>Uploader</span>
+                  <span className={styles.metaValue}>{videoInfo?.uploader || '—'}</span>
+                </div>
+                <div className={styles.metaRow}>
+                  <span className={styles.metaLabel}>Duration</span>
+                  <span className={styles.metaValue}>{videoInfo?.duration ? formatDuration(videoInfo.duration) : '—'}</span>
+                </div>
+              </div>
+              {downloadThumbnail && (
+                <div className={styles.helperTextMuted}>Thumbnail sẽ được tải khi chạy</div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
