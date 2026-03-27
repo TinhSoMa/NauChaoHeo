@@ -12,6 +12,7 @@ import { createRotationQueueApi, RotationQueueAPI } from './rotationQueueApi'
 import { appLogsApi, AppLogsAPI } from './appLogsApi'
 import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
 import { grokUiApi, GrokUiAPI } from './grokUiApi'
+import { downloaderApi, DownloaderAPI } from './downloaderApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -77,6 +78,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Rotation Queue Inspector API
   rotationQueue: createRotationQueueApi(),
+
+  // Downloader API (yt-dlp)
+  downloader: downloaderApi,
 })
 
 // Declare types for the exposed API
@@ -104,6 +108,7 @@ declare global {
       captionVideo: CaptionVideoAPI
       cutVideo: CutVideoAPI
       rotationQueue: RotationQueueAPI
+      downloader: DownloaderAPI
     }
   }
 }

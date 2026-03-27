@@ -1,0 +1,469 @@
+@reference "tailwindcss";
+@config "../../../tailwind.config.cjs";
+
+.page {
+  @apply max-w-6xl mx-auto space-y-6;
+}
+
+.headerRow {
+  @apply flex items-center justify-between;
+}
+
+.headerLeft {
+  @apply flex items-center gap-3;
+}
+
+.headerIcon {
+  @apply h-9 w-9 rounded-xl bg-linear-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center shrink-0;
+}
+
+.headerTitle {
+  @apply text-lg font-semibold text-text-primary leading-tight;
+}
+
+.headerSubtitle {
+  @apply text-xs text-text-muted;
+}
+
+.statusBadge {
+  @apply px-3 py-1 rounded-full text-xs border max-w-xs truncate;
+}
+
+.statusFetching {
+  @apply flex items-center gap-1;
+}
+
+.statusRunning {
+  @apply bg-amber-500/15 text-amber-400 border-amber-500/40;
+}
+
+.statusError {
+  @apply bg-red-500/15 text-red-400 border-red-500/40;
+}
+
+.statusDone {
+  @apply bg-emerald-500/15 text-emerald-400 border-emerald-500/40;
+}
+
+.statusReady {
+  @apply bg-sky-500/15 text-sky-400 border-sky-500/40;
+}
+
+.statusIdle {
+  @apply bg-slate-500/15 text-slate-400 border-slate-500/40;
+}
+
+.mainGrid {
+  @apply grid gap-6 lg:grid-cols-[1.25fr_1fr];
+}
+
+.card {
+  @apply rounded-2xl border border-border bg-card p-5 space-y-5;
+}
+
+.sectionDivider {
+  @apply border-t border-border;
+}
+
+.sectionLabel {
+  @apply text-xs font-medium text-text-secondary;
+}
+
+.urlSection {
+  @apply space-y-2;
+}
+
+.urlHeaderRow {
+  @apply flex items-center justify-between gap-3;
+}
+
+.urlLabel {
+  @apply flex items-center gap-1.5 text-xs font-medium text-text-secondary;
+}
+
+.modeSwitch {
+  @apply flex items-center gap-1 rounded-full border border-border bg-surface p-0.5 text-xs;
+}
+
+.modeButton {
+  @apply px-2.5 py-1 rounded-full text-text-muted;
+}
+
+.modeButtonActive {
+  @apply bg-primary/20 text-primary;
+}
+
+.urlInputRow {
+  @apply flex gap-2;
+}
+
+.urlTextarea {
+  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs font-mono resize-y;
+}
+
+.urlTextareaRow {
+  @apply space-y-2;
+}
+
+.urlTextareaMeta {
+  @apply flex items-center gap-2;
+}
+
+.helperTextMuted {
+  @apply text-xs text-text-muted;
+}
+
+.errorText {
+  @apply text-xs text-red-400;
+}
+
+.warningText {
+  @apply text-xs text-amber-400;
+}
+
+.outputSection {
+  @apply space-y-1.5;
+}
+
+.outputRow {
+  @apply flex gap-2;
+}
+
+.outputActualRow {
+  @apply flex items-center gap-2 text-xs text-text-muted;
+}
+
+.monoText {
+  @apply font-mono truncate;
+}
+
+.downloadTypeSection {
+  @apply space-y-2.5;
+}
+
+.downloadTypeRow {
+  @apply flex flex-wrap gap-x-5 gap-y-2;
+}
+
+.selectInput {
+  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm;
+}
+
+.selectDisabled {
+  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm opacity-60;
+}
+
+.subSection {
+  @apply space-y-2;
+}
+
+.subHeader {
+  @apply flex items-center gap-1.5 text-xs font-medium text-text-secondary;
+}
+
+.subLangsRow {
+  @apply flex flex-wrap gap-2;
+}
+
+.subLangButton {
+  @apply px-2.5 py-1 rounded-lg text-xs border transition-colors border-border text-text-muted hover:border-border-hover;
+}
+
+.subLangButtonActive {
+  @apply bg-primary/20 border-primary text-primary;
+}
+
+.subAllRow {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.subManualRow {
+  @apply space-y-1;
+}
+
+.subFormatRow {
+  @apply flex items-center gap-2;
+}
+
+.subFormatLabel {
+  @apply text-xs text-text-secondary;
+}
+
+.subFormatSelect {
+  @apply rounded-lg border border-border bg-surface px-2 py-1 text-xs;
+}
+
+.subDanmakuRow {
+  @apply flex items-center gap-2;
+}
+
+.cookieRow {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.cookieLink {
+  @apply flex items-center gap-1 text-xs text-text-muted hover:text-text-secondary transition-colors;
+}
+
+.actionRow {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.progressCard {
+  @apply rounded-xl border border-border bg-surface/60 p-3 space-y-2;
+}
+
+.progressHeader {
+  @apply flex items-center justify-between text-xs;
+}
+
+.progressMeta {
+  @apply text-xs text-text-muted;
+}
+
+.progressBar {
+  @apply w-full h-2 bg-surface rounded-full overflow-hidden;
+}
+
+.progressBarFill {
+  @apply h-full bg-emerald-500 transition-all duration-300;
+}
+
+.progressDetailRow {
+  @apply flex flex-wrap items-center gap-3 text-xs text-text-muted;
+}
+
+.logsSection {
+  @apply space-y-1;
+}
+
+.logsToggle {
+  @apply flex items-center gap-1 text-xs text-text-muted hover:text-text-secondary;
+}
+
+.logScroll {
+  @apply max-h-48 overflow-y-auto rounded-lg border border-border bg-surface/60 p-3 text-xs font-mono text-text-muted space-y-0.5;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.logScroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.previewColumn {
+  @apply space-y-5;
+}
+
+.previewCard {
+  @apply rounded-2xl border border-border bg-card p-4 space-y-3;
+}
+
+.previewHeader {
+  @apply flex items-center gap-2 text-xs font-medium text-text-secondary;
+}
+
+.previewUrl {
+  @apply text-xs text-text-muted truncate;
+}
+
+.previewEmbedWrap {
+  @apply aspect-video w-full overflow-hidden rounded-xl border border-border bg-black;
+}
+
+.previewPlaceholder {
+  @apply aspect-video w-full rounded-xl border border-dashed border-border flex flex-col items-center justify-center text-xs text-text-muted gap-2;
+}
+
+.previewInfo {
+  @apply text-xs text-text-muted space-y-1;
+}
+
+.previewTitle {
+  @apply text-text-primary font-medium;
+}
+
+.thumbnailCard {
+  @apply rounded-2xl border border-border bg-card p-4 space-y-2;
+}
+
+.thumbnailImage {
+  @apply w-full rounded-xl object-cover;
+}
+
+.queueSection {
+  @apply space-y-2;
+}
+
+.queueList {
+  @apply space-y-2 max-h-48 overflow-y-auto;
+}
+
+.queueItem {
+  @apply flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs border-border bg-surface/60;
+}
+
+.queueItemActive {
+  @apply border-primary/60 bg-primary/5;
+}
+
+.queueItemInfo {
+  @apply min-w-0;
+}
+
+.queueItemTitle {
+  @apply truncate text-text-primary;
+}
+
+.queueItemOutput {
+  @apply truncate text-text-muted font-mono;
+}
+
+.queueItemPercent {
+  @apply text-text-muted;
+}
+
+.queueItemError {
+  @apply text-red-400;
+}
+
+.queueItemActions {
+  @apply flex items-center gap-2 shrink-0;
+}
+
+.queueStatus {
+  @apply px-2 py-0.5 rounded-full border;
+}
+
+.queueStatusDone {
+  @apply text-emerald-400 border-emerald-500/40 bg-emerald-500/10;
+}
+
+.queueStatusError {
+  @apply text-red-400 border-red-500/40 bg-red-500/10;
+}
+
+.queueStatusRunning {
+  @apply text-amber-400 border-amber-500/40 bg-amber-500/10;
+}
+
+.queueStatusStopped {
+  @apply text-slate-400 border-slate-500/40 bg-slate-500/10;
+}
+
+.queueStatusQueued {
+  @apply text-text-muted border-border bg-surface;
+}
+
+.playlistInfoBox {
+  @apply rounded-lg border border-border bg-surface/60 p-2 text-xs text-text-muted space-y-1;
+}
+
+.playlistTitle {
+  @apply text-text-primary font-medium;
+}
+
+.playlistEntry {
+  @apply truncate;
+}
+
+.playlistEntries {
+  @apply space-y-0.5;
+}
+
+.hiddenInput {
+  @apply hidden;
+}
+
+.spin {
+  @apply animate-spin;
+}
+
+.iframeFill {
+  @apply h-full w-full;
+}
+
+.iconAccent {
+  @apply text-emerald-400;
+}
+
+.iconWarning {
+  @apply text-amber-400;
+}
+
+.modalOverlay {
+  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm;
+}
+
+.modalCard {
+  @apply bg-card border border-border rounded-2xl p-6 w-full max-w-lg space-y-5 shadow-2xl;
+}
+
+.modalHeader {
+  @apply flex items-center justify-between;
+}
+
+.modalTitle {
+  @apply flex items-center gap-2 font-semibold text-text-primary;
+}
+
+.modalClose {
+  @apply text-text-muted hover:text-text-primary text-lg leading-none;
+}
+
+.cookieList {
+  @apply space-y-2 max-h-40 overflow-y-auto;
+}
+
+.cookieItem {
+  @apply flex items-center justify-between rounded-lg border border-border bg-surface px-3 py-2 text-xs;
+}
+
+.cookieDomain {
+  @apply font-medium text-text-primary;
+}
+
+.cookieLabel {
+  @apply text-text-muted ml-2;
+}
+
+.cookieDelete {
+  @apply text-red-400 hover:text-red-300;
+}
+
+.newCookieBox {
+  @apply space-y-2 rounded-xl border border-dashed border-border p-4;
+}
+
+.newCookieTitle {
+  @apply text-xs font-medium text-text-secondary mb-1;
+}
+
+.fileRow {
+  @apply flex gap-2 items-center;
+}
+
+.fileLoaded {
+  @apply text-xs text-emerald-400;
+}
+
+.cookieTextarea {
+  @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs font-mono resize-y;
+}
+
+.logError {
+  @apply text-red-400;
+}
+
+.stageLabel {
+  @apply text-text-primary;
+}
+
+.successText {
+  @apply text-xs text-emerald-400;
+}
+
+.successRow {
+  @apply flex items-center gap-1 text-xs text-emerald-400;
+}

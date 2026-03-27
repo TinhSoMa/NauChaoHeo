@@ -54,3 +54,4 @@ THIRD_PARTY_PYTHON.md
 .grok3api_profile
 __pycache__
 cookie.txt
+resources/yt-dlp/win64/yt-dlp.exe

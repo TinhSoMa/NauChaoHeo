@@ -6,6 +6,7 @@ import { StoryTranslatorWeb } from '../story/StoryTranslatorWeb'
 import { GeminiChat } from '../gemini'
 import { Settings } from '../settings/Settings'
 import { Veo3Page } from '../veo3/Veo3Page'
+import { DownloaderPage } from '../downloader/DownloaderPage'
 import { useTabManager, TabId } from '../../context/TabContext'
 
 interface TabEntry {
@@ -21,6 +22,7 @@ const TAB_ENTRIES: TabEntry[] = [
   { id: 'storyWeb', element: <StoryTranslatorWeb /> },
   { id: 'gemini', element: <GeminiChat /> },
   { id: 'veo3', element: <Veo3Page /> },
+  { id: 'downloader', element: <DownloaderPage /> },
   { id: 'settings', element: <Settings /> }
 ]
 

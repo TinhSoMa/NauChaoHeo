@@ -17,6 +17,7 @@ import { registerRotationQueueHandlers } from './rotationQueueHandlers';
 import { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 import { registerAppLogHandlers } from './appLogHandlers';
 import { registerGrokUiHandlers } from './grokUiHandlers';
+import { registerDownloaderHandlers } from './downloaderHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -66,6 +67,9 @@ export function registerAllHandlers(): void {
 
   // Đăng ký Rotation Queue inspector handlers (feature-flagged)
   registerRotationQueueHandlers();
+
+  // Đăng ký Downloader handlers (yt-dlp)
+  registerDownloaderHandlers();
 
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }

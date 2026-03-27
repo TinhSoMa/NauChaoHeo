@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Scissors } from 'lucide-react';
+import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Scissors, Download } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -52,6 +52,7 @@ export const Sidebar = () => {
     { icon: MessageCircle, label: 'Dich Truyen (Web)', path: '/story-web' },
     { icon: MessageCircle, label: 'Chat Gemini', path: '/gemini-chat' },
     { icon: Video, label: 'Veo3 AI Prompt', path: '/veo3' },
+    { icon: Download, label: 'Downloader', path: '/downloader' },
   ];
 
   const bottomItems = [

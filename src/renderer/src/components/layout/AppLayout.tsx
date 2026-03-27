@@ -13,6 +13,7 @@ const TAB_BY_PATH: Record<string, TabId> = {
   '/story-web': 'storyWeb',
   '/gemini-chat': 'gemini',
   '/veo3': 'veo3',
+  '/downloader': 'downloader',
   '/settings': 'settings'
 }
 

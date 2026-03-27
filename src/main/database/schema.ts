@@ -753,5 +753,18 @@ export function initDatabase(): void {
     ON caption_gemini_web_conversation(updated_at);
   `);
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation)');
+
+  // Create downloader_cookies table  one Netscape cookie file per domain
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS downloader_cookies (
+      id         TEXT PRIMARY KEY,
+      domain     TEXT NOT NULL UNIQUE,
+      label      TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      enabled    INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies)');
 }

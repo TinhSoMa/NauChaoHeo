@@ -32,6 +32,10 @@ extraResources:
     to: fonts
     filter:
       - "**/*"
+  - from: resources/yt-dlp/win64
+    to: yt-dlp
+    filter:
+      - "**/*"
   - from: resources/python/win32-x64/runtime
     to: python
     filter:
