@@ -17,6 +17,8 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   language: 'vi' | 'en';
   projectsBasePath: string | null;
+  renderVideoOutputDir: string | null;
+  useRenderVideoOutputDir: boolean;
   recentProjectIds: string[]; // IDs của các project gần đây, tối đa 10
   lastActiveProjectId: string | null; // Project cuối cùng được chọn
   useProxy: boolean; // Bật/tắt sử dụng proxy cho API calls
@@ -551,6 +553,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   language: 'vi',
   projectsBasePath: null,
+  renderVideoOutputDir: null,
+  useRenderVideoOutputDir: false,
   recentProjectIds: [],
   lastActiveProjectId: null,
   useProxy: true, // Mặc định bật proxy

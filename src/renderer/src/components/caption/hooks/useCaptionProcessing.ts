@@ -3981,7 +3981,20 @@ export function useCaptionProcessing({
           cfg.renderContainer || 'mp4',
           thumbnailTextForRender
         );
-        const renderOutputDir = resolveRenderOutputDir(inputType, currentPath, finalVideoInputPath);
+        let renderOutputDir = resolveRenderOutputDir(inputType, currentPath, finalVideoInputPath);
+        try {
+          const appSettingsRes = await window.electronAPI.appSettings.getAll();
+          const appSettings = appSettingsRes?.data as { renderVideoOutputDir?: unknown; useRenderVideoOutputDir?: unknown } | undefined;
+          const useCustom = Boolean(appSettings && appSettings.useRenderVideoOutputDir === true);
+          const customDir = appSettings && typeof appSettings.renderVideoOutputDir === 'string'
+            ? appSettings.renderVideoOutputDir.trim()
+            : '';
+          if (useCustom && customDir) {
+            renderOutputDir = customDir;
+          }
+        } catch (err) {
+          console.warn('[CaptionProcessing][Step7] Không tải được appSettings cho output dir:', err);
+        }
         const finalVideoPath = joinFilePath(renderOutputDir, finalVideoFileName);
         console.log(
           `[CaptionProcessing][Step7] Output filename: ${finalVideoFileName}, outputDir: ${renderOutputDir || '(empty)'}`

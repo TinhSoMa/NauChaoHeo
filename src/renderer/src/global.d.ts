@@ -544,6 +544,8 @@ interface ProjectAPI {
 
 interface AppSettings {
   projectsBasePath: string | null;
+  renderVideoOutputDir: string | null;
+  useRenderVideoOutputDir: boolean;
   theme: 'light' | 'dark' | 'system';
   language: 'vi' | 'en';
   recentProjectIds: string[];
