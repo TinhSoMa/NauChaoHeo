@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Scissors, Download, X, PanelLeftOpen } from 'lucide-react';
 import clsx from 'clsx';
@@ -11,6 +11,7 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
 
 
 export const Sidebar = () => {
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const [hidden, setHidden] = useState<boolean>(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -50,6 +51,19 @@ export const Sidebar = () => {
       // Ignore persistence error in renderer.
     }
   }, [collapsed, hidden]);
+
+  useEffect(() => {
+    if (hidden) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (sidebarRef.current && target && !sidebarRef.current.contains(target)) {
+        setHidden(true);
+        setCollapsed(true);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [hidden]);
 
   // Preserve query parameters (especially projectId) when navigating
   const getNavPath = (path: string) => {
@@ -95,6 +109,7 @@ export const Sidebar = () => {
 
   return (
     <aside 
+      ref={sidebarRef}
       className={cn(
         "h-screen bg-sidebar border-r border-border flex flex-col transition-all duration-300 relative",
         effectiveCollapsed ? "w-20" : "w-64"
