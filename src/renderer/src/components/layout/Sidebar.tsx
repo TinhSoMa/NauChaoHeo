@@ -78,12 +78,17 @@ export const Sidebar = () => {
   if (hidden) {
     return (
       <button
-        onClick={() => setHidden(false)}
+        onClick={() => {
+          setHidden(false);
+          setCollapsed(true);
+        }}
         title="Hiện menu"
         aria-label="Hiện menu"
-        className="group fixed left-0 top-2 z-50 flex h-16 w-2 items-center justify-center overflow-hidden rounded-r-full bg-linear-to-b from-border/80 to-border/30 transition-all duration-200 hover:w-4 hover:bg-linear-to-b hover:from-primary/40 hover:to-primary/20 hover:shadow-md hover:shadow-primary/30"
+        className="group fixed left-0 top-2 z-50 h-20 w-20 bg-transparent"
       >
-        <span className="h-10 w-0.5 rounded-full bg-border/70 transition-all duration-200 group-hover:w-1 group-hover:bg-primary/60" />
+        <span className="absolute left-0 top-2 flex h-16 w-2 items-center justify-center overflow-hidden rounded-r-full bg-linear-to-b from-border/80 to-border/30 transition-all duration-200 group-hover:w-4 group-hover:bg-linear-to-b group-hover:from-primary/40 group-hover:to-primary/20 group-hover:shadow-md group-hover:shadow-primary/30">
+          <span className="h-10 w-0.5 rounded-full bg-border/70 transition-all duration-200 group-hover:w-1 group-hover:bg-primary/60" />
+        </span>
       </button>
     );
   }
