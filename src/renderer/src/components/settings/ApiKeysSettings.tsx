@@ -46,6 +46,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
   const [pendingAccountIds, setPendingAccountIds] = useState<Set<string>>(new Set());
   const [pendingProjectKeys, setPendingProjectKeys] = useState<Set<string>>(new Set());
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [accountFilter, setAccountFilter] = useState<AccountFilter>('all');
   const [projectFilter, setProjectFilter] = useState<ProjectFilter>('all');
   const [apiWorkerInput, setApiWorkerInput] = useState('1');
@@ -345,6 +346,21 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
       .filter((acc) => acc.projects.length > 0 || projectFilter === 'all');
   }, [accountFilter, apiAccounts, projectFilter]);
 
+  useEffect(() => {
+    if (filteredAccounts.length === 0) {
+      setSelectedAccountId(null);
+      return;
+    }
+    if (!selectedAccountId || !filteredAccounts.some((acc) => acc.accountId === selectedAccountId)) {
+      setSelectedAccountId(filteredAccounts[0].accountId);
+    }
+  }, [filteredAccounts, selectedAccountId]);
+
+  const selectedAccount = useMemo(
+    () => filteredAccounts.find((acc) => acc.accountId === selectedAccountId) || null,
+    [filteredAccounts, selectedAccountId]
+  );
+
   // Calculate stats
   const totalProjects = apiAccounts.reduce((sum, acc) => sum + acc.projects.length, 0);
   const availableProjects = apiAccounts.reduce((sum, acc) => 
@@ -367,475 +383,282 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
           <ArrowLeft size={20} />
         </Button>
         <div className={styles.detailTitle}>Quản lý API Keys</div>
+        <div className={styles.apiHeaderFilters}>
+          <select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value as AccountFilter)}
+            className={styles.select}
+          >
+            <option value="all">Tất cả account</option>
+            <option value="active">Account bật</option>
+            <option value="disabled">Account tắt</option>
+          </select>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value as ProjectFilter)}
+            className={styles.select}
+          >
+            <option value="all">Tất cả key</option>
+            <option value="available">Key đang bật</option>
+            <option value="disabled">Key đã tắt</option>
+          </select>
+        </div>
+        <div className={styles.apiHeaderActions}>
+          <input
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            id="import-json-input"
+            onChange={handleImportJson}
+          />
+          <Button
+            onClick={() => document.getElementById('import-json-input')?.click()}
+            variant="secondary"
+            className={styles.apiActionButton}
+          >
+            <Upload size={16} /> Import
+          </Button>
+          <Button
+            onClick={handleExportJson}
+            variant="secondary"
+            className={styles.apiActionButton}
+          >
+            <Download size={16} /> Export
+          </Button>
+          <Button
+            onClick={handleResetAllKeyStatus}
+            variant="danger"
+            className={`${styles.apiActionButton} ${styles.apiActionDanger}`}
+          >
+            <RefreshCw size={16} /> Reset
+          </Button>
+        </div>
       </div>
       
       <div className={styles.detailContent}>
-        <div className={styles.section}>
-          {/* Header Controls */}
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Quản lý Keys</span>
-              <span className={styles.labelDesc}>
-                File: {keysLocation || 'Chưa xác định'}
-              </span>
-            </div>
-            <div className={styles.flexRow}>
-              <input
-                type="file"
-                accept=".json"
-                style={{ display: 'none' }}
-                id="import-json-input"
-                onChange={handleImportJson}
-              />
-              <Button 
-                onClick={() => document.getElementById('import-json-input')?.click()}
-                variant="secondary"
-              >
-                <Upload size={16} /> Import
-              </Button>
-              <Button onClick={handleExportJson} variant="secondary">
-                <Download size={16} /> Export
-              </Button>
-              <Button onClick={handleResetAllKeyStatus} variant="danger">
-                <RefreshCw size={16} /> Reset
-              </Button>
-            </div>
+        <div className={styles.apiKpiRow}>
+          <div className={styles.apiKpiCard}>
+            <div className={styles.apiKpiLabel}>Tổng tài khoản</div>
+            <div className={styles.apiKpiValue}>{apiAccounts.length}</div>
           </div>
-
-          {/* API Worker Count */}
-          <div className={styles.row} style={{ marginTop: 12 }}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Số worker API song song</span>
-              <span className={styles.labelDesc}>
-                Áp dụng cho dịch truyện và caption Step 3 (API)
-              </span>
-            </div>
-            <div className={styles.flexRow}>
-              <input
-                type="number"
-                min={API_WORKER_MIN}
-                max={API_WORKER_MAX}
-                value={apiWorkerInput}
-                onChange={(e) => setApiWorkerInput(e.target.value)}
-                className={styles.input}
-                style={{ width: 120 }}
-              />
-              <Button
-                onClick={handleSaveApiWorkerCount}
-                variant="primary"
-                disabled={isSavingApiWorker || Number(apiWorkerInput) === savedApiWorkerCount}
-              >
-                Lưu
-              </Button>
-            </div>
+          <div className={styles.apiKpiCard}>
+            <div className={styles.apiKpiLabel}>Keys đang bật</div>
+            <div className={styles.apiKpiValue}>{availableProjects}/{totalProjects}</div>
           </div>
-
-          {/* API Request Delay */}
-          <div className={styles.row} style={{ marginTop: 12 }}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Delay giữa request API</span>
-              <span className={styles.labelDesc}>
-                Áp dụng cho dịch truyện và caption Step 3 (API)
-              </span>
-            </div>
-            <div className={styles.flexRow}>
-              <input
-                type="number"
-                min={API_DELAY_MIN_SEC}
-                max={API_DELAY_MAX_SEC}
-                step="0.1"
-                value={apiDelayInput}
-                onChange={(e) => setApiDelayInput(e.target.value)}
-                className={styles.input}
-                style={{ width: 120 }}
-              />
-              <Button
-                onClick={handleSaveApiDelay}
-                variant="primary"
-                disabled={isSavingApiDelay || Number(apiDelayInput) === savedApiDelaySec}
-              >
-                Lưu
-              </Button>
-            </div>
+          <div className={styles.apiKpiCard}>
+            <div className={styles.apiKpiLabel}>Keys đã tắt</div>
+            <div className={styles.apiKpiValue}>{disabledProjects}</div>
           </div>
-
-          {/* Stats Summary */}
-          {!loading && apiAccounts.length > 0 && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
-              gap: 12,
-              marginTop: 16,
-              marginBottom: 16,
-            }}>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 8,
-                padding: 12,
-                border: '1px solid var(--border-color)',
-              }}>
-                <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Tổng tài khoản
-                </div>
-                <div style={{ fontSize: '1.5em', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {apiAccounts.length}
-                </div>
-              </div>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 8,
-                padding: 12,
-                border: '1px solid var(--border-color)',
-              }}>
-                <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Keys đang bật
-                </div>
-                <div style={{ fontSize: '1.5em', fontWeight: 700, color: '#10b981' }}>
-                  {availableProjects}/{totalProjects}
-                </div>
-              </div>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 8,
-                padding: 12,
-                border: '1px solid var(--border-color)',
-              }}>
-                <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Keys đã tắt
-                </div>
-                <div style={{ fontSize: '1.5em', fontWeight: 700, color: '#64748b' }}>
-                  {disabledProjects}
-                </div>
-              </div>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 8,
-                padding: 12,
-                border: '1px solid var(--border-color)',
-              }}>
-                <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Tổng thành công
-                </div>
-                <div style={{ fontSize: '1.5em', fontWeight: 700, color: '#10b981' }}>
-                  {totalSuccess.toLocaleString()}
-                </div>
-              </div>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 8,
-                padding: 12,
-                border: '1px solid var(--border-color)',
-              }}>
-                <div style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Tổng lỗi
-                </div>
-                <div style={{ fontSize: '1.5em', fontWeight: 700, color: totalErrors > 0 ? '#ef4444' : 'var(--text-tertiary)' }}>
-                  {totalErrors.toLocaleString()}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Bộ lọc hiển thị</span>
-              <span className={styles.labelDesc}>Lọc nhanh theo account và trạng thái key</span>
-            </div>
-            <div className={styles.flexRow}>
-              <select
-                value={accountFilter}
-                onChange={(e) => setAccountFilter(e.target.value as AccountFilter)}
-                className={styles.select}
-              >
-                <option value="all">Tất cả account</option>
-                <option value="active">Account bật</option>
-                <option value="disabled">Account tắt</option>
-              </select>
-              <select
-                value={projectFilter}
-                onChange={(e) => setProjectFilter(e.target.value as ProjectFilter)}
-                className={styles.select}
-              >
-                <option value="all">Tất cả key</option>
-                <option value="available">Key đang bật</option>
-                <option value="disabled">Key đã tắt</option>
-              </select>
-            </div>
+          <div className={styles.apiKpiCard}>
+            <div className={styles.apiKpiLabel}>Tổng thành công</div>
+            <div className={styles.apiKpiValue}>{totalSuccess.toLocaleString()}</div>
           </div>
-
-          <div className={styles.divider} style={{ margin: '16px 0', borderTop: '1px solid var(--border-color)' }} />
-
-          {/* Accounts List */}
-          <div className={styles.row} style={{ display: 'block' }}>
-            <div className={styles.label} style={{ marginBottom: 12 }}>
-              <span className={styles.labelText}>Danh sách tài khoản</span>
-            </div>
-            
-            <div style={{ 
-              background: 'var(--bg-secondary)', 
-              borderRadius: 8, 
-              padding: 8,
-              maxHeight: 450,
-              overflowY: 'auto'
-            }}>
-              {loading ? (
-                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>
-                  <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite' }} />
-                  <div style={{ marginTop: 8 }}>Đang tải...</div>
-                </div>
-              ) : filteredAccounts.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>
-                  <AlertCircle size={32} style={{ opacity: 0.5, marginBottom: 8 }} />
-                  <div style={{ marginBottom: 4 }}>Không có dữ liệu phù hợp bộ lọc</div>
-                  <div style={{ fontSize: '0.85em' }}>Thử đổi bộ lọc account/key ở trên</div>
-                </div>
-              ) : (
-                filteredAccounts.map((acc, index) => (
-                  <div key={index} style={{ 
-                    marginBottom: 8, 
-                    padding: 10, 
-                    background: 'var(--bg-primary)', 
-                    borderRadius: 6,
-                    border: '1px solid var(--border-color)'
-                  }}>
-                    {/* Account Header */}
-                    <div style={{ 
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: 8,
-                      gap: 8,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.9em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {acc.email}
-                        </div>
-                        <div style={{
-                          fontSize: '0.75em',
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          background: getAccountStatusConfig(acc.accountStatus).bg,
-                          color: getAccountStatusConfig(acc.accountStatus).text,
-                          fontWeight: 600,
-                        }}>
-                          {getAccountStatusConfig(acc.accountStatus).label}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ 
-                          fontSize: '0.75em',
-                          color: 'var(--text-secondary)',
-                          background: 'var(--bg-secondary)',
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                        }}>
-                          {acc.projects.length} projects
-                        </div>
-                        <Button
-                          variant={acc.accountStatus === 'disabled' ? 'primary' : 'secondary'}
-                          onClick={() => handleToggleAccountStatus(acc)}
-                          disabled={pendingAccountIds.has(acc.accountId)}
-                        >
-                          {pendingAccountIds.has(acc.accountId)
-                            ? 'Đang cập nhật...'
-                            : (acc.accountStatus === 'disabled' ? 'Bật account' : 'Tắt account')}
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    {/* Projects List */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {acc.projects.map((p) => {
-                        const statusConfig = getStatusConfig(p.status);
-                        const StatusIcon = statusConfig.icon;
-                        const projectKey = `${acc.accountId}:${p.projectIndex}`;
-                        const isErrorExpanded = expandedErrors.has(projectKey);
-                        const hasError = Boolean(p.lastErrorMessage) && p.errorCount > 0;
-                        
-                        return (
-                          <div key={projectKey} style={{ 
-                            padding: '6px 8px',
-                            borderRadius: 4,
-                            background: 'var(--bg-secondary)',
-                            border: '1px solid var(--border-color)',
-                          }}>
-                            {/* Main Info Row */}
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6,
-                              fontSize: '0.8em',
-                            }}>
-                              {/* Status Badge */}
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 3,
-                                fontSize: '0.85em',
-                                padding: '2px 6px',
-                                borderRadius: 3,
-                                background: statusConfig.bg,
-                                color: statusConfig.text,
-                                fontWeight: 600,
-                                minWidth: 95,
-                              }}>
-                                <StatusIcon size={11} />
-                                <span>{statusConfig.label}</span>
-                              </div>
-                              
-                              {/* Project Name */}
-                              <span style={{ 
-                                color: 'var(--text-primary)',
-                                fontWeight: 500,
-                                flex: 1,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {p.projectName}
-                              </span>
-
-                              <Button
-                                variant={p.status === 'disabled' ? 'primary' : 'secondary'}
-                                onClick={() => handleToggleProjectStatus(acc, p)}
-                                disabled={pendingProjectKeys.has(projectKey) || pendingAccountIds.has(acc.accountId)}
-                              >
-                                {pendingProjectKeys.has(projectKey)
-                                  ? 'Đang cập nhật...'
-                                  : (p.status === 'disabled' ? 'Bật key' : 'Tắt key')}
-                              </Button>
-                              
-                              {/* Stats Badges */}
-                              <div style={{ display: 'flex', gap: 4, fontSize: '0.85em' }}>
-                                <span style={{ 
-                                  background: p.successCount > 0 ? '#10b98110' : 'var(--bg-primary)',
-                                  color: p.successCount > 0 ? '#10b981' : 'var(--text-tertiary)',
-                                  padding: '2px 5px',
-                                  borderRadius: 3,
-                                  fontFamily: 'monospace',
-                                  fontWeight: 600,
-                                  minWidth: 92,
-                                  textAlign: 'center',
-                                }}>
-                                  Thành công: {p.successCount || 0}
-                                </span>
-                                <span style={{ 
-                                  background: p.errorCount > 0 ? '#ef444410' : 'var(--bg-primary)',
-                                  color: p.errorCount > 0 ? '#ef4444' : 'var(--text-tertiary)',
-                                  padding: '2px 5px',
-                                  borderRadius: 3,
-                                  fontFamily: 'monospace',
-                                  fontWeight: 600,
-                                  minWidth: 56,
-                                  textAlign: 'center',
-                                }}>
-                                  Lỗi: {p.errorCount || 0}
-                                </span>
-                              </div>
-                              
-                              {/* Today Count */}
-                              {p.totalRequestsToday > 0 && (
-                                <span style={{ 
-                                  background: 'var(--bg-primary)',
-                                  color: 'var(--text-secondary)',
-                                  padding: '2px 6px',
-                                  borderRadius: 3,
-                                  fontSize: '0.85em',
-                                  fontFamily: 'monospace',
-                                  fontWeight: 600,
-                                }}>
-                                  Hôm nay: {p.totalRequestsToday}
-                                </span>
-                              )}
-                            </div>
-                            
-                            {/* API Key & Timestamp Row */}
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 6,
-                              fontSize: '0.7em',
-                              color: 'var(--text-tertiary)',
-                              fontFamily: 'monospace',
-                              marginTop: 4,
-                            }}>
-                              <span style={{ 
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {p.apiKey}
-                              </span>
-                              <span style={{ 
-                                background: 'var(--bg-primary)',
-                                padding: '2px 5px',
-                                borderRadius: 2,
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {formatTimestamp(p.lastUsedTimestamp)}
-                              </span>
-                            </div>
-                            
-                            {/* Error Message (Expandable) */}
-                            {hasError && (
-                              <div style={{ marginTop: 4 }}>
-                                <button
-                                  onClick={() => toggleErrorMessage(projectKey)}
-                                  style={{
-                                    width: '100%',
-                                    textAlign: 'left',
-                                    border: 'none',
-                                    background: '#ef444408',
-                                    color: '#ef4444',
-                                    padding: '3px 6px',
-                                    borderRadius: 3,
-                                    fontSize: '0.7em',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    transition: 'all 0.2s',
-                                  }}
-                                  onMouseEnter={(e) => e.currentTarget.style.background = '#ef444415'}
-                                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef444408'}
-                                >
-                                  {isErrorExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                                  <span style={{ flex: 1, fontWeight: 500 }}>
-                                    {isErrorExpanded ? 'Ẩn lỗi' : 'Xem lỗi'}
-                                  </span>
-                                  <AlertCircle size={10} />
-                                </button>
-                                {isErrorExpanded && (
-                                  <div style={{
-                                    marginTop: 3,
-                                    padding: 6,
-                                    background: 'var(--bg-primary)',
-                                    borderRadius: 3,
-                                    fontSize: '0.65em',
-                                    color: 'var(--text-secondary)',
-                                    fontFamily: 'monospace',
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.4,
-                                    border: '1px solid var(--border-color)',
-                                  }}>
-                                    {p.lastErrorMessage}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <div className={styles.apiKpiCard}>
+            <div className={styles.apiKpiLabel}>Tổng lỗi</div>
+            <div className={styles.apiKpiValue}>{totalErrors.toLocaleString()}</div>
           </div>
         </div>
 
-        {/* Bottom Action Bar */}
+        <div className={styles.apiGrid}>
+          <div className={styles.apiSidebar}>
+            <div className={styles.apiPanel}>
+              <div className={styles.apiPanelHeader}>API Runtime</div>
+              <div className={styles.apiPanelBody}>
+                <div className={styles.apiFieldRow}>
+                  <div>
+                    <div className={styles.apiFieldLabel}>Số worker API</div>
+                    <div className={styles.apiFieldDesc}>Áp dụng cho dịch truyện và caption Step 3</div>
+                  </div>
+                  <div className={styles.apiFieldAction}>
+                    <input
+                      type="number"
+                      min={API_WORKER_MIN}
+                      max={API_WORKER_MAX}
+                      value={apiWorkerInput}
+                      onChange={(e) => setApiWorkerInput(e.target.value)}
+                      className={styles.input}
+                      style={{ width: 110 }}
+                    />
+                    <Button
+                      onClick={handleSaveApiWorkerCount}
+                      variant="primary"
+                      disabled={isSavingApiWorker || Number(apiWorkerInput) === savedApiWorkerCount}
+                    >
+                      Lưu
+                    </Button>
+                  </div>
+                </div>
+                <div className={styles.apiFieldRow}>
+                  <div>
+                    <div className={styles.apiFieldLabel}>Delay giữa request</div>
+                    <div className={styles.apiFieldDesc}>Giây (0 - 30)</div>
+                  </div>
+                  <div className={styles.apiFieldAction}>
+                    <input
+                      type="number"
+                      min={API_DELAY_MIN_SEC}
+                      max={API_DELAY_MAX_SEC}
+                      step="0.1"
+                      value={apiDelayInput}
+                      onChange={(e) => setApiDelayInput(e.target.value)}
+                      className={styles.input}
+                      style={{ width: 110 }}
+                    />
+                    <Button
+                      onClick={handleSaveApiDelay}
+                      variant="primary"
+                      disabled={isSavingApiDelay || Number(apiDelayInput) === savedApiDelaySec}
+                    >
+                      Lưu
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${styles.apiPanel} ${styles.apiListPanel}`}>
+              <div className={styles.apiPanelHeader}>Danh sách account</div>
+              <div className={styles.apiList}>
+                {loading ? (
+                  <div className={styles.apiEmpty}>Đang tải dữ liệu...</div>
+                ) : filteredAccounts.length === 0 ? (
+                  <div className={styles.apiEmpty}>Không có dữ liệu phù hợp bộ lọc</div>
+                ) : (
+                  filteredAccounts.map((acc) => {
+                    const statusCfg = getAccountStatusConfig(acc.accountStatus)
+                    const isActive = acc.accountId === selectedAccountId
+                    return (
+                      <button
+                        key={acc.accountId}
+                        className={`${styles.apiAccountItem} ${isActive ? styles.apiAccountItemActive : ''}`}
+                        onClick={() => setSelectedAccountId(acc.accountId)}
+                      >
+                        <div className={styles.apiAccountMain}>
+                          <div className={styles.apiAccountName}>{acc.email}</div>
+                          <div className={styles.apiAccountMeta}>{acc.projects.length} projects</div>
+                        </div>
+                        <span
+                          className={styles.apiBadge}
+                          style={{ background: statusCfg.bg, color: statusCfg.text }}
+                        >
+                          {statusCfg.label}
+                        </span>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.apiDetail}>
+            {selectedAccount ? (
+              <div className={styles.apiPanel}>
+                <div className={styles.apiDetailHeader}>
+                  <div>
+                    <div className={styles.apiDetailTitle}>{selectedAccount.email}</div>
+                    <div className={styles.apiDetailSubtitle}>{selectedAccount.accountId}</div>
+                  </div>
+                  <div className={styles.apiDetailActions}>
+                    <span
+                      className={styles.apiBadge}
+                      style={{
+                        background: getAccountStatusConfig(selectedAccount.accountStatus).bg,
+                        color: getAccountStatusConfig(selectedAccount.accountStatus).text,
+                      }}
+                    >
+                      {getAccountStatusConfig(selectedAccount.accountStatus).label}
+                    </span>
+                    <Button
+                      variant={selectedAccount.accountStatus === 'disabled' ? 'primary' : 'secondary'}
+                      onClick={() => handleToggleAccountStatus(selectedAccount)}
+                      disabled={pendingAccountIds.has(selectedAccount.accountId)}
+                    >
+                      {pendingAccountIds.has(selectedAccount.accountId)
+                        ? 'Đang cập nhật...'
+                        : (selectedAccount.accountStatus === 'disabled' ? 'Bật account' : 'Tắt account')}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className={styles.apiDetailBody}>
+                  {selectedAccount.projects.map((p) => {
+                    const statusConfig = getStatusConfig(p.status)
+                    const StatusIcon = statusConfig.icon
+                    const projectKey = `${selectedAccount.accountId}:${p.projectIndex}`
+                    const isErrorExpanded = expandedErrors.has(projectKey)
+                    const hasError = Boolean(p.lastErrorMessage) && p.errorCount > 0
+
+                    return (
+                      <div key={projectKey} className={styles.apiProjectItem}>
+                        <div className={styles.apiProjectRow}>
+                          <div className={styles.apiProjectMain}>
+                            <span
+                              className={styles.apiStatusBadge}
+                              style={{ background: statusConfig.bg, color: statusConfig.text }}
+                            >
+                              <StatusIcon size={11} /> {statusConfig.label}
+                            </span>
+                            <span className={styles.apiProjectName}>{p.projectName}</span>
+                          </div>
+                          <div className={styles.apiProjectActions}>
+                            <Button
+                              variant={p.status === 'disabled' ? 'primary' : 'secondary'}
+                              onClick={() => handleToggleProjectStatus(selectedAccount, p)}
+                              disabled={pendingProjectKeys.has(projectKey) || pendingAccountIds.has(selectedAccount.accountId)}
+                            >
+                              {pendingProjectKeys.has(projectKey)
+                                ? 'Đang cập nhật...'
+                                : (p.status === 'disabled' ? 'Bật key' : 'Tắt key')}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className={styles.apiProjectMeta}>
+                          <span className={styles.apiKeyText}>{p.apiKey}</span>
+                          <span className={styles.apiTimeText}>{formatTimestamp(p.lastUsedTimestamp)}</span>
+                          <span className={styles.apiStatChip} style={{ color: p.successCount > 0 ? '#10b981' : 'var(--color-text-muted)' }}>
+                            OK {p.successCount || 0}
+                          </span>
+                          <span className={styles.apiStatChip} style={{ color: p.errorCount > 0 ? '#ef4444' : 'var(--color-text-muted)' }}>
+                            Err {p.errorCount || 0}
+                          </span>
+                          {p.totalRequestsToday > 0 && (
+                            <span className={styles.apiStatChip}>
+                              Today {p.totalRequestsToday}
+                            </span>
+                          )}
+                        </div>
+
+                        {hasError && (
+                          <div className={styles.apiErrorBlock}>
+                            <button
+                              onClick={() => toggleErrorMessage(projectKey)}
+                              className={styles.apiErrorToggle}
+                            >
+                              {isErrorExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                              {isErrorExpanded ? 'Ẩn lỗi' : 'Xem lỗi'}
+                            </button>
+                            {isErrorExpanded && (
+                              <div className={styles.apiErrorMessage}>
+                                {p.lastErrorMessage}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className={styles.apiEmptyState}>
+                Chọn một account để xem chi tiết API keys.
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className={styles.saveBar}>
           <Button onClick={() => loadApiKeysInfo()} variant="secondary" disabled={loading}>
             <RotateCcw size={16} />
@@ -843,7 +666,6 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
           </Button>
         </div>
       </div>
-      
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }

@@ -125,24 +125,57 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--color-background);
+  background-color: transparent;
+
+  --glass-bg: color-mix(in srgb, var(--color-card) 65%, transparent);
+  --glass-border: color-mix(in srgb, var(--color-border) 55%, transparent);
+  --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.14);
+  --glass-highlight: color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
 .detailHeader {
-  padding: 20px 40px;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-card);
+  padding: 12px 24px;
+  border-bottom: none;
+  background-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   flex-shrink: 0;
+  position: relative;
+  min-height: 44px;
+  padding-left: 52px;
+}
+
+.detailHeader > button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  transition: all 0.2s ease;
+  position: absolute;
+  left: 12px;
+  top: 6px;
+}
+
+.detailHeader button:hover {
+  background-color: color-mix(in srgb, var(--color-card) 70%, transparent);
+}
+
+.detailHeader button:active {
+  background-color: color-mix(in srgb, var(--color-card) 85%, transparent);
 }
 
 
 
 .detailTitle {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--color-text-primary);
 }
 
@@ -156,13 +189,17 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  min-height: 0;
 }
 
 /* Section (reused) */
 .section {
-  background-color: var(--color-card);
+  background-color: var(--glass-bg);
   border-radius: 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--glass-shadow);
   padding: 0;
   overflow: hidden;
 }
@@ -173,12 +210,19 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-card);
+  border-bottom: 1px solid var(--glass-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
 }
 
 .row:last-child {
   border-bottom: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .detailHeader,
+  .section {
+    background-color: color-mix(in srgb, var(--color-card) 90%, transparent);
+  }
 }
 
 /* Label */
@@ -287,6 +331,404 @@
 }
 
 /* Footer in content */
+
+
+/* API Keys - Desktop Layout */
+.apiGrid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.apiSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.apiDetail {
+  min-width: 0;
+  min-height: 0;
+}
+
+.apiPanel {
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+.apiPanelHeader {
+  padding: 12px 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.apiPanelBody {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.apiKpiRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.apiKpiCard {
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--glass-shadow);
+}
+
+.apiKpiLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.apiKpiValue {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--color-text-primary);
+}
+
+.apiMetaRow {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.apiMetaValue {
+  color: var(--color-text-primary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+.apiToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.apiFieldRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.apiFieldLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.apiFieldDesc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.apiFieldAction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.apiFilterRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.apiList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.apiList::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.apiAccountItem {
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.apiAccountItem:hover {
+  border-color: var(--glass-highlight);
+}
+
+.apiAccountItemActive {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+.apiAccountMain {
+  min-width: 0;
+}
+
+.apiAccountName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.apiAccountMeta {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.apiBadge {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.apiDetailHeader {
+  padding: 14px;
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.apiDetailTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.apiDetailSubtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+.apiDetailActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.apiDetailBody {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.apiListPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.apiDetailBody::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.apiHeaderFilters {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.apiHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.apiActionButton {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-card) 70%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  box-shadow: none;
+}
+
+.apiActionButton :global(svg) {
+  width: 14px;
+  height: 14px;
+}
+
+.apiActionDanger {
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+}
+
+.apiProjectItem {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--glass-bg) 88%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.apiProjectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.apiProjectMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.apiStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.apiProjectName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.apiProjectActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.apiProjectMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.apiKeyText {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apiTimeText {
+  background: color-mix(in srgb, var(--color-card) 70%, transparent);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.apiStatChip {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-card) 75%, transparent);
+  font-weight: 600;
+}
+
+.apiErrorBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.apiErrorToggle {
+  border: none;
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+  color: var(--color-error);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.apiErrorMessage {
+  border-radius: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--color-card) 85%, transparent);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+.apiEmpty {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 16px 8px;
+}
+
+.apiEmptyState {
+  border: 1px dashed var(--glass-border);
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+}
 .saveBar {
   margin-top: auto;
   padding-top: 24px;
