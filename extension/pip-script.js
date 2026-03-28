@@ -43,6 +43,7 @@ async function openPiPWindow() {
 
     // KIỂM TRA: Đảm bảo đang ở trong một conversation (chỉ áp dụng cho Gemini)
     const currentUrl = window.location.href;
+    const originalUrl = currentUrl;
     const urlObj = new URL(currentUrl);
     const urlPath = urlObj.pathname;
     const isGeminiHost = urlObj.hostname.includes("gemini.google.com");
@@ -85,6 +86,7 @@ async function openPiPWindow() {
       width: isGrok ? 420 : 1000,
       height: isGrok ? 300 : 800,
     });
+    window.__pipWindow = pipWindow;
 
     // Thiết lập Dark theme cho PiP window
     pipWindow.document.documentElement.style.colorScheme = "dark";
@@ -113,6 +115,7 @@ async function openPiPWindow() {
       pipWindow.addEventListener("pagehide", () => {
         console.log("----> PiP Grok đóng (Progress-only mode)");
         pipWindow = null;
+        window.__pipWindow = null;
         statusOverlay = null;
       });
 
@@ -299,6 +302,7 @@ async function openPiPWindow() {
       }
 
       pipWindow = null;
+      window.__pipWindow = null;
       statusOverlay = null;
       spacerElement = null;
     });

@@ -14,14 +14,19 @@ let pollingIntervalId = null; // Quản lý interval để có thể hủy khi c
  * Lấy document context - Ưu tiên PiP window vì DOM đã được MOVE vào đó
  * Đây là chiến lược MOVE thay vì CLONE để đảm bảo tương tác thực sự
  */
-function getDocumentContext() {
-    // Nếu PiP window đang mở, DOM đã được move vào đó
+function getPiPWindow() {
     if (window.documentPictureInPicture && window.documentPictureInPicture.window) {
-        console.log("----> Sử dụng PiP window document (DOM đã được move)");
-        return window.documentPictureInPicture.window.document;
+        return window.documentPictureInPicture.window;
     }
-    
-    // Fallback về document gốc (khi PiP chưa mở hoặc đã đóng)
+    return window.__pipWindow || null;
+}
+
+function getDocumentContext() {
+    const pipWin = getPiPWindow();
+    if (pipWin && pipWin.document) {
+        console.log("----> Sử dụng PiP window document (DOM đã được move)");
+        return pipWin.document;
+    }
     console.log("----> Sử dụng tab gốc document");
     return document;
 }
@@ -30,9 +35,8 @@ function getDocumentContext() {
  * Kiểm tra xem có đang dùng PiP không
  */
 function isUsingPiP() {
-    return window.documentPictureInPicture && 
-           window.documentPictureInPicture.window &&
-           window.documentPictureInPicture.window.document.body.children.length > 0;
+    const pipWin = getPiPWindow();
+    return !!(pipWin && pipWin.document && pipWin.document.body && pipWin.document.body.children.length > 0);
 }
 
 // ============================================
@@ -184,26 +188,20 @@ async function fillInputBox(inputBox, text, usingPiP) {
     // Đợi một chút
     await sleep(300);
     
-    // Điền text theo cách khác nhau cho PiP và tab gốc
+    // Điền text - dùng execCommand từ đúng document (PiP hoặc tab gốc)
+    const ownerDoc = inputBox.ownerDocument || document;
     if (usingPiP) {
         console.log("----> Dán text vào PiP window (DOM đã được move)");
-        // Với PiP, dùng textContent trực tiếp
-        inputBox.textContent = text;
     } else {
         console.log("----> Dán text vào tab gốc");
-        // Với tab gốc, dùng execCommand (deprecated nhưng vẫn hoạt động tốt)
-        // hoặc clipboard API
-        try {
-            // Thử dùng execCommand trước
-            const success = document.execCommand('insertText', false, text);
-            if (!success) {
-                // Fallback: gán trực tiếp
-                inputBox.textContent = text;
-            }
-        } catch (e) {
-            // Fallback: gán trực tiếp
+    }
+    try {
+        const success = ownerDoc.execCommand('insertText', false, text);
+        if (!success) {
             inputBox.textContent = text;
         }
+    } catch (e) {
+        inputBox.textContent = text;
     }
 
     // QUAN TRỌNG: Kích hoạt sự kiện để framework biết đã có chữ
