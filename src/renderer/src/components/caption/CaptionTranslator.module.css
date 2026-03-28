@@ -1288,6 +1288,7 @@
   --cap-gap: clamp(8px, 0.7vw, 12px);
   --cap-step-rail: clamp(124px, 9.2vw, 152px);
   --cap-inspector: clamp(320px, 24vw, 388px);
+  --cap-stage: 700px;
   width: 100%;
   height: calc(100vh - 4rem);
   padding: 0;
@@ -1333,7 +1334,7 @@
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--cap-step-rail) minmax(0, 1fr) var(--cap-inspector);
+  grid-template-columns: var(--cap-step-rail) minmax(0, var(--cap-stage)) minmax(0, 1fr);
   gap: var(--cap-gap);
 }
 
@@ -1768,6 +1769,7 @@
 
 .inspector {
   min-height: 0;
+  width: 100%;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;

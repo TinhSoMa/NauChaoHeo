@@ -70,7 +70,8 @@
 
 .canvasContainer {
   position: relative;
-  width: 760px;
+  width: 100%;
+  max-width: 760px;
   aspect-ratio: 16 / 9;
   height: auto;
   background-color: #111827;
@@ -110,18 +111,19 @@
 
 @media (max-width: 1200px) {
   .canvasContainer {
-    width: 700px;
+    max-width: 700px;
   }
 }
 
 @media (max-width: 960px) {
   .canvasContainer {
-    width: 640px;
+    max-width: 640px;
   }
 }
 
 .canvasContainerPortrait {
-  width: 420px;
+  width: 100%;
+  max-width: 420px;
   aspect-ratio: 9 / 16;
 }
 
