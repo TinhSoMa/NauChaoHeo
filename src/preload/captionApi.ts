@@ -40,6 +40,7 @@ export interface CaptionAPI {
   // SRT Operations
   parseSrt: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>;
   parseDraft: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>; // Parse draft_content.json
+  findSrtInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<Record<string, string>>>;
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
 
@@ -110,6 +111,9 @@ export function createCaptionAPI(): CaptionAPI {
 
     parseDraft: (filePath: string) =>
       ipcRenderer.invoke('caption:parseDraft', filePath),
+
+    findSrtInFolders: (folderPaths: string[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.FIND_SRT_IN_FOLDERS, folderPaths),
 
     exportSrt: (entries: SubtitleEntry[], outputPath: string) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.EXPORT_SRT, entries, outputPath),

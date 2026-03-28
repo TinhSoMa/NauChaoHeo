@@ -300,6 +300,7 @@ export interface TrimSilenceResult {
 export const CAPTION_IPC_CHANNELS = {
   // Caption
   PARSE_SRT: 'caption:parseSrt',
+  FIND_SRT_IN_FOLDERS: 'caption:findSrtInFolders',
   TRANSLATE: 'caption:translate',
   TRANSLATE_PROGRESS: 'caption:translateProgress',
   TRANSLATE_PROGRESS_ACK: 'caption:translateProgressAck',

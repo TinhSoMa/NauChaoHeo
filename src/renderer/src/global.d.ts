@@ -375,6 +375,7 @@ interface CutVideoAPI {
 interface CaptionAPI {
   parseSrt: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>;
   parseDraft: (filePath: string) => Promise<IpcApiResponse<ParseSrtResult>>; // Parse draft_content.json
+  findSrtInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<Record<string, string>>>;
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
   translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;

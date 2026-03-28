@@ -23,13 +23,22 @@ type ReadSessionResult =
 
 export function getInputPaths(inputType: CaptionInputType, filePath: string): string[] {
   if (!filePath) return [];
-  if (inputType === 'draft') {
-    return filePath
-      .split(/\s*;\s*/)
-      .map((p) => p.trim())
+  const rawPaths = filePath
+    .split(/\s*;\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (inputType === 'srt') {
+    return rawPaths
+      .map((p) => {
+        const trimmed = p.replace(/[\\/]+$/, '');
+        if (trimmed.toLowerCase().endsWith('.srt')) {
+          return trimmed.replace(/[^/\\]+$/, '').replace(/[\\/]+$/, '');
+        }
+        return trimmed;
+      })
       .filter(Boolean);
   }
-  return [filePath];
+  return rawPaths;
 }
 
 export function getSessionPathForInputPath(inputType: CaptionInputType, inputPath: string): string {

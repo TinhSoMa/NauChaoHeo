@@ -153,7 +153,7 @@ export function useThumbnailPreviewState(
       projectId: contextKey.projectId || null,
       inputType,
       sourcePath: contextKey.folderPath,
-      folderPath: inputType === 'draft'
+      folderPath: inputType === 'draft' || inputType === 'srt'
         ? contextKey.folderPath
         : contextKey.folderPath.replace(/[^/\\]+$/, ''),
     };

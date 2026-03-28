@@ -120,7 +120,9 @@ function normalizePathKey(value: string): string {
 }
 
 function resolveFolderPathForInput(currentPath: string, inputType: string): string {
-  return inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '');
+  return inputType === 'draft' || inputType === 'srt'
+    ? currentPath
+    : currentPath.replace(/[^/\\]+$/, '');
 }
 
 function toSafeThumbSlug(thumbnailText?: string): string {
@@ -187,6 +189,7 @@ interface UseCaptionProcessingProps {
   filePath: string;
   inputPathsOverride?: string[];
   inputType: string;
+  srtFilesByFolder?: Record<string, string>;
   captionFolder: string | null;
   settings: {
     fontSizeScaleVersion?: number;
@@ -751,7 +754,7 @@ function entriesToPlainText(entries: SubtitleEntry[]): string {
 }
 
 function resolveProcessOutputDir(inputType: string, currentPath: string): string {
-  return inputType === 'draft'
+  return inputType === 'draft' || inputType === 'srt'
     ? `${currentPath}/caption_output`
     : currentPath.replace(/[^/\\]+$/, 'caption_output');
 }
@@ -1308,7 +1311,9 @@ function resolveRenderOutputDir(inputType: string, currentPath: string, sourceVi
   if (sourceVideoPath && sourceVideoPath.trim()) {
     return resolveParentDir(sourceVideoPath);
   }
-  return inputType === 'draft' ? currentPath.trim().replace(/[\\/]+$/, '') : resolveParentDir(currentPath);
+  return inputType === 'draft' || inputType === 'srt'
+    ? currentPath.trim().replace(/[\\/]+$/, '')
+    : resolveParentDir(currentPath);
 }
 
 function buildStopCheckpoint(params: {
@@ -1358,6 +1363,7 @@ export function useCaptionProcessing({
   filePath,
   inputPathsOverride,
   inputType,
+  srtFilesByFolder,
   captionFolder,
   settings,
   enabledSteps,
@@ -1386,7 +1392,7 @@ export function useCaptionProcessing({
     [filePath, inputType]
   );
   const resolvedInputPaths = useMemo(() => {
-    if (inputType !== 'draft' || !Array.isArray(inputPathsOverride)) {
+    if (!Array.isArray(inputPathsOverride)) {
       return baseInputPaths;
     }
     const basePathKeys = new Set(baseInputPaths.map(normalizePathKey));
@@ -1404,11 +1410,21 @@ export function useCaptionProcessing({
     }
     return nextPaths;
   }, [baseInputPaths, inputPathsOverride, inputType]);
-  const isDraftFilterApplied = inputType === 'draft' && Array.isArray(inputPathsOverride);
+  const isDraftFilterApplied = (inputType === 'draft' || inputType === 'srt') && Array.isArray(inputPathsOverride);
   const isDraftFilterEmpty = isDraftFilterApplied && baseInputPaths.length > 0 && resolvedInputPaths.length === 0;
   const resolveFolderPath = useCallback(
     (currentPath: string) => resolveFolderPathForInput(currentPath, inputType),
     [inputType]
+  );
+  const resolveSourcePath = useCallback(
+    (currentPath: string) => {
+      if (inputType === 'srt') {
+        const srtPath = srtFilesByFolder?.[currentPath];
+        return typeof srtPath === 'string' ? srtPath : '';
+      }
+      return currentPath;
+    },
+    [inputType, srtFilesByFolder]
   );
 
   const toggleStep = useCallback((step: Step) => {
@@ -1464,7 +1480,7 @@ export function useCaptionProcessing({
     const requested = folderPath ? normalizePath(folderPath) : '';
     const targetPath = requested
       ? (inputPaths.find((candidatePath) => {
-          const folderCandidate = inputType === 'draft'
+          const folderCandidate = inputType === 'draft' || inputType === 'srt'
             ? candidatePath
             : candidatePath.replace(/[^/\\]+$/, '');
           return normalizePath(candidatePath) === requested || normalizePath(folderCandidate) === requested;
@@ -1477,8 +1493,8 @@ export function useCaptionProcessing({
     const sessionFallback = {
       projectId,
       inputType: inputType as 'srt' | 'draft',
-      sourcePath: targetPath,
-      folderPath: inputType === 'draft' ? targetPath : targetPath.replace(/[^/\\]+$/, ''),
+      sourcePath: resolveSourcePath(targetPath),
+      folderPath: resolveFolderPath(targetPath),
     };
 
     try {
@@ -1509,7 +1525,7 @@ export function useCaptionProcessing({
         throw new Error('Không thể tạo subtitle scaled cho audio preview.');
       }
 
-      const folderPathsToSearch = inputType === 'draft'
+      const folderPathsToSearch = (inputType === 'draft' || inputType === 'srt')
         ? [targetPath]
         : [targetPath.replace(/[^/\\]+$/, '')];
       // @ts-ignore
@@ -1622,7 +1638,7 @@ export function useCaptionProcessing({
 
     try {
       await Promise.all(paths.map(async (currentPath, idx) => {
-        const folderPath = inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, '');
+        const folderPath = resolveFolderPath(currentPath);
         const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
         await updateCaptionSession(
           sessionPath,
@@ -1654,7 +1670,7 @@ export function useCaptionProcessing({
           {
             projectId,
             inputType: inputType as 'srt' | 'draft',
-            sourcePath: currentPath,
+            sourcePath: resolveSourcePath(currentPath),
             folderPath,
           }
         );
@@ -1687,7 +1703,18 @@ export function useCaptionProcessing({
     setCurrentStep(null);
     setProgress(p => ({ ...p, message: 'Đã dừng.' }));
     runIdRef.current = null;
-  }, [currentFolder?.index, currentFolder?.path, currentStep, resolvedInputPaths, inputType, projectId, settings.processingMode, stopStep7AudioPreview]);
+  }, [
+    currentFolder?.index,
+    currentFolder?.path,
+    currentStep,
+    resolvedInputPaths,
+    inputType,
+    projectId,
+    resolveFolderPath,
+    resolveSourcePath,
+    settings.processingMode,
+    stopStep7AudioPreview,
+  ]);
 
   type ManualApplyResult = {
     success: boolean;
@@ -1711,7 +1738,7 @@ export function useCaptionProcessing({
 
     const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
     const folderPath = resolveFolderPath(trimmedPath);
-    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: trimmedPath, folderPath };
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: resolveSourcePath(trimmedPath), folderPath };
 
     let result: ManualApplyResult = { success: true, updatedBatchIndexes: [] };
 
@@ -1890,7 +1917,7 @@ export function useCaptionProcessing({
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-  }, [entries, inputType, projectId]);
+  }, [entries, inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
   const applyManualBatchResponse = useCallback(async (payload: {
     inputPath: string;
@@ -1904,7 +1931,7 @@ export function useCaptionProcessing({
     const batchIndex = Math.max(1, Math.floor(payload.batchIndex));
     const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
     const folderPath = resolveFolderPath(trimmedPath);
-    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: trimmedPath, folderPath };
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: resolveSourcePath(trimmedPath), folderPath };
 
     try {
       const session = await readCaptionSession(sessionPath, fallback);
@@ -1931,7 +1958,7 @@ export function useCaptionProcessing({
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-  }, [applyManualBatchUpdates, inputType, projectId]);
+  }, [applyManualBatchUpdates, inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
   const applyManualBulkResponses = useCallback(async (payload: {
     inputPath: string;
@@ -1949,7 +1976,7 @@ export function useCaptionProcessing({
 
     const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
     const folderPath = resolveFolderPath(trimmedPath);
-    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: trimmedPath, folderPath };
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: resolveSourcePath(trimmedPath), folderPath };
 
     try {
       const session = await readCaptionSession(sessionPath, fallback);
@@ -1986,7 +2013,7 @@ export function useCaptionProcessing({
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-  }, [applyManualBatchUpdates, inputType, projectId]);
+  }, [applyManualBatchUpdates, inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).filter((step) => step !== 5).sort() as Step[];
@@ -2152,7 +2179,7 @@ export function useCaptionProcessing({
     const getSessionFallback = (currentPath: string) => ({
       projectId,
       inputType: inputType as 'srt' | 'draft',
-      sourcePath: currentPath,
+      sourcePath: resolveSourcePath(currentPath),
       folderPath: resolveFolderPath(currentPath),
     });
     const setRunStateForAllSessions = async (
@@ -2593,6 +2620,7 @@ export function useCaptionProcessing({
     ) => {
       const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', currentPath);
       const folderPath = resolveFolderPath(currentPath);
+      const sourcePath = resolveSourcePath(currentPath);
       await updateCaptionSession(
         sessionPath,
         (session) => updater({
@@ -2602,7 +2630,7 @@ export function useCaptionProcessing({
             ...session.projectContext,
             projectId: projectId || null,
             inputType: inputType as 'srt' | 'draft',
-            sourcePath: currentPath,
+            sourcePath,
             folderPath,
           },
           runtime: {
@@ -2770,9 +2798,13 @@ export function useCaptionProcessing({
       // ========== STEP 1: INPUT ==========
       if (step === 1) {
         if (currentEntries.length === 0 && currentPath) {
+          const sourcePath = resolveSourcePath(currentPath);
+          if (inputType === 'srt' && !sourcePath) {
+            throw new Error(`[${folderName}] Thiếu file SRT cho folder.`);
+          }
           const parseResult = inputType === 'srt'
             // @ts-ignore
-            ? await window.electronAPI.caption.parseSrt(currentPath)
+            ? await window.electronAPI.caption.parseSrt(sourcePath)
             // @ts-ignore
             : await window.electronAPI.caption.parseDraft(`${currentPath}/draft_content.json`);
 
@@ -2780,7 +2812,7 @@ export function useCaptionProcessing({
             currentEntries = parseResult.data.entries;
             if (!isMulti) setEntries(currentEntries);
           } else {
-            throw new Error(`[${folderName}] Lỗi đọc file draft/srt: ${parseResult.error}`);
+            throw new Error(`[${folderName}] Lỗi đọc file draft/srt: ${parseResult.error || 'missing_srt'}`);
           }
         }
         setProgress({ current: 1, total: 1, message: msgCtx('Bước 1: Đã load file input') });
@@ -2791,7 +2823,8 @@ export function useCaptionProcessing({
             pushArtifact(stepArtifacts, 'draft_folder', currentPath, 'dir');
             pushArtifact(stepArtifacts, 'draft_content_json', `${currentPath}/draft_content.json`, 'file');
           } else {
-            pushArtifact(stepArtifacts, 'source_srt', currentPath, 'file');
+            const sourcePath = resolveSourcePath(currentPath);
+            pushArtifact(stepArtifacts, 'source_srt', sourcePath, 'file');
           }
           const outputFingerprint = buildEntriesFingerprint(extractedEntries);
           const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
@@ -3197,7 +3230,7 @@ export function useCaptionProcessing({
               translateMethod: cfg.translateMethod,
               retryBatchIndexes,
               projectId: projectId || undefined,
-              sourcePath: currentPath,
+              sourcePath: resolveSourcePath(currentPath),
               runId: runIdRef.current || undefined,
             });
           } catch (error) {
@@ -3351,7 +3384,7 @@ export function useCaptionProcessing({
         const plainTextContent = entriesToPlainText(currentEntries);
         if (plainTextContent) {
           try {
-            const folderPathsToSearch = inputType === 'draft'
+            const folderPathsToSearch = (inputType === 'draft' || inputType === 'srt')
               ? [currentPath]
               : [currentPath.replace(/[^/\\]+$/, '')];
             // @ts-ignore
@@ -3863,8 +3896,8 @@ export function useCaptionProcessing({
         const sessionFallback = {
           projectId,
           inputType: inputType as 'srt' | 'draft',
-          sourcePath: currentPath,
-          folderPath: inputType === 'draft' ? currentPath : currentPath.replace(/[^/\\]+$/, ''),
+          sourcePath: resolveSourcePath(currentPath),
+          folderPath: resolveFolderPath(currentPath),
         };
         const sessionBeforeRender = await readCaptionSession(sessionPathForStep7, sessionFallback);
         const targetRevision = cfg.settingsRevision && cfg.settingsRevision > 0 ? cfg.settingsRevision : 0;
@@ -3899,7 +3932,9 @@ export function useCaptionProcessing({
 
         setProgress({ current: 0, total: 100, message: msgCtx('Bước 7: Đang tìm video gốc tốt nhất...') });
         let finalVideoInputPath: string | undefined = undefined;
-        const folderPathsToSearch = inputType === 'draft' ? [currentPath] : [currentPath.replace(/[^/\\]+$/, '')];
+        const folderPathsToSearch = (inputType === 'draft' || inputType === 'srt')
+          ? [currentPath]
+          : [currentPath.replace(/[^/\\]+$/, '')];
         // @ts-ignore
         const findBestRes = await window.electronAPI.captionVideo.findBestVideoInFolders(folderPathsToSearch);
         let stripWidth = 1080;

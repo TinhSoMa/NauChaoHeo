@@ -784,6 +784,11 @@
   transition: all 0.2s ease;
 }
 
+.folderBoxMissing {
+  border-color: var(--color-danger, #ef4444);
+  background-color: rgba(239, 68, 68, 0.08);
+}
+
 .folderBoxDisabled {
   opacity: 0.55;
 }
@@ -806,6 +811,48 @@
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
+}
+
+.folderSrtRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.folderSrtLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.folderSrtMissing {
+  color: var(--color-danger, #ef4444);
+  font-weight: 600;
+}
+
+.folderSrtPickBtn {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.folderSrtPickBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
+.folderSrtPickBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .folderBox:hover {

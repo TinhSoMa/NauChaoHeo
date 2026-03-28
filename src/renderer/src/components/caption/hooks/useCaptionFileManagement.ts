@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { SubtitleEntry } from '../CaptionTypes';
 import { InputType } from '../../../config/captionConfig';
 import { useProjectContext } from '../../../context/ProjectContext';
@@ -22,7 +22,14 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
   const [filePath, setFilePath] = useState('');
   const [entries, setEntries] = useState<SubtitleEntry[]>([]);
   const [folderVideos, setFolderVideos] = useState<Record<string, { name: string; fullPath: string; duration: number }>>({});
+  const [srtFilesByFolder, setSrtFilesByFolder] = useState<Record<string, string>>({});
+  const [missingSrtFolders, setMissingSrtFolders] = useState<Set<string>>(new Set());
+  const srtFilesByFolderRef = useRef<Record<string, string>>({});
   const storageKey = `caption:lastInput:${projectId || 'global'}:${inputType}`;
+
+  useEffect(() => {
+    srtFilesByFolderRef.current = srtFilesByFolder;
+  }, [srtFilesByFolder]);
 
   useEffect(() => {
     if (filePath) return;
@@ -52,13 +59,81 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     }
   }, [filePath, storageKey]);
 
+  const normalizeFolderPath = useCallback((value: string): string => {
+    return (value || '').trim().replace(/[\\/]+$/, '');
+  }, []);
+
+  const updateMissingSrt = useCallback((paths: string[], map: Record<string, string>) => {
+    const missing = new Set<string>();
+    for (const p of paths) {
+      if (!map[p]) {
+        missing.add(p);
+      }
+    }
+    setMissingSrtFolders(missing);
+  }, []);
+
+  const hydrateSrtEntries = useCallback(async (folderPath: string, srtPath: string) => {
+    if (!folderPath || !srtPath) return;
+    try {
+      // @ts-ignore
+      const parseResult = await window.electronAPI.caption.parseSrt(srtPath);
+      if (!parseResult?.success || !parseResult.data) return;
+      const parsedData = parseResult.data;
+      setEntries(parsedData.entries);
+      const sessionPath = getSessionPathForInputPath('srt', folderPath);
+      await updateCaptionSession(
+        sessionPath,
+        (session) => {
+          const stepKey = toStepKey(1);
+          return {
+            ...session,
+            projectContext: {
+              ...session.projectContext,
+              projectId: projectId || null,
+              inputType: 'srt',
+              sourcePath: srtPath,
+              folderPath,
+            },
+            data: {
+              ...session.data,
+              extractedEntries: compactEntries(parsedData.entries),
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: makeStepSuccess(session.steps[stepKey], {
+                totalEntries: parsedData.totalEntries,
+                source: 'browse_srt',
+              }),
+            },
+          };
+        },
+        {
+          projectId,
+          inputType: 'srt',
+          sourcePath: srtPath,
+          folderPath,
+        }
+      );
+      if (onProgress) {
+        onProgress({
+          current: 0,
+          total: parsedData.totalEntries,
+          message: `Đã load ${parsedData.totalEntries} dòng từ SRT`,
+        });
+      }
+    } catch (error) {
+      console.warn('[CaptionFileManagement] Không thể parse SRT:', error);
+    }
+  }, [onProgress, projectId]);
+
   const handleBrowseFile = useCallback(async () => {
     try {
       let filters = undefined;
       let properties = ['openFile'];
 
       if (inputType === 'srt') {
-        filters = [{ name: 'SRT Files', extensions: ['srt'] }];
+        properties = ['openDirectory', 'multiSelections'];
       } else if (inputType === 'draft') {
         properties = ['openDirectory', 'multiSelections'];
       }
@@ -98,6 +173,22 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
             total: selectedPaths.length, 
             message: `Đã chọn ${selectedPaths.length} thư mục dự án CapCut` 
             });
+        }
+        return;
+      }
+
+      if (inputType === 'srt') {
+        const selectedPaths = result.filePaths
+          .map((p) => p.trim())
+          .filter(Boolean);
+        setFilePath(selectedPaths.join('; '));
+        setEntries([]);
+        if (onProgress) {
+          onProgress({
+            current: 0,
+            total: selectedPaths.length,
+            message: `Đã chọn ${selectedPaths.length} thư mục SRT`,
+          });
         }
         return;
       }
@@ -183,11 +274,16 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
           sessionPath,
         });
       }
+      const sourcePath = inputType === 'srt'
+        ? (srtFilesByFolderRef.current[firstPath] || firstPath)
+        : firstPath;
       const session = await readCaptionSession(sessionPath, {
         projectId,
         inputType,
-        sourcePath: firstPath,
-        folderPath: inputType === 'draft' ? firstPath : firstPath.replace(/[^/\\]+$/, ''),
+        sourcePath,
+        folderPath: inputType === 'draft' || inputType === 'srt'
+          ? firstPath
+          : firstPath.replace(/[^/\\]+$/, ''),
       });
       if (cancelled) return;
       const step3Done = session.steps.step3?.status === 'success';
@@ -208,7 +304,7 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
   }, [filePath, inputType, projectId]);
 
   useEffect(() => {
-    if (inputType !== 'draft' || !filePath) {
+    if ((inputType !== 'draft' && inputType !== 'srt') || !filePath) {
       setFolderVideos({});
       return;
     }
@@ -240,6 +336,130 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     fetchVideos();
   }, [filePath, inputType]);
 
+  useEffect(() => {
+    if (inputType !== 'srt') {
+      setSrtFilesByFolder({});
+      setMissingSrtFolders(new Set());
+      return;
+    }
+    const rawPaths = getInputPaths('srt', filePath);
+    const folderPaths = rawPaths.map(normalizeFolderPath).filter(Boolean);
+    if (folderPaths.length === 0) {
+      setSrtFilesByFolder({});
+      setMissingSrtFolders(new Set());
+      return;
+    }
+    let cancelled = false;
+
+    const syncSrtFiles = async () => {
+      const prev = srtFilesByFolderRef.current;
+      const next: Record<string, string> = {};
+      const pending: string[] = [];
+      for (const folderPath of folderPaths) {
+        const prevValue = prev[folderPath];
+        if (prevValue && prevValue.trim()) {
+          next[folderPath] = prevValue;
+        } else {
+          pending.push(folderPath);
+        }
+      }
+      if (pending.length > 0) {
+        try {
+          // @ts-ignore
+          const res = await window.electronAPI.caption.findSrtInFolders(pending);
+          if (res?.success && res.data) {
+            for (const folderPath of pending) {
+              const found = res.data[folderPath];
+              if (typeof found === 'string' && found.trim()) {
+                next[folderPath] = found;
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[CaptionFileManagement] Không thể auto-detect SRT:', error);
+        }
+      }
+      if (cancelled) return;
+      setSrtFilesByFolder(next);
+      updateMissingSrt(folderPaths, next);
+      for (const folderPath of folderPaths) {
+        const sourcePath = next[folderPath] || '';
+        const sessionPath = getSessionPathForInputPath('srt', folderPath);
+        await updateCaptionSession(
+          sessionPath,
+          (session) => ({
+            ...session,
+            projectContext: {
+              ...session.projectContext,
+              projectId: projectId || null,
+              inputType: 'srt',
+              sourcePath,
+              folderPath,
+            },
+          }),
+          { projectId, inputType: 'srt', sourcePath, folderPath }
+        );
+      }
+      if (folderPaths.length === 1) {
+        const onlyPath = folderPaths[0];
+        const srtPath = next[onlyPath];
+        if (srtPath) {
+          await hydrateSrtEntries(onlyPath, srtPath);
+        }
+      }
+    };
+
+    void syncSrtFiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [filePath, inputType, normalizeFolderPath, projectId, updateMissingSrt, hydrateSrtEntries]);
+
+  const pickSrtForFolder = useCallback(async (folderPath: string) => {
+    const targetFolder = normalizeFolderPath(folderPath);
+    if (!targetFolder) return;
+    try {
+      // @ts-ignore - electronAPI is globally defined
+      const result = await window.electronAPI.invoke('dialog:openFile', {
+        filters: [{ name: 'SRT Files', extensions: ['srt'] }],
+        properties: ['openFile'],
+      }) as { canceled: boolean; filePaths: string[] };
+
+      if (result?.canceled || !result?.filePaths?.length) return;
+      const selectedPath = result.filePaths[0];
+      if (!selectedPath) return;
+
+      setSrtFilesByFolder((prev) => ({ ...prev, [targetFolder]: selectedPath }));
+      setMissingSrtFolders((prev) => {
+        const next = new Set(prev);
+        next.delete(targetFolder);
+        return next;
+      });
+
+      const sessionPath = getSessionPathForInputPath('srt', targetFolder);
+      await updateCaptionSession(
+        sessionPath,
+        (session) => ({
+          ...session,
+          projectContext: {
+            ...session.projectContext,
+            projectId: projectId || null,
+            inputType: 'srt',
+            sourcePath: selectedPath,
+            folderPath: targetFolder,
+          },
+        }),
+        { projectId, inputType: 'srt', sourcePath: selectedPath, folderPath: targetFolder }
+      );
+      const inputPaths = getInputPaths('srt', filePath);
+      if (inputPaths.length === 1 && normalizeFolderPath(inputPaths[0]) === targetFolder) {
+        await hydrateSrtEntries(targetFolder, selectedPath);
+      }
+    } catch (error) {
+      console.warn('[CaptionFileManagement] Không thể chọn SRT cho folder:', error);
+    }
+  }, [filePath, hydrateSrtEntries, normalizeFolderPath, projectId]);
+
   // First video path for preview
   const firstVideoPath = Object.values(folderVideos)[0]?.fullPath || null;
 
@@ -248,6 +468,9 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     entries, setEntries,
     folderVideos,
     firstVideoPath,
+    srtFilesByFolder,
+    missingSrtFolders,
+    pickSrtForFolder,
     handleBrowseFile
   };
 }

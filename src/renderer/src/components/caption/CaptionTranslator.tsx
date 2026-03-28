@@ -1302,14 +1302,14 @@ export function CaptionTranslator() {
     DRAFT_DURATION_FILTER_DEFAULT_MINUTES
   );
   const selectedInputPaths = useMemo(
-    () => getInputPaths('draft', fileManager.filePath),
-    [fileManager.filePath]
+    () => getInputPaths(settings.inputType, fileManager.filePath),
+    [fileManager.filePath, settings.inputType]
   );
   const draftDurationFilterThresholdMinutes = useMemo(
     () => (Number.isFinite(draftDurationFilterMinutes) && draftDurationFilterMinutes >= 0 ? draftDurationFilterMinutes : 0),
     [draftDurationFilterMinutes]
   );
-  const draftDurationFilterStats = useMemo(() => {
+  const durationFilterStats = useMemo(() => {
     const nextFilteredPaths: string[] = [];
     let missingDurationCount = 0;
     let excludedByThresholdCount = 0;
@@ -1350,32 +1350,45 @@ export function CaptionTranslator() {
     fileManager.folderVideos,
     selectedInputPaths,
   ]);
-  const filteredDraftInputPaths = draftDurationFilterStats.filteredPaths;
-  const prevFilteredDraftPathsRef = useRef<string[]>([]);
-  const prevDraftFilePathRef = useRef<string>('');
-  const [selectedDraftRunPaths, setSelectedDraftRunPaths] = useState<string[]>([]);
-  const selectedDraftRunSet = useMemo(() => new Set(selectedDraftRunPaths), [selectedDraftRunPaths]);
+  const filteredInputPaths = durationFilterStats.filteredPaths;
+  const missingSrtFolders = fileManager.missingSrtFolders;
+  const availableRunPaths = useMemo(() => {
+    if (settings.inputType !== 'srt') {
+      return filteredInputPaths;
+    }
+    return filteredInputPaths.filter((path) => !missingSrtFolders.has(path));
+  }, [filteredInputPaths, missingSrtFolders, settings.inputType]);
+  const missingSrtCount = useMemo(() => {
+    if (settings.inputType !== 'srt') {
+      return 0;
+    }
+    return filteredInputPaths.filter((path) => missingSrtFolders.has(path)).length;
+  }, [filteredInputPaths, missingSrtFolders, settings.inputType]);
+  const prevFilteredPathsRef = useRef<string[]>([]);
+  const prevInputFilePathRef = useRef<string>('');
+  const [selectedRunPaths, setSelectedRunPaths] = useState<string[]>([]);
+  const selectedRunSet = useMemo(() => new Set(selectedRunPaths), [selectedRunPaths]);
 
   useEffect(() => {
-    if (settings.inputType !== 'draft') {
-      prevFilteredDraftPathsRef.current = [];
-      prevDraftFilePathRef.current = '';
-      setSelectedDraftRunPaths([]);
+    if (settings.inputType !== 'draft' && settings.inputType !== 'srt') {
+      prevFilteredPathsRef.current = [];
+      prevInputFilePathRef.current = '';
+      setSelectedRunPaths([]);
       return;
     }
     const currentFilePath = fileManager.filePath || '';
-    const prevFilePath = prevDraftFilePathRef.current;
+    const prevFilePath = prevInputFilePathRef.current;
     if (currentFilePath !== prevFilePath) {
-      prevDraftFilePathRef.current = currentFilePath;
-      prevFilteredDraftPathsRef.current = filteredDraftInputPaths;
-      setSelectedDraftRunPaths(filteredDraftInputPaths);
+      prevInputFilePathRef.current = currentFilePath;
+      prevFilteredPathsRef.current = availableRunPaths;
+      setSelectedRunPaths(availableRunPaths);
       return;
     }
-    setSelectedDraftRunPaths((prev) => {
+    setSelectedRunPaths((prev) => {
       const prevSelected = new Set(prev);
-      const prevFiltered = new Set(prevFilteredDraftPathsRef.current);
+      const prevFiltered = new Set(prevFilteredPathsRef.current);
       const next: string[] = [];
-      for (const path of filteredDraftInputPaths) {
+      for (const path of availableRunPaths) {
         if (prevFiltered.has(path)) {
           if (prevSelected.has(path)) {
             next.push(path);
@@ -1384,13 +1397,13 @@ export function CaptionTranslator() {
           next.push(path);
         }
       }
-      prevFilteredDraftPathsRef.current = filteredDraftInputPaths;
+      prevFilteredPathsRef.current = availableRunPaths;
       return next;
     });
-  }, [filteredDraftInputPaths, settings.inputType, fileManager.filePath]);
+  }, [availableRunPaths, settings.inputType, fileManager.filePath]);
   
-  const toggleDraftRunPath = useCallback((path: string) => {
-    setSelectedDraftRunPaths((prev) => {
+  const toggleRunPath = useCallback((path: string) => {
+    setSelectedRunPaths((prev) => {
       const prevSet = new Set(prev);
       if (prevSet.has(path)) {
         return prev.filter((item) => item !== path);
@@ -1399,21 +1412,21 @@ export function CaptionTranslator() {
     });
   }, []);
 
-  const handleSelectAllDraftRuns = useCallback(() => {
-    setSelectedDraftRunPaths([...filteredDraftInputPaths]);
-  }, [filteredDraftInputPaths]);
+  const handleSelectAllRuns = useCallback(() => {
+    setSelectedRunPaths([...availableRunPaths]);
+  }, [availableRunPaths]);
 
-  const handleClearDraftRuns = useCallback(() => {
-    setSelectedDraftRunPaths([]);
+  const handleClearRuns = useCallback(() => {
+    setSelectedRunPaths([]);
   }, []);
 
   const processingInputPaths = useMemo(
-    () => (settings.inputType === 'draft'
-      ? selectedDraftRunPaths
+    () => (settings.inputType === 'draft' || settings.inputType === 'srt'
+      ? selectedRunPaths
       : getInputPaths(settings.inputType, fileManager.filePath)),
-    [settings.inputType, selectedDraftRunPaths, fileManager.filePath]
+    [settings.inputType, selectedRunPaths, fileManager.filePath]
   );
-  const isStep3MultiFolderMode = settings.inputType === 'draft' && processingInputPaths.length > 1;
+  const isStep3MultiFolderMode = processingInputPaths.length > 1;
 
   const hardsubSettings = useHardsubSettings({
     inputType: settings.inputType,
@@ -1646,7 +1659,9 @@ export function CaptionTranslator() {
         projectId,
         inputType: settings.inputType,
         sourcePath: firstPath,
-        folderPath: settings.inputType === 'draft' ? firstPath : firstPath.replace(/[^/\\]+$/, ''),
+        folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
+          ? firstPath
+          : firstPath.replace(/[^/\\]+$/, ''),
       });
       const step7 = (session.settings.step7Render || {}) as Record<string, unknown>;
       if (!cancelled) {
@@ -1700,7 +1715,9 @@ export function CaptionTranslator() {
           projectId,
           inputType: settings.inputType,
           sourcePath: inputPath,
-          folderPath: settings.inputType === 'draft' ? inputPath : inputPath.replace(/[^/\\]+$/, ''),
+          folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
+            ? inputPath
+            : inputPath.replace(/[^/\\]+$/, ''),
         };
         try {
           await syncSessionWithProjectSettings(
@@ -1874,7 +1891,9 @@ export function CaptionTranslator() {
         projectId,
         inputType: settings.inputType,
         sourcePath: inputPath,
-        folderPath: settings.inputType === 'draft' ? inputPath : inputPath.replace(/[^/\\]+$/, ''),
+        folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
+          ? inputPath
+          : inputPath.replace(/[^/\\]+$/, ''),
       }
     );
     return true;
@@ -1938,8 +1957,8 @@ export function CaptionTranslator() {
   }, [thumbnailManualSaveState]);
 
   const step7ThumbnailPanelData = useMemo(() => {
-    const selectedSet = new Set(selectedDraftRunPaths);
-    const sourceItems = settings.inputType === 'draft'
+    const selectedSet = new Set(selectedRunPaths);
+    const sourceItems = (settings.inputType === 'draft' || settings.inputType === 'srt')
       ? hardsubSettings.thumbnailFolderItems.filter((item) => selectedSet.has(item.folderPath))
       : hardsubSettings.thumbnailFolderItems;
 
@@ -1955,7 +1974,7 @@ export function CaptionTranslator() {
 
     return { items, sourceIndexes };
   }, [
-    selectedDraftRunPaths,
+    selectedRunPaths,
     hardsubSettings.thumbnailFolderItems,
     settings.inputType,
   ]);
@@ -2074,7 +2093,7 @@ export function CaptionTranslator() {
   }, [settings.layoutProfiles]);
 
   const processingThumbnailPayload = useMemo(() => {
-    if (settings.inputType !== 'draft') {
+    if (settings.inputType !== 'draft' && settings.inputType !== 'srt') {
       return {
         thumbnailText: hardsubSettings.thumbnailText,
         thumbnailTextsByOrder: hardsubSettings.thumbnailTextsByOrder,
@@ -2088,11 +2107,11 @@ export function CaptionTranslator() {
       orderIndexByPath.set(path, idx);
     });
 
-    const thumbnailTextsByOrder = selectedDraftRunPaths.map((path) => {
+    const thumbnailTextsByOrder = selectedRunPaths.map((path) => {
       const idx = orderIndexByPath.get(path);
       return idx !== undefined ? (hardsubSettings.thumbnailTextsByOrder[idx] || '') : '';
     });
-    const thumbnailTextsSecondaryByOrder = selectedDraftRunPaths.map((path) => {
+    const thumbnailTextsSecondaryByOrder = selectedRunPaths.map((path) => {
       const idx = orderIndexByPath.get(path);
       return idx !== undefined ? (hardsubSettings.thumbnailTextsSecondaryByOrder[idx] || '') : '';
     });
@@ -2103,7 +2122,7 @@ export function CaptionTranslator() {
       thumbnailTextsSecondaryByOrder,
     };
   }, [
-    selectedDraftRunPaths,
+    selectedRunPaths,
     hardsubSettings.selectedDraftPaths,
     hardsubSettings.thumbnailText,
     hardsubSettings.thumbnailTextsByOrder,
@@ -2113,7 +2132,7 @@ export function CaptionTranslator() {
   ]);
 
   const processingVideoPayload = useMemo(() => {
-    if (settings.inputType !== 'draft') {
+    if (settings.inputType !== 'draft' && settings.inputType !== 'srt') {
       return {
         hardsubTextPrimary: hardsubSettings.videoText,
         hardsubTextSecondary: hardsubSettings.videoTextSecondary,
@@ -2121,11 +2140,11 @@ export function CaptionTranslator() {
         hardsubTextsSecondaryByOrder: hardsubSettings.videoTextsSecondaryByOrder,
       };
     }
-    const videoTextsByOrder = selectedDraftRunPaths.map((path) => {
+    const videoTextsByOrder = selectedRunPaths.map((path) => {
       const idx = hardsubSettings.selectedDraftPaths.findIndex((draftPath) => draftPath === path);
       return idx >= 0 ? (hardsubSettings.videoTextsByOrder[idx] || '') : '';
     });
-    const videoTextsSecondaryByOrder = selectedDraftRunPaths.map((path) => {
+    const videoTextsSecondaryByOrder = selectedRunPaths.map((path) => {
       const idx = hardsubSettings.selectedDraftPaths.findIndex((draftPath) => draftPath === path);
       return idx >= 0 ? (hardsubSettings.videoTextsSecondaryByOrder[idx] || '') : '';
     });
@@ -2136,7 +2155,7 @@ export function CaptionTranslator() {
       hardsubTextsSecondaryByOrder: videoTextsSecondaryByOrder,
     };
   }, [
-    selectedDraftRunPaths,
+    selectedRunPaths,
     hardsubSettings.selectedDraftPaths,
     hardsubSettings.videoText,
     hardsubSettings.videoTextsByOrder,
@@ -2151,8 +2170,11 @@ export function CaptionTranslator() {
     entries: fileManager.entries,
     setEntries: fileManager.setEntries,
     filePath: fileManager.filePath,
-    inputPathsOverride: settings.inputType === 'draft' ? selectedDraftRunPaths : undefined,
+    inputPathsOverride: (settings.inputType === 'draft' || settings.inputType === 'srt')
+      ? selectedRunPaths
+      : undefined,
     inputType: settings.inputType,
+    srtFilesByFolder: fileManager.srtFilesByFolder,
     captionFolder,
     settings: {
       ...settings,
@@ -2183,7 +2205,7 @@ export function CaptionTranslator() {
       });
       return;
     }
-    const inputPaths = selectedDraftRunPaths;
+    const inputPaths = selectedRunPaths;
     if (inputPaths.length === 0) {
       setThumbnailBulkExportState({
         status: 'error',
@@ -2327,7 +2349,7 @@ export function CaptionTranslator() {
     })();
   }, [
     fileManager.folderVideos,
-    selectedDraftRunPaths,
+    selectedRunPaths,
     hardsubSettings.selectedDraftPaths,
     hardsubSettings.thumbnailTextsByOrder,
     hardsubSettings.thumbnailTextsSecondaryByOrder,
@@ -2674,9 +2696,9 @@ export function CaptionTranslator() {
   const lastHydratedInputPathRef = useRef<string>('');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
-  const displayOutputDir = settings.inputType === 'srt'
-    ? (displayPath ? displayPath.replace(/[^/\\]+$/, 'caption_output') : captionFolder)
-    : (displayPath ? `${displayPath}/caption_output` : '');
+  const displayOutputDir = displayPath
+    ? `${displayPath}/caption_output`
+    : (settings.inputType === 'srt' ? captionFolder : '');
 
   const refreshActiveSession = useCallback(async (cancelRef?: { current: boolean }) => {
     const isCancelled = () => !!cancelRef?.current;
@@ -2736,7 +2758,7 @@ export function CaptionTranslator() {
         projectId,
         inputType: settings.inputType,
         sourcePath: activeInputPath,
-        folderPath: settings.inputType === 'draft'
+        folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
           ? activeInputPath
           : activeInputPath.replace(/[^/\\]+$/, ''),
       });
@@ -3089,7 +3111,7 @@ export function CaptionTranslator() {
   }, [previewMode, renderedPreviewVideoPath]);
 
   useEffect(() => {
-    if (settings.inputType !== 'draft') {
+    if (settings.inputType !== 'draft' && settings.inputType !== 'srt') {
       if (thumbnailPreviewFolderPath) {
         setThumbnailPreviewFolderPath('');
       }
@@ -3129,7 +3151,7 @@ export function CaptionTranslator() {
     ? []
     : (sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries);
   const firstFolderVideoInfo = firstFolderPath ? fileManager.folderVideos[firstFolderPath] : null;
-  const thumbnailPreviewFolderPathResolved = settings.inputType === 'draft'
+  const thumbnailPreviewFolderPathResolved = (settings.inputType === 'draft' || settings.inputType === 'srt')
     ? (
         (isMultiFolder
           ? (thumbnailPreviewFolderPath || processing.currentFolder?.path || firstFolderPath)
@@ -3137,14 +3159,14 @@ export function CaptionTranslator() {
         ) || ''
       )
     : '';
-  const thumbnailPreviewFolderIndex = settings.inputType === 'draft'
+  const thumbnailPreviewFolderIndex = (settings.inputType === 'draft' || settings.inputType === 'srt')
     ? hardsubSettings.selectedDraftPaths.findIndex((path) => path === thumbnailPreviewFolderPathResolved)
     : -1;
   const thumbnailPreviewVideoInfo = thumbnailPreviewFolderPathResolved
     ? fileManager.folderVideos[thumbnailPreviewFolderPathResolved]
     : null;
   const thumbnailPreviewVideoPath = thumbnailPreviewVideoInfo?.fullPath || firstFolderVideoInfo?.fullPath || fileManager.firstVideoPath || null;
-  const thumbnailPreviewInputPath = settings.inputType === 'draft'
+  const thumbnailPreviewInputPath = (settings.inputType === 'draft' || settings.inputType === 'srt')
     ? (thumbnailPreviewFolderPathResolved || firstFolderPath || '')
     : fileManager.filePath;
   const thumbnailPreviewContextKey: ThumbnailPreviewContextKey | null = (projectId && thumbnailPreviewInputPath)
@@ -3181,7 +3203,7 @@ export function CaptionTranslator() {
     });
     return map;
   }, [fileManager.folderVideos]);
-  const thumbnailPreviewSourceLabel = settings.inputType === 'draft'
+  const thumbnailPreviewSourceLabel = (settings.inputType === 'draft' || settings.inputType === 'srt')
     ? (thumbnailPreviewFolderPathResolved
       ? `Nguồn: ${getPathBaseName(thumbnailPreviewFolderPathResolved)}`
       : 'Nguồn: folder hiện tại')
@@ -3465,7 +3487,7 @@ export function CaptionTranslator() {
             projectId,
             inputType: settings.inputType,
             sourcePath: activeInputPath,
-            folderPath: settings.inputType === 'draft'
+            folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
               ? activeInputPath
               : activeInputPath.replace(/[^/\\]+$/, ''),
           });
@@ -3765,10 +3787,10 @@ export function CaptionTranslator() {
   const isStep7AudioActionActive = isStep7AudioMixing || isStep7AudioPlaying;
   const isBulkExportRunning = thumbnailBulkExportState.status === 'running';
   const canBulkExportThumbnails = (
-    settings.inputType === 'draft'
+    (settings.inputType === 'draft' || settings.inputType === 'srt')
     && isMultiFolder
     && (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16')
-    && selectedDraftRunPaths.length > 0
+    && selectedRunPaths.length > 0
   );
   const canQuickStep7Audio = isStep7AudioActionActive || hasStep7AudioPreview || (
     processing.enabledSteps.has(7) &&
@@ -4619,7 +4641,7 @@ export function CaptionTranslator() {
         projectId,
         inputType: settings.inputType,
         sourcePath: stepInspectorActiveInputPath,
-        folderPath: settings.inputType === 'draft'
+        folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
           ? stepInspectorActiveInputPath
           : stepInspectorActiveInputPath.replace(/[^/\\]+$/, ''),
       });
@@ -6102,7 +6124,7 @@ export function CaptionTranslator() {
             <div className={styles.stepCardHint}>
               {settings.inputType === 'draft'
                 ? 'Draft cho phép chọn nhiều folder trong cùng một lần duyệt.'
-                : 'SRT dùng một file phụ đề làm nguồn.'}
+                : 'SRT chọn nhiều folder và tự dò file phụ đề trong từng folder.'}
             </div>
           </div>
 
@@ -6111,85 +6133,99 @@ export function CaptionTranslator() {
               <div className={styles.stepCardTitle}>Đường dẫn đầu vào</div>
             </div>
             <div className={styles.stepBrowseRow}>
-              {settings.inputType === 'srt' ? (
-                <Input
-                  value={fileManager.filePath}
-                  onChange={(e) => fileManager.setFilePath(e.target.value)}
-                  placeholder="Đường dẫn .srt"
-                />
-              ) : (
-                <div
-                  className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
-                  onClick={!fileManager.filePath
-                    ? () => {
-                        void fileManager.handleBrowseFile();
-                      }
-                    : undefined}
-                >
-                  {!fileManager.filePath ? (
-                    <span className={styles.placeholderText}>Chưa chọn folder...</span>
+              <div
+                className={`${styles.folderBoxContainer} ${!fileManager.filePath ? styles.emptyFolderBox : ''}`}
+                onClick={!fileManager.filePath
+                  ? () => {
+                      void fileManager.handleBrowseFile();
+                    }
+                  : undefined}
+              >
+                {!fileManager.filePath ? (
+                  <span className={styles.placeholderText}>Chưa chọn folder...</span>
+                ) : (
+                  filteredInputPaths.length === 0 ? (
+                    <span className={styles.placeholderText}>Không có folder nào thỏa điều kiện lọc.</span>
                   ) : (
-                    filteredDraftInputPaths.length === 0 ? (
-                      <span className={styles.placeholderText}>Không có folder nào thỏa điều kiện lọc.</span>
-                    ) : (
-                      <div className={styles.folderGrid}>
-                        {filteredDraftInputPaths.map((path, idx) => {
-                          const folderName = path.split(/[/\\]/).pop() || path;
-                          const vInfo = fileManager.folderVideos[path];
-                          const isActiveFolder = displayPath === path;
-                          return (
-                            <div
-                              key={`${path}-${idx}`}
-                              className={`${styles.folderBox} ${isActiveFolder ? styles.folderBoxActive : ''} ${!selectedDraftRunSet.has(path) ? styles.folderBoxDisabled : ''}` }
-                              title={path}
-                              onClick={() => {
-                                if (processing.status === 'running') return;
-                                setThumbnailPreviewFolderPath(path);
-                              }}
-                            >
-                              <div className={styles.folderBoxHeader}>
-                                <input
-                                  type="checkbox"
-                                  className={styles.folderSelectCheckbox}
-                                  checked={selectedDraftRunSet.has(path)}
-                                  disabled={processing.status === 'running'}
-                                  onChange={() => {
-                                    if (processing.status === 'running') return;
-                                    toggleDraftRunPath(path);
-                                  }}
-                                  onClick={(event) => event.stopPropagation()}
-                                  title="Chọn folder để chạy pipeline"
-                                />
-                                <img src={folderIconUrl} alt="folder" className={`${styles.folderIcon} ${styles.folderIconCompact}`} />
-                                <span className={styles.folderName}>{folderName}</span>
-                              </div>
-                              {vInfo && (
-                                <div className={styles.folderBoxSubText}>
-                                  <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
-                                  {vInfo.name}
-                                </div>
-                              )}
+                    <div className={styles.folderGrid}>
+                      {filteredInputPaths.map((path, idx) => {
+                        const folderName = path.split(/[/\\]/).pop() || path;
+                        const vInfo = fileManager.folderVideos[path];
+                        const isActiveFolder = displayPath === path;
+                        const isMissingSrt = settings.inputType === 'srt' && missingSrtFolders.has(path);
+                        const srtPath = fileManager.srtFilesByFolder[path];
+                        const srtFileLabel = srtPath ? getPathBaseName(srtPath) : '';
+                        return (
+                          <div
+                            key={`${path}-${idx}`}
+                            className={`${styles.folderBox} ${isActiveFolder ? styles.folderBoxActive : ''} ${!selectedRunSet.has(path) ? styles.folderBoxDisabled : ''} ${isMissingSrt ? styles.folderBoxMissing : ''}`}
+                            title={path}
+                            onClick={() => {
+                              if (processing.status === 'running') return;
+                              setThumbnailPreviewFolderPath(path);
+                            }}
+                          >
+                            <div className={styles.folderBoxHeader}>
+                              <input
+                                type="checkbox"
+                                className={styles.folderSelectCheckbox}
+                                checked={selectedRunSet.has(path)}
+                                disabled={processing.status === 'running' || isMissingSrt}
+                                onChange={() => {
+                                  if (processing.status === 'running' || isMissingSrt) return;
+                                  toggleRunPath(path);
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                                title={isMissingSrt ? 'Thiếu file SRT' : 'Chọn folder để chạy pipeline'}
+                              />
+                              <img src={folderIconUrl} alt="folder" className={`${styles.folderIcon} ${styles.folderIconCompact}`} />
+                              <span className={styles.folderName}>{folderName}</span>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )
-                  )}
-                </div>
-              )}
+                            {settings.inputType === 'srt' && (
+                              <div className={styles.folderSrtRow}>
+                                <span className={`${styles.folderSrtLabel} ${isMissingSrt ? styles.folderSrtMissing : ''}`}>
+                                  {srtFileLabel ? `SRT: ${srtFileLabel}` : 'Thiếu SRT'}
+                                </span>
+                                <button
+                                  type="button"
+                                  className={styles.folderSrtPickBtn}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void fileManager.pickSrtForFolder(path);
+                                  }}
+                                  disabled={processing.status === 'running'}
+                                  title="Chọn file .srt"
+                                >
+                                  Chọn SRT
+                                </button>
+                              </div>
+                            )}
+                            {vInfo && (
+                              <div className={styles.folderBoxSubText}>
+                                <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
+                                {vInfo.name}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+              </div>
               <Button onClick={fileManager.handleBrowseFile}>Chọn</Button>
-              {settings.inputType === 'draft' && fileManager.filePath && (
+              {fileManager.filePath && (
                 <Button
                   variant="secondary"
                   disabled={processing.status === 'running'}
                   onClick={() => fileManager.setFilePath('')}
                   title="Bỏ chọn tất cả folder"
                 >
-                  Bỏ chọn tất cả
+                  Bỏ chọn
                 </Button>
               )}
             </div>
-            {settings.inputType === 'draft' && (
+            {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
               <div className={styles.durationFilterControls}>
                 <select
                   value={draftDurationFilterMode}
@@ -6219,27 +6255,27 @@ export function CaptionTranslator() {
                 <span className={styles.durationFilterUnit}>phút</span>
               </div>
             )}
-            {settings.inputType === 'draft' && (
+            {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
               <div className={styles.folderSelectActions}>
                 <Button
                   variant="secondary"
-                  disabled={processing.status === 'running' || filteredDraftInputPaths.length === 0}
-                  onClick={handleSelectAllDraftRuns}
+                  disabled={processing.status === 'running' || availableRunPaths.length === 0}
+                  onClick={handleSelectAllRuns}
                   title="Chọn tất cả folder đang hiển thị"
                 >
                   Chọn tất cả
                 </Button>
                 <Button
                   variant="secondary"
-                  disabled={processing.status === 'running' || selectedDraftRunPaths.length === 0}
-                  onClick={handleClearDraftRuns}
+                  disabled={processing.status === 'running' || selectedRunPaths.length === 0}
+                  onClick={handleClearRuns}
                   title="Bỏ chọn tất cả folder"
                 >
                   Bỏ chọn
                 </Button>
               </div>
             )}
-            {settings.inputType === 'draft' && (
+            {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
               <div className={styles.stepCardHint}>
                 Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
                 {draftDurationFilterMode !== 'all'
@@ -6248,20 +6284,23 @@ export function CaptionTranslator() {
               </div>
             )}
             <div className={styles.stepMetaPills}>
-              {settings.inputType === 'draft' && (
+              {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
                 <span className={styles.stepMetaPill}>Folders tổng: {selectedInputPaths.length}</span>
               )}
-              {settings.inputType === 'draft' && (
-                <span className={styles.stepMetaPill}>Sau lọc: {filteredDraftInputPaths.length}</span>
+              {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
+                <span className={styles.stepMetaPill}>Sau lọc: {filteredInputPaths.length}</span>
               )}
-              {settings.inputType === 'draft' && (
-                <span className={styles.stepMetaPill}>Đã chọn: {selectedDraftRunPaths.length}</span>
+              {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
+                <span className={styles.stepMetaPill}>Đã chọn: {selectedRunPaths.length}</span>
               )}
-              {settings.inputType === 'draft' && draftDurationFilterMode !== 'all' && (
-                <span className={styles.stepMetaPill}>Thiếu duration: {draftDurationFilterStats.missingDurationCount}</span>
+              {settings.inputType === 'srt' && (
+                <span className={styles.stepMetaPill}>Thiếu SRT: {missingSrtCount}</span>
               )}
-              {settings.inputType === 'draft' && draftDurationFilterMode !== 'all' && (
-                <span className={styles.stepMetaPill}>Không đạt ngưỡng: {draftDurationFilterStats.excludedByThresholdCount}</span>
+              {(settings.inputType === 'draft' || settings.inputType === 'srt') && draftDurationFilterMode !== 'all' && (
+                <span className={styles.stepMetaPill}>Thiếu duration: {durationFilterStats.missingDurationCount}</span>
+              )}
+              {(settings.inputType === 'draft' || settings.inputType === 'srt') && draftDurationFilterMode !== 'all' && (
+                <span className={styles.stepMetaPill}>Không đạt ngưỡng: {durationFilterStats.excludedByThresholdCount}</span>
               )}
               <span className={styles.stepMetaPill}>Dòng đã load: {fileManager.entries.length}</span>
             </div>
@@ -6666,7 +6705,7 @@ export function CaptionTranslator() {
             <ThumbnailListPanel
               visible={
                 (settings.renderMode === 'hardsub' || settings.renderMode === 'hardsub_portrait_9_16') &&
-                settings.inputType === 'draft' &&
+                (settings.inputType === 'draft' || settings.inputType === 'srt') &&
                 isMultiFolder
               }
               items={step7ThumbnailPanelData.items}
@@ -6776,7 +6815,7 @@ export function CaptionTranslator() {
                 setInspectorPane('step');
                 void fileManager.handleBrowseFile();
               }}
-              title={settings.inputType === 'draft' ? 'Chọn lại/ thêm nhiều folder' : 'Chọn file SRT'}
+              title={settings.inputType === 'draft' ? 'Chọn lại/ thêm nhiều folder' : 'Chọn folder SRT'}
             >
               Nguồn vào
             </button>
@@ -6805,7 +6844,7 @@ export function CaptionTranslator() {
                 Thumbnail
               </button>
             </div>
-            {activePreviewTab === 'thumbnail' && settings.inputType === 'draft' && isMultiFolder && (
+            {activePreviewTab === 'thumbnail' && (settings.inputType === 'draft' || settings.inputType === 'srt') && isMultiFolder && (
               <div className={styles.thumbnailFolderPicker}>
                 <select
                   className={styles.thumbnailFolderSelect}
@@ -7013,7 +7052,7 @@ export function CaptionTranslator() {
               {inspectorPane === 'step'
                 ? (settings.inputType === 'draft'
                   ? `Input: Draft ${processingInputPaths.length} folder | ${fileManager.entries.length} dòng`
-                  : `Input: SRT | ${fileManager.entries.length} dòng`)
+                  : `Input: SRT ${processingInputPaths.length} folder | ${fileManager.entries.length} dòng`)
                 : inspectorPane === 'common'
                   ? 'Common: Render / Typography / Audio dùng lại nhiều step. Voice giữ ở B4.'
                   : inspectorPane === 'batch3'

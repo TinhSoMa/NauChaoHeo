@@ -425,6 +425,63 @@ export function registerCaptionHandlers(): void {
   );
 
   // ============================================
+  // FIND SRT IN FOLDERS
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.FIND_SRT_IN_FOLDERS,
+    async (_event: IpcMainInvokeEvent, folderPaths: string[]): Promise<IpcResponse<Record<string, string>>> => {
+      const result: Record<string, string> = {};
+      if (!Array.isArray(folderPaths) || folderPaths.length === 0) {
+        return { success: true, data: result };
+      }
+      try {
+        const path = await import('path');
+        const fs = await import('fs/promises');
+        const fsSync = await import('fs');
+
+        for (const rawPath of folderPaths) {
+          const trimmed = typeof rawPath === 'string' ? rawPath.trim().replace(/[\\/]+$/, '') : '';
+          if (!trimmed) continue;
+          try {
+            if (!fsSync.existsSync(trimmed)) {
+              result[trimmed] = '';
+              continue;
+            }
+            const entries = await fs.readdir(trimmed, { withFileTypes: true });
+            const srtFiles = entries
+              .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.srt'))
+              .map((entry) => entry.name);
+
+            let picked = '';
+            const lowerMap = new Map(srtFiles.map((name) => [name.toLowerCase(), name]));
+            if (lowerMap.has('translated.srt')) {
+              picked = lowerMap.get('translated.srt') || '';
+            } else {
+              const subtitleCandidates = srtFiles
+                .filter((name) => name.toLowerCase().startsWith('subtitle') && name.toLowerCase().endsWith('.srt'))
+                .sort((a, b) => a.localeCompare(b));
+              if (subtitleCandidates.length > 0) {
+                picked = subtitleCandidates[0];
+              } else if (srtFiles.length > 0) {
+                const sorted = [...srtFiles].sort((a, b) => a.localeCompare(b));
+                picked = sorted[0];
+              }
+            }
+            result[trimmed] = picked ? path.join(trimmed, picked) : '';
+          } catch (error) {
+            console.warn('[CaptionHandlers] Không thể quét SRT trong folder:', trimmed, error);
+            result[trimmed] = '';
+          }
+        }
+        return { success: true, data: result };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi find SRT in folders:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
   // PARSE DRAFT (draft_content.json từ CapCut)
   // ============================================
   ipcMain.handle(
