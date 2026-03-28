@@ -320,6 +320,14 @@ class YtDlpService {
     if (!ffmpegLocation) {
       onLog(`[yt-dlp] WARN: ffmpeg không tìm thấy tại: ${ffmpegPath} (fallback dùng hệ thống)`)
     }
+    const mergeAudio = options.mergeAudio !== false
+    if (mergeAudio) {
+      onLog('[Downloader] Ghép audio: ON → merge')
+    } else if (options.downloadSeparateAudio) {
+      onLog('[Downloader] Ghép audio: OFF → tải audio riêng')
+    } else {
+      onLog('[Downloader] Ghép audio: OFF → video-only')
+    }
     const args = buildArgs(options, ffmpegLocation || undefined)
 
     return new Promise((resolve, reject) => {
@@ -551,6 +559,7 @@ function parseVideoInfo(json: any): VideoInfo {
 
 function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] {
   const args: string[] = []
+  const mergeAudio = options.mergeAudio !== false
 
   // Cookie
   if (options.useCookie && options['cookiePath' as keyof DownloadOptions]) {
@@ -559,11 +568,27 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
 
   // Format
   if (options.formatId) {
-    args.push('-f', options.formatId)
-  } else {
+    if (mergeAudio) {
+      args.push('-f', options.formatId)
+    } else if (options.downloadSeparateAudio) {
+      args.push('-f', `${options.formatId}+bestaudio[acodec^=mp4a]/${options.formatId}+bestaudio`)
+    } else {
+      args.push('-f', options.formatId)
+    }
+  } else if (mergeAudio) {
     args.push(
       '-f',
       'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best'
+    )
+  } else if (options.downloadSeparateAudio) {
+    args.push(
+      '-f',
+      'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc][ext=mp4]+bestaudio'
+    )
+  } else {
+    args.push(
+      '-f',
+      'bestvideo[vcodec^=avc][ext=mp4]/bestvideo[vcodec^=avc]/bestvideo'
     )
   }
 
@@ -586,9 +611,13 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
   // Output template
   args.push('-o', '%(title)s [%(id)s].%(ext)s')
 
-  // Merge to mp4 if possible
-  args.push('--merge-output-format', 'mp4')
-  args.push('--postprocessor-args', 'ffmpeg:-movflags +faststart')
+  if (mergeAudio) {
+    // Merge to mp4 if possible
+    args.push('--merge-output-format', 'mp4')
+    args.push('--postprocessor-args', 'ffmpeg:-movflags +faststart')
+  } else {
+    args.push('--no-merge-output')
+  }
 
   if (ffmpegLocation) {
     args.push('--ffmpeg-location', ffmpegLocation)

@@ -62,6 +62,18 @@ function isAacCodec(codec?: string | null): boolean {
   return value.startsWith('mp4a') || value === 'aac'
 }
 
+function getVideoCodecTag(codec?: string | null): string | null {
+  if (!codec) return null
+  const value = codec.toLowerCase()
+  if (value.includes('av01') || value.includes('av1')) return 'AV1'
+  if (value.includes('vp9')) return 'VP9'
+  if (value.includes('hevc') || value.includes('hev') || value.includes('hvc1') || value.includes('h265') || value.includes('h.265')) {
+    return 'HEVC'
+  }
+  if (value.startsWith('avc') || value.includes('h264') || value.includes('h.264')) return 'H264'
+  return null
+}
+
 function resolveEmbedUrl(rawUrl: string): { provider?: 'youtube' | 'bilibili'; embedUrl?: string } {
   const trimmed = rawUrl.trim()
   if (!trimmed || !trimmed.startsWith('http')) return {}
@@ -258,6 +270,8 @@ export const DownloaderPage = () => {
   const [downloadVideo, setDownloadVideo] = useState(true)
   const [downloadSubtitle, setDownloadSubtitle] = useState(true)
   const [downloadThumbnail, setDownloadThumbnail] = useState(false)
+  const [mergeAudio, setMergeAudio] = useState(true)
+  const [downloadSeparateAudio, setDownloadSeparateAudio] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
   const [downloadAllSubs, setDownloadAllSubs] = useState(true)
   const [manualSubLangs, setManualSubLangs] = useState('')
@@ -363,10 +377,14 @@ export const DownloaderPage = () => {
           setCookieFoundDomain(res.cookieDomain ?? null)
           // Pre-select best format
           const nextFormats = res.data.formats.filter((format: VideoFormat) => (
-            format.vcodec && format.vcodec !== 'none' && isH264Codec(format.vcodec)
+            format.vcodec && format.vcodec !== 'none'
           ))
+          const bestH264WithAudio = nextFormats.find((format: VideoFormat) => (
+            isH264Codec(format.vcodec) && isAacCodec(format.acodec)
+          ))
+          const bestH264 = nextFormats.find((format: VideoFormat) => isH264Codec(format.vcodec))
           const bestWithAudio = nextFormats.find((format: VideoFormat) => isAacCodec(format.acodec))
-          const best = bestWithAudio || nextFormats[0]
+          const best = bestH264WithAudio || bestH264 || bestWithAudio || nextFormats[0]
           setSelectedFormatId(best ? best.id : '')
           setStatus('ready')
         } else {
@@ -447,6 +465,12 @@ export const DownloaderPage = () => {
     }
   }, [downloadThumbnail])
 
+  useEffect(() => {
+    if (mergeAudio) {
+      setDownloadSeparateAudio(false)
+    }
+  }, [mergeAudio])
+
   const allLangs = useMemo(() => {
     if (!videoInfo) return []
     const langs = new Set([
@@ -460,7 +484,6 @@ export const DownloaderPage = () => {
     if (!videoInfo) return []
     return videoInfo.formats.filter((format) => {
       if (!format.vcodec || format.vcodec === 'none') return false
-      if (!isH264Codec(format.vcodec)) return false
       return true
     })
   }, [videoInfo])
@@ -573,14 +596,26 @@ export const DownloaderPage = () => {
       }
 
       let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
-      if (downloadVideo && selectedFormatId && videoInfo) {
-        const selectedFormat = availableFormats.find((format) => format.id === selectedFormatId)
-        if (!selectedFormat) {
-          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ → fallback best H264/AAC`])
-          resolvedFormatId = undefined
-        } else if (!isAacCodec(selectedFormat.acodec)) {
-          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
-          resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
+      let resolvedDownloadSeparateAudio = false
+      if (downloadVideo) {
+        if (selectedFormatId && videoInfo) {
+          const selectedFormat = availableFormats.find((format) => format.id === selectedFormatId)
+          if (!selectedFormat) {
+            setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ → fallback best H264/AAC`])
+            resolvedFormatId = undefined
+            if (!mergeAudio && downloadSeparateAudio) {
+              resolvedDownloadSeparateAudio = true
+            }
+          } else if (mergeAudio) {
+            if (!isAacCodec(selectedFormat.acodec)) {
+              setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
+              resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
+            }
+          } else if (downloadSeparateAudio && !isAacCodec(selectedFormat.acodec)) {
+            resolvedDownloadSeparateAudio = true
+          }
+        } else if (!mergeAudio && downloadSeparateAudio) {
+          resolvedDownloadSeparateAudio = true
         }
       }
 
@@ -588,6 +623,8 @@ export const DownloaderPage = () => {
         url: targetUrl,
         outputDir: resolvedDir,
         formatId: resolvedFormatId,
+        mergeAudio,
+        downloadSeparateAudio: resolvedDownloadSeparateAudio,
         subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
         convertSubs: downloadSubtitle ? convertSubs : undefined,
         skipDanmakuConvert,
@@ -624,7 +661,7 @@ export const DownloaderPage = () => {
       setActiveQueueId(item.id)
       updateQueueItem(item.id, { status: 'running', error: undefined })
       setProgressInfo({ percent: 0, stage: 'downloading' })
-      setLogs(prev => [...prev, `\n=== Download: ${item.url} ===`])
+    setLogs(prev => [...prev, `\n=== Download: ${item.url} ===`])
 
       let info: VideoInfo | null = null
       try {
@@ -659,17 +696,29 @@ export const DownloaderPage = () => {
       }
 
       let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
-      if (downloadVideo && selectedFormatId && info) {
-        const itemFormats = info.formats.filter((format) => (
-          format.vcodec && format.vcodec !== 'none' && isH264Codec(format.vcodec)
-        ))
-        const selectedFormat = itemFormats.find((format) => format.id === selectedFormatId)
-        if (!selectedFormat) {
-          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ cho link ${item.url} → fallback best H264/AAC`])
-          resolvedFormatId = undefined
-        } else if (!isAacCodec(selectedFormat.acodec)) {
-          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
-          resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
+      let resolvedDownloadSeparateAudio = false
+      if (downloadVideo) {
+        if (selectedFormatId && info) {
+          const itemFormats = info.formats.filter((format) => (
+            format.vcodec && format.vcodec !== 'none'
+          ))
+          const selectedFormat = itemFormats.find((format) => format.id === selectedFormatId)
+          if (!selectedFormat) {
+            setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ cho link ${item.url} → fallback best H264/AAC`])
+            resolvedFormatId = undefined
+            if (!mergeAudio && downloadSeparateAudio) {
+              resolvedDownloadSeparateAudio = true
+            }
+          } else if (mergeAudio) {
+            if (!isAacCodec(selectedFormat.acodec)) {
+              setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
+              resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
+            }
+          } else if (downloadSeparateAudio && !isAacCodec(selectedFormat.acodec)) {
+            resolvedDownloadSeparateAudio = true
+          }
+        } else if (!mergeAudio && downloadSeparateAudio) {
+          resolvedDownloadSeparateAudio = true
         }
       }
 
@@ -677,6 +726,8 @@ export const DownloaderPage = () => {
         url: item.url,
         outputDir: resolvedDir,
         formatId: resolvedFormatId,
+        mergeAudio,
+        downloadSeparateAudio: resolvedDownloadSeparateAudio,
         subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
         convertSubs: downloadSubtitle ? convertSubs : undefined,
         skipDanmakuConvert,
@@ -723,6 +774,8 @@ export const DownloaderPage = () => {
     downloadVideo,
     downloadSubtitle,
     downloadThumbnail,
+    mergeAudio,
+    downloadSeparateAudio,
     selectedFormatId,
     availableFormats,
     selectedSubLangs,
@@ -749,6 +802,7 @@ export const DownloaderPage = () => {
     setCookieFoundDomain(null); setStatus('idle'); setLogs([])
     setProgressInfo(null); setSelectedFormatId(''); setSelectedSubLangs([])
     setDownloadVideo(true); setDownloadSubtitle(false); setDownloadThumbnail(false)
+    setMergeAudio(true); setDownloadSeparateAudio(false)
     setAllowPlaylist(false); setPlaylistInfo(null); setPlaylistError(null)
     setQueue([]); setActiveQueueId(null); setMultiText(''); setPreviewUrl('')
     setLastResolvedOutputDir('')
@@ -1050,7 +1104,13 @@ export const DownloaderPage = () => {
                   <Checkbox label="Video" checked={downloadVideo} onChange={setDownloadVideo} />
                   <Checkbox label="Subtitles" checked={downloadSubtitle} onChange={setDownloadSubtitle} />
                   <Checkbox label="Thumbnail" checked={downloadThumbnail} onChange={setDownloadThumbnail} />
+                  <Checkbox label="Ghép audio" checked={mergeAudio} onChange={setMergeAudio} />
                 </div>
+                {!mergeAudio && (
+                  <div className={styles.inlineRow}>
+                    <Checkbox label="Tải audio riêng" checked={downloadSeparateAudio} onChange={setDownloadSeparateAudio} />
+                  </div>
+                )}
               </div>
 
               <div className={styles.fieldGroup}>
@@ -1096,11 +1156,15 @@ export const DownloaderPage = () => {
                     >
                       <option value="">Tự động (best)</option>
                       {availableFormats.map((f: VideoFormat) => {
-                        const needsAacMerge = !isAacCodec(f.acodec)
+                        const needsAudio = !isAacCodec(f.acodec)
+                        const note = mergeAudio
+                          ? (needsAudio ? ' • sẽ ghép audio' : '')
+                          : (downloadSeparateAudio && needsAudio ? ' • sẽ tải audio riêng' : '')
+                        const codecTag = getVideoCodecTag(f.vcodec)
                         return (
                         <option key={f.id} value={f.id}>
                           {f.resolution} — {f.ext.toUpperCase()}{f.note ? ` (${f.note})` : ''}{formatSize(f.filesize)}
-                          {needsAacMerge ? ' • sẽ ghép audio' : ''}
+                          {codecTag ? ` · ${codecTag}` : ''}{note}
                         </option>
                         )
                       })}
@@ -1115,9 +1179,6 @@ export const DownloaderPage = () => {
 
               {downloadSubtitle && (
                 <div className={styles.fieldGroup}>
-                  <div className={styles.fieldLabel}>
-                    <Scissors size={13} /> Subtitle
-                  </div>
                   <div className={styles.inlineRow}>
                     <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
                     {downloadAllSubs && (

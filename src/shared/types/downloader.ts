@@ -49,6 +49,10 @@ export interface DownloadOptions {
   outputDir: string
   /** yt-dlp format id, e.g. "137+140". undefined = best */
   formatId?: string
+  /** whether to merge audio into video */
+  mergeAudio?: boolean
+  /** when mergeAudio=false, download audio as a separate file */
+  downloadSeparateAudio?: boolean
   /** subtitle language codes to download, e.g. ["vi", "en", "all"] */
   subtitleLangs?: string[]
   /** convert subtitles to this format, e.g. "srt" */
