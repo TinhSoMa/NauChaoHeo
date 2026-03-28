@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 
-export type TabId = 'translator' | 'cutVideo' | 'story' | 'storySummary' | 'storyWeb' | 'gemini' | 'veo3' | 'downloader' | 'settings'
+export type TabId = 'home' | 'translator' | 'cutVideo' | 'story' | 'storySummary' | 'storyWeb' | 'gemini' | 'veo3' | 'downloader' | 'settings'
 
 interface TabContextValue {
   activeTabId: TabId
@@ -11,8 +11,8 @@ interface TabContextValue {
 const TabContext = createContext<TabContextValue | undefined>(undefined)
 
 export function TabProvider({ children }: { children: React.ReactNode }) {
-  const [activeTabId, setActiveTabId] = useState<TabId>('story')
-  const [openedTabs, setOpenedTabs] = useState<TabId[]>(['story'])
+  const [activeTabId, setActiveTabId] = useState<TabId>('home')
+  const [openedTabs, setOpenedTabs] = useState<TabId[]>(['home'])
 
   const setActiveTab = (tabId: TabId) => {
     setActiveTabId(tabId)

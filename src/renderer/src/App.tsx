@@ -17,7 +17,7 @@ function App() {
           <Route path="/settings-standalone" element={<SettingsStandalone />} />
 
           {/* Điều hướng mặc định */}
-          <Route path="/" element={<Navigate to="/story-translator" replace />} />
+          <Route path="/" element={<Navigate to="/project-home" replace />} />
 
           {/* Editor sử dụng layout chính (keep-alive tabs) */}
           <Route path="/*" element={<AppLayout />} />

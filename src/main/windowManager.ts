@@ -98,7 +98,7 @@ export function createEditorWindow(projectId: string): BrowserWindow {
     editorWindow.show()
   })
 
-  const url = buildRendererUrl('story-translator', { projectId })
+  const url = buildRendererUrl('project-home', { projectId })
   editorWindow.loadURL(url)
 
   editorWindow.on('closed', () => {

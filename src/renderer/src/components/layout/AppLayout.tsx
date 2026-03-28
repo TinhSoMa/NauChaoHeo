@@ -6,6 +6,7 @@ import { useTabManager, TabId } from '../../context/TabContext'
 import { ProjectProvider } from '../../context/ProjectContext'
 
 const TAB_BY_PATH: Record<string, TabId> = {
+  '/project-home': 'home',
   '/translator': 'translator',
   '/cut-video': 'cutVideo',
   '/story-translator': 'story',
@@ -24,7 +25,7 @@ export const AppLayout = () => {
   const projectId = searchParams.get('projectId')
 
   useEffect(() => {
-    const nextTab = TAB_BY_PATH[location.pathname] ?? 'story'
+    const nextTab = TAB_BY_PATH[location.pathname] ?? 'home'
     setActiveTab(nextTab)
   }, [location.pathname, setActiveTab])
 

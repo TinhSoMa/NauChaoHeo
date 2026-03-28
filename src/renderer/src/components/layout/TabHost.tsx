@@ -1,12 +1,4 @@
-import React, { Component, type ReactNode } from 'react'
-import { CaptionTranslator } from '../caption'
-import { CutVideo } from '../cutvideo/CutVideo'
-import { StoryTranslator, StorySummary } from '../story'
-import { StoryTranslatorWeb } from '../story/StoryTranslatorWeb'
-import { GeminiChat } from '../gemini'
-import { Settings } from '../settings/Settings'
-import { Veo3Page } from '../veo3/Veo3Page'
-import { DownloaderPage } from '../downloader/DownloaderPage'
+import React, { Component, Suspense, lazy, type ReactNode } from 'react'
 import { useTabManager, TabId } from '../../context/TabContext'
 
 interface TabEntry {
@@ -14,7 +6,39 @@ interface TabEntry {
   element: ReactNode
 }
 
+const ProjectHome = lazy(() =>
+  import('../project/ProjectHome').then((m) => ({ default: m.ProjectHome }))
+)
+const CaptionTranslator = lazy(() =>
+  import('../caption').then((m) => ({ default: m.CaptionTranslator }))
+)
+const CutVideo = lazy(() =>
+  import('../cutvideo/CutVideo').then((m) => ({ default: m.CutVideo }))
+)
+const StoryTranslator = lazy(() =>
+  import('../story').then((m) => ({ default: m.StoryTranslator }))
+)
+const StorySummary = lazy(() =>
+  import('../story').then((m) => ({ default: m.StorySummary }))
+)
+const StoryTranslatorWeb = lazy(() =>
+  import('../story/StoryTranslatorWeb').then((m) => ({ default: m.StoryTranslatorWeb }))
+)
+const GeminiChat = lazy(() =>
+  import('../gemini').then((m) => ({ default: m.GeminiChat }))
+)
+const Settings = lazy(() =>
+  import('../settings/Settings').then((m) => ({ default: m.Settings }))
+)
+const Veo3Page = lazy(() =>
+  import('../veo3/Veo3Page').then((m) => ({ default: m.Veo3Page }))
+)
+const DownloaderPage = lazy(() =>
+  import('../downloader/DownloaderPage').then((m) => ({ default: m.DownloaderPage }))
+)
+
 const TAB_ENTRIES: TabEntry[] = [
+  { id: 'home', element: <ProjectHome /> },
   { id: 'translator', element: <CaptionTranslator /> },
   { id: 'cutVideo', element: <CutVideo /> },
   { id: 'story', element: <StoryTranslator /> },
@@ -84,7 +108,15 @@ export function TabHost() {
         return (
           <div key={tab.id} className={isActive ? 'block' : 'hidden'}>
             <TabErrorBoundary resetKey={tab.id}>
-              {tab.element}
+              <Suspense
+                fallback={
+                  <div className="rounded-xl border border-border bg-card p-6 text-text-primary">
+                    <div className="text-sm text-text-secondary">Đang tải giao diện...</div>
+                  </div>
+                }
+              >
+                {tab.element}
+              </Suspense>
             </TabErrorBoundary>
           </div>
         )
