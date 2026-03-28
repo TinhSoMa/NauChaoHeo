@@ -268,7 +268,7 @@ export const DownloaderPage = () => {
   const [logs, setLogs] = useState<string[]>([])
   const [progressInfo, setProgressInfo] = useState<DownloadProgress | null>(null)
   const [showLogs, setShowLogs] = useState(false)
-  const logsEndRef = useRef<HTMLDivElement>(null)
+  const logScrollRef = useRef<HTMLDivElement>(null)
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [activeQueueId, setActiveQueueId] = useState<string | null>(null)
   const stopRequestedRef = useRef(false)
@@ -299,10 +299,7 @@ export const DownloaderPage = () => {
     return () => { unsubLog?.(); unsubProg?.() }
   }, [activeQueueId, mode])
 
-  // Auto-scroll logs
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs])
+  // Log scroll is user-controlled (no auto-scroll)
 
   // ── Debounced fetchInfo on URL change ──
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -1131,11 +1128,10 @@ export const DownloaderPage = () => {
                 </button>
               </div>
               {showLogs && (
-                <div className={styles.logScroll}>
+                <div className={styles.logScroll} ref={logScrollRef}>
                   {logs.map((l, i) => (
                     <div key={i} className={l.startsWith('ERROR') ? styles.logError : ''}>{l}</div>
                   ))}
-                  <div ref={logsEndRef} />
                 </div>
               )}
             </div>
