@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../common/Button';
 import styles from './CutVideo.module.css';
-import { FolderPlus, Play, Square, Trash2 } from 'lucide-react';
+import { FolderPlus, Play, Square, Trash2, ArrowLeft } from 'lucide-react';
 
 interface CapcutVideoItem {
   fileName: string;
@@ -49,12 +49,14 @@ function previewProjectName(index: number): string {
   return `${base}_${index - 1}`;
 }
 
-export const CapcutProjectCreator: React.FC = () => {
+export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [sourceFolderPath, setSourceFolderPath] = useState('');
   const [capcutDraftsPath, setCapcutDraftsPath] = useState(DEFAULT_CAPCUT_DRAFTS_PATH);
   const [scanItems, setScanItems] = useState<CapcutVideoItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [logs, setLogs] = useState<CapcutLog[]>([]);
   const [createdProjects, setCreatedProjects] = useState<CapcutProjectResult[]>([]);
   const [progress, setProgress] = useState<CapcutProgress>({
@@ -186,6 +188,15 @@ export const CapcutProjectCreator: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (!sourceFolderPath || isCreating || isScanning) return;
+    const timer = setTimeout(() => {
+      handleScan();
+    }, 200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceFolderPath]);
+
   const handleStart = async () => {
     if (!sourceFolderPath) {
       alert('Vui lòng chọn folder video nguồn.');
@@ -216,6 +227,7 @@ export const CapcutProjectCreator: React.FC = () => {
         sourceFolderPath,
         capcutDraftsPath,
         namingMode: 'month_day_suffix',
+        orderedVideoPaths: scanItems.map((item) => item.fullPath),
       });
       if (res.data?.projects) {
         setCreatedProjects(res.data.projects);
@@ -240,6 +252,44 @@ export const CapcutProjectCreator: React.FC = () => {
 
   const handleClearLogs = () => setLogs([]);
 
+  const handleDragStart = (index: number, event: React.DragEvent<HTMLTableRowElement>) => {
+    if (isCreating) return;
+    setDragIndex(index);
+    setDragOverIndex(index);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', scanItems[index]?.fullPath || String(index));
+  };
+
+  const handleDragOver = (index: number, event: React.DragEvent<HTMLTableRowElement>) => {
+    if (isCreating || dragIndex === null) return;
+    event.preventDefault();
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDrop = (index: number) => {
+    if (isCreating || dragIndex === null || dragIndex === index) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    setScanItems((prev) => {
+      if (dragIndex === null) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(index, 0, moved);
+      return next;
+    });
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
   const renderLogBadge = (status: CapcutLog['status']) => {
     if (status === 'success') return <span className={`${styles.badge} ${styles.badgeSuccess}`}>OK</span>;
     if (status === 'error') return <span className={`${styles.badge} ${styles.badgeError}`}>Lỗi</span>;
@@ -249,188 +299,209 @@ export const CapcutProjectCreator: React.FC = () => {
 
   return (
     <div className={styles.panel}>
-      <h2 className={styles.panelTitle}>TẠO HÀNG LOẠT PROJECT CAPCUT</h2>
-
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Đường dẫn</h3>
-        <div className={styles.grid2}>
-          <div>
-            <label className={styles.label}>Folder video nguồn</label>
-            <div className={styles.inputGroup}>
-              <input
-                className={styles.input}
-                value={sourceFolderPath}
-                readOnly
-                placeholder="Chọn folder chứa video"
-              />
-              <Button variant="secondary" onClick={handlePickSourceFolder} disabled={isCreating || isScanning}>
-                <FolderPlus size={14} />
-              </Button>
-            </div>
-          </div>
-          <div>
-            <label className={styles.label}>Folder drafts (project CapCut)</label>
-            <div className={styles.inputGroup}>
-              <input
-                className={styles.input}
-                value={capcutDraftsPath}
-                onChange={(e) => setCapcutDraftsPath(e.target.value)}
-                onBlur={() => void saveDraftsPath(capcutDraftsPath)}
-                placeholder="Chọn folder chứa project CapCut"
-              />
-              <Button variant="secondary" onClick={handlePickCapcutDraftsFolder} disabled={isCreating || isScanning}>
-                <FolderPlus size={14} />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Danh sách video quét được</h3>
-          <Button variant="secondary" onClick={handleScan} disabled={isCreating || isScanning || !sourceFolderPath}>
-            Quét video
+      <div className={styles.panelTopBar}>
+        <button className={styles.panelBackButton} type="button" onClick={() => onBack?.()}>
+          <ArrowLeft size={14} />
+          Quay lại danh sách
+        </button>
+        <div className={styles.panelTopActions}>
+          <Button variant="danger" onClick={handleStop} disabled={!isCreating}>
+            <Square size={16} style={{ marginRight: '8px' }} /> Dừng
+          </Button>
+          <Button
+            variant="success"
+            onClick={handleStart}
+            disabled={isCreating || isScanning || scanItems.length === 0}
+          >
+            <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu tạo project
           </Button>
         </div>
-        <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th style={{ width: '60px' }}>STT</th>
-                <th>Video</th>
-                <th>Project preview</th>
-                <th>Path</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scanItems.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className={styles.textMuted} style={{ textAlign: 'center' }}>
-                    Chưa có dữ liệu quét.
-                  </td>
-                </tr>
-              ) : (
-                scanItems.map((item, index) => (
-                  <tr key={item.fullPath}>
-                    <td>{index + 1}</td>
-                    <td>{item.fileName}</td>
-                    <td>{previewProjectName(index + 1)}</td>
-                    <td title={item.fullPath}>{item.fullPath}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
 
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Tiến trình</h3>
-        <div className={styles.progressContainer}>
-          <div className={styles.progressItem}>
-            <div className={styles.progressLabel}>
-              <span>{progress.message}</span>
-              <span>{progress.percent}%</span>
+      <div className={styles.panelLayout}>
+        <div className={styles.panelColumn}>
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Đường dẫn</h3>
+            <div className={styles.grid2}>
+              <div>
+                <label className={styles.label}>Folder video nguồn</label>
+                <div className={styles.inputGroup}>
+                  <input
+                    className={styles.input}
+                    value={sourceFolderPath}
+                    readOnly
+                    placeholder="Chọn folder chứa video"
+                  />
+                  <Button variant="secondary" onClick={handlePickSourceFolder} disabled={isCreating || isScanning}>
+                    <FolderPlus size={14} />
+                  </Button>
+                </div>
+              </div>
+              <div>
+                <label className={styles.label}>Folder drafts (project CapCut)</label>
+                <div className={styles.inputGroup}>
+                  <input
+                    className={styles.input}
+                    value={capcutDraftsPath}
+                    onChange={(e) => setCapcutDraftsPath(e.target.value)}
+                    onBlur={() => void saveDraftsPath(capcutDraftsPath)}
+                    placeholder="Chọn folder chứa project CapCut"
+                  />
+                  <Button variant="secondary" onClick={handlePickCapcutDraftsFolder} disabled={isCreating || isScanning}>
+                    <FolderPlus size={14} />
+                  </Button>
+                </div>
+              </div>
             </div>
-            <div className={styles.progressBar}>
-              <div className={`${styles.progressFill} ${styles.progressFillBlue}`} style={{ width: `${progress.percent}%` }} />
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Danh sách video quét được</h3>
+              <Button variant="secondary" onClick={handleScan} disabled={isCreating || isScanning || !sourceFolderPath}>
+                Quét lại
+              </Button>
+            </div>
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '60px' }}>STT</th>
+                    <th>Video</th>
+                    <th>Project preview</th>
+                    <th>Path</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scanItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className={styles.textMuted} style={{ textAlign: 'center' }}>
+                        Chưa có dữ liệu quét.
+                      </td>
+                    </tr>
+                  ) : (
+                    scanItems.map((item, index) => (
+                      <tr
+                        key={item.fullPath}
+                        draggable={!isCreating}
+                        onDragStart={(event) => handleDragStart(index, event)}
+                        onDragOver={(event) => handleDragOver(index, event)}
+                        onDrop={() => handleDrop(index)}
+                        onDragEnd={handleDragEnd}
+                        className={`${styles.draggableRow} ${dragOverIndex === index ? styles.dragOverRow : ''}`}
+                        aria-grabbed={dragIndex === index}
+                      >
+                        <td>{index + 1}</td>
+                        <td>{item.fileName}</td>
+                        <td>{previewProjectName(index + 1)}</td>
+                        <td title={item.fullPath}>{item.fullPath}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-        <div className={styles.textMuted} style={{ fontSize: 12, marginTop: 8 }}>
-          {progress.total > 0 ? `Đã xử lý ${progress.current}/${progress.total}` : 'Chưa bắt đầu.'}
-          {progress.currentVideoName ? ` | Video: ${progress.currentVideoName}` : ''}
-        </div>
-      </div>
 
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Nhật ký</h3>
-          <button className={styles.iconButton} title="Xóa log" onClick={handleClearLogs}>
-            <Trash2 size={16} />
-          </button>
-        </div>
-        <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Thời gian</th>
-                <th>Trạng thái</th>
-                <th>Nội dung</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log, index) => (
-                <tr key={`${log.time}-${index}`}>
-                  <td>{log.time}</td>
-                  <td>{renderLogBadge(log.status)}</td>
-                  <td>
-                    {log.projectName ? `[${log.projectName}] ` : ''}
-                    {log.message}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <div className={`${styles.panelColumn} ${styles.panelColumnSticky}`}>
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Tiến trình</h3>
+            <div className={styles.progressContainer}>
+              <div className={styles.progressItem}>
+                <div className={styles.progressLabel}>
+                  <span>{progress.message}</span>
+                  <span>{progress.percent}%</span>
+                </div>
+                <div className={styles.progressBar}>
+                  <div className={`${styles.progressFill} ${styles.progressFillBlue}`} style={{ width: `${progress.percent}%` }} />
+                </div>
+              </div>
+            </div>
+            <div className={styles.textMuted} style={{ fontSize: 12, marginTop: 8 }}>
+              {progress.total > 0 ? `Đã xử lý ${progress.current}/${progress.total}` : 'Chưa bắt đầu.'}
+              {progress.currentVideoName ? ` | Video: ${progress.currentVideoName}` : ''}
+            </div>
+          </div>
 
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Kết quả tạo project</h3>
-        <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Video</th>
-                <th>Project</th>
-                <th>Clip copy</th>
-                <th>Asset folder</th>
-                <th>Trạng thái</th>
-                <th>Ghi chú</th>
-              </tr>
-            </thead>
-            <tbody>
-              {createdProjects.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className={styles.textMuted} style={{ textAlign: 'center' }}>
-                    Chưa có kết quả.
-                  </td>
-                </tr>
-              ) : (
-                createdProjects.map((item, index) => (
-                  <tr key={`${item.projectName}-${index}`}>
-                    <td>{item.videoName}</td>
-                    <td>{item.projectName}</td>
-                    <td>{typeof item.copiedClipCount === 'number' ? item.copiedClipCount : '--'}</td>
-                    <td title={item.assetFolder || ''}>{item.assetFolder || '--'}</td>
-                    <td>
-                      {item.status === 'success' ? (
-                        <span className={`${styles.badge} ${styles.badgeSuccess}`}>OK</span>
-                      ) : (
-                        <span className={`${styles.badge} ${styles.badgeError}`}>Lỗi</span>
-                      )}
-                    </td>
-                    <td>{item.error || '--'}</td>
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Nhật ký</h3>
+              <button className={styles.iconButton} title="Xóa log" onClick={handleClearLogs}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Trạng thái</th>
+                    <th>Nội dung</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </thead>
+                <tbody>
+                  {logs.map((log, index) => (
+                    <tr key={`${log.time}-${index}`}>
+                      <td>{log.time}</td>
+                      <td>{renderLogBadge(log.status)}</td>
+                      <td>
+                        {log.projectName ? `[${log.projectName}] ` : ''}
+                        {log.message}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-      <div className={styles.flexRowRight}>
-        <Button variant="danger" onClick={handleStop} disabled={!isCreating}>
-          <Square size={16} style={{ marginRight: '8px' }} /> Dừng
-        </Button>
-        <Button
-          variant="success"
-          onClick={handleStart}
-          disabled={isCreating || isScanning || scanItems.length === 0}
-        >
-          <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu tạo project
-        </Button>
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Kết quả tạo project</h3>
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Video</th>
+                    <th>Project</th>
+                    <th>Clip copy</th>
+                    <th>Asset folder</th>
+                    <th>Trạng thái</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {createdProjects.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className={styles.textMuted} style={{ textAlign: 'center' }}>
+                        Chưa có kết quả.
+                      </td>
+                    </tr>
+                  ) : (
+                    createdProjects.map((item, index) => (
+                      <tr key={`${item.projectName}-${index}`}>
+                        <td>{item.videoName}</td>
+                        <td>{item.projectName}</td>
+                        <td>{typeof item.copiedClipCount === 'number' ? item.copiedClipCount : '--'}</td>
+                        <td title={item.assetFolder || ''}>{item.assetFolder || '--'}</td>
+                        <td>
+                          {item.status === 'success' ? (
+                            <span className={`${styles.badge} ${styles.badgeSuccess}`}>OK</span>
+                          ) : (
+                            <span className={`${styles.badge} ${styles.badgeError}`}>Lỗi</span>
+                          )}
+                        </td>
+                        <td>{item.error || '--'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* actions moved to top bar */}
+        </div>
       </div>
     </div>
   );

@@ -359,6 +359,7 @@ export function registerCutVideoHandlers(): void {
     sourceFolderPath: string;
     capcutDraftsPath?: string;
     namingMode: 'index_plus_filename' | 'month_day_suffix';
+    orderedVideoPaths?: string[];
   }) => {
     const sender = event.sender;
     const draftsPath = options.capcutDraftsPath
@@ -368,6 +369,7 @@ export function registerCutVideoHandlers(): void {
       sourceFolderPath: options.sourceFolderPath,
       capcutDraftsPath: draftsPath,
       namingMode: options.namingMode,
+      orderedVideoPaths: options.orderedVideoPaths,
       onProgress: (data) => sender.send('cutVideo:capcutProgress', data),
       onLog: (data) => sender.send('cutVideo:capcutLog', data),
     });

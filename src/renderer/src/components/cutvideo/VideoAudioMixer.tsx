@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '../common/Button';
 import styles from './CutVideo.module.css';
-import { ArrowDown, ArrowUp, FolderPlus, Music2, Square, Trash2, Video, X, Play } from 'lucide-react';
+import { ArrowDown, ArrowUp, FolderPlus, Music2, Square, Trash2, Video, X, Play, ArrowLeft } from 'lucide-react';
 
 interface AudioItem {
   id: string;
@@ -37,7 +37,7 @@ function clampVolume(value: number): number {
   return Math.max(0, Math.min(200, Math.round(value)));
 }
 
-export const VideoAudioMixer: React.FC = () => {
+export const VideoAudioMixer: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [videoDurationSec, setVideoDurationSec] = useState<number>(0);
   const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
@@ -217,224 +217,237 @@ export const VideoAudioMixer: React.FC = () => {
 
   return (
     <div className={styles.panel}>
-      <h2 className={styles.panelTitle}>🎧 GHÉP PLAYLIST NHẠC VÀO VIDEO</h2>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Video đầu vào</h3>
-          {!videoPath ? (
-            <Button variant="secondary" onClick={handleSelectVideo} disabled={isProcessing}>
-              <Video size={16} style={{ marginRight: '8px' }} /> Chọn video
-            </Button>
-          ) : (
-            <Button variant="secondary" onClick={handleRemoveVideo} disabled={isProcessing}>
-              <X size={16} style={{ marginRight: '8px' }} /> Bỏ chọn
-            </Button>
-          )}
+      <div className={styles.panelTopBar}>
+        <button className={styles.panelBackButton} type="button" onClick={() => onBack?.()}>
+          <ArrowLeft size={14} />
+          Quay lại danh sách
+        </button>
+        <div className={styles.panelTopActions}>
+          <Button variant="danger" onClick={handleStop} disabled={!isProcessing}>
+            <Square size={16} style={{ marginRight: '8px' }} /> Dừng
+          </Button>
+          <Button variant="success" onClick={handleStart} disabled={isProcessing}>
+            <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu ghép nhạc
+          </Button>
         </div>
-        {!videoPath ? (
-          <div className={styles.emptyState}>Chưa chọn video để ghép nhạc.</div>
-        ) : (
-          <div className={styles.fileInfoCard}>
-            <div className={styles.fileInfoDetails}>
-              <div className={styles.fileInfoItem}>
-                <Video size={16} color="var(--color-primary)" />
-                <strong title={videoPath}>{videoPath.split(/[/\\]/).pop()}</strong>
+      </div>
+
+
+      <div className={styles.panelLayout}>
+        <div className={styles.panelColumn}>
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Video đầu vào</h3>
+              {!videoPath ? (
+                <Button variant="secondary" onClick={handleSelectVideo} disabled={isProcessing}>
+                  <Video size={16} style={{ marginRight: '8px' }} /> Chọn video
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={handleRemoveVideo} disabled={isProcessing}>
+                  <X size={16} style={{ marginRight: '8px' }} /> Bỏ chọn
+                </Button>
+              )}
+            </div>
+            {!videoPath ? (
+              <div className={styles.emptyState}>Chưa chọn video để ghép nhạc.</div>
+            ) : (
+              <div className={styles.fileInfoCard}>
+                <div className={styles.fileInfoDetails}>
+                  <div className={styles.fileInfoItem}>
+                    <Video size={16} color="var(--color-primary)" />
+                    <strong title={videoPath}>{videoPath.split(/[/\\]/).pop()}</strong>
+                  </div>
+                  <span className={styles.textMuted}>|</span>
+                  <div className={styles.fileInfoItem}>⏱ {formatDuration(videoDurationSec)}</div>
+                </div>
               </div>
-              <span className={styles.textMuted}>|</span>
-              <div className={styles.fileInfoItem}>⏱ {formatDuration(videoDurationSec)}</div>
+            )}
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Playlist audio (theo thứ tự phát)</h3>
+              <div className={styles.flexRow}>
+                <Button variant="secondary" onClick={handleAddAudioFiles} disabled={isProcessing}>
+                  <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm audio
+                </Button>
+                <Button variant="secondary" onClick={handleClearAudios} disabled={isProcessing || audioItems.length === 0}>
+                  <Trash2 size={16} style={{ marginRight: '8px' }} /> Xóa tất cả
+                </Button>
+              </div>
+            </div>
+            {audioItems.length === 0 ? (
+              <div className={styles.emptyState}>Chưa có file audio nào.</div>
+            ) : (
+              <div className={styles.tableContainer}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '48px' }}>#</th>
+                      <th>Tên file</th>
+                      <th style={{ width: '120px' }}>Duration</th>
+                      <th style={{ width: '140px' }}>Thứ tự</th>
+                      <th style={{ width: '64px' }}>Xóa</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {audioItems.map((item, index) => (
+                      <tr key={item.id}>
+                        <td>{index + 1}</td>
+                        <td title={item.path}>
+                          <div className={styles.fileInfoItem}>
+                            <Music2 size={14} color="var(--color-text-secondary)" />
+                            <span>{item.name}</span>
+                          </div>
+                        </td>
+                        <td>{formatDuration(item.durationSec)}</td>
+                        <td>
+                          <div className={styles.flexRow}>
+                            <button
+                              className={styles.iconButton}
+                              onClick={() => handleMoveAudio(index, 'up')}
+                              disabled={isProcessing || index === 0}
+                              title="Move up"
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                            <button
+                              className={styles.iconButton}
+                              onClick={() => handleMoveAudio(index, 'down')}
+                              disabled={isProcessing || index === audioItems.length - 1}
+                              title="Move down"
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            className={`${styles.iconButton} ${styles.iconButtonDanger}`}
+                            onClick={() => handleRemoveAudio(item.id)}
+                            disabled={isProcessing}
+                            title="Xóa file audio"
+                          >
+                            <X size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Âm lượng mix</h3>
+            <div className={styles.grid2}>
+              <div>
+                <label className={styles.label}>Video volume (%)</label>
+                <div className={styles.volumeControl}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={1}
+                    value={videoVolumePercent}
+                    className={styles.rangeInput}
+                    disabled={isProcessing}
+                    onChange={(e) => setVideoVolumePercent(clampVolume(Number(e.target.value)))}
+                  />
+                  <input
+                    type="number"
+                    className={`${styles.input} ${styles.inputSmall}`}
+                    min={0}
+                    max={200}
+                    step={1}
+                    disabled={isProcessing}
+                    value={videoVolumePercent}
+                    onChange={(e) => setVideoVolumePercent(clampVolume(Number(e.target.value)))}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className={styles.label}>Music volume (%)</label>
+                <div className={styles.volumeControl}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={200}
+                    step={1}
+                    value={musicVolumePercent}
+                    className={styles.rangeInput}
+                    disabled={isProcessing}
+                    onChange={(e) => setMusicVolumePercent(clampVolume(Number(e.target.value)))}
+                  />
+                  <input
+                    type="number"
+                    className={`${styles.input} ${styles.inputSmall}`}
+                    min={0}
+                    max={200}
+                    step={1}
+                    disabled={isProcessing}
+                    value={musicVolumePercent}
+                    onChange={(e) => setMusicVolumePercent(clampVolume(Number(e.target.value)))}
+                  />
+                </div>
+              </div>
             </div>
           </div>
-        )}
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Playlist audio (theo thứ tự phát)</h3>
-          <div className={styles.flexRow}>
-            <Button variant="secondary" onClick={handleAddAudioFiles} disabled={isProcessing}>
-              <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm audio
-            </Button>
-            <Button variant="secondary" onClick={handleClearAudios} disabled={isProcessing || audioItems.length === 0}>
-              <Trash2 size={16} style={{ marginRight: '8px' }} /> Xóa tất cả
-            </Button>
-          </div>
         </div>
-        {audioItems.length === 0 ? (
-          <div className={styles.emptyState}>Chưa có file audio nào.</div>
-        ) : (
-          <div className={styles.tableContainer}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th style={{ width: '48px' }}>#</th>
-                  <th>Tên file</th>
-                  <th style={{ width: '120px' }}>Duration</th>
-                  <th style={{ width: '140px' }}>Thứ tự</th>
-                  <th style={{ width: '64px' }}>Xóa</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audioItems.map((item, index) => (
-                  <tr key={item.id}>
-                    <td>{index + 1}</td>
-                    <td title={item.path}>
-                      <div className={styles.fileInfoItem}>
-                        <Music2 size={14} color="var(--color-text-secondary)" />
-                        <span>{item.name}</span>
-                      </div>
-                    </td>
-                    <td>{formatDuration(item.durationSec)}</td>
-                    <td>
-                      <div className={styles.flexRow}>
-                        <button
-                          className={styles.iconButton}
-                          onClick={() => handleMoveAudio(index, 'up')}
-                          disabled={isProcessing || index === 0}
-                          title="Move up"
-                        >
-                          <ArrowUp size={14} />
-                        </button>
-                        <button
-                          className={styles.iconButton}
-                          onClick={() => handleMoveAudio(index, 'down')}
-                          disabled={isProcessing || index === audioItems.length - 1}
-                          title="Move down"
-                        >
-                          <ArrowDown size={14} />
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <button
-                        className={`${styles.iconButton} ${styles.iconButtonDanger}`}
-                        onClick={() => handleRemoveAudio(item.id)}
-                        disabled={isProcessing}
-                        title="Xóa file audio"
-                      >
-                        <X size={14} />
-                      </button>
-                    </td>
+
+        <div className={`${styles.panelColumn} ${styles.panelColumnSticky}`}>
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Output</h3>
+            <input className={styles.input} readOnly value={outputPath || outputPreviewPath || 'Chưa có output'} />
+          </div>
+
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Tiến trình</h3>
+            <div className={styles.progressContainer}>
+              <div className={styles.progressItem}>
+                <div className={styles.progressLabel}>
+                  <span>{progress.message || 'Đang chờ...'}</span>
+                  <span>{progress.percent}%</span>
+                </div>
+                <div className={styles.progressBar}>
+                  <div className={`${styles.progressFill} ${styles.progressFillBlue}`} style={{ width: `${progress.percent}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Nhật ký</h3>
+              <button className={styles.iconButton} title="Xóa log" onClick={clearLogs}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Trạng thái</th>
+                    <th>Nội dung</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Âm lượng mix</h3>
-        <div className={styles.grid2}>
-          <div>
-            <label className={styles.label}>Video volume (%)</label>
-            <div className={styles.volumeControl}>
-              <input
-                type="range"
-                min={0}
-                max={200}
-                step={1}
-                value={videoVolumePercent}
-                className={styles.rangeInput}
-                disabled={isProcessing}
-                onChange={(e) => setVideoVolumePercent(clampVolume(Number(e.target.value)))}
-              />
-              <input
-                type="number"
-                className={`${styles.input} ${styles.inputSmall}`}
-                min={0}
-                max={200}
-                step={1}
-                disabled={isProcessing}
-                value={videoVolumePercent}
-                onChange={(e) => setVideoVolumePercent(clampVolume(Number(e.target.value)))}
-              />
+                </thead>
+                <tbody>
+                  {logs.map((log, idx) => (
+                    <tr key={`${log.time}-${idx}`}>
+                      <td>{log.time}</td>
+                      <td>{renderBadge(log.status)}</td>
+                      <td>{log.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-          <div>
-            <label className={styles.label}>Music volume (%)</label>
-            <div className={styles.volumeControl}>
-              <input
-                type="range"
-                min={0}
-                max={200}
-                step={1}
-                value={musicVolumePercent}
-                className={styles.rangeInput}
-                disabled={isProcessing}
-                onChange={(e) => setMusicVolumePercent(clampVolume(Number(e.target.value)))}
-              />
-              <input
-                type="number"
-                className={`${styles.input} ${styles.inputSmall}`}
-                min={0}
-                max={200}
-                step={1}
-                disabled={isProcessing}
-                value={musicVolumePercent}
-                onChange={(e) => setMusicVolumePercent(clampVolume(Number(e.target.value)))}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Output</h3>
-        <input className={styles.input} readOnly value={outputPath || outputPreviewPath || 'Chưa có output'} />
-      </div>
-
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Tiến trình</h3>
-        <div className={styles.progressContainer}>
-          <div className={styles.progressItem}>
-            <div className={styles.progressLabel}>
-              <span>{progress.message || 'Đang chờ...'}</span>
-              <span>{progress.percent}%</span>
-            </div>
-            <div className={styles.progressBar}>
-              <div className={`${styles.progressFill} ${styles.progressFillBlue}`} style={{ width: `${progress.percent}%` }} />
-            </div>
-          </div>
+          {/* actions moved to top bar */}
         </div>
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Nhật ký</h3>
-          <button className={styles.iconButton} title="Xóa log" onClick={clearLogs}>
-            <Trash2 size={16} />
-          </button>
-        </div>
-        <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Thời gian</th>
-                <th>Trạng thái</th>
-                <th>Nội dung</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log, idx) => (
-                <tr key={`${log.time}-${idx}`}>
-                  <td>{log.time}</td>
-                  <td>{renderBadge(log.status)}</td>
-                  <td>{log.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className={styles.flexRowRight}>
-        <Button variant="danger" onClick={handleStop} disabled={!isProcessing}>
-          <Square size={16} style={{ marginRight: '8px' }} /> Dừng
-        </Button>
-        <Button variant="success" onClick={handleStart} disabled={isProcessing}>
-          <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu ghép nhạc
-        </Button>
       </div>
     </div>
   );

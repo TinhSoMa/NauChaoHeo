@@ -153,6 +153,7 @@ export interface CutVideoAPI {
     sourceFolderPath: string;
     capcutDraftsPath: string;
     namingMode: 'index_plus_filename' | 'month_day_suffix';
+    orderedVideoPaths?: string[];
   }) => Promise<CapcutBatchResult>;
   stopCapcutProjectBatch: () => Promise<{ success: boolean }>;
   onCapcutProgress: (callback: (data: {

@@ -4,22 +4,27 @@
 
 .container {
   width: 100%;
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   min-height: 100%;
+
+  --glass-bg: color-mix(in srgb, var(--color-card) 65%, transparent);
+  --glass-border: color-mix(in srgb, var(--color-border) 55%, transparent);
+  --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.14);
+  --glass-highlight: color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
 .workspaceHeader {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .workspaceTitle {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--color-text-primary);
   letter-spacing: 0.2px;
@@ -27,102 +32,218 @@
 
 .workspaceSubtitle {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 
-.tabBar {
+.overviewGrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
 }
 
-.tabButton {
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-card);
+.overviewCard {
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--glass-bg);
   color: var(--color-text-primary);
   cursor: pointer;
-  padding: 12px 14px;
+  padding: 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   text-align: left;
   transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  box-shadow: var(--glass-shadow);
 }
 
-.tabButton:hover {
-  border-color: var(--color-primary);
-  background: rgba(24, 144, 255, 0.06);
-  transform: translateY(-1px);
+.overviewCard:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-2px);
 }
 
-.tabButtonActive {
-  border-color: var(--color-primary);
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.18), rgba(24, 144, 255, 0.04));
-}
-
-.tabIcon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+.overviewIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-primary);
-  background: rgba(24, 144, 255, 0.14);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
   flex-shrink: 0;
 }
 
-.tabText {
-  display: inline-flex;
+.overviewBody {
+  display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
-.tabLabel {
+.overviewTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overviewTitle {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
-.tabSubLabel {
+.overviewDesc {
   font-size: 12px;
   color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
-.workspaceBody {
+.overviewChip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.detailPanel {
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-.tabPanel {
-  width: 100%;
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+}
+
+.detailHeaderMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detailIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.detailTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.detailSubtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.detailBackButton {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.detailBackButton:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-1px);
+}
+
+.detailBody {
+  padding: 16px;
+}
+
+.panelTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panelTopActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panelBackButton {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.panelBackButton:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-1px);
 }
 
 @media (max-width: 1100px) {
-  .tabBar {
+  .overviewGrid {
     grid-template-columns: 1fr;
+  }
+
+  .panelLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .panelColumnSticky {
+    position: static;
   }
 }
 
 @media (max-width: 768px) {
   .container {
     padding: 16px;
-    gap: 14px;
+    gap: 12px;
   }
 
   .workspaceTitle {
     font-size: 20px;
-  }
-
-  .tabButton {
-    padding: 10px 12px;
   }
 }
 
@@ -132,26 +253,87 @@
   gap: 20px;
 }
 
-.panelTitle {
-  font-size: 20px;
-  font-weight: bold;
-  color: var(--color-primary);
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
+.panelLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 12px;
-  border-bottom: 2px solid var(--color-border);
-  padding-bottom: 12px;
+  align-items: start;
 }
 
-.section {
-  padding: 16px;
-  border-radius: 12px;
-  background-color: var(--color-card);
-  border: 1px solid var(--color-border);
+.panelColumn {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+}
+
+.panelColumnSticky {
+  position: sticky;
+  top: 8px;
+  align-self: start;
+}
+
+.panelActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panelTitle {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--color-primary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 10px;
+}
+
+.section {
+  padding: 14px;
+  border-radius: 12px;
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionCompact {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionSummary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sectionSummary::-webkit-details-marker {
+  display: none;
+}
+
+.sectionSummary::after {
+  content: '▸';
+  float: right;
+  color: var(--color-text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+details[open] > .sectionSummary::after {
+  transform: rotate(90deg);
 }
 
 .sectionHeader {
@@ -161,7 +343,7 @@
 }
 
 .sectionTitle {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-primary);
   margin: 0;
@@ -170,24 +352,24 @@
 /* Base Form Elements */
 .select {
   width: 100%;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-radius: 8px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: 13px;
   outline: none;
   cursor: pointer;
 }
 
 .input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-radius: 8px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: 13px;
   outline: none;
 }
 
@@ -201,7 +383,7 @@
 }
 
 .label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-secondary);
   margin-bottom: 4px;
   display: block;
@@ -258,8 +440,8 @@
 .folderList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 200px;
+  gap: 6px;
+  max-height: 180px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -276,10 +458,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 7px 10px;
   border-radius: 6px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
   gap: 12px;
 }
 
@@ -336,8 +518,8 @@
 .folderGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
-  max-height: 250px;
+  gap: 10px;
+  max-height: 220px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -352,19 +534,19 @@
 
 .folderBox {
   position: relative;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 9px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   transition: all 0.2s;
 }
 
 .folderBox:hover {
-  border-color: var(--color-primary);
-  background-color: rgba(24, 144, 255, 0.05); /* very light primary */
+  border-color: var(--glass-highlight);
+  background-color: color-mix(in srgb, var(--glass-bg) 90%, transparent);
 }
 
 .folderBoxHeader {
@@ -401,8 +583,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
   color: var(--color-text-secondary);
   display: flex;
   align-items: center;
@@ -449,9 +631,9 @@
   text-align: center;
   color: var(--color-text-secondary);
   font-size: 14px;
-  border: 1px dashed var(--color-border);
+  border: 1px dashed var(--glass-border);
   border-radius: 8px;
-  background-color: var(--color-background);
+  background-color: color-mix(in srgb, var(--glass-bg) 80%, transparent);
 }
 
 /* Progress */
@@ -475,10 +657,10 @@
 }
 
 .progressBar {
-  height: 8px;
+  height: 6px;
   border-radius: 4px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+  border: 1px solid var(--glass-border);
   overflow: hidden;
 }
 
@@ -498,9 +680,9 @@
 
 /* Logs Table */
 .tableContainer {
-  max-height: 180px;
+  max-height: 160px;
   overflow-y: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--glass-border);
   border-radius: 8px;
 }
 
@@ -521,7 +703,7 @@
 .table th {
   position: sticky;
   top: 0;
-  background-color: var(--color-surface);
+  background-color: color-mix(in srgb, var(--glass-bg) 90%, transparent);
   color: var(--color-text-secondary);
   font-weight: 500;
   text-align: left;
@@ -531,9 +713,23 @@
 }
 
 .table td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--glass-border);
   color: var(--color-text-primary);
+}
+
+.draggableRow {
+  cursor: grab;
+  user-select: none;
+}
+
+.draggableRow:active {
+  cursor: grabbing;
+}
+
+.dragOverRow {
+  outline: 1px dashed color-mix(in srgb, var(--color-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
 .table tr:last-child td {
@@ -582,22 +778,22 @@
 
 /* Drag & Drop */
 .dropzone {
-  border: 2px dashed var(--color-border);
+  border: 1px dashed var(--glass-border);
   border-radius: 12px;
-  padding: 32px 16px;
+  padding: 24px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  background-color: var(--color-background);
+  gap: 10px;
+  background-color: color-mix(in srgb, var(--glass-bg) 80%, transparent);
   transition: all 0.2s ease;
   cursor: pointer;
 }
 
 .dropzone:hover, .dropzoneActive {
-  border-color: var(--color-primary);
-  background-color: rgba(24, 144, 255, 0.05);
+  border-color: var(--glass-highlight);
+  background-color: color-mix(in srgb, var(--glass-bg) 90%, transparent);
 }
 
 .dropzoneIcon {
@@ -618,10 +814,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 10px 12px;
   border-radius: 8px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
 }
 
 .fileInfoDetails {
@@ -644,9 +840,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 7px 14px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
@@ -681,8 +877,8 @@
 }
 
 .btnSecondary {
-  background-color: var(--color-surface);
-  border-color: var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border-color: var(--glass-border);
   color: var(--color-text-primary);
 }
 
@@ -756,10 +952,10 @@
 /* Video clip editor table specific styles */
 .clipInput {
   width: 100%;
-  padding: 4px 8px;
+  padding: 4px 6px;
   border-radius: 4px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
   color: var(--color-text-primary);
   font-size: 13px;
   outline: none;

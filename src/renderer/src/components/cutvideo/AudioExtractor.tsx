@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './CutVideo.module.css';
 import { Button } from '../common/Button';
-import { Play, Square, FolderPlus, Trash2, X, Folder, Film } from 'lucide-react';
+import { Play, Square, FolderPlus, Trash2, X, Folder, Film, ArrowLeft } from 'lucide-react';
 import { useFolderManager } from './hooks/useFolderManager';
 
 interface LogItem {
@@ -15,8 +15,8 @@ interface LogItem {
 
 const DEFAULT_CAPCUT_PROJECT_PATH = '';
 
-export const AudioExtractor: React.FC = () => {
-  const { folders, handleAddFolders, handleRemoveFolder } = useFolderManager();
+export const AudioExtractor: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
+  const { folders, handleAddFolders, handleRemoveFolder, handleClearFolders } = useFolderManager();
 
   // ----- Process State -----
   const [isProcessing, setIsProcessing] = useState(false);
@@ -127,127 +127,148 @@ export const AudioExtractor: React.FC = () => {
 
   return (
     <div className={styles.panel}>
-      <h2 className={styles.panelTitle}>🎵 TÁCH AUDIO NHIỀU THƯ MỤC</h2>
-
-      {/* COMPONENT 1: SOURCE FOLDERS */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Thư mục nguồn</h3>
-          <Button variant="secondary" onClick={handleAddFolders}>
-            <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm thư mục
+      {/* <h2 className={styles.panelTitle}>🎵 TÁCH AUDIO NHIỀU THƯ MỤC</h2> */}
+      <div className={styles.panelTopBar}>
+        <button className={styles.panelBackButton} type="button" onClick={() => onBack?.()}>
+          <ArrowLeft size={14} />
+          Quay lại danh sách
+        </button>
+        <div className={styles.panelTopActions}>
+          <Button variant="danger" onClick={handleStop} disabled={!isProcessing}>
+            <Square size={16} style={{ marginRight: '8px' }} /> Dừng
+          </Button>
+          <Button variant="success" onClick={handleStart} disabled={isProcessing}>
+            <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu Tách
           </Button>
         </div>
-        <div className={styles.folderGrid}>
-          {folders.length === 0 ? (
-            <div className={styles.emptyState} style={{ gridColumn: '1 / -1' }}>Chưa có thư mục nào. Nhấn + để thêm</div>
-          ) : (
-            folders.map((folder, index) => {
-              const folderName = folder.path.split(/[/\\]/).pop() || folder.path;
-              return (
-                <div key={index} className={styles.folderBox} title={folder.path}>
-                  <div className={styles.folderBoxHeader}>
-                    <Folder size={16} color="var(--color-primary)" />
-                    <span className={styles.folderName}>{folderName}</span>
-                  </div>
-                  <div className={styles.folderBoxSubText}>
-                    <Film size={14} color="var(--color-text-secondary)" />
-                    {folder.firstVideoName ? folder.firstVideoName : `${folder.count} files media`}
-                  </div>
-                  <button className={styles.removeFolderBoxBtn} title="Xóa thư mục" onClick={() => handleRemoveFolder(folder.path)}>
-                    <X size={12} />
-                  </button>
+      </div>
+
+      <div className={styles.panelLayout}>
+        <div className={styles.panelColumn}>
+          {/* COMPONENT 1: SOURCE FOLDERS */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Thư mục nguồn</h3>
+              <div className={styles.flexRow}>
+                <Button variant="secondary" onClick={handleAddFolders}>
+                  <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm thư mục
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleClearFolders}
+                  disabled={folders.length === 0}
+                >
+                  <Trash2 size={16} style={{ marginRight: '8px' }} /> Xóa hết
+                </Button>
+              </div>
+            </div>
+            <div className={styles.folderGrid}>
+              {folders.length === 0 ? (
+                <div className={styles.emptyState} style={{ gridColumn: '1 / -1' }}>Chưa có thư mục nào. Nhấn + để thêm</div>
+              ) : (
+                folders.map((folder, index) => {
+                  const folderName = folder.path.split(/[/\\]/).pop() || folder.path;
+                  return (
+                    <div key={index} className={styles.folderBox} title={folder.path}>
+                      <div className={styles.folderBoxHeader}>
+                        <Folder size={16} color="var(--color-primary)" />
+                        <span className={styles.folderName}>{folderName}</span>
+                      </div>
+                      <div className={styles.folderBoxSubText}>
+                        <Film size={14} color="var(--color-text-secondary)" />
+                        {folder.firstVideoName ? folder.firstVideoName : `${folder.count} files media`}
+                      </div>
+                      <button className={styles.removeFolderBoxBtn} title="Xóa thư mục" onClick={() => handleRemoveFolder(folder.path)}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <details className={styles.sectionCompact}>
+            <summary className={styles.sectionSummary}>Project CapCut (tùy chọn)</summary>
+            <div className={styles.inputGroup}>
+              <input
+                className={styles.input}
+                value={capcutProjectPath}
+                onChange={(e) => setCapcutProjectPath(e.target.value)}
+                placeholder="Để trống = dùng chính folder đang xử lý"
+                disabled={isProcessing}
+              />
+              <Button variant="secondary" onClick={handlePickCapcutProjectFolder} disabled={isProcessing}>
+                <FolderPlus size={14} />
+              </Button>
+            </div>
+          </details>
+        </div>
+
+        <div className={`${styles.panelColumn} ${styles.panelColumnSticky}`}>
+          {/* COMPONENT 3: PROGRESS */}
+          <div className={styles.section}>
+            <h3 className={styles.sectionTitle}>Tiến trình</h3>
+            <div className={styles.progressContainer}>
+              <div className={styles.progressItem}>
+                <div className={styles.progressLabel}>
+                  <span>Tiến trình tổng</span>
+                  <span>{progress.totalPercent}%</span>
                 </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Project CapCut (đầu vào)</h3>
-        <div className={styles.inputGroup}>
-          <input
-            className={styles.input}
-            value={capcutProjectPath}
-            onChange={(e) => setCapcutProjectPath(e.target.value)}
-            placeholder="Để trống = dùng chính folder đang xử lý"
-            disabled={isProcessing}
-          />
-          <Button variant="secondary" onClick={handlePickCapcutProjectFolder} disabled={isProcessing}>
-            <FolderPlus size={14} />
-          </Button>
-        </div>
-      </div>
-
-      {/* COMPONENT 3: PROGRESS */}
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>Tiến trình</h3>
-        <div className={styles.progressContainer}>
-          <div className={styles.progressItem}>
-            <div className={styles.progressLabel}>
-              <span>Tiến trình tổng</span>
-              <span>{progress.totalPercent}%</span>
-            </div>
-            <div className={styles.progressBar}>
-              <div className={`${styles.progressFill} ${styles.progressFillGreen}`} style={{ width: `${progress.totalPercent}%` }}></div>
+                <div className={styles.progressBar}>
+                  <div className={`${styles.progressFill} ${styles.progressFillGreen}`} style={{ width: `${progress.totalPercent}%` }}></div>
+                </div>
+              </div>
+              <div className={styles.progressItem}>
+                <div className={styles.progressLabel}>
+                  <span>File hiện tại: {progress.currentFile || '---'}</span>
+                  <span>{progress.currentPercent}%</span>
+                </div>
+                <div className={styles.progressBar}>
+                  <div className={`${styles.progressFill} ${styles.progressFillBlue}`} style={{ width: `${progress.currentPercent}%` }}></div>
+                </div>
+              </div>
             </div>
           </div>
-          <div className={styles.progressItem}>
-            <div className={styles.progressLabel}>
-              <span>File hiện tại: {progress.currentFile || '---'}</span>
-              <span>{progress.currentPercent}%</span>
+
+          {/* COMPONENT 4: LOG TABLE */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Nhật ký xử lý</h3>
+              <button className={styles.iconButton} title="Xóa log" onClick={handleClearLogs}>
+                <Trash2 size={16} />
+              </button>
             </div>
-            <div className={styles.progressBar}>
-              <div className={`${styles.progressFill} ${styles.progressFillBlue}`} style={{ width: `${progress.currentPercent}%` }}></div>
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Tên file</th>
+                    <th>Thư mục nguồn</th>
+                    <th>Pha</th>
+                    <th>Trạng thái</th>
+                    <th>Chi tiết</th>
+                    <th>Thời gian</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log, index) => (
+                    <tr key={`${log.file}-${log.folder}-${log.phase || 'extract'}-${index}`}>
+                      <td>{log.file}</td>
+                      <td>{log.folder}</td>
+                      <td>{phaseLabel(log.phase)}</td>
+                      <td>{renderBadge(log.status)}</td>
+                      <td title={log.detail || ''}>{log.detail || '--'}</td>
+                      <td>{log.time}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* COMPONENT 4: LOG TABLE */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Nhật ký xử lý</h3>
-          <button className={styles.iconButton} title="Xóa log" onClick={handleClearLogs}>
-            <Trash2 size={16} />
-          </button>
+          {/* COMPONENT 5: ACTION BUTTONS */}
         </div>
-        <div className={styles.tableContainer}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Tên file</th>
-                <th>Thư mục nguồn</th>
-                <th>Pha</th>
-                <th>Trạng thái</th>
-                <th>Chi tiết</th>
-                <th>Thời gian</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log, index) => (
-                <tr key={`${log.file}-${log.folder}-${log.phase || 'extract'}-${index}`}>
-                  <td>{log.file}</td>
-                  <td>{log.folder}</td>
-                  <td>{phaseLabel(log.phase)}</td>
-                  <td>{renderBadge(log.status)}</td>
-                  <td title={log.detail || ''}>{log.detail || '--'}</td>
-                  <td>{log.time}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* COMPONENT 5: ACTION BUTTONS */}
-      <div className={styles.flexRowRight}>
-        <Button variant="danger" onClick={handleStop} disabled={!isProcessing}>
-          <Square size={16} style={{ marginRight: '8px' }} /> Dừng
-        </Button>
-        <Button variant="success" onClick={handleStart} disabled={isProcessing}>
-          <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu Tách
-        </Button>
       </div>
 
     </div>

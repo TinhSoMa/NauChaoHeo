@@ -14,10 +14,11 @@ interface TabConfig {
   label: string;
   subtitle: string;
   icon: React.ReactNode;
+  chip?: string;
 }
 
 export const CutVideo: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<CutVideoTab>('audio');
+  const [activeTab, setActiveTab] = useState<CutVideoTab | null>(null);
 
   const tabs = useMemo<TabConfig[]>(
     () => [
@@ -26,113 +27,85 @@ export const CutVideo: React.FC = () => {
         label: 'Tách Audio',
         subtitle: 'Xuất audio từ nhiều folder',
         icon: <Music2 size={16} />,
+        chip: 'Batch',
       },
       {
         id: 'split',
         label: 'Cắt Video',
         subtitle: 'Chia video thành nhiều đoạn',
         icon: <Scissors size={16} />,
+        chip: 'Timeline',
       },
       {
         id: 'merge',
         label: 'Nối Video',
         subtitle: 'Ghép video render theo thứ tự',
         icon: <Link2 size={16} />,
+        chip: 'Render',
       },
       {
         id: 'musicMix',
         label: 'Ghép Nhạc',
         subtitle: 'Trộn playlist nhạc vào 1 video',
         icon: <ListMusic size={16} />,
+        chip: 'Music',
       },
       {
         id: 'capcut',
         label: 'CapCut Draft',
         subtitle: 'Tạo hàng loạt project từ folder video',
         icon: <Clapperboard size={16} />,
+        chip: 'Draft',
       },
     ],
     []
   );
 
+  const activeConfig = activeTab ? tabs.find((t) => t.id === activeTab) : null;
+
   return (
     <div className={styles.container}>
-      <div className={styles.workspaceHeader}>
+      {/* <div className={styles.workspaceHeader}>
         <h1 className={styles.workspaceTitle}>Cut Video</h1>
         <p className={styles.workspaceSubtitle}>Chọn đúng chức năng bạn cần để thao tác nhanh hơn.</p>
+      </div> */}
+
+      <div className={styles.overviewGrid} role="list" aria-label="CutVideo tools">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="listitem"
+            className={styles.overviewCard}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            <div className={styles.overviewIcon}>{tab.icon}</div>
+            <div className={styles.overviewBody}>
+              <div className={styles.overviewTitleRow}>
+                <span className={styles.overviewTitle}>{tab.label}</span>
+                {tab.chip && <span className={styles.overviewChip}>{tab.chip}</span>}
+              </div>
+              <div className={styles.overviewDesc}>{tab.subtitle}</div>
+            </div>
+          </button>
+        ))}
       </div>
 
-      <div className={styles.tabBar} role="tablist" aria-label="CutVideo features">
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              aria-controls={`cutvideo-tabpanel-${tab.id}`}
-              id={`cutvideo-tab-${tab.id}`}
-              className={`${styles.tabButton} ${isActive ? styles.tabButtonActive : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <span className={styles.tabIcon}>{tab.icon}</span>
-              <span className={styles.tabText}>
-                <span className={styles.tabLabel}>{tab.label}</span>
-                <span className={styles.tabSubLabel}>{tab.subtitle}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className={styles.workspaceBody}>
-        <div
-          role="tabpanel"
-          id="cutvideo-tabpanel-audio"
-          aria-labelledby="cutvideo-tab-audio"
-          hidden={activeTab !== 'audio'}
-          className={styles.tabPanel}
+      {activeConfig && (
+        <section
+          className={styles.detailPanel}
+          role="region"
+          aria-label={`CutVideo ${activeConfig.label}`}
         >
-          {activeTab === 'audio' && <AudioExtractor />}
-        </div>
-        <div
-          role="tabpanel"
-          id="cutvideo-tabpanel-split"
-          aria-labelledby="cutvideo-tab-split"
-          hidden={activeTab !== 'split'}
-          className={styles.tabPanel}
-        >
-          {activeTab === 'split' && <VideoSplitter />}
-        </div>
-        <div
-          role="tabpanel"
-          id="cutvideo-tabpanel-merge"
-          aria-labelledby="cutvideo-tab-merge"
-          hidden={activeTab !== 'merge'}
-          className={styles.tabPanel}
-        >
-          {activeTab === 'merge' && <VideoMerger />}
-        </div>
-        <div
-          role="tabpanel"
-          id="cutvideo-tabpanel-musicMix"
-          aria-labelledby="cutvideo-tab-musicMix"
-          hidden={activeTab !== 'musicMix'}
-          className={styles.tabPanel}
-        >
-          {activeTab === 'musicMix' && <VideoAudioMixer />}
-        </div>
-        <div
-          role="tabpanel"
-          id="cutvideo-tabpanel-capcut"
-          aria-labelledby="cutvideo-tab-capcut"
-          hidden={activeTab !== 'capcut'}
-          className={styles.tabPanel}
-        >
-          {activeTab === 'capcut' && <CapcutProjectCreator />}
-        </div>
-      </div>
+          <div className={styles.detailBody}>
+            {activeTab === 'audio' && <AudioExtractor onBack={() => setActiveTab(null)} />}
+            {activeTab === 'split' && <VideoSplitter onBack={() => setActiveTab(null)} />}
+            {activeTab === 'merge' && <VideoMerger onBack={() => setActiveTab(null)} />}
+            {activeTab === 'musicMix' && <VideoAudioMixer onBack={() => setActiveTab(null)} />}
+            {activeTab === 'capcut' && <CapcutProjectCreator onBack={() => setActiveTab(null)} />}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

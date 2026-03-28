@@ -63,6 +63,10 @@ export function useFolderManager() {
     setFolders(prev => prev.filter(f => f.path !== pathToRemove));
   }, []);
 
+  const handleClearFolders = useCallback(() => {
+    setFolders([]);
+  }, []);
+
   const handleSelectVideoFile = useCallback(async () => {
      try {
        // @ts-ignore
@@ -88,6 +92,7 @@ export function useFolderManager() {
     selectedFile,
     handleAddFolders,
     handleRemoveFolder,
+    handleClearFolders,
     handleSelectVideoFile,
     handleRemoveVideoFile
   };

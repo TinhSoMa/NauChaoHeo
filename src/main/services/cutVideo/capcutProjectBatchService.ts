@@ -45,6 +45,7 @@ export interface CapcutProjectBatchOptions {
   sourceFolderPath: string;
   capcutDraftsPath: string;
   namingMode: CapcutNamingMode;
+  orderedVideoPaths?: string[];
   onProgress?: (progress: CapcutBatchProgress) => void;
   onLog?: (log: CapcutBatchLog) => void;
 }
@@ -250,7 +251,7 @@ class CapcutProjectBatchService {
 
   async createProjects(options: CapcutProjectBatchOptions): Promise<CapcutProjectBatchResult> {
     this.stopRequested = false;
-    const { sourceFolderPath, capcutDraftsPath, namingMode, onProgress, onLog } = options;
+    const { sourceFolderPath, capcutDraftsPath, namingMode, onProgress, onLog, orderedVideoPaths } = options;
 
     const emitProgress = (progress: CapcutBatchProgress): void => {
       onProgress?.(progress);
@@ -291,11 +292,29 @@ class CapcutProjectBatchService {
       message: `Python runtime: mode=${runtime.mode}, path=${runtime.pythonPath}`,
     });
 
-    const scan = await this.scanVideos(sourceFolderPath);
-    if (!scan.success || !scan.data) {
-      return { success: false, error: scan.error || 'Không thể quét video nguồn.' };
+    let videos: CapcutScanVideoItem[] = [];
+    const orderedList = Array.isArray(orderedVideoPaths) ? orderedVideoPaths.filter(Boolean) : [];
+    if (orderedList.length > 0) {
+      const seen = new Set<string>();
+      for (const item of orderedList) {
+        const resolvedPath = path.resolve(item);
+        if (seen.has(resolvedPath)) continue;
+        const ext = path.extname(resolvedPath).toLowerCase();
+        if (!SUPPORTED_VIDEO_EXTS.has(ext)) continue;
+        if (!fs.existsSync(resolvedPath)) continue;
+        const fileName = path.basename(resolvedPath);
+        videos.push({ fileName, fullPath: resolvedPath, ext });
+        seen.add(resolvedPath);
+      }
     }
-    const videos = scan.data.videos;
+
+    if (videos.length === 0) {
+      const scan = await this.scanVideos(sourceFolderPath);
+      if (!scan.success || !scan.data) {
+        return { success: false, error: scan.error || 'Không thể quét video nguồn.' };
+      }
+      videos = scan.data.videos;
+    }
     const total = videos.length;
     if (total === 0) {
       return { success: false, error: 'Không tìm thấy video hợp lệ trong folder nguồn.' };
