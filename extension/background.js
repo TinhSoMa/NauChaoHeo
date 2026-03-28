@@ -751,7 +751,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const existing = await chrome.storage.local.get(['batchFiles', 'translatedBatches']);
             const batchFiles = existing.batchFiles || [];
             const completedCount = batchFiles.filter(f => f.completed).length;
-            const nextIndex = completedCount; // index của file tiếp theo chưa dịch
+            const firstPendingIndex = batchFiles.findIndex(f => !f.completed);
+            const nextIndex = firstPendingIndex >= 0 ? firstPendingIndex : batchFiles.length;
             await chrome.storage.local.set({
                 currentBatchIndex: nextIndex,
                 batchCount: completedCount

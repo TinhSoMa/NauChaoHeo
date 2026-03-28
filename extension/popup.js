@@ -31,6 +31,10 @@ const DOM = {
   statusLog: null,
   fileList: null,
   fileSummary: null,
+  dataModal: null,
+  dataModalTitle: null,
+  dataModalBody: null,
+  dataModalClose: null,
 
   init() {
     this.modeFile = document.getElementById("modeFile");
@@ -57,6 +61,10 @@ const DOM = {
     this.statusLog = document.getElementById("statusLog");
     this.fileList = document.getElementById("fileList");
     this.fileSummary = document.getElementById("fileSummary");
+    this.dataModal = document.getElementById("dataModal");
+    this.dataModalTitle = document.getElementById("dataModalTitle");
+    this.dataModalBody = document.getElementById("dataModalBody");
+    this.dataModalClose = document.getElementById("dataModalClose");
   }
 };
 
@@ -96,9 +104,20 @@ const UIManager = {
     DOM.fileList.innerHTML = batchFiles.map((bf, idx) => {
       const st = bf.status || (bf.completed ? 'done' : 'pending');
       const projectTag = bf.projectName && bf.projectName !== "Mixed_Files" ? `[${bf.projectName}] ` : "";
+      const hasData = !!(bf.rawText || bf.result);
+      const viewBtn = hasData
+        ? `<button class="btn-view" data-view-index="${idx}" title="Xem dữ liệu đã lưu">view</button>`
+        : "";
+      const resetBtn = st === 'done'
+        ? `<button class="btn-reset" data-reset-index="${idx}" title="Xóa bản dịch">x</button>`
+        : "";
       return `<div class="file-item">
         <span class="file-name" title="${bf.name}">#${idx + 1}: ${projectTag}${bf.name}</span>
-        <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
+        <span class="file-actions">
+          <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
+          ${viewBtn}
+          ${resetBtn}
+        </span>
       </div>`;
     }).join('');
     DOM.fileSummary.textContent = `Tổng: ${batchFiles.length} | ✅ ${completedCount} | ❌ ${errorCount} | ⏳ ${batchFiles.length - completedCount - errorCount}`;
@@ -272,6 +291,67 @@ async function downloadFullStoryInPopup() {
 // EVENT HANDLERS
 // ============================================
 const EventHandlers = {
+  openDataModal(title, content) {
+    DOM.dataModalTitle.textContent = title;
+    DOM.dataModalBody.textContent = content;
+    DOM.dataModal.classList.add("show");
+  },
+
+  closeDataModal() {
+    DOM.dataModal.classList.remove("show");
+  },
+
+  async onViewSavedData(fileIndex) {
+    const data = await chrome.storage.local.get(['batchFiles']);
+    const batchFiles = data.batchFiles || [];
+    const file = batchFiles[fileIndex];
+    if (!file) return;
+
+    let content = "Không có dữ liệu đã lưu.";
+    if (file.rawText) {
+      content = file.rawText;
+    } else if (file.result !== undefined) {
+      content = JSON.stringify(file.result, null, 2);
+    }
+
+    const title = `Dữ liệu: ${file.name || `Batch ${fileIndex + 1}`}`;
+    EventHandlers.openDataModal(title, content);
+  },
+
+  async onResetTranslation(fileIndex) {
+    const state = await StorageManager.loadSettings();
+    if (state.isRunning) {
+      UIManager.setStatus("⚠️ Hãy bấm Dừng trước khi xóa bản dịch.", "#ff9800");
+      return;
+    }
+
+    const data = await chrome.storage.local.get(['batchFiles', 'translatedBatches']);
+    const batchFiles = data.batchFiles || [];
+    const translatedBatches = data.translatedBatches || [];
+
+    if (!batchFiles[fileIndex]) return;
+
+    batchFiles[fileIndex].completed = false;
+    batchFiles[fileIndex].status = 'pending';
+    delete batchFiles[fileIndex].result;
+    delete batchFiles[fileIndex].rawText;
+
+    const targetBatchIndex = fileIndex + 1;
+    const updatedTranslated = translatedBatches.filter(b => b.batchIndex !== targetBatchIndex);
+
+    const completedCount = batchFiles.filter(f => f.completed).length;
+    const firstPendingIndex = batchFiles.findIndex(f => !f.completed);
+    const nextIndex = firstPendingIndex >= 0 ? firstPendingIndex : batchFiles.length;
+
+    await chrome.storage.local.set({
+      batchFiles: batchFiles,
+      translatedBatches: updatedTranslated,
+      batchCount: completedCount,
+      currentBatchIndex: nextIndex
+    });
+
+    UIManager.setStatus(`Đã xóa bản dịch: ${batchFiles[fileIndex].name}`, "#4CAF50");
+  },
   async onFolderSelect(fileList) {
     if (!fileList || fileList.length === 0) return;
 
@@ -572,6 +652,28 @@ function setupEventListeners() {
   DOM.btnStop.addEventListener("click", () => EventHandlers.onStop());
   DOM.btnDownload.addEventListener("click", () => EventHandlers.onDownload());
   DOM.btnClear.addEventListener("click", () => EventHandlers.onClear());
+  DOM.dataModalClose.addEventListener("click", () => EventHandlers.closeDataModal());
+  DOM.dataModal.addEventListener("click", (e) => {
+    if (e.target === DOM.dataModal) {
+      EventHandlers.closeDataModal();
+    }
+  });
+
+  DOM.fileList.addEventListener("click", (e) => {
+    const target = e.target;
+    if (target && target.classList && target.classList.contains("btn-reset")) {
+      const idx = parseInt(target.getAttribute("data-reset-index"), 10);
+      if (!Number.isNaN(idx)) {
+        EventHandlers.onResetTranslation(idx);
+      }
+    }
+    if (target && target.classList && target.classList.contains("btn-view")) {
+      const idx = parseInt(target.getAttribute("data-view-index"), 10);
+      if (!Number.isNaN(idx)) {
+        EventHandlers.onViewSavedData(idx);
+      }
+    }
+  });
 
   // Live update: khi background thay đổi batchFiles -> tự động render lại danh sách
   chrome.storage.onChanged.addListener((changes, area) => {

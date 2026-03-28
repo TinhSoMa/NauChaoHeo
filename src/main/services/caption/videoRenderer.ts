@@ -2735,10 +2735,6 @@ export async function renderStep7AudioPreview(
   const step7SpeedInput = options.step7AudioSpeedInput && options.step7AudioSpeedInput > 0
     ? options.step7AudioSpeedInput
     : 1.0;
-  const adjustedAudio = await buildSpeedAdjustedAudioFile(options.audioPath, step7SpeedInput);
-  if (!adjustedAudio.success || !adjustedAudio.audioPath || !existsSync(adjustedAudio.audioPath)) {
-    return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted cho preview.' };
-  }
 
   const renderOptions: RenderVideoOptions = {
     srtPath: options.srtPath,
@@ -2747,8 +2743,8 @@ export async function renderStep7AudioPreview(
     height: 1080,
     videoPath: options.videoPath,
     renderMode: 'hardsub',
-    audioPath: adjustedAudio.audioPath,
-    audioSpeed: 1.0,
+    audioPath: options.audioPath,
+    audioSpeed: step7SpeedInput,
     step7AudioSpeedInput: step7SpeedInput,
     srtTimeScale: options.srtTimeScale,
     step4SrtScale: options.step4SrtScale,
@@ -2760,6 +2756,9 @@ export async function renderStep7AudioPreview(
   };
 
   let prepTempAssPath: string | null = null;
+  let tempDirPath: string | null = null;
+  let tempTtsAudioPath: string | null = null;
+  let tempVideoAudioPath: string | null = null;
   const cleanupPreviewTemps = async () => {
     if (prepTempAssPath) {
       unregisterTempFile(prepTempAssPath);
@@ -2767,39 +2766,22 @@ export async function renderStep7AudioPreview(
         await fs.unlink(prepTempAssPath);
       } catch {}
     }
-    if (adjustedAudio.generated && adjustedAudio.audioPath) {
-      try {
-        await fs.unlink(adjustedAudio.audioPath);
-      } catch {}
+    if (tempTtsAudioPath) {
+      unregisterTempFile(tempTtsAudioPath);
+      try { await fs.unlink(tempTtsAudioPath); } catch {}
+    }
+    if (tempVideoAudioPath) {
+      unregisterTempFile(tempVideoAudioPath);
+      try { await fs.unlink(tempVideoAudioPath); } catch {}
+    }
+    if (tempDirPath) {
+      try { await fs.rm(tempDirPath, { recursive: true, force: true }); } catch {}
     }
   };
 
   try {
     const prep = await prepareSubtitleAndDuration(renderOptions);
     prepTempAssPath = prep.tempAssPath;
-    const hasTtsAudio = existsSync(adjustedAudio.audioPath);
-    if (!hasTtsAudio) {
-      await cleanupPreviewTemps();
-      return { success: false, error: 'Không tìm thấy file audio preview đã speed-adjust.' };
-    }
-
-    const safeVideoVolume = clampVolumePercent(options.videoVolume, 0, 200, 100);
-    const safeAudioVolume = clampVolumePercent(options.audioVolume, 0, 400, 100);
-    const audioMix = buildHardsubAudioMix({
-      hasVideoAudio: prep.hasVideoAudio,
-      hasTtsAudio: true,
-      videoVolume: safeVideoVolume,
-      audioVolume: safeAudioVolume,
-      videoSpeedMultiplier: prep.videoSpeedMultiplier,
-      audioSpeed: prep.audioSpeed,
-    });
-
-    const filterComplexParts = [...audioMix.filterParts];
-    const previewSourceLabel = ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_preview_src');
-    if (!previewSourceLabel) {
-      await cleanupPreviewTemps();
-      return { success: false, error: 'Không thể xác định audio stream để mix preview.' };
-    }
 
     const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
       ? prep.originalVideoDuration / prep.videoSpeedMultiplier
@@ -2821,15 +2803,94 @@ export async function renderStep7AudioPreview(
     }
     const effectiveDuration = Math.max(0.1, endSec - startSec);
 
-    filterComplexParts.push(
-      `${previewSourceLabel}atrim=start=${startSec.toFixed(3)}:end=${endSec.toFixed(3)},asetpts=PTS-STARTPTS[a_preview_out]`
-    );
+    const trimAudioSegment = async (inputPath: string, outputPath: string, startSec: number, durationSec: number): Promise<{ success: boolean; error?: string }> => {
+      return new Promise((resolve) => {
+        const safeStart = Math.max(0, startSec);
+        const safeDuration = Math.max(0.1, durationSec);
+        const args = [
+          '-y',
+          '-ss', safeStart.toFixed(3),
+          '-t', safeDuration.toFixed(3),
+          '-i', inputPath,
+          '-vn',
+          '-ac', '2',
+          '-ar', '44100',
+          '-c:a', 'pcm_s16le',
+          outputPath,
+        ];
+        const proc = spawn(ffmpegPath, args, { windowsHide: true, shell: false });
+        let stderr = '';
+        proc.stderr.on('data', (data) => { stderr += data.toString(); });
+        proc.on('close', (code) => {
+          if (code === 0) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: stderr || `FFmpeg exit code: ${code}` });
+          }
+        });
+        proc.on('error', (error) => {
+          resolve({ success: false, error: `Lỗi FFmpeg trim audio: ${error.message}` });
+        });
+      });
+    };
+
+    tempDirPath = await fs.mkdtemp(path.join(os.tmpdir(), 'caption_audio_preview_'));
+    const safeAudioSpeed = prep.audioSpeed > 0 ? prep.audioSpeed : step7SpeedInput;
+    const safeVideoSpeed = prep.videoSpeedMultiplier > 0 ? prep.videoSpeedMultiplier : 1.0;
+    const ttsTrimStartSec = startSec * safeAudioSpeed;
+    const ttsTrimDurationSec = effectiveDuration * safeAudioSpeed;
+    tempTtsAudioPath = path.join(tempDirPath, `preview_tts_${Date.now()}.wav`);
+    registerTempFile(tempTtsAudioPath);
+    const ttsTrimResult = await trimAudioSegment(options.audioPath, tempTtsAudioPath, ttsTrimStartSec, ttsTrimDurationSec);
+    if (!ttsTrimResult.success || !existsSync(tempTtsAudioPath)) {
+      await cleanupPreviewTemps();
+      return { success: false, error: ttsTrimResult.error || 'Không thể cắt audio TTS cho preview.' };
+    }
+
+    let hasVideoAudioForMix = false;
+    if (prep.hasVideoAudio) {
+      const vidTrimStartSec = startSec * safeVideoSpeed;
+      const vidTrimDurationSec = effectiveDuration * safeVideoSpeed;
+      tempVideoAudioPath = path.join(tempDirPath, `preview_vid_${Date.now()}.wav`);
+      registerTempFile(tempVideoAudioPath);
+      const vidTrimResult = await trimAudioSegment(options.videoPath, tempVideoAudioPath, vidTrimStartSec, vidTrimDurationSec);
+      if (vidTrimResult.success && existsSync(tempVideoAudioPath)) {
+        hasVideoAudioForMix = true;
+      } else {
+        tempVideoAudioPath = null;
+      }
+    }
+
+    const safeVideoVolume = clampVolumePercent(options.videoVolume, 0, 200, 100);
+    const safeAudioVolume = clampVolumePercent(options.audioVolume, 0, 400, 100);
+    const audioMix = buildHardsubAudioMix({
+      hasVideoAudio: hasVideoAudioForMix,
+      hasTtsAudio: true,
+      videoVolume: safeVideoVolume,
+      audioVolume: safeAudioVolume,
+      videoSpeedMultiplier: safeVideoSpeed,
+      audioSpeed: safeAudioSpeed,
+    });
+
+    const filterComplexParts = [...audioMix.filterParts];
+    const previewSourceLabel = ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_preview_src');
+    if (!previewSourceLabel) {
+      await cleanupPreviewTemps();
+      return { success: false, error: 'Không thể xác định audio stream để mix preview.' };
+    }
+
+    const inputArgs: string[] = [];
+    if (hasVideoAudioForMix && tempVideoAudioPath) {
+      inputArgs.push('-i', tempVideoAudioPath);
+    } else {
+      inputArgs.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+    }
+    inputArgs.push('-i', tempTtsAudioPath);
 
     const args = [
-      '-i', options.videoPath,
-      '-i', adjustedAudio.audioPath,
+      ...inputArgs,
       '-filter_complex', filterComplexParts.join(';'),
-      '-map', '[a_preview_out]',
+      '-map', previewSourceLabel,
       '-vn',
       '-ac', '2',
       '-ar', '44100',
