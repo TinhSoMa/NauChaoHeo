@@ -33,5 +33,9 @@ export const useThemeEffect = () => {
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(theme);
+
+    if (window.electronAPI?.appSettings?.update) {
+      void window.electronAPI.appSettings.update({ theme });
+    }
   }, [theme]);
 };

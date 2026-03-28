@@ -3,7 +3,7 @@
  * Lưu trữ đường dẫn Projects, theme, ngôn ngữ, v.v.
  */
 
-import { app } from 'electron';
+import { app, nativeTheme } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ASSStyleConfig } from '../../shared/types/caption';
@@ -248,6 +248,14 @@ function normalizeApiRequestDelayMs(rawValue: unknown): number {
     return API_REQUEST_DELAY_DEFAULT_MS;
   }
   return clamp(Math.floor(numeric), API_REQUEST_DELAY_MIN_MS, API_REQUEST_DELAY_MAX_MS);
+}
+
+function applyNativeTheme(theme: AppSettings['theme']): void {
+  if (theme === 'system') {
+    nativeTheme.themeSource = 'system';
+    return;
+  }
+  nativeTheme.themeSource = theme === 'dark' ? 'dark' : 'light';
 }
 
 function normalizeGrokUiTimeoutMs(rawValue: unknown): number {
@@ -667,14 +675,17 @@ class AppSettingsServiceClass {
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
         };
+        applyNativeTheme(this.settings.theme);
         console.log('[AppSettings] Loaded settings successfully');
       } else {
         console.log('[AppSettings] No settings file found, using defaults');
         this.settings = { ...DEFAULT_SETTINGS };
+        applyNativeTheme(this.settings.theme);
       }
     } catch (error) {
       console.error('[AppSettings] Error loading settings:', error);
       this.settings = { ...DEFAULT_SETTINGS };
+      applyNativeTheme(this.settings.theme);
     }
   }
 
@@ -710,6 +721,7 @@ class AppSettingsServiceClass {
    * Update settings (partial update)
    */
   update(partial: Partial<AppSettings>): AppSettings {
+    const prevTheme = this.settings.theme;
     const nextPartial: Partial<AppSettings> = { ...partial };
     if (Object.prototype.hasOwnProperty.call(partial, 'captionTypographyDefaults')) {
       nextPartial.captionTypographyDefaults = normalizeCaptionTypographyDefaults(partial.captionTypographyDefaults);
@@ -797,6 +809,9 @@ class AppSettingsServiceClass {
     }
     this.settings = { ...this.settings, ...nextPartial };
     this.save();
+    if (prevTheme !== this.settings.theme) {
+      applyNativeTheme(this.settings.theme);
+    }
     return this.getAll();
   }
 
