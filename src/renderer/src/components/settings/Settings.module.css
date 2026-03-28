@@ -146,21 +146,25 @@
   flex-shrink: 0;
   position: relative;
   min-height: 44px;
-  padding-left: 52px;
+  padding-left: 24px;
 }
 
 .detailHeader > button {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
-  border-radius: 8px;
-  background-color: transparent;
-  border: none;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--color-card) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   color: var(--color-text-primary);
   transition: all 0.2s ease;
-  position: absolute;
-  left: 12px;
-  top: 6px;
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  top: auto;
+  z-index: 40;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .detailHeader button:hover {
@@ -190,6 +194,18 @@
   flex-direction: column;
   gap: 24px;
   min-height: 0;
+}
+
+.geminiAccountsScroll {
+  max-height: clamp(420px, 68vh, 900px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: none;
+}
+
+.geminiAccountsScroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* Section (reused) */
@@ -559,10 +575,11 @@
 }
 
 .apiListPanel {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  max-height: clamp(240px, 42vh, 360px);
 }
 
 .apiDetailBody::-webkit-scrollbar {

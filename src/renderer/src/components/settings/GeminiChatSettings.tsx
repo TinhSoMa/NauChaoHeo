@@ -678,19 +678,21 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
            </div>
 
            {listTab === 'accounts' && (
-             <GeminiChatAccountsPanel
-               configs={configs}
-               isLoading={isLoading}
-               tokenStats={tokenStats}
-               liveStats={liveStats}
-               webApiOps={webApiOps}
-               getProxyLabel={getProxyLabel}
-               onEdit={handleEdit}
-               onDelete={handleDelete}
-               onToggleActive={handleToggleActive}
-               onToggleError={handleToggleError}
-               onClearError={handleClearError}
-             />
+             <div className={styles.geminiAccountsScroll}>
+               <GeminiChatAccountsPanel
+                 configs={configs}
+                 isLoading={isLoading}
+                 tokenStats={tokenStats}
+                 liveStats={liveStats}
+                 webApiOps={webApiOps}
+                 getProxyLabel={getProxyLabel}
+                 onEdit={handleEdit}
+                 onDelete={handleDelete}
+                 onToggleActive={handleToggleActive}
+                 onToggleError={handleToggleError}
+                 onClearError={handleClearError}
+               />
+             </div>
            )}
 
            {listTab === 'webapi' && (

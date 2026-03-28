@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { ProxyConfig, ProxyStats } from '@shared/types/proxy';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { ArrowLeft, Plus, Trash2, TestTube, Check, X, Download, Upload, RotateCcw, FileText } from 'lucide-react';
-import styles from './Settings.module.css';
+import sharedStyles from './Settings.module.css';
+import styles from './ProxySettings.module.css';
 
 interface ProxySettingsProps {
   onBack: () => void;
@@ -24,6 +25,12 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [loading, setLoading] = useState(false);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
   const [checkingAll, setCheckingAll] = useState(false);
+  const [activeTab, setActiveTab] = useState<'list' | 'scopes' | 'sources'>('list');
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState<'any' | 'http' | 'https' | 'socks5'>('any');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'enabled' | 'disabled' | 'healthy' | 'error'>('all');
+  const [expandedProxyIds, setExpandedProxyIds] = useState<Set<string>>(new Set());
+  const [openAccordion, setOpenAccordion] = useState<'webshare' | 'add' | 'bulk' | null>('webshare');
   const [proxyScopes, setProxyScopes] = useState({
     caption: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
     story: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
@@ -52,8 +59,6 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   const [syncingWebshare, setSyncingWebshare] = useState(false);
   
   // Form state
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkImportText, setBulkImportText] = useState('');
   const [bulkImportType, setBulkImportType] = useState<'http' | 'socks5'>('socks5');
   const [formData, setFormData] = useState({
@@ -337,7 +342,6 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
 
       const result = await window.electronAPI.proxy.add(formData);
       if (result.success) {
-        setShowAddForm(false);
         setFormData({
           host: '',
           port: 8080,
@@ -504,6 +508,58 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     return stats.find(s => s.id === proxyId);
   };
 
+  const toggleProxyDetail = (proxyId: string) => {
+    setExpandedProxyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(proxyId)) next.delete(proxyId);
+      else next.add(proxyId);
+      return next;
+    });
+  };
+
+  const openSourcesTab = (section: 'webshare' | 'add' | 'bulk') => {
+    setActiveTab('sources');
+    setOpenAccordion(section);
+  };
+
+  const toggleAccordion = (section: 'webshare' | 'add' | 'bulk') => {
+    setOpenAccordion((prev) => (prev === section ? null : section));
+  };
+
+  const filteredProxies = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    return proxies.filter((proxy) => {
+      const proxyStats = stats.find((s) => s.id === proxy.id);
+      const matchesQuery = !query || [
+        proxy.host,
+        proxy.port?.toString?.() ?? '',
+        proxy.country,
+        proxy.city,
+        proxy.platform,
+        proxy.username,
+      ].some((value) => String(value || '').toLowerCase().includes(query));
+
+      const matchesType = filterType === 'any' ? true : proxy.type === filterType;
+
+      const matchesStatus = (() => {
+        switch (filterStatus) {
+          case 'enabled':
+            return proxy.enabled;
+          case 'disabled':
+            return !proxy.enabled;
+          case 'healthy':
+            return proxy.enabled && Boolean(proxyStats?.isHealthy);
+          case 'error':
+            return proxy.enabled && proxyStats?.isHealthy === false;
+          default:
+            return true;
+        }
+      })();
+
+      return matchesQuery && matchesType && matchesStatus;
+    });
+  }, [filterStatus, filterType, proxies, searchText, stats]);
+
   // Handle Webshare bulk import
   const handleBulkImport = async () => {
     try {
@@ -520,7 +576,6 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
       
       if (result.success) {
         alert(`✅ Import thành công!\n\nĐã thêm: ${result.added}\nĐã bỏ qua (duplicate): ${result.skipped}`);
-        setShowBulkImport(false);
         setBulkImportText('');
         loadProxies();
         loadStats();
@@ -649,469 +704,514 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   };
 
   return (
-    <div className={styles.detailContainer}>
-      <div className={styles.detailHeader}>
+    <div className={sharedStyles.detailContainer}>
+      <div className={sharedStyles.detailHeader}>
         <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
           <ArrowLeft size={20} />
         </Button>
-        <div className={styles.detailTitle}>Quản lý Proxy</div>
+        <div className={sharedStyles.detailTitle}>Quản lý Proxy</div>
       </div>
       
-      <div className={styles.detailContent}>
-        <div className={styles.section}>
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Proxy theo chức năng</span>
-              <span className={styles.labelDesc}>Mỗi chức năng có mode/type riêng. Rotating endpoint theo từng scope.</span>
-            </div>
-          </div>
-          <div style={{ padding: '0 24px 16px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {scopeRows.map((scope) => {
-              const scopeMode = proxyScopes[scope.key].mode;
-              const isDirectList = scopeMode === 'direct-list';
-              const isOff = scopeMode === 'off';
-              const rotatingType = rotatingForms[scope.key].protocol;
-              const displayType = isDirectList ? proxyScopes[scope.key].typePreference : rotatingType;
-              const typeOptions = isDirectList
-                ? [
-                  { value: 'any', label: 'Any' },
-                  { value: 'http', label: 'HTTP' },
-                  { value: 'https', label: 'HTTPS' },
-                  { value: 'socks5', label: 'SOCKS5' },
-                ]
-                : [
-                  { value: 'http', label: 'HTTP' },
-                  { value: 'socks5', label: 'SOCKS5' },
-                ];
-
-              return (
-              <div key={scope.key} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div className={styles.flexRow} style={{ alignItems: 'center', gap: '12px' }}>
-                  <div style={{ minWidth: '160px' }}>
-                    <div style={{ fontWeight: 600 }}>{scope.label}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{scope.desc}</div>
-                  </div>
-                  <Select
-                    label="Mode"
-                    value={scopeMode}
-                    onChange={(e) => handleScopeChange(scope.key, { mode: e.target.value as 'off' | 'direct-list' | 'rotating-endpoint' })}
-                    options={[
-                      { value: 'off', label: 'Off' },
-                      { value: 'direct-list', label: 'Direct List' },
-                      { value: 'rotating-endpoint', label: 'Rotating Endpoint' },
-                    ]}
-                  />
-                  <Select
-                    label={isDirectList ? 'Proxy Type' : 'Rotating Protocol'}
-                    value={displayType}
-                    onChange={(e) => handleScopeTypeChange(scope.key, e.target.value as 'any' | 'http' | 'https' | 'socks5')}
-                    disabled={isOff}
-                    options={typeOptions}
-                  />
-                </div>
-                {scopeMode === 'rotating-endpoint' && (
-                  <div style={{ marginLeft: '172px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div className={styles.flexRow} style={{ gap: '12px' }}>
-                      <Input
-                        label="Domain Name"
-                        placeholder="p.webshare.io"
-                        value={rotatingForms[scope.key].host}
-                        onChange={(e) => updateRotatingForm(scope.key, { host: e.target.value })}
-                      />
-                      <Input
-                        label="Proxy Port"
-                        type="number"
-                        placeholder="80"
-                        value={rotatingForms[scope.key].port}
-                        onChange={(e) => updateRotatingForm(scope.key, { port: e.target.value })}
-                      />
-                    </div>
-                    <div className={styles.flexRow} style={{ gap: '12px' }}>
-                      <Input
-                        label="Proxy Username"
-                        placeholder="qhnwfwys-rotate"
-                        value={rotatingForms[scope.key].username}
-                        onChange={(e) => updateRotatingForm(scope.key, { username: e.target.value })}
-                      />
-                      <Input
-                        label="Proxy Password"
-                        type="password"
-                        placeholder="wzaljgyi9l6x"
-                        value={rotatingForms[scope.key].password}
-                        onChange={(e) => updateRotatingForm(scope.key, { password: e.target.value })}
-                      />
-                    </div>
-                    <div className={styles.flexRow} style={{ gap: '12px' }}>
-                      <Button onClick={() => handleSaveRotatingEndpoint(scope.key)} variant="primary">
-                        Lưu Endpoint
-                      </Button>
-                      <Button
-                        onClick={() => handleTestRotatingEndpoint(scope.key)}
-                        variant="secondary"
-                        disabled={testingRotatingScopes.has(scope.key)}
-                      >
-                        {testingRotatingScopes.has(scope.key) ? 'Đang test...' : 'Test Endpoint'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-            })}
-            <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
-              Rotating endpoint được cấu hình theo từng scope (không còn đồng bộ toàn cục).
-            </div>
-          </div>
+      <div className={`${sharedStyles.detailContent} ${styles.proxyContent}`}>
+        <div className={styles.tabBar}>
+          {[
+            { key: 'list', label: 'Danh sách' },
+            { key: 'scopes', label: 'Proxy theo chức năng' },
+            { key: 'sources', label: 'Nguồn & Import' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key as typeof activeTab)}
+              className={`${styles.tabButton} ${activeTab === tab.key ? styles.tabButtonActive : ''}`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        <div className={styles.section}>
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Webshare Sync</span>
-              <span className={styles.labelDesc}>Lấy list proxy Webshare mới và thay thế proxies Webshare hiện tại.</span>
-            </div>
-          </div>
-          <div style={{ padding: '0 24px 16px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <Input
-              label="Webshare API Key"
-              type="password"
-              placeholder="Token APIKEY"
-              value={webshareApiKey}
-              onChange={(e) => setWebshareApiKey(e.target.value)}
-            />
-            <Select
-              label="Webshare Proxy Type"
-              value={webshareProxyType}
-              onChange={(e) => setWebshareProxyType(e.target.value as 'http' | 'socks5' | 'both')}
-              options={[
-                { value: 'both', label: 'BOTH (HTTP + SOCKS5)' },
-                { value: 'socks5', label: 'SOCKS5' },
-                { value: 'http', label: 'HTTP' },
-              ]}
-            />
-            <div className={styles.flexRow}>
-              <Button onClick={handleSaveWebshareKey} variant="secondary" disabled={savingWebshareKey}>
-                {savingWebshareKey ? 'Đang lưu...' : 'Lưu API Key'}
-              </Button>
-              <Button onClick={handleSyncWebshare} variant="primary" disabled={syncingWebshare}>
-                {syncingWebshare ? 'Đang cập nhật...' : 'Cập nhật Webshare'}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Add Proxy Form */}
-        {showAddForm && (
-          <div className={styles.section}>
-            <div className={styles.row}>
-              <div className={styles.label}>
-                <span className={styles.labelText}>Thêm Proxy Mới</span>
-              </div>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              <div className={styles.flexRow}>
+        {activeTab === 'list' && (
+          <div className={styles.tabSection}>
+            <div className={styles.toolbar}>
+              <div className={styles.toolbarGroup}>
                 <Input
-                  label="Host/IP"
-                  placeholder="123.45.67.89"
-                  value={formData.host}
-                  onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                  placeholder="Tìm host, platform, country..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  variant="small"
+                  className={styles.searchInput}
                 />
-                <Input
-                  label="Port"
-                  type="number"
-                  placeholder="8080"
-                  value={formData.port.toString()}
-                  onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })}
-                />
-              </div>
-              <div className={styles.flexRow}>
-                <Input
-                  label="Username (tùy chọn)"
-                  placeholder="user123"
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                />
-                <Input
-                  label="Password (tùy chọn)"
-                  type="password"
-                  placeholder="••••••"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                />
-              </div>
-              <div className={styles.flexRow}>
                 <Select
-                  label="Loại Proxy"
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as typeof filterType)}
+                  variant="small"
+                  containerClassName={styles.filterSelect}
                   options={[
+                    { value: 'any', label: 'All Types' },
                     { value: 'http', label: 'HTTP' },
                     { value: 'https', label: 'HTTPS' },
                     { value: 'socks5', label: 'SOCKS5' },
                   ]}
                 />
-                <label className={styles.flexRow}>
-                  <input
-                    type="checkbox"
-                    checked={formData.enabled}
-                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                  />
-                  <span>Kích hoạt ngay</span>
-                </label>
-              </div>
-              <div className={styles.flexRow}>
-                <Button onClick={handleAddProxy} variant="primary">
-                  <Plus size={16} />
-                  Thêm
-                </Button>
-                <Button onClick={() => setShowAddForm(false)} variant="secondary">
-                  Hủy
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bulk Import Form */}
-        {showBulkImport && (
-          <div className={styles.section}>
-            <div className={styles.row}>
-              <div className={styles.label}>
-                <span className={styles.labelText}>Bulk Import Webshare Proxies</span>
-              </div>
-              <Button onClick={handleQuickAddWebshare} variant="secondary">
-                ⚡ Quick Add 10 Free Proxies
-              </Button>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-                Paste danh sách proxy (mỗi dòng: ip,port,username,password,country,city). 
-                Chọn loại mặc định bên dưới (HTTP/SOCKS5). Hỗ trợ prefix override: `socks5:ip:port:user:pass` hoặc `socks5://user:pass@ip:port`.
-              </p>
-              <div style={{ marginBottom: '12px', maxWidth: '280px' }}>
                 <Select
-                  label="Loại proxy mặc định"
-                  value={bulkImportType}
-                  onChange={(e) => setBulkImportType(e.target.value as 'http' | 'socks5')}
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as typeof filterStatus)}
+                  variant="small"
+                  containerClassName={styles.filterSelect}
                   options={[
-                    { value: 'socks5', label: 'SOCKS5 (Webshare Proxy)' },
-                    { value: 'http', label: 'HTTP (Webshare Proxy)' },
+                    { value: 'all', label: 'All Status' },
+                    { value: 'enabled', label: 'Enabled' },
+                    { value: 'disabled', label: 'Disabled' },
+                    { value: 'healthy', label: 'Healthy' },
+                    { value: 'error', label: 'Error' },
                   ]}
                 />
               </div>
-              <textarea
-                className={styles.select}
-                style={{ width: '100%', height: '120px', resize: 'none', marginBottom: '12px' }}
-                placeholder={`socks5:142.111.48.253:7030:qfdakzos:7fvhf24fe3ud
-23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo`}
-                value={bulkImportText}
-                onChange={(e) => setBulkImportText(e.target.value)}
-              />
-              <div className={styles.flexRow}>
-                <Button onClick={handleBulkImport} variant="primary">
-                  <Upload size={16} />
-                  Import ({bulkImportText.trim().split('\n').filter(l => l.trim()).length} proxies)
+              <div className={styles.toolbarActions}>
+                <Button onClick={handleCheckAll} variant="secondary" disabled={proxies.length === 0 || checkingAll}>
+                  <TestTube size={16} />
+                  {checkingAll ? 'Đang kiểm tra...' : 'Kiểm tra'}
                 </Button>
-                <Button onClick={() => { setShowBulkImport(false); setBulkImportText(''); setBulkImportType('socks5'); }} variant="secondary">
-                  Hủy
+                <Button onClick={handleImport} variant="secondary">
+                  <Upload size={16} />
+                  Import
+                </Button>
+                <Button onClick={handleExport} variant="secondary" disabled={proxies.length === 0}>
+                  <Download size={16} />
+                  Export
+                </Button>
+                <Button onClick={() => openSourcesTab('bulk')} variant="secondary">
+                  <FileText size={16} />
+                  Bulk Import
+                </Button>
+                <Button onClick={() => openSourcesTab('add')} variant="primary">
+                  <Plus size={16} />
+                  Thêm Proxy
                 </Button>
               </div>
+            </div>
+
+            <div className={styles.tableWrapper}>
+              {loading ? (
+                <div className={styles.emptyState}>Đang tải...</div>
+              ) : filteredProxies.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <div>Không có proxy phù hợp.</div>
+                  <span>Hãy thử đổi filter hoặc thêm proxy mới.</span>
+                </div>
+              ) : (
+                <table className={styles.proxyTable}>
+                  <thead>
+                    <tr>
+                      <th>Trạng thái</th>
+                      <th>Host:Port</th>
+                      <th>Loại</th>
+                      <th>Location</th>
+                      <th>Success</th>
+                      <th className={styles.actionsCol}>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProxies.map((proxy) => {
+                      const proxyStats = getProxyStats(proxy.id);
+                      const isTesting = testingIds.has(proxy.id);
+                      const statusLabel = !proxy.enabled
+                        ? 'Tắt'
+                        : proxyStats?.isHealthy
+                          ? 'Sẵn sàng'
+                          : 'Lỗi';
+                      const statusClass = !proxy.enabled
+                        ? styles.statusOff
+                        : proxyStats?.isHealthy
+                          ? styles.statusOk
+                          : styles.statusWarn;
+                      const isExpanded = expandedProxyIds.has(proxy.id);
+                      const successRate = proxyStats?.successRate ?? 0;
+
+                      return (
+                        <Fragment key={proxy.id}>
+                          <tr className={styles.proxyRow}>
+                            <td>
+                              <div className={`${styles.statusBadge} ${statusClass}`}>
+                                {proxy.enabled ? (proxyStats?.isHealthy ? <Check size={14} /> : <X size={14} />) : <X size={14} />}
+                                <span>{statusLabel}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <code className={styles.monoText}>{proxy.host}:{proxy.port}</code>
+                            </td>
+                            <td>
+                              <span className={styles.typeBadge}>{proxy.type}</span>
+                            </td>
+                            <td className={styles.locationCell}>
+                              {proxy.country || proxy.city ? (
+                                <>
+                                  <span className={styles.locationMain}>{proxy.country || '-'}</span>
+                                  <span className={styles.locationSub}>{proxy.city || '-'}</span>
+                                </>
+                              ) : (
+                                <span className={styles.muted}>-</span>
+                              )}
+                            </td>
+                            <td>
+                              {proxyStats ? (
+                                <div className={styles.rateWrap}>
+                                  <div className={styles.rateBar}>
+                                    <span className={styles.rateFill} style={{ width: `${successRate}%` }} />
+                                  </div>
+                                  <span className={styles.rateText}>{successRate}%</span>
+                                </div>
+                              ) : (
+                                <span className={styles.muted}>-</span>
+                              )}
+                            </td>
+                            <td className={styles.actionsCol}>
+                              <div className={styles.rowActions}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleProxy(proxy.id, proxy.enabled)}
+                                  className={styles.iconButton}
+                                  title={proxy.enabled ? 'Tắt' : 'Bật'}
+                                >
+                                  <RotateCcw size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestProxy(proxy.id)}
+                                  disabled={isTesting}
+                                  className={styles.iconButton}
+                                  title="Test proxy"
+                                >
+                                  <TestTube size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveProxy(proxy.id)}
+                                  className={`${styles.iconButton} ${styles.iconDanger}`}
+                                  title="Xóa"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleProxyDetail(proxy.id)}
+                                  className={styles.detailToggle}
+                                >
+                                  {isExpanded ? 'Thu gọn' : 'Chi tiết'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className={styles.proxyDetailRow}>
+                              <td colSpan={6}>
+                                <div className={styles.proxyDetailGrid}>
+                                  <div>
+                                    <div className={styles.detailLabel}>Platform</div>
+                                    <div className={styles.detailValue}>{proxy.platform || '-'}</div>
+                                  </div>
+                                  <div>
+                                    <div className={styles.detailLabel}>Credentials</div>
+                                    <div className={styles.detailValue}>
+                                      {proxy.username ? `${proxy.username}:***` : 'Không có'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className={styles.detailLabel}>Thành công</div>
+                                    <div className={styles.detailValue}>{proxyStats?.successCount ?? 0}</div>
+                                  </div>
+                                  <div>
+                                    <div className={styles.detailLabel}>Thất bại</div>
+                                    <div className={styles.detailValue}>{proxyStats?.failedCount ?? 0}</div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}
 
-        {/* Proxy List */}
-        <div className={styles.section}>
-          <div className={styles.row}>
-            <div className={styles.label}>
-              <span className={styles.labelText}>Danh sách Proxy ({proxies.length})</span>
+        {activeTab === 'scopes' && (
+          <div className={styles.tabSection}>
+            <div className={styles.scopeGrid}>
+              {scopeRows.map((scope) => {
+                const scopeMode = proxyScopes[scope.key].mode;
+                const isDirectList = scopeMode === 'direct-list';
+                const isOff = scopeMode === 'off';
+                const rotatingType = rotatingForms[scope.key].protocol;
+                const displayType = isDirectList ? proxyScopes[scope.key].typePreference : rotatingType;
+                const typeOptions = isDirectList
+                  ? [
+                    { value: 'any', label: 'Any' },
+                    { value: 'http', label: 'HTTP' },
+                    { value: 'https', label: 'HTTPS' },
+                    { value: 'socks5', label: 'SOCKS5' },
+                  ]
+                  : [
+                    { value: 'http', label: 'HTTP' },
+                    { value: 'socks5', label: 'SOCKS5' },
+                  ];
+
+                return (
+                  <div key={scope.key} className={styles.scopeCard}>
+                    <div className={styles.scopeHeader}>
+                      <div className={styles.scopeInfo}>
+                        <div className={styles.scopeTitle}>{scope.label}</div>
+                        <div className={styles.scopeDesc}>{scope.desc}</div>
+                      </div>
+                      <div className={styles.scopeControls}>
+                        <Select
+                          value={scopeMode}
+                          onChange={(e) => handleScopeChange(scope.key, { mode: e.target.value as 'off' | 'direct-list' | 'rotating-endpoint' })}
+                          options={[
+                            { value: 'off', label: 'Off' },
+                            { value: 'direct-list', label: 'Direct List' },
+                            { value: 'rotating-endpoint', label: 'Rotating Endpoint' },
+                          ]}
+                          variant="small"
+                        />
+                        <Select
+                          value={displayType}
+                          onChange={(e) => handleScopeTypeChange(scope.key, e.target.value as 'any' | 'http' | 'https' | 'socks5')}
+                          disabled={isOff}
+                          options={typeOptions}
+                          variant="small"
+                        />
+                      </div>
+                    </div>
+                    <div className={styles.scopeMeta}>
+                      <span className={styles.scopeChip}>Mode: {scopeMode}</span>
+                      <span className={styles.scopeChip}>Type: {displayType}</span>
+                    </div>
+                    {scopeMode === 'rotating-endpoint' && (
+                      <div className={styles.scopeInline}>
+                        <div className={styles.scopeInlineGrid}>
+                          <Input
+                            label="Domain"
+                            placeholder="p.webshare.io"
+                            value={rotatingForms[scope.key].host}
+                            onChange={(e) => updateRotatingForm(scope.key, { host: e.target.value })}
+                          />
+                          <Input
+                            label="Port"
+                            type="number"
+                            placeholder="80"
+                            value={rotatingForms[scope.key].port}
+                            onChange={(e) => updateRotatingForm(scope.key, { port: e.target.value })}
+                          />
+                          <Input
+                            label="Username"
+                            placeholder="qhnwfwys-rotate"
+                            value={rotatingForms[scope.key].username}
+                            onChange={(e) => updateRotatingForm(scope.key, { username: e.target.value })}
+                          />
+                          <Input
+                            label="Password"
+                            type="password"
+                            placeholder="••••••"
+                            value={rotatingForms[scope.key].password}
+                            onChange={(e) => updateRotatingForm(scope.key, { password: e.target.value })}
+                          />
+                        </div>
+                        <div className={styles.scopeInlineActions}>
+                          <Button onClick={() => handleSaveRotatingEndpoint(scope.key)} variant="primary">
+                            Lưu Endpoint
+                          </Button>
+                          <Button
+                            onClick={() => handleTestRotatingEndpoint(scope.key)}
+                            variant="secondary"
+                            disabled={testingRotatingScopes.has(scope.key)}
+                          >
+                            {testingRotatingScopes.has(scope.key) ? 'Đang test...' : 'Test Endpoint'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div className={styles.flexRow}>
-              <Button onClick={() => setShowBulkImport(true)} variant="secondary">
-                <FileText size={16} />
-                Bulk Import (Webshare)
-              </Button>
-              <Button onClick={handleImport} variant="secondary">
-                <Upload size={16} />
-                Import JSON
-              </Button>
-              <Button onClick={handleResetAll} variant="secondary" disabled={proxies.length === 0}>
-                <RotateCcw size={16} />
-                Reset All
-              </Button>
-              <Button onClick={handleCheckAll} variant="secondary" disabled={proxies.length === 0 || checkingAll}>
-                <TestTube size={16} />
-                {checkingAll ? 'Đang kiểm tra...' : 'Kiểm tra Proxy'}
-              </Button>
-              <Button onClick={handleExport} variant="secondary" disabled={proxies.length === 0}>
-                <Download size={16} />
-                Export
-              </Button>
-              <Button onClick={() => setShowAddForm(true)} variant="primary">
-                <Plus size={16} />
-                Thêm Proxy
-              </Button>
+            <div className={styles.scopeHint}>
+              Rotating endpoint được cấu hình theo từng scope (không còn đồng bộ toàn cục).
             </div>
           </div>
+        )}
 
-          {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-              Đang tải...
-            </div>
-          ) : proxies.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-              <p>Chưa có proxy nào.</p>
-              <p style={{ fontSize: '14px', marginTop: '8px' }}>Nhấn "Thêm Proxy" để bắt đầu.</p>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ backgroundColor: 'var(--color-surface)', fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  <tr>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Trạng thái</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Host:Port</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Platform</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Location</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Loại</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Credentials</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Success Rate</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Thành công</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Thất bại</th>
-                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {proxies.map((proxy) => {
-                    const proxyStats = getProxyStats(proxy.id);
-                    const isTesting = testingIds.has(proxy.id);
+        {activeTab === 'sources' && (
+          <div className={styles.tabSection}>
+            <div className={styles.accordion}>
+              <div className={styles.accordionItem}>
+                <button
+                  type="button"
+                  className={styles.accordionHeader}
+                  onClick={() => toggleAccordion('webshare')}
+                >
+                  <span>Webshare Sync</span>
+                  <span className={styles.accordionHint}>Đồng bộ danh sách proxy mới</span>
+                </button>
+                {openAccordion === 'webshare' && (
+                  <div className={styles.accordionBody}>
+                    <Input
+                      label="Webshare API Key"
+                      type="password"
+                      placeholder="Token APIKEY"
+                      value={webshareApiKey}
+                      onChange={(e) => setWebshareApiKey(e.target.value)}
+                    />
+                    <Select
+                      label="Webshare Proxy Type"
+                      value={webshareProxyType}
+                      onChange={(e) => setWebshareProxyType(e.target.value as 'http' | 'socks5' | 'both')}
+                      options={[
+                        { value: 'both', label: 'BOTH (HTTP + SOCKS5)' },
+                        { value: 'socks5', label: 'SOCKS5' },
+                        { value: 'http', label: 'HTTP' },
+                      ]}
+                    />
+                    <div className={styles.accordionActions}>
+                      <Button onClick={handleSaveWebshareKey} variant="secondary" disabled={savingWebshareKey}>
+                        {savingWebshareKey ? 'Đang lưu...' : 'Lưu API Key'}
+                      </Button>
+                      <Button onClick={handleSyncWebshare} variant="primary" disabled={syncingWebshare}>
+                        {syncingWebshare ? 'Đang cập nhật...' : 'Cập nhật Webshare'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-                    return (
-                      <tr key={proxy.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {proxy.enabled ? (
-                              proxyStats?.isHealthy ? (
-                                <Check size={16} style={{ color: 'green' }} />
-                              ) : (
-                                <X size={16} style={{ color: 'orange' }} />
-                              )
-                            ) : (
-                              <X size={16} style={{ color: 'gray' }} />
-                            )}
-                            <span style={{ fontSize: '12px', color: proxy.enabled ? (proxyStats?.isHealthy ? 'green' : 'orange') : 'gray' }}>
-                              {proxy.enabled ? (proxyStats?.isHealthy ? 'Sẵn sàng' : 'Lỗi') : 'Tắt'}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <code style={{ fontSize: '14px', color: 'var(--color-text-primary)', fontFamily: 'monospace' }}>
-                            {proxy.host}:{proxy.port}
-                          </code>
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          {proxy.platform ? (
-                            <span style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', color: '#3b82f6' }}>
-                              {proxy.platform}
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>-</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 16px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-                          {proxy.country || proxy.city ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              {proxy.country && <span style={{ fontWeight: '500' }}>{proxy.country}</span>}
-                              {proxy.city && <span style={{ color: 'var(--color-text-tertiary)' }}>{proxy.city}</span>}
-                            </div>
-                          ) : (
-                            <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>-</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{ fontSize: '12px', padding: '4px 8px', backgroundColor: 'var(--color-surface)', borderRadius: '6px', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
-                            {proxy.type}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 16px', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-                          {proxy.username ? (
-                            <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>
-                              {proxy.username}:***
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>Không có</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          {proxyStats ? (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                              <div style={{ width: '80px', height: '4px', backgroundColor: 'var(--color-surface)', borderRadius: '2px', overflow: 'hidden' }}>
-                                <div
-                                  style={{
-                                    height: '100%',
-                                    backgroundColor: proxyStats.successRate >= 80 ? 'green' : proxyStats.successRate >= 50 ? 'orange' : 'red',
-                                    width: `${proxyStats.successRate}%`
-                                  }}
-                                />
-                              </div>
-                              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', width: '40px', textAlign: 'right' }}>
-                                {proxyStats.successRate}%
-                              </span>
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>-</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: 'green', fontFamily: 'monospace' }}>
-                          {proxyStats?.successCount || 0}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: 'red', fontFamily: 'monospace' }}>
-                          {proxyStats?.failedCount || 0}
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                            <button
-                              onClick={() => handleToggleProxy(proxy.id, proxy.enabled)}
-                              style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: proxy.enabled ? 'green' : 'gray' }}
-                              title={proxy.enabled ? 'Tắt' : 'Bật'}
-                            >
-                              <RotateCcw size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleTestProxy(proxy.id)}
-                              disabled={isTesting}
-                              style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: 'blue', opacity: isTesting ? 0.5 : 1 }}
-                              title="Test proxy"
-                            >
-                              <TestTube size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleRemoveProxy(proxy.id)}
-                              style={{ padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: 'red' }}
-                              title="Xóa"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+              <div className={styles.accordionItem}>
+                <button
+                  type="button"
+                  className={styles.accordionHeader}
+                  onClick={() => toggleAccordion('add')}
+                >
+                  <span>Thêm Proxy</span>
+                  <span className={styles.accordionHint}>Nhập thủ công một proxy</span>
+                </button>
+                {openAccordion === 'add' && (
+                  <div className={styles.accordionBody}>
+                    <div className={styles.formGrid}>
+                      <Input
+                        label="Host/IP"
+                        placeholder="123.45.67.89"
+                        value={formData.host}
+                        onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                      />
+                      <Input
+                        label="Port"
+                        type="number"
+                        placeholder="8080"
+                        value={formData.port.toString()}
+                        onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 8080 })}
+                      />
+                      <Input
+                        label="Username (tùy chọn)"
+                        placeholder="user123"
+                        value={formData.username}
+                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                      />
+                      <Input
+                        label="Password (tùy chọn)"
+                        type="password"
+                        placeholder="••••••"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                    </div>
+                    <div className={styles.formRow}>
+                      <Select
+                        label="Loại Proxy"
+                        value={formData.type}
+                        onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                        options={[
+                          { value: 'http', label: 'HTTP' },
+                          { value: 'https', label: 'HTTPS' },
+                          { value: 'socks5', label: 'SOCKS5' },
+                        ]}
+                      />
+                      <label className={styles.checkboxRow}>
+                        <input
+                          type="checkbox"
+                          checked={formData.enabled}
+                          onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                        />
+                        <span>Kích hoạt ngay</span>
+                      </label>
+                    </div>
+                    <div className={styles.accordionActions}>
+                      <Button onClick={handleAddProxy} variant="primary">
+                        <Plus size={16} />
+                        Thêm
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-        {/* Info Box */}
-        <div style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '12px', padding: '16px' }}>
-          <h4 style={{ fontWeight: '500', color: '#3b82f6', marginBottom: '8px' }}>ℹ️ Lưu ý</h4>
-          <ul style={{ fontSize: '14px', color: 'var(--color-text-secondary)', listStyle: 'disc', listStylePosition: 'inside', margin: 0, paddingLeft: '16px' }}>
-            <li>Proxy được rotation tự động theo round-robin khi gọi API</li>
-            <li>Proxy bị tắt tự động sau 2 lỗi liên tiếp</li>
-            <li>Nếu không còn proxy khả dụng, yêu cầu sẽ dừng lại</li>
-            <li>Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định</li>
-          </ul>
-        </div>
+              <div className={styles.accordionItem}>
+                <button
+                  type="button"
+                  className={styles.accordionHeader}
+                  onClick={() => toggleAccordion('bulk')}
+                >
+                  <span>Bulk Import Webshare</span>
+                  <span className={styles.accordionHint}>Dán danh sách proxy hàng loạt</span>
+                </button>
+                {openAccordion === 'bulk' && (
+                  <div className={styles.accordionBody}>
+                    <p className={styles.helpText}>
+                      Paste danh sách proxy (mỗi dòng: ip,port,username,password,country,city).
+                      Hỗ trợ prefix: socks5:ip:port:user:pass hoặc socks5://user:pass@ip:port.
+                    </p>
+                    <Select
+                      label="Loại proxy mặc định"
+                      value={bulkImportType}
+                      onChange={(e) => setBulkImportType(e.target.value as 'http' | 'socks5')}
+                      options={[
+                        { value: 'socks5', label: 'SOCKS5 (Webshare Proxy)' },
+                        { value: 'http', label: 'HTTP (Webshare Proxy)' },
+                      ]}
+                    />
+                    <textarea
+                      className={styles.bulkTextarea}
+                      placeholder={`socks5:142.111.48.253:7030:qfdakzos:7fvhf24fe3ud
+23.95.150.145,6114,qfdakzos,7fvhf24fe3ud,US,Buffalo`}
+                      value={bulkImportText}
+                      onChange={(e) => setBulkImportText(e.target.value)}
+                    />
+                    <div className={styles.accordionActions}>
+                      <Button onClick={handleQuickAddWebshare} variant="secondary">
+                        ⚡ Quick Add 10 Free Proxies
+                      </Button>
+                      <Button onClick={handleBulkImport} variant="primary">
+                        <Upload size={16} />
+                        Import ({bulkImportText.trim().split('\n').filter(l => l.trim()).length} proxies)
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className={styles.noteBox}>
+              <h4>ℹ️ Lưu ý</h4>
+              <ul>
+                <li>Proxy được rotation tự động theo round‑robin khi gọi API</li>
+                <li>Proxy bị tắt tự động sau 2 lỗi liên tiếp</li>
+                <li>Nếu không còn proxy khả dụng, yêu cầu sẽ dừng lại</li>
+                <li>Khuyến nghị sử dụng proxy trả phí để đảm bảo ổn định</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

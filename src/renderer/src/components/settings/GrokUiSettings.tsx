@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Save, RotateCcw, Activity, FolderOpen, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, Save, RotateCcw, FolderOpen, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Checkbox } from '../common/Checkbox';
@@ -7,7 +7,6 @@ import sharedStyles from './Settings.module.css';
 import styles from './GrokUiSettings.module.css';
 import type { SettingsDetailProps } from './types';
 import type {
-  GrokUiHealthSnapshot,
   GrokUiProfileConfig,
   GrokUiProfileStatus,
   GrokUiProfileStatusEntry,
@@ -56,10 +55,8 @@ export function GrokUiSettings({ onBack }: SettingsDetailProps) {
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [createProfileError, setCreateProfileError] = useState<string | null>(null);
   const [profileStatuses, setProfileStatuses] = useState<Record<string, GrokUiProfileStatus>>({});
+  const [expandedProfiles, setExpandedProfiles] = useState<Set<string>>(new Set());
 
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [healthError, setHealthError] = useState<string | null>(null);
-  const [healthSnapshot, setHealthSnapshot] = useState<GrokUiHealthSnapshot | null>(null);
   const isDelayLow = requestDelaySec > 0 && requestDelaySec < 3;
 
   const loadProfileStatuses = useCallback(async () => {
@@ -224,6 +221,18 @@ export function GrokUiSettings({ onBack }: SettingsDetailProps) {
     ]));
   }, []);
 
+  const toggleProfileExpand = useCallback((id: string) => {
+    setExpandedProfiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   const handleRemoveProfile = useCallback((id: string) => {
     setProfiles((prev) => prev.filter((profile) => profile.id !== id));
     void window.electronAPI.grokUi.deleteProfile({ id })
@@ -251,39 +260,6 @@ export function GrokUiSettings({ onBack }: SettingsDetailProps) {
     }
   }, [loadProfileStatuses]);
 
-  const handleHealthCheck = useCallback(async () => {
-    try {
-      setHealthLoading(true);
-      setHealthError(null);
-      const result = await window.electronAPI.grokUi.getHealth();
-      if (!result.success || !result.data) {
-        setHealthSnapshot(null);
-        setHealthError(result.error || 'Không thể kiểm tra Grok UI.');
-        return;
-      }
-      setHealthSnapshot(result.data);
-    } catch (error) {
-      setHealthSnapshot(null);
-      setHealthError(String(error));
-    } finally {
-      setHealthLoading(false);
-    }
-  }, []);
-
-  const formattedCheckedAt = useMemo(() => {
-    if (!healthSnapshot?.checkedAt) return '';
-    return new Date(healthSnapshot.checkedAt).toLocaleString();
-  }, [healthSnapshot?.checkedAt]);
-
-  const grokModuleLabel = healthSnapshot
-    ? (healthSnapshot.modules?.grok3api ? 'OK' : 'MISS')
-    : '-';
-  const driverModuleLabel = healthSnapshot
-    ? (healthSnapshot.modules?.undetected_chromedriver ? 'OK' : 'MISS')
-    : '-';
-  const pythonStatus = healthSnapshot ? (healthSnapshot.pythonOk ? 'OK' : 'FAIL') : '---';
-  const moduleStatus = healthSnapshot ? (healthSnapshot.modulesOk ? 'OK' : 'FAIL') : '---';
-
   return (
     <div className={sharedStyles.detailContainer}>
       <div className={sharedStyles.detailHeader}>
@@ -293,239 +269,210 @@ export function GrokUiSettings({ onBack }: SettingsDetailProps) {
         <div className={styles.headerInfo}>
           <div className={sharedStyles.detailTitle}>Grok UI</div>
           <div className={styles.headerSubtitle}>
-            Dùng Grok3API UI mode với profile trình duyệt tuỳ chọn.
+            Grok3API UI mode — quản lý profile trình duyệt & runtime.
           </div>
         </div>
       </div>
 
       <div className={sharedStyles.detailContent}>
-        <div className={sharedStyles.section}>
-          <div className={styles.profileToolbar}>
-            <div>
-              <div className={styles.profileTitle}>Profiles</div>
-              <div className={sharedStyles.labelDesc}>
-                Quản lý nhiều profile Grok UI. Rate limit sẽ tự chuyển sang profile tiếp theo.
+        <div className={styles.grokLayout}>
+          <div className={styles.leftPane}>
+            <div className={`${sharedStyles.section} ${styles.sectionCompact}`}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Profiles</div>
+                  <div className={styles.sectionDesc}>
+                    Quản lý profile Grok UI. Rate limit sẽ tự chuyển sang profile tiếp theo.
+                  </div>
+                </div>
+                <div className={styles.sectionActions}>
+                  <Button onClick={handleResetStatuses} variant="secondary" disabled={loading}>
+                    <RefreshCcw size={16} />
+                    Reset
+                  </Button>
+                  <Button onClick={handleAddProfile} variant="primary" disabled={loading}>
+                    <Plus size={16} />
+                    Thêm
+                  </Button>
+                </div>
               </div>
-            </div>
-            <div className={styles.profileToolbarActions}>
-              <Button onClick={handleResetStatuses} variant="secondary" disabled={loading}>
-                <RefreshCcw size={16} />
-                Reset trạng thái
-              </Button>
-              <Button onClick={handleAddProfile} variant="primary" disabled={loading}>
-                <Plus size={16} />
-                Thêm profile
-              </Button>
+
+              <div className={styles.profileGridScroll}>
+                <div className={styles.profileList}>
+                  {profiles.length === 0 && (
+                    <div className={styles.emptyProfiles}>Chưa có profile nào.</div>
+                  )}
+                  {profiles.map((profile, index) => {
+                  const status = profileStatuses[profile.id];
+                  const statusLabel = status?.state === 'rate_limited'
+                    ? 'Rate limited'
+                    : status?.state === 'error'
+                      ? 'Error'
+                      : 'OK';
+                  const statusClass = status?.state === 'rate_limited'
+                    ? styles.statusWarn
+                    : status?.state === 'error'
+                      ? styles.statusError
+                      : styles.statusOk;
+                  const isExpanded = expandedProfiles.has(profile.id);
+                  return (
+                    <div key={profile.id} className={styles.profileRow}>
+                      <div className={styles.profileSummary}>
+                        <div className={styles.profileSummaryMain}>
+                          <span className={styles.profileIndex}>#{index + 1}</span>
+                          <div className={styles.profileRowTitle}>
+                            {profile.profileName || `Profile ${index + 1}`}
+                          </div>
+                          <div className={`${styles.statusPill} ${statusClass}`}>
+                            {statusLabel}
+                          </div>
+                        </div>
+                        <div className={styles.profileSummaryMeta}>
+                          <span className={styles.profileMetaChip}>
+                            {profile.enabled ? 'Enabled' : 'Disabled'}
+                          </span>
+                          <span className={styles.profileMetaChip}>
+                            {profile.anonymous ? 'Ẩn danh' : 'Thông thường'}
+                          </span>
+                          <span className={styles.profileMetaPath} title={profile.profileDir || DEFAULT_PROFILE_DIR}>
+                            {profile.profileDir || DEFAULT_PROFILE_DIR}
+                          </span>
+                        </div>
+                      </div>
+                      <div className={styles.profileSummaryActions}>
+                        <Button
+                          onClick={() => toggleProfileExpand(profile.id)}
+                          variant="secondary"
+                        >
+                          {isExpanded ? 'Thu gọn' : 'Xem chi tiết'}
+                        </Button>
+                      </div>
+
+                      {isExpanded && (
+                        <div className={styles.profileDetails}>
+                          <div className={styles.profileDetailRow}>
+                            <span className={styles.profileDetailLabel}>Tên profile</span>
+                            <Input
+                              value={profile.profileName}
+                              onChange={(e) => setProfiles((prev) => prev.map((item) => (
+                                item.id === profile.id ? { ...item, profileName: e.target.value } : item
+                              )))}
+                              placeholder={DEFAULT_PROFILE_NAME}
+                              disabled={loading || profile.anonymous}
+                            />
+                          </div>
+                          <div className={styles.profileDetailRow}>
+                            <span className={styles.profileDetailLabel}>Thư mục profile</span>
+                            <div className={styles.profileDirRow}>
+                              <Input
+                                value={profile.profileDir}
+                                onChange={(e) => setProfiles((prev) => prev.map((item) => (
+                                  item.id === profile.id ? { ...item, profileDir: e.target.value } : item
+                                )))}
+                                placeholder={DEFAULT_PROFILE_DIR}
+                                disabled={loading || profile.anonymous}
+                              />
+                              <Button
+                                onClick={() => handleBrowseProfileDir(index)}
+                                disabled={loading || profile.anonymous}
+                              >
+                                <FolderOpen size={16} />
+                                Browse
+                              </Button>
+                            </div>
+                          </div>
+                          <div className={styles.profileDetailActions}>
+                            <Checkbox
+                              label="Enabled"
+                              checked={profile.enabled}
+                              onChange={(checked) => handleToggleProfileEnabled(profile.id, checked)}
+                              disabled={loading}
+                            />
+                            <Checkbox
+                              label="Ẩn danh"
+                              checked={profile.anonymous}
+                              onChange={(checked) => setProfiles((prev) => prev.map((item) => (
+                                item.id === profile.id ? { ...item, anonymous: checked } : item
+                              )))}
+                              disabled={loading}
+                            />
+                            <Button
+                              onClick={() => handleCreateProfile(profile)}
+                              variant="secondary"
+                              disabled={loading || profile.anonymous || creatingProfile}
+                            >
+                              {creatingProfile ? 'Đang tạo...' : 'Tạo profile'}
+                            </Button>
+                            <Button
+                              onClick={() => handleRemoveProfile(profile.id)}
+                              variant="secondary"
+                              disabled={loading}
+                            >
+                              <Trash2 size={16} />
+                              Xóa
+                            </Button>
+                          </div>
+                          {createProfileError && <div className={styles.errorText}>{createProfileError}</div>}
+                          {status?.lastError && (
+                            <div className={styles.profileError}>
+                              {status.lastError}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className={styles.profileList}>
-            {profiles.length === 0 && (
-              <div className={styles.emptyProfiles}>Chưa có profile nào.</div>
-            )}
-            {profiles.map((profile, index) => {
-              const status = profileStatuses[profile.id];
-              const statusLabel = status?.state === 'rate_limited'
-                ? 'Rate limited'
-                : status?.state === 'error'
-                  ? 'Error'
-                  : 'OK';
-              const statusClass = status?.state === 'rate_limited'
-                ? styles.statusWarn
-                : status?.state === 'error'
-                  ? styles.statusError
-                  : styles.statusOk;
-              return (
-                <div key={profile.id} className={styles.profileCard}>
-                  <div className={styles.profileHeader}>
-                    <div className={styles.profileHeaderLeft}>
-                      <div className={styles.profileCardTitle}>Profile #{index + 1}</div>
-                      <div className={`${styles.statusPill} ${statusClass}`}>
-                        {statusLabel}
-                      </div>
-                    </div>
-                    <div className={styles.profileHeaderRight}>
-                      <Checkbox
-                        label="Enabled"
-                        checked={profile.enabled}
-                        onChange={(checked) => handleToggleProfileEnabled(profile.id, checked)}
-                        disabled={loading}
-                      />
-                      <Button
-                        onClick={() => handleRemoveProfile(profile.id)}
-                        variant="secondary"
-                        disabled={loading}
-                      >
-                        <Trash2 size={16} />
-                        Xóa
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className={styles.profileField}>
-                    <span className={styles.profileLabel}>Profile Name</span>
+          <div className={styles.rightPane}>
+            <div className={`${sharedStyles.section} ${styles.sectionCompact}`}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Runtime</div>
+                  <div className={styles.sectionDesc}>Timeout & delay cho Grok UI.</div>
+                </div>
+              </div>
+              <div className={styles.inlineSettings}>
+                <div className={styles.settingCard}>
+                  <div className={styles.settingLabel}>Timeout (giây)</div>
+                  <div className={styles.settingDesc}>Thời gian chờ tối đa cho 1 batch.</div>
+                  <div className={styles.settingInputRow}>
                     <Input
-                      value={profile.profileName}
-                      onChange={(e) => setProfiles((prev) => prev.map((item) => (
-                        item.id === profile.id ? { ...item, profileName: e.target.value } : item
-                      )))}
-                      placeholder={DEFAULT_PROFILE_NAME}
-                      disabled={loading || profile.anonymous}
-                    />
-                  </div>
-
-                  <div className={styles.profileField}>
-                    <span className={styles.profileLabel}>Profile Directory</span>
-                    <div className={styles.profileDirRow}>
-                      <Input
-                        value={profile.profileDir}
-                        onChange={(e) => setProfiles((prev) => prev.map((item) => (
-                          item.id === profile.id ? { ...item, profileDir: e.target.value } : item
-                        )))}
-                        placeholder={DEFAULT_PROFILE_DIR}
-                        disabled={loading || profile.anonymous}
-                      />
-                      <Button
-                        onClick={() => handleBrowseProfileDir(index)}
-                        disabled={loading || profile.anonymous}
-                      >
-                        <FolderOpen size={16} />
-                        Browse
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className={styles.profileField}>
-                    <span className={styles.profileLabel}>Anonymous Mode</span>
-                    <Checkbox
-                      label="Bật ẩn danh"
-                      checked={profile.anonymous}
-                      onChange={(checked) => setProfiles((prev) => prev.map((item) => (
-                        item.id === profile.id ? { ...item, anonymous: checked } : item
-                      )))}
+                      type="number"
+                      value={timeoutSec}
+                      onChange={(e) => setTimeoutSec(Number(e.target.value))}
+                      min={10}
+                      max={300}
+                      variant="small"
                       disabled={loading}
                     />
                   </div>
-
-                  <div className={styles.profileActions}>
-                    <Button
-                      onClick={() => handleCreateProfile(profile)}
-                      variant="secondary"
-                      disabled={loading || profile.anonymous || creatingProfile}
-                    >
-                      {creatingProfile ? 'Đang tạo...' : 'Tạo profile'}
-                    </Button>
-                    {createProfileError && <div className={styles.errorText}>{createProfileError}</div>}
-                  </div>
-                  {status?.lastError && (
-                    <div className={styles.profileError}>
-                      {status.lastError}
-                    </div>
-                  )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={sharedStyles.section}>
-          <div className={sharedStyles.row}>
-            <div className={sharedStyles.label}>
-              <span className={sharedStyles.labelText}>Timeout (giây)</span>
-              <span className={sharedStyles.labelDesc}>Thời gian chờ tối đa cho 1 batch Grok UI.</span>
-            </div>
-            <Input
-              type="number"
-              value={timeoutSec}
-              onChange={(e) => setTimeoutSec(Number(e.target.value))}
-              min={10}
-              max={300}
-              variant="small"
-              disabled={loading}
-            />
-          </div>
-
-          <div className={sharedStyles.row}>
-            <div className={sharedStyles.label}>
-              <span className={sharedStyles.labelText}>Request Delay (giây)</span>
-              <span className={sharedStyles.labelDesc}>
-                Khoảng chờ giữa mỗi request sau khi đã nhận + lưu kết quả (ACK). Khuyến nghị ≥ 5s.
-                {isDelayLow && (
-                  <span className={styles.warningText}> Giá trị quá thấp, dễ bị submit locked.</span>
-                )}
-              </span>
-            </div>
-            <Input
-              type="number"
-              value={requestDelaySec}
-              onChange={(e) => setRequestDelaySec(Number(e.target.value))}
-              min={0}
-              max={30}
-              variant="small"
-              disabled={loading}
-            />
-          </div>
-        </div>
-
-        <div className={sharedStyles.section}>
-          <div className={sharedStyles.row}>
-            <div className={sharedStyles.label}>
-              <span className={sharedStyles.labelText}>Health Check</span>
-              <span className={sharedStyles.labelDesc}>
-                Kiểm tra Python + module Grok3API trước khi chạy Step 3.
-              </span>
-            </div>
-            <Button onClick={handleHealthCheck} variant="primary" disabled={healthLoading}>
-              <Activity size={16} />
-              {healthLoading ? 'Đang kiểm tra...' : 'Health Check'}
-            </Button>
-          </div>
-          <div className={styles.healthGrid}>
-            <div className={styles.healthCard}>
-              <div className={styles.healthLabel}>Python</div>
-              <div
-                className={`${styles.statusPill} ${
-                  pythonStatus === 'OK' ? styles.statusOk : pythonStatus === 'FAIL' ? styles.statusError : styles.statusUnknown
-                }`}
-              >
-                {pythonStatus}
+                <div className={styles.settingCard}>
+                  <div className={styles.settingLabel}>Request Delay (giây)</div>
+                  <div className={styles.settingDesc}>
+                    Khoảng chờ giữa mỗi request (ACK). Khuyến nghị ≥ 5s.
+                    {isDelayLow && (
+                      <span className={styles.warningText}> Giá trị quá thấp.</span>
+                    )}
+                  </div>
+                  <div className={styles.settingInputRow}>
+                    <Input
+                      type="number"
+                      value={requestDelaySec}
+                      onChange={(e) => setRequestDelaySec(Number(e.target.value))}
+                      min={0}
+                      max={30}
+                      variant="small"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className={styles.metaText}>
-                Version: <span className={styles.mono}>{healthSnapshot?.pythonVersion || '-'}</span>
-              </div>
-              <div className={styles.metaText}>
-                Runtime: <span className={styles.mono}>{healthSnapshot?.runtimeMode || '-'}</span>
-              </div>
-            </div>
-            <div className={styles.healthCard}>
-              <div className={styles.healthLabel}>Modules</div>
-              <div
-                className={`${styles.statusPill} ${
-                  moduleStatus === 'OK' ? styles.statusOk : moduleStatus === 'FAIL' ? styles.statusError : styles.statusUnknown
-                }`}
-              >
-                {moduleStatus}
-              </div>
-              <div className={styles.metaText}>
-                grok3api: <span className={styles.mono}>{grokModuleLabel}</span>
-              </div>
-              <div className={styles.metaText}>
-                undetected_chromedriver:{' '}
-                <span className={styles.mono}>{driverModuleLabel}</span>
-              </div>
-            </div>
-            <div className={styles.healthCard}>
-              <div className={styles.healthLabel}>Detail</div>
-              <div className={styles.metaText}>
-                Checked: <span className={styles.mono}>{formattedCheckedAt || '-'}</span>
-              </div>
-              <div className={styles.metaText}>
-                Python path: <span className={styles.mono}>{healthSnapshot?.pythonPath || '-'}</span>
-              </div>
-              {healthError && <div className={styles.errorText}>{healthError}</div>}
-              {healthSnapshot?.error && !healthError && (
-                <div className={styles.errorText}>{healthSnapshot.error}</div>
-              )}
             </div>
           </div>
         </div>
