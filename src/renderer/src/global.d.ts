@@ -548,6 +548,7 @@ interface AppSettings {
   projectsBasePath: string | null;
   renderVideoOutputDir: string | null;
   useRenderVideoOutputDir: boolean;
+  downloaderOutputDir: string | null;
   theme: 'light' | 'dark' | 'system';
   language: 'vi' | 'en';
   recentProjectIds: string[];

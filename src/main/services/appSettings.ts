@@ -18,6 +18,7 @@ export interface AppSettings {
   language: 'vi' | 'en';
   projectsBasePath: string | null;
   renderVideoOutputDir: string | null;
+  downloaderOutputDir: string | null;
   useRenderVideoOutputDir: boolean;
   recentProjectIds: string[]; // IDs của các project gần đây, tối đa 10
   lastActiveProjectId: string | null; // Project cuối cùng được chọn
@@ -554,6 +555,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   language: 'vi',
   projectsBasePath: null,
   renderVideoOutputDir: null,
+  downloaderOutputDir: null,
   useRenderVideoOutputDir: false,
   recentProjectIds: [],
   lastActiveProjectId: null,
@@ -738,6 +740,9 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'apiRequestDelayMs')) {
       nextPartial.apiRequestDelayMs = normalizeApiRequestDelayMs(partial.apiRequestDelayMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'downloaderOutputDir')) {
+      nextPartial.downloaderOutputDir = normalizeStringOrNull(partial.downloaderOutputDir);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'grokUiTimeoutMs')) {
       nextPartial.grokUiTimeoutMs = normalizeGrokUiTimeoutMs(partial.grokUiTimeoutMs);

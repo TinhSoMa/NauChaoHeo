@@ -16,6 +16,7 @@ interface OutputSettingsProps {
 export function OutputSettings({ onBack }: OutputSettingsProps) {
   const [projectsBasePath, setProjectsBasePath] = useState<string>('');
   const [renderVideoOutputDir, setRenderVideoOutputDir] = useState<string>('');
+  const [downloaderOutputDir, setDownloaderOutputDir] = useState<string>('');
   const [useRenderVideoOutputDir, setUseRenderVideoOutputDir] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
@@ -35,6 +36,9 @@ export function OutputSettings({ onBack }: OutputSettingsProps) {
           }
           if (typeof data.useRenderVideoOutputDir === 'boolean') {
             setUseRenderVideoOutputDir(data.useRenderVideoOutputDir);
+          }
+          if (typeof data.downloaderOutputDir === 'string') {
+            setDownloaderOutputDir(data.downloaderOutputDir);
           }
         }
       } catch (err) {
@@ -75,6 +79,20 @@ export function OutputSettings({ onBack }: OutputSettingsProps) {
     }
   }, []);
 
+  const handleBrowseDownloaderDir = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.invoke('dialog:openDirectory', {}) as {
+        canceled: boolean;
+        filePaths: string[];
+      };
+      if (!result.canceled && result.filePaths.length > 0) {
+        setDownloaderOutputDir(result.filePaths[0]);
+      }
+    } catch (err) {
+      console.error('[OutputSettings] Loi chon thu muc downloader:', err);
+    }
+  }, []);
+
   // Save
   const handleSave = useCallback(async () => {
     try {
@@ -84,19 +102,21 @@ export function OutputSettings({ onBack }: OutputSettingsProps) {
       await window.electronAPI.appSettings.update({
         renderVideoOutputDir: renderDirToSave,
         useRenderVideoOutputDir,
+        downloaderOutputDir: downloaderOutputDir.trim() || null,
       });
-      alert('Đã lưu thư mục Projects!');
+      alert('Đã lưu cài đặt output!');
     } catch (err) {
       console.error('[OutputSettings] Loi luu thu muc Projects:', err);
       alert('Không thể lưu cài đặt');
     }
-  }, [projectsBasePath, renderVideoOutputDir, useRenderVideoOutputDir]);
+  }, [projectsBasePath, renderVideoOutputDir, useRenderVideoOutputDir, downloaderOutputDir]);
 
   // Reset
   const handleReset = useCallback(() => {
     setProjectsBasePath('');
     setRenderVideoOutputDir('');
     setUseRenderVideoOutputDir(false);
+    setDownloaderOutputDir('');
   }, []);
 
   return (
@@ -172,6 +192,24 @@ export function OutputSettings({ onBack }: OutputSettingsProps) {
                 disabled={loading}
               />
               <Button onClick={handleBrowseRenderDir} disabled={loading}>
+                Browse
+              </Button>
+            </div>
+          </div>
+
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Thư mục lưu Downloader</span>
+              <span className={styles.labelDesc}>Chọn thư mục lưu mặc định cho Downloader.</span>
+            </div>
+            <div className={styles.flexRow}>
+              <Input
+                value={downloaderOutputDir}
+                onChange={(e) => setDownloaderOutputDir(e.target.value)}
+                placeholder="Ví dụ: D:\\Downloads\\NauChaoHeo"
+                disabled={loading}
+              />
+              <Button onClick={handleBrowseDownloaderDir} disabled={loading}>
                 Browse
               </Button>
             </div>

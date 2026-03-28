@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { ytDlpService } from '../services/downloader/ytDlpService'
 import { cookieDatabase, extractRootDomain } from '../database/cookieDatabase'
+import { AppSettingsService } from '../services/appSettings'
 import type { DownloadOptions, PlaylistInfo } from '../../shared/types/downloader'
 
 function sanitizeFolderName(name: string): string {
@@ -141,7 +142,11 @@ export function registerDownloaderHandlers(): void {
 
   // ── Default output dir ─────────────────────────────────────────────────────
   ipcMain.handle('downloader:getDefaultOutputDir', async () => {
-    return path.join(app.getPath('downloads'), 'NauChaoHeo')
+    const settings = AppSettingsService.getAll()
+    const fromSettings = settings.downloaderOutputDir?.trim()
+    return fromSettings && fromSettings.length > 0
+      ? fromSettings
+      : path.join(app.getPath('downloads'), 'NauChaoHeo')
   })
 
   ipcMain.handle('downloader:resolveOutputSubdir', async (_event, baseDir: string, rawName: string) => {

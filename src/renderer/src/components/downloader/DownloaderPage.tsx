@@ -274,9 +274,37 @@ export const DownloaderPage = () => {
   const stopRequestedRef = useRef(false)
   const [lastResolvedOutputDir, setLastResolvedOutputDir] = useState<string>('')
 
-  // Get default output dir on mount
+  // Get output dir on mount (from settings or default)
   useEffect(() => {
-    api()?.getDefaultOutputDir().then((dir: string) => dir && setOutputDir(dir))
+    let cancelled = false
+    const loadOutputDir = async () => {
+      let resolved = ''
+      try {
+        const settingsRes = await window.electronAPI.appSettings.getAll()
+        if (settingsRes?.success && settingsRes.data && typeof settingsRes.data.downloaderOutputDir === 'string') {
+          const trimmed = settingsRes.data.downloaderOutputDir.trim()
+          if (trimmed) {
+            resolved = trimmed
+          }
+        }
+      } catch (err) {
+        console.warn('[Downloader] Không thể đọc downloaderOutputDir:', err)
+      }
+      if (!resolved) {
+        try {
+          resolved = await api().getDefaultOutputDir()
+        } catch (err) {
+          console.warn('[Downloader] Không thể lấy default output dir:', err)
+        }
+      }
+      if (!cancelled) {
+        setOutputDir(resolved || '')
+      }
+    }
+    void loadOutputDir()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Subscribe to yt-dlp events
@@ -671,7 +699,12 @@ export const DownloaderPage = () => {
     lastPreviewUrlRef.current = ''
   }
 
-  const handleOpenDir = () => outputDir && api().openOutputDir(outputDir)
+  const handleOpenDir = async () => {
+    const resolved = outputDir || await api().getDefaultOutputDir()
+    if (resolved) {
+      api().openOutputDir(resolved)
+    }
+  }
 
   // ── Status display ──
   const statusLabel = useMemo(() => {
@@ -753,7 +786,6 @@ export const DownloaderPage = () => {
           </div>
           <div>
             <div className={styles.brandTitle}>Downloader</div>
-            <div className={styles.brandSubtitle}>Tải video, subtitle và thumbnail qua yt-dlp</div>
           </div>
         </div>
         <div className={styles.toolbarStatus}>
@@ -917,15 +949,17 @@ export const DownloaderPage = () => {
             </div>
             <div className={`${styles.panelBody} ${styles.optionPanelBody}`}>
               <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Thư mục lưu</label>
-                <div className={styles.fieldRow}>
-                  <Input
-                    value={outputDir}
-                    onChange={e => setOutputDir(e.target.value)}
-                    placeholder="D:\Downloads\..."
-                  />
-                  <Button variant="secondary" onClick={handleOpenDir} title="Mở thư mục">
-                    <FolderOpen size={14} />
+                <div className={styles.outputActualRow}>
+                  <span className={styles.helperTextMuted}>Đang dùng:</span>
+                  <span className={styles.monoText}>{outputDir || 'Mặc định hệ thống'}</span>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      void handleOpenDir()
+                    }}
+                    title="Mở thư mục"
+                  >
+                    <FolderOpen size={12} />
                   </Button>
                 </div>
                 {mode === 'single' && lastResolvedOutputDir && (
