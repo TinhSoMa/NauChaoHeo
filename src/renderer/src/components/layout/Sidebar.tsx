@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Scissors, Download, X, PanelLeftOpen } from 'lucide-react';
+import { BookOpen, Video, Settings, ChevronsLeft, ChevronsRight, Subtitles, MessageCircle, FileText, Scissors, Download, X} from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
