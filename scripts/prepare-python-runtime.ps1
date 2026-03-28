@@ -30,8 +30,6 @@ $cacheDir = Join-Path $pythonBaseDir "cache"
 $runtimeDir = Join-Path $pythonBaseDir "win32-x64\runtime"
 $licensesDir = Join-Path $resourcesDir "licenses\python"
 $requirementsPath = Join-Path $projectRoot "requirements-pycapcut-lock.txt"
-$grokRepoDir = Join-Path $projectRoot "Grok3API"
-$grokPackageDir = Join-Path $grokRepoDir "grok3api"
 
 Ensure-Directory -PathValue $resourcesDir
 Ensure-Directory -PathValue $pythonBaseDir
@@ -122,20 +120,6 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "import sys,pycapcut,numpy,pymediainfo,uiautomation; print('OK runtime=' + sys.version)"
 )
 
-if (-not (Test-Path -LiteralPath $grokPackageDir)) {
-  throw "Missing Grok3API package folder: $grokPackageDir"
-}
-if (-not (Test-Path -LiteralPath (Join-Path $grokPackageDir "__init__.py"))) {
-  throw "Missing Grok3API __init__.py: $grokPackageDir"
-}
-
-$grokDestDir = Join-Path $sitePackages "grok3api"
-if (Test-Path -LiteralPath $grokDestDir) {
-  Remove-Item -LiteralPath $grokDestDir -Recurse -Force
-}
-Write-Host "[Python Runtime] Copying Grok3API package..."
-Copy-Item -LiteralPath $grokPackageDir -Destination $grokDestDir -Recurse -Force
-
 if (Test-Path -LiteralPath $licensesDir) {
   Remove-Item -LiteralPath $licensesDir -Recurse -Force
 }
@@ -146,7 +130,7 @@ if (Test-Path -LiteralPath $pythonLicensePath) {
   Copy-Item -LiteralPath $pythonLicensePath -Destination (Join-Path $licensesDir "PYTHON_LICENSE.txt") -Force
 }
 
-$packages = @("pycapcut", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "undetected-chromedriver", "grok3api")
+$packages = @("pycapcut", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "undetected-chromedriver")
 foreach ($pkg in $packages) {
   $pkgDir = Join-Path $licensesDir $pkg
   Ensure-Directory -PathValue $pkgDir
@@ -178,14 +162,6 @@ foreach ($pkg in $packages) {
   if (Test-Path -LiteralPath $licenseSubDir) {
     Copy-Item -LiteralPath $licenseSubDir -Destination (Join-Path $pkgDir "licenses") -Recurse -Force
   }
-}
-
-$grokLicensePath = Join-Path $grokRepoDir "LICENSE"
-if (-not (Test-Path -LiteralPath $grokLicensePath)) {
-  $grokLicensePath = Join-Path $grokPackageDir "LICENSE"
-}
-if (Test-Path -LiteralPath $grokLicensePath) {
-  Copy-Item -LiteralPath $grokLicensePath -Destination (Join-Path $licensesDir "grok3api\LICENSE") -Force
 }
 
 $runtimeVersion = (& $pythonExe --version) | Out-String

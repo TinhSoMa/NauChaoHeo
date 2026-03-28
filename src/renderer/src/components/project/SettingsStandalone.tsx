@@ -1,6 +1,10 @@
-import { Settings } from '../settings/Settings'
+import { Suspense, lazy } from 'react'
 import { useThemeEffect } from '../../hooks/useTheme'
 import { ArrowLeft } from 'lucide-react'
+
+const Settings = lazy(() =>
+  import('../settings/Settings').then((mod) => ({ default: mod.Settings })),
+)
 
 // Màn cài đặt tối giản cho Dashboard (không Sidebar/AppLayout)
 export function SettingsStandalone() {
@@ -27,7 +31,9 @@ export function SettingsStandalone() {
           </button>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
-          <Settings />
+          <Suspense fallback={<div className="text-sm text-text-secondary">Đang tải Settings...</div>}>
+            <Settings />
+          </Suspense>
         </div>
       </div>
     </div>
