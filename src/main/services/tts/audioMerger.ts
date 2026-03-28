@@ -4,6 +4,7 @@
  */
 
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import {
@@ -14,8 +15,11 @@ import {
   MergeResult,
 } from '../../../shared/types/caption';
 import { getAudioDuration } from './ttsService';
+import { getFFmpegPath } from '../../utils/ffmpegPath';
 
-const BATCH_SIZE = 32; // Số file tối đa mỗi batch FFmpeg
+const MAX_BATCH_SPAN_MS = 8 * 60 * 1000; // 8 phút
+const MAX_BATCH_FILES = 64;
+const BATCH_CONCURRENCY = 2;
 const DEBUG_AUDIO_MERGER = process.env.AUDIO_MERGER_DEBUG === '1';
 
 function debugLog(message: string, details?: Record<string, unknown>): void {
@@ -33,6 +37,15 @@ function compactError(message: string, maxLength: number = 500): string {
   const trimmed = message.trim();
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, maxLength)}...`;
+}
+
+function resolveFfmpegBinary(): string {
+  const ffmpegPath = getFFmpegPath();
+  if (ffmpegPath && existsSync(ffmpegPath)) {
+    return ffmpegPath;
+  }
+  console.warn(`[AudioMerger] WARN: Không tìm thấy ffmpeg đóng gói tại ${ffmpegPath}. Fallback PATH.`);
+  return 'ffmpeg';
 }
 
 interface BatchMergeResult {
@@ -53,7 +66,8 @@ interface PadTailResult {
  */
 async function padTailToTargetDuration(
   outputPath: string,
-  targetDurationMs: number
+  targetDurationMs: number,
+  ffmpegBin: string
 ): Promise<PadTailResult> {
   if (targetDurationMs <= 0) {
     return { success: true, padded: false, missingMs: 0 };
@@ -112,7 +126,7 @@ async function padTailToTargetDuration(
 
     args.push(tempPath);
 
-    const proc = spawn('ffmpeg', args, {
+    const proc = spawn(ffmpegBin, args, {
       windowsHide: true,
       shell: false,
     });
@@ -231,58 +245,77 @@ export async function analyzeAudioFiles(
  */
 async function mergeSmallBatch(
   files: Array<{ path: string; startMs: number }>,
-  outputPath: string
+  outputPath: string,
+  ffmpegBin: string
 ): Promise<BatchMergeResult> {
+  if (files.length === 0) {
+    console.warn(`[AudioMerger] mergeSmallBatch nhận batch rỗng: ${outputPath}`);
+    return { success: false, error: 'Batch rỗng' };
+  }
+
+  const lastFile = files[files.length - 1];
+  debugLog('Bắt đầu mergeSmallBatch', {
+    outputPath,
+    files: files.length,
+    firstStartMs: files[0].startMs,
+    lastStartMs: lastFile.startMs,
+  });
+
+  const args = ['-y'];
+  const filterParts: string[] = [];
+  
+  // Input files
+  files.forEach((file, idx) => {
+    args.push('-i', file.path);
+    filterParts.push(`[${idx}:a]adelay=${file.startMs}|${file.startMs}[a${idx}]`);
+  });
+  
+  // Amix filter
+  const mixInputs = files.map((_, idx) => `[a${idx}]`).join('');
+  let filterComplex = filterParts.join(';') +
+    `;${mixInputs}amix=inputs=${files.length}:duration=longest:dropout_transition=0:normalize=0`;
+
+  filterComplex += `[out]`;
+
+  const outputDir = path.dirname(outputPath);
+  const baseName = path.basename(outputPath, path.extname(outputPath));
+  const scriptPath = path.join(outputDir, `${baseName}_filter_${Date.now()}_${Math.floor(Math.random() * 10000)}.ffscript`);
+
+  const cleanupScript = async () => {
+    try { await fs.unlink(scriptPath); } catch {}
+  };
+
+  try {
+    await fs.writeFile(scriptPath, filterComplex, 'utf8');
+    debugLog('Filter script prepared', {
+      outputPath,
+      scriptPath,
+      length: filterComplex.length,
+      lines: filterComplex.split(';').length,
+    });
+  } catch (err) {
+    return { success: false, error: `Không thể ghi filter script: ${String(err)}` };
+  }
+
+  args.push('-filter_complex_script', scriptPath);
+  args.push('-map', '[out]');
+  
+  // Codec
+  if (outputPath.toLowerCase().endsWith('.wav')) {
+    args.push('-c:a', 'pcm_s16le');
+  } else {
+    args.push('-c:a', 'libmp3lame', '-b:a', '192k');
+  }
+  
+  args.push(outputPath);
+
+  debugLog('FFmpeg command prepared', {
+    outputPath,
+    argsPreview: args.join(' '),
+  });
+  
   return new Promise((resolve) => {
-    if (files.length === 0) {
-      console.warn(`[AudioMerger] mergeSmallBatch nhận batch rỗng: ${outputPath}`);
-      resolve({ success: false, error: 'Batch rỗng' });
-      return;
-    }
-
-    const lastFile = files[files.length - 1];
-    debugLog('Bắt đầu mergeSmallBatch', {
-      outputPath,
-      files: files.length,
-      firstStartMs: files[0].startMs,
-      lastStartMs: lastFile.startMs,
-    });
-
-    const args = ['-y'];
-    const filterParts: string[] = [];
-    
-    // Input files
-    files.forEach((file, idx) => {
-      args.push('-i', file.path);
-      filterParts.push(`[${idx}:a]adelay=${file.startMs}|${file.startMs}[a${idx}]`);
-    });
-    
-    // Amix filter
-    const mixInputs = files.map((_, idx) => `[a${idx}]`).join('');
-    let filterComplex = filterParts.join(';') + 
-      `;${mixInputs}amix=inputs=${files.length}:duration=longest:dropout_transition=0:normalize=0`;
-
-    filterComplex += `[out]`;
-
-    
-    args.push('-filter_complex', filterComplex);
-    args.push('-map', '[out]');
-    
-    // Codec
-    if (outputPath.toLowerCase().endsWith('.wav')) {
-      args.push('-c:a', 'pcm_s16le');
-    } else {
-      args.push('-c:a', 'libmp3lame', '-b:a', '192k');
-    }
-    
-    args.push(outputPath);
-
-    debugLog('FFmpeg command prepared', {
-      outputPath,
-      argsPreview: args.join(' '),
-    });
-    
-    const proc = spawn('ffmpeg', args, {
+    const proc = spawn(ffmpegBin, args, {
       windowsHide: true,
       shell: false,
     });
@@ -294,6 +327,7 @@ async function mergeSmallBatch(
     });
 
     proc.on('close', (code) => {
+      void cleanupScript();
       if (code !== 0) {
         console.error(`[AudioMerger] FFmpeg error: ${stderr}`);
         const errorMessage = compactError(stderr || `FFmpeg exit code: ${code}`);
@@ -310,6 +344,7 @@ async function mergeSmallBatch(
     });
     
     proc.on('error', (err) => {
+      void cleanupScript();
       console.error(`[AudioMerger] Spawn error: ${err}`);
       const errorMessage = `Spawn error: ${String(err)}`;
       debugLog('mergeSmallBatch spawn error', {
@@ -329,6 +364,7 @@ export async function mergeAudioFiles(
   outputPath: string,
   timeScale: number = 1.0
 ): Promise<MergeResult> {
+  const ffmpegBin = resolveFfmpegBinary();
   
   // Tự động đẩy file ra ngoài thư mục 'audio' theo yêu cầu
   let finalOutputPath = outputPath;
@@ -434,7 +470,7 @@ export async function mergeAudioFiles(
         destination: finalOutputPath,
       });
       await fs.copyFile(timeline[0].path, finalOutputPath);
-      const padResult = await padTailToTargetDuration(finalOutputPath, lastSubtitleEndMs);
+      const padResult = await padTailToTargetDuration(finalOutputPath, lastSubtitleEndMs, ffmpegBin);
       if (!padResult.success) {
         return {
           success: false,
@@ -445,39 +481,67 @@ export async function mergeAudioFiles(
       return { success: true, outputPath: finalOutputPath };
     }
     
-    // Chia thành batches
-    const tempFiles: string[] = [];
+    // Chia thành batches theo span timeline
+    const batches: Array<Array<{ path: string; startMs: number }>> = [];
+    let currentBatch: Array<{ path: string; startMs: number }> = [];
+    let batchStartMs = 0;
+    for (const item of timeline) {
+      if (currentBatch.length === 0) {
+        currentBatch.push(item);
+        batchStartMs = item.startMs;
+        continue;
+      }
+      const spanMs = item.startMs - batchStartMs;
+      if (spanMs > MAX_BATCH_SPAN_MS || currentBatch.length >= MAX_BATCH_FILES) {
+        batches.push(currentBatch);
+        currentBatch = [item];
+        batchStartMs = item.startMs;
+      } else {
+        currentBatch.push(item);
+      }
+    }
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+
     const outputDir = path.dirname(finalOutputPath);
     const baseName = path.basename(finalOutputPath, path.extname(finalOutputPath));
     const ext = path.extname(finalOutputPath);
-    
-    for (let i = 0; i < timeline.length; i += BATCH_SIZE) {
-      const batch = timeline.slice(i, i + BATCH_SIZE);
-      const batchIdx = Math.floor(i / BATCH_SIZE);
-      const totalBatches = Math.ceil(timeline.length / BATCH_SIZE);
-      const batchLastItem = batch[batch.length - 1];
-      
-      console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${totalBatches}`);
-      
-      const tempPath = path.join(outputDir, `${baseName}_temp_${batchIdx}${ext}`);
-      debugLog('Thông tin batch', {
-        batchNumber: batchIdx + 1,
-        totalBatches,
-        segmentCount: batch.length,
-        batchStartMs: batch[0].startMs,
-        batchEndMs: batchLastItem.startMs,
-        tempPath,
-      });
-      const batchResult = await mergeSmallBatch(batch, tempPath);
-      
-      if (!batchResult.success) {
-        debugLog('Batch merge thất bại, bắt đầu cleanup temp files', {
-          failedBatch: batchIdx + 1,
-          tempFilesCount: tempFiles.length,
-          error: batchResult.error ?? 'unknown',
+    const tempFiles: string[] = new Array(batches.length);
+
+    for (let i = 0; i < batches.length; i += BATCH_CONCURRENCY) {
+      const group = batches.slice(i, i + BATCH_CONCURRENCY);
+      const results = await Promise.all(group.map(async (batch, offset) => {
+        const batchIdx = i + offset;
+        const batchLastItem = batch[batch.length - 1];
+        console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${batches.length}`);
+        const tempPath = path.join(outputDir, `${baseName}_temp_${batchIdx}${ext}`);
+        debugLog('Thông tin batch', {
+          batchNumber: batchIdx + 1,
+          totalBatches: batches.length,
+          segmentCount: batch.length,
+          batchStartMs: batch[0].startMs,
+          batchEndMs: batchLastItem.startMs,
+          tempPath,
+          spanMs: batchLastItem.startMs - batch[0].startMs,
         });
-        // Cleanup temp files
-        for (const tf of tempFiles) {
+        const batchResult = await mergeSmallBatch(batch, tempPath, ffmpegBin);
+        return { batchIdx, tempPath, batchResult };
+      }));
+
+      const failed = results.find(r => !r.batchResult.success);
+      if (failed) {
+        debugLog('Batch merge thất bại, bắt đầu cleanup temp files', {
+          failedBatch: failed.batchIdx + 1,
+          tempFilesCount: tempFiles.filter(Boolean).length,
+          error: failed.batchResult.error ?? 'unknown',
+        });
+        for (const res of results) {
+          if (res.batchResult.success) {
+            tempFiles[res.batchIdx] = res.tempPath;
+          }
+        }
+        for (const tf of tempFiles.filter(Boolean)) {
           try {
             await fs.unlink(tf);
             debugLog('Đã xóa temp file sau lỗi batch', { tempFile: tf });
@@ -491,15 +555,17 @@ export async function mergeAudioFiles(
         return {
           success: false,
           outputPath: finalOutputPath,
-          error: `Lỗi ghép batch ${batchIdx + 1}: ${batchResult.error ?? 'unknown error'}`,
+          error: `Lỗi ghép batch ${failed.batchIdx + 1}: ${failed.batchResult.error ?? 'unknown error'}`,
         };
       }
-      
-      tempFiles.push(tempPath);
-      debugLog('Batch merge thành công', {
-        batchNumber: batchIdx + 1,
-        tempPath,
-      });
+
+      for (const res of results) {
+        tempFiles[res.batchIdx] = res.tempPath;
+        debugLog('Batch merge thành công', {
+          batchNumber: res.batchIdx + 1,
+          tempPath: res.tempPath,
+        });
+      }
     }
     
     // Nếu chỉ có 1 batch, rename
@@ -509,7 +575,7 @@ export async function mergeAudioFiles(
         to: finalOutputPath,
       });
       await fs.rename(tempFiles[0], finalOutputPath);
-      const padResult = await padTailToTargetDuration(finalOutputPath, lastSubtitleEndMs);
+      const padResult = await padTailToTargetDuration(finalOutputPath, lastSubtitleEndMs, ffmpegBin);
       if (!padResult.success) {
         return {
           success: false,
@@ -524,7 +590,7 @@ export async function mergeAudioFiles(
     console.log(`[AudioMerger] Ghép ${tempFiles.length} batch files...`);
     
     const finalTimeline = tempFiles.map((p) => ({ path: p, startMs: 0 }));
-    const finalResult = await mergeSmallBatch(finalTimeline, finalOutputPath);
+    const finalResult = await mergeSmallBatch(finalTimeline, finalOutputPath, ffmpegBin);
     
     // Cleanup temp files
     for (const tf of tempFiles) {
@@ -540,7 +606,7 @@ export async function mergeAudioFiles(
     }
     
     if (finalResult.success) {
-      const padResult = await padTailToTargetDuration(finalOutputPath, lastSubtitleEndMs);
+      const padResult = await padTailToTargetDuration(finalOutputPath, lastSubtitleEndMs, ffmpegBin);
       if (!padResult.success) {
         return {
           success: false,
