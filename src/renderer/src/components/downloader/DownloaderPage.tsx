@@ -50,6 +50,18 @@ function formatDuration(seconds?: number): string {
   return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
 }
 
+function isH264Codec(codec?: string | null): boolean {
+  if (!codec) return false
+  const value = codec.toLowerCase()
+  return value.startsWith('avc') || value.startsWith('h264')
+}
+
+function isAacCodec(codec?: string | null): boolean {
+  if (!codec) return false
+  const value = codec.toLowerCase()
+  return value.startsWith('mp4a') || value === 'aac'
+}
+
 function resolveEmbedUrl(rawUrl: string): { provider?: 'youtube' | 'bilibili'; embedUrl?: string } {
   const trimmed = rawUrl.trim()
   if (!trimmed || !trimmed.startsWith('http')) return {}
@@ -244,10 +256,10 @@ export const DownloaderPage = () => {
 
   // Download type toggles
   const [downloadVideo, setDownloadVideo] = useState(true)
-  const [downloadSubtitle, setDownloadSubtitle] = useState(false)
+  const [downloadSubtitle, setDownloadSubtitle] = useState(true)
   const [downloadThumbnail, setDownloadThumbnail] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
-  const [downloadAllSubs, setDownloadAllSubs] = useState(false)
+  const [downloadAllSubs, setDownloadAllSubs] = useState(true)
   const [manualSubLangs, setManualSubLangs] = useState('')
   const [skipDanmakuConvert, setSkipDanmakuConvert] = useState(true)
 
@@ -350,8 +362,12 @@ export const DownloaderPage = () => {
           setVideoInfo(res.data)
           setCookieFoundDomain(res.cookieDomain ?? null)
           // Pre-select best format
-          const best = res.data.formats[0]
-          if (best) setSelectedFormatId(best.id)
+          const nextFormats = res.data.formats.filter((format: VideoFormat) => (
+            format.vcodec && format.vcodec !== 'none' && isH264Codec(format.vcodec)
+          ))
+          const bestWithAudio = nextFormats.find((format: VideoFormat) => isAacCodec(format.acodec))
+          const best = bestWithAudio || nextFormats[0]
+          setSelectedFormatId(best ? best.id : '')
           setStatus('ready')
         } else {
           setFetchError(res.error || 'Không lấy được thông tin video')
@@ -440,6 +456,24 @@ export const DownloaderPage = () => {
     return Array.from(langs).sort()
   }, [videoInfo])
 
+  const availableFormats = useMemo(() => {
+    if (!videoInfo) return []
+    return videoInfo.formats.filter((format) => {
+      if (!format.vcodec || format.vcodec === 'none') return false
+      if (!isH264Codec(format.vcodec)) return false
+      return true
+    })
+  }, [videoInfo])
+
+  useEffect(() => {
+    if (!downloadVideo) return
+    if (!selectedFormatId) return
+    const stillValid = availableFormats.some((format) => format.id === selectedFormatId)
+    if (!stillValid) {
+      setSelectedFormatId('')
+    }
+  }, [availableFormats, downloadVideo, selectedFormatId])
+
   const resolvedSubLangs = useMemo(() => {
     if (!downloadSubtitle) return []
     if (downloadAllSubs) return ['all']
@@ -454,6 +488,7 @@ export const DownloaderPage = () => {
   }, [downloadSubtitle, downloadAllSubs, allLangs.length, manualSubLangs, selectedSubLangs])
 
   const toggleLang = (lang: string) => {
+    setDownloadAllSubs(false)
     setSelectedSubLangs(prev =>
       prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
     )
@@ -537,10 +572,22 @@ export const DownloaderPage = () => {
         return
       }
 
+      let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
+      if (downloadVideo && selectedFormatId && videoInfo) {
+        const selectedFormat = availableFormats.find((format) => format.id === selectedFormatId)
+        if (!selectedFormat) {
+          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ → fallback best H264/AAC`])
+          resolvedFormatId = undefined
+        } else if (!isAacCodec(selectedFormat.acodec)) {
+          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
+          resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
+        }
+      }
+
       const options: DownloadOptions = {
         url: targetUrl,
         outputDir: resolvedDir,
-        formatId: downloadVideo ? selectedFormatId || undefined : undefined,
+        formatId: resolvedFormatId,
         subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
         convertSubs: downloadSubtitle ? convertSubs : undefined,
         skipDanmakuConvert,
@@ -611,10 +658,25 @@ export const DownloaderPage = () => {
         continue
       }
 
+      let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
+      if (downloadVideo && selectedFormatId && info) {
+        const itemFormats = info.formats.filter((format) => (
+          format.vcodec && format.vcodec !== 'none' && isH264Codec(format.vcodec)
+        ))
+        const selectedFormat = itemFormats.find((format) => format.id === selectedFormatId)
+        if (!selectedFormat) {
+          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ cho link ${item.url} → fallback best H264/AAC`])
+          resolvedFormatId = undefined
+        } else if (!isAacCodec(selectedFormat.acodec)) {
+          setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
+          resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
+        }
+      }
+
       const options: DownloadOptions = {
         url: item.url,
         outputDir: resolvedDir,
-        formatId: downloadVideo ? selectedFormatId || undefined : undefined,
+        formatId: resolvedFormatId,
         subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
         convertSubs: downloadSubtitle ? convertSubs : undefined,
         skipDanmakuConvert,
@@ -662,6 +724,7 @@ export const DownloaderPage = () => {
     downloadSubtitle,
     downloadThumbnail,
     selectedFormatId,
+    availableFormats,
     selectedSubLangs,
     convertSubs,
     useCookie,
@@ -939,6 +1002,39 @@ export const DownloaderPage = () => {
               )}
             </div>
           </div>
+
+          <div className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitle}><FolderOpen size={14} /> Thư mục lưu</div>
+            </div>
+            <div className={styles.panelBody}>
+              <div className={styles.outputActualRow}>
+                <span className={styles.helperTextMuted}>Đang dùng:</span>
+                <span className={styles.monoText}>{outputDir || 'Mặc định hệ thống'}</span>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void handleOpenDir()
+                  }}
+                  title="Mở thư mục"
+                >
+                  <FolderOpen size={12} />
+                </Button>
+              </div>
+              {mode === 'single' && lastResolvedOutputDir && (
+                <div className={styles.outputActualRow}>
+                  <span className={styles.helperTextMuted}>Thư mục thực tế:</span>
+                  <span className={styles.monoText}>{lastResolvedOutputDir}</span>
+                  <Button variant="secondary" onClick={() => api().openOutputDir(lastResolvedOutputDir)}>
+                    <FolderOpen size={12} />
+                  </Button>
+                </div>
+              )}
+              {mode === 'multi' && (
+                <div className={styles.helperTextMuted}>Mỗi link sẽ lưu vào một thư mục con riêng.</div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className={styles.centerPane}>
@@ -948,36 +1044,6 @@ export const DownloaderPage = () => {
               <span className={styles.panelMeta}>{mode === 'multi' ? `${multiUrls.length} link` : 'Single'}</span>
             </div>
             <div className={`${styles.panelBody} ${styles.optionPanelBody}`}>
-              <div className={styles.fieldGroup}>
-                <div className={styles.outputActualRow}>
-                  <span className={styles.helperTextMuted}>Đang dùng:</span>
-                  <span className={styles.monoText}>{outputDir || 'Mặc định hệ thống'}</span>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      void handleOpenDir()
-                    }}
-                    title="Mở thư mục"
-                  >
-                    <FolderOpen size={12} />
-                  </Button>
-                </div>
-                {mode === 'single' && lastResolvedOutputDir && (
-                  <div className={styles.outputActualRow}>
-                    <span className={styles.helperTextMuted}>Thư mục thực tế:</span>
-                    <span className={styles.monoText}>{lastResolvedOutputDir}</span>
-                    <Button variant="secondary" onClick={() => api().openOutputDir(lastResolvedOutputDir)}>
-                      <FolderOpen size={12} />
-                    </Button>
-                  </div>
-                )}
-                {mode === 'multi' && (
-                  <div className={styles.helperTextMuted}>Mỗi link sẽ lưu vào một thư mục con riêng.</div>
-                )}
-              </div>
-
-              <div className={styles.sectionDivider} />
-
               <div className={styles.fieldGroup}>
                 <div className={styles.fieldLabel}>Loại tải</div>
                 <div className={styles.toggleRow}>
@@ -1022,17 +1088,22 @@ export const DownloaderPage = () => {
               {downloadVideo && (
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Chất lượng video</label>
-                  {videoInfo && videoInfo.formats.length > 0 ? (
+                  {videoInfo ? (
                     <select
                       className={styles.selectInput}
                       value={selectedFormatId}
                       onChange={e => setSelectedFormatId(e.target.value)}
                     >
-                      {videoInfo.formats.map((f: VideoFormat) => (
+                      <option value="">Tự động (best)</option>
+                      {availableFormats.map((f: VideoFormat) => {
+                        const needsAacMerge = !isAacCodec(f.acodec)
+                        return (
                         <option key={f.id} value={f.id}>
                           {f.resolution} — {f.ext.toUpperCase()}{f.note ? ` (${f.note})` : ''}{formatSize(f.filesize)}
+                          {needsAacMerge ? ' • sẽ ghép audio' : ''}
                         </option>
-                      ))}
+                        )
+                      })}
                     </select>
                   ) : (
                     <select className={styles.selectDisabled} disabled>
@@ -1045,16 +1116,16 @@ export const DownloaderPage = () => {
               {downloadSubtitle && (
                 <div className={styles.fieldGroup}>
                   <div className={styles.fieldLabel}>
-                    <Scissors size={13} /> Subtitles
+                    <Scissors size={13} /> Subtitle
                   </div>
                   <div className={styles.inlineRow}>
-                    <Checkbox label="Tải tất cả (all)" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
+                    <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
                     {downloadAllSubs && (
                       <span className={styles.successText}>Sub sẽ tải: all</span>
                     )}
                   </div>
 
-                  {!downloadAllSubs && allLangs.length > 0 ? (
+                  {allLangs.length > 0 ? (
                     <div className={styles.subLangsRow}>
                       {allLangs.map(lang => (
                         <button
@@ -1076,16 +1147,16 @@ export const DownloaderPage = () => {
                         placeholder="vd: vi,en,all"
                       />
                       <p className={styles.helperTextMuted}>
-                        Không lấy được danh sách subtitle. Nhập tay ngôn ngữ để tải.
+                        Không có danh sách. Nhập tay để tải.
                       </p>
                     </div>
                   )}
 
                   {allLangs.length === 0 && (
-                    <p className={styles.helperTextMuted}>{isFetching ? 'Đang tải...' : 'Nhập link để xem subtitle có sẵn'}</p>
+                    <p className={styles.helperTextMuted}>{isFetching ? 'Đang tải...' : 'Nhập link để xem subs'}</p>
                   )}
                   <div className={styles.subFormatRow}>
-                    <label className={styles.subFormatLabel}>Định dạng:</label>
+                    <label className={styles.subFormatLabel}>Định dạng</label>
                     <select
                       className={styles.subFormatSelect}
                       value={convertSubs}
@@ -1103,7 +1174,7 @@ export const DownloaderPage = () => {
                       onChange={setSkipDanmakuConvert}
                     />
                     {skipDanmakuConvert && (resolvedSubLangs.includes('danmaku') || resolvedSubLangs.includes('all')) && (
-                      <span className={styles.warningText}>Có danmaku → bỏ convert để tránh lỗi</span>
+                      <span className={styles.warningText}>Có danmaku → tắt convert</span>
                     )}
                   </div>
                 </div>
@@ -1149,27 +1220,6 @@ export const DownloaderPage = () => {
             </div>
           </div>
 
-          {logs.length > 0 && (
-            <div className={styles.panel}>
-              <div className={styles.panelHeader}>
-                <div className={styles.panelTitle}>Nhật ký</div>
-                <button
-                  onClick={() => setShowLogs(p => !p)}
-                  className={styles.linkButton}
-                >
-                  {showLogs ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  {showLogs ? 'Ẩn log' : `Xem log (${logs.length})`}
-                </button>
-              </div>
-              {showLogs && (
-                <div className={styles.logScroll} ref={logScrollRef}>
-                  {logs.map((l, i) => (
-                    <div key={i} className={l.startsWith('ERROR') ? styles.logError : ''}>{l}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className={styles.rightPane}>
@@ -1274,6 +1324,27 @@ export const DownloaderPage = () => {
               )}
             </div>
           </div>
+          {logs.length > 0 && (
+            <div className={styles.panel}>
+              <div className={styles.panelHeader}>
+                <div className={styles.panelTitle}>Nhật ký</div>
+                <button
+                  onClick={() => setShowLogs(p => !p)}
+                  className={styles.linkButton}
+                >
+                  {showLogs ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {showLogs ? 'Ẩn log' : `Xem log (${logs.length})`}
+                </button>
+              </div>
+              {showLogs && (
+                <div className={styles.logScroll} ref={logScrollRef}>
+                  {logs.map((l, i) => (
+                    <div key={i} className={l.startsWith('ERROR') ? styles.logError : ''}>{l}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

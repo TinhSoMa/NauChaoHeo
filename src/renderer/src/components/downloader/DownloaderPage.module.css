@@ -628,12 +628,21 @@
   font-size: 12px;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   color: var(--muted);
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 .logScroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  width: 6px;
+  height: 6px;
+}
+
+.logScroll::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 6px;
+}
+
+.logScroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .logError {

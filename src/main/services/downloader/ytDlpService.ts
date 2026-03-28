@@ -5,6 +5,7 @@ import os from 'os'
 import { existsSync } from 'fs'
 import type { VideoInfo, VideoFormat, DownloadOptions, DownloadProgress, PlaylistInfo } from '../../../shared/types/downloader'
 import { getYtDlpPath } from '../../utils/ytDlpPath'
+import { getFFmpegPath } from '../../utils/ffmpegPath'
 
 // Try to resolve yt-dlp executable
 function findYtDlp(): string {
@@ -314,7 +315,12 @@ class YtDlpService {
     onLog: (line: string) => void,
     onProgress: (p: DownloadProgress) => void,
   ): Promise<void> {
-    const args = buildArgs(options)
+    const ffmpegPath = getFFmpegPath()
+    const ffmpegLocation = existsSync(ffmpegPath) ? path.dirname(ffmpegPath) : ''
+    if (!ffmpegLocation) {
+      onLog(`[yt-dlp] WARN: ffmpeg không tìm thấy tại: ${ffmpegPath} (fallback dùng hệ thống)`)
+    }
+    const args = buildArgs(options, ffmpegLocation || undefined)
 
     return new Promise((resolve, reject) => {
       onLog(`[yt-dlp] ${this.ytDlpBin} ${args.join(' ')}`)
@@ -424,6 +430,83 @@ class YtDlpService {
 // Helpers
 // ──────────────────────────────────────────────
 
+function normalizeSubtitleEntries(entries: any): { ext: string }[] {
+  if (!entries) return []
+  if (Array.isArray(entries)) {
+    return entries
+      .map((entry) => {
+        const ext = entry?.ext || entry?.format || entry?.extension
+        return ext ? { ext: String(ext) } : null
+      })
+      .filter(Boolean) as { ext: string }[]
+  }
+  if (typeof entries === 'object') {
+    const ext = (entries as any).ext || (entries as any).format || (entries as any).extension
+    return ext ? [{ ext: String(ext) }] : []
+  }
+  return []
+}
+
+function mergeSubtitleMap(target: Record<string, { ext: string }[]>, source: Record<string, { ext: string }[]>) {
+  for (const [lang, entries] of Object.entries(source)) {
+    if (!lang) continue
+    if (!target[lang]) {
+      target[lang] = [...entries]
+      continue
+    }
+    const existing = new Set(target[lang].map(item => item.ext))
+    for (const item of entries) {
+      if (!existing.has(item.ext)) {
+        target[lang].push(item)
+        existing.add(item.ext)
+      }
+    }
+  }
+}
+
+function extractSubtitleMap(raw: any): Record<string, { ext: string }[]> {
+  const result: Record<string, { ext: string }[]> = {}
+  if (!raw) return result
+
+  const addLang = (lang: string | undefined, entries: any) => {
+    if (!lang) return
+    const normalized = normalizeSubtitleEntries(entries)
+    if (normalized.length === 0) return
+    if (!result[lang]) result[lang] = []
+    const existing = new Set(result[lang].map(item => item.ext))
+    for (const item of normalized) {
+      if (!existing.has(item.ext)) {
+        result[lang].push(item)
+        existing.add(item.ext)
+      }
+    }
+  }
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item) continue
+      const lang = item.lang || item.language || item.code || item.id
+      if (item.subtitles || item.formats || item.entries) {
+        addLang(lang, item.subtitles || item.formats || item.entries)
+      } else {
+        addLang(lang, item)
+      }
+    }
+    return result
+  }
+
+  if (typeof raw === 'object') {
+    if (Array.isArray((raw as any).subtitles)) {
+      return extractSubtitleMap((raw as any).subtitles)
+    }
+    for (const [lang, entries] of Object.entries(raw)) {
+      addLang(lang, entries)
+    }
+  }
+
+  return result
+}
+
 function parseVideoInfo(json: any): VideoInfo {
   const formats: VideoFormat[] = (json.formats || [])
     .filter((f: any) => f.vcodec !== 'none' || f.acodec !== 'none')
@@ -445,14 +528,13 @@ function parseVideoInfo(json: any): VideoInfo {
     })
 
   const subtitles: Record<string, { ext: string }[]> = {}
-  for (const [lang, subs] of Object.entries(json.subtitles || {})) {
-    subtitles[lang] = (subs as any[]).map(s => ({ ext: s.ext }))
-  }
+  mergeSubtitleMap(subtitles, extractSubtitleMap(json.subtitles))
+  mergeSubtitleMap(subtitles, extractSubtitleMap(json.subtitle))
+  mergeSubtitleMap(subtitles, extractSubtitleMap(json.requested_subtitles))
 
   const autoSubtitles: Record<string, { ext: string }[]> = {}
-  for (const [lang, subs] of Object.entries(json.automatic_captions || {})) {
-    autoSubtitles[lang] = (subs as any[]).map(s => ({ ext: s.ext }))
-  }
+  mergeSubtitleMap(autoSubtitles, extractSubtitleMap(json.automatic_captions))
+  mergeSubtitleMap(autoSubtitles, extractSubtitleMap(json.auto_captions))
 
   return {
     id: json.id ? String(json.id) : undefined,
@@ -467,7 +549,7 @@ function parseVideoInfo(json: any): VideoInfo {
   }
 }
 
-function buildArgs(options: DownloadOptions): string[] {
+function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] {
   const args: string[] = []
 
   // Cookie
@@ -479,7 +561,10 @@ function buildArgs(options: DownloadOptions): string[] {
   if (options.formatId) {
     args.push('-f', options.formatId)
   } else {
-    args.push('-f', 'bestvideo+bestaudio/best')
+    args.push(
+      '-f',
+      'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best'
+    )
   }
 
   // Subtitles
@@ -503,6 +588,19 @@ function buildArgs(options: DownloadOptions): string[] {
 
   // Merge to mp4 if possible
   args.push('--merge-output-format', 'mp4')
+  args.push('--postprocessor-args', 'ffmpeg:-movflags +faststart')
+
+  if (ffmpegLocation) {
+    args.push('--ffmpeg-location', ffmpegLocation)
+  }
+
+  // Fast-safe defaults
+  args.push('--concurrent-fragments', '4')
+  args.push('--buffer-size', '16M')
+  args.push('--http-chunk-size', '10M')
+  args.push('--retries', '10')
+  args.push('--fragment-retries', '10')
+  args.push('--retry-sleep', '1')
 
   // Ensure progress updates are newline-delimited
   args.push('--newline')
