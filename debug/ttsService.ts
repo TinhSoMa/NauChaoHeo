@@ -3,16 +3,12 @@
  * Provider được xác định qua options.provider hoặc prefix của options.voice.
  */
 
-import { spawn, type ChildProcess } from 'child_process';
-import { app } from 'electron';
-import { existsSync } from 'fs';
+import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import WebSocket, { RawData } from 'ws';
 import { AppSettingsService } from '../appSettings';
-import { getProxyManager } from '../proxy/proxyManager';
-import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import {
   AudioFile,
   DEFAULT_RATE,
@@ -25,63 +21,15 @@ import {
   TTSResult,
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
-  CAPTION_PROCESS_STOP_SIGNAL,
   TTS_VOICE_CATALOG,
   VoiceInfo,
 } from '../../../shared/types/caption';
-import type { ProxyConfig } from '../../../shared/types/proxy';
 
 const PROVIDER_PREFIX_PATTERN = /^(edge|capcut):(.*)$/i;
 const DEFAULT_CAPCUT_WS_URL = 'wss://sami-normal-sg.capcutapi.com/internal/api/v1/ws';
 const DEFAULT_CAPCUT_USER_AGENT = 'Cronet/TTNetVersion:e159bc05 2022-08-16 QuicVersion:68cae75d 2021-08-12';
 const DEFAULT_CAPCUT_X_SS_DP = '359289';
 const MAX_TTS_RETRIES = 3;
-const CAPCUT_BATCH_SIZE = 1000;
-const DEFAULT_EDGE_TTS_BATCH_SIZE = 50;
-const MIN_EDGE_TTS_BATCH_SIZE = 1;
-const MAX_EDGE_TTS_BATCH_SIZE = 500;
-const TTS_STOP_MESSAGE = 'Đã gửi tín hiệu dừng TTS.';
-
-const activeTtsProcesses = new Set<ChildProcess>();
-let ttsStopRequested = false;
-
-function registerActiveTtsProcess(proc: ChildProcess): void {
-  activeTtsProcesses.add(proc);
-  const cleanup = () => activeTtsProcesses.delete(proc);
-  proc.once('close', cleanup);
-  proc.once('exit', cleanup);
-  proc.once('error', cleanup);
-}
-
-function clearTtsStopRequest(): void {
-  ttsStopRequested = false;
-}
-
-function throwIfTtsStopped(): void {
-  if (ttsStopRequested) {
-    throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
-  }
-}
-
-export function stopActiveTts(): { stopped: boolean; message: string } {
-  ttsStopRequested = true;
-  let hadActive = false;
-  for (const proc of Array.from(activeTtsProcesses)) {
-    if (proc.killed) continue;
-    hadActive = true;
-    try {
-      proc.kill('SIGKILL');
-    } catch {
-      try {
-        proc.kill();
-      } catch {}
-    }
-  }
-  return {
-    stopped: hadActive || activeTtsProcesses.size > 0,
-    message: hadActive ? TTS_STOP_MESSAGE : 'Không có tiến trình TTS đang chạy.',
-  };
-}
 
 interface CapCutRuntimeConfig {
   wsUrl: string;
@@ -100,25 +48,6 @@ interface ResolvedVoiceSelection {
 interface SingleGenerateResult {
   success: boolean;
   error?: string;
-}
-
-interface EdgeAsyncioItem {
-  index: number;
-  text: string;
-  outputPath: string;
-  startMs: number;
-  durationMs: number;
-  filename: string;
-}
-
-interface EdgeAsyncioJob {
-  proxyId?: string | null;
-  proxyUrl?: string | null;
-  items: EdgeAsyncioItem[];
-  voice: string;
-  rate: string;
-  volume: string;
-  outputFormat: 'wav' | 'mp3';
 }
 
 interface TTSTestVoiceSampleOptions extends TTSTestVoiceRequest {
@@ -224,30 +153,6 @@ export function getSafeFilename(index: number, text: string, ext: string = 'wav'
   return `${index.toString().padStart(3, '0')}_${safeText || 'audio'}.${ext}`;
 }
 
-function sanitizeTextForTts(text: string): string {
-  if (!text) return '';
-  // Remove lone surrogate code units to avoid UTF-8 encode errors.
-  return text.replace(/[\uD800-\uDFFF]/g, '');
-}
-
-function fixMojibake(text: string): string {
-  if (!text) return text;
-  const suspect = /Ã|Â/;
-  if (!suspect.test(text)) {
-    return text;
-  }
-  for (let i = 0; i < text.length; i += 1) {
-    if (text.charCodeAt(i) > 0xff) {
-      return text;
-    }
-  }
-  const fixed = Buffer.from(text, 'latin1').toString('utf8');
-  if (!suspect.test(fixed)) {
-    return fixed;
-  }
-  return text;
-}
-
 function parseExtraCapCutHeaders(envValue: string | undefined): Record<string, string> {
   if (!envValue) return {};
   try {
@@ -283,44 +188,12 @@ function normalizeHeaderMap(headers: Record<string, string> | null | undefined):
   return normalized;
 }
 
-function resolveEdgeTtsWorkerPath(): string {
-  const appPath = app.getAppPath();
-  const candidates = [
-    path.join(process.resourcesPath || '', 'tts', 'python', 'edge_tts_worker.py'),
-    path.join(appPath, 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
-    path.join(process.cwd(), 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
-    path.join(appPath, 'out', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
-    path.join(appPath, 'dist', 'main', 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return candidates[0];
-}
-
-function toProxyUrl(proxy: ProxyConfig): string {
-  const scheme = proxy.type === 'socks5' ? 'socks5' : proxy.type === 'https' ? 'https' : 'http';
-  if (proxy.username) {
-    const username = encodeURIComponent(proxy.username);
-    const password = encodeURIComponent(proxy.password || '');
-    return `${scheme}://${username}:${password}@${proxy.host}:${proxy.port}`;
-  }
-  return `${scheme}://${proxy.host}:${proxy.port}`;
-}
-
 function normalizeSecretValue(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeEdgeTtsBatchSize(value: number | undefined): number {
-  const raw = Number.isFinite(value) ? Math.round(value as number) : DEFAULT_EDGE_TTS_BATCH_SIZE;
-  return Math.min(MAX_EDGE_TTS_BATCH_SIZE, Math.max(MIN_EDGE_TTS_BATCH_SIZE, raw));
 }
 
 function shouldPersistCapcutSecrets(
@@ -742,10 +615,6 @@ async function generateSingleAudioEdge(args: {
 }): Promise<SingleGenerateResult> {
   const { text, outputPath, voiceId, rate, volume } = args;
   return new Promise((resolve) => {
-    if (ttsStopRequested) {
-      resolve({ success: false, error: CAPTION_PROCESS_STOP_SIGNAL });
-      return;
-    }
     let settled = false;
     const settle = (result: SingleGenerateResult) => {
       if (settled) return;
@@ -767,7 +636,6 @@ async function generateSingleAudioEdge(args: {
       windowsHide: true,
       shell: true,
     });
-    registerActiveTtsProcess(proc);
 
     let stderr = '';
     proc.stderr?.on('data', (data) => {
@@ -775,10 +643,6 @@ async function generateSingleAudioEdge(args: {
     });
 
     proc.on('close', async (code) => {
-      if (ttsStopRequested) {
-        settle({ success: false, error: CAPTION_PROCESS_STOP_SIGNAL });
-        return;
-      }
       if (code === 0) {
         try {
           const stats = await fs.stat(outputPath);
@@ -796,10 +660,6 @@ async function generateSingleAudioEdge(args: {
     });
 
     proc.on('error', (err) => {
-      if (ttsStopRequested) {
-        settle({ success: false, error: CAPTION_PROCESS_STOP_SIGNAL });
-        return;
-      }
       settle({ success: false, error: `Spawn error: ${err.message}` });
     });
 
@@ -988,7 +848,6 @@ async function generateBatchAudioWithProvider(
   providerGenerator: SingleGenerator,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
-  throwIfTtsStopped();
   const {
     rate = DEFAULT_RATE,
     volume = DEFAULT_VOLUME,
@@ -1009,7 +868,6 @@ async function generateBatchAudioWithProvider(
   }
 
   await fs.mkdir(outputDir, { recursive: true });
-  throwIfTtsStopped();
 
   const providerLabel = voiceSelection.provider.toUpperCase();
   const audioFiles: AudioFile[] = [];
@@ -1020,11 +878,9 @@ async function generateBatchAudioWithProvider(
   console.log(`[TTS] Bắt đầu tạo ${entries.length} audio files`);
 
   for (let i = 0; i < entries.length; i += maxConcurrent) {
-    throwIfTtsStopped();
     const batch = entries.slice(i, i + maxConcurrent);
 
     const batchPromises = batch.map(async (entry) => {
-      throwIfTtsStopped();
       const text = entry.translatedText || entry.text;
       const filename = getSafeFilename(entry.index, text, outputFormat);
       const outputPath = path.join(outputDir, filename);
@@ -1060,16 +916,13 @@ async function generateBatchAudioWithProvider(
         volume,
         outputFormat,
       });
-      throwIfTtsStopped();
 
       let retryCount = 0;
       while (!result.success && retryCount < MAX_TTS_RETRIES) {
-        throwIfTtsStopped();
         retryCount++;
         const delay = Math.pow(2, retryCount) * 1000;
         console.log(`[TTS] [${providerLabel}] lỗi ${filename}, retry ${retryCount}/${MAX_TTS_RETRIES}`);
         await new Promise((resolve) => setTimeout(resolve, delay));
-        throwIfTtsStopped();
         result = await providerGenerator({
           text,
           outputPath,
@@ -1078,7 +931,6 @@ async function generateBatchAudioWithProvider(
           volume,
           outputFormat,
         });
-        throwIfTtsStopped();
       }
 
       completed++;
@@ -1115,7 +967,6 @@ async function generateBatchAudioWithProvider(
     });
 
     const batchResults = await Promise.all(batchPromises);
-    throwIfTtsStopped();
     audioFiles.push(...batchResults);
 
     if (i + maxConcurrent < entries.length) {
@@ -1145,468 +996,20 @@ async function generateBatchAudioWithProvider(
   };
 }
 
-// export async function generateBatchAudioEdge(
-//   entries: SubtitleEntry[],
-//   options: Partial<TTSOptions>,
-//   progressCallback?: (progress: TTSProgress) => void
-// ): Promise<TTSResult> {
-//   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'edge' });
-//   return generateBatchAudioWithProvider(
-//     entries,
-//     options,
-//     voiceSelection,
-//     ({ text, outputPath, voiceId, rate, volume }) =>
-//       generateSingleAudioEdge({ text, outputPath, voiceId, rate, volume }),
-//     progressCallback
-//   );
-// }
-
 export async function generateBatchAudioEdge(
   entries: SubtitleEntry[],
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
-  return generateAsyncioAudioWithProvider(entries, options, progressCallback);
-}
-
-async function runEdgeTtsWorker(
-  jobs: EdgeAsyncioJob[],
-  runtime: { command: string; baseArgs: string[] },
-  workerPath: string,
-  timeoutMs?: number,
-  onProgress?: (event: { index: number; success?: boolean; error?: string; filename?: string; proxyId?: string }) => void,
-): Promise<{ results: Map<number, { success: boolean; error?: string }>; errors: string[] }> {
-  throwIfTtsStopped();
-  const payload = { jobs, ...(timeoutMs ? { timeoutMs } : {}) };
-  const errors: string[] = [];
-  const results = new Map<number, { success: boolean; error?: string }>();
-
-  return new Promise((resolve) => {
-    let doneReceived = false;
-    let stderr = '';
-    let buffer = '';
-
-    console.log(`[TTS][EDGE][asyncio] Spawn worker: ${runtime.command} ${runtime.baseArgs.join(' ')} ${workerPath}`);
-    console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${jobs.reduce((sum, job) => sum + job.items.length, 0)}`);
-
-    const proc = spawn(runtime.command, [...runtime.baseArgs, workerPath], {
-      windowsHide: true,
-      shell: false,
-      env: {
-        ...process.env,
-        PYTHONUTF8: '1',
-        PYTHONIOENCODING: 'utf-8',
-      },
-    });
-    registerActiveTtsProcess(proc);
-
-    proc.stdout?.on('data', (data) => {
-      buffer += data.toString();
-      let index: number;
-      while ((index = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, index).trim();
-        buffer = buffer.slice(index + 1);
-        if (!line) continue;
-        try {
-          const event = JSON.parse(line);
-          if (event?.event === 'progress' && typeof event.index === 'number') {
-            // progress event: just capture last known error/success
-            if (typeof event.success === 'boolean') {
-              results.set(event.index, { success: event.success, error: event.error });
-              if (!event.success) {
-                console.warn(
-                  `[TTS][EDGE][asyncio] Failed index=${event.index} file=${event.filename || 'n/a'} ` +
-                  `proxyId=${event.proxyId || 'direct'} error=${event.error || 'unknown'}`
-                );
-              }
-            }
-            if (onProgress) {
-              onProgress({
-                index: event.index,
-                success: event.success,
-                error: event.error,
-                filename: event.filename,
-                proxyId: event.proxyId,
-              });
-            }
-            continue;
-          }
-          if (event?.event === 'done' && Array.isArray(event.results)) {
-            for (const item of event.results) {
-              if (typeof item.index === 'number') {
-                results.set(item.index, { success: !!item.success, error: item.error });
-              }
-            }
-            doneReceived = true;
-          }
-        } catch {
-          // Ignore non-JSON lines
-        }
-      }
-    });
-
-    proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (!doneReceived) {
-        const err = (stderr || `Python worker exited with code ${code ?? 'unknown'}`).trim();
-        if (err) errors.push(err);
-      }
-      if (stderr.trim()) {
-        console.warn(`[TTS][EDGE][asyncio] Worker stderr:\n${stderr.trim()}`);
-      }
-      console.log(`[TTS][EDGE][asyncio] Worker closed code=${code ?? 'unknown'} done=${doneReceived}`);
-      resolve({ results, errors });
-    });
-
-    proc.on('error', (err) => {
-      errors.push(`Spawn error: ${err.message}`);
-      resolve({ results, errors });
-    });
-
-    proc.stdin?.write(Buffer.from(JSON.stringify(payload), 'utf8'));
-    proc.stdin?.end();
-  });
-}
-
-export async function generateAsyncioAudioWithProvider(
-  entries: SubtitleEntry[],
-  options: Partial<TTSOptions>,
-  progressCallback?: (progress: TTSProgress) => void
-): Promise<TTSResult> {
-  throwIfTtsStopped();
   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'edge' });
-  const outputFormat: 'wav' | 'mp3' = options.outputFormat === 'mp3' ? 'mp3' : 'wav';
-  const {
-    rate = DEFAULT_RATE,
-    volume = DEFAULT_VOLUME,
-    outputDir,
-  } = options;
-  const effectiveBatchSize = normalizeEdgeTtsBatchSize(options.edgeTtsBatchSize);
-
-  console.log(`[TTS][EDGE][asyncio] Start entries=${entries.length}, voice=${voiceSelection.voiceId}, format=${outputFormat}`);
-  console.log(`[TTS][EDGE][asyncio] Batch size=${effectiveBatchSize}`);
-
-  if (!outputDir) {
-    return {
-      success: false,
-      audioFiles: [],
-      totalGenerated: 0,
-      totalFailed: entries.length,
-      outputDir: '',
-      errors: ['outputDir is required'],
-    };
-  }
-
-  await fs.mkdir(outputDir, { recursive: true });
-  throwIfTtsStopped();
-
-  const availability = await checkPythonModuleAvailability(['edge_tts']);
-  if (!availability.success || !availability.runtime) {
-    const error = availability.error || 'Thiếu module Python edge_tts.';
-    console.error(`[TTS][EDGE][asyncio] Python runtime/module check failed: ${error}`);
-    return {
-      success: false,
-      audioFiles: entries.map((entry) => ({
-        index: entry.index,
-        path: path.join(outputDir, getSafeFilename(entry.index, entry.translatedText || entry.text, outputFormat)),
-        startMs: entry.startMs,
-        durationMs: entry.durationMs,
-        success: false,
-        error,
-      })),
-      totalGenerated: 0,
-      totalFailed: entries.length,
-      outputDir,
-      errors: [error],
-    };
-  }
-  throwIfTtsStopped();
-
-  const workerPath = resolveEdgeTtsWorkerPath();
-  if (!existsSync(workerPath)) {
-    console.error(`[TTS][EDGE][asyncio] Worker not found: ${workerPath}`);
-    return {
-      success: false,
-      audioFiles: [],
-      totalGenerated: 0,
-      totalFailed: entries.length,
-      outputDir,
-      errors: [`Không tìm thấy edge_tts_worker.py (${workerPath})`],
-    };
-  }
-  throwIfTtsStopped();
-
-  const providerLabel = 'EDGE';
-  const audioFiles: AudioFile[] = [];
-  const errors: string[] = [];
-  let completed = 0;
-  const progressSeen = new Set<number>();
-
-  const pendingItems: EdgeAsyncioItem[] = [];
-  for (const entry of entries) {
-    throwIfTtsStopped();
-    const rawText = entry.translatedText || entry.text;
-    const normalizedText = fixMojibake(rawText);
-    const cleanText = sanitizeTextForTts(normalizedText);
-    const filename = getSafeFilename(entry.index, cleanText, outputFormat);
-    const outputPath = path.join(outputDir, filename);
-
-    try {
-      const existing = await fs.stat(outputPath);
-      if (existing.size > 0) {
-        audioFiles.push({
-          index: entry.index,
-          path: outputPath,
-          startMs: entry.startMs,
-          durationMs: entry.durationMs,
-          success: true,
-        });
-        completed++;
-        progressCallback?.({
-          current: completed,
-          total: entries.length,
-          status: 'generating',
-          currentFile: filename,
-          message: `[${providerLabel}] Skip (existed): ${filename}`,
-        });
-        continue;
-      }
-    } catch {
-      // File chưa tồn tại => đưa vào danh sách xử lý
-    }
-
-    pendingItems.push({
-      index: entry.index,
-      text: cleanText,
-      outputPath,
-      startMs: entry.startMs,
-      durationMs: entry.durationMs,
-      filename,
-    });
-    console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
-  }
-
-  const proxyManager = getProxyManager();
-  const proxyContext = proxyManager.getProxyContext('tts');
-  const useProxySetting = proxyContext.mode !== 'off';
-  const useRotatingEndpoint = useProxySetting && proxyContext.mode === 'rotating-endpoint';
-  if (useRotatingEndpoint && proxyManager.getAvailableProxies(undefined, 'tts').length === 0) {
-    return {
-      success: false,
-      audioFiles: [],
-      totalGenerated: 0,
-      totalFailed: entries.length,
-      outputDir,
-      errors: ['Rotating endpoint không hợp lệ hoặc không khả dụng cho Edge TTS'],
-    };
-  }
-  const preferredType = proxyContext.typePreference === 'any' ? undefined : proxyContext.typePreference;
-  const hasPreferredProxy = !useRotatingEndpoint
-    && useProxySetting
-    && proxyManager.getAvailableProxies(preferredType, 'tts').length > 0;
-  console.log(
-    `[TTS][EDGE][asyncio] useProxy=${useProxySetting}`
-    + (useRotatingEndpoint
-      ? ` (rotating-endpoint=${proxyContext.rotatingEndpointMasked || 'configured'})`
-      : (preferredType ? ` (${preferredType}-only)` : (hasPreferredProxy ? ' (proxy)' : '')))
+  return generateBatchAudioWithProvider(
+    entries,
+    options,
+    voiceSelection,
+    ({ text, outputPath, voiceId, rate, volume }) =>
+      generateSingleAudioEdge({ text, outputPath, voiceId, rate, volume }),
+    progressCallback
   );
-  if (useProxySetting && !hasPreferredProxy && !useRotatingEndpoint) {
-    console.warn('[TTS][EDGE][asyncio] Không có proxy theo typePreference khả dụng, fallback dùng proxy thường nếu có.');
-  }
-
-  const buildJobs = (items: EdgeAsyncioItem[]): EdgeAsyncioJob[] => {
-    const jobs: EdgeAsyncioJob[] = [];
-    let i = 0;
-    while (i < items.length) {
-      const chunk = items.slice(i, i + effectiveBatchSize);
-      let proxy: ProxyConfig | null = null;
-      if (useProxySetting) {
-        if (useRotatingEndpoint) {
-          proxy = proxyManager.getNextProxy(undefined, 'tts');
-        } else {
-          proxy = proxyManager.getNextProxy(preferredType, 'tts');
-          if (!proxy && preferredType) {
-            proxy = proxyManager.getNextProxy(undefined, 'tts');
-          }
-        }
-      }
-      if (proxy) {
-        console.log(`[TTS][EDGE][asyncio] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`);
-      } else {
-        console.log(`[TTS][EDGE][asyncio] Assign direct (no proxy) -> items ${chunk.length}`);
-      }
-      jobs.push({
-        proxyId: proxy?.id || null,
-        proxyUrl: proxy ? toProxyUrl(proxy) : null,
-        items: chunk,
-        voice: voiceSelection.voiceId,
-        rate,
-        volume,
-        outputFormat,
-      });
-      i += effectiveBatchSize;
-    }
-    if (jobs.length === 0 && items.length > 0) {
-      jobs.push({
-        proxyId: null,
-        proxyUrl: null,
-        items,
-        voice: voiceSelection.voiceId,
-        rate,
-        volume,
-        outputFormat,
-      });
-    }
-    return jobs;
-  };
-
-  let remaining = pendingItems.slice();
-  let attempt = 0;
-
-  while (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
-    throwIfTtsStopped();
-    attempt++;
-    console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`);
-    const jobs = buildJobs(remaining);
-    const runResult = await runEdgeTtsWorker(
-      jobs,
-      availability.runtime,
-      workerPath,
-      undefined,
-      (event) => {
-        if (event?.success !== true) return;
-        if (progressSeen.has(event.index)) return;
-        progressSeen.add(event.index);
-        completed++;
-        progressCallback?.({
-          current: completed,
-          total: entries.length,
-          status: 'generating',
-          currentFile: event.filename || '',
-          message: event.filename
-            ? `[${providerLabel}] Đã tạo: ${event.filename}`
-            : `[${providerLabel}] Đã tạo audio #${event.index}`,
-        });
-      }
-    );
-    throwIfTtsStopped();
-    if (runResult.errors.length > 0) {
-      console.warn(`[TTS][EDGE][asyncio] Worker errors: ${runResult.errors.join(' | ')}`);
-      errors.push(...runResult.errors);
-    }
-
-    const nextRemaining: EdgeAsyncioItem[] = [];
-    for (const job of jobs) {
-      let jobFailedReason: string | undefined;
-      let jobFailed = false;
-
-      for (const item of job.items) {
-        const result = runResult.results.get(item.index);
-        let itemSuccess = !!result?.success;
-        let itemError = result?.error;
-
-        if (itemSuccess) {
-          try {
-            const stats = await fs.stat(item.outputPath);
-            if (stats.size <= 0) {
-              throw new Error('file rỗng');
-            }
-          } catch (error) {
-            itemSuccess = false;
-            itemError = `Worker báo success nhưng file output không hợp lệ (${item.outputPath}): ${String(error)}`;
-          }
-        }
-
-        if (itemSuccess) {
-          audioFiles.push({
-            index: item.index,
-            path: item.outputPath,
-            startMs: item.startMs,
-            durationMs: item.durationMs,
-            success: true,
-          });
-          if (!progressSeen.has(item.index)) {
-            progressSeen.add(item.index);
-            completed++;
-            progressCallback?.({
-              current: completed,
-              total: entries.length,
-              status: 'generating',
-              currentFile: item.filename,
-              message: `[${providerLabel}] Đã tạo: ${item.filename}`,
-            });
-          }
-        } else {
-          if (!jobFailedReason && itemError) {
-            jobFailedReason = itemError;
-          }
-          jobFailed = true;
-          if (attempt <= MAX_TTS_RETRIES) {
-            nextRemaining.push(item);
-          } else {
-            const errorText = itemError || 'Unknown error';
-            errors.push(`${item.filename}: ${errorText}`);
-            audioFiles.push({
-              index: item.index,
-              path: item.outputPath,
-              startMs: item.startMs,
-              durationMs: item.durationMs,
-              success: false,
-              error: errorText,
-            });
-            if (!progressSeen.has(item.index)) {
-              progressSeen.add(item.index);
-              completed++;
-              progressCallback?.({
-                current: completed,
-                total: entries.length,
-                status: 'generating',
-                currentFile: item.filename,
-                message: `[${providerLabel}] Lỗi: ${item.filename}`,
-              });
-            }
-          }
-        }
-      }
-
-      if (job.proxyId) {
-        if (jobFailed) {
-          proxyManager.markProxyFailed(job.proxyId, jobFailedReason);
-        } else {
-          proxyManager.markProxySuccess(job.proxyId);
-        }
-      }
-    }
-
-    remaining = nextRemaining;
-    if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
-      console.log(`[TTS][EDGE][asyncio] Requeue ${remaining.length} items for next attempt.`);
-    }
-  }
-
-  audioFiles.sort((a, b) => a.startMs - b.startMs);
-  const totalGenerated = audioFiles.filter((file) => file.success).length;
-  const totalFailed = audioFiles.filter((file) => !file.success).length;
-
-  progressCallback?.({
-    current: entries.length,
-    total: entries.length,
-    status: 'completed',
-    currentFile: '',
-    message: `[${providerLabel}] Hoàn thành: ${totalGenerated}/${entries.length} files`,
-  });
-
-  return {
-    success: totalFailed === 0,
-    audioFiles,
-    totalGenerated,
-    totalFailed,
-    outputDir,
-    errors: errors.length > 0 ? errors : undefined,
-  };
 }
 
 export async function generateBatchAudioCapCut(
@@ -1614,7 +1017,6 @@ export async function generateBatchAudioCapCut(
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
-  throwIfTtsStopped();
   const voiceSelection = resolveVoiceSelection({ ...options, provider: 'capcut' });
   const cfgResult = loadCapCutRuntimeConfig();
 
@@ -1652,7 +1054,6 @@ export async function generateBatchAudioCapCut(
   }
 
   await fs.mkdir(outputDir, { recursive: true });
-  throwIfTtsStopped();
 
   const providerLabel = 'CAPCUT';
   const audioFiles: AudioFile[] = [];
@@ -1667,8 +1068,7 @@ export async function generateBatchAudioCapCut(
   let completed = 0;
 
   for (const entry of entries) {
-    throwIfTtsStopped();
-    const text = fixMojibake(entry.translatedText || entry.text);
+    const text = entry.translatedText || entry.text;
     const filename = getSafeFilename(entry.index, text, outputFormat);
     const outputPath = path.join(outputDir, filename);
 
@@ -1700,110 +1100,97 @@ export async function generateBatchAudioCapCut(
   }
 
   if (pending.length > 0) {
+    const finalBuffers: Buffer[] = Array.from({ length: pending.length }, () => Buffer.alloc(0));
+    let unresolvedLocalIndexes: number[] = pending.map((_, idx) => idx);
+    let lastBatchError = '';
+    const maxBatchAttempts = Math.max(1, MAX_TTS_RETRIES + 1);
     const missingSubtitleIndexes: number[] = [];
     const missingSocketResponseIndexes: number[] = [];
-    const maxBatchAttempts = Math.max(1, MAX_TTS_RETRIES + 1);
 
-    for (let chunkStart = 0; chunkStart < pending.length; chunkStart += CAPCUT_BATCH_SIZE) {
-      throwIfTtsStopped();
-      const chunk = pending.slice(chunkStart, chunkStart + CAPCUT_BATCH_SIZE);
-      const finalBuffers: Buffer[] = Array.from({ length: chunk.length }, () => Buffer.alloc(0));
-      let unresolvedLocalIndexes: number[] = chunk.map((_, idx) => idx);
-      let lastBatchError = '';
-
-      for (let attempt = 1; attempt <= maxBatchAttempts; attempt++) {
-        throwIfTtsStopped();
-        if (unresolvedLocalIndexes.length === 0) {
-          break;
-        }
-
-        const attemptItems = unresolvedLocalIndexes.map((localIndex) => chunk[localIndex]);
-        console.log(
-          `[TTS] [${providerLabel}] Batch socket attempt ${attempt}/${maxBatchAttempts}: ${attemptItems.length} dòng`
-        );
-
-        const batchResult = await requestCapCutBatchAudio({
-          texts: attemptItems.map((item) => item.text),
-          voiceId: voiceSelection.voiceId,
-          outputFormat,
-          config: cfgResult.config,
-        });
-        throwIfTtsStopped();
-
-        if (batchResult.lastError) {
-          lastBatchError = batchResult.lastError;
-        }
-
-        const nextUnresolved: number[] = [];
-        for (let idx = 0; idx < attemptItems.length; idx++) {
-          const localIndex = unresolvedLocalIndexes[idx];
-          const audioBuffer = batchResult.audioBuffers[idx] || Buffer.alloc(0);
-          if (audioBuffer.length > 0) {
-            finalBuffers[localIndex] = audioBuffer;
-          } else {
-            nextUnresolved.push(localIndex);
-          }
-        }
-
-        unresolvedLocalIndexes = nextUnresolved;
-        if (unresolvedLocalIndexes.length > 0 && attempt < maxBatchAttempts) {
-          console.warn(
-            `[TTS] [${providerLabel}] Socket attempt ${attempt} còn thiếu ${unresolvedLocalIndexes.length} dòng, sẽ gửi lại batch thiếu.`
-          );
-        }
+    for (let attempt = 1; attempt <= maxBatchAttempts; attempt++) {
+      if (unresolvedLocalIndexes.length === 0) {
+        break;
       }
 
-      for (let idx = 0; idx < chunk.length; idx++) {
-        throwIfTtsStopped();
-        const item = chunk[idx];
-        const audioBuffer = finalBuffers[idx];
-        let success = false;
-        let errorText: string | undefined;
+      const attemptItems = unresolvedLocalIndexes.map((localIndex) => pending[localIndex]);
+      console.log(
+        `[TTS] [${providerLabel}] Batch socket attempt ${attempt}/${maxBatchAttempts}: ${attemptItems.length} dòng`
+      );
 
+      const batchResult = await requestCapCutBatchAudio({
+        texts: attemptItems.map((item) => item.text),
+        voiceId: voiceSelection.voiceId,
+        outputFormat,
+        config: cfgResult.config,
+      });
+
+      if (batchResult.lastError) {
+        lastBatchError = batchResult.lastError;
+      }
+
+      const nextUnresolved: number[] = [];
+      for (let idx = 0; idx < attemptItems.length; idx++) {
+        const localIndex = unresolvedLocalIndexes[idx];
+        const audioBuffer = batchResult.audioBuffers[idx] || Buffer.alloc(0);
         if (audioBuffer.length > 0) {
-          try {
-            await fs.writeFile(item.outputPath, audioBuffer);
-            success = true;
-          } catch (error) {
-            errorText = `Không thể ghi file audio: ${String(error)}`;
-          }
+          finalBuffers[localIndex] = audioBuffer;
         } else {
-          errorText = lastBatchError
-            ? `Thiếu audio sau ${maxBatchAttempts} lần batch socket. ${lastBatchError}`
-            : `Thiếu audio sau ${maxBatchAttempts} lần batch socket.`;
-          const safeText = item.text.replace(/\s+/g, ' ');
-          console.warn(
-            `[TTS][${providerLabel}] Missing audio subtitle index=${item.entry.index} ` +
-            `socketIndex=${chunkStart + idx + 1} text="${safeText}"`
-          );
-          missingSubtitleIndexes.push(item.entry.index);
-          missingSocketResponseIndexes.push(chunkStart + idx + 1);
+          nextUnresolved.push(localIndex);
         }
-
-        if (!success && errorText) {
-          errors.push(`${item.filename}: ${errorText}`);
-        }
-
-        audioFiles.push({
-          index: item.entry.index,
-          path: item.outputPath,
-          startMs: item.entry.startMs,
-          durationMs: item.entry.durationMs,
-          success,
-          error: success ? undefined : errorText,
-        });
-
-        completed++;
-        progressCallback?.({
-          current: completed,
-          total: entries.length,
-          status: 'generating',
-          currentFile: item.filename,
-          message: success
-            ? `[${providerLabel}] Đã tạo: ${item.filename}`
-            : `[${providerLabel}] Lỗi: ${item.filename}`,
-        });
       }
+
+      unresolvedLocalIndexes = nextUnresolved;
+      if (unresolvedLocalIndexes.length > 0 && attempt < maxBatchAttempts) {
+        console.warn(
+          `[TTS] [${providerLabel}] Socket attempt ${attempt} còn thiếu ${unresolvedLocalIndexes.length} dòng, sẽ gửi lại batch thiếu.`
+        );
+      }
+    }
+
+    for (let idx = 0; idx < pending.length; idx++) {
+      const item = pending[idx];
+      const audioBuffer = finalBuffers[idx];
+      let success = false;
+      let errorText: string | undefined;
+
+      if (audioBuffer.length > 0) {
+        try {
+          await fs.writeFile(item.outputPath, audioBuffer);
+          success = true;
+        } catch (error) {
+          errorText = `Không thể ghi file audio: ${String(error)}`;
+        }
+      } else {
+        errorText = lastBatchError
+          ? `Thiếu audio sau ${maxBatchAttempts} lần batch socket. ${lastBatchError}`
+          : `Thiếu audio sau ${maxBatchAttempts} lần batch socket.`;
+        missingSubtitleIndexes.push(item.entry.index);
+        missingSocketResponseIndexes.push(idx + 1);
+      }
+
+      if (!success && errorText) {
+        errors.push(`${item.filename}: ${errorText}`);
+      }
+
+      audioFiles.push({
+        index: item.entry.index,
+        path: item.outputPath,
+        startMs: item.entry.startMs,
+        durationMs: item.entry.durationMs,
+        success,
+        error: success ? undefined : errorText,
+      });
+
+      completed++;
+      progressCallback?.({
+        current: completed,
+        total: entries.length,
+        status: 'generating',
+        currentFile: item.filename,
+        message: success
+          ? `[${providerLabel}] Đã tạo: ${item.filename}`
+          : `[${providerLabel}] Lỗi: ${item.filename}`,
+      });
     }
 
     if (missingSubtitleIndexes.length > 0) {
@@ -1846,9 +1233,6 @@ export async function generateBatchAudio(
   options: Partial<TTSOptions>,
   progressCallback?: (progress: TTSProgress) => void
 ): Promise<TTSResult> {
-  if (activeTtsProcesses.size === 0) {
-    clearTtsStopRequest();
-  }
   const voiceSelection = resolveVoiceSelection(options);
   if (voiceSelection.provider === 'capcut') {
     return generateBatchAudioCapCut(entries, options, progressCallback);

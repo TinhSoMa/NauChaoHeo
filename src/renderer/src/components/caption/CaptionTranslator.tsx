@@ -2432,6 +2432,27 @@ export function CaptionTranslator() {
   }, [processing.status, step4VoiceTestState, stopStep4VoiceTestPlayback]);
 
   const audioFiles = processing.audioFiles;
+  const ttsErrorItems = useMemo(() => {
+    if (!audioFiles || audioFiles.length === 0) {
+      return [];
+    }
+    const entryByIndex = new Map<number, SubtitleEntry>();
+    for (const entry of fileManager.entries) {
+      entryByIndex.set(entry.index, entry);
+    }
+    return audioFiles
+      .filter((item) => item && item.success === false)
+      .map((item) => {
+        const entry = entryByIndex.get(item.index);
+        const text = (entry?.translatedText || entry?.text || '').trim();
+        return {
+          index: item.index,
+          text: text || '(không tìm thấy text cho dòng này)',
+          error: item.error || 'Unknown error',
+          path: item.path || '',
+        };
+      });
+  }, [audioFiles, fileManager.entries]);
   const step7AudioElementRef = useRef<HTMLAudioElement | null>(null);
   const step7AudioAutoPlayAfterMixRef = useRef(false);
   const step7AudioLastMixedSignatureRef = useRef<string>('');
@@ -6691,6 +6712,37 @@ export function CaptionTranslator() {
           {isCapCutVoiceSelected && (
             <div className={styles.stepInfoCard}>
               Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge.
+            </div>
+          )}
+          {ttsErrorItems.length > 0 && (
+            <div className={styles.stepCard}>
+              <div className={styles.stepCardHeader}>
+                <div className={styles.stepCardTitle}>TTS lỗi (Step 4)</div>
+                <span className={styles.stepMetaPill}>{ttsErrorItems.length} dòng</span>
+              </div>
+              {processing.currentFolder && (
+                <div className={styles.stepCardHint}>
+                  Folder hiện tại: {processing.currentFolder.name}
+                </div>
+              )}
+              <div className={styles.ttsErrorList}>
+                {ttsErrorItems.map((item) => (
+                  <div key={`tts-error-${item.index}-${item.path}`} className={styles.ttsErrorRow}>
+                    <div className={styles.ttsErrorMeta}>
+                      <span className={styles.ttsErrorIndex}>#{item.index}</span>
+                      {item.path && (
+                        <span className={styles.ttsErrorPath} title={item.path}>
+                          {shortenMiddle(item.path, 80)}
+                        </span>
+                      )}
+                    </div>
+                    <div className={styles.ttsErrorText} title={item.text}>
+                      {item.text}
+                    </div>
+                    <div className={styles.ttsErrorReason}>{item.error}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <div className={styles.stepInfoNote}>
