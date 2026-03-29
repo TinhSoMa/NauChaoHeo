@@ -66,6 +66,9 @@ export interface AppSettings {
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;
+  translationPromptFamilyId: string | null;
+  summaryPromptFamilyId: string | null;
+  captionPromptFamilyId: string | null;
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;
   captionLogoScale: number;

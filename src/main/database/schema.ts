@@ -10,6 +10,20 @@ import fs from 'fs';
 import type { GrokUiProfileConfig } from '../../shared/types/grokUi';
 import { AppSettingsService } from '../services/appSettings';
 
+type PromptRowLite = {
+  id: string;
+  name: string;
+  description?: string | null;
+  source_lang: string;
+  target_lang: string;
+  created_at: number;
+  prompt_type?: string | null;
+  language_bucket?: string | null;
+  group_id?: string | null;
+  family_id?: string | null;
+  version_no?: number | null;
+};
+
 const extractCookieKey = (cookie: string): string => {
   const trimmed = (cookie || '').trim();
   const psid1 = trimmed.match(/__Secure-1PSID=([^;\s]+)/)?.[1] || '';
@@ -51,6 +65,184 @@ function buildLegacyGrokUiProfiles(settings: {
     anonymous,
     enabled: true,
   }];
+}
+
+function normalizePromptType(raw: unknown, name: string): 'translation' | 'summary' | 'caption' {
+  if (raw === 'translation' || raw === 'summary' || raw === 'caption') {
+    return raw;
+  }
+  const lowered = (name || '').toLowerCase();
+  if (lowered.includes('summary') || lowered.includes('[summary]') || lowered.includes('tóm tắt')) {
+    return 'summary';
+  }
+  if (lowered.includes('caption') || lowered.includes('subtitle') || lowered.includes('phụ đề')) {
+    return 'caption';
+  }
+  return 'translation';
+}
+
+function normalizePromptNameForFamily(name: string): string {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\bv\d+\b/g, '')
+    .replace(/[^a-z0-9\u00C0-\u024F\u1E00-\u1EFF]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 96);
+}
+
+function toLanguageBucket(sourceLang: string, targetLang: string): string {
+  const src = (sourceLang || '').trim().toLowerCase() || 'unknown';
+  const dst = (targetLang || '').trim().toLowerCase() || 'unknown';
+  return `${src}->${dst}`;
+}
+
+function normalizeGroupName(name: string): string {
+  return (name || '').trim().replace(/\s+/g, ' ').slice(0, 64) || 'General';
+}
+
+function normalizeGroupKey(name: string): string {
+  return normalizeGroupName(name).toLowerCase();
+}
+
+function ensurePromptHierarchySchema(dbRef: Database.Database): void {
+  dbRef.exec(`
+    CREATE TABLE IF NOT EXISTS prompt_groups (
+      id TEXT PRIMARY KEY,
+      language_bucket TEXT NOT NULL,
+      name TEXT NOT NULL,
+      normalized_name TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(language_bucket, normalized_name)
+    );
+  `);
+
+  const columns = dbRef.pragma('table_info(prompts)') as Array<{ name: string }>;
+  const existing = new Set(columns.map((col) => col.name));
+  const alterStatements: string[] = [];
+
+  if (!existing.has('prompt_type')) {
+    alterStatements.push("ALTER TABLE prompts ADD COLUMN prompt_type TEXT NOT NULL DEFAULT 'translation';");
+  }
+  if (!existing.has('language_bucket')) {
+    alterStatements.push("ALTER TABLE prompts ADD COLUMN language_bucket TEXT;");
+  }
+  if (!existing.has('group_id')) {
+    alterStatements.push('ALTER TABLE prompts ADD COLUMN group_id TEXT;');
+  }
+  if (!existing.has('family_id')) {
+    alterStatements.push('ALTER TABLE prompts ADD COLUMN family_id TEXT;');
+  }
+  if (!existing.has('version_no')) {
+    alterStatements.push('ALTER TABLE prompts ADD COLUMN version_no INTEGER NOT NULL DEFAULT 1;');
+  }
+  if (!existing.has('is_latest')) {
+    alterStatements.push('ALTER TABLE prompts ADD COLUMN is_latest INTEGER NOT NULL DEFAULT 1;');
+  }
+  if (!existing.has('archived')) {
+    alterStatements.push('ALTER TABLE prompts ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;');
+  }
+
+  for (const statement of alterStatements) {
+    dbRef.exec(statement);
+  }
+
+  dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompts_language_bucket ON prompts(language_bucket);');
+  dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompts_family_id ON prompts(family_id);');
+  dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompts_group_id ON prompts(group_id);');
+  dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompt_groups_bucket ON prompt_groups(language_bucket, normalized_name);');
+}
+
+function backfillPromptHierarchy(dbRef: Database.Database): void {
+  const rows = dbRef.prepare(`
+    SELECT
+      id, name, description, source_lang, target_lang, created_at,
+      prompt_type, language_bucket, group_id, family_id, version_no
+    FROM prompts
+    ORDER BY created_at ASC
+  `).all() as PromptRowLite[];
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const familyIdByKey = new Map<string, string>();
+  const groupIdByBucketAndName = new Map<string, string>();
+
+  const ensureGroup = (languageBucket: string, groupNameInput: string): string => {
+    const groupName = normalizeGroupName(groupNameInput);
+    const groupKey = `${languageBucket}::${normalizeGroupKey(groupName)}`;
+    const inMemory = groupIdByBucketAndName.get(groupKey);
+    if (inMemory) {
+      return inMemory;
+    }
+
+    const existing = dbRef.prepare(
+      'SELECT id FROM prompt_groups WHERE language_bucket = ? AND normalized_name = ? LIMIT 1'
+    ).get(languageBucket, normalizeGroupKey(groupName)) as { id: string } | undefined;
+
+    if (existing?.id) {
+      groupIdByBucketAndName.set(groupKey, existing.id);
+      return existing.id;
+    }
+
+    const groupId = `grp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+    dbRef.prepare(`
+      INSERT INTO prompt_groups (id, language_bucket, name, normalized_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(groupId, languageBucket, groupName, normalizeGroupKey(groupName), now, now);
+    groupIdByBucketAndName.set(groupKey, groupId);
+    return groupId;
+  };
+
+  const updateStmt = dbRef.prepare(`
+    UPDATE prompts
+    SET prompt_type = ?, language_bucket = ?, group_id = ?, family_id = ?, version_no = ?, archived = COALESCE(archived, 0)
+    WHERE id = ?
+  `);
+
+  const tx = dbRef.transaction(() => {
+    for (const row of rows) {
+      const languageBucket = (row.language_bucket && row.language_bucket.trim())
+        ? row.language_bucket.trim().toLowerCase()
+        : toLanguageBucket(row.source_lang, row.target_lang);
+      const promptType = normalizePromptType(row.prompt_type, row.name || '');
+      const groupId = (row.group_id && row.group_id.trim())
+        ? row.group_id
+        : ensureGroup(languageBucket, 'General');
+      const normalizedName = normalizePromptNameForFamily(row.name || 'untitled');
+      const familyKey = `${languageBucket}::${promptType}::${normalizedName}`;
+      const familyId = (row.family_id && row.family_id.trim())
+        ? row.family_id
+        : (familyIdByKey.get(familyKey) || row.id);
+      familyIdByKey.set(familyKey, familyId);
+      const versionNo = typeof row.version_no === 'number' && row.version_no > 0 ? Math.floor(row.version_no) : 1;
+
+      updateStmt.run(promptType, languageBucket, groupId, familyId, versionNo, row.id);
+    }
+
+    dbRef.exec('UPDATE prompts SET is_latest = 0;');
+    dbRef.exec(`
+      UPDATE prompts
+      SET is_latest = 1
+      WHERE id IN (
+        SELECT p.id
+        FROM prompts p
+        INNER JOIN (
+          SELECT family_id, MAX(version_no) AS max_version, MAX(updated_at) AS max_updated
+          FROM prompts
+          GROUP BY family_id
+        ) latest
+          ON p.family_id = latest.family_id
+          AND p.version_no = latest.max_version
+          AND p.updated_at = latest.max_updated
+      );
+    `);
+  });
+
+  tx();
 }
 
 let db: Database.Database | null = null;
@@ -101,6 +293,9 @@ export function initDatabase(): void {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  ensurePromptHierarchySchema(db);
+  backfillPromptHierarchy(db);
 
   // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
   // Chỉ có 1 dòng duy nhất (id = 1)

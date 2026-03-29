@@ -584,6 +584,9 @@ interface AppSettings {
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;
+  translationPromptFamilyId: string | null;
+  summaryPromptFamilyId: string | null;
+  captionPromptFamilyId: string | null;
   grokUiProfileDir: string | null;
   grokUiProfileName: string | null;
   grokUiAnonymous: boolean;
@@ -816,6 +819,44 @@ interface CreatePromptDTO {
   targetLang: string;
   content: string;
   isDefault?: boolean;
+  promptType?: 'translation' | 'summary' | 'caption';
+  groupId?: string | null;
+  familyId?: string;
+}
+
+interface PromptGroup {
+  id: string;
+  languageBucket: string;
+  name: string;
+  normalizedName: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface PromptFamilySummary {
+  familyId: string;
+  promptType: 'translation' | 'summary' | 'caption';
+  languageBucket: string;
+  sourceLang: string;
+  targetLang: string;
+  groupId: string | null;
+  groupName?: string;
+  latestPromptId: string;
+  latestName: string;
+  latestVersion: number;
+  latestUpdatedAt: number;
+}
+
+interface PromptHierarchySnapshot {
+  languages: Array<{
+    languageBucket: string;
+    sourceLang: string;
+    targetLang: string;
+    totalFamilies: number;
+    totalPrompts: number;
+  }>;
+  groups: PromptGroup[];
+  families: PromptFamilySummary[];
 }
 
 interface PromptAPI {
@@ -825,6 +866,15 @@ interface PromptAPI {
   update: (id: string, data: Partial<CreatePromptDTO>) => Promise<any>;
   delete: (id: string) => Promise<any>;
   setDefault: (id: string) => Promise<any>;
+  getGroups: (languageBucket?: string) => Promise<PromptGroup[]>;
+  createGroup: (payload: { languageBucket: string; name: string }) => Promise<PromptGroup>;
+  renameGroup: (payload: { groupId: string; name: string }) => Promise<PromptGroup>;
+  deleteGroup: (groupId: string) => Promise<boolean>;
+  getFamilies: (payload?: { languageBucket?: string; groupId?: string; promptType?: 'translation' | 'summary' | 'caption' }) => Promise<PromptFamilySummary[]>;
+  getVersions: (familyId: string) => Promise<any[]>;
+  moveFamily: (payload: { familyId: string; targetGroupId: string }) => Promise<boolean>;
+  getHierarchy: () => Promise<PromptHierarchySnapshot>;
+  resolveLatestByFamily: (familyId: string) => Promise<any | null>;
 }
 
 interface RotationQueueViewOptions {

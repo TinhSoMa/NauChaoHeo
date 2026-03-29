@@ -44,6 +44,9 @@ export interface AppSettings {
   translationPromptId: string | null; // Prompt ID cho chức năng dịch truyện
   summaryPromptId: string | null; // Prompt ID cho chức năng tóm tắt
   captionPromptId: string | null; // Prompt ID cho chức năng dịch caption (Step 3)
+  translationPromptFamilyId: string | null; // Family ID cho chức năng dịch truyện (ưu tiên)
+  summaryPromptFamilyId: string | null; // Family ID cho chức năng tóm tắt (ưu tiên)
+  captionPromptFamilyId: string | null; // Family ID cho chức năng dịch caption (ưu tiên)
   // Caption logo (global — dùng lại khi edit nhiều video)
   captionLogoPath: string | null;
   captionLogoPosition: { x: number; y: number } | null;
@@ -607,6 +610,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   translationPromptId: null, // Tự động tìm prompt dịch
   summaryPromptId: null, // Tự động tìm prompt tóm tắt
   captionPromptId: null, // Tự động dùng prompt mặc định
+  translationPromptFamilyId: null,
+  summaryPromptFamilyId: null,
+  captionPromptFamilyId: null,
   captionLogoPath: null,
   captionLogoPosition: null,
   captionLogoScale: 1.0,
@@ -783,6 +789,15 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'downloaderOutputDir')) {
       nextPartial.downloaderOutputDir = normalizeStringOrNull(partial.downloaderOutputDir);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'translationPromptFamilyId')) {
+      nextPartial.translationPromptFamilyId = normalizeStringOrNull(partial.translationPromptFamilyId);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'summaryPromptFamilyId')) {
+      nextPartial.summaryPromptFamilyId = normalizeStringOrNull(partial.summaryPromptFamilyId);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'captionPromptFamilyId')) {
+      nextPartial.captionPromptFamilyId = normalizeStringOrNull(partial.captionPromptFamilyId);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'grokUiTimeoutMs')) {
       nextPartial.grokUiTimeoutMs = normalizeGrokUiTimeoutMs(partial.grokUiTimeoutMs);

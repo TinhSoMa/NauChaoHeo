@@ -31,7 +31,7 @@ import { ApiKeysSettings } from './ApiKeysSettings';
 import { GeminiChatSettings } from './GeminiChatSettings';
 import { GrokUiSettings } from './GrokUiSettings';
 import { ProxySettings } from './ProxySettings';
-import { PromptSettings } from './PromptSettings';
+import { PromptSettings } from './PromptSettings.tsx';
 import { QueueMonitorSettings } from './QueueMonitorSettings';
 import { DebugLogsSettings } from './DebugLogsSettings';
 import { AutoShutdownSettings } from './AutoShutdownSettings';
@@ -53,7 +53,7 @@ const menuItems: SettingsMenuItem[] = [
   { 
     id: 'prompts', 
     label: 'Prompt Templates', 
-    desc: 'Chọn prompt cho dịch truyện và tóm tắt',
+    desc: 'Quản lý theo language, group, family và version',
     icon: FileText 
   },
   { 

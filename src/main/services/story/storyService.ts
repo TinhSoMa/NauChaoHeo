@@ -228,7 +228,19 @@ export class StoryService {
       
       // 1. Check if user has configured a specific prompt in settings
       const appSettings = AppSettingsService.getAll();
-      if (appSettings.translationPromptId) {
+      if (appSettings.translationPromptFamilyId) {
+        const familyPrompt = PromptService.resolveLatestByFamily(appSettings.translationPromptFamilyId);
+        if (familyPrompt && familyPrompt.sourceLang === sourceLang && familyPrompt.targetLang === targetLang) {
+          matchingPrompt = familyPrompt;
+        } else if (familyPrompt) {
+          console.warn(
+            `[StoryService] translationPromptFamilyId mismatch (${familyPrompt.sourceLang}->${familyPrompt.targetLang}), expected ${sourceLang}->${targetLang}. Falling back.`
+          );
+        } else {
+          console.warn(`[StoryService] Configured translation prompt family "${appSettings.translationPromptFamilyId}" not found, falling back.`);
+        }
+      }
+      if (!matchingPrompt && appSettings.translationPromptId) {
         matchingPrompt = PromptService.getById(appSettings.translationPromptId);
         if (!matchingPrompt) {
           console.warn(`[StoryService] Configured translation prompt "${appSettings.translationPromptId}" not found, falling back to auto-detect`);
@@ -274,7 +286,19 @@ export class StoryService {
       
       // 1. Check if user has configured a specific prompt in settings
       const appSettings = AppSettingsService.getAll();
-      if (appSettings.summaryPromptId) {
+      if (appSettings.summaryPromptFamilyId) {
+        const familyPrompt = PromptService.resolveLatestByFamily(appSettings.summaryPromptFamilyId);
+        if (familyPrompt && familyPrompt.sourceLang === sourceLang && familyPrompt.targetLang === targetLang) {
+          matchingPrompt = familyPrompt;
+        } else if (familyPrompt) {
+          console.warn(
+            `[StoryService] summaryPromptFamilyId mismatch (${familyPrompt.sourceLang}->${familyPrompt.targetLang}), expected ${sourceLang}->${targetLang}. Falling back.`
+          );
+        } else {
+          console.warn(`[StoryService] Configured summary prompt family "${appSettings.summaryPromptFamilyId}" not found, falling back.`);
+        }
+      }
+      if (!matchingPrompt && appSettings.summaryPromptId) {
         matchingPrompt = PromptService.getById(appSettings.summaryPromptId);
         if (!matchingPrompt) {
           console.warn(`[StoryService] Configured summary prompt "${appSettings.summaryPromptId}" not found, falling back to auto-detect`);

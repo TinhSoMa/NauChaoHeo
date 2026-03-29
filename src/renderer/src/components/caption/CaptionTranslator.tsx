@@ -2649,12 +2649,22 @@ export function CaptionTranslator() {
     let promptName = 'default';
     try {
       const settingsRes = await window.electronAPI.appSettings.getAll();
-      const captionPromptId = settingsRes?.data?.captionPromptId;
-      if (captionPromptId) {
-        const promptRes: any = await window.electronAPI.invoke('prompt:getById', captionPromptId);
+      const captionPromptFamilyId = settingsRes?.data?.captionPromptFamilyId;
+      if (captionPromptFamilyId) {
+        const promptRes: any = await window.electronAPI.prompt.resolveLatestByFamily(captionPromptFamilyId);
         if (promptRes?.content) {
           customTemplate = promptRes.content;
-          promptName = promptRes.name || captionPromptId;
+          promptName = `${promptRes.name || captionPromptFamilyId} v${promptRes.version || 1}`;
+        }
+      }
+      if (!customTemplate) {
+        const captionPromptId = settingsRes?.data?.captionPromptId;
+        if (captionPromptId) {
+          const promptRes: any = await window.electronAPI.invoke('prompt:getById', captionPromptId);
+          if (promptRes?.content) {
+            customTemplate = promptRes.content;
+            promptName = promptRes.name || captionPromptId;
+          }
         }
       }
     } catch (e) {

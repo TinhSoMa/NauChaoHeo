@@ -548,7 +548,16 @@ export function registerCaptionHandlers(): void {
         // Inject prompt from DB if captionPromptId is set and no client override
         if (!options.promptTemplate) {
           const appSettings = AppSettingsService.getAll();
-          if (appSettings.captionPromptId) {
+          if (appSettings.captionPromptFamilyId) {
+            const familyPrompt = PromptService.resolveLatestByFamily(appSettings.captionPromptFamilyId);
+            if (familyPrompt?.content) {
+              options.promptTemplate = familyPrompt.content;
+              console.log(`[CaptionHandlers] Sử dụng caption prompt family latest: ${familyPrompt.name} v${familyPrompt.version}`);
+            } else {
+              console.warn(`[CaptionHandlers] Không tìm thấy caption prompt family: ${appSettings.captionPromptFamilyId}`);
+            }
+          }
+          if (!options.promptTemplate && appSettings.captionPromptId) {
             const prompt = PromptService.getById(appSettings.captionPromptId);
             if (prompt?.content) {
               options.promptTemplate = prompt.content;
