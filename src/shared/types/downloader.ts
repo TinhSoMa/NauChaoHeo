@@ -49,6 +49,8 @@ export interface DownloadOptions {
   outputDir: string
   /** yt-dlp format id, e.g. "137+140". undefined = best */
   formatId?: string
+  /** yt-dlp audio format id to merge or download separately */
+  audioFormatId?: string
   /** whether to merge audio into video */
   mergeAudio?: boolean
   /** when mergeAudio=false, download audio as a separate file */

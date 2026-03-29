@@ -560,6 +560,8 @@ function parseVideoInfo(json: any): VideoInfo {
 function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] {
   const args: string[] = []
   const mergeAudio = options.mergeAudio !== false
+  const audioFormatId = options.audioFormatId?.trim()
+  const hasAudioFormat = !!audioFormatId
 
   // Cookie
   if (options.useCookie && options['cookiePath' as keyof DownloadOptions]) {
@@ -569,22 +571,38 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
   // Format
   if (options.formatId) {
     if (mergeAudio) {
-      args.push('-f', options.formatId)
+      args.push('-f', hasAudioFormat ? `${options.formatId}+${audioFormatId}` : options.formatId)
     } else if (options.downloadSeparateAudio) {
-      args.push('-f', `${options.formatId}+bestaudio[acodec^=mp4a]/${options.formatId}+bestaudio`)
+      args.push('-f', hasAudioFormat
+        ? `${options.formatId}+${audioFormatId}`
+        : `${options.formatId}+bestaudio[acodec^=mp4a]/${options.formatId}+bestaudio`)
     } else {
       args.push('-f', options.formatId)
     }
   } else if (mergeAudio) {
-    args.push(
-      '-f',
-      'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best'
-    )
+    if (hasAudioFormat) {
+      args.push(
+        '-f',
+        `bestvideo[vcodec^=avc][ext=mp4]+${audioFormatId}/bestvideo+${audioFormatId}`
+      )
+    } else {
+      args.push(
+        '-f',
+        'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best'
+      )
+    }
   } else if (options.downloadSeparateAudio) {
-    args.push(
-      '-f',
-      'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc][ext=mp4]+bestaudio'
-    )
+    if (hasAudioFormat) {
+      args.push(
+        '-f',
+        `bestvideo[vcodec^=avc][ext=mp4]+${audioFormatId}/bestvideo+${audioFormatId}`
+      )
+    } else {
+      args.push(
+        '-f',
+        'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc][ext=mp4]+bestaudio'
+      )
+    }
   } else {
     args.push(
       '-f',

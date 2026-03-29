@@ -62,6 +62,18 @@ function isAacCodec(codec?: string | null): boolean {
   return value.startsWith('mp4a') || value === 'aac'
 }
 
+function getAudioCodecTag(codec?: string | null): string | null {
+  if (!codec) return null
+  const value = codec.toLowerCase()
+  if (value.includes('mp4a') || value === 'aac') return 'AAC'
+  if (value.includes('opus')) return 'OPUS'
+  if (value.includes('vorbis')) return 'VORBIS'
+  if (value.includes('mp3')) return 'MP3'
+  if (value.includes('flac')) return 'FLAC'
+  if (value.includes('alac')) return 'ALAC'
+  return null
+}
+
 function getVideoCodecTag(codec?: string | null): string | null {
   if (!codec) return null
   const value = codec.toLowerCase()
@@ -279,6 +291,7 @@ export const DownloaderPage = () => {
 
   // Options (populated from fetchInfo)
   const [selectedFormatId, setSelectedFormatId] = useState<string>('')
+  const [selectedAudioFormatId, setSelectedAudioFormatId] = useState<string>('')
   const [selectedSubLangs, setSelectedSubLangs] = useState<string[]>([])
   const [convertSubs, setConvertSubs] = useState('srt')
 
@@ -488,6 +501,13 @@ export const DownloaderPage = () => {
     })
   }, [videoInfo])
 
+  const availableAudioFormats = useMemo(() => {
+    if (!videoInfo) return []
+    return videoInfo.formats
+      .filter((format) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
+      .sort((a, b) => (b.tbr || 0) - (a.tbr || 0))
+  }, [videoInfo])
+
   useEffect(() => {
     if (!downloadVideo) return
     if (!selectedFormatId) return
@@ -496,6 +516,26 @@ export const DownloaderPage = () => {
       setSelectedFormatId('')
     }
   }, [availableFormats, downloadVideo, selectedFormatId])
+
+  useEffect(() => {
+    if (!downloadVideo || (!mergeAudio && !downloadSeparateAudio)) {
+      if (selectedAudioFormatId) {
+        setSelectedAudioFormatId('')
+      }
+      return
+    }
+    if (!selectedAudioFormatId) return
+    const stillValid = availableAudioFormats.some((format) => format.id === selectedAudioFormatId)
+    if (!stillValid) {
+      setSelectedAudioFormatId('')
+    }
+  }, [
+    availableAudioFormats,
+    downloadSeparateAudio,
+    downloadVideo,
+    mergeAudio,
+    selectedAudioFormatId,
+  ])
 
   const resolvedSubLangs = useMemo(() => {
     if (!downloadSubtitle) return []
@@ -597,6 +637,7 @@ export const DownloaderPage = () => {
 
       let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
       let resolvedDownloadSeparateAudio = false
+      let resolvedAudioFormatId: string | undefined = undefined
       if (downloadVideo) {
         if (selectedFormatId && videoInfo) {
           const selectedFormat = availableFormats.find((format) => format.id === selectedFormatId)
@@ -607,7 +648,7 @@ export const DownloaderPage = () => {
               resolvedDownloadSeparateAudio = true
             }
           } else if (mergeAudio) {
-            if (!isAacCodec(selectedFormat.acodec)) {
+            if (!selectedAudioFormatId && !isAacCodec(selectedFormat.acodec)) {
               setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
               resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
             }
@@ -618,11 +659,30 @@ export const DownloaderPage = () => {
           resolvedDownloadSeparateAudio = true
         }
       }
+      if (downloadVideo && (mergeAudio || resolvedDownloadSeparateAudio)) {
+        if (selectedAudioFormatId) {
+          const audioFormat = availableAudioFormats.find((format) => format.id === selectedAudioFormatId)
+          if (audioFormat) {
+            const tag = getAudioCodecTag(audioFormat.acodec)
+            const bitrate = audioFormat.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
+            setLogs(prev => [
+              ...prev,
+              `[Downloader] Audio: ${selectedAudioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
+            ])
+            resolvedAudioFormatId = selectedAudioFormatId
+          } else {
+            setLogs(prev => [...prev, `[Downloader] Audio ${selectedAudioFormatId} không hợp lệ → fallback best`])
+          }
+        } else {
+          setLogs(prev => [...prev, '[Downloader] Audio: best'])
+        }
+      }
 
       const options: DownloadOptions = {
         url: targetUrl,
         outputDir: resolvedDir,
         formatId: resolvedFormatId,
+        audioFormatId: resolvedAudioFormatId,
         mergeAudio,
         downloadSeparateAudio: resolvedDownloadSeparateAudio,
         subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
@@ -697,6 +757,7 @@ export const DownloaderPage = () => {
 
       let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
       let resolvedDownloadSeparateAudio = false
+      let resolvedAudioFormatId: string | undefined = undefined
       if (downloadVideo) {
         if (selectedFormatId && info) {
           const itemFormats = info.formats.filter((format) => (
@@ -710,7 +771,7 @@ export const DownloaderPage = () => {
               resolvedDownloadSeparateAudio = true
             }
           } else if (mergeAudio) {
-            if (!isAacCodec(selectedFormat.acodec)) {
+            if (!selectedAudioFormatId && !isAacCodec(selectedFormat.acodec)) {
               setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
               resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
             }
@@ -721,11 +782,35 @@ export const DownloaderPage = () => {
           resolvedDownloadSeparateAudio = true
         }
       }
+      if (downloadVideo && (mergeAudio || resolvedDownloadSeparateAudio)) {
+        if (selectedAudioFormatId) {
+          if (info) {
+            const itemAudioFormats = info.formats.filter((format) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
+            const audioFormat = itemAudioFormats.find((format) => format.id === selectedAudioFormatId)
+            if (audioFormat) {
+              const tag = getAudioCodecTag(audioFormat.acodec)
+              const bitrate = audioFormat.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
+              setLogs(prev => [
+                ...prev,
+                `[Downloader] Audio: ${selectedAudioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
+              ])
+              resolvedAudioFormatId = selectedAudioFormatId
+            } else {
+              setLogs(prev => [...prev, `[Downloader] Audio ${selectedAudioFormatId} không hợp lệ cho link ${item.url} → fallback best`])
+            }
+          } else {
+            setLogs(prev => [...prev, `[Downloader] Audio ${selectedAudioFormatId} không kiểm tra được → fallback best`])
+          }
+        } else {
+          setLogs(prev => [...prev, '[Downloader] Audio: best'])
+        }
+      }
 
       const options: DownloadOptions = {
         url: item.url,
         outputDir: resolvedDir,
         formatId: resolvedFormatId,
+        audioFormatId: resolvedAudioFormatId,
         mergeAudio,
         downloadSeparateAudio: resolvedDownloadSeparateAudio,
         subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
@@ -777,7 +862,9 @@ export const DownloaderPage = () => {
     mergeAudio,
     downloadSeparateAudio,
     selectedFormatId,
+    selectedAudioFormatId,
     availableFormats,
+    availableAudioFormats,
     selectedSubLangs,
     convertSubs,
     useCookie,
@@ -800,7 +887,7 @@ export const DownloaderPage = () => {
   const handleClear = () => {
     setUrl(''); setVideoInfo(null); setFetchError(null)
     setCookieFoundDomain(null); setStatus('idle'); setLogs([])
-    setProgressInfo(null); setSelectedFormatId(''); setSelectedSubLangs([])
+    setProgressInfo(null); setSelectedFormatId(''); setSelectedAudioFormatId(''); setSelectedSubLangs([])
     setDownloadVideo(true); setDownloadSubtitle(false); setDownloadThumbnail(false)
     setMergeAudio(true); setDownloadSeparateAudio(false)
     setAllowPlaylist(false); setPlaylistInfo(null); setPlaylistError(null)
@@ -1172,6 +1259,39 @@ export const DownloaderPage = () => {
                   ) : (
                     <select className={styles.selectDisabled} disabled>
                       <option>{isFetching ? 'Đang tải danh sách...' : 'Nhập link để xem chất lượng'}</option>
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {downloadVideo && (mergeAudio || downloadSeparateAudio) && (
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>
+                    {mergeAudio ? 'Audio để ghép' : 'Audio để tải riêng'}
+                  </label>
+                  {videoInfo ? (
+                    <select
+                      className={styles.selectInput}
+                      value={selectedAudioFormatId}
+                      onChange={e => setSelectedAudioFormatId(e.target.value)}
+                    >
+                      <option value="">Tự động (best audio)</option>
+                      {availableAudioFormats.map((f: VideoFormat) => {
+                        const codecTag = getAudioCodecTag(f.acodec)
+                        const bitrate = f.tbr ? `${Math.round(f.tbr)} kbps` : ''
+                        return (
+                          <option key={f.id} value={f.id}>
+                            {f.ext.toUpperCase()}
+                            {codecTag ? ` · ${codecTag}` : ''}
+                            {bitrate ? ` · ${bitrate}` : ''}
+                            {formatSize(f.filesize)}
+                          </option>
+                        )
+                      })}
+                    </select>
+                  ) : (
+                    <select className={styles.selectDisabled} disabled>
+                      <option>{isFetching ? 'Đang tải danh sách...' : 'Nhập link để xem audio'}</option>
                     </select>
                   )}
                 </div>
