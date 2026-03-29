@@ -18,6 +18,7 @@ import { registerGeminiWebApiHandlers } from './geminiWebApiHandlers';
 import { registerAppLogHandlers } from './appLogHandlers';
 import { registerGrokUiHandlers } from './grokUiHandlers';
 import { registerDownloaderHandlers } from './downloaderHandlers';
+import { registerShutdownHandlers } from './shutdownHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -71,6 +72,9 @@ export function registerAllHandlers(): void {
   // Đăng ký Downloader handlers (yt-dlp)
   registerDownloaderHandlers();
 
+  // Đăng ký Shutdown handlers (auto shutdown sau pipeline)
+  registerShutdownHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -90,4 +94,5 @@ export { registerGrokUiHandlers } from './grokUiHandlers';
 export { registerProxyHandlers } from './proxyHandlers';
 export { registerCutVideoHandlers } from './cutVideoHandlers';
 export { registerRotationQueueHandlers } from './rotationQueueHandlers';
+export { registerShutdownHandlers } from './shutdownHandlers';
 

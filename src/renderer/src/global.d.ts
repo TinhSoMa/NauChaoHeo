@@ -596,6 +596,8 @@ interface AppSettings {
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
   captionStandaloneSettings: string | null;
+  autoShutdownEnabled: boolean;
+  autoShutdownDelayMinutes: number;
   capcutTtsSecrets: {
     appKey: string | null;
     token: string | null;
@@ -1031,6 +1033,29 @@ declare global {
     metadata?: Record<string, unknown>;
   }
 
+  interface ShutdownStatus {
+    active: boolean;
+    delayMinutes: number;
+    scheduledAt: number | null;
+    deadlineAt: number | null;
+    secondsRemaining: number;
+    reason: string;
+    source: 'pipeline_success' | 'pipeline_error' | 'manual' | 'unknown';
+  }
+
+  interface ShutdownSchedulePayload {
+    delayMinutes?: number;
+    reason?: string;
+    source?: 'pipeline_success' | 'pipeline_error' | 'manual' | 'unknown';
+  }
+
+  interface ShutdownAPI {
+    schedule: (payload: ShutdownSchedulePayload) => Promise<IpcApiResponse<ShutdownStatus>>;
+    cancel: () => Promise<IpcApiResponse<ShutdownStatus>>;
+    getStatus: () => Promise<IpcApiResponse<ShutdownStatus>>;
+    onCountdown: (callback: (payload: ShutdownStatus) => void) => () => void;
+  }
+
   interface Window {
     electronAPI: {
       // Cac method co ban
@@ -1084,6 +1109,9 @@ declare global {
 
       // Rotation Queue Inspector API
       rotationQueue: RotationQueueAPI;
+
+      // Shutdown API
+      shutdown: ShutdownAPI;
     };
   }
 }

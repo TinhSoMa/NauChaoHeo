@@ -71,6 +71,8 @@ export interface AppSettings {
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
   captionStandaloneSettings: string | null;
+  autoShutdownEnabled: boolean;
+  autoShutdownDelayMinutes: number;
   capcutTtsSecrets: {
     appKey: string | null;
     token: string | null;

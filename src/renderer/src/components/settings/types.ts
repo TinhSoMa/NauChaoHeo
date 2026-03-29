@@ -17,7 +17,8 @@ export type SettingsTab =
   | 'proxy'
   | 'prompts'
   | 'queueMonitor'
-  | 'debugLogs';
+  | 'debugLogs'
+  | 'autoShutdown';
 
 // Theme & Language types
 export type ThemeMode = 'light' | 'dark';

@@ -7,6 +7,7 @@ import { AppSettingsService } from './services/appSettings'
 import { createDashboardWindow } from './windowManager'
 import { cleanTempFiles } from './services/caption/garbageCollector'
 import { installMainConsoleCapture } from './services/logging/consoleCapture'
+import { shutdownScheduler } from './services/shutdownScheduler'
 
 installMainConsoleCapture()
 let isQuitInProgress = false
@@ -53,6 +54,7 @@ app.on('window-all-closed', () => {
 // Dọn dẹp rác và flush caption settings trước khi ứng dụng đóng
 app.on('before-quit', (event) => {
   if (isQuitInProgress) {
+    shutdownScheduler.dispose()
     cleanTempFiles()
     return
   }
@@ -62,6 +64,7 @@ app.on('before-quit', (event) => {
 
   const windows = BrowserWindow.getAllWindows()
   const finishQuit = () => {
+    shutdownScheduler.dispose()
     cleanTempFiles()
     app.quit()
   }

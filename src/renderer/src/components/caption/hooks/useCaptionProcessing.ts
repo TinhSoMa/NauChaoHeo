@@ -301,6 +301,8 @@ interface UseCaptionProcessingProps {
     settingsUpdatedAt?: string;
     isHydrated?: boolean;
     hydrationSeq?: number;
+    autoShutdownEnabled?: boolean;
+    autoShutdownDelayMinutes?: number;
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
@@ -1785,6 +1787,11 @@ export function useCaptionProcessing({
     } catch (error) {
       console.warn('[CaptionProcessing] Không thể gửi stop TTS:', error);
     }
+    try {
+      await window.electronAPI.shutdown?.cancel?.();
+    } catch (error) {
+      console.warn('[CaptionProcessing] Không thể hủy auto shutdown:', error);
+    }
     await stopStep7AudioPreview(true);
     setStatus('idle');
     setCurrentFolder(null);
@@ -2311,6 +2318,11 @@ export function useCaptionProcessing({
     abortRef.current = false;
     await stopStep7AudioPreview(true);
     setStatus('running');
+    try {
+      await window.electronAPI.shutdown?.cancel?.();
+    } catch (error) {
+      console.warn('[CaptionProcessing] Không thể reset auto shutdown trước run mới:', error);
+    }
 
     // Listen for progress — đăng ký 1 lần với replace (ghi đè listener cũ)
     // @ts-ignore
@@ -2356,6 +2368,45 @@ export function useCaptionProcessing({
     const isMulti = totalFolders > 1;
     const step7Enabled = steps.includes(7);
     const thumbnailEnabled = cfg.thumbnailFrameTimeSec !== null && cfg.thumbnailFrameTimeSec !== undefined;
+    const shutdownEnabled = cfg.autoShutdownEnabled === true;
+    const shutdownDelayMinutesRaw = Number(cfg.autoShutdownDelayMinutes);
+    const shutdownDelayMinutes = Number.isFinite(shutdownDelayMinutesRaw)
+      ? Math.min(30, Math.max(1, Math.round(shutdownDelayMinutesRaw)))
+      : 5;
+    let shutdownScheduleRequested = false;
+
+    const scheduleAutoShutdownIfNeeded = async (
+      source: 'pipeline_success' | 'pipeline_error',
+      detail?: string
+    ): Promise<void> => {
+      if (!shutdownEnabled || shutdownScheduleRequested || abortRef.current) {
+        return;
+      }
+      if (source === 'pipeline_success' && !step7Enabled) {
+        return;
+      }
+      const reasonBase = source === 'pipeline_error'
+        ? 'NauChaoHeo pipeline lỗi, tự tắt máy theo cấu hình.'
+        : 'NauChaoHeo pipeline hoàn thành, tự tắt máy theo cấu hình.';
+      const reason = detail ? `${reasonBase} ${detail}` : reasonBase;
+      try {
+        const result = await window.electronAPI.shutdown?.schedule?.({
+          delayMinutes: shutdownDelayMinutes,
+          source,
+          reason,
+        });
+        if (result?.success) {
+          shutdownScheduleRequested = true;
+          console.log(
+            `[CaptionProcessing] Đã lên lịch auto shutdown (${source}) sau ${shutdownDelayMinutes} phút.`
+          );
+        } else if (result && !result.success) {
+          console.warn('[CaptionProcessing] Không thể lên lịch auto shutdown:', result.error || 'Unknown error');
+        }
+      } catch (error) {
+        console.warn('[CaptionProcessing] Lỗi khi lên lịch auto shutdown:', error);
+      }
+    };
 
     const getSessionFallback = (currentPath: string) => ({
       projectId,
@@ -4821,10 +4872,15 @@ export function useCaptionProcessing({
           );
         } else if (failedFolders.size === totalFolders) {
           await setRunStateForAllSessions('error', `Tất cả folder đều lỗi${failMsg}`);
+          await scheduleAutoShutdownIfNeeded('pipeline_error', `Summary: all ${totalFolders} folders failed.`);
         } else {
           await setRunStateForAllSessions(
             'completed',
             `Hoàn thành ${successCount}/${totalFolders} folder (Bước: ${steps.join(', ')})${failMsg}`
+          );
+          await scheduleAutoShutdownIfNeeded(
+            'pipeline_success',
+            `Summary: ${successCount}/${totalFolders} folders completed.`
           );
         }
         setStatus(
@@ -4916,10 +4972,15 @@ export function useCaptionProcessing({
             'error',
             `Tất cả folder đều lỗi.${warningDetails ? ` ${warningDetails}${warningTail}` : ''}`
           );
+          await scheduleAutoShutdownIfNeeded('pipeline_error', `Summary: all ${totalFolders} folders failed.`);
         } else if (failedFolders.size > 0) {
           await setRunStateForAllSessions(
             'completed',
             `Hoàn thành ${successCount}/${totalFolders} folder, có cảnh báo.${warningDetails ? ` ${warningDetails}${warningTail}` : ''}`
+          );
+          await scheduleAutoShutdownIfNeeded(
+            'pipeline_success',
+            `Summary: ${successCount}/${totalFolders} folders completed with warnings.`
           );
         } else {
           await setRunStateForAllSessions(
@@ -4927,6 +4988,12 @@ export function useCaptionProcessing({
             isMulti
               ? `Hoàn thành tất cả ${totalFolders} project! (Các bước: ${steps.join(', ')})`
               : `Hoàn thành các bước: ${steps.join(', ')}`
+          );
+          await scheduleAutoShutdownIfNeeded(
+            'pipeline_success',
+            isMulti
+              ? `Summary: all ${totalFolders} projects completed.`
+              : `Summary: completed steps ${steps.join(', ')}.`
           );
         }
         setStatus(
@@ -4969,6 +5036,7 @@ export function useCaptionProcessing({
         await setRunStateForAllSessions('error', `Lỗi: ${String(err)}`);
         setStatus('error');
         setProgress(p => ({ ...p, message: `Lỗi: ${err}` }));
+        await scheduleAutoShutdownIfNeeded('pipeline_error', `Unhandled error: ${String(err)}`);
         console.error(err);
       }
     }

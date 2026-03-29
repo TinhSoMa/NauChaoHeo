@@ -15,7 +15,8 @@ import {
   FileText,
   ListOrdered,
   Terminal,
-  Bot
+  Bot,
+  Power
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -33,6 +34,7 @@ import { ProxySettings } from './ProxySettings';
 import { PromptSettings } from './PromptSettings';
 import { QueueMonitorSettings } from './QueueMonitorSettings';
 import { DebugLogsSettings } from './DebugLogsSettings';
+import { AutoShutdownSettings } from './AutoShutdownSettings';
 
 // Menu items configuration
 const menuItems: SettingsMenuItem[] = [
@@ -102,6 +104,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Theo dõi log runtime (main + renderer) theo thời gian thực',
     icon: Terminal
   },
+  {
+    id: 'autoShutdown',
+    label: 'Shutdown',
+    desc: 'Tự động tắt máy sau khi pipeline chạy xong hoặc lỗi',
+    icon: Power
+  },
 ];
 
 export function Settings() {
@@ -137,6 +145,7 @@ export function Settings() {
       {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}
       {activeTab === 'queueMonitor' && <QueueMonitorSettings onBack={handleBack} />}
       {activeTab === 'debugLogs' && <DebugLogsSettings onBack={handleBack} />}
+      {activeTab === 'autoShutdown' && <AutoShutdownSettings onBack={handleBack} />}
     </div>
   );
 }

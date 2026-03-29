@@ -13,6 +13,7 @@ import { appLogsApi, AppLogsAPI } from './appLogsApi'
 import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
 import { grokUiApi, GrokUiAPI } from './grokUiApi'
 import { downloaderApi, DownloaderAPI } from './downloaderApi'
+import { shutdownApi, ShutdownAPI } from './shutdownApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -81,6 +82,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Downloader API (yt-dlp)
   downloader: downloaderApi,
+
+  // Shutdown API (auto shutdown)
+  shutdown: shutdownApi,
 })
 
 // Declare types for the exposed API
@@ -109,6 +113,7 @@ declare global {
       cutVideo: CutVideoAPI
       rotationQueue: RotationQueueAPI
       downloader: DownloaderAPI
+      shutdown: ShutdownAPI
     }
   }
 }

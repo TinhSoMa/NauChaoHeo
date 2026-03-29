@@ -50,6 +50,8 @@ export interface AppSettings {
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
   captionStandaloneSettings: string | null;
+  autoShutdownEnabled: boolean;
+  autoShutdownDelayMinutes: number;
   capcutTtsSecrets: CapcutTtsSecrets;
   geminiWebApiCookieFallback: GeminiWebApiCookieFallback;
 }
@@ -118,6 +120,10 @@ export const GROK_UI_TIMEOUT_MAX_MS = 300_000;
 export const GROK_UI_REQUEST_DELAY_DEFAULT_MS = 5_000;
 export const GROK_UI_REQUEST_DELAY_MIN_MS = 0;
 export const GROK_UI_REQUEST_DELAY_MAX_MS = 30_000;
+export const AUTO_SHUTDOWN_ENABLED_DEFAULT = false;
+export const AUTO_SHUTDOWN_DELAY_DEFAULT_MINUTES = 5;
+export const AUTO_SHUTDOWN_DELAY_MIN_MINUTES = 1;
+export const AUTO_SHUTDOWN_DELAY_MAX_MINUTES = 30;
 
 const DEFAULT_TYPOGRAPHY_STYLE: ASSStyleConfig = {
   fontName: 'ZYVNA Fairy',
@@ -272,6 +278,18 @@ function normalizeGrokUiRequestDelayMs(rawValue: unknown): number {
     return GROK_UI_REQUEST_DELAY_DEFAULT_MS;
   }
   return clamp(Math.floor(numeric), GROK_UI_REQUEST_DELAY_MIN_MS, GROK_UI_REQUEST_DELAY_MAX_MS);
+}
+
+function normalizeAutoShutdownDelayMinutes(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return AUTO_SHUTDOWN_DELAY_DEFAULT_MINUTES;
+  }
+  return clamp(
+    Math.floor(numeric),
+    AUTO_SHUTDOWN_DELAY_MIN_MINUTES,
+    AUTO_SHUTDOWN_DELAY_MAX_MINUTES
+  );
 }
 
 function normalizePoint(
@@ -594,6 +612,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   captionLogoScale: 1.0,
   captionTypographyDefaults: null,
   captionStandaloneSettings: null,
+  autoShutdownEnabled: AUTO_SHUTDOWN_ENABLED_DEFAULT,
+  autoShutdownDelayMinutes: AUTO_SHUTDOWN_DELAY_DEFAULT_MINUTES,
   capcutTtsSecrets: {
     appKey: null,
     token: null,
@@ -672,6 +692,8 @@ class AppSettingsServiceClass {
           grokUiRequestDelayMs: normalizeGrokUiRequestDelayMs(loaded?.grokUiRequestDelayMs),
           captionTypographyDefaults: normalizeCaptionTypographyDefaults(loaded?.captionTypographyDefaults),
           captionStandaloneSettings: normalizeCaptionStandaloneSettings(loaded?.captionStandaloneSettings),
+          autoShutdownEnabled: loaded?.autoShutdownEnabled === true,
+          autoShutdownDelayMinutes: normalizeAutoShutdownDelayMinutes(loaded?.autoShutdownDelayMinutes),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
         };
@@ -728,6 +750,12 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'captionStandaloneSettings')) {
       nextPartial.captionStandaloneSettings = normalizeCaptionStandaloneSettings(partial.captionStandaloneSettings);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'autoShutdownEnabled')) {
+      nextPartial.autoShutdownEnabled = partial.autoShutdownEnabled === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'autoShutdownDelayMinutes')) {
+      nextPartial.autoShutdownDelayMinutes = normalizeAutoShutdownDelayMinutes(partial.autoShutdownDelayMinutes);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'capcutTtsSecrets')) {
       nextPartial.capcutTtsSecrets = normalizeCapcutTtsSecrets(partial.capcutTtsSecrets);

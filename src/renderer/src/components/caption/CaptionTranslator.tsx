@@ -42,7 +42,7 @@ import { Step3BulkFileItem, Step3BulkMultiFolderModal } from './components/Step3
 import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { AlertCircle, Download, Eye } from 'lucide-react';
+import { AlertCircle, Download, Eye, Power, PowerOff } from 'lucide-react';
 import {
   CaptionProjectSettingsValues,
   CaptionSessionV1,
@@ -247,6 +247,13 @@ function formatIsoDisplay(value: string | undefined): string {
   } catch {
     return value;
   }
+}
+
+function formatCountdownShort(seconds: number): string {
+  const safe = Math.max(0, Math.floor(seconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 function formatStepDuration(startedAt: string | undefined, endedAt: string | undefined, status: string | undefined, nowMs: number): string {
@@ -2165,6 +2172,10 @@ export function CaptionTranslator() {
     settings.inputType,
   ]);
 
+  const [autoShutdownEnabled, setAutoShutdownEnabled] = useState(false);
+  const [autoShutdownDelayMinutes, setAutoShutdownDelayMinutes] = useState(5);
+  const [shutdownStatus, setShutdownStatus] = useState<ShutdownStatus | null>(null);
+
   // 4. Processing Hook
   const processing = useCaptionProcessing({
     projectId,
@@ -2179,6 +2190,8 @@ export function CaptionTranslator() {
     captionFolder,
     settings: {
       ...settings,
+      autoShutdownEnabled,
+      autoShutdownDelayMinutes,
       thumbnailText: processingThumbnailPayload.thumbnailText,
       thumbnailTextsByOrder: processingThumbnailPayload.thumbnailTextsByOrder,
       thumbnailTextSecondary: processingThumbnailPayload.thumbnailTextSecondary,
@@ -2557,6 +2570,72 @@ export function CaptionTranslator() {
       stopStep7AudioPlayback();
     }
   }, [processing.status, stopStep7AudioPlayback]);
+
+  useEffect(() => {
+    let mounted = true;
+    let disposeCountdown: (() => void) | null = null;
+
+    const loadAutoShutdownConfig = async () => {
+      try {
+        const settingsRes = await window.electronAPI.appSettings.getAll();
+        if (mounted && settingsRes.success && settingsRes.data) {
+          setAutoShutdownEnabled(settingsRes.data.autoShutdownEnabled === true);
+          const rawDelay = Number(settingsRes.data.autoShutdownDelayMinutes);
+          const safeDelay = Number.isFinite(rawDelay) ? Math.min(30, Math.max(1, Math.round(rawDelay))) : 5;
+          setAutoShutdownDelayMinutes(safeDelay);
+        }
+      } catch (error) {
+        console.warn('[CaptionTranslator] Không thể tải cài đặt auto shutdown:', error);
+      }
+
+      try {
+        const statusRes = await window.electronAPI.shutdown.getStatus();
+        if (mounted && statusRes.success && statusRes.data) {
+          setShutdownStatus(statusRes.data);
+        }
+      } catch (error) {
+        console.warn('[CaptionTranslator] Không thể lấy trạng thái shutdown:', error);
+      }
+
+      disposeCountdown = window.electronAPI.shutdown.onCountdown((payload) => {
+        if (mounted) {
+          setShutdownStatus(payload);
+        }
+      });
+    };
+
+    void loadAutoShutdownConfig();
+
+    return () => {
+      mounted = false;
+      if (disposeCountdown) {
+        disposeCountdown();
+      }
+    };
+  }, []);
+
+  const handleQuickAutoShutdownToggle = useCallback(() => {
+    const next = !autoShutdownEnabled;
+    setAutoShutdownEnabled(next);
+    void window.electronAPI.appSettings.update({
+      autoShutdownEnabled: next,
+      autoShutdownDelayMinutes,
+    }).catch((error) => {
+      console.warn('[CaptionTranslator] Không thể lưu toggle auto shutdown:', error);
+    });
+  }, [autoShutdownEnabled, autoShutdownDelayMinutes]);
+
+  const handleCancelAutoShutdown = useCallback(() => {
+    void window.electronAPI.shutdown.cancel()
+      .then((res) => {
+        if (res.success && res.data) {
+          setShutdownStatus(res.data);
+        }
+      })
+      .catch((error) => {
+        console.warn('[CaptionTranslator] Không thể hủy auto shutdown:', error);
+      });
+  }, []);
 
   // --- Download prompt preview ---
   const handleDownloadPromptPreview = async () => {
@@ -3913,6 +3992,14 @@ export function CaptionTranslator() {
   const bulkExportTitle = thumbnailBulkExportState.message
     ? thumbnailBulkExportState.message
     : 'Xuất thumbnail hàng loạt (16:9 + 9:16)';
+  const isAutoShutdownScheduled = shutdownStatus?.active === true;
+  const autoShutdownCountdownLabel = isAutoShutdownScheduled
+    ? formatCountdownShort(shutdownStatus?.secondsRemaining || 0)
+    : '';
+  const autoShutdownQuickLabel = autoShutdownEnabled ? 'Shutdown ON' : 'Shutdown OFF';
+  const autoShutdownQuickTitle = autoShutdownEnabled
+    ? `Đang bật auto shutdown (${autoShutdownDelayMinutes} phút)`
+    : `Đang tắt auto shutdown (${autoShutdownDelayMinutes} phút)`;
 
   const handleQuickStep7AudioToggle = useCallback(() => {
     if (isStep7AudioPlaying) {
@@ -6928,6 +7015,29 @@ export function CaptionTranslator() {
                 title={bulkExportTitle}
               >
                 <span className={styles.stepRailQuickBtnLabel}>{bulkExportLabel}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${styles.stepRailQuickBtnShutdown} ${autoShutdownEnabled ? styles.stepRailQuickBtnShutdownOn : styles.stepRailQuickBtnShutdownOff}`}
+              onClick={handleQuickAutoShutdownToggle}
+              title={autoShutdownQuickTitle}
+            >
+              <span className={styles.stepRailQuickBtnLabel}>{autoShutdownQuickLabel}</span>
+              <Power size={13} className={styles.stepRailQuickBtnIcon} />
+              {isAutoShutdownScheduled && (
+                <span className={styles.stepRailQuickBtnShutdownCountdown}>{autoShutdownCountdownLabel}</span>
+              )}
+            </button>
+            {isAutoShutdownScheduled && (
+              <button
+                type="button"
+                className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${styles.stepRailQuickBtnShutdownCancel}`}
+                onClick={handleCancelAutoShutdown}
+                title="Hủy lịch tắt máy đã lên"
+              >
+                <span className={styles.stepRailQuickBtnLabel}>Hủy tắt máy</span>
+                <PowerOff size={13} className={styles.stepRailQuickBtnIcon} />
               </button>
             )}
             <button
