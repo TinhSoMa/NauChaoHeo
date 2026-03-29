@@ -574,8 +574,8 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
       args.push('-f', hasAudioFormat ? `${options.formatId}+${audioFormatId}` : options.formatId)
     } else if (options.downloadSeparateAudio) {
       args.push('-f', hasAudioFormat
-        ? `${options.formatId}+${audioFormatId}`
-        : `${options.formatId}+bestaudio[acodec^=mp4a]/${options.formatId}+bestaudio`)
+        ? `${options.formatId},${audioFormatId}`
+        : `${options.formatId},bestaudio[acodec^=mp4a]/${options.formatId},bestaudio`)
     } else {
       args.push('-f', options.formatId)
     }
@@ -595,12 +595,12 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
     if (hasAudioFormat) {
       args.push(
         '-f',
-        `bestvideo[vcodec^=avc][ext=mp4]+${audioFormatId}/bestvideo+${audioFormatId}`
+        `bestvideo[vcodec^=avc][ext=mp4],${audioFormatId}/bestvideo,${audioFormatId}`
       )
     } else {
       args.push(
         '-f',
-        'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc][ext=mp4]+bestaudio'
+        'bestvideo[vcodec^=avc][ext=mp4],bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc][ext=mp4],bestaudio'
       )
     }
   } else {
@@ -633,8 +633,6 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
     // Merge to mp4 if possible
     args.push('--merge-output-format', 'mp4')
     args.push('--postprocessor-args', 'ffmpeg:-movflags +faststart')
-  } else {
-    args.push('--no-merge-output')
   }
 
   if (ffmpegLocation) {
