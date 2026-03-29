@@ -7,7 +7,16 @@ import {
 import { Input } from '../common/Input'
 import { Button } from '../common/Button'
 import { Checkbox } from '../common/Checkbox'
-import type { VideoInfo, VideoFormat, CookieEntry, DownloadOptions, DownloadProgress, PlaylistInfo, DownloadSpeedProfile } from '@shared/types/downloader'
+import type {
+  VideoInfo,
+  VideoFormat,
+  CookieEntry,
+  DownloadOptions,
+  DownloadProgress,
+  PlaylistInfo,
+  DownloadSpeedProfile,
+  DownloadNoLogoPolicy,
+} from '@shared/types/downloader'
 import styles from './DownloaderPage.module.css'
 
 type StatusTone = 'idle' | 'fetching' | 'ready' | 'running' | 'done' | 'error'
@@ -306,9 +315,9 @@ export const DownloaderPage = () => {
   const [downloadSeparateAudio, setDownloadSeparateAudio] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
   const [downloadAllSubs, setDownloadAllSubs] = useState(false)
-  const [manualSubLangs, setManualSubLangs] = useState('')
   const [skipDanmakuConvert, setSkipDanmakuConvert] = useState(true)
   const [speedProfile, setSpeedProfile] = useState<DownloadSpeedProfile>('auto')
+  const [noLogoPolicy, setNoLogoPolicy] = useState<DownloadNoLogoPolicy>('auto')
 
   // Options (populated from fetchInfo)
   const [selectedFormatId, setSelectedFormatId] = useState<string>('')
@@ -561,15 +570,9 @@ export const DownloaderPage = () => {
   const resolvedSubLangs = useMemo(() => {
     if (!downloadSubtitle) return []
     if (downloadAllSubs) return ['all']
-    if (allLangs.length === 0) {
-      const manual = manualSubLangs
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean)
-      return manual
-    }
+    if (allLangs.length === 0) return []
     return selectedSubLangs.length > 0 ? selectedSubLangs : pickDefaultSubtitleLangs(allLangs)
-  }, [downloadSubtitle, downloadAllSubs, allLangs.length, manualSubLangs, selectedSubLangs])
+  }, [downloadSubtitle, downloadAllSubs, allLangs.length, selectedSubLangs])
 
   const toggleLang = (lang: string) => {
     setDownloadAllSubs(false)
@@ -702,6 +705,7 @@ export const DownloaderPage = () => {
       const options: DownloadOptions = {
         url: targetUrl,
         outputDir: resolvedDir,
+        downloadVideo,
         formatId: resolvedFormatId,
         audioFormatId: resolvedAudioFormatId,
         mergeAudio,
@@ -712,6 +716,7 @@ export const DownloaderPage = () => {
         writeThumbnail: downloadThumbnail,
         useCookie,
         speedProfile,
+        noLogoPolicy,
         allowPlaylist,
       }
 
@@ -831,6 +836,7 @@ export const DownloaderPage = () => {
       const options: DownloadOptions = {
         url: item.url,
         outputDir: resolvedDir,
+        downloadVideo,
         formatId: resolvedFormatId,
         audioFormatId: resolvedAudioFormatId,
         mergeAudio,
@@ -841,6 +847,7 @@ export const DownloaderPage = () => {
         writeThumbnail: downloadThumbnail,
         useCookie,
         speedProfile,
+        noLogoPolicy,
         allowPlaylist,
       }
 
@@ -892,6 +899,7 @@ export const DownloaderPage = () => {
     convertSubs,
     useCookie,
     speedProfile,
+    noLogoPolicy,
     allowPlaylist,
     resolvedSubLangs,
     skipDanmakuConvert,
@@ -920,7 +928,7 @@ export const DownloaderPage = () => {
     setIsCheckingPlaylist(false)
     setDownloadAllSubs(false)
     setSpeedProfile('auto')
-    setManualSubLangs('')
+    setNoLogoPolicy('auto')
     setSkipDanmakuConvert(true)
     setPreviewDirectUrl('')
     setPreviewError(null)
@@ -1225,27 +1233,97 @@ export const DownloaderPage = () => {
                 )}
               </div>
 
-              <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>Profile tốc độ</label>
-                <select
-                  className={styles.selectInput}
-                  value={speedProfile}
-                  onChange={e => setSpeedProfile(e.target.value as DownloadSpeedProfile)}
-                >
-                  <option value="auto">Tự động (khuyên dùng)</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="antiThrottle">IDM-like (aria2 segmented)</option>
-                </select>
-                <p className={styles.helperTextMuted}>
-                  {speedProfile === 'auto' && isBilibiliUrl(activeUrl)
-                    ? 'Link Bilibili: tự động dùng IDM-like segmented.'
-                    : 'Auto sẽ tự chọn profile phù hợp theo website (Bilibili -> IDM-like).'}
-                </p>
+              <div className={styles.quickControlRow}>
+                <div className={`${styles.fieldGroup} ${styles.quickControlItem}`}>
+                  <label className={styles.fieldLabel}>Profile tốc độ</label>
+                  <select
+                    className={styles.selectInput}
+                    value={speedProfile}
+                    onChange={e => setSpeedProfile(e.target.value as DownloadSpeedProfile)}
+                  >
+                    <option value="auto">Tự động (khuyên dùng)</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="antiThrottle">IDM-like (aria2 segmented)</option>
+                  </select>
+                  <p className={styles.helperTextMuted}>
+                    {speedProfile === 'auto' && isBilibiliUrl(activeUrl)
+                      ? 'Link Bilibili: tự động dùng IDM-like segmented.'
+                      : 'Auto sẽ tự chọn profile phù hợp theo website (Bilibili -> IDM-like).'}
+                  </p>
+                </div>
+
+                <div className={`${styles.fieldGroup} ${styles.quickControlItem}`}>
+                  <label className={styles.fieldLabel}>No-logo (Bilibili)</label>
+                  <select
+                    className={styles.selectInput}
+                    value={noLogoPolicy}
+                    onChange={e => setNoLogoPolicy(e.target.value as DownloadNoLogoPolicy)}
+                  >
+                    <option value="auto">Tự động (Bilibili: ưu tiên nguồn sạch)</option>
+                    <option value="sourcePreferred">Luôn ưu tiên nguồn sạch</option>
+                    <option value="off">Tắt</option>
+                  </select>
+                  <p className={styles.helperTextMuted}>
+                    {noLogoPolicy === 'off'
+                      ? 'Không áp dụng lọc no-logo.'
+                      : isBilibiliUrl(activeUrl)
+                        ? 'Đang bật lọc nguồn/subtitle để giảm khả năng dính logo (best effort).'
+                        : 'No-logo hiện chỉ áp dụng chủ yếu cho link Bilibili.'}
+                  </p>
+                </div>
+
+                <div className={`${styles.fieldGroup} ${styles.quickControlItem}`}>
+                  <label className={styles.fieldLabel}>
+                    {mergeAudio ? 'Audio để ghép' : 'Audio để tải riêng'}
+                  </label>
+                  {downloadVideo ? (
+                    (mergeAudio || downloadSeparateAudio) ? (
+                      videoInfo ? (
+                        <select
+                          className={styles.selectInput}
+                          value={selectedAudioFormatId}
+                          onChange={e => setSelectedAudioFormatId(e.target.value)}
+                        >
+                          <option value="">Tự động (best audio)</option>
+                          {availableAudioFormats.map((f: VideoFormat) => {
+                            const codecTag = getAudioCodecTag(f.acodec)
+                            const bitrate = f.tbr ? `${Math.round(f.tbr)} kbps` : ''
+                            return (
+                              <option key={f.id} value={f.id}>
+                                {f.ext.toUpperCase()}
+                                {codecTag ? ` · ${codecTag}` : ''}
+                                {bitrate ? ` · ${bitrate}` : ''}
+                                {formatSize(f.filesize)}
+                              </option>
+                            )
+                          })}
+                        </select>
+                      ) : (
+                        <select className={styles.selectDisabled} disabled>
+                          <option>{isFetching ? 'Đang tải danh sách...' : 'Nhập link để xem audio'}</option>
+                        </select>
+                      )
+                    ) : (
+                      <select className={styles.selectDisabled} disabled>
+                        <option>Bật ghép audio hoặc tải audio riêng</option>
+                      </select>
+                    )
+                  ) : (
+                    <select className={styles.selectDisabled} disabled>
+                      <option>Tắt tải video nên không cần chọn audio</option>
+                    </select>
+                  )}
+                  <p className={styles.helperTextMuted}>
+                    {downloadVideo && (mergeAudio || downloadSeparateAudio)
+                      ? 'Chọn cụ thể hoặc để tự động.'
+                      : 'Audio phụ thuộc tuỳ chọn Video/Ghép.'}
+                  </p>
+                </div>
               </div>
 
               <div className={styles.fieldGroup}>
                 <div className={styles.inlineRow}>
-                  <Checkbox label="Tải playlist (nếu có)" checked={allowPlaylist} onChange={setAllowPlaylist} />
+                  <Checkbox label="Tải playlist" checked={allowPlaylist} onChange={setAllowPlaylist} />
                   <Button
                     variant="secondary"
                     onClick={handleCheckPlaylist}
@@ -1307,49 +1385,16 @@ export const DownloaderPage = () => {
                 </div>
               )}
 
-              {downloadVideo && (mergeAudio || downloadSeparateAudio) && (
-                <div className={styles.fieldGroup}>
-                  <label className={styles.fieldLabel}>
-                    {mergeAudio ? 'Audio để ghép' : 'Audio để tải riêng'}
-                  </label>
-                  {videoInfo ? (
-                    <select
-                      className={styles.selectInput}
-                      value={selectedAudioFormatId}
-                      onChange={e => setSelectedAudioFormatId(e.target.value)}
-                    >
-                      <option value="">Tự động (best audio)</option>
-                      {availableAudioFormats.map((f: VideoFormat) => {
-                        const codecTag = getAudioCodecTag(f.acodec)
-                        const bitrate = f.tbr ? `${Math.round(f.tbr)} kbps` : ''
-                        return (
-                          <option key={f.id} value={f.id}>
-                            {f.ext.toUpperCase()}
-                            {codecTag ? ` · ${codecTag}` : ''}
-                            {bitrate ? ` · ${bitrate}` : ''}
-                            {formatSize(f.filesize)}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  ) : (
-                    <select className={styles.selectDisabled} disabled>
-                      <option>{isFetching ? 'Đang tải danh sách...' : 'Nhập link để xem audio'}</option>
-                    </select>
-                  )}
-                </div>
-              )}
-
               {downloadSubtitle && (
                 <div className={styles.fieldGroup}>
-                  {!downloadAllSubs && resolvedSubLangs.length === 0 && (
+                  {/* {!downloadAllSubs && resolvedSubLangs.length === 0 && (
                     <p className={styles.warningText}>Chưa chọn ngôn ngữ phụ đề.</p>
-                  )}
+                  )} */}
                   <div className={styles.inlineRow}>
                     <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
-                    {downloadAllSubs && (
+                    {/* {downloadAllSubs && (
                       <span className={styles.successText}>Sub sẽ tải: all</span>
-                    )}
+                    )} */}
                   </div>
 
                   {allLangs.length > 0 ? (
@@ -1366,22 +1411,11 @@ export const DownloaderPage = () => {
                     </div>
                   ) : null}
 
-                  {!downloadAllSubs && allLangs.length === 0 && (
-                    <div className={styles.subManualRow}>
-                      <Input
-                        value={manualSubLangs}
-                        onChange={e => setManualSubLangs(e.target.value)}
-                        placeholder="vd: vi,en,all"
-                      />
-                      <p className={styles.helperTextMuted}>
-                        Không có danh sách. Nhập tay để tải.
-                      </p>
-                    </div>
-                  )}
-
-                  {allLangs.length === 0 && (
-                    <p className={styles.helperTextMuted}>{isFetching ? 'Đang tải...' : 'Nhập link để xem subs'}</p>
-                  )}
+                  {/* {allLangs.length === 0 && (
+                    <p className={styles.helperTextMuted}>
+                      {isFetching ? 'Đang tải...' : 'Không có danh sách phụ đề để chọn.'}
+                    </p>
+                  )} */}
                   <div className={styles.subFormatRow}>
                     <label className={styles.subFormatLabel}>Định dạng</label>
                     <select
@@ -1400,9 +1434,9 @@ export const DownloaderPage = () => {
                       checked={skipDanmakuConvert}
                       onChange={setSkipDanmakuConvert}
                     />
-                    {skipDanmakuConvert && (resolvedSubLangs.includes('danmaku') || resolvedSubLangs.includes('all')) && (
+                    {/* {skipDanmakuConvert && (resolvedSubLangs.includes('danmaku') || resolvedSubLangs.includes('all')) && (
                       <span className={styles.warningText}>Có danmaku → tắt convert</span>
-                    )}
+                    )} */}
                   </div>
                 </div>
               )}
@@ -1434,6 +1468,12 @@ export const DownloaderPage = () => {
               <div className={styles.progressDetailRow}>
                 {progressInfo?.engine === 'idm' && (
                   <span>IDM-like segmented</span>
+                )}
+                {progressInfo?.noLogoStrategy === 'source-preferred' && (
+                  <span>No-logo source preferred</span>
+                )}
+                {progressInfo?.noLogoStrategy === 'subtitle-filtered' && (
+                  <span>No-logo subtitle filtered</span>
                 )}
                 {progressInfo?.connectionCount != null && (
                   <span>CN {progressInfo.connectionCount}</span>

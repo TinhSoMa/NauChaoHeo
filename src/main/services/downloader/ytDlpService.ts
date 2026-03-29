@@ -3,7 +3,14 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { existsSync } from 'fs'
-import type { VideoInfo, VideoFormat, DownloadOptions, DownloadProgress, PlaylistInfo } from '../../../shared/types/downloader'
+import type {
+  VideoInfo,
+  VideoFormat,
+  DownloadOptions,
+  DownloadProgress,
+  PlaylistInfo,
+  DownloadNoLogoStrategy,
+} from '../../../shared/types/downloader'
 import { getYtDlpPath } from '../../utils/ytDlpPath'
 import { getFFmpegPath } from '../../utils/ffmpegPath'
 import { getAria2cPath } from '../../utils/aria2cPath'
@@ -214,6 +221,7 @@ function parseProgress(line: string): Partial<DownloadProgress> | null {
 }
 
 type ResolvedSpeedProfile = 'balanced' | 'antiThrottle'
+type ResolvedNoLogoPolicy = 'off' | 'sourcePreferred'
 
 function isBilibiliUrl(rawUrl: string): boolean {
   try {
@@ -228,6 +236,12 @@ function resolveSpeedProfile(url: string, requested?: DownloadOptions['speedProf
   if (requested === 'balanced' || requested === 'antiThrottle') return requested
   if (isBilibiliUrl(url)) return 'antiThrottle'
   return 'balanced'
+}
+
+function resolveNoLogoPolicy(url: string, requested?: DownloadOptions['noLogoPolicy']): ResolvedNoLogoPolicy {
+  if (requested === 'off') return 'off'
+  if (!isBilibiliUrl(url)) return 'off'
+  return 'sourcePreferred'
 }
 
 function getSpeedArgs(profile: ResolvedSpeedProfile): string[] {
@@ -298,6 +312,29 @@ function sanitizeSubtitleLangsForAria2(langs: string[] | undefined): string[] | 
   }
 
   return normalized.filter((lang) => lang.toLowerCase() !== 'danmaku')
+}
+
+function sanitizeSubtitleLangsForNoLogo(langs: string[] | undefined): string[] | undefined {
+  if (!langs || langs.length === 0) return langs
+
+  const normalized = langs.map((lang) => lang.trim()).filter(Boolean)
+  if (normalized.length === 0) return undefined
+
+  const hasAll = normalized.includes('all')
+  if (hasAll) {
+    // Keep broad subtitle coverage but exclude danmaku track when no-logo policy is active.
+    return ['all', '-danmaku']
+  }
+
+  return normalized.filter((lang) => lang.toLowerCase() !== 'danmaku')
+}
+
+function withBilibiliNoLogoSelector(selector: string): string {
+  return [
+    `${selector}[format_note*=无水印]`,
+    `${selector}[format_note!*=watermark][format_note!*=水印]`,
+    selector,
+  ].join('/')
 }
 
 function withPrependedPathEnv(env: NodeJS.ProcessEnv, binPath: string): NodeJS.ProcessEnv {
@@ -474,8 +511,11 @@ class YtDlpService {
     if (!ffmpegLocation) {
       onLog(`[yt-dlp] WARN: ffmpeg không tìm thấy tại: ${ffmpegPath} (fallback dùng hệ thống)`)
     }
+    const shouldDownloadVideo = options.downloadVideo !== false
     const mergeAudio = options.mergeAudio !== false
-    if (mergeAudio) {
+    if (!shouldDownloadVideo) {
+      onLog('[Downloader] Video: OFF -> chỉ tải subtitles/thumbnail (skip media download)')
+    } else if (mergeAudio) {
       onLog('[Downloader] Ghép audio: ON → merge')
     } else if (options.downloadSeparateAudio) {
       onLog('[Downloader] Ghép audio: OFF → tải audio riêng')
@@ -483,6 +523,7 @@ class YtDlpService {
       onLog('[Downloader] Ghép audio: OFF → video-only')
     }
     const speedProfile = resolveSpeedProfile(options.url, options.speedProfile)
+    const noLogoPolicy = resolveNoLogoPolicy(options.url, options.noLogoPolicy)
     let useAria2 = speedProfile === 'antiThrottle'
     if (useAria2) {
       if (existsSync(this.aria2Bin) || this.aria2Bin === 'aria2c' || this.aria2Bin === 'aria2c.exe') {
@@ -497,19 +538,48 @@ class YtDlpService {
     } else {
       onLog(`[Downloader] Profile tốc độ: ${speedProfile}`)
     }
+    if (options.noLogoPolicy === 'auto' || options.noLogoPolicy === undefined) {
+      onLog(`[Downloader] No-logo: auto -> ${noLogoPolicy}`)
+    } else {
+      onLog(`[Downloader] No-logo: ${noLogoPolicy}`)
+    }
+    if (noLogoPolicy === 'off' && options.noLogoPolicy && options.noLogoPolicy !== 'off' && !isBilibiliUrl(options.url)) {
+      onLog('[Downloader] No-logo source filter hiện áp dụng chủ yếu cho Bilibili')
+    }
 
     const effectiveOptions: DownloadOptions = { ...options }
+    if (!shouldDownloadVideo) {
+      effectiveOptions.formatId = undefined
+      effectiveOptions.audioFormatId = undefined
+      effectiveOptions.downloadSeparateAudio = false
+      effectiveOptions.mergeAudio = false
+    }
+    let noLogoStrategy: DownloadNoLogoStrategy = 'off'
+    if (noLogoPolicy === 'sourcePreferred') {
+      noLogoStrategy = 'source-preferred'
+      const before = effectiveOptions.subtitleLangs ?? []
+      const after = sanitizeSubtitleLangsForNoLogo(before)
+      const changed = JSON.stringify(before) !== JSON.stringify(after ?? [])
+      if (changed) {
+        noLogoStrategy = 'subtitle-filtered'
+        onLog('[Downloader] No-logo: lọc danmaku subtitle để giảm overlay không mong muốn')
+      }
+      effectiveOptions.subtitleLangs = after
+    }
     if (useAria2) {
-      const before = options.subtitleLangs ?? []
+      const before = effectiveOptions.subtitleLangs ?? []
       const after = sanitizeSubtitleLangsForAria2(before)
       const changed = JSON.stringify(before) !== JSON.stringify(after ?? [])
       if (changed) {
+        if (noLogoStrategy !== 'off') {
+          noLogoStrategy = 'subtitle-filtered'
+        }
         onLog('[Downloader] IDM-like: bỏ danmaku subtitle để tránh lỗi aria2 gzip decode')
       }
       effectiveOptions.subtitleLangs = after
     }
 
-    const args = buildArgs(effectiveOptions, ffmpegLocation || undefined, speedProfile, useAria2)
+    const args = buildArgs(effectiveOptions, ffmpegLocation || undefined, speedProfile, useAria2, noLogoPolicy)
 
     return new Promise((resolve, reject) => {
       onLog(`[yt-dlp] ${this.ytDlpBin} ${args.join(' ')}`)
@@ -529,6 +599,7 @@ class YtDlpService {
         percent: 0,
         stage: 'downloading',
         engine: useAria2 ? 'idm' : 'native',
+        noLogoStrategy,
       }
       let speedBaseline: { timeMs: number; bytes: number } | null = null
       const speedWindow: Array<{ timeMs: number; bytes: number }> = []
@@ -598,10 +669,10 @@ class YtDlpService {
         if (buffer) handleLine(buffer)
         this.activeProcess = null
         if (code === 0 || code === null) {
-          onProgress({ percent: 100, stage: 'done', message: 'Hoàn tất!' })
+          onProgress({ ...lastProgress, percent: 100, stage: 'done', message: 'Hoàn tất!' })
           resolve()
         } else {
-          onProgress({ percent: 0, stage: 'error', message: `yt-dlp exited ${code}` })
+          onProgress({ ...lastProgress, stage: 'error', message: `yt-dlp exited ${code}` })
           reject(new Error(`yt-dlp exited with code ${code}`))
         }
       })
@@ -780,11 +851,20 @@ function buildArgs(
   ffmpegLocation?: string,
   speedProfile: ResolvedSpeedProfile = 'balanced',
   useAria2 = false,
+  noLogoPolicy: ResolvedNoLogoPolicy = 'off',
 ): string[] {
   const args: string[] = []
+  const shouldDownloadVideo = options.downloadVideo !== false
   const mergeAudio = options.mergeAudio !== false
   const audioFormatId = options.audioFormatId?.trim()
   const hasAudioFormat = !!audioFormatId
+  const shouldApplyNoLogoSource = noLogoPolicy === 'sourcePreferred' && isBilibiliUrl(options.url)
+  const avcMp4Selector = shouldApplyNoLogoSource
+    ? withBilibiliNoLogoSelector('bestvideo[vcodec^=avc][ext=mp4]')
+    : 'bestvideo[vcodec^=avc][ext=mp4]'
+  const avcSelector = shouldApplyNoLogoSource
+    ? withBilibiliNoLogoSelector('bestvideo[vcodec^=avc]')
+    : 'bestvideo[vcodec^=avc]'
 
   // Cookie
   if (options.useCookie && options['cookiePath' as keyof DownloadOptions]) {
@@ -792,45 +872,49 @@ function buildArgs(
   }
 
   // Format
-  if (options.formatId) {
-    if (mergeAudio) {
-      args.push('-f', hasAudioFormat ? `${options.formatId}+${audioFormatId}` : options.formatId)
+  if (shouldDownloadVideo) {
+    if (options.formatId) {
+      if (mergeAudio) {
+        args.push('-f', hasAudioFormat ? `${options.formatId}+${audioFormatId}` : options.formatId)
+      } else if (options.downloadSeparateAudio) {
+        args.push('-f', hasAudioFormat
+          ? `${options.formatId},${audioFormatId}`
+          : `${options.formatId},bestaudio[acodec^=mp4a]/${options.formatId},bestaudio`)
+      } else {
+        args.push('-f', options.formatId)
+      }
+    } else if (mergeAudio) {
+      if (hasAudioFormat) {
+        args.push(
+          '-f',
+          `${avcMp4Selector}+${audioFormatId}/${avcSelector}+${audioFormatId}`
+        )
+      } else {
+        args.push(
+          '-f',
+          `${avcMp4Selector}+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best`
+        )
+      }
     } else if (options.downloadSeparateAudio) {
-      args.push('-f', hasAudioFormat
-        ? `${options.formatId},${audioFormatId}`
-        : `${options.formatId},bestaudio[acodec^=mp4a]/${options.formatId},bestaudio`)
-    } else {
-      args.push('-f', options.formatId)
-    }
-  } else if (mergeAudio) {
-    if (hasAudioFormat) {
-      args.push(
-        '-f',
-        `bestvideo[vcodec^=avc][ext=mp4]+${audioFormatId}/bestvideo+${audioFormatId}`
-      )
-    } else {
-      args.push(
-        '-f',
-        'bestvideo[vcodec^=avc][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/best[ext=mp4]/best'
-      )
-    }
-  } else if (options.downloadSeparateAudio) {
-    if (hasAudioFormat) {
-      args.push(
-        '-f',
-        `bestvideo[vcodec^=avc][ext=mp4],${audioFormatId}/bestvideo,${audioFormatId}`
-      )
+      if (hasAudioFormat) {
+        args.push(
+          '-f',
+          `${avcMp4Selector},${audioFormatId}/${avcSelector},${audioFormatId}`
+        )
+      } else {
+        args.push(
+          '-f',
+          `${avcMp4Selector},bestaudio[acodec^=mp4a]/${avcSelector},bestaudio`
+        )
+      }
     } else {
       args.push(
         '-f',
-        'bestvideo[vcodec^=avc][ext=mp4],bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc][ext=mp4],bestaudio'
+        `${avcMp4Selector}/${avcSelector}/bestvideo`
       )
     }
   } else {
-    args.push(
-      '-f',
-      'bestvideo[vcodec^=avc][ext=mp4]/bestvideo[vcodec^=avc]/bestvideo'
-    )
+    args.push('--skip-download')
   }
 
   // Subtitles
@@ -852,7 +936,7 @@ function buildArgs(
   // Output template
   args.push('-o', '%(title)s [%(id)s].%(ext)s')
 
-  if (mergeAudio) {
+  if (shouldDownloadVideo && mergeAudio) {
     // Merge to mp4 if possible
     args.push('--merge-output-format', 'mp4')
     args.push('--postprocessor-args', 'ffmpeg:-movflags +faststart')

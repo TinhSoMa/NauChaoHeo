@@ -45,10 +45,14 @@ export interface PlaylistInfo {
 }
 
 export type DownloadSpeedProfile = 'auto' | 'balanced' | 'antiThrottle'
+export type DownloadNoLogoPolicy = 'off' | 'auto' | 'sourcePreferred'
+export type DownloadNoLogoStrategy = 'off' | 'source-preferred' | 'subtitle-filtered'
 
 export interface DownloadOptions {
   url: string
   outputDir: string
+  /** whether to download video stream itself */
+  downloadVideo?: boolean
   /** yt-dlp format id, e.g. "137+140". undefined = best */
   formatId?: string
   /** yt-dlp audio format id to merge or download separately */
@@ -69,6 +73,8 @@ export interface DownloadOptions {
   useCookie: boolean
   /** network tuning profile for yt-dlp */
   speedProfile?: DownloadSpeedProfile
+  /** source-level no-logo policy (best effort, mainly for bilibili) */
+  noLogoPolicy?: DownloadNoLogoPolicy
   /** allow downloading playlists */
   allowPlaylist?: boolean
 }
@@ -81,6 +87,7 @@ export interface DownloadProgress {
   windowSpeedBytes?: number
   connectionCount?: number
   engine?: 'native' | 'idm'
+  noLogoStrategy?: DownloadNoLogoStrategy
   downloadedBytes?: number
   totalBytes?: number
   eta?: string

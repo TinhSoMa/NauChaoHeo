@@ -254,6 +254,21 @@
   gap: 8px;
 }
 
+.quickControlRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.quickControlItem {
+  min-width: 0;
+}
+
+.quickControlItem .helperTextMuted {
+  margin: 0;
+}
+
 .fieldLabel {
   font-size: 12px;
   color: var(--muted);
@@ -893,6 +908,16 @@
 
   .toolbarStatus {
     display: none;
+  }
+
+  .quickControlRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .quickControlRow {
+    grid-template-columns: 1fr;
   }
 }
 
