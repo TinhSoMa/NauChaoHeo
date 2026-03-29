@@ -469,6 +469,16 @@ interface TrimSilencePathItem {
   outputPath: string;
 }
 
+interface FitAudioResponse {
+  scaledCount: number;
+  skippedCount: number;
+  pathMapping: Array<{ originalPath: string; outputPath: string }>;
+}
+
+interface CheckFilesResult {
+  missingPaths: string[];
+}
+
 interface VoiceInfo {
   name: string;
   provider: 'edge' | 'capcut';
@@ -495,7 +505,8 @@ interface TTSAPI {
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
-  fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  fitAudio: (audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>) => Promise<IpcApiResponse<FitAudioResponse>>;
+  checkAudioFiles: (paths: string[]) => Promise<IpcApiResponse<CheckFilesResult>>;
 }
 
 // ============================================

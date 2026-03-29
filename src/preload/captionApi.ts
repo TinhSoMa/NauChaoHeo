@@ -17,6 +17,8 @@ import {
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
   MergeResult,
+  FitAudioResponse,
+  CheckFilesResult,
   TrimSilencePathItem,
   TrimSilenceResult,
   VoiceInfo,
@@ -98,7 +100,10 @@ export interface TTSAPI {
   trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
 
   // Fit Audio to Duration
-  fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  fitAudio: (
+    audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>
+  ) => Promise<IpcApiResponse<FitAudioResponse>>;
+  checkAudioFiles: (paths: string[]) => Promise<IpcApiResponse<CheckFilesResult>>;
 }
 
 /**
@@ -190,8 +195,10 @@ export function createTTSAPI(): TTSAPI {
     trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END_TO_PATHS, targets),
 
-    fitAudio: (audioItems: Array<{ path: string; durationMs: number }>) =>
+    fitAudio: (audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_FIT_AUDIO, audioItems),
+    checkAudioFiles: (paths: string[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_CHECK_FILES, paths),
   };
 }
 

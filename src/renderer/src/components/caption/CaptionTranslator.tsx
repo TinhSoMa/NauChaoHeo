@@ -39,6 +39,7 @@ import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { BulkApplyResult, ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { Step3BulkFileItem, Step3BulkMultiFolderModal } from './components/Step3BulkMultiFolderModal';
+import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { AlertCircle, Download, Eye } from 'lucide-react';
@@ -2459,6 +2460,7 @@ export function CaptionTranslator() {
   const step7AudioLastDataUriRef = useRef<string>('');
   const [isStep7AudioPlaying, setIsStep7AudioPlaying] = useState(false);
   const [step7AudioButtonError, setStep7AudioButtonError] = useState<string>('');
+  const [isCaptionConsoleOpen, setIsCaptionConsoleOpen] = useState(false);
 
   const stopStep7AudioPlayback = useCallback(() => {
     const audio = step7AudioElementRef.current;
@@ -7387,6 +7389,14 @@ export function CaptionTranslator() {
         <div className={styles.runBarHeader}>
           <div className={styles.runBarTitle}>Chạy & Tiến độ</div>
           <span className={`${styles.statusBadge} ${styles.statusIdle}`}>{processing.status}</span>
+          <button
+            type="button"
+            className={styles.resetBtnLike}
+            onClick={() => setIsCaptionConsoleOpen(true)}
+            title="Mở console Caption"
+          >
+            Debug
+          </button>
         </div>
 
         <div className={styles.runBarControls}>
@@ -7535,6 +7545,7 @@ export function CaptionTranslator() {
           )}
         </div>
       </div>
+      <CaptionRuntimeConsole open={isCaptionConsoleOpen} onClose={() => setIsCaptionConsoleOpen(false)} />
       </div>
 
       {step3BulkMultiModalOpen && (

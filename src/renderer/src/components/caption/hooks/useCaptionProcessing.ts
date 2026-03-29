@@ -119,6 +119,15 @@ function normalizePathKey(value: string): string {
   return value.trim().replace(/[\\/]+$/, '').toLowerCase();
 }
 
+function getPathBaseName(pathValue: string): string {
+  const clean = (pathValue || '').trim();
+  if (!clean) {
+    return '';
+  }
+  const parts = clean.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || clean;
+}
+
 function resolveFolderPathForInput(currentPath: string, inputType: string): string {
   return inputType === 'draft' || inputType === 'srt'
     ? currentPath
@@ -3812,6 +3821,11 @@ export function useCaptionProcessing({
         let fitOutputDir = '';
         let fitScaledCount = 0;
         let fitOutputPaths: string[] = [];
+        let fitPathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+        let fitSourceFiles: string[] = [];
+        let fitSpeed = 1.0;
+        let fitSpeedLabel = '';
+        let fitSpeedDirLabel = '';
         if (cfg.trimAudioEnabled) {
           const previousTrimResults = toRecord(sessionBeforeStep.data?.trimResults);
           const previousTrimFiles = Array.isArray(previousTrimResults.trimFiles)
@@ -3894,39 +3908,147 @@ export function useCaptionProcessing({
           if (currentEntries.length === 0) {
             throw new Error(`[${folderName}] Thiếu dữ liệu subtitle dịch trong session để fit audio. Hãy chạy Step 3 trước.`);
           }
-          setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang fit audio...') });
-          const fitSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
-          const fitItems = filesToMerge
-            .map(f => {
-              const entryByIndex = currentEntries.find(e => e.index === f.index);
-              const entryByStart = currentEntries.find(e => e.startMs === f.startMs);
-              const baseDurationMs = f.durationMs > 0
-                ? f.durationMs
-                : (entryByIndex?.durationMs || entryByStart?.durationMs || 0);
-              const allowedDurationMs = baseDurationMs > 0
-                ? Math.round(baseDurationMs * fitSpeed)
-                : 0;
-              return { path: f.path, durationMs: allowedDurationMs };
-            })
-            .filter(item => item.durationMs > 0);
+          fitSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
+          fitSpeedLabel = normalizeSpeedLabel(fitSpeed);
+          fitSpeedDirLabel = `${fitSpeedLabel.replace('.', '_')}x`;
+          fitSourceFiles = filesToMerge.map((file) => file.path);
 
-          if (fitItems.length > 0) {
+          const previousFitResults = toRecord(sessionBeforeStep.data?.fitResults);
+          const previousFitSpeed = readNumber(previousFitResults, 'srtSpeed');
+          const previousSpeedLabel = readString(previousFitResults, 'speedLabel');
+          const previousFitOutputDir = readString(previousFitResults, 'fitOutputDir') || '';
+          const previousFitScaledCount = readNumber(previousFitResults, 'fitScaledCount') || 0;
+          const previousFitFiles = Array.isArray(previousFitResults.fitFiles)
+            ? previousFitResults.fitFiles.filter((item) => typeof item === 'string' && item.trim().length > 0) as string[]
+            : [];
+          const previousMappingRaw = Array.isArray(previousFitResults.pathMapping)
+            ? previousFitResults.pathMapping
+            : [];
+          const previousPathMapping = previousMappingRaw
+            .map((item) => toRecord(item))
+            .filter((item) => typeof item.originalPath === 'string' && typeof item.outputPath === 'string')
+            .map((item) => ({
+              originalPath: String(item.originalPath),
+              outputPath: String(item.outputPath),
+            }));
+
+          const mappingByOriginal = new Map<string, string>();
+          for (const mapping of previousPathMapping) {
+            mappingByOriginal.set(mapping.originalPath, mapping.outputPath);
+          }
+
+          const speedMatches = Number.isFinite(previousFitSpeed) && Math.abs((previousFitSpeed || 0) - fitSpeed) < 0.0001;
+          const labelMatches = !previousSpeedLabel || previousSpeedLabel === fitSpeedDirLabel;
+          const missingMapping = filesToMerge.filter((file) => !mappingByOriginal.has(file.path));
+
+          let reusedFit = false;
+          if (speedMatches && labelMatches && missingMapping.length === 0 && mappingByOriginal.size > 0) {
+            const outputPaths = filesToMerge.map((file) => mappingByOriginal.get(file.path) || file.path);
+            const uniqueOutputs = Array.from(new Set(outputPaths));
             // @ts-ignore
-            const fitResult = await window.electronAPI.tts.fitAudio(fitItems);
-            if (fitResult.success && fitResult.data) {
-              const fitData = fitResult.data as {
-                scaledCount?: number;
-                pathMapping?: Array<{ originalPath: string; outputPath: string }>;
-              };
-              const scaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
-              const pathMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
-              setProgress({ current: scaledCount, total: fitItems.length, message: msgCtx(`Bước 6: Đã fit ${scaledCount}/${fitItems.length} audio`) });
+            const checkResult = await window.electronAPI.tts.checkAudioFiles(uniqueOutputs);
+            const missingOutputs = checkResult?.success && checkResult.data
+              ? (checkResult.data.missingPaths || [])
+              : uniqueOutputs;
+            if (missingOutputs.length === 0) {
+              filesToMerge = filesToMerge.map((file) => {
+                const mapped = mappingByOriginal.get(file.path);
+                return mapped ? { ...file, path: mapped, success: true } : file;
+              });
+              fitOutputDir = previousFitOutputDir;
+              const derivedFitOutputs = previousFitFiles.length > 0
+                ? previousFitFiles
+                : previousPathMapping
+                  .filter((mapping) => mapping.outputPath !== mapping.originalPath)
+                  .map((mapping) => mapping.outputPath);
+              fitScaledCount = previousFitScaledCount || derivedFitOutputs.length;
+              fitOutputPaths = derivedFitOutputs;
+              if (!fitOutputDir && derivedFitOutputs.length > 0) {
+                const normalized = derivedFitOutputs[0].replace(/[/\\]+$/, '');
+                const match = normalized.match(/^(.*)[\\/][^\\/]+$/);
+                fitOutputDir = match ? match[1] : '';
+              }
+              fitPathMapping = previousPathMapping;
+              setProgress({
+                current: fitScaledCount,
+                total: filesToMerge.length,
+                message: msgCtx('Bước 6: Dùng lại audio đã fit'),
+              });
+              reusedFit = true;
+            } else {
+              console.warn(`[${folderName}] fit cache invalid: thiếu ${missingOutputs.length} file fit`);
+            }
+          } else if (missingMapping.length > 0) {
+            console.warn(`[${folderName}] fit cache invalid: thiếu mapping ${missingMapping.length} file`);
+          }
+
+          if (!reusedFit) {
+            setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang fit audio...') });
+            const fitItems = filesToMerge
+              .map(f => {
+                const entryByIndex = currentEntries.find(e => e.index === f.index);
+                const entryByStart = currentEntries.find(e => e.startMs === f.startMs);
+                const baseDurationMs = f.durationMs > 0
+                  ? f.durationMs
+                  : (entryByIndex?.durationMs || entryByStart?.durationMs || 0);
+                const allowedDurationMs = baseDurationMs > 0
+                  ? Math.round(baseDurationMs * fitSpeed)
+                  : 0;
+                return { path: f.path, durationMs: allowedDurationMs, speedLabel: fitSpeedDirLabel };
+              })
+              .filter(item => item.durationMs > 0);
+
+            if (fitItems.length > 0) {
+              let processedCount = 0;
+              let scaledCount = 0;
+              const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+
+              for (const fitItem of fitItems) {
+                const audioName = getPathBaseName(fitItem.path) || 'unknown';
+                setProgress({
+                  current: processedCount,
+                  total: fitItems.length,
+                  message: msgCtx(`Bước 6: Đang fit ${processedCount}/${fitItems.length} - ${audioName}`),
+                });
+
+                // @ts-ignore
+                const fitResult = await window.electronAPI.tts.fitAudio([fitItem]);
+                if (fitResult.success && fitResult.data) {
+                  const fitData = fitResult.data as {
+                    scaledCount?: number;
+                    pathMapping?: Array<{ originalPath: string; outputPath: string }>;
+                  };
+                  const itemScaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
+                  const itemMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
+                  scaledCount += itemScaledCount;
+                  pathMapping.push(...itemMapping);
+                } else {
+                  console.warn(`[${folderName}] Cảnh báo fit audio (${audioName}): ${fitResult.error}`);
+                }
+
+                processedCount++;
+                setProgress({
+                  current: processedCount,
+                  total: fitItems.length,
+                  message: msgCtx(`Bước 6: Đang fit ${processedCount}/${fitItems.length} - ${audioName}`),
+                });
+              }
+
+              setProgress({
+                current: fitItems.length,
+                total: fitItems.length,
+                message: msgCtx(`Bước 6: Đã fit xong ${scaledCount}/${fitItems.length} audio cần tăng tốc`),
+              });
+
               fitScaledCount = scaledCount;
+              fitPathMapping = pathMapping;
               for (const mapping of pathMapping) {
                 const idx = filesToMerge.findIndex(f => f.path === mapping.originalPath);
-                if (idx !== -1 && mapping.outputPath !== mapping.originalPath) {
+                if (idx !== -1) {
                   filesToMerge[idx] = { ...filesToMerge[idx], path: mapping.outputPath, success: true };
-                  fitOutputPaths.push(mapping.outputPath);
+                  if (mapping.outputPath !== mapping.originalPath) {
+                    fitOutputPaths.push(mapping.outputPath);
+                  }
                 }
               }
               if (fitOutputPaths.length > 0) {
@@ -3934,8 +4056,6 @@ export function useCaptionProcessing({
                 const match = normalized.match(/^(.*)[\\/][^\\/]+$/);
                 fitOutputDir = match ? match[1] : '';
               }
-            } else {
-              console.warn(`[${folderName}] Cảnh báo fit audio: ${fitResult.error}`);
             }
           }
         }
@@ -3969,6 +4089,15 @@ export function useCaptionProcessing({
                 srtSpeed: safeSrtSpeed,
                 speedLabel,
               };
+          const fitResultsPayload = cfg.autoFitAudio ? {
+            srtSpeed: fitSpeed,
+            speedLabel: fitSpeedDirLabel || fitSpeedLabel,
+            fitOutputDir: fitOutputDir || undefined,
+            fitFiles: fitOutputPaths,
+            sourceFiles: fitSourceFiles,
+            pathMapping: fitPathMapping,
+            fitScaledCount,
+          } : undefined;
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
             const stepArtifacts: CaptionArtifactFile[] = [];
             pushArtifact(stepArtifacts, 'merged_audio', actualMergedOutputPath, 'file');
@@ -3987,18 +4116,21 @@ export function useCaptionProcessing({
                 pushArtifact(stepArtifacts, 'fit_audio_clip', outputPath, 'file');
               }
             }
-            const outputFingerprint = buildObjectFingerprint({
-              mergedPath: actualMergedOutputPath,
-              filesCount: filesToMerge.length,
-              srtSpeed: safeSrtSpeed,
-              speedLabel,
-              trimAudioEnabled: !!cfg.trimAudioEnabled,
-              trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
-              trimFiles: cfg.trimAudioEnabled ? trimTargets.map((item) => item.outputPath) : undefined,
-              autoFitAudio: !!cfg.autoFitAudio,
-              fitOutputDir: fitOutputDir || undefined,
-              fitScaledCount,
-            });
+              const outputFingerprint = buildObjectFingerprint({
+                mergedPath: actualMergedOutputPath,
+                filesCount: filesToMerge.length,
+                srtSpeed: safeSrtSpeed,
+                speedLabel,
+                trimAudioEnabled: !!cfg.trimAudioEnabled,
+                trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
+                trimFiles: cfg.trimAudioEnabled ? trimTargets.map((item) => item.outputPath) : undefined,
+                autoFitAudio: !!cfg.autoFitAudio,
+                fitOutputDir: fitOutputDir || undefined,
+                fitScaledCount,
+                fitSpeed: fitSpeed,
+                fitSpeedLabel: fitSpeedDirLabel || fitSpeedLabel,
+                fitMappingCount: fitPathMapping.length,
+              });
             const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
             let nextSession: CaptionSessionV1 = {
               ...session,
@@ -4006,6 +4138,7 @@ export function useCaptionProcessing({
                 ...session.data,
                 mergeResult: mergeResultPayload,
                 trimResults: trimResults || undefined,
+                fitResults: fitResultsPayload || undefined,
               },
               artifacts: {
                 ...session.artifacts,

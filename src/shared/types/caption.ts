@@ -293,6 +293,21 @@ export interface TrimSilenceResult {
   errors?: string[];
 }
 
+export interface FitAudioPathMapping {
+  originalPath: string;
+  outputPath: string;
+}
+
+export interface FitAudioResponse {
+  scaledCount: number;
+  skippedCount: number;
+  pathMapping: FitAudioPathMapping[];
+}
+
+export interface CheckFilesResult {
+  missingPaths: string[];
+}
+
 // ============================================
 // IPC CHANNELS
 // ============================================
@@ -320,6 +335,7 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_TRIM_SILENCE_TO_PATHS: 'tts:trimSilenceToPaths',
   TTS_TRIM_SILENCE_END_TO_PATHS: 'tts:trimSilenceEndToPaths',
   TTS_FIT_AUDIO: 'tts:fitAudio',
+  TTS_CHECK_FILES: 'tts:checkFiles',
   
   // Audio Merge
   AUDIO_ANALYZE: 'audio:analyze',
@@ -845,6 +861,7 @@ export interface CaptionSessionData {
   };
   ttsAudioFiles?: AudioFile[];
   trimResults?: Record<string, unknown>;
+  fitResults?: Record<string, unknown>;
   mergeResult?: Record<string, unknown>;
   renderResult?: Record<string, unknown>;
   renderTimingPayload?: Record<string, unknown>;

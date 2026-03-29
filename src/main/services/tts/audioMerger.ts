@@ -33,12 +33,6 @@ function debugLog(message: string, details?: Record<string, unknown>): void {
   console.log(`[AudioMerger][DEBUG] ${message}`);
 }
 
-function compactError(message: string, maxLength: number = 500): string {
-  const trimmed = message.trim();
-  if (trimmed.length <= maxLength) return trimmed;
-  return `${trimmed.slice(0, maxLength)}...`;
-}
-
 function resolveFfmpegBinary(): string {
   const ffmpegPath = getFFmpegPath();
   if (ffmpegPath && existsSync(ffmpegPath)) {
@@ -143,7 +137,7 @@ async function padTailToTargetDuration(
           success: false,
           padded: false,
           missingMs,
-          error: compactError(stderr || `Pad tail ffmpeg exit code: ${code}`),
+          error: stderr || `Pad tail ffmpeg exit code: ${code}`,
         });
         return;
       }
@@ -330,7 +324,7 @@ async function mergeSmallBatch(
       void cleanupScript();
       if (code !== 0) {
         console.error(`[AudioMerger] FFmpeg error: ${stderr}`);
-        const errorMessage = compactError(stderr || `FFmpeg exit code: ${code}`);
+        const errorMessage = stderr || `FFmpeg exit code: ${code}`;
         debugLog('mergeSmallBatch thất bại', {
           outputPath,
           exitCode: code,
@@ -883,11 +877,12 @@ export interface FitAudioResult {
 /**
  * Tự động scale từng audio file để vừa với thời lượng cho phép.
  * Nếu audio thực tế dài hơn durationMs, sẽ tăng tốc bằng atempo filter.
- * File gốc KHÔNG bị thay đổi — bản scale được lưu vào thư mục audio_scaled/
+ * File gốc KHÔNG bị thay đổi — bản scale được lưu vào thư mục audio_fit/
  */
 export async function fitAudioToDuration(
   audioPath: string,
-  allowedDurationMs: number
+  allowedDurationMs: number,
+  speedLabel?: string
 ): Promise<FitAudioResult> {
   const fileName = path.basename(audioPath);
   
@@ -927,16 +922,30 @@ export async function fitAudioToDuration(
 
   const filterChain = atempoFilters.join(',');
 
-  // Lưu bản scale vào thư mục audio_fit/ (tránh lẫn audio gốc/trim)
+  // Lưu bản scale vào thư mục audio_fit/<speedLabel> (tránh lẫn audio gốc/trim)
   const audioDir = path.dirname(audioPath);
   const audioDirName = path.basename(audioDir);
-  let fitDir = audioDir;
+  const audioParentDir = path.dirname(audioDir);
+  const audioParentName = path.basename(audioParentDir);
+  let baseFitDir = audioDir;
   if (audioDirName === 'audio_fit') {
-    fitDir = audioDir;
+    baseFitDir = audioDir;
+  } else if (audioParentName === 'audio_fit') {
+    baseFitDir = audioParentDir;
   } else if (audioDirName === 'audio' || audioDirName === 'audio_trimmed' || audioDirName === 'audio_scaled') {
-    fitDir = path.join(path.dirname(audioDir), 'audio_fit');
+    baseFitDir = path.join(audioParentDir, 'audio_fit');
   } else {
-    fitDir = path.join(audioDir, 'audio_fit');
+    baseFitDir = path.join(audioDir, 'audio_fit');
+  }
+  const normalizedLabel = typeof speedLabel === 'string' ? speedLabel.trim() : '';
+  const safeLabel = normalizedLabel.replace(/[\\/]+/g, '_');
+  let fitDir = baseFitDir;
+  if (safeLabel) {
+    if (audioParentName === 'audio_fit' && audioDirName === safeLabel) {
+      fitDir = audioDir;
+    } else {
+      fitDir = path.join(baseFitDir, safeLabel);
+    }
   }
   await fs.mkdir(fitDir, { recursive: true });
   const scaledPath = path.join(fitDir, fileName);
@@ -963,7 +972,8 @@ export async function fitAudioToDuration(
 
     proc.on('close', async (code) => {
       if (code === 0) {
-        console.log(`[AudioMerger] fitAudio SAVED: ${scaledPath}`);
+        const savedName = path.basename(scaledPath);
+        console.log(`[AudioMerger] fitAudio SAVED: ${savedName}`);
         resolve({ scaled: true, outputPath: scaledPath });
       } else {
         try { await fs.unlink(scaledPath); } catch {}

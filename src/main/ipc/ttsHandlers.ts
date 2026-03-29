@@ -371,7 +371,7 @@ export function registerTTSHandlers(): void {
     CAPTION_IPC_CHANNELS.TTS_FIT_AUDIO,
     async (
       _event: IpcMainInvokeEvent,
-      audioItems: Array<{ path: string; durationMs: number }>
+      audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>
     ): Promise<IpcResponse<{
       scaledCount: number;
       skippedCount: number;
@@ -385,7 +385,7 @@ export function registerTTSHandlers(): void {
         const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
 
         for (const item of audioItems) {
-          const result = await TTSService.fitAudioToDuration(item.path, item.durationMs);
+          const result = await TTSService.fitAudioToDuration(item.path, item.durationMs, item.speedLabel);
           pathMapping.push({ originalPath: item.path, outputPath: result.outputPath });
           if (result.scaled) {
             scaledCount++;
@@ -402,6 +402,31 @@ export function registerTTSHandlers(): void {
         };
       } catch (error) {
         console.error('[TTSHandlers] Lỗi fit audio:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_CHECK_FILES,
+    async (
+      _event: IpcMainInvokeEvent,
+      paths: string[]
+    ): Promise<IpcResponse<{ missingPaths: string[] }>> => {
+      try {
+        const missingPaths: string[] = [];
+        for (const rawPath of paths || []) {
+          if (typeof rawPath !== 'string' || !rawPath.trim()) {
+            continue;
+          }
+          try {
+            await fs.access(rawPath);
+          } catch {
+            missingPaths.push(rawPath);
+          }
+        }
+        return { success: true, data: { missingPaths } };
+      } catch (error) {
         return { success: false, error: String(error) };
       }
     }
