@@ -148,6 +148,12 @@ function validateTranslationCount(expectedCount, responseObject, rawText) {
 // ============================================
 const TabManager = {
     async findTab(urlPattern) {
+        const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const activeMatch = activeTabs.find(t => t.url && t.url.includes(urlPattern));
+        if (activeMatch) {
+            return activeMatch;
+        }
+
         const tabs = await chrome.tabs.query({});
         return tabs.find(t => t.url && t.url.includes(urlPattern));
     },
@@ -407,7 +413,24 @@ const BatchProcessor = {
 // ============================================
 const Initializer = {
     async setupGeminiTab() {
-        const geminiTab = await TabManager.findGeminiTab();
+        let geminiTab = null;
+
+        const pref = await chrome.storage.local.get(['pipTargetTabId']);
+        if (pref.pipTargetTabId) {
+            try {
+                const pinned = await chrome.tabs.get(pref.pipTargetTabId);
+                if (pinned && pinned.url && pinned.url.includes("gemini.google.com")) {
+                    geminiTab = pinned;
+                    Utils.log(`Ưu tiên tab Gemini từ PiP (Tab ${geminiTab.id})`);
+                }
+            } catch (_) {
+                // tab đã đóng hoặc không tồn tại
+            }
+        }
+
+        if (!geminiTab) {
+            geminiTab = await TabManager.findGeminiTab();
+        }
 
         if (!geminiTab) {
             throw new Error("Không tìm thấy tab Gemini! Hãy mở tab Gemini trước khi chạy.");
@@ -419,6 +442,15 @@ const Initializer = {
 
         await TabManager.injectScript(State.geminiTabId, 'pip-script.js');
         await TabManager.injectScript(State.geminiTabId, 'content-script-gemini.js');
+
+        const scriptInfo = await Utils.sendMessageToTab(State.geminiTabId, {
+            action: "GET_SCRIPT_VERSION"
+        });
+        if (scriptInfo && scriptInfo.version) {
+            Utils.log(`Gemini content script version: ${scriptInfo.version}`, 'success');
+        } else {
+            Utils.log("Không lấy được version của Gemini content script (có thể tab chưa sẵn sàng)", 'warning');
+        }
 
         await TabManager.keepAlive(State.geminiTabId);
     },

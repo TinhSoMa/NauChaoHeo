@@ -523,12 +523,19 @@ const PiPManager = {
     try {
       UIManager.setStatus("Đang mở PiP window...");
 
-      const tabs = await chrome.tabs.query({});
-      const targetTab = tabs.find(t => {
+      const matcher = (t) => {
         if (!t.url) return false;
         if (provider === 'grok') return t.url.includes("grok.com");
         return t.url.includes("gemini.google.com");
-      });
+      };
+
+      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      let targetTab = activeTabs.find(matcher);
+
+      if (!targetTab) {
+        const tabs = await chrome.tabs.query({});
+        targetTab = tabs.find(matcher);
+      }
 
       if (!targetTab) {
         const name = provider === 'grok' ? 'Grok' : 'Gemini';
@@ -554,6 +561,7 @@ const PiPManager = {
       });
 
       if (response && response.status === "OK") {
+        await StorageManager.saveSettings({ pipTargetTabId: targetTab.id });
         UIManager.setStatus("✓ PiP window đã mở! (Tự động Always On Top)");
         await new Promise(r => setTimeout(r, 1000));
         return true;
