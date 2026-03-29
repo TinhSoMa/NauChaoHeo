@@ -1118,6 +1118,60 @@ type ManualBulkParseResult =
   | { ok: true; items: ManualBatchInput[] }
   | { ok: false; errorMessage: string };
 
+function repairTranslatedQuotes(raw: string): string {
+  const target = '"translated"';
+  let out = '';
+  let i = 0;
+  while (i < raw.length) {
+    const idx = raw.indexOf(target, i);
+    if (idx === -1) {
+      out += raw.slice(i);
+      break;
+    }
+    out += raw.slice(i, idx);
+    out += target;
+    let j = idx + target.length;
+    while (j < raw.length && /\s/.test(raw[j])) { out += raw[j]; j += 1; }
+    if (raw[j] === ':') { out += raw[j]; j += 1; }
+    while (j < raw.length && /\s/.test(raw[j])) { out += raw[j]; j += 1; }
+    if (raw[j] !== '"') {
+      i = j;
+      continue;
+    }
+    out += '"';
+    j += 1;
+    while (j < raw.length) {
+      const ch = raw[j];
+      if (ch === '\\') {
+        if (j + 1 < raw.length) {
+          out += ch + raw[j + 1];
+          j += 2;
+          continue;
+        }
+        out += ch;
+        j += 1;
+        continue;
+      }
+      if (ch === '"') {
+        let k = j + 1;
+        while (k < raw.length && /\s/.test(raw[k])) k += 1;
+        if (k >= raw.length || raw[k] === ',' || raw[k] === '}') {
+          out += '"';
+          j += 1;
+          break;
+        }
+        out += '\\"';
+        j += 1;
+        continue;
+      }
+      out += ch;
+      j += 1;
+    }
+    i = j;
+  }
+  return out;
+}
+
 function parseManualBulkInput(raw: string): ManualBulkParseResult {
   const trimmed = (raw || '').trim();
   if (!trimmed) {
@@ -1157,7 +1211,27 @@ function parseManualBulkInput(raw: string): ManualBulkParseResult {
       return { ok: true, items };
     }
   } catch {
-    // fallback to NDJSON
+    // try repair for JSON array
+    try {
+      const repaired = repairTranslatedQuotes(trimmed);
+      const parsed = JSON.parse(repaired);
+      if (Array.isArray(parsed)) {
+        const items: ManualBatchInput[] = [];
+        for (const item of parsed) {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            return { ok: false, errorMessage: 'JSON array phải chứa object {batchIndex, response}.' };
+          }
+          const normalized = normalizeItem(item as Record<string, unknown>);
+          if (!normalized) {
+            return { ok: false, errorMessage: 'Thiếu batchIndex hoặc response trong JSON array.' };
+          }
+          items.push(normalized);
+        }
+        return { ok: true, items };
+      }
+    } catch {
+      // fallback to NDJSON
+    }
   }
 
   const lines = trimmed.split(/\r?\n/);
@@ -1169,7 +1243,12 @@ function parseManualBulkInput(raw: string): ManualBulkParseResult {
     try {
       parsedLine = JSON.parse(line);
     } catch (error) {
-      return { ok: false, errorMessage: `Line ${i + 1}: JSON không hợp lệ.` };
+      try {
+        const repaired = repairTranslatedQuotes(line);
+        parsedLine = JSON.parse(repaired);
+      } catch {
+        return { ok: false, errorMessage: `Line ${i + 1}: JSON không hợp lệ.` };
+      }
     }
     if (!parsedLine || typeof parsedLine !== 'object' || Array.isArray(parsedLine)) {
       return { ok: false, errorMessage: `Line ${i + 1}: cần object {batchIndex, response}.` };
@@ -1724,6 +1803,11 @@ export function useCaptionProcessing({
     missingBatches?: number;
   };
 
+  type ManualValidateResult = {
+    ok: boolean;
+    error?: string;
+  };
+
   const applyManualBatchUpdates = useCallback(async (
     inputPath: string,
     updates: Array<{ batchIndex: number; translatedTexts: string[] }>
@@ -1960,6 +2044,45 @@ export function useCaptionProcessing({
     }
   }, [applyManualBatchUpdates, inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
+  const validateManualBatchResponse = useCallback(async (payload: {
+    inputPath: string;
+    batchIndex: number;
+    responseJson: string;
+  }): Promise<ManualValidateResult> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { ok: false, error: 'Thiếu input path để kiểm tra.' };
+    }
+    const batchIndex = Math.max(1, Math.floor(payload.batchIndex || 0));
+    if (!batchIndex) {
+      return { ok: false, error: 'Thiếu batchIndex để kiểm tra.' };
+    }
+    try {
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+      const folderPath = resolveFolderPath(trimmedPath);
+      const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: resolveSourcePath(trimmedPath), folderPath };
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      if (step2BatchPlan.length === 0) {
+        return { ok: false, error: 'Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.' };
+      }
+      const plan = step2BatchPlan.find((item) => Math.floor(item.batchIndex) === batchIndex);
+      if (!plan) {
+        return { ok: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+      }
+      const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+      const parsed = parseJsonTranslationResponseForManual(payload.responseJson, expectedLines);
+      if (!parsed.ok) {
+        return { ok: false, error: `${parsed.errorCode}: ${parsed.errorMessage}` };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [inputType, projectId, resolveFolderPath, resolveSourcePath]);
+
   const applyManualBulkResponses = useCallback(async (payload: {
     inputPath: string;
     raw: string;
@@ -2014,6 +2137,55 @@ export function useCaptionProcessing({
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }, [applyManualBatchUpdates, inputType, projectId, resolveFolderPath, resolveSourcePath]);
+
+  const validateManualBulkResponses = useCallback(async (payload: {
+    inputPath: string;
+    raw: string;
+  }): Promise<ManualValidateResult> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { ok: false, error: 'Thiếu input path để kiểm tra.' };
+    }
+
+    const bulkParsed = parseManualBulkInput(payload.raw);
+    if (!bulkParsed.ok) {
+      return { ok: false, error: bulkParsed.errorMessage };
+    }
+
+    try {
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+      const folderPath = resolveFolderPath(trimmedPath);
+      const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: resolveSourcePath(trimmedPath), folderPath };
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      if (step2BatchPlan.length === 0) {
+        return { ok: false, error: 'Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.' };
+      }
+      const planMap = new Map<number, StepBatchPlanItem>();
+      for (const plan of step2BatchPlan) {
+        if (typeof plan.batchIndex === 'number') {
+          planMap.set(Math.floor(plan.batchIndex), plan);
+        }
+      }
+      for (const item of bulkParsed.items) {
+        const batchIndex = Math.max(1, Math.floor(item.batchIndex));
+        const plan = planMap.get(batchIndex);
+        if (!plan) {
+          return { ok: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+        }
+        const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+        const parsed = parseJsonTranslationResponseForManual(item.responseJson, expectedLines);
+        if (!parsed.ok) {
+          return { ok: false, error: `Batch #${batchIndex} ${parsed.errorCode}: ${parsed.errorMessage}` };
+        }
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).filter((step) => step !== 5).sort() as Step[];
@@ -4653,6 +4825,8 @@ export function useCaptionProcessing({
     handleStop,
     applyManualBatchResponse,
     applyManualBulkResponses,
+    validateManualBatchResponse,
+    validateManualBulkResponses,
     handleStep7AudioPreview,
     stopStep7AudioPreview,
     status,

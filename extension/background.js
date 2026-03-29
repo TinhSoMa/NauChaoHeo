@@ -114,6 +114,36 @@ const Utils = {
 };
 
 // ============================================
+// VALIDATION
+// ============================================
+function validateTranslationCount(expectedCount, responseObject, rawText) {
+    const indexes = [];
+    if (responseObject && Array.isArray(responseObject.translations)) {
+        for (const item of responseObject.translations) {
+            if (item && typeof item.index === 'number') {
+                indexes.push(item.index);
+            }
+        }
+    }
+    if (indexes.length === 0 && rawText) {
+        const matches = rawText.match(/"index"\s*:\s*(\d+)/g);
+        if (matches && matches.length > 0) {
+            for (const m of matches) {
+                const num = parseInt(m.replace(/^\D+/, ''), 10);
+                if (!Number.isNaN(num)) indexes.push(num);
+            }
+        }
+    }
+    const unique = Array.from(new Set(indexes)).sort((a, b) => a - b);
+    const missing = [];
+    for (let i = 1; i <= expectedCount; i++) {
+        if (!unique.includes(i)) missing.push(i);
+    }
+    const ok = missing.length === 0 && unique.length === expectedCount;
+    return { ok, uniqueCount: unique.length, missing };
+}
+
+// ============================================
 // TAB MANAGEMENT
 // ============================================
 const TabManager = {
@@ -467,51 +497,98 @@ async function processLoop() {
 
         let responseObject;
         let rawResponseText = null;
+        const expectedCount = batchData.lines.length;
+        const MAX_RETRY = 2;
+        let retryCount = 0;
 
-        if (State.copyOnlyMode) {
-            Utils.log("BƯỚC 2: Chế độ Copy Only - Bỏ qua Gemini");
-            await Utils.sendProgressUpdate("Chế độ Copy Only: Lưu text gốc...");
+        while (true) {
+            if (State.copyOnlyMode) {
+                Utils.log("BƯỚC 2: Chế độ Copy Only - Bỏ qua Gemini");
+                await Utils.sendProgressUpdate("Chế độ Copy Only: Lưu text gốc...");
 
-            responseObject = {
-                translations: batchData.lines.map((line, idx) => ({
-                    index: idx + 1,
-                    original: line,
-                    translated: line
-                })),
-                summary: {
-                    copyOnly: true,
-                    input_count: batchData.lines.length,
-                    output_count: batchData.lines.length,
-                    match: true
-                }
-            };
-            rawResponseText = JSON.stringify(responseObject);
+                responseObject = {
+                    translations: batchData.lines.map((line, idx) => ({
+                        index: idx + 1,
+                        original: line,
+                        translated: line
+                    })),
+                    summary: {
+                        copyOnly: true,
+                        input_count: batchData.lines.length,
+                        output_count: batchData.lines.length,
+                        match: true
+                    }
+                };
+                rawResponseText = JSON.stringify(responseObject);
 
-            Utils.log("✓ Đã tạo response copy-only", 'success');
-        } else {
-            const providerName = State.provider === 'grok' ? 'Grok' : 'Gemini';
-            Utils.log(`BƯỚC 2: Gửi qua ${providerName} để dịch...`);
-            await Utils.sendProgressUpdate(`Đang dịch với ${providerName}...`);
-
-            const result = State.provider === 'grok'
-                ? await BatchProcessor.translateWithGrok(batchData)
-                : await BatchProcessor.translateWithGemini(batchData);
-
-            Utils.log(`✓ ${providerName} đã hoàn thành dịch`, 'success');
-            await Utils.sendProgressUpdate(`${providerName} đã hoàn thành dịch`);
-
-            const parsed = BatchProcessor.parseGeminiJson(result.text);
-            if (parsed.ok) {
-                // Object này giờ có thể bị null nếu AI sinh sai JSON, nhưng không quan trọng vì mình sẽ lưu `rawText`.
-                responseObject = parsed.data || {};
-                rawResponseText = parsed.rawText;
+                Utils.log("✓ Đã tạo response copy-only", 'success');
             } else {
-                // Sẽ không bao giờ rơi vào if này nữa vì parseGeminiJson luôn ok:true
-                Utils.log(`❌ Không thể parse JSON từ ${providerName}. Dừng lại để tránh mất dữ liệu.`, 'error');
-                Utils.log(`Parse error: ${parsed.error}`, 'error');
-                Utils.log(`Response preview: ${(parsed.responseText || result.text || '').slice(0, 200)}`, 'error');
-                throw new Error(`PARSE_FAILED: ${providerName} trả về nội dung không hợp lệ. Kiểm tra console để xem response.`);
+                const providerName = State.provider === 'grok' ? 'Grok' : 'Gemini';
+                Utils.log(`BƯỚC 2: Gửi qua ${providerName} để dịch...`);
+                await Utils.sendProgressUpdate(`Đang dịch với ${providerName}...`);
+
+                const result = State.provider === 'grok'
+                    ? await BatchProcessor.translateWithGrok(batchData)
+                    : await BatchProcessor.translateWithGemini(batchData);
+
+                Utils.log(`✓ ${providerName} đã hoàn thành dịch`, 'success');
+                await Utils.sendProgressUpdate(`${providerName} đã hoàn thành dịch`);
+
+                const parsed = BatchProcessor.parseGeminiJson(result.text);
+                if (parsed.ok) {
+                    // Object này giờ có thể bị null nếu AI sinh sai JSON, nhưng không quan trọng vì mình sẽ lưu `rawText`.
+                    responseObject = parsed.data || {};
+                    rawResponseText = parsed.rawText;
+                } else {
+                    // Sẽ không bao giờ rơi vào if này nữa vì parseGeminiJson luôn ok:true
+                    Utils.log(`❌ Không thể parse JSON từ ${providerName}. Dừng lại để tránh mất dữ liệu.`, 'error');
+                    Utils.log(`Parse error: ${parsed.error}`, 'error');
+                    Utils.log(`Response preview: ${(parsed.responseText || result.text || '').slice(0, 200)}`, 'error');
+                    throw new Error(`PARSE_FAILED: ${providerName} trả về nội dung không hợp lệ. Kiểm tra console để xem response.`);
+                }
             }
+
+            const validation = validateTranslationCount(expectedCount, responseObject, rawResponseText);
+            if (validation.ok) {
+                break;
+            }
+
+            const receivedCount = validation.uniqueCount;
+            Utils.log(`ERROR_COUNT_MISMATCH: nhận ${receivedCount}/${expectedCount}`, 'error');
+            Utils.log(`Thiếu index: ${validation.missing.join(', ') || 'không rõ'}`, 'error');
+
+            if (retryCount >= MAX_RETRY) {
+                Utils.log(`Fail cuối sau ${retryCount} retry. Đánh dấu lỗi và chuyển batch kế.`, 'error');
+                const filesData = await chrome.storage.local.get(['batchFiles']);
+                const batchFiles = filesData.batchFiles || [];
+                const fileIdx = (batchData.index !== undefined ? batchData.index : currentIndex);
+                if (batchFiles[fileIdx]) {
+                    batchFiles[fileIdx].completed = false;
+                    batchFiles[fileIdx].status = 'error';
+                    batchFiles[fileIdx].errorReason = 'ERROR_COUNT_MISMATCH';
+                    batchFiles[fileIdx].missingIndices = validation.missing;
+                    batchFiles[fileIdx].retryCount = retryCount;
+                    if (rawResponseText) batchFiles[fileIdx].rawText = rawResponseText;
+                    await chrome.storage.local.set({ batchFiles });
+                }
+                await BatchProcessor.moveToNextBatch(batchData.index);
+                Utils.log("✓ Đã chuyển batch (do lỗi thiếu index)", 'warning');
+                if (!State.copyOnlyMode) {
+                    Utils.log(`BƯỚC 5: Nghỉ ${State.promptDelay} giây tránh rate limit...`);
+                    await Utils.sendProgressUpdate(`Đang nghỉ ${State.promptDelay} giây...`);
+                    await Utils.sleep(State.promptDelay * 1000);
+                } else {
+                    await Utils.sleep(1000);
+                }
+                Utils.log("BƯỚC 6: Tiếp tục với batch tiếp theo...\n");
+                processLoop();
+                return;
+            }
+
+            retryCount += 1;
+            Utils.log(`Retry ${retryCount}/${MAX_RETRY} sau ${State.promptDelay}s...`, 'warning');
+            await Utils.sendProgressUpdate(`Thiếu index → chờ ${State.promptDelay}s rồi retry...`);
+            await Utils.sleep(State.promptDelay * 1000);
         }
 
         Utils.log("BƯỚC 3: Lưu kết quả vào bộ nhớ...");

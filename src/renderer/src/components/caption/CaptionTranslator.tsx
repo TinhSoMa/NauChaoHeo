@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react';
 import styles from './CaptionTranslator.module.css';
 import { Button } from '../common/Button';
 import folderIconUrl from '../../../../../resources/icons/folder.svg';
@@ -2676,6 +2676,11 @@ export function CaptionTranslator() {
   const [step3ManualInput, setStep3ManualInput] = useState('');
   const [step3ManualError, setStep3ManualError] = useState('');
   const [step3ManualBusy, setStep3ManualBusy] = useState(false);
+  const [step3ManualFileName, setStep3ManualFileName] = useState('');
+  const [step3ManualFileContent, setStep3ManualFileContent] = useState('');
+  const [step3ManualHideFilePreview, setStep3ManualHideFilePreview] = useState(false);
+  const step3ManualFileInputRef = useRef<HTMLInputElement | null>(null);
+  const step3ManualValidateTokenRef = useRef(0);
   const [step3BulkMultiModalOpen, setStep3BulkMultiModalOpen] = useState(false);
   const [step3BulkMultiFiles, setStep3BulkMultiFiles] = useState<Step3BulkFileItem[]>([]);
   const [step3BulkMultiError, setStep3BulkMultiError] = useState('');
@@ -2934,6 +2939,9 @@ export function CaptionTranslator() {
     setStep3ManualModal({ mode: 'single', batchIndex });
     setStep3ManualInput('');
     setStep3ManualError('');
+    setStep3ManualFileName('');
+    setStep3ManualFileContent('');
+    setStep3ManualHideFilePreview(false);
   }, []);
 
   const openStep3ManualBulk = useCallback(() => {
@@ -2946,6 +2954,9 @@ export function CaptionTranslator() {
     setStep3ManualModal({ mode: 'bulk' });
     setStep3ManualInput('');
     setStep3ManualError('');
+    setStep3ManualFileName('');
+    setStep3ManualFileContent('');
+    setStep3ManualHideFilePreview(false);
   }, [isStep3MultiFolderMode]);
 
   const closeStep3ManualModal = useCallback(() => {
@@ -2953,6 +2964,70 @@ export function CaptionTranslator() {
     setStep3ManualModal(null);
     setStep3ManualInput('');
     setStep3ManualError('');
+    setStep3ManualFileName('');
+    setStep3ManualFileContent('');
+    setStep3ManualHideFilePreview(false);
+  }, [
+    processing,
+    resolveActiveInputPath,
+    step3ManualBusy,
+    step3ManualModal,
+  ]);
+
+  const handleStep3ManualPickFile = useCallback(() => {
+    if (step3ManualBusy) return;
+    step3ManualFileInputRef.current?.click();
+  }, [step3ManualBusy]);
+
+  const handleStep3ManualFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    if (step3ManualBusy) return;
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!(name.endsWith('.txt') || name.endsWith('.json') || name.endsWith('.jsonl'))) {
+      setStep3ManualError('Chỉ hỗ trợ file TXT/JSON/JSONL.');
+      return;
+    }
+    try {
+      const raw = await file.text();
+      setStep3ManualFileName(file.name);
+      if (name.endsWith('.json') || name.endsWith('.jsonl')) {
+        setStep3ManualFileContent(raw);
+        setStep3ManualHideFilePreview(true);
+        setStep3ManualInput('');
+        if (!step3ManualModal) {
+          setStep3ManualError('Không thể kiểm tra: modal chưa sẵn sàng.');
+          return;
+        }
+        const activeInputPath = resolveActiveInputPath();
+        if (!activeInputPath) {
+          setStep3ManualError('Không tìm thấy input path để kiểm tra.');
+          return;
+        }
+        const validateToken = ++step3ManualValidateTokenRef.current;
+        const validateResult = step3ManualModal?.mode === 'single'
+          ? await processing.validateManualBatchResponse({
+              inputPath: activeInputPath,
+              batchIndex: step3ManualModal.batchIndex || 1,
+              responseJson: raw,
+            })
+          : await processing.validateManualBulkResponses({ inputPath: activeInputPath, raw });
+        if (validateToken !== step3ManualValidateTokenRef.current) return;
+        if (!validateResult.ok) {
+          setStep3ManualError(validateResult.error || 'Không thể kiểm tra index.');
+          return;
+        }
+        setStep3ManualError('');
+      } else {
+        setStep3ManualFileContent('');
+        setStep3ManualHideFilePreview(false);
+        setStep3ManualInput(raw);
+        setStep3ManualError('');
+      }
+    } catch (error) {
+      setStep3ManualError(error instanceof Error ? error.message : String(error));
+    }
   }, [step3ManualBusy]);
 
   const handleSubmitStep3Manual = useCallback(async () => {
@@ -2964,7 +3039,7 @@ export function CaptionTranslator() {
       setStep3ManualError('Không tìm thấy input path để cập nhật.');
       return;
     }
-    const raw = step3ManualInput.trim();
+    const raw = (step3ManualInput.trim() || step3ManualFileContent.trim());
     if (!raw) {
       setStep3ManualError('Input rỗng.');
       return;
@@ -2989,6 +3064,9 @@ export function CaptionTranslator() {
       await refreshActiveSession();
       setStep3ManualModal(null);
       setStep3ManualInput('');
+      setStep3ManualFileName('');
+      setStep3ManualFileContent('');
+      setStep3ManualHideFilePreview(false);
     } catch (error) {
       setStep3ManualError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -2998,6 +3076,7 @@ export function CaptionTranslator() {
     step3ManualModal,
     step3ManualBusy,
     step3ManualInput,
+    step3ManualFileContent,
     processing,
     resolveActiveInputPath,
     refreshActiveSession,
@@ -7452,6 +7531,32 @@ export function CaptionTranslator() {
             </button>
           </div>
           <div className={styles.modalBody}>
+            {(step3ManualModal.mode === 'single' || step3ManualModal.mode === 'bulk') && (
+              <div className={styles.step3BulkMultiActions}>
+                <input
+                  ref={step3ManualFileInputRef}
+                  type="file"
+                  accept=".txt,.json,.jsonl,application/json"
+                  className={styles.step3BulkMultiFileInput}
+                  onChange={handleStep3ManualFileChange}
+                  disabled={step3ManualBusy}
+                />
+                <button
+                  type="button"
+                  className={styles.step3BulkMultiBtn}
+                  onClick={handleStep3ManualPickFile}
+                  disabled={step3ManualBusy}
+                >
+                  Chọn file JSON
+                </button>
+                {step3ManualFileName && (
+                  <div className={styles.step3BulkMultiCount}>
+                    Đã chọn: {step3ManualFileName}
+                    {step3ManualHideFilePreview ? ' (ẩn nội dung để tránh lag)' : ''}
+                  </div>
+                )}
+              </div>
+            )}
             <textarea
               className={styles.input}
               rows={10}
