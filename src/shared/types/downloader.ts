@@ -44,6 +44,8 @@ export interface PlaylistInfo {
   entries: PlaylistEntry[]
 }
 
+export type DownloadSpeedProfile = 'auto' | 'balanced' | 'antiThrottle'
+
 export interface DownloadOptions {
   url: string
   outputDir: string
@@ -65,6 +67,8 @@ export interface DownloadOptions {
   writeThumbnail?: boolean
   /** whether to use cookie from DB for this domain */
   useCookie: boolean
+  /** network tuning profile for yt-dlp */
+  speedProfile?: DownloadSpeedProfile
   /** allow downloading playlists */
   allowPlaylist?: boolean
 }
@@ -73,6 +77,8 @@ export interface DownloadProgress {
   percent: number
   speed?: string
   speedBytes?: number
+  avgSpeedBytes?: number
+  windowSpeedBytes?: number
   downloadedBytes?: number
   totalBytes?: number
   eta?: string

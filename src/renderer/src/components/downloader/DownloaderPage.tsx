@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Download, FileText, Link2, RefreshCcw, Scissors, StopCircle, Video,
+  Download, FileText, Link2, RefreshCcw, StopCircle, Video,
   Cookie, Plus, Trash2, FolderOpen, ChevronDown, ChevronRight, Loader2,
   ListOrdered, CheckCircle2,
 } from 'lucide-react'
 import { Input } from '../common/Input'
 import { Button } from '../common/Button'
 import { Checkbox } from '../common/Checkbox'
-import type { VideoInfo, VideoFormat, CookieEntry, DownloadOptions, DownloadProgress, PlaylistInfo } from '@shared/types/downloader'
+import type { VideoInfo, VideoFormat, CookieEntry, DownloadOptions, DownloadProgress, PlaylistInfo, DownloadSpeedProfile } from '@shared/types/downloader'
 import styles from './DownloaderPage.module.css'
 
 type StatusTone = 'idle' | 'fetching' | 'ready' | 'running' | 'done' | 'error'
@@ -110,6 +110,26 @@ function resolveEmbedUrl(rawUrl: string): { provider?: 'youtube' | 'bilibili'; e
     return {}
   }
   return {}
+}
+
+function isBilibiliUrl(rawUrl: string): boolean {
+  if (!rawUrl || !rawUrl.startsWith('http')) return false
+  try {
+    const host = new URL(rawUrl).hostname.replace(/^www\./, '').toLowerCase()
+    return host.includes('bilibili.com') || host.includes('b23.tv')
+  } catch {
+    return false
+  }
+}
+
+function pickDefaultSubtitleLangs(langs: string[]): string[] {
+  if (langs.length === 0) return []
+  const preferred = ['vi', 'en', 'ja']
+  for (const pref of preferred) {
+    const found = langs.find((lang) => lang.toLowerCase() === pref)
+    if (found) return [found]
+  }
+  return [langs[0]]
 }
 
 function parseUrls(text: string): string[] {
@@ -285,9 +305,10 @@ export const DownloaderPage = () => {
   const [mergeAudio, setMergeAudio] = useState(true)
   const [downloadSeparateAudio, setDownloadSeparateAudio] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
-  const [downloadAllSubs, setDownloadAllSubs] = useState(true)
+  const [downloadAllSubs, setDownloadAllSubs] = useState(false)
   const [manualSubLangs, setManualSubLangs] = useState('')
   const [skipDanmakuConvert, setSkipDanmakuConvert] = useState(true)
+  const [speedProfile, setSpeedProfile] = useState<DownloadSpeedProfile>('auto')
 
   // Options (populated from fetchInfo)
   const [selectedFormatId, setSelectedFormatId] = useState<string>('')
@@ -545,9 +566,9 @@ export const DownloaderPage = () => {
         .split(',')
         .map(s => s.trim())
         .filter(Boolean)
-      return manual.length > 0 ? manual : ['all']
+      return manual
     }
-    return selectedSubLangs.length > 0 ? selectedSubLangs : ['all']
+    return selectedSubLangs.length > 0 ? selectedSubLangs : pickDefaultSubtitleLangs(allLangs)
   }, [downloadSubtitle, downloadAllSubs, allLangs.length, manualSubLangs, selectedSubLangs])
 
   const toggleLang = (lang: string) => {
@@ -690,6 +711,7 @@ export const DownloaderPage = () => {
         skipDanmakuConvert,
         writeThumbnail: downloadThumbnail,
         useCookie,
+        speedProfile,
         allowPlaylist,
       }
 
@@ -818,6 +840,7 @@ export const DownloaderPage = () => {
         skipDanmakuConvert,
         writeThumbnail: downloadThumbnail,
         useCookie,
+        speedProfile,
         allowPlaylist,
       }
 
@@ -868,6 +891,7 @@ export const DownloaderPage = () => {
     selectedSubLangs,
     convertSubs,
     useCookie,
+    speedProfile,
     allowPlaylist,
     resolvedSubLangs,
     skipDanmakuConvert,
@@ -895,6 +919,7 @@ export const DownloaderPage = () => {
     setLastResolvedOutputDir('')
     setIsCheckingPlaylist(false)
     setDownloadAllSubs(false)
+    setSpeedProfile('auto')
     setManualSubLangs('')
     setSkipDanmakuConvert(true)
     setPreviewDirectUrl('')
@@ -1201,6 +1226,24 @@ export const DownloaderPage = () => {
               </div>
 
               <div className={styles.fieldGroup}>
+                <label className={styles.fieldLabel}>Profile tốc độ</label>
+                <select
+                  className={styles.selectInput}
+                  value={speedProfile}
+                  onChange={e => setSpeedProfile(e.target.value as DownloadSpeedProfile)}
+                >
+                  <option value="auto">Tự động (khuyên dùng)</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="antiThrottle">Anti-throttle</option>
+                </select>
+                <p className={styles.helperTextMuted}>
+                  {speedProfile === 'auto' && isBilibiliUrl(activeUrl)
+                    ? 'Link Bilibili: tự động dùng anti-throttle.'
+                    : 'Auto sẽ tự chọn profile phù hợp theo website.'}
+                </p>
+              </div>
+
+              <div className={styles.fieldGroup}>
                 <div className={styles.inlineRow}>
                   <Checkbox label="Tải playlist (nếu có)" checked={allowPlaylist} onChange={setAllowPlaylist} />
                   <Button
@@ -1299,6 +1342,9 @@ export const DownloaderPage = () => {
 
               {downloadSubtitle && (
                 <div className={styles.fieldGroup}>
+                  {!downloadAllSubs && resolvedSubLangs.length === 0 && (
+                    <p className={styles.warningText}>Chưa chọn ngôn ngữ phụ đề.</p>
+                  )}
                   <div className={styles.inlineRow}>
                     <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
                     {downloadAllSubs && (
@@ -1395,6 +1441,12 @@ export const DownloaderPage = () => {
                 {progressInfo?.speedBytes
                   ? <span>{formatBytes(progressInfo.speedBytes)}/s</span>
                   : (progressInfo?.speed ? <span>{progressInfo.speed}</span> : null)}
+                {progressInfo?.windowSpeedBytes != null && (
+                  <span>TB30s {formatBytes(progressInfo.windowSpeedBytes)}/s</span>
+                )}
+                {progressInfo?.avgSpeedBytes != null && (
+                  <span>TB toàn phiên {formatBytes(progressInfo.avgSpeedBytes)}/s</span>
+                )}
                 {progressInfo?.eta && <span>ETA {progressInfo.eta}</span>}
                 {progressInfo?.message && <span>{progressInfo.message}</span>}
               </div>

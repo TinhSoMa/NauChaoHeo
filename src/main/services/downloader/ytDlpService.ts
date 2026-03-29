@@ -161,6 +161,46 @@ function parseProgress(line: string): Partial<DownloadProgress> | null {
   return null
 }
 
+type ResolvedSpeedProfile = 'balanced' | 'antiThrottle'
+
+function isBilibiliUrl(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase()
+    return host.includes('bilibili.com') || host.includes('b23.tv')
+  } catch {
+    return false
+  }
+}
+
+function resolveSpeedProfile(url: string, requested?: DownloadOptions['speedProfile']): ResolvedSpeedProfile {
+  if (requested === 'balanced' || requested === 'antiThrottle') return requested
+  if (isBilibiliUrl(url)) return 'antiThrottle'
+  return 'balanced'
+}
+
+function getSpeedArgs(profile: ResolvedSpeedProfile): string[] {
+  if (profile === 'antiThrottle') {
+    return [
+      '--concurrent-fragments', '1',
+      '--buffer-size', '4M',
+      '--http-chunk-size', '1M',
+      '--retries', '15',
+      '--fragment-retries', '15',
+      '--retry-sleep', '2',
+      '--socket-timeout', '30',
+    ]
+  }
+
+  return [
+    '--concurrent-fragments', '4',
+    '--buffer-size', '16M',
+    '--http-chunk-size', '10M',
+    '--retries', '10',
+    '--fragment-retries', '10',
+    '--retry-sleep', '1',
+  ]
+}
+
 class YtDlpService {
   private ytDlpBin = findYtDlp()
   private activeProcess: ChildProcess | null = null
@@ -328,7 +368,13 @@ class YtDlpService {
     } else {
       onLog('[Downloader] Ghép audio: OFF → video-only')
     }
-    const args = buildArgs(options, ffmpegLocation || undefined)
+    const speedProfile = resolveSpeedProfile(options.url, options.speedProfile)
+    if (options.speedProfile === 'auto') {
+      onLog(`[Downloader] Profile tốc độ: auto -> ${speedProfile}`)
+    } else {
+      onLog(`[Downloader] Profile tốc độ: ${speedProfile}`)
+    }
+    const args = buildArgs(options, ffmpegLocation || undefined, speedProfile)
 
     return new Promise((resolve, reject) => {
       onLog(`[yt-dlp] ${this.ytDlpBin} ${args.join(' ')}`)
@@ -344,6 +390,8 @@ class YtDlpService {
       this.activeProcess = spawn(this.ytDlpBin, args, { cwd: options.outputDir })
 
       let lastProgress: DownloadProgress = { percent: 0, stage: 'downloading' }
+      let speedBaseline: { timeMs: number; bytes: number } | null = null
+      const speedWindow: Array<{ timeMs: number; bytes: number }> = []
 
       const handleLine = (line: string) => {
         onLog(line)
@@ -353,6 +401,36 @@ class YtDlpService {
             ...lastProgress,
             ...prog,
             stage: prog.stage ?? lastProgress.stage,
+          }
+          if (next.downloadedBytes != null) {
+            const now = Date.now()
+
+            if (!speedBaseline || next.downloadedBytes < speedBaseline.bytes) {
+              speedBaseline = { timeMs: now, bytes: next.downloadedBytes }
+            }
+
+            speedWindow.push({ timeMs: now, bytes: next.downloadedBytes })
+            while (speedWindow.length > 1 && speedWindow[0].timeMs < now - 30_000) {
+              speedWindow.shift()
+            }
+
+            if (speedBaseline && now > speedBaseline.timeMs && next.downloadedBytes >= speedBaseline.bytes) {
+              const elapsed = (now - speedBaseline.timeMs) / 1000
+              if (elapsed >= 1) {
+                next.avgSpeedBytes = (next.downloadedBytes - speedBaseline.bytes) / elapsed
+              }
+            }
+
+            if (speedWindow.length >= 2) {
+              const first = speedWindow[0]
+              const last = speedWindow[speedWindow.length - 1]
+              if (last.timeMs > first.timeMs && last.bytes >= first.bytes) {
+                const elapsed = (last.timeMs - first.timeMs) / 1000
+                if (elapsed >= 1) {
+                  next.windowSpeedBytes = (last.bytes - first.bytes) / elapsed
+                }
+              }
+            }
           }
           if (prog.currentFile) {
             next.percent = 0
@@ -557,7 +635,7 @@ function parseVideoInfo(json: any): VideoInfo {
   }
 }
 
-function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] {
+function buildArgs(options: DownloadOptions, ffmpegLocation?: string, speedProfile: ResolvedSpeedProfile = 'balanced'): string[] {
   const args: string[] = []
   const mergeAudio = options.mergeAudio !== false
   const audioFormatId = options.audioFormatId?.trim()
@@ -639,13 +717,11 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string): string[] 
     args.push('--ffmpeg-location', ffmpegLocation)
   }
 
-  // Fast-safe defaults
-  args.push('--concurrent-fragments', '4')
-  args.push('--buffer-size', '16M')
-  args.push('--http-chunk-size', '10M')
-  args.push('--retries', '10')
-  args.push('--fragment-retries', '10')
-  args.push('--retry-sleep', '1')
+  // Resume partial files if the previous attempt was interrupted.
+  args.push('--continue')
+
+  // Network tuning profile
+  args.push(...getSpeedArgs(speedProfile))
 
   // Ensure progress updates are newline-delimited
   args.push('--newline')
