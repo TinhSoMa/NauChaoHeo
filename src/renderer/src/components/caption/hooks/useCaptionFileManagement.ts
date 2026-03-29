@@ -63,6 +63,23 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     return (value || '').trim().replace(/[\\/]+$/, '');
   }, []);
 
+  const normalizePathForCompare = useCallback((value: string): string => {
+    return (value || '')
+      .trim()
+      .replace(/[\\/]+/g, '/')
+      .replace(/\/+$/, '');
+  }, []);
+
+  const isDirectChildFile = useCallback((folderPath: string, filePath: string): boolean => {
+    const folderNorm = normalizePathForCompare(folderPath);
+    const fileNorm = normalizePathForCompare(filePath);
+    if (!folderNorm || !fileNorm) return false;
+    const lastSlash = fileNorm.lastIndexOf('/');
+    if (lastSlash <= 0) return false;
+    const parentDir = fileNorm.slice(0, lastSlash);
+    return parentDir === folderNorm;
+  }, [normalizePathForCompare]);
+
   const updateMissingSrt = useCallback((paths: string[], map: Record<string, string>) => {
     const missing = new Set<string>();
     for (const p of paths) {
@@ -370,7 +387,7 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
           if (res?.success && res.data) {
             for (const folderPath of pending) {
               const found = res.data[folderPath];
-              if (typeof found === 'string' && found.trim()) {
+              if (typeof found === 'string' && found.trim() && isDirectChildFile(folderPath, found)) {
                 next[folderPath] = found;
               }
             }

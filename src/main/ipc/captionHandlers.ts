@@ -467,7 +467,10 @@ export function registerCaptionHandlers(): void {
                 picked = sorted[0];
               }
             }
-            result[trimmed] = picked ? path.join(trimmed, picked) : '';
+            const pickedPath = picked ? path.join(trimmed, picked) : '';
+            // guard: chỉ nhận file nằm trực tiếp trong folder
+            const parentDir = pickedPath ? path.dirname(pickedPath).replace(/[\\/]+$/, '') : '';
+            result[trimmed] = pickedPath && parentDir === trimmed ? pickedPath : '';
           } catch (error) {
             console.warn('[CaptionHandlers] Không thể quét SRT trong folder:', trimmed, error);
             result[trimmed] = '';

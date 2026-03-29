@@ -6203,7 +6203,7 @@ export function CaptionTranslator() {
             <div className={styles.stepCardHint}>
               {settings.inputType === 'draft'
                 ? 'Draft cho phép chọn nhiều folder trong cùng một lần duyệt.'
-                : 'SRT chọn nhiều folder và tự dò file phụ đề trong từng folder.'}
+                : 'SRT chọn nhiều folder và tự dò file phụ đề ngay trong từng folder (không quét thư mục con).'}
             </div>
           </div>
 
