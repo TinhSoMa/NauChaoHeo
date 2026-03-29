@@ -79,6 +79,8 @@ export interface DownloadProgress {
   speedBytes?: number
   avgSpeedBytes?: number
   windowSpeedBytes?: number
+  connectionCount?: number
+  engine?: 'native' | 'idm'
   downloadedBytes?: number
   totalBytes?: number
   eta?: string

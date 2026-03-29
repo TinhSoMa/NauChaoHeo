@@ -1234,12 +1234,12 @@ export const DownloaderPage = () => {
                 >
                   <option value="auto">Tự động (khuyên dùng)</option>
                   <option value="balanced">Balanced</option>
-                  <option value="antiThrottle">Anti-throttle</option>
+                  <option value="antiThrottle">IDM-like (aria2 segmented)</option>
                 </select>
                 <p className={styles.helperTextMuted}>
                   {speedProfile === 'auto' && isBilibiliUrl(activeUrl)
-                    ? 'Link Bilibili: tự động dùng anti-throttle.'
-                    : 'Auto sẽ tự chọn profile phù hợp theo website.'}
+                    ? 'Link Bilibili: tự động dùng IDM-like segmented.'
+                    : 'Auto sẽ tự chọn profile phù hợp theo website (Bilibili -> IDM-like).'}
                 </p>
               </div>
 
@@ -1432,6 +1432,12 @@ export const DownloaderPage = () => {
                 />
               </div>
               <div className={styles.progressDetailRow}>
+                {progressInfo?.engine === 'idm' && (
+                  <span>IDM-like segmented</span>
+                )}
+                {progressInfo?.connectionCount != null && (
+                  <span>CN {progressInfo.connectionCount}</span>
+                )}
                 {progressInfo?.percent != null && (
                   <span>{Math.round(progressInfo.percent)}%</span>
                 )}

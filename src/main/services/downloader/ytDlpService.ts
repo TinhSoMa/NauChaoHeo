@@ -6,6 +6,7 @@ import { existsSync } from 'fs'
 import type { VideoInfo, VideoFormat, DownloadOptions, DownloadProgress, PlaylistInfo } from '../../../shared/types/downloader'
 import { getYtDlpPath } from '../../utils/ytDlpPath'
 import { getFFmpegPath } from '../../utils/ffmpegPath'
+import { getAria2cPath } from '../../utils/aria2cPath'
 
 // Try to resolve yt-dlp executable
 function findYtDlp(): string {
@@ -26,6 +27,24 @@ function findYtDlp(): string {
     }
   }
   return bundledPath || 'yt-dlp' // fallback, will error at runtime with a clear message
+}
+
+function findAria2c(): string {
+  const bundledPath = getAria2cPath()
+  if (bundledPath && existsSync(bundledPath)) {
+    return bundledPath
+  }
+
+  const candidates = process.platform === 'win32' ? ['aria2c.exe', 'aria2c'] : ['aria2c']
+  for (const name of candidates) {
+    try {
+      const result = require('child_process').spawnSync(name, ['--version'], { encoding: 'utf8', timeout: 5000 })
+      if (result.status === 0) return name
+    } catch {
+      // continue
+    }
+  }
+  return bundledPath || 'aria2c'
 }
 
 function parseSizeToBytes(value: string, unit: string): number | null {
@@ -156,6 +175,39 @@ function parseProgress(line: string): Partial<DownloadProgress> | null {
       stage: 'downloading',
     }
   }
+
+  // aria2c readout line when using external downloader, e.g.
+  // [#abcd12 512.0MiB/1.99GiB(25%) CN:16 DL:35.0MiB ETA:45s]
+  const aria2Full = line.match(/\[#([0-9a-f]+)\s+([\d.]+)\s*([KMG]?i?B)\/([\d.]+)\s*([KMG]?i?B)\((\d+(?:\.\d+)?)%\)\s+CN:(\d+)\s+DL:([\d.]+)\s*([KMG]?i?B)(?:\s+ETA:([^\]\s]+))?\]/i)
+  if (aria2Full) {
+    const downloadedBytes = parseSizeToBytes(aria2Full[2], aria2Full[3]) ?? undefined
+    const totalBytes = parseSizeToBytes(aria2Full[4], aria2Full[5]) ?? undefined
+    const speedBytes = parseSizeToBytes(aria2Full[8], aria2Full[9]) ?? undefined
+    return {
+      percent: parseFloat(aria2Full[6]),
+      downloadedBytes,
+      totalBytes,
+      speedBytes,
+      speed: `${aria2Full[8]}${aria2Full[9]}/s`,
+      eta: aria2Full[10],
+      connectionCount: Number.parseInt(aria2Full[7], 10) || undefined,
+      stage: 'downloading',
+    }
+  }
+
+  // aria2c line without total bytes in the same row, keep percent if present
+  const aria2PercentSpeed = line.match(/\[#.+?\((\d+(?:\.\d+)?)%\).*?DL:([\d.]+)\s*([KMG]?i?B)(?:\s+ETA:([^\]\s]+))?.*\]/i)
+  if (aria2PercentSpeed) {
+    const speedBytes = parseSizeToBytes(aria2PercentSpeed[2], aria2PercentSpeed[3]) ?? undefined
+    return {
+      percent: parseFloat(aria2PercentSpeed[1]),
+      speedBytes,
+      speed: `${aria2PercentSpeed[2]}${aria2PercentSpeed[3]}/s`,
+      eta: aria2PercentSpeed[4],
+      stage: 'downloading',
+    }
+  }
+
   if (line.includes('[Merger]')) return { stage: 'merging', percent: 99, message: 'Merging...' }
   if (line.includes('has already been downloaded')) return { stage: 'done', percent: 100 }
   return null
@@ -201,8 +253,70 @@ function getSpeedArgs(profile: ResolvedSpeedProfile): string[] {
   ]
 }
 
+function getAria2Args(profile: ResolvedSpeedProfile): string {
+  if (profile === 'antiThrottle') {
+    return [
+      '--max-connection-per-server=16',
+      '--split=16',
+      '--min-split-size=1M',
+      '--max-tries=0',
+      '--retry-wait=1',
+      '--connect-timeout=15',
+      '--timeout=30',
+      '--http-accept-gzip=false',
+      '--summary-interval=1',
+      '--file-allocation=none',
+      '--allow-overwrite=true',
+    ].join(' ')
+  }
+
+  return [
+    '--max-connection-per-server=8',
+    '--split=8',
+    '--min-split-size=4M',
+    '--max-tries=0',
+    '--retry-wait=1',
+    '--connect-timeout=20',
+    '--timeout=30',
+    '--http-accept-gzip=false',
+    '--summary-interval=1',
+    '--file-allocation=none',
+    '--allow-overwrite=true',
+  ].join(' ')
+}
+
+function sanitizeSubtitleLangsForAria2(langs: string[] | undefined): string[] | undefined {
+  if (!langs || langs.length === 0) return langs
+
+  const normalized = langs.map((lang) => lang.trim()).filter(Boolean)
+  if (normalized.length === 0) return undefined
+
+  const hasAll = normalized.includes('all')
+  if (hasAll) {
+    // Keep broad subtitle coverage but avoid danmaku xml endpoint that breaks aria2 on some Bilibili responses.
+    return ['all', '-danmaku']
+  }
+
+  return normalized.filter((lang) => lang.toLowerCase() !== 'danmaku')
+}
+
+function withPrependedPathEnv(env: NodeJS.ProcessEnv, binPath: string): NodeJS.ProcessEnv {
+  if (!binPath.includes('/') && !binPath.includes('\\')) {
+    return env
+  }
+  const nextEnv: NodeJS.ProcessEnv = { ...env }
+  const binDir = path.dirname(binPath)
+  const pathKeys = process.platform === 'win32' ? ['Path', 'PATH'] : ['PATH']
+  for (const key of pathKeys) {
+    const cur = nextEnv[key]
+    nextEnv[key] = cur ? `${binDir}${path.delimiter}${cur}` : binDir
+  }
+  return nextEnv
+}
+
 class YtDlpService {
   private ytDlpBin = findYtDlp()
+  private aria2Bin = findAria2c()
   private activeProcess: ChildProcess | null = null
 
   /**
@@ -369,12 +483,33 @@ class YtDlpService {
       onLog('[Downloader] Ghép audio: OFF → video-only')
     }
     const speedProfile = resolveSpeedProfile(options.url, options.speedProfile)
+    let useAria2 = speedProfile === 'antiThrottle'
+    if (useAria2) {
+      if (existsSync(this.aria2Bin) || this.aria2Bin === 'aria2c' || this.aria2Bin === 'aria2c.exe') {
+        onLog('[Downloader] Engine: IDM-like segmented (aria2c)')
+      } else {
+        useAria2 = false
+        onLog(`[Downloader] WARN: aria2c không tìm thấy tại ${this.aria2Bin} -> fallback yt-dlp native`)
+      }
+    }
     if (options.speedProfile === 'auto') {
       onLog(`[Downloader] Profile tốc độ: auto -> ${speedProfile}`)
     } else {
       onLog(`[Downloader] Profile tốc độ: ${speedProfile}`)
     }
-    const args = buildArgs(options, ffmpegLocation || undefined, speedProfile)
+
+    const effectiveOptions: DownloadOptions = { ...options }
+    if (useAria2) {
+      const before = options.subtitleLangs ?? []
+      const after = sanitizeSubtitleLangsForAria2(before)
+      const changed = JSON.stringify(before) !== JSON.stringify(after ?? [])
+      if (changed) {
+        onLog('[Downloader] IDM-like: bỏ danmaku subtitle để tránh lỗi aria2 gzip decode')
+      }
+      effectiveOptions.subtitleLangs = after
+    }
+
+    const args = buildArgs(effectiveOptions, ffmpegLocation || undefined, speedProfile, useAria2)
 
     return new Promise((resolve, reject) => {
       onLog(`[yt-dlp] ${this.ytDlpBin} ${args.join(' ')}`)
@@ -387,9 +522,14 @@ class YtDlpService {
         return reject(new Error(`Không tạo được thư mục lưu: ${options.outputDir || '(empty)'} (${e?.message || e})`))
       }
 
-      this.activeProcess = spawn(this.ytDlpBin, args, { cwd: options.outputDir })
+      const spawnEnv = useAria2 ? withPrependedPathEnv(process.env, this.aria2Bin) : process.env
+      this.activeProcess = spawn(this.ytDlpBin, args, { cwd: options.outputDir, env: spawnEnv })
 
-      let lastProgress: DownloadProgress = { percent: 0, stage: 'downloading' }
+      let lastProgress: DownloadProgress = {
+        percent: 0,
+        stage: 'downloading',
+        engine: useAria2 ? 'idm' : 'native',
+      }
       let speedBaseline: { timeMs: number; bytes: number } | null = null
       const speedWindow: Array<{ timeMs: number; bytes: number }> = []
 
@@ -635,7 +775,12 @@ function parseVideoInfo(json: any): VideoInfo {
   }
 }
 
-function buildArgs(options: DownloadOptions, ffmpegLocation?: string, speedProfile: ResolvedSpeedProfile = 'balanced'): string[] {
+function buildArgs(
+  options: DownloadOptions,
+  ffmpegLocation?: string,
+  speedProfile: ResolvedSpeedProfile = 'balanced',
+  useAria2 = false,
+): string[] {
   const args: string[] = []
   const mergeAudio = options.mergeAudio !== false
   const audioFormatId = options.audioFormatId?.trim()
@@ -717,11 +862,18 @@ function buildArgs(options: DownloadOptions, ffmpegLocation?: string, speedProfi
     args.push('--ffmpeg-location', ffmpegLocation)
   }
 
+  if (useAria2) {
+    args.push('--downloader', 'aria2c')
+    args.push('--downloader-args', `aria2c:${getAria2Args(speedProfile)}`)
+  }
+
   // Resume partial files if the previous attempt was interrupted.
   args.push('--continue')
 
-  // Network tuning profile
-  args.push(...getSpeedArgs(speedProfile))
+  // Network tuning profile (for yt-dlp native downloader path)
+  if (!useAria2) {
+    args.push(...getSpeedArgs(speedProfile))
+  }
 
   // Ensure progress updates are newline-delimited
   args.push('--newline')

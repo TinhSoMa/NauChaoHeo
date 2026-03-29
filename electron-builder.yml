@@ -36,6 +36,10 @@ extraResources:
     to: yt-dlp
     filter:
       - "**/*"
+  - from: resources/aria2c/win64
+    to: aria2c
+    filter:
+      - "**/*"
   - from: resources/python/win32-x64/runtime
     to: python
     filter:
