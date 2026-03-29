@@ -18,7 +18,13 @@ export function getCaptionOutputDirFromInput(inputType: 'srt' | 'draft', inputPa
 
   const joinPath = (parts: string[]): string => (prefix ? prefix : '') + parts.join(sep);
 
-  if (inputType === 'draft') {
+  // draft/srt mode đều đang chạy theo danh sách folder đầu vào.
+  // Vì vậy caption_output phải nằm bên trong chính folder input đó.
+  if (inputType === 'draft' || inputType === 'srt') {
+    const lastSegment = segments[segments.length - 1]?.toLowerCase() || '';
+    if (lastSegment === 'caption_output') {
+      return joinPath(segments);
+    }
     return joinPath([...segments, 'caption_output']);
   }
 
@@ -39,6 +45,7 @@ export function getCaptionOutputDirFromInput(inputType: 'srt' | 'draft', inputPa
     }
     return resolved;
   }
+
   return joinPath([...segments.slice(0, -1), 'caption_output']);
 }
 
