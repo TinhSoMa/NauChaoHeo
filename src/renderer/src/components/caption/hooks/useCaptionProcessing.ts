@@ -3933,17 +3933,34 @@ export function useCaptionProcessing({
             }));
 
           const mappingByOriginal = new Map<string, string>();
+          const mappingByAnyPath = new Map<string, string>();
+          const normalizedOutputPathByAnyPath = new Map<string, string>();
           for (const mapping of previousPathMapping) {
             mappingByOriginal.set(mapping.originalPath, mapping.outputPath);
+            mappingByAnyPath.set(mapping.originalPath, mapping.outputPath);
+            mappingByAnyPath.set(mapping.outputPath, mapping.outputPath);
+
+            const normalizedOriginalPath = normalizePathKey(mapping.originalPath);
+            const normalizedOutputPath = normalizePathKey(mapping.outputPath);
+            normalizedOutputPathByAnyPath.set(normalizedOriginalPath, mapping.outputPath);
+            normalizedOutputPathByAnyPath.set(normalizedOutputPath, mapping.outputPath);
           }
 
           const speedMatches = Number.isFinite(previousFitSpeed) && Math.abs((previousFitSpeed || 0) - fitSpeed) < 0.0001;
           const labelMatches = !previousSpeedLabel || previousSpeedLabel === fitSpeedDirLabel;
-          const missingMapping = filesToMerge.filter((file) => !mappingByOriginal.has(file.path));
+          const missingMapping = filesToMerge.filter((file) => {
+            const normalizedKey = normalizePathKey(file.path);
+            return !normalizedOutputPathByAnyPath.has(normalizedKey);
+          });
 
           let reusedFit = false;
-          if (speedMatches && labelMatches && missingMapping.length === 0 && mappingByOriginal.size > 0) {
-            const outputPaths = filesToMerge.map((file) => mappingByOriginal.get(file.path) || file.path);
+          if (speedMatches && labelMatches && missingMapping.length === 0 && mappingByAnyPath.size > 0) {
+            const outputPaths = filesToMerge.map((file) => {
+              const normalizedKey = normalizePathKey(file.path);
+              return normalizedOutputPathByAnyPath.get(normalizedKey)
+                || mappingByAnyPath.get(file.path)
+                || file.path;
+            });
             const uniqueOutputs = Array.from(new Set(outputPaths));
             // @ts-ignore
             const checkResult = await window.electronAPI.tts.checkAudioFiles(uniqueOutputs);
@@ -3952,7 +3969,9 @@ export function useCaptionProcessing({
               : uniqueOutputs;
             if (missingOutputs.length === 0) {
               filesToMerge = filesToMerge.map((file) => {
-                const mapped = mappingByOriginal.get(file.path);
+                const normalizedKey = normalizePathKey(file.path);
+                const mapped = normalizedOutputPathByAnyPath.get(normalizedKey)
+                  || mappingByAnyPath.get(file.path);
                 return mapped ? { ...file, path: mapped, success: true } : file;
               });
               fitOutputDir = previousFitOutputDir;
@@ -4004,6 +4023,9 @@ export function useCaptionProcessing({
               const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
 
               for (const fitItem of fitItems) {
+                if (abortRef.current) {
+                  throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                }
                 const audioName = getPathBaseName(fitItem.path) || 'unknown';
                 setProgress({
                   current: processedCount,
@@ -4023,6 +4045,9 @@ export function useCaptionProcessing({
                   scaledCount += itemScaledCount;
                   pathMapping.push(...itemMapping);
                 } else {
+                  if ((fitResult?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current) {
+                    throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                  }
                   console.warn(`[${folderName}] Cảnh báo fit audio (${audioName}): ${fitResult.error}`);
                 }
 
@@ -4063,9 +4088,15 @@ export function useCaptionProcessing({
         const safeSrtSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
         const speedLabel = normalizeSpeedLabel(safeSrtSpeed);
         const mergedPath = `${processOutputDir}/merged_audio_${speedLabel}x.wav`;
+        if (abortRef.current) {
+          throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+        }
         setProgress({ current: 0, total: 1, message: msgCtx('Bước 6: Đang ghép audio...') });
         // @ts-ignore
         const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, safeSrtSpeed);
+        if (!result.success && ((result?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current)) {
+          throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+        }
         if (result.success) {
           setProgress({ current: 1, total: 1, message: msgCtx('Bước 6: Đã ghép audio thành công') });
           const actualMergedOutputPath = (

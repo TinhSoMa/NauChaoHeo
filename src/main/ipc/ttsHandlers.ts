@@ -6,6 +6,7 @@ import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import {
+  CAPTION_PROCESS_STOP_SIGNAL,
   CAPTION_IPC_CHANNELS,
   SubtitleEntry,
   TTSTestVoiceRequest,
@@ -116,8 +117,18 @@ export function registerTTSHandlers(): void {
     CAPTION_IPC_CHANNELS.TTS_STOP,
     async (): Promise<IpcResponse<{ stopped: boolean; message?: string }>> => {
       try {
-        const result = TTSService.stopActiveTts();
-        return { success: true, data: result };
+        const ttsResult = TTSService.stopActiveTts();
+        const mergeResult = TTSService.stopActiveAudioMerger();
+        const stopped = !!ttsResult.stopped || !!mergeResult.stopped;
+        return {
+          success: true,
+          data: {
+            stopped,
+            message: stopped
+              ? 'Đã gửi tín hiệu dừng TTS và merge/fit audio.'
+              : 'Không có TTS hoặc merge/fit audio đang chạy.',
+          },
+        };
       } catch (error) {
         console.error('[TTSHandlers] Lỗi stop TTS:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -161,9 +172,13 @@ export function registerTTSHandlers(): void {
       console.log(`[TTSHandlers] Merge audio: ${audioFiles.length} files -> ${outputPath}, scale: ${timeScale}`);
 
       try {
+        TTSService.resetTtsStopRequest();
         const result = await TTSService.mergeAudioFiles(audioFiles, outputPath, timeScale);
         return { success: result.success, data: result, error: result.error };
       } catch (error) {
+        if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
+          return { success: false, error: CAPTION_PROCESS_STOP_SIGNAL };
+        }
         console.error('[TTSHandlers] Lỗi merge audio:', error);
         return { success: false, error: String(error) };
       }
@@ -377,9 +392,8 @@ export function registerTTSHandlers(): void {
       skippedCount: number;
       pathMapping: Array<{ originalPath: string; outputPath: string }>;
     }>> => {
-      console.log(`[TTSHandlers] Fit audio: ${audioItems.length} files`);
-
       try {
+        TTSService.resetTtsStopRequest();
         let scaledCount = 0;
         let skippedCount = 0;
         const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
@@ -394,13 +408,14 @@ export function registerTTSHandlers(): void {
           }
         }
 
-        console.log(`[TTSHandlers] Fit audio done: ${scaledCount} scaled, ${skippedCount} skipped`);
-
         return {
           success: true,
           data: { scaledCount, skippedCount, pathMapping },
         };
       } catch (error) {
+        if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
+          return { success: false, error: CAPTION_PROCESS_STOP_SIGNAL };
+        }
         console.error('[TTSHandlers] Lỗi fit audio:', error);
         return { success: false, error: String(error) };
       }

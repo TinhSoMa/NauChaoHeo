@@ -57,7 +57,15 @@ function clearTtsStopRequest(): void {
   ttsStopRequested = false;
 }
 
-function throwIfTtsStopped(): void {
+export function resetTtsStopRequest(): void {
+  clearTtsStopRequest();
+}
+
+export function isTtsStopRequested(): boolean {
+  return ttsStopRequested;
+}
+
+export function throwIfTtsStopped(): void {
   if (ttsStopRequested) {
     throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
   }
