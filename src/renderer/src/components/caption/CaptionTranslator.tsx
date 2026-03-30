@@ -46,6 +46,7 @@ import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { BulkApplyResult, ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 import { Step3BulkFileItem, Step3BulkMultiFolderModal } from './components/Step3BulkMultiFolderModal';
+import { Step3BatchMonitorPopup, type Step3BatchEditableLine } from './components/Step3BatchMonitorPopup';
 import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
@@ -76,6 +77,9 @@ type Step3BatchRuntimeEntry = {
 };
 type Step3BatchViewRow = {
   batchIndex: number;
+  startIndex: number;
+  endIndex: number;
+  lineRangeLabel: string;
   status: Step3BatchStatus;
   attempts: number;
   expectedLines: number;
@@ -2802,6 +2806,16 @@ export function CaptionTranslator() {
   const [step3ManualFileName, setStep3ManualFileName] = useState('');
   const [step3ManualFileContent, setStep3ManualFileContent] = useState('');
   const [step3ManualHideFilePreview, setStep3ManualHideFilePreview] = useState(false);
+  const [step3BatchEditModal, setStep3BatchEditModal] = useState<{
+    batchIndex: number;
+    startIndex: number;
+    endIndex: number;
+    expectedLines: number;
+    lineRangeLabel: string;
+  } | null>(null);
+  const [step3BatchEditLines, setStep3BatchEditLines] = useState<Step3BatchEditableLine[]>([]);
+  const [step3BatchEditBusy, setStep3BatchEditBusy] = useState(false);
+  const [step3BatchEditError, setStep3BatchEditError] = useState('');
   const step3ManualFileInputRef = useRef<HTMLInputElement | null>(null);
   const step3ManualValidateTokenRef = useRef(0);
   const [step3BulkMultiModalOpen, setStep3BulkMultiModalOpen] = useState(false);
@@ -3057,6 +3071,93 @@ export function CaptionTranslator() {
     settings.inputType,
     fileManager.filePath,
   ]);
+
+  const buildStep3BatchEditorLines = useCallback((row: Step3BatchViewRow): Step3BatchEditableLine[] => {
+    const sourceEntries = sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries;
+    const rangeCount = Math.max(0, row.endIndex - row.startIndex + 1);
+    const expectedCount = Math.max(rangeCount, row.expectedLines);
+    return Array.from({ length: expectedCount }, (_, offset) => {
+      const globalIndex = row.startIndex + offset;
+      const entry = sourceEntries[globalIndex];
+      return {
+        lineNo: offset + 1,
+        globalIndex: globalIndex + 1,
+        originalText: typeof entry?.text === 'string' ? entry.text : '',
+        translatedText: typeof entry?.translatedText === 'string' ? entry.translatedText : '',
+      };
+    });
+  }, [fileManager.entries, sessionPreviewEntries]);
+
+  const openStep3BatchEditor = useCallback((row: Step3BatchViewRow) => {
+    setStep3BatchEditModal({
+      batchIndex: row.batchIndex,
+      startIndex: row.startIndex,
+      endIndex: row.endIndex,
+      expectedLines: row.expectedLines,
+      lineRangeLabel: row.lineRangeLabel,
+    });
+    setStep3BatchEditLines(buildStep3BatchEditorLines(row));
+    setStep3BatchEditBusy(false);
+    setStep3BatchEditError('');
+  }, [buildStep3BatchEditorLines]);
+
+  const closeStep3BatchEditor = useCallback(() => {
+    if (step3BatchEditBusy) {
+      return;
+    }
+    setStep3BatchEditModal(null);
+    setStep3BatchEditLines([]);
+    setStep3BatchEditError('');
+  }, [step3BatchEditBusy]);
+
+  const handleSaveStep3BatchEditor = useCallback(async (lines: Step3BatchEditableLine[]) => {
+    if (!step3BatchEditModal || step3BatchEditBusy || processing.status === 'running') {
+      return;
+    }
+    const activeInputPath = resolveActiveInputPath();
+    if (!activeInputPath) {
+      setStep3BatchEditError('Không tìm thấy input path để cập nhật batch.');
+      return;
+    }
+
+    const expectedCount = Math.max(
+      step3BatchEditModal.expectedLines,
+      step3BatchEditModal.endIndex - step3BatchEditModal.startIndex + 1
+    );
+    const lineMap = new Map<number, string>();
+    for (const line of lines) {
+      if (!Number.isFinite(line.lineNo) || line.lineNo <= 0) {
+        continue;
+      }
+      lineMap.set(Math.floor(line.lineNo), typeof line.translatedText === 'string' ? line.translatedText : '');
+    }
+    const translatedTexts = Array.from({ length: expectedCount }, (_, offset) => {
+      const value = lineMap.get(offset + 1);
+      return typeof value === 'string' ? value : '';
+    });
+
+    setStep3BatchEditBusy(true);
+    setStep3BatchEditError('');
+    try {
+      const result = await processing.applyManualBatchTranslatedTexts({
+        inputPath: activeInputPath,
+        batchIndex: step3BatchEditModal.batchIndex,
+        translatedTexts,
+      });
+      if (!result.success) {
+        setStep3BatchEditError(result.error || 'Không thể lưu chỉnh sửa batch.');
+        return;
+      }
+      await refreshActiveSession();
+      setStep3BatchEditModal(null);
+      setStep3BatchEditLines([]);
+      setStep3BatchEditError('');
+    } catch (error) {
+      setStep3BatchEditError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStep3BatchEditBusy(false);
+    }
+  }, [step3BatchEditBusy, step3BatchEditModal, processing, refreshActiveSession, resolveActiveInputPath]);
 
   const openStep3ManualSingle = useCallback((batchIndex: number) => {
     setStep3ManualModal({ mode: 'single', batchIndex });
@@ -4492,6 +4593,9 @@ export function CaptionTranslator() {
 
       rows.push({
         batchIndex,
+        startIndex: startLine,
+        endIndex: endLine,
+        lineRangeLabel,
         status,
         attempts: typeof report?.attempts === 'number' ? Math.max(0, Math.floor(report.attempts)) : 0,
         expectedLines,
@@ -6013,6 +6117,15 @@ export function CaptionTranslator() {
                   <span className={styles.step3BatchSub}>try {row.attempts || '--'} · {row.transportLabel}</span>
                 </div>
                 <div className={styles.step3BatchColAction}>
+                  <button
+                    type="button"
+                    className={styles.step3BatchActionBtn}
+                    onClick={() => openStep3BatchEditor(row)}
+                    disabled={processing.status === 'running'}
+                    title={`Xem/Sửa subtitle của batch #${row.batchIndex}`}
+                  >
+                    Xem/Sửa
+                  </button>
                   <button
                     type="button"
                     className={styles.step3BatchActionBtn}
@@ -7758,6 +7871,17 @@ export function CaptionTranslator() {
           onApply={handleApplyStep3BulkMultiFolder}
         />
       )}
+
+      <Step3BatchMonitorPopup
+        visible={!!step3BatchEditModal}
+        batchIndex={step3BatchEditModal?.batchIndex || 0}
+        lineRangeLabel={step3BatchEditModal?.lineRangeLabel || '--'}
+        lines={step3BatchEditLines}
+        busy={step3BatchEditBusy}
+        error={step3BatchEditError}
+        onClose={closeStep3BatchEditor}
+        onSave={handleSaveStep3BatchEditor}
+      />
 
       {step3ManualModal && (
       <div

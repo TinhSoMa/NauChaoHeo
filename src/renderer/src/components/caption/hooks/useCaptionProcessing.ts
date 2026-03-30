@@ -2104,6 +2104,48 @@ export function useCaptionProcessing({
     }
   }, [applyManualBatchUpdates, inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
+  const applyManualBatchTranslatedTexts = useCallback(async (payload: {
+    inputPath: string;
+    batchIndex: number;
+    translatedTexts: string[];
+  }): Promise<ManualApplyResult> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { success: false, error: 'Thiếu input path để cập nhật.' };
+    }
+    const batchIndex = Math.max(1, Math.floor(payload.batchIndex));
+    const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+    const folderPath = resolveFolderPath(trimmedPath);
+    const fallback = { projectId, inputType: inputType as 'srt' | 'draft', sourcePath: resolveSourcePath(trimmedPath), folderPath };
+
+    try {
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      if (step2BatchPlan.length === 0) {
+        return { success: false, error: 'Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.' };
+      }
+      const plan = step2BatchPlan.find((item) => Math.floor(item.batchIndex) === batchIndex);
+      if (!plan) {
+        return { success: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+      }
+
+      const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+      const normalized = Array.from({ length: expectedLines }, (_, idx) => {
+        const value = payload.translatedTexts?.[idx];
+        return typeof value === 'string' ? value.trim() : '';
+      });
+
+      return await applyManualBatchUpdates(trimmedPath, [{
+        batchIndex,
+        translatedTexts: normalized,
+      }]);
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [applyManualBatchUpdates, inputType, projectId, resolveFolderPath, resolveSourcePath]);
+
   const validateManualBatchResponse = useCallback(async (payload: {
     inputPath: string;
     batchIndex: number;
@@ -5162,6 +5204,7 @@ export function useCaptionProcessing({
     handleStart,
     handleStop,
     applyManualBatchResponse,
+    applyManualBatchTranslatedTexts,
     applyManualBulkResponses,
     validateManualBatchResponse,
     validateManualBulkResponses,
