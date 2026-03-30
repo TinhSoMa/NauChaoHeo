@@ -1,4 +1,4 @@
-const GEMINI_SCRIPT_VERSION = "2026.03.29.4";
+const GEMINI_SCRIPT_VERSION = "2026.03.30.1";
 
 if (window.__geminiScriptVersion === GEMINI_SCRIPT_VERSION) {
     console.log(`----> Gemini Content Script đã ở bản mới nhất v${GEMINI_SCRIPT_VERSION}`);
@@ -22,6 +22,23 @@ if (window.__geminiScriptVersion === GEMINI_SCRIPT_VERSION) {
 let pollingIntervalId = null; // Quản lý interval để có thể hủy khi cần
 let activeInputBox = null;
 let activeDocument = null;
+let requestInFlight = false;
+let pendingRequestResponder = null;
+
+function createSafeSendResponse(sendResponse) {
+    let responded = false;
+    return (payload) => {
+        if (responded) return;
+        responded = true;
+        requestInFlight = false;
+        pendingRequestResponder = null;
+        try {
+            sendResponse(payload);
+        } catch (e) {
+            console.warn("----> ⚠️ Gửi response thất bại:", e?.message || e);
+        }
+    };
+}
 
 // ============================================
 // DOCUMENT CONTEXT MANAGEMENT
@@ -100,7 +117,19 @@ function resolveComposerContext() {
 // ============================================
 const runtimeMessageListener = (request, sender, sendResponse) => {
     if (request.action === "PASTE_AND_SEND") {
-        handlePasteAndSend(request.prompt, sendResponse);
+        if (requestInFlight) {
+            sendResponse({ status: "BUSY", message: "Gemini content script đang xử lý request trước đó" });
+            return false;
+        }
+
+        requestInFlight = true;
+        const safeSendResponse = createSafeSendResponse(sendResponse);
+        pendingRequestResponder = safeSendResponse;
+
+        Promise.resolve(handlePasteAndSend(request.prompt, safeSendResponse))
+            .catch((e) => {
+                safeSendResponse({ status: "ERROR", message: e?.message || String(e) });
+            });
         return true; // Giữ channel mở cho async response
     } else if (request.action === "PING") {
         sendResponse({ status: "ALIVE" });
@@ -114,6 +143,14 @@ const runtimeMessageListener = (request, sender, sendResponse) => {
             activeDocument = null;
             console.log("----> 🛑 ĐÃ HỦY POLLING - Dừng ngay lập tức!");
         }
+
+        if (typeof pendingRequestResponder === 'function') {
+            pendingRequestResponder({ status: "CANCELLED", message: "Đã dừng bởi người dùng" });
+        } else {
+            requestInFlight = false;
+            pendingRequestResponder = null;
+        }
+
         sendResponse({ status: "CANCELLED" });
         // Synchronous response - NOT returning true
     } else if (request.action === "UPDATE_PIP_STATUS") {
@@ -261,19 +298,47 @@ function looksLikeSendButton(button) {
     const type = (button.getAttribute('type') || '').toLowerCase();
     const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
     const dataTestId = (button.getAttribute('data-test-id') || '').toLowerCase();
+    const icon = (button.querySelector('mat-icon')?.getAttribute('fonticon') || '').toLowerCase();
     return (
         type === 'submit' ||
         ariaLabel.includes('send') ||
         ariaLabel.includes('gửi') ||
+        ariaLabel.includes('submit') ||
+        icon.includes('send') ||
+        icon.includes('arrow_upward') ||
         dataTestId.includes('send')
     );
+}
+
+function findVisibleStopButton(doc) {
+    const candidates = [
+        'button[aria-label*="Stop"]',
+        'button[aria-label*="Dừng"]',
+        'button[data-test-id*="stop"]',
+        'button[data-test-id*="Stop"]'
+    ];
+
+    for (const selector of candidates) {
+        const button = doc.querySelector(selector);
+        if (button && isElementVisible(button)) {
+            return button;
+        }
+    }
+
+    return null;
+}
+
+function getInputTextLength(inputBox) {
+    if (!inputBox) return 0;
+    const text = (inputBox.innerText || inputBox.textContent || '').trim();
+    return text.length;
 }
 
 /**
  * Tìm nút Gửi (Send button)
  * Gemini có thể dùng aria-label khác nhau tùy ngôn ngữ
  */
-function findSendButton(doc, inputBox = null) {
+function findSendButton(doc, inputBox = null, logWhenMissing = true) {
     // Thử các selector khác nhau
     const selectors = [
         'button[aria-label*="Send"]',
@@ -344,7 +409,9 @@ function findSendButton(doc, inputBox = null) {
         return visible.button;
     }
     
-    console.warn("----> Không tìm thấy nút Send!");
+    if (logWhenMissing) {
+        console.warn("----> Không tìm thấy nút Send!");
+    }
     return null;
 }
 
@@ -382,43 +449,58 @@ function submitNearestForm(inputBox) {
     }
 }
 
-async function waitForGenerationStart(doc, inputBox, label) {
+async function waitForGenerationStart(doc, inputBox, label, expectedPromptLength = 0) {
     await sleep(900);
     if (isGeminiGenerating(doc, inputBox)) {
         console.log(`----> ✓ Gemini đã bắt đầu xử lý sau ${label}`);
         return true;
     }
+
+    // Fallback khi Gemini đổi UI và nút Send/Stop không bắt được bằng selector.
+    // Nếu input gần như trống ngay sau thao tác gửi thì coi như prompt đã được nhận.
+    const remainingLength = getInputTextLength(inputBox);
+    const threshold = expectedPromptLength > 0
+        ? Math.max(8, Math.floor(expectedPromptLength * 0.02))
+        : 8;
+    if (remainingLength <= threshold) {
+        console.log(`----> ✓ Prompt đã được nhận sau ${label} (input còn ${remainingLength} ký tự)`);
+        return true;
+    }
+
     console.log(`----> [debug] Gemini chưa bắt đầu sau ${label}`);
     return false;
 }
 
 function isGeminiGenerating(doc, inputBox = null) {
-    const stopButton = doc.querySelector('button[aria-label*="Stop"]') ||
-        doc.querySelector('button[aria-label*="Dừng"]');
-    if (stopButton && isElementVisible(stopButton)) {
+    const stopButton = findVisibleStopButton(doc);
+    if (stopButton) {
         return true;
     }
 
-    const sendButton = findSendButton(doc, inputBox || activeInputBox);
-    return !sendButton || !isButtonEnabled(sendButton);
+    const sendButton = findSendButton(doc, inputBox || activeInputBox, false);
+    if (!sendButton) {
+        return false;
+    }
+    return !isButtonEnabled(sendButton);
 }
 
 async function triggerSend(doc, inputBox) {
     inputBox.focus();
+    const promptLength = getInputTextLength(inputBox);
 
     // Ưu tiên hành vi bàn phím như người dùng thật để tránh lệ thuộc selector nút
     simulateEnterOnInput(inputBox, false);
-    if (await waitForGenerationStart(doc, inputBox, "Enter")) {
+    if (await waitForGenerationStart(doc, inputBox, "Enter", promptLength)) {
         return true;
     }
 
     simulateEnterOnInput(inputBox, true);
-    if (await waitForGenerationStart(doc, inputBox, "Ctrl+Enter")) {
+    if (await waitForGenerationStart(doc, inputBox, "Ctrl+Enter", promptLength)) {
         return true;
     }
 
     if (submitNearestForm(inputBox)) {
-        if (await waitForGenerationStart(doc, inputBox, "form submit")) {
+        if (await waitForGenerationStart(doc, inputBox, "form submit", promptLength)) {
             return true;
         }
     }
@@ -429,7 +511,7 @@ async function triggerSend(doc, inputBox) {
         sendButton.click();
         console.log("----> ✓ Đã click nút Gửi");
 
-        if (await waitForGenerationStart(doc, inputBox, "click Send")) {
+        if (await waitForGenerationStart(doc, inputBox, "click Send", promptLength)) {
             return true;
         }
     }
@@ -442,7 +524,7 @@ async function triggerSend(doc, inputBox) {
         sendButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         console.log("----> ✓ Đã gửi chuỗi sự kiện chuột tới nút Gửi");
 
-        if (await waitForGenerationStart(doc, inputBox, "mouse events")) {
+        if (await waitForGenerationStart(doc, inputBox, "mouse events", promptLength)) {
             return true;
         }
     }
@@ -556,6 +638,8 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
     const checkIntervalMs = 3000; // Kiểm tra mỗi 3 giây
     
     let hasStartedGenerating = false; // Flag để biết Gemini đã bắt đầu generate chưa
+    let stableResponseChecks = 0;
+    let lastResponseSignature = '';
 
     // Clear interval cũ nếu còn tồn tại (tránh memory leak)
     if (pollingIntervalId) {
@@ -572,49 +656,59 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         console.log(`----> [${checkCount}/${maxChecks}] Kiểm tra trạng thái Gemini (${usingPiP ? 'PiP' : 'Tab gốc'})...`);
         
         // Tìm nút Send
-        const sendButton = findSendButton(doc, inputBox || activeInputBox);
+        const sendButton = findSendButton(doc, inputBox || activeInputBox, false);
         
         // Kiểm tra xem Gemini có đang generate không
-        // Cách 1: Nút Send không có hoặc bị disabled
-        const isGenerating = !sendButton || sendButton.disabled;
+        // Ưu tiên Stop button, sau đó fallback theo trạng thái nút Send nếu tìm được.
+        const stopButton = findVisibleStopButton(doc);
+        const isGenerating = !!stopButton || (!!sendButton && !isButtonEnabled(sendButton));
         
-        // Cách 2: Tìm nút Stop (xuất hiện khi đang generate)
-        const stopButton = doc.querySelector('button[aria-label*="Stop"]') || 
-                  doc.querySelector('button[aria-label*="Dừng"]');
-        
-        if (isGenerating || (stopButton && isElementVisible(stopButton))) {
+        if (isGenerating) {
             hasStartedGenerating = true;
+            stableResponseChecks = 0;
+            lastResponseSignature = '';
             console.log(`----> [${checkCount}] Gemini đang xử lý... (${stopButton ? 'có nút Stop' : 'nút Send disabled'})`);
             return; // Tiếp tục đợi
         }
+
+        // Không thấy tín hiệu generate nữa, kiểm tra response có ổn định chưa.
+        const responseText = extractGeminiResponse(doc, true);
+        const responseLength = responseText ? responseText.length : 0;
+        const hasMeaningfulResponse = responseLength > 50;
+        const responseSignature = hasMeaningfulResponse
+            ? `${responseLength}:${responseText.slice(-120)}`
+            : '';
+
+        if (responseSignature && responseSignature === lastResponseSignature) {
+            stableResponseChecks++;
+        } else {
+            stableResponseChecks = responseSignature ? 1 : 0;
+            lastResponseSignature = responseSignature;
+        }
         
-        // Nếu có nút Send và KHÔNG bị disabled → Gemini có thể đã xong
-        if (sendButton && !sendButton.disabled) {
-            // Chỉ coi là xong nếu đã từng bắt đầu generate
-            // Tránh trường hợp false positive ngay từ đầu
-            if (hasStartedGenerating || checkCount > 3) {
-                console.log(`----> [${checkCount}] ✓ Tìm thấy nút Send sẵn sàng! Gemini có thể đã dịch xong.`);
-                
-                // Lấy response
-                const responseText = extractGeminiResponse(doc);
-                
-                if (responseText && responseText.length > 50) { // Đảm bảo có nội dung thực sự
-                    clearInterval(pollingIntervalId);
-                    pollingIntervalId = null;
-                    activeInputBox = null;
-                    activeDocument = null;
-                    console.log("----> ✓ Đã hoàn thành! Độ dài response:", responseText.length);
-                    
-                    sendResponse({ 
-                        status: "DONE",
-                        text: responseText
-                    });
-                } else {
-                    console.log(`----> [${checkCount}] ⚠️ Nút Send có nhưng response quá ngắn (${responseText ? responseText.length : 0} ký tự), đợi thêm...`);
-                }
+        // Điều kiện hoàn thành:
+        // 1) Có nút Send enabled (đường đi chuẩn), hoặc
+        // 2) Không có nút Send nhưng response đã ổn định >= 2 lần check liên tiếp.
+        const sendReady = !!sendButton && isButtonEnabled(sendButton);
+        const doneByStableResponse = !sendButton && hasMeaningfulResponse && stableResponseChecks >= 2;
+
+        if ((hasStartedGenerating || checkCount > 3) && (sendReady || doneByStableResponse)) {
+            if (!hasMeaningfulResponse) {
+                console.log(`----> [${checkCount}] ⚠️ Đã có tín hiệu hoàn thành nhưng response quá ngắn (${responseLength} ký tự), đợi thêm...`);
             } else {
-                console.log(`----> [${checkCount}] Nút Send có nhưng chưa chắc đã bắt đầu generate, đợi thêm...`);
+                clearInterval(pollingIntervalId);
+                pollingIntervalId = null;
+                activeInputBox = null;
+                activeDocument = null;
+                console.log(`----> [${checkCount}] ✓ Gemini đã hoàn thành (${doneByStableResponse ? 'fallback theo độ ổn định response' : 'nút Send sẵn sàng'})`);
+
+                sendResponse({
+                    status: "DONE",
+                    text: responseText
+                });
             }
+        } else if (!sendButton) {
+            console.log(`----> [${checkCount}] Chưa tìm thấy nút Send, theo dõi độ ổn định response... (${responseLength} ký tự)`);
         }
 
         // Timeout sau maxChecks lần kiểm tra
@@ -639,7 +733,7 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
  * 
  * Gemini render nhiều message-content, ta lấy cái cuối cùng
  */
-function extractGeminiResponse(docOverride = null) {
+function extractGeminiResponse(docOverride = null, silent = false) {
     try {
         const doc = docOverride || activeDocument || getDocumentContext();
         
@@ -652,7 +746,9 @@ function extractGeminiResponse(docOverride = null) {
             const textContent = lastMessage.innerText || lastMessage.textContent;
             
             if (textContent && textContent.trim().length > 0) {
-                console.log("----> ✓ Đã lấy response từ message-content");
+                if (!silent) {
+                    console.log("----> ✓ Đã lấy response từ message-content");
+                }
                 return textContent.trim();
             }
         }
@@ -662,7 +758,9 @@ function extractGeminiResponse(docOverride = null) {
         if (modelResponse) {
             const text = modelResponse.innerText || modelResponse.textContent;
             if (text && text.trim().length > 0) {
-                console.log("----> ✓ Đã lấy response từ data-test-id");
+                if (!silent) {
+                    console.log("----> ✓ Đã lấy response từ data-test-id");
+                }
                 return text.trim();
             }
         }
@@ -672,7 +770,9 @@ function extractGeminiResponse(docOverride = null) {
         if (markdownContent) {
             const text = markdownContent.innerText || markdownContent.textContent;
             if (text && text.trim().length > 0) {
-                console.log("----> ✓ Đã lấy response từ markdown-content");
+                if (!silent) {
+                    console.log("----> ✓ Đã lấy response từ markdown-content");
+                }
                 return text.trim();
             }
         }
@@ -683,12 +783,16 @@ function extractGeminiResponse(docOverride = null) {
             const lastContainer = responseContainers[responseContainers.length - 1];
             const text = lastContainer.innerText || lastContainer.textContent;
             if (text && text.trim().length > 0) {
-                console.log("----> ✓ Đã lấy response từ class selector");
+                if (!silent) {
+                    console.log("----> ✓ Đã lấy response từ class selector");
+                }
                 return text.trim();
             }
         }
         
-        console.warn("----> ⚠️ Không tìm thấy response content");
+        if (!silent) {
+            console.warn("----> ⚠️ Không tìm thấy response content");
+        }
         return null;
         
     } catch (error) {
@@ -712,6 +816,11 @@ function cleanupGeminiScript() {
         clearInterval(pollingIntervalId);
         pollingIntervalId = null;
     }
+    if (typeof pendingRequestResponder === 'function') {
+        pendingRequestResponder({ status: "ERROR", message: "Content script đang được reload" });
+    }
+    requestInFlight = false;
+    pendingRequestResponder = null;
     activeInputBox = null;
     activeDocument = null;
     try {

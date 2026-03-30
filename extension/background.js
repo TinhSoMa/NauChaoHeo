@@ -5,6 +5,7 @@
 // ============================================
 const State = {
     isRunning: false,
+    runId: 0,
     geminiTabId: null,
     geminiWindowId: null,
     grokTabId: null,
@@ -54,6 +55,7 @@ const State = {
 // ============================================
 const Utils = {
     sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+    lastTabMessageError: null,
 
     log(message, type = 'info') {
         const prefix = {
@@ -70,13 +72,21 @@ const Utils = {
         return new Promise((resolve) => {
             chrome.tabs.sendMessage(tabId, message, (response) => {
                 if (chrome.runtime.lastError) {
+                    this.lastTabMessageError = chrome.runtime.lastError.message;
                     console.error("Lỗi gửi tin nhắn:", chrome.runtime.lastError.message);
                     resolve(null);
                 } else {
+                    this.lastTabMessageError = null;
                     resolve(response);
                 }
             });
         });
+    },
+
+    consumeLastTabMessageError() {
+        const message = this.lastTabMessageError;
+        this.lastTabMessageError = null;
+        return message;
     },
 
     async sendProgressUpdate(status) {
@@ -141,6 +151,15 @@ function validateTranslationCount(expectedCount, responseObject, rawText) {
     }
     const ok = missing.length === 0 && unique.length === expectedCount;
     return { ok, uniqueCount: unique.length, missing };
+}
+
+function isChannelClosedError(message) {
+    if (!message) return false;
+    const text = String(message).toLowerCase();
+    return text.includes('message channel closed before a response was received') ||
+        text.includes('receiving end does not exist') ||
+        text.includes('the tab was closed') ||
+        text.includes('could not establish connection');
 }
 
 // ============================================
@@ -245,6 +264,49 @@ const BatchProcessor = {
             .join('\n');
     },
 
+    async requestProviderResponse(tabId, providerName, finalPrompt, contentScriptFile) {
+        const maxAttempts = 3;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (!State.isRunning) {
+                throw new Error("STOPPED_BY_USER");
+            }
+
+            const result = await Utils.sendMessageToTab(tabId, {
+                action: "PASTE_AND_SEND",
+                prompt: finalPrompt
+            });
+            const sendError = Utils.consumeLastTabMessageError();
+
+            if (result && result.status === "BUSY") {
+                if (attempt < maxAttempts) {
+                    Utils.log(`${providerName} đang bận request khác. Chờ 2 giây để thử lại...`, 'warning');
+                    await Utils.sleep(2000);
+                    continue;
+                }
+                return result;
+            }
+
+            if (result) {
+                return result;
+            }
+
+            if (isChannelClosedError(sendError) && attempt < maxAttempts) {
+                Utils.log(`${providerName}: kênh message bị đóng (thử lại ${attempt}/${maxAttempts - 1})`, 'warning');
+                await TabManager.injectScript(tabId, contentScriptFile);
+                await Utils.sleep(700);
+                continue;
+            }
+
+            if (attempt < maxAttempts) {
+                Utils.log(`${providerName}: chưa nhận được phản hồi, thử lại...`, 'warning');
+                await Utils.sleep(1000);
+            }
+        }
+
+        return null;
+    },
+
     async translateWithGemini(batchData) {
         Utils.log("Gửi yêu cầu dịch tới Gemini...");
 
@@ -266,10 +328,12 @@ const BatchProcessor = {
         Utils.log("Đang gửi prompt và đợi Gemini trả lời...");
         Utils.log(`Độ dài prompt: ${finalPrompt.length} ký tự`);
 
-        const geminiResult = await Utils.sendMessageToTab(State.geminiTabId, {
-            action: "PASTE_AND_SEND",
-            prompt: finalPrompt
-        });
+        const geminiResult = await this.requestProviderResponse(
+            State.geminiTabId,
+            'Gemini',
+            finalPrompt,
+            'content-script-gemini.js'
+        );
 
         if (!State.isRunning) {
             throw new Error("STOPPED_BY_USER");
@@ -277,6 +341,14 @@ const BatchProcessor = {
 
         if (!geminiResult) {
             throw new Error("Gemini không phản hồi");
+        }
+
+        if (geminiResult.status === "CANCELLED") {
+            throw new Error("STOPPED_BY_USER");
+        }
+
+        if (geminiResult.status === "BUSY") {
+            throw new Error("Gemini đang bận request khác. Hãy chạy lại.");
         }
 
         if (geminiResult.status === "TIMEOUT") {
@@ -321,10 +393,12 @@ const BatchProcessor = {
         Utils.log("Đang gửi prompt và đợi Grok trả lời...");
         Utils.log(`Độ dài prompt: ${finalPrompt.length} ký tự`);
 
-        const grokResult = await Utils.sendMessageToTab(State.grokTabId, {
-            action: "PASTE_AND_SEND",
-            prompt: finalPrompt
-        });
+        const grokResult = await this.requestProviderResponse(
+            State.grokTabId,
+            'Grok',
+            finalPrompt,
+            'content-script-grok.js'
+        );
 
         if (!State.isRunning) {
             throw new Error("STOPPED_BY_USER");
@@ -332,6 +406,14 @@ const BatchProcessor = {
 
         if (!grokResult) {
             throw new Error("Grok không phản hồi");
+        }
+
+        if (grokResult.status === "CANCELLED") {
+            throw new Error("STOPPED_BY_USER");
+        }
+
+        if (grokResult.status === "BUSY") {
+            throw new Error("Grok đang bận request khác. Hãy chạy lại.");
         }
 
         if (grokResult.status === "TIMEOUT") {
@@ -482,8 +564,8 @@ const Initializer = {
 // ============================================
 // MAIN PROCESS LOOP
 // ============================================
-async function processLoop() {
-    if (!State.isRunning) {
+async function processLoop(runId) {
+    if (!State.isRunning || runId !== State.runId) {
         Utils.log("Đã dừng bởi người dùng.", 'warning');
         return;
     }
@@ -513,7 +595,7 @@ async function processLoop() {
         if (batchData.completed) {
             Utils.log(`Batch ${batchData.name} đã completed, bỏ qua...`);
             await BatchProcessor.moveToNextBatch(currentIndex);
-            processLoop();
+            processLoop(runId);
             return;
         }
 
@@ -613,7 +695,7 @@ async function processLoop() {
                     await Utils.sleep(1000);
                 }
                 Utils.log("BƯỚC 6: Tiếp tục với batch tiếp theo...\n");
-                processLoop();
+                processLoop(runId);
                 return;
             }
 
@@ -657,7 +739,7 @@ async function processLoop() {
         }
 
         Utils.log("BƯỚC 6: Tiếp tục với batch tiếp theo...\n");
-        processLoop();
+        processLoop(runId);
 
     } catch (error) {
         if (error.message === "STOPPED_BY_USER") {
@@ -694,8 +776,12 @@ async function processLoop() {
 // ============================================
 // MAIN START FUNCTION
 // ============================================
-async function loadSettingsAndStart() {
+async function loadSettingsAndStart(runId) {
     try {
+        if (!State.isRunning || runId !== State.runId) {
+            return;
+        }
+
         const data = await State.loadFromStorage();
         
         // Load prompt template trực tiếp từ file promt.json
@@ -719,7 +805,7 @@ async function loadSettingsAndStart() {
         await Initializer.validateFileMode(data);
 
         await Utils.sleep(1000);
-        processLoop();
+        processLoop(runId);
 
     } catch (error) {
         Utils.log(error.message, 'error');
@@ -854,7 +940,14 @@ async function downloadFullStory() {
 // ============================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "START_PROCESS") {
+        if (State.isRunning) {
+            Utils.log("Quy trình đang chạy, bỏ qua lệnh START trùng.", 'warning');
+            return;
+        }
+
         State.isRunning = true;
+        State.runId += 1;
+        const runId = State.runId;
         (async () => {
             // Resume: tìm file đầu tiên chưa completed thay vì reset về 0
             const existing = await chrome.storage.local.get(['batchFiles', 'translatedBatches']);
@@ -867,10 +960,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 batchCount: completedCount
                 // translatedBatches GIỮ LẠI - không reset
             });
-            loadSettingsAndStart();
+            if (!State.isRunning || runId !== State.runId) {
+                return;
+            }
+            loadSettingsAndStart(runId);
         })();
     } else if (request.action === "STOP_PROCESS") {
         State.isRunning = false;
+        State.runId += 1;
         Utils.log("Đã nhận lệnh DỪNG. Đang hủy các tác vụ...");
 
         if (State.geminiTabId) {
