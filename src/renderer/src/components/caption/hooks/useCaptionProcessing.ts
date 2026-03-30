@@ -34,10 +34,13 @@ import {
   markFollowingStepsStale,
   recordStepSkipped,
   readCaptionSession,
+  resolveSessionStoredPath,
   resolveStepInputsFromSession,
   setStepArtifacts,
   shouldSkipStep,
   syncSessionWithProjectSettings,
+  toSessionStoredAudioFiles,
+  toSessionStoredPath,
   toStepKey,
   updateCaptionSession,
   validateStepOutputForSkip,
@@ -1639,7 +1642,7 @@ export function useCaptionProcessing({
       setAudioPreviewMeta(null);
 
       const session = await readCaptionSession(sessionPath, sessionFallback);
-      const step7Inputs = resolveStepInputsFromSession(session, 7);
+      const step7Inputs = resolveStepInputsFromSession(session, 7, { folderPath: resolveFolderPath(targetPath) });
       const translatedEntries = compactEntries(step7Inputs.translatedEntries);
       const mergedAudioPath = step7Inputs.mergedAudioPath;
       if (translatedEntries.length === 0) {
@@ -3008,7 +3011,9 @@ export function useCaptionProcessing({
         if (!guard.ok) {
           throw new Error(`[${folderName}] ${guard.reason || `Chưa chạy các bước phụ thuộc cho Step ${step}.`} (${guard.code || 'STEP_BLOCKED'})`);
         }
-        const stepInputs = resolveStepInputsFromSession(sessionBeforeStep, step as CaptionStepNumber);
+        const stepInputs = resolveStepInputsFromSession(sessionBeforeStep, step as CaptionStepNumber, {
+          folderPath: resolveFolderPath(currentPath),
+        });
         const hydrateStepInputContext = () => {
           if (step === 2 || step === 3) {
             currentEntries = compactEntries(stepInputs.extractedEntries);
@@ -3910,6 +3915,9 @@ export function useCaptionProcessing({
           currentAudioFiles = normalizeAudioFiles(ttsData.audioFiles as PartialProcessingAudioFile[]);
           if (!isMulti) setAudioFiles(currentAudioFiles);
           setProgress({ current: ttsData.totalGenerated, total: currentEntries.length, message: msgCtx(`Bước 4: Đã tạo ${ttsData.totalGenerated} audio`) });
+          const sessionFolderPath = resolveFolderPath(currentPath);
+          const storedAudioDir = toSessionStoredPath(audioDir, sessionFolderPath);
+          const storedAudioFiles = toSessionStoredAudioFiles(currentAudioFiles, sessionFolderPath);
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
             const stepArtifacts: CaptionArtifactFile[] = [];
             pushArtifact(stepArtifacts, 'audio_output_dir', audioDir, 'dir');
@@ -3917,7 +3925,7 @@ export function useCaptionProcessing({
               pushArtifact(stepArtifacts, 'tts_audio_clip', file.path, 'file');
             }
             const outputFingerprint = buildObjectFingerprint(
-              currentAudioFiles.map((file) => ({
+              storedAudioFiles.map((file) => ({
                 index: file.index,
                 path: file.path,
                 startMs: file.startMs,
@@ -3929,11 +3937,11 @@ export function useCaptionProcessing({
               ...session,
               data: {
                 ...session.data,
-                ttsAudioFiles: currentAudioFiles,
+                ttsAudioFiles: storedAudioFiles,
               },
               artifacts: {
                 ...session.artifacts,
-                audioDir,
+                audioDir: storedAudioDir,
               },
               steps: {
                 ...session.steps,
@@ -3991,12 +3999,18 @@ export function useCaptionProcessing({
         let fitSpeedLabel = '';
         let fitSpeedDirLabel = '';
         let fitAudioWorkersUsed = 0;
+        const stepSessionFolderPath = resolveFolderPath(currentPath);
         if (cfg.trimAudioEnabled) {
           const previousTrimResults = toRecord(sessionBeforeStep.data?.trimResults);
           const previousTrimFiles = Array.isArray(previousTrimResults.trimFiles)
-            ? previousTrimResults.trimFiles.filter((filePath) => typeof filePath === 'string' && filePath.trim().length > 0)
+            ? previousTrimResults.trimFiles
+              .filter((filePath) => typeof filePath === 'string' && filePath.trim().length > 0)
+              .map((filePath) => resolveSessionStoredPath(String(filePath), stepSessionFolderPath))
             : [];
-          const previousTrimOutputDir = readString(previousTrimResults, 'trimOutputDir') || '';
+          const previousTrimOutputDir = resolveSessionStoredPath(
+            readString(previousTrimResults, 'trimOutputDir') || '',
+            stepSessionFolderPath
+          );
           const trimmedByName = new Map<string, string>();
           for (const filePath of previousTrimFiles) {
             const fileName = String(filePath).split(/[/\\]/).pop() || '';
@@ -4083,10 +4097,15 @@ export function useCaptionProcessing({
           const previousFitResults = toRecord(sessionBeforeStep.data?.fitResults);
           const previousFitSpeed = readNumber(previousFitResults, 'srtSpeed');
           const previousSpeedLabel = readString(previousFitResults, 'speedLabel');
-          const previousFitOutputDir = readString(previousFitResults, 'fitOutputDir') || '';
+          const previousFitOutputDir = resolveSessionStoredPath(
+            readString(previousFitResults, 'fitOutputDir') || '',
+            stepSessionFolderPath
+          );
           const previousFitScaledCount = readNumber(previousFitResults, 'fitScaledCount') || 0;
           const previousFitFiles = Array.isArray(previousFitResults.fitFiles)
-            ? previousFitResults.fitFiles.filter((item) => typeof item === 'string' && item.trim().length > 0) as string[]
+            ? previousFitResults.fitFiles
+              .filter((item) => typeof item === 'string' && item.trim().length > 0)
+              .map((item) => resolveSessionStoredPath(String(item), stepSessionFolderPath)) as string[]
             : [];
           const previousMappingRaw = Array.isArray(previousFitResults.pathMapping)
             ? previousFitResults.pathMapping
@@ -4095,8 +4114,8 @@ export function useCaptionProcessing({
             .map((item) => toRecord(item))
             .filter((item) => typeof item.originalPath === 'string' && typeof item.outputPath === 'string')
             .map((item) => ({
-              originalPath: String(item.originalPath),
-              outputPath: String(item.outputPath),
+              originalPath: resolveSessionStoredPath(String(item.originalPath), stepSessionFolderPath),
+              outputPath: resolveSessionStoredPath(String(item.outputPath), stepSessionFolderPath),
             }));
 
           const mappingByOriginal = new Map<string, string>();
@@ -4301,29 +4320,44 @@ export function useCaptionProcessing({
               ? result.data.outputPath.trim()
               : mergedPath
           ) || mergedPath;
+          const storedMergedOutputPath = toSessionStoredPath(actualMergedOutputPath, stepSessionFolderPath);
+          const storedRequestedMergedPath = toSessionStoredPath(mergedPath, stepSessionFolderPath);
+          const storedTrimOutputDir = toSessionStoredPath(trimOutputDir, stepSessionFolderPath);
+          const storedTrimTargets = trimTargets.map((item) => ({
+            inputPath: toSessionStoredPath(item.inputPath, stepSessionFolderPath),
+            outputPath: toSessionStoredPath(item.outputPath, stepSessionFolderPath),
+          }));
+          const storedFitOutputDir = toSessionStoredPath(fitOutputDir, stepSessionFolderPath);
+          const storedFitOutputPaths = fitOutputPaths.map((outputPath) => toSessionStoredPath(outputPath, stepSessionFolderPath));
+          const storedFitSourceFiles = fitSourceFiles.map((sourcePath) => toSessionStoredPath(sourcePath, stepSessionFolderPath));
+          const storedFitPathMapping = fitPathMapping.map((mapping) => ({
+            originalPath: toSessionStoredPath(mapping.originalPath, stepSessionFolderPath),
+            outputPath: toSessionStoredPath(mapping.outputPath, stepSessionFolderPath),
+          }));
+          const storedFilesToMerge = toSessionStoredAudioFiles(filesToMerge, stepSessionFolderPath);
           const mergeResultPayload: Record<string, unknown> = result.data
             ? {
                 success: !!result.data.success,
-                outputPath: actualMergedOutputPath,
+                outputPath: storedMergedOutputPath,
                 error: result.data.error,
-                requestedOutputPath: mergedPath,
+                requestedOutputPath: storedRequestedMergedPath,
                 srtSpeed: safeSrtSpeed,
                 speedLabel,
               }
             : {
                 success: true,
-                outputPath: actualMergedOutputPath,
-                requestedOutputPath: mergedPath,
+                outputPath: storedMergedOutputPath,
+                requestedOutputPath: storedRequestedMergedPath,
                 srtSpeed: safeSrtSpeed,
                 speedLabel,
               };
           const fitResultsPayload = cfg.autoFitAudio ? {
             srtSpeed: fitSpeed,
             speedLabel: fitSpeedDirLabel || fitSpeedLabel,
-            fitOutputDir: fitOutputDir || undefined,
-            fitFiles: fitOutputPaths,
-            sourceFiles: fitSourceFiles,
-            pathMapping: fitPathMapping,
+            fitOutputDir: storedFitOutputDir || undefined,
+            fitFiles: storedFitOutputPaths,
+            sourceFiles: storedFitSourceFiles,
+            pathMapping: storedFitPathMapping,
             fitScaledCount,
             fitAudioWorkers: fitAudioWorkersUsed,
           } : undefined;
@@ -4346,19 +4380,19 @@ export function useCaptionProcessing({
               }
             }
               const outputFingerprint = buildObjectFingerprint({
-                mergedPath: actualMergedOutputPath,
+                mergedPath: storedMergedOutputPath,
                 filesCount: filesToMerge.length,
                 srtSpeed: safeSrtSpeed,
                 speedLabel,
                 trimAudioEnabled: !!cfg.trimAudioEnabled,
-                trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
-                trimFiles: cfg.trimAudioEnabled ? trimTargets.map((item) => item.outputPath) : undefined,
+                trimOutputDir: cfg.trimAudioEnabled ? storedTrimOutputDir : undefined,
+                trimFiles: cfg.trimAudioEnabled ? storedTrimTargets.map((item) => item.outputPath) : undefined,
                 autoFitAudio: !!cfg.autoFitAudio,
-                fitOutputDir: fitOutputDir || undefined,
+                fitOutputDir: storedFitOutputDir || undefined,
                 fitScaledCount,
                 fitSpeed: fitSpeed,
                 fitSpeedLabel: fitSpeedDirLabel || fitSpeedLabel,
-                fitMappingCount: fitPathMapping.length,
+                fitMappingCount: storedFitPathMapping.length,
               });
             const prevOutputFingerprint = session.steps[stepKey]?.outputFingerprint;
             let nextSession: CaptionSessionV1 = {
@@ -4366,12 +4400,18 @@ export function useCaptionProcessing({
               data: {
                 ...session.data,
                 mergeResult: mergeResultPayload,
-                trimResults: trimResults || undefined,
+                trimResults: trimResults
+                  ? {
+                      ...trimResults,
+                      trimOutputDir: storedTrimOutputDir || undefined,
+                      trimFiles: storedTrimTargets.map((item) => item.outputPath),
+                    }
+                  : undefined,
                 fitResults: fitResultsPayload || undefined,
               },
               artifacts: {
                 ...session.artifacts,
-                mergedAudioPath: actualMergedOutputPath,
+                mergedAudioPath: storedMergedOutputPath,
               },
               timing: {
                 ...session.timing,
@@ -4387,16 +4427,16 @@ export function useCaptionProcessing({
                     srtSpeed: safeSrtSpeed,
                     speedLabel,
                     trimAudioEnabled: !!cfg.trimAudioEnabled,
-                    trimOutputDir: cfg.trimAudioEnabled ? trimOutputDir : undefined,
+                    trimOutputDir: cfg.trimAudioEnabled ? storedTrimOutputDir : undefined,
                     trimmedCount: trimmedCount,
                     trimFailedCount: trimFailedCount,
                     trimErrors: trimErrors.length > 0 ? trimErrors : undefined,
                     autoFitAudio: !!cfg.autoFitAudio,
-                    fitOutputDir: fitOutputDir || undefined,
+                    fitOutputDir: storedFitOutputDir || undefined,
                     fitCount: fitScaledCount || undefined,
                     fitAudioWorkers: cfg.autoFitAudio ? fitAudioWorkersUsed : undefined,
                   }),
-                  inputFingerprint: buildObjectFingerprint(filesToMerge.map((file) => ({
+                  inputFingerprint: buildObjectFingerprint(storedFilesToMerge.map((file) => ({
                     path: file.path,
                     startMs: file.startMs,
                     durationMs: file.durationMs,
@@ -4451,7 +4491,9 @@ export function useCaptionProcessing({
         }
 
         const sessionForRender = await readCaptionSession(sessionPathForStep7, sessionFallback);
-        const step7Inputs = resolveStepInputsFromSession(sessionForRender, 7);
+        const step7Inputs = resolveStepInputsFromSession(sessionForRender, 7, {
+          folderPath: resolveFolderPath(currentPath),
+        });
         const translatedEntriesForRender = compactEntries(step7Inputs.translatedEntries);
         const mergedAudioPathForRender = step7Inputs.mergedAudioPath;
         if (translatedEntriesForRender.length === 0) {
@@ -4572,6 +4614,8 @@ export function useCaptionProcessing({
         const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
         const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
           ? cfg.renderAudioSpeed : 1.0;
+        const storedScaledSrtPathForStep7 = toSessionStoredPath(srtFileForVideo, resolveFolderPath(currentPath));
+        const storedMergedAudioPathForStep7 = toSessionStoredPath(mergedAudioPathForRender, resolveFolderPath(currentPath));
         await updateSessionForStep(currentPath, step, folderIdx, (session) => {
           const stepArtifacts: CaptionArtifactFile[] = [];
           pushArtifact(stepArtifacts, 'scaled_srt_for_render', srtFileForVideo, 'file');
@@ -4582,8 +4626,8 @@ export function useCaptionProcessing({
             artifacts: {
               ...session.artifacts,
               translatedSrtPath: session.artifacts.translatedSrtPath,
-              scaledSrtPath: srtFileForVideo,
-              mergedAudioPath: mergedAudioPathForRender,
+              scaledSrtPath: storedScaledSrtPathForStep7,
+              mergedAudioPath: storedMergedAudioPathForStep7,
             },
             timing: {
               ...session.timing,

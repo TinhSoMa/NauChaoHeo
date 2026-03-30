@@ -1,4 +1,5 @@
 import {
+  AudioFile,
   CaptionArtifactFile,
   CaptionSessionV1,
   CaptionProjectSettingsValues,
@@ -43,6 +44,125 @@ export function getInputPaths(inputType: CaptionInputType, filePath: string): st
 
 export function getSessionPathForInputPath(inputType: CaptionInputType, inputPath: string): string {
   return getCaptionSessionPathFromInput(inputType, inputPath);
+}
+
+function trimPathTrailingSeparators(value: string): string {
+  return value.replace(/[\\/]+$/, '');
+}
+
+function normalizePathSegments(value: string): string[] {
+  return value.replace(/\\/g, '/').split('/').filter(Boolean);
+}
+
+function isAbsoluteFsPath(value: string): boolean {
+  if (!value) return false;
+  return /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\') || value.startsWith('//') || value.startsWith('/');
+}
+
+function toRelativePathFromBase(value: string, basePath: string): string | null {
+  const normalizedBase = trimPathTrailingSeparators(basePath.trim());
+  const normalizedValue = trimPathTrailingSeparators(value.trim());
+  if (!normalizedBase || !normalizedValue) {
+    return null;
+  }
+  if (!isAbsoluteFsPath(normalizedBase) || !isAbsoluteFsPath(normalizedValue)) {
+    return null;
+  }
+
+  const baseSegments = normalizePathSegments(normalizedBase);
+  const valueSegments = normalizePathSegments(normalizedValue);
+  if (baseSegments.length === 0 || valueSegments.length < baseSegments.length) {
+    return null;
+  }
+
+  const isPrefix = baseSegments.every((segment, idx) => segment.toLowerCase() === valueSegments[idx].toLowerCase());
+  if (!isPrefix) {
+    return null;
+  }
+
+  const relativeSegments = valueSegments.slice(baseSegments.length);
+  return relativeSegments.length > 0 ? relativeSegments.join('/') : '.';
+}
+
+function joinBaseAndRelative(basePath: string, relativePath: string): string {
+  const normalizedBase = trimPathTrailingSeparators(basePath.trim());
+  const normalizedRelative = relativePath.trim().replace(/^[./\\]+/, '').replace(/[\\/]+/g, '/');
+  if (!normalizedBase) {
+    return normalizedRelative;
+  }
+  if (!normalizedRelative) {
+    return normalizedBase;
+  }
+  const separator = normalizedBase.includes('\\') ? '\\' : '/';
+  return `${normalizedBase}${separator}${normalizedRelative.split('/').join(separator)}`;
+}
+
+function rebaseCaptionOutputPath(pathValue: string, folderPath: string): string {
+  const normalizedFolderPath = trimPathTrailingSeparators(folderPath.trim());
+  if (!normalizedFolderPath) {
+    return pathValue;
+  }
+  const segments = normalizePathSegments(pathValue);
+  if (segments.length === 0) {
+    return pathValue;
+  }
+  const captionOutputIndex = segments.findIndex((segment) => segment.toLowerCase() === 'caption_output');
+  if (captionOutputIndex < 0) {
+    return pathValue;
+  }
+  const relativeFromCaptionOutput = segments.slice(captionOutputIndex).join('/');
+  return joinBaseAndRelative(normalizedFolderPath, relativeFromCaptionOutput);
+}
+
+export function toSessionStoredPath(pathValue?: string | null, folderPath?: string): string {
+  const rawPath = typeof pathValue === 'string' ? pathValue.trim() : '';
+  if (!rawPath) {
+    return '';
+  }
+  const normalizedFolderPath = typeof folderPath === 'string' ? folderPath.trim() : '';
+  if (!normalizedFolderPath) {
+    return rawPath;
+  }
+  const relative = toRelativePathFromBase(rawPath, normalizedFolderPath);
+  if (relative == null) {
+    return isAbsoluteFsPath(rawPath) ? rawPath : rawPath.replace(/[\\/]+/g, '/');
+  }
+  return relative;
+}
+
+export function resolveSessionStoredPath(pathValue?: string | null, folderPath?: string): string {
+  const rawPath = typeof pathValue === 'string' ? pathValue.trim() : '';
+  if (!rawPath) {
+    return '';
+  }
+  const normalizedFolderPath = typeof folderPath === 'string' ? folderPath.trim() : '';
+  if (isAbsoluteFsPath(rawPath)) {
+    if (!normalizedFolderPath) {
+      return rawPath;
+    }
+    return rebaseCaptionOutputPath(rawPath, normalizedFolderPath);
+  }
+  if (!normalizedFolderPath) {
+    return rawPath;
+  }
+  if (rawPath === '.') {
+    return trimPathTrailingSeparators(normalizedFolderPath);
+  }
+  return joinBaseAndRelative(normalizedFolderPath, rawPath);
+}
+
+export function toSessionStoredAudioFiles(files: AudioFile[] = [], folderPath?: string): AudioFile[] {
+  return files.map((file) => ({
+    ...file,
+    path: toSessionStoredPath(file.path, folderPath),
+  }));
+}
+
+export function resolveSessionStoredAudioFiles(files: AudioFile[] = [], folderPath?: string): AudioFile[] {
+  return files.map((file) => ({
+    ...file,
+    path: resolveSessionStoredPath(file.path, folderPath),
+  }));
 }
 
 const DEFAULT_THUMBNAIL_PREVIEW_RUNTIME: Required<ThumbnailPreviewRuntimeState> = {
@@ -387,19 +507,36 @@ export function markFollowingStepsStale(
   return next;
 }
 
-export function resolveStepInputsFromSession(session: CaptionSessionV1, step: CaptionStepNumber) {
+export function resolveStepInputsFromSession(
+  session: CaptionSessionV1,
+  step: CaptionStepNumber,
+  options?: { folderPath?: string }
+) {
   const extractedEntries = (session.data.extractedEntries || []) as SubtitleEntry[];
   const translatedEntries = (session.data.translatedEntries || []) as SubtitleEntry[];
-  const ttsAudioFiles = session.data.ttsAudioFiles || [];
-  const mergedAudioPath = typeof session.artifacts.mergedAudioPath === 'string'
+  const rawTtsAudioFiles = (session.data.ttsAudioFiles || []) as AudioFile[];
+  const rawMergedAudioPath = typeof session.artifacts.mergedAudioPath === 'string'
     ? session.artifacts.mergedAudioPath
     : '';
-  const translatedSrtPath = typeof session.artifacts.translatedSrtPath === 'string'
+  const rawTranslatedSrtPath = typeof session.artifacts.translatedSrtPath === 'string'
     ? session.artifacts.translatedSrtPath
     : '';
-  const scaledSrtPath = typeof session.artifacts.scaledSrtPath === 'string'
+  const rawScaledSrtPath = typeof session.artifacts.scaledSrtPath === 'string'
     ? session.artifacts.scaledSrtPath
     : '';
+  const folderPath = options?.folderPath?.trim() || '';
+  const ttsAudioFiles = folderPath
+    ? resolveSessionStoredAudioFiles(rawTtsAudioFiles, folderPath)
+    : rawTtsAudioFiles;
+  const mergedAudioPath = folderPath
+    ? resolveSessionStoredPath(rawMergedAudioPath, folderPath)
+    : rawMergedAudioPath;
+  const translatedSrtPath = folderPath
+    ? resolveSessionStoredPath(rawTranslatedSrtPath, folderPath)
+    : rawTranslatedSrtPath;
+  const scaledSrtPath = folderPath
+    ? resolveSessionStoredPath(rawScaledSrtPath, folderPath)
+    : rawScaledSrtPath;
 
   return {
     step,
