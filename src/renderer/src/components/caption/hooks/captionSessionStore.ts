@@ -574,7 +574,12 @@ export function validateStepOutputForSkip(
 export function shouldSkipStep(
   session: CaptionSessionV1,
   step: CaptionStepNumber,
-  options?: { currentSrtSpeed?: number; currentTrimAudioEnabled?: boolean; currentAutoFitAudio?: boolean }
+  options?: {
+    currentSrtSpeed?: number;
+    currentTrimAudioEnabled?: boolean;
+    currentAutoFitAudio?: boolean;
+    currentEdgeOutputFormat?: 'wav' | 'mp3';
+  }
 ): { skip: boolean; reason?: string } {
   // Step 7 (render video) luôn cho phép chạy lại nhiều lần.
   if (step === 7) {
@@ -590,6 +595,23 @@ export function shouldSkipStep(
   }
   if (stepState.status !== 'success') {
     return { skip: false, reason: 'not_success_yet' };
+  }
+  if (step === 4 && typeof options?.currentEdgeOutputFormat === 'string') {
+    const metrics = toRecord(stepState?.metrics);
+    const settingsStep4 = toRecord(toRecord(session.settings).step4Tts);
+    const previousRaw = typeof metrics.outputFormat === 'string'
+      ? metrics.outputFormat
+      : (typeof settingsStep4.edgeOutputFormat === 'string' ? settingsStep4.edgeOutputFormat : null);
+    if (previousRaw === null) {
+      if (options.currentEdgeOutputFormat === 'mp3') {
+        return { skip: false, reason: 'tts_output_format_changed' };
+      }
+    } else {
+      const previousFormat = previousRaw === 'mp3' ? 'mp3' : 'wav';
+      if (previousFormat !== options.currentEdgeOutputFormat) {
+        return { skip: false, reason: 'tts_output_format_changed' };
+      }
+    }
   }
   if (step === 6 && typeof options?.currentSrtSpeed === 'number') {
     const timingScale = toFiniteNumber(toRecord(session.timing).step4SrtScale);
@@ -707,6 +729,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       voice: settings.voice,
       rate: settings.rate,
       volume: settings.volume,
+      edgeOutputFormat: settings.edgeOutputFormat,
       edgeTtsBatchSize: settings.edgeTtsBatchSize,
       srtSpeed: settings.srtSpeed,
       autoFitAudio: settings.autoFitAudio,

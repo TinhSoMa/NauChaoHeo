@@ -7,12 +7,14 @@ import {
   DEFAULT_VOLUME,
   DEFAULT_SRT_SPEED,
   DEFAULT_EDGE_TTS_BATCH_SIZE,
+  DEFAULT_EDGE_OUTPUT_FORMAT,
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,
   MAX_FIT_AUDIO_WORKERS,
   DEFAULT_SPLIT_BY_LINES,
   DEFAULT_LINES_PER_FILE,
   DEFAULT_NUMBER_OF_PARTS,
+  normalizeEdgeOutputFormat,
   normalizeVoiceValue,
   InputType,
 } from '../../../config/captionConfig';
@@ -1167,7 +1169,12 @@ export function useCaptionSettings() {
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
   const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
+  const [edgeOutputFormat, setEdgeOutputFormatState] = useState(DEFAULT_EDGE_OUTPUT_FORMAT);
   const [edgeTtsBatchSize, setEdgeTtsBatchSizeState] = useState(DEFAULT_EDGE_TTS_BATCH_SIZE);
+
+  const setEdgeOutputFormat = useCallback((value: string) => {
+    setEdgeOutputFormatState(normalizeEdgeOutputFormat(value));
+  }, []);
 
   const setEdgeTtsBatchSize = useCallback((value: number) => {
     if (!Number.isFinite(value)) {
@@ -1840,6 +1847,7 @@ export function useCaptionSettings() {
       voice,
       rate,
       volume,
+      edgeOutputFormat,
       edgeTtsBatchSize,
       srtSpeed,
       splitByLines,
@@ -1933,6 +1941,7 @@ export function useCaptionSettings() {
       voice,
       rate,
       volume,
+      edgeOutputFormat,
       edgeTtsBatchSize,
       srtSpeed,
       splitByLines,
@@ -1965,6 +1974,7 @@ export function useCaptionSettings() {
     if (saved.voice) setVoice(saved.voice);
     if (saved.rate) setRate(String(saved.rate));
     if (saved.volume) setVolume(String(saved.volume));
+    if (saved.edgeOutputFormat !== undefined) setEdgeOutputFormat(String(saved.edgeOutputFormat));
     if (typeof saved.edgeTtsBatchSize === 'number') setEdgeTtsBatchSize(saved.edgeTtsBatchSize);
     if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
     if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
@@ -2326,6 +2336,7 @@ export function useCaptionSettings() {
     voice, setVoice,
     rate, setRate,
     volume, setVolume,
+    edgeOutputFormat, setEdgeOutputFormat,
     edgeTtsBatchSize, setEdgeTtsBatchSize,
     srtSpeed, setSrtSpeed,
     splitByLines, setSplitByLines,

@@ -226,6 +226,7 @@ interface UseCaptionProcessingProps {
     voice: string;
     rate: string;
     volume: string;
+    edgeOutputFormat?: 'wav' | 'mp3';
     edgeTtsBatchSize?: number;
     srtSpeed: number;
     audioDir: string;
@@ -2701,6 +2702,7 @@ export function useCaptionProcessing({
         voice: cfg.voice,
         rate: cfg.rate,
         volume: cfg.volume,
+        edgeOutputFormat: cfg.edgeOutputFormat,
         edgeTtsBatchSize: cfg.edgeTtsBatchSize,
         srtSpeed: cfg.srtSpeed,
         autoFitAudio: cfg.autoFitAudio,
@@ -2806,6 +2808,7 @@ export function useCaptionProcessing({
       voice: cfg.voice,
       rate: cfg.rate,
       volume: cfg.volume,
+      edgeOutputFormat: cfg.edgeOutputFormat,
         edgeTtsBatchSize: cfg.edgeTtsBatchSize,
         srtSpeed: cfg.srtSpeed,
       splitByLines: cfg.splitByLines,
@@ -3009,6 +3012,7 @@ export function useCaptionProcessing({
           currentSrtSpeed,
           currentTrimAudioEnabled: !!cfg.trimAudioEnabled,
           currentAutoFitAudio: !!cfg.autoFitAudio,
+          currentEdgeOutputFormat: cfg.edgeOutputFormat === 'mp3' ? 'mp3' : 'wav',
         });
         if (step === 6 && skipDecision.reason === 'srt_scale_changed') {
           await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
@@ -3021,6 +3025,21 @@ export function useCaptionProcessing({
                 error: undefined,
                 metrics: undefined,
                 blockedReason: 'srt_scale_changed',
+              },
+            },
+          }));
+        }
+        if (step === 4 && skipDecision.reason === 'tts_output_format_changed') {
+          await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+            ...session,
+            steps: {
+              ...session.steps,
+              [stepKey]: {
+                ...session.steps[stepKey],
+                status: 'stale',
+                error: undefined,
+                metrics: undefined,
+                blockedReason: 'tts_output_format_changed',
               },
             },
           }));
@@ -3834,7 +3853,7 @@ export function useCaptionProcessing({
         const ttsGenerateOptions: Record<string, unknown> = {
           voice: cfg.voice,
           outputDir: audioDir,
-          outputFormat: 'wav',
+          outputFormat: cfg.edgeOutputFormat === 'mp3' ? 'mp3' : 'wav',
           runId: runIdRef.current || undefined,
         };
         if (!isCapCutVoice) {
@@ -3880,6 +3899,7 @@ export function useCaptionProcessing({
                   ...makeStepSuccess(session.steps[stepKey], {
                     totalGenerated: ttsData.totalGenerated,
                     totalFailed: ttsData.totalFailed,
+                    outputFormat: cfg.edgeOutputFormat === 'mp3' ? 'mp3' : 'wav',
                   }),
                   inputFingerprint: buildEntriesFingerprint((session.data.translatedEntries || []) as SubtitleEntry[]),
                   outputFingerprint,

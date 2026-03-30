@@ -67,15 +67,26 @@ export function normalizeVoiceValue(value?: string | null): string {
 
 export const RATE_OPTIONS = ['+0%', '+10%', '+20%', '+30%', '+40%', '+50%'];
 export const VOLUME_OPTIONS = ['+0%', '+10%', '+20%', '+30%'];
+export const EDGE_OUTPUT_FORMAT_OPTIONS = ['wav', 'mp3'] as const;
+export type EdgeOutputFormat = typeof EDGE_OUTPUT_FORMAT_OPTIONS[number];
 
 export const DEFAULT_RATE = '+30%';
 export const DEFAULT_VOLUME = '+30%';
 export const DEFAULT_SRT_SPEED = 1.0;
 export const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
+export const DEFAULT_EDGE_OUTPUT_FORMAT: EdgeOutputFormat = 'wav';
 export const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 2;
 export const DEFAULT_FIT_AUDIO_WORKERS = 5;
 export const MIN_FIT_AUDIO_WORKERS = 1;
 export const MAX_FIT_AUDIO_WORKERS = 16;
+
+export function normalizeEdgeOutputFormat(value?: string | null): EdgeOutputFormat {
+  const normalized = (value || '').trim().toLowerCase();
+  if (normalized === 'mp3') {
+    return 'mp3';
+  }
+  return 'wav';
+}
 
 // ============================================
 // SPLIT OPTIONS

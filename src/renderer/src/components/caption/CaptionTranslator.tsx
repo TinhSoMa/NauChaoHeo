@@ -12,6 +12,8 @@ import {
   VOICES,
   RATE_OPTIONS,
   VOLUME_OPTIONS,
+  EDGE_OUTPUT_FORMAT_OPTIONS,
+  DEFAULT_EDGE_OUTPUT_FORMAT,
   DEFAULT_EDGE_TTS_BATCH_SIZE,
   DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
   DEFAULT_FIT_AUDIO_WORKERS,
@@ -1472,6 +1474,7 @@ export function CaptionTranslator() {
     voice: settings.voice,
     rate: settings.rate,
     volume: settings.volume,
+    edgeOutputFormat: settings.edgeOutputFormat,
     edgeTtsBatchSize: settings.edgeTtsBatchSize,
     srtSpeed: settings.srtSpeed,
     splitByLines: settings.splitByLines,
@@ -1552,6 +1555,7 @@ export function CaptionTranslator() {
     settings.voice,
     settings.rate,
     settings.volume,
+    settings.edgeOutputFormat,
     settings.edgeTtsBatchSize,
     settings.srtSpeed,
     settings.splitByLines,
@@ -5032,7 +5036,13 @@ export function CaptionTranslator() {
       }
       case 4: {
         const audioFiles = stepData.ttsAudioFiles || [];
+        const outputFormat = typeof metrics.outputFormat === 'string'
+          ? metrics.outputFormat
+          : (typeof inspectorSessionData.settings.step4Tts?.edgeOutputFormat === 'string'
+            ? inspectorSessionData.settings.step4Tts.edgeOutputFormat
+            : DEFAULT_EDGE_OUTPUT_FORMAT);
         const failedCount = audioFiles.filter((item: { success?: boolean }) => item?.success === false).length;
+        stepItems.push({ label: 'Output Format', value: String(outputFormat).toUpperCase() });
         stepItems.push({ label: 'Audio Files', value: `${audioFiles.length}` });
         stepItems.push({ label: 'Failed Files', value: `${failedCount}`, tone: failedCount > 0 ? 'warning' : 'default' });
         break;
@@ -6826,6 +6836,20 @@ export function CaptionTranslator() {
                   </select>
                 </div>
                 <div className={styles.inputGroup}>
+                  <label className={styles.label}>Output format (Edge)</label>
+                  <select
+                    value={settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT}
+                    onChange={(e) => settings.setEdgeOutputFormat(e.target.value)}
+                    className={styles.select}
+                  >
+                    {EDGE_OUTPUT_FORMAT_OPTIONS.map((format) => (
+                      <option key={format} value={format}>
+                        {format.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.inputGroup}>
                   <label className={styles.label}>Batch size (Edge)</label>
                   <Input
                     type="number"
@@ -6838,6 +6862,8 @@ export function CaptionTranslator() {
                 </div>
               </div>
               <div className={styles.stepCardHint}>
+                Format {String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} |
+                {' '}
                 Batch {safeEdgeBatchSizeForUi} (mặc định {DEFAULT_EDGE_TTS_BATCH_SIZE}) |
                 {' '}Jobs ~ {estimatedEdgeJobCount} = ceil({knownStep4TotalItems}/{safeEdgeBatchSizeForUi}) |
                 {' '}Đồng thời ~ {edgeConcurrentAudioLimit} audio ({estimatedEdgeJobCount} x {edgeConcurrentAudioPerJob}).

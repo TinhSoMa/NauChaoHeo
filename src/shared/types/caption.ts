@@ -966,6 +966,7 @@ export interface CaptionProjectSettingsValues {
   voice?: string;
   rate?: string;
   volume?: string;
+  edgeOutputFormat?: 'wav' | 'mp3';
   edgeTtsBatchSize?: number;
   edgeWavMode?: 'auto' | 'direct' | 'convert';
   edgeWorkerItemConcurrency?: number;
