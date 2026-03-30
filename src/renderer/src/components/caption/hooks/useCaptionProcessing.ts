@@ -256,6 +256,7 @@ interface UseCaptionProcessingProps {
     thumbnailTextSecondaryFontSizeRel?: number;
     thumbnailTextSecondaryColor?: string;
     thumbnailLineHeightRatio?: number;
+    thumbnailTextConstrainTo34?: boolean;
     thumbnailTextPrimaryPosition?: { x: number; y: number };
     thumbnailTextSecondaryPosition?: { x: number; y: number };
     hardsubTextPrimary?: string;
@@ -1354,6 +1355,31 @@ function formatMissingBatchMessage(
   );
   const mergedGlobalCount = Array.from(new Set(failedReports.flatMap((report) => report.missingGlobalLineIndexes))).length;
   return `[${folderName}] Step 3 thiếu batch: ${details} | tổng thiếu ${mergedGlobalCount} dòng global: ${mergedGlobalRanges}`;
+}
+
+const STEP3_GEMINI_EXHAUSTED_CODE = 'ALL_GEMINI_WEB_ACCOUNTS_FAILED';
+
+function normalizeStep3BackendErrorMessage(rawError: string): string {
+  const trimmed = (rawError || '').trim();
+  if (!trimmed) {
+    return 'TRANSLATE_CALL_FAILED';
+  }
+  if (trimmed.includes(STEP3_GEMINI_EXHAUSTED_CODE)) {
+    return 'Hết account Gemini Web khả dụng, Step 3 đã dừng.';
+  }
+  return trimmed;
+}
+
+function extractStep3BackendErrorCode(rawError: string): string {
+  const trimmed = (rawError || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  const matched = trimmed.match(/^([A-Z0-9_]+)\s*:/);
+  if (matched && matched[1]) {
+    return matched[1];
+  }
+  return '';
 }
 
 function deriveBatchReportFromProgress(
@@ -3512,9 +3538,11 @@ export function useCaptionProcessing({
         }
 
         const backendCallSucceeded = result?.success === true;
-        const backendErrorMessage = typeof result?.error === 'string' && result.error.trim().length > 0
+        const backendErrorRaw = typeof result?.error === 'string' && result.error.trim().length > 0
           ? result.error.trim()
           : 'TRANSLATE_CALL_FAILED';
+        const backendErrorMessage = normalizeStep3BackendErrorMessage(backendErrorRaw);
+        const backendErrorCode = extractStep3BackendErrorCode(backendErrorRaw);
         const translateData = (result?.data && typeof result.data === 'object')
           ? (result.data as Record<string, unknown>)
           : {};
@@ -3538,7 +3566,7 @@ export function useCaptionProcessing({
           || (typeof result?.error === 'string' && result.error.includes(CAPTION_PROCESS_STOP_SIGNAL));
         const fallbackFailureReason = backendCallSucceeded
           ? 'MISSING_BATCH_REPORT'
-          : `TRANSLATE_CALL_FAILED: ${backendErrorMessage}`;
+          : `TRANSLATE_CALL_FAILED: ${backendErrorRaw}`;
         const postTranslateEntries = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
         const finalBatchReports: SharedTranslationBatchReport[] = [];
         for (const batchPlan of step3BatchPlan) {
@@ -3679,7 +3707,7 @@ export function useCaptionProcessing({
             missingGlobalLineIndexes,
           };
           const step3ErrorReason = !backendCallSucceeded
-            ? `STEP3_BACKEND_FAILED: ${backendErrorMessage}`
+            ? `STEP3_BACKEND_FAILED${backendErrorCode ? `:${backendErrorCode}` : ''}: ${backendErrorRaw}`
             : `STEP3_MISSING_BATCHES: ${missingBatchIndexes.map((idx) => `#${idx}`).join(', ') || 'unknown'}`;
           const nextStepState = isStep3Complete
             ? {

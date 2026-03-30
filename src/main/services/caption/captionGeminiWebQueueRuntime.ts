@@ -29,6 +29,9 @@ export interface CaptionGeminiWebQueueRuntimeContext {
   queue: UniversalRotationQueueService;
   resourceLabelById: Map<string, string>;
   queueGapMs: number;
+  minIntervalMs: number;
+  maxIntervalMs: number;
+  intervalMode: 'fixed' | 'random';
 }
 
 export function getCaptionStep3QueueGapMs(): number {
@@ -108,5 +111,12 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
     }
   }
 
-  return { queue, resourceLabelById, queueGapMs };
+  return {
+    queue,
+    resourceLabelById,
+    queueGapMs,
+    minIntervalMs,
+    maxIntervalMs,
+    intervalMode,
+  };
 }

@@ -48,6 +48,7 @@ type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
 const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
 const GROK_UI_RATE_LIMIT_MESSAGE = 'Grok UI: tất cả profile bị rate limit, dừng dịch.';
 const GROK_UI_HARD_STOP_MESSAGE = 'Grok UI batch failed, stopped.';
+const GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE = 'ALL_GEMINI_WEB_ACCOUNTS_FAILED';
 let activeTranslateRunId: string | undefined;
 let translateStopRequested = false;
 let translateStopRunId: string | undefined;
@@ -150,6 +151,7 @@ interface BatchTranslationResult {
   success: boolean;
   translatedTexts: string[];
   error?: string;
+  errorCode?: string;
   transport: TranslationTransport;
   resourceId?: string;
   resourceLabel?: string;
@@ -167,6 +169,11 @@ interface DispatchTimingMetadata {
   startedAt: number;
   endedAt: number;
   nextAllowedAt: number;
+}
+
+interface GeminiWebQueueDispatchOptions {
+  preferredResourceId?: string;
+  maxAttempts?: number;
 }
 
 function formatIndexRanges(indexes: number[]): string {
@@ -469,6 +476,7 @@ async function translateBatchGeminiWebQueue(
   projectId: string,
   sourcePath: string,
   queueContext: CaptionGeminiWebQueueRuntimeContext,
+  dispatchOptions?: GeminiWebQueueDispatchOptions,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [GeminiWebQueue] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
   const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate);
@@ -481,9 +489,10 @@ async function translateBatchGeminiWebQueue(
       serviceId: CAPTION_GEMINI_WEB_QUEUE_SERVICE_ID,
       jobType: 'translate-caption-batch',
       priority: 'normal',
-      maxAttempts: 3,
+      maxAttempts: Math.max(1, Math.floor(dispatchOptions?.maxAttempts ?? 3)),
       timeoutMs: 120_000,
       requiredCapabilities: ['caption_translate', 'gemini_webapi'],
+      preferredResourceId: dispatchOptions?.preferredResourceId,
       payload: { prompt },
       execute: async (ctx) => {
         const accountConfigId = ctx.resource.resourceId;
@@ -598,6 +607,7 @@ async function translateBatchGeminiWebQueue(
         success: false,
         translatedTexts: [],
         error: queued.error || 'GeminiWeb queue job failed',
+        errorCode: queued.errorCode,
         transport: 'gemini_webapi_queue',
         resourceId: queued.resourceId,
         resourceLabel: queued.resourceId ? resourceLabelById.get(queued.resourceId) : undefined,
@@ -614,6 +624,7 @@ async function translateBatchGeminiWebQueue(
         success: false,
         translatedTexts,
         error: `${parsed.errorCode || 'ERROR_PROCESSING_FAILED'}: ${parsed.errorMessage || 'JSON response không hợp lệ'}`,
+        errorCode: parsed.errorCode || 'ERROR_PROCESSING_FAILED',
         transport: 'gemini_webapi_queue',
         resourceId: queued.resourceId,
         resourceLabel: queued.result?.resourceLabel || (queued.resourceId ? resourceLabelById.get(queued.resourceId) : undefined),
@@ -628,6 +639,7 @@ async function translateBatchGeminiWebQueue(
         success: false,
         translatedTexts,
         error: `Thiếu ${batch.texts.length - validCount} dòng`,
+        errorCode: 'ERROR_MISSING_LINES',
         transport: 'gemini_webapi_queue',
         resourceId: queued.resourceId,
         resourceLabel: queued.result?.resourceLabel || (queued.resourceId ? resourceLabelById.get(queued.resourceId) : undefined),
@@ -650,6 +662,7 @@ async function translateBatchGeminiWebQueue(
       success: false,
       translatedTexts: [],
       error: String(error),
+      errorCode: 'EXECUTION_ERROR',
       transport: 'gemini_webapi_queue',
       queueRuntimeKey: CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
     };
@@ -693,6 +706,10 @@ export async function translateAll(
     if (ms <= 0) return;
     await raceWithStop(new Promise<void>((resolve) => setTimeout(resolve, ms)));
   };
+
+  let geminiWebQueueRuntimeForRestore: CaptionGeminiWebQueueRuntimeContext | null = null;
+  const geminiResourceEnabledRestoreMap = new Map<string, boolean>();
+  const geminiTemporarilyDisabledResourceIds = new Set<string>();
 
   try {
     assertNotStopped();
@@ -824,6 +841,10 @@ export async function translateAll(
     let nextDispatchAtMs = Date.now();
     let dispatchGateQueue: Promise<void> = Promise.resolve();
     let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
+    let geminiSequentialNextDispatchAtMs: number | null = null;
+    let geminiExhaustedError: string | null = null;
+    let geminiRoundRobinCursor = 0;
+    let geminiInitialEnabledCount = 0;
     const MAX_BATCH_RETRY_DEFAULT = 2;
     const MAX_BATCH_RETRY = useGrokUi ? 2 : MAX_BATCH_RETRY_DEFAULT;
 
@@ -889,12 +910,20 @@ export async function translateAll(
 
   if (useGeminiWebQueue) {
     geminiWebQueueContext = ensureCaptionGeminiWebQueueRuntime();
+    geminiWebQueueRuntimeForRestore = geminiWebQueueContext;
     queueGapMs = geminiWebQueueContext.queueGapMs;
     const { queue } = geminiWebQueueContext;
     const snapshot = queue.getSnapshot();
+    for (const resource of snapshot.resources) {
+      if (resource.poolId !== CAPTION_GEMINI_WEB_QUEUE_POOL_ID) {
+        continue;
+      }
+      geminiResourceEnabledRestoreMap.set(resource.resourceId, resource.enabled);
+    }
     const enabledResources = snapshot.resources.filter(
       (resource) => resource.poolId === CAPTION_GEMINI_WEB_QUEUE_POOL_ID && resource.enabled
     );
+    geminiInitialEnabledCount = enabledResources.length;
     if (enabledResources.length === 0) {
       const errorMessage = 'Không có account Gemini Web hợp lệ (is_active + __Secure-1PSID + __Secure-1PSIDTS).';
       const missingGlobalLineIndexes = collectMissingGlobalLineIndexes(batches);
@@ -913,6 +942,60 @@ export async function translateAll(
       };
     }
   }
+
+  const sampleGeminiQueueDelayMs = (): number => {
+    if (!geminiWebQueueContext) {
+      return queueGapMs;
+    }
+    const minMs = Math.max(0, Math.floor(geminiWebQueueContext.minIntervalMs || queueGapMs));
+    const maxMs = Math.max(minMs, Math.floor(geminiWebQueueContext.maxIntervalMs || minMs));
+    if (geminiWebQueueContext.intervalMode !== 'random' || maxMs <= minMs) {
+      return minMs;
+    }
+    return minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
+  };
+
+  const getGeminiEnabledResourceIds = (): string[] => {
+    if (!geminiWebQueueContext) {
+      return [];
+    }
+    return geminiWebQueueContext.queue.getSnapshot().resources
+      .filter(
+        (resource) => resource.poolId === CAPTION_GEMINI_WEB_QUEUE_POOL_ID && resource.enabled
+      )
+      .map((resource) => resource.resourceId);
+  };
+
+  const pickNextGeminiResourceId = (): string | null => {
+    const resourceIds = getGeminiEnabledResourceIds();
+    if (resourceIds.length === 0) {
+      return null;
+    }
+    const index = geminiRoundRobinCursor % resourceIds.length;
+    const picked = resourceIds[index];
+    geminiRoundRobinCursor = (index + 1) % resourceIds.length;
+    return picked;
+  };
+
+  const disableGeminiResourceForCurrentRun = (resourceId: string, reason: string): void => {
+    if (!geminiWebQueueContext || !resourceId) {
+      return;
+    }
+    if (geminiTemporarilyDisabledResourceIds.has(resourceId)) {
+      return;
+    }
+    geminiTemporarilyDisabledResourceIds.add(resourceId);
+    try {
+      geminiWebQueueContext.queue.setResourceEnabled(CAPTION_GEMINI_WEB_QUEUE_POOL_ID, resourceId, false);
+      console.warn(
+        `[CaptionTranslator] [GeminiWebQueue] Tạm loại account ${resourceId} trong run hiện tại. Reason: ${reason}`
+      );
+    } catch (error) {
+      console.warn(
+        `[CaptionTranslator] [GeminiWebQueue] Không thể tạm loại account ${resourceId}: ${String(error)}`
+      );
+    }
+  };
 
   const buildBatchReport = (
     batch: TextBatch,
@@ -1042,10 +1125,12 @@ export async function translateAll(
       : (useImpit ? 'impit_cookie' : (useGrokUi ? 'grok_ui' : (assignedKey?.keyInfo.name || 'rotation')));
     const queueGapSecLabel = Number((queueGapMs / 1000).toFixed(1)).toString().replace(/\.0$/, '');
     const dispatchModeLabel = useGeminiWebQueue
-      ? `dispatch mỗi ${queueGapSecLabel}s, không chờ batch trước`
+      ? `tuần tự 1 job, chờ sau hoàn thành theo setting (${queueGapSecLabel}s+)`
       : `${MAX_CONCURRENT} song song, pacing ${queueGapSecLabel}s`;
     let progressTokenLabel = defaultTokenLabel;
-    const totalAttempts = Math.max(1, MAX_BATCH_RETRY + 1);
+    const totalAttempts = useGeminiWebQueue
+      ? Math.max(1, geminiInitialEnabledCount)
+      : Math.max(1, MAX_BATCH_RETRY + 1);
     let attempt = 0;
     let bestTexts: string[] = Array.from({ length: batch.texts.length }, () => '');
     let bestTranslatedCount = -1;
@@ -1056,6 +1141,23 @@ export async function translateAll(
       assertNotStopped();
       attempt += 1;
       const isRetryAttempt = attempt > 1;
+      const preferredGeminiResourceId = useGeminiWebQueue ? pickNextGeminiResourceId() : null;
+      if (useGeminiWebQueue && !preferredGeminiResourceId) {
+        geminiExhaustedError = `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Không còn account Gemini Web khả dụng để dịch Step 3.`;
+        lastResult = {
+          success: false,
+          translatedTexts: bestTexts,
+          error: geminiExhaustedError,
+          errorCode: GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE,
+          transport: 'gemini_webapi_queue',
+          queueRuntimeKey: CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+        };
+        break;
+      }
+
+      const nextAllowedAt = useGeminiWebQueue
+        ? (geminiSequentialNextDispatchAtMs ?? Date.now())
+        : nextDispatchAtMs;
       if (progressCallback && !shouldStopTranslation(runId)) {
         progressCallback({
           current: batch.startIndex,
@@ -1071,11 +1173,29 @@ export async function translateAll(
           transport: methodLabel,
           queuePacingMode: 'dispatch_spacing_global',
           queueGapMs,
-          nextAllowedAt: nextDispatchAtMs,
+          nextAllowedAt,
         });
       }
 
-      const dispatchTiming = await reserveDispatchSlot();
+      let dispatchTiming: DispatchTimingMetadata;
+      if (useGeminiWebQueue) {
+        const waitUntil = geminiSequentialNextDispatchAtMs ?? Date.now();
+        const now = Date.now();
+        const waitMs = Math.max(0, waitUntil - now);
+        if (waitMs > 0) {
+          await sleepWithStop(waitMs);
+        }
+        const dispatchAt = Date.now();
+        dispatchTiming = {
+          queuePacingMode: 'dispatch_spacing_global',
+          queueGapMs,
+          startedAt: dispatchAt,
+          endedAt: dispatchAt,
+          nextAllowedAt: dispatchAt,
+        };
+      } else {
+        dispatchTiming = await reserveDispatchSlot();
+      }
       lastDispatchTiming = dispatchTiming;
 
       assertNotStopped();
@@ -1101,7 +1221,18 @@ export async function translateAll(
       );
 
       const batchResult: BatchTranslationResult = useGeminiWebQueue
-        ? await translateBatchGeminiWebQueue(batch, targetLanguage, promptTemplate, projectId, sourcePath, geminiWebQueueContext!)
+        ? await translateBatchGeminiWebQueue(
+          batch,
+          targetLanguage,
+          promptTemplate,
+          projectId,
+          sourcePath,
+          geminiWebQueueContext!,
+          {
+            preferredResourceId: preferredGeminiResourceId || undefined,
+            maxAttempts: 1,
+          }
+        )
         : useImpit
           ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
           : useGrokUi
@@ -1110,7 +1241,22 @@ export async function translateAll(
 
       assertNotStopped();
       lastResult = batchResult;
-      lastDispatchTiming = dispatchTiming;
+      if (useGeminiWebQueue) {
+        const finishedAt = Date.now();
+        const nextGapMs = sampleGeminiQueueDelayMs();
+        geminiSequentialNextDispatchAtMs = finishedAt + nextGapMs;
+        batchResult.queuePacingMode = 'dispatch_spacing_global';
+        batchResult.queueGapMs = nextGapMs;
+        batchResult.startedAt = batchResult.startedAt ?? dispatchTiming.startedAt;
+        batchResult.endedAt = finishedAt;
+        batchResult.nextAllowedAt = geminiSequentialNextDispatchAtMs;
+      }
+      lastDispatchTiming = {
+        ...dispatchTiming,
+        queueGapMs: batchResult.queueGapMs ?? dispatchTiming.queueGapMs,
+        endedAt: batchResult.endedAt ?? dispatchTiming.endedAt,
+        nextAllowedAt: batchResult.nextAllowedAt ?? dispatchTiming.nextAllowedAt,
+      };
       if (batchResult.resourceLabel || batchResult.resourceId) {
         progressTokenLabel = batchResult.resourceLabel || batchResult.resourceId || progressTokenLabel;
       }
@@ -1125,6 +1271,27 @@ export async function translateAll(
       if (batchResult.success) {
         bestTexts = normalizedTexts;
         break;
+      }
+
+      if (useGeminiWebQueue) {
+        const failedResourceId = (batchResult.resourceId || '').trim();
+        if (failedResourceId) {
+          disableGeminiResourceForCurrentRun(failedResourceId, batchResult.error || batchResult.errorCode || 'ACCOUNT_FAILED');
+        }
+        const remainingResourceIds = getGeminiEnabledResourceIds();
+        if (remainingResourceIds.length === 0) {
+          geminiExhaustedError = `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Tất cả account Gemini Web đều lỗi trong run hiện tại.`;
+          lastResult = {
+            ...batchResult,
+            error: geminiExhaustedError,
+            errorCode: GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE,
+          };
+          break;
+        }
+        if (attempt >= totalAttempts) {
+          break;
+        }
+        continue;
       }
 
       const retryable = shouldRetryBatch(batchResult, normalizedTexts, batch.texts.length);
@@ -1240,15 +1407,18 @@ export async function translateAll(
   const manager = getApiManager();
   if (useGeminiWebQueue) {
     assertNotStopped();
-    const dispatchPromises = batches.map((batch, index) =>
-      processBatch(batch, index).catch(async (error) => {
+    for (let i = 0; i < batches.length; i += 1) {
+      const batch = batches[i];
+      await processBatch(batch, i).catch(async (error) => {
         if (isStopSignal(error)) {
           throw error;
         }
         await registerUnexpectedBatchFailure(batch, error);
-      })
-    );
-    await Promise.all(dispatchPromises);
+      });
+      if (geminiExhaustedError) {
+        break;
+      }
+    }
   } else {
     for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
       assertNotStopped();
@@ -1286,6 +1456,40 @@ export async function translateAll(
     }
   }
 
+  if (useGeminiWebQueue && geminiExhaustedError) {
+    const reportedBatchIndexes = new Set(batchReports.map((report) => report.batchIndex));
+    for (const batch of batches) {
+      const batchNumber = batch.batchIndex + 1;
+      if (reportedBatchIndexes.has(batchNumber)) {
+        continue;
+      }
+      const fallbackTexts = Array.from(
+        { length: batch.texts.length },
+        (_, offset) => allTranslatedTexts[batch.startIndex + offset] ?? ''
+      );
+      const report = buildBatchReport(
+        batch,
+        fallbackTexts,
+        0,
+        'failed',
+        geminiExhaustedError,
+        undefined,
+        'gemini_webapi_queue',
+        undefined,
+        undefined,
+        CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+      );
+      batchReports.push(report);
+      translatedCount += report.translatedLines;
+      failedCount += report.missingGlobalLineIndexes.length;
+      completedBatches += 1;
+      processedLines += batch.texts.length;
+    }
+    if (!errors.includes(geminiExhaustedError)) {
+      errors.push(geminiExhaustedError);
+    }
+  }
+
   // Merge kết quả vào entries
   const resultEntries = mergeTranslatedTexts(entries, allTranslatedTexts);
 
@@ -1295,13 +1499,16 @@ export async function translateAll(
         ? 'gemini_webapi_queue'
         : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
       const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
+      const hasFailures = failedCount > 0;
       progressCallback({
         current: entries.length,
         total: entries.length,
         batchIndex: Math.max(0, maxBatchIndex - 1),
         totalBatches: maxBatchIndex,
-        status: 'completed',
-        message: `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
+        status: hasFailures ? 'error' : 'completed',
+        message: hasFailures
+          ? `Kết thúc có lỗi: ${translatedCount}/${entries.length} dòng, thiếu ${failedCount} dòng`
+          : `Hoàn thành: ${translatedCount}/${entries.length} dòng`,
         runId,
         eventType: 'summary',
         transport: summaryTransport,
@@ -1340,6 +1547,25 @@ export async function translateAll(
       ...mergePacingMetadata(lastDispatchTiming),
     };
   } finally {
+    if (geminiWebQueueRuntimeForRestore && geminiTemporarilyDisabledResourceIds.size > 0) {
+      for (const resourceId of geminiTemporarilyDisabledResourceIds) {
+        const restoreEnabled = geminiResourceEnabledRestoreMap.get(resourceId);
+        if (typeof restoreEnabled !== 'boolean') {
+          continue;
+        }
+        try {
+          geminiWebQueueRuntimeForRestore.queue.setResourceEnabled(
+            CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
+            resourceId,
+            restoreEnabled,
+          );
+        } catch (error) {
+          console.warn(
+            `[CaptionTranslator] [GeminiWebQueue] Không thể khôi phục trạng thái account ${resourceId}: ${String(error)}`
+          );
+        }
+      }
+    }
     stopSignal.dispose();
   }
 }

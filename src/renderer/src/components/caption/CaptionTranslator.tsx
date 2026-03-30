@@ -6630,7 +6630,7 @@ export function CaptionTranslator() {
               {settings.translateMethod === 'impit'
                 ? 'Impit bỏ qua model API.'
                 : settings.translateMethod === 'gemini_webapi_queue'
-                  ? 'GeminiWebApi Queue dùng account từ gemini_chat_config và xoay vòng qua queue.'
+                  ? 'GeminiWebApi Queue chạy tuần tự 1 job, chờ theo setting send interval; account lỗi sẽ đổi account khác, hết account thì dừng Step 3.'
                   : settings.translateMethod === 'grok_ui'
                     ? 'Grok UI dùng Grok3API qua trình duyệt, không phụ thuộc Gemini model.'
                     : 'API sẽ dùng model đã chọn để dịch batch.'}
