@@ -37,9 +37,14 @@ const DEFAULT_CAPCUT_USER_AGENT = 'Cronet/TTNetVersion:e159bc05 2022-08-16 QuicV
 const DEFAULT_CAPCUT_X_SS_DP = '359289';
 const MAX_TTS_RETRIES = 3;
 const CAPCUT_BATCH_SIZE = 1000;
-const DEFAULT_EDGE_TTS_BATCH_SIZE = 50;
+const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
 const MIN_EDGE_TTS_BATCH_SIZE = 1;
 const MAX_EDGE_TTS_BATCH_SIZE = 500;
+const DEFAULT_EDGE_WAV_MODE = 'auto';
+const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 2;
+const MIN_EDGE_WORKER_ITEM_CONCURRENCY = 1;
+const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 32;
+const DEFAULT_EDGE_WORKER_TIMEOUT_MS = 75000;
 const TTS_STOP_MESSAGE = 'Đã gửi tín hiệu dừng TTS.';
 
 const activeTtsProcesses = new Set<ChildProcess>();
@@ -127,6 +132,14 @@ interface EdgeAsyncioJob {
   rate: string;
   volume: string;
   outputFormat: 'wav' | 'mp3';
+}
+
+type EdgeWavMode = 'auto' | 'direct' | 'convert';
+
+interface EdgeWorkerRuntimeOptions {
+  timeoutMs?: number;
+  wavMode: EdgeWavMode;
+  itemConcurrency: number;
 }
 
 interface TTSTestVoiceSampleOptions extends TTSTestVoiceRequest {
@@ -329,6 +342,37 @@ function normalizeSecretValue(value: unknown): string | null {
 function normalizeEdgeTtsBatchSize(value: number | undefined): number {
   const raw = Number.isFinite(value) ? Math.round(value as number) : DEFAULT_EDGE_TTS_BATCH_SIZE;
   return Math.min(MAX_EDGE_TTS_BATCH_SIZE, Math.max(MIN_EDGE_TTS_BATCH_SIZE, raw));
+}
+
+function normalizeEdgeWavMode(value: unknown): EdgeWavMode {
+  if (value === 'direct' || value === 'convert' || value === 'auto') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === 'direct' || lowered === 'convert' || lowered === 'auto') {
+      return lowered;
+    }
+  }
+  return DEFAULT_EDGE_WAV_MODE;
+}
+
+function normalizeEdgeWorkerItemConcurrency(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    return DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
+  }
+  const rounded = Math.round(num);
+  return Math.min(MAX_EDGE_WORKER_ITEM_CONCURRENCY, Math.max(MIN_EDGE_WORKER_ITEM_CONCURRENCY, rounded));
+}
+
+function normalizeEdgeWorkerTimeoutMs(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    return DEFAULT_EDGE_WORKER_TIMEOUT_MS;
+  }
+  const rounded = Math.round(num);
+  return rounded > 0 ? rounded : DEFAULT_EDGE_WORKER_TIMEOUT_MS;
 }
 
 function shouldPersistCapcutSecrets(
@@ -1181,11 +1225,16 @@ async function runEdgeTtsWorker(
   jobs: EdgeAsyncioJob[],
   runtime: { command: string; baseArgs: string[] },
   workerPath: string,
-  timeoutMs?: number,
+  workerRuntime?: EdgeWorkerRuntimeOptions,
   onProgress?: (event: { index: number; success?: boolean; error?: string; filename?: string; proxyId?: string }) => void,
 ): Promise<{ results: Map<number, { success: boolean; error?: string }>; errors: string[] }> {
   throwIfTtsStopped();
-  const payload = { jobs, ...(timeoutMs ? { timeoutMs } : {}) };
+  const payload = {
+    jobs,
+    ...(workerRuntime?.timeoutMs ? { timeoutMs: workerRuntime.timeoutMs } : {}),
+    wavMode: workerRuntime?.wavMode || DEFAULT_EDGE_WAV_MODE,
+    itemConcurrency: workerRuntime?.itemConcurrency || DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
+  };
   const errors: string[] = [];
   const results = new Map<number, { success: boolean; error?: string }>();
 
@@ -1293,9 +1342,20 @@ export async function generateAsyncioAudioWithProvider(
     outputDir,
   } = options;
   const effectiveBatchSize = normalizeEdgeTtsBatchSize(options.edgeTtsBatchSize);
+  const edgeWavMode = normalizeEdgeWavMode(options.edgeWavMode || process.env.EDGE_TTS_WAV_MODE);
+  const edgeWorkerItemConcurrency = normalizeEdgeWorkerItemConcurrency(
+    options.edgeWorkerItemConcurrency ?? process.env.EDGE_TTS_ITEM_CONCURRENCY
+  );
+  const edgeWorkerTimeoutMs = normalizeEdgeWorkerTimeoutMs(
+    options.edgeWorkerTimeoutMs ?? process.env.EDGE_TTS_ITEM_TIMEOUT_MS
+  );
 
   console.log(`[TTS][EDGE][asyncio] Start entries=${entries.length}, voice=${voiceSelection.voiceId}, format=${outputFormat}`);
   console.log(`[TTS][EDGE][asyncio] Batch size=${effectiveBatchSize}`);
+  console.log(
+    `[TTS][EDGE][asyncio] Worker mode=${edgeWavMode}, `
+    + `itemConcurrency=${edgeWorkerItemConcurrency}, timeoutMs=${edgeWorkerTimeoutMs || 0}`
+  );
 
   if (!outputDir) {
     return {
@@ -1483,7 +1543,11 @@ export async function generateAsyncioAudioWithProvider(
       jobs,
       availability.runtime,
       workerPath,
-      undefined,
+      {
+        timeoutMs: edgeWorkerTimeoutMs,
+        wavMode: edgeWavMode,
+        itemConcurrency: edgeWorkerItemConcurrency,
+      },
       (event) => {
         if (event?.success !== true) return;
         if (progressSeen.has(event.index)) return;

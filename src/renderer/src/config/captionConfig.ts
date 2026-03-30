@@ -71,7 +71,7 @@ export const VOLUME_OPTIONS = ['+0%', '+10%', '+20%', '+30%'];
 export const DEFAULT_RATE = '+30%';
 export const DEFAULT_VOLUME = '+30%';
 export const DEFAULT_SRT_SPEED = 1.0;
-export const DEFAULT_EDGE_TTS_BATCH_SIZE = 50;
+export const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
 
 // ============================================
 // SPLIT OPTIONS
