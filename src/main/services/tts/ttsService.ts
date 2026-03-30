@@ -142,6 +142,8 @@ interface EdgeWorkerRuntimeOptions {
   itemConcurrency: number;
 }
 
+type EdgeConversionMode = 'direct_wav' | 'mp3_to_wav' | 'mp3_to_wav_fallback' | 'mp3_direct';
+
 interface TTSTestVoiceSampleOptions extends TTSTestVoiceRequest {
   text: string;
   voice: string;
@@ -373,6 +375,25 @@ function normalizeEdgeWorkerTimeoutMs(value: unknown): number {
   }
   const rounded = Math.round(num);
   return rounded > 0 ? rounded : DEFAULT_EDGE_WORKER_TIMEOUT_MS;
+}
+
+function getEdgeConversionModeLabel(mode: unknown): string | null {
+  if (typeof mode !== 'string') {
+    return null;
+  }
+  if (mode === 'direct_wav') {
+    return 'WAV trực tiếp';
+  }
+  if (mode === 'mp3_to_wav_fallback') {
+    return 'fallback MP3 -> WAV';
+  }
+  if (mode === 'mp3_to_wav') {
+    return 'MP3 -> WAV';
+  }
+  if (mode === 'mp3_direct') {
+    return 'MP3 trực tiếp';
+  }
+  return null;
 }
 
 function shouldPersistCapcutSecrets(
@@ -1226,8 +1247,15 @@ async function runEdgeTtsWorker(
   runtime: { command: string; baseArgs: string[] },
   workerPath: string,
   workerRuntime?: EdgeWorkerRuntimeOptions,
-  onProgress?: (event: { index: number; success?: boolean; error?: string; filename?: string; proxyId?: string }) => void,
-): Promise<{ results: Map<number, { success: boolean; error?: string }>; errors: string[] }> {
+  onProgress?: (event: {
+    index: number;
+    success?: boolean;
+    error?: string;
+    filename?: string;
+    proxyId?: string;
+    conversionMode?: EdgeConversionMode;
+  }) => void,
+): Promise<{ results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>; errors: string[] }> {
   throwIfTtsStopped();
   const payload = {
     jobs,
@@ -1236,7 +1264,7 @@ async function runEdgeTtsWorker(
     itemConcurrency: workerRuntime?.itemConcurrency || DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
   };
   const errors: string[] = [];
-  const results = new Map<number, { success: boolean; error?: string }>();
+  const results = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>();
 
   return new Promise((resolve) => {
     let doneReceived = false;
@@ -1267,9 +1295,12 @@ async function runEdgeTtsWorker(
         try {
           const event = JSON.parse(line);
           if (event?.event === 'progress' && typeof event.index === 'number') {
+            const conversionMode = typeof event.conversionMode === 'string'
+              ? event.conversionMode as EdgeConversionMode
+              : undefined;
             // progress event: just capture last known error/success
             if (typeof event.success === 'boolean') {
-              results.set(event.index, { success: event.success, error: event.error });
+              results.set(event.index, { success: event.success, error: event.error, conversionMode });
               if (!event.success) {
                 console.warn(
                   `[TTS][EDGE][asyncio] Failed index=${event.index} file=${event.filename || 'n/a'} ` +
@@ -1284,6 +1315,7 @@ async function runEdgeTtsWorker(
                 error: event.error,
                 filename: event.filename,
                 proxyId: event.proxyId,
+                conversionMode,
               });
             }
             continue;
@@ -1291,7 +1323,13 @@ async function runEdgeTtsWorker(
           if (event?.event === 'done' && Array.isArray(event.results)) {
             for (const item of event.results) {
               if (typeof item.index === 'number') {
-                results.set(item.index, { success: !!item.success, error: item.error });
+                results.set(item.index, {
+                  success: !!item.success,
+                  error: item.error,
+                  conversionMode: typeof item.conversionMode === 'string'
+                    ? item.conversionMode as EdgeConversionMode
+                    : undefined,
+                });
               }
             }
             doneReceived = true;
@@ -1553,14 +1591,15 @@ export async function generateAsyncioAudioWithProvider(
         if (progressSeen.has(event.index)) return;
         progressSeen.add(event.index);
         completed++;
+        const modeLabel = getEdgeConversionModeLabel(event.conversionMode);
         progressCallback?.({
           current: completed,
           total: entries.length,
           status: 'generating',
           currentFile: event.filename || '',
           message: event.filename
-            ? `[${providerLabel}] Đã tạo: ${event.filename}`
-            : `[${providerLabel}] Đã tạo audio #${event.index}`,
+            ? `[${providerLabel}] Đã tạo: ${event.filename}${modeLabel ? ` (${modeLabel})` : ''}`
+            : `[${providerLabel}] Đã tạo audio #${event.index}${modeLabel ? ` (${modeLabel})` : ''}`,
         });
       }
     );
@@ -1603,12 +1642,13 @@ export async function generateAsyncioAudioWithProvider(
           if (!progressSeen.has(item.index)) {
             progressSeen.add(item.index);
             completed++;
+            const modeLabel = getEdgeConversionModeLabel(result?.conversionMode);
             progressCallback?.({
               current: completed,
               total: entries.length,
               status: 'generating',
               currentFile: item.filename,
-              message: `[${providerLabel}] Đã tạo: ${item.filename}`,
+              message: `[${providerLabel}] Đã tạo: ${item.filename}${modeLabel ? ` (${modeLabel})` : ''}`,
             });
           }
         } else {

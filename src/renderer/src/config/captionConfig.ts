@@ -72,6 +72,7 @@ export const DEFAULT_RATE = '+30%';
 export const DEFAULT_VOLUME = '+30%';
 export const DEFAULT_SRT_SPEED = 1.0;
 export const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
+export const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 2;
 
 // ============================================
 // SPLIT OPTIONS

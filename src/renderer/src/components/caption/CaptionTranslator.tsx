@@ -12,6 +12,8 @@ import {
   VOICES,
   RATE_OPTIONS,
   VOLUME_OPTIONS,
+  DEFAULT_EDGE_TTS_BATCH_SIZE,
+  DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
   LINES_PER_FILE_OPTIONS,
   normalizeVoiceValue,
 } from '../../config/captionConfig';
@@ -6687,6 +6689,26 @@ export function CaptionTranslator() {
       const isStep4PipelineRunning = processing.status === 'running';
       const isStep4VoiceTesting = step4VoiceTestState === 'testing';
       const canRunStep4VoiceTest = !isStep4PipelineRunning && !isStep4VoiceTesting;
+      const safeEdgeBatchSizeForUi = Math.min(
+        EDGE_TTS_BATCH_SIZE_MAX,
+        Math.max(
+          EDGE_TTS_BATCH_SIZE_MIN,
+          Number.isFinite(settings.edgeTtsBatchSize)
+            ? Math.round(settings.edgeTtsBatchSize)
+            : DEFAULT_EDGE_TTS_BATCH_SIZE
+        )
+      );
+      const knownStep4TotalItems = Math.max(
+        0,
+        isStep4PipelineRunning && Number.isFinite(processing.progress.total)
+          ? Math.round(processing.progress.total)
+          : fileManager.entries.length
+      );
+      const estimatedEdgeJobCount = knownStep4TotalItems > 0
+        ? Math.ceil(knownStep4TotalItems / safeEdgeBatchSizeForUi)
+        : 0;
+      const edgeConcurrentAudioPerJob = DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
+      const edgeConcurrentAudioLimit = estimatedEdgeJobCount * edgeConcurrentAudioPerJob;
       const step4VoiceTestStatusLabel = step4VoiceTestState === 'testing'
         ? 'đang test'
         : step4VoiceTestState === 'success'
@@ -6804,7 +6826,9 @@ export function CaptionTranslator() {
                 </div>
               </div>
               <div className={styles.stepCardHint}>
-                Số caption xử lý mỗi lượt cho Edge TTS. Mặc định 50.
+                Batch {safeEdgeBatchSizeForUi} (mặc định {DEFAULT_EDGE_TTS_BATCH_SIZE}) |
+                {' '}Jobs ~ {estimatedEdgeJobCount} = ceil({knownStep4TotalItems}/{safeEdgeBatchSizeForUi}) |
+                {' '}Đồng thời ~ {edgeConcurrentAudioLimit} audio ({estimatedEdgeJobCount} x {edgeConcurrentAudioPerJob}).
               </div>
             </div>
           )}

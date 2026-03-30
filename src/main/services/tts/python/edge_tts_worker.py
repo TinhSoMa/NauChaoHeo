@@ -253,6 +253,7 @@ async def process_item(item: Dict[str, Any], job: Dict[str, Any], wav_mode: str)
     output_path = item.get("outputPath")
     proxy = job.get("proxyUrl")
     output_format = str(job.get("outputFormat") or "wav").lower()
+    conversion_mode: str | None = None
     try:
         if output_format not in {"mp3", "wav"}:
             raise RuntimeError(f"Unsupported output format: {output_format}")
@@ -271,6 +272,7 @@ async def process_item(item: Dict[str, Any], job: Dict[str, Any], wav_mode: str)
         )
         if output_format == "mp3":
             await communicate.save(output_path)
+            conversion_mode = "mp3_direct"
             ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
             if not ok:
                 raise RuntimeError("Audio file empty or not created.")
@@ -291,6 +293,7 @@ async def process_item(item: Dict[str, Any], job: Dict[str, Any], wav_mode: str)
                         f.write(wav_bytes)
                     if not looks_like_wav(output_path):
                         raise RuntimeError("Direct WAV output is not valid WAV data.")
+                    conversion_mode = "direct_wav"
                 except Exception as exc:
                     direct_error = str(exc)
                     if wav_mode == "direct":
@@ -305,6 +308,7 @@ async def process_item(item: Dict[str, Any], job: Dict[str, Any], wav_mode: str)
                 if not looks_like_mp3_bytes(mp3_bytes):
                     raise RuntimeError("Generated stream is not valid MP3 data.")
                 convert_mp3_bytes_to_wav(mp3_bytes, output_path)
+                conversion_mode = "mp3_to_wav_fallback" if direct_error else "mp3_to_wav"
                 if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
                     raise RuntimeError("Converted WAV file empty or not created.")
                 if not looks_like_wav(output_path):
@@ -315,8 +319,9 @@ async def process_item(item: Dict[str, Any], job: Dict[str, Any], wav_mode: str)
             "filename": item.get("filename"),
             "proxyId": job.get("proxyId"),
             "success": True,
+            "conversionMode": conversion_mode,
         })
-        return {"index": index, "success": True}
+        return {"index": index, "success": True, "conversionMode": conversion_mode}
     except Exception as exc:
         message = str(exc)
         emit({
