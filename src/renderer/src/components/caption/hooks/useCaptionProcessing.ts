@@ -42,6 +42,11 @@ import {
   updateCaptionSession,
   validateStepOutputForSkip,
 } from './captionSessionStore';
+import {
+  DEFAULT_FIT_AUDIO_WORKERS,
+  MIN_FIT_AUDIO_WORKERS,
+  MAX_FIT_AUDIO_WORKERS,
+} from '../../../config/captionConfig';
 
 type ProcessingAudioFile = {
   index: number;
@@ -117,6 +122,17 @@ function pad4(value: number): string {
 
 function normalizePathKey(value: string): string {
   return value.trim().replace(/[\\/]+$/, '').toLowerCase();
+}
+
+function normalizeFitAudioWorkers(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_FIT_AUDIO_WORKERS;
+  }
+  const rounded = Math.round(value as number);
+  if (rounded < MIN_FIT_AUDIO_WORKERS) {
+    return DEFAULT_FIT_AUDIO_WORKERS;
+  }
+  return Math.min(MAX_FIT_AUDIO_WORKERS, Math.max(MIN_FIT_AUDIO_WORKERS, rounded));
 }
 
 function getPathBaseName(pathValue: string): string {
@@ -230,6 +246,7 @@ interface UseCaptionProcessingProps {
     coverFeatherHorizontalPercent?: number;
     coverFeatherVerticalPercent?: number;
     autoFitAudio: boolean;
+    fitAudioWorkers?: number;
     audioSpeed?: number;
     renderAudioSpeed?: number;
     videoVolume?: number;
@@ -2688,6 +2705,11 @@ export function useCaptionProcessing({
         srtSpeed: cfg.srtSpeed,
         autoFitAudio: cfg.autoFitAudio,
       },
+      step6Merge: {
+        trimAudioEnabled: cfg.trimAudioEnabled,
+        autoFitAudio: cfg.autoFitAudio,
+        fitAudioWorkers: cfg.fitAudioWorkers,
+      },
       step7Render: {
         fontSizeScaleVersion: cfg.fontSizeScaleVersion,
         subtitleFontSizeRel: cfg.subtitleFontSizeRel,
@@ -2792,6 +2814,7 @@ export function useCaptionProcessing({
       enabledSteps: steps,
       audioDir: cfg.audioDir,
       autoFitAudio: cfg.autoFitAudio,
+      fitAudioWorkers: cfg.fitAudioWorkers,
       trimAudioEnabled: cfg.trimAudioEnabled,
       hardwareAcceleration: cfg.hardwareAcceleration,
       style: cfg.style,
@@ -3905,6 +3928,7 @@ export function useCaptionProcessing({
         let fitSpeed = 1.0;
         let fitSpeedLabel = '';
         let fitSpeedDirLabel = '';
+        let fitAudioWorkersUsed = 0;
         if (cfg.trimAudioEnabled) {
           const previousTrimResults = toRecord(sessionBeforeStep.data?.trimResults);
           const previousTrimFiles = Array.isArray(previousTrimResults.trimFiles)
@@ -3987,6 +4011,8 @@ export function useCaptionProcessing({
           if (currentEntries.length === 0) {
             throw new Error(`[${folderName}] Thiếu dữ liệu subtitle dịch trong session để fit audio. Hãy chạy Step 3 trước.`);
           }
+          const safeFitAudioWorkers = normalizeFitAudioWorkers(cfg.fitAudioWorkers);
+          fitAudioWorkersUsed = safeFitAudioWorkers;
           fitSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
           fitSpeedLabel = normalizeSpeedLabel(fitSpeed);
           fitSpeedDirLabel = `${fitSpeedLabel.replace('.', '_')}x`;
@@ -4081,7 +4107,11 @@ export function useCaptionProcessing({
           }
 
           if (!reusedFit) {
-            setProgress({ current: 0, total: filesToMerge.length, message: msgCtx('Bước 6: Đang fit audio...') });
+            setProgress({
+              current: 0,
+              total: filesToMerge.length,
+              message: msgCtx(`Bước 6: Đang fit audio (${safeFitAudioWorkers} workers)...`),
+            });
             const fitItems = filesToMerge
               .map(f => {
                 const entryByIndex = currentEntries.find(e => e.index === f.index);
@@ -4097,51 +4127,77 @@ export function useCaptionProcessing({
               .filter(item => item.durationMs > 0);
 
             if (fitItems.length > 0) {
+              const fitWorkerCount = Math.max(1, Math.min(safeFitAudioWorkers, fitItems.length));
+              fitAudioWorkersUsed = fitWorkerCount;
               let processedCount = 0;
               let scaledCount = 0;
               const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+              let nextFitItemIndex = 0;
+              let fitWorkerError: Error | null = null;
 
-              for (const fitItem of fitItems) {
-                if (abortRef.current) {
-                  throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
-                }
-                const audioName = getPathBaseName(fitItem.path) || 'unknown';
-                setProgress({
-                  current: processedCount,
-                  total: fitItems.length,
-                  message: msgCtx(`Bước 6: Đang fit ${processedCount}/${fitItems.length} - ${audioName}`),
-                });
-
-                // @ts-ignore
-                const fitResult = await window.electronAPI.tts.fitAudio([fitItem]);
-                if (fitResult.success && fitResult.data) {
-                  const fitData = fitResult.data as {
-                    scaledCount?: number;
-                    pathMapping?: Array<{ originalPath: string; outputPath: string }>;
-                  };
-                  const itemScaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
-                  const itemMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
-                  scaledCount += itemScaledCount;
-                  pathMapping.push(...itemMapping);
-                } else {
-                  if ((fitResult?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current) {
-                    throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+              const runFitWorker = async (workerNo: number) => {
+                while (true) {
+                  if (fitWorkerError) {
+                    return;
                   }
-                  console.warn(`[${folderName}] Cảnh báo fit audio (${audioName}): ${fitResult.error}`);
-                }
+                  if (abortRef.current) {
+                    fitWorkerError = new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                    return;
+                  }
+                  const currentFitItemIndex = nextFitItemIndex;
+                  nextFitItemIndex += 1;
+                  if (currentFitItemIndex >= fitItems.length) {
+                    return;
+                  }
 
-                processedCount++;
-                setProgress({
-                  current: processedCount,
-                  total: fitItems.length,
-                  message: msgCtx(`Bước 6: Đang fit ${processedCount}/${fitItems.length} - ${audioName}`),
-                });
+                  const fitItem = fitItems[currentFitItemIndex];
+                  const audioName = getPathBaseName(fitItem.path) || 'unknown';
+                  setProgress({
+                    current: processedCount,
+                    total: fitItems.length,
+                    message: msgCtx(`Bước 6: Đang fit ${processedCount}/${fitItems.length} - w${workerNo} - ${audioName}`),
+                  });
+
+                  // @ts-ignore
+                  const fitResult = await window.electronAPI.tts.fitAudio([fitItem]);
+                  if (fitResult.success && fitResult.data) {
+                    const fitData = fitResult.data as {
+                      scaledCount?: number;
+                      pathMapping?: Array<{ originalPath: string; outputPath: string }>;
+                    };
+                    const itemScaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
+                    const itemMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
+                    scaledCount += itemScaledCount;
+                    pathMapping.push(...itemMapping);
+                  } else {
+                    if ((fitResult?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current) {
+                      fitWorkerError = new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                      return;
+                    }
+                    console.warn(`[${folderName}] Cảnh báo fit audio (${audioName}): ${fitResult.error}`);
+                  }
+
+                  processedCount++;
+                  setProgress({
+                    current: processedCount,
+                    total: fitItems.length,
+                    message: msgCtx(`Bước 6: Đang fit ${processedCount}/${fitItems.length} - w${workerNo} - ${audioName}`),
+                  });
+                }
+              };
+
+              await Promise.all(
+                Array.from({ length: fitWorkerCount }, (_, workerIndex) => runFitWorker(workerIndex + 1))
+              );
+
+              if (fitWorkerError) {
+                throw fitWorkerError;
               }
 
               setProgress({
                 current: fitItems.length,
                 total: fitItems.length,
-                message: msgCtx(`Bước 6: Đã fit xong ${scaledCount}/${fitItems.length} audio cần tăng tốc`),
+                message: msgCtx(`Bước 6: Đã fit xong ${scaledCount}/${fitItems.length} audio cần tăng tốc (${fitWorkerCount} workers)`),
               });
 
               fitScaledCount = scaledCount;
@@ -4207,6 +4263,7 @@ export function useCaptionProcessing({
             sourceFiles: fitSourceFiles,
             pathMapping: fitPathMapping,
             fitScaledCount,
+            fitAudioWorkers: fitAudioWorkersUsed,
           } : undefined;
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
             const stepArtifacts: CaptionArtifactFile[] = [];
@@ -4275,6 +4332,7 @@ export function useCaptionProcessing({
                     autoFitAudio: !!cfg.autoFitAudio,
                     fitOutputDir: fitOutputDir || undefined,
                     fitCount: fitScaledCount || undefined,
+                    fitAudioWorkers: cfg.autoFitAudio ? fitAudioWorkersUsed : undefined,
                   }),
                   inputFingerprint: buildObjectFingerprint(filesToMerge.map((file) => ({
                     path: file.path,

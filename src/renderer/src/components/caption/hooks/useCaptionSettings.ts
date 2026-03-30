@@ -7,6 +7,9 @@ import {
   DEFAULT_VOLUME,
   DEFAULT_SRT_SPEED,
   DEFAULT_EDGE_TTS_BATCH_SIZE,
+  DEFAULT_FIT_AUDIO_WORKERS,
+  MIN_FIT_AUDIO_WORKERS,
+  MAX_FIT_AUDIO_WORKERS,
   DEFAULT_SPLIT_BY_LINES,
   DEFAULT_LINES_PER_FILE,
   DEFAULT_NUMBER_OF_PARTS,
@@ -1187,6 +1190,21 @@ export function useCaptionSettings() {
   const [audioDir, setAudioDir] = useState('');
   const [trimAudioEnabled, setTrimAudioEnabled] = useState(true);
   const [autoFitAudio, setAutoFitAudio] = useState(false);
+  const [fitAudioWorkers, setFitAudioWorkersState] = useState(DEFAULT_FIT_AUDIO_WORKERS);
+
+  const setFitAudioWorkers = useCallback((value: number) => {
+    if (!Number.isFinite(value)) {
+      setFitAudioWorkersState(DEFAULT_FIT_AUDIO_WORKERS);
+      return;
+    }
+    const rounded = Math.round(value);
+    if (rounded < MIN_FIT_AUDIO_WORKERS) {
+      setFitAudioWorkersState(DEFAULT_FIT_AUDIO_WORKERS);
+      return;
+    }
+    const normalized = clamp(rounded, MIN_FIT_AUDIO_WORKERS, MAX_FIT_AUDIO_WORKERS);
+    setFitAudioWorkersState(normalized);
+  }, []);
 
   const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv' | 'nvenc'>('qsv');
   const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
@@ -1831,6 +1849,7 @@ export function useCaptionSettings() {
       audioDir,
       trimAudioEnabled,
       autoFitAudio,
+      fitAudioWorkers,
       hardwareAcceleration,
       style: activeProfile.style,
       renderMode,
@@ -1923,6 +1942,7 @@ export function useCaptionSettings() {
       audioDir,
       trimAudioEnabled,
       autoFitAudio,
+      fitAudioWorkers,
       hardwareAcceleration,
       activeProfile,
       renderMode,
@@ -1957,6 +1977,7 @@ export function useCaptionSettings() {
     if (saved.audioDir) setAudioDir(saved.audioDir);
     if (typeof saved.trimAudioEnabled === 'boolean') setTrimAudioEnabled(saved.trimAudioEnabled);
     if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
+    if (typeof saved.fitAudioWorkers === 'number') setFitAudioWorkers(saved.fitAudioWorkers);
     if (saved.hardwareAcceleration === 'none' || saved.hardwareAcceleration === 'qsv' || saved.hardwareAcceleration === 'nvenc') {
       setHardwareAcceleration(saved.hardwareAcceleration);
     }
@@ -2314,6 +2335,7 @@ export function useCaptionSettings() {
     audioDir, setAudioDir,
     trimAudioEnabled, setTrimAudioEnabled,
     autoFitAudio, setAutoFitAudio,
+    fitAudioWorkers, setFitAudioWorkers,
     hardwareAcceleration, setHardwareAcceleration,
     fontSizeScaleVersion: FONT_SIZE_SCALE_VERSION,
     style: activeProfile.style,

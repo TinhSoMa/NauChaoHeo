@@ -14,6 +14,9 @@ import {
   VOLUME_OPTIONS,
   DEFAULT_EDGE_TTS_BATCH_SIZE,
   DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
+  DEFAULT_FIT_AUDIO_WORKERS,
+  MIN_FIT_AUDIO_WORKERS,
+  MAX_FIT_AUDIO_WORKERS,
   LINES_PER_FILE_OPTIONS,
   normalizeVoiceValue,
 } from '../../config/captionConfig';
@@ -1477,6 +1480,7 @@ export function CaptionTranslator() {
     enabledSteps: Array.from(settings.enabledSteps.values()),
     audioDir: settings.audioDir,
     autoFitAudio: settings.autoFitAudio,
+    fitAudioWorkers: settings.fitAudioWorkers,
     trimAudioEnabled: settings.trimAudioEnabled,
     hardwareAcceleration: settings.hardwareAcceleration,
     style: settings.style,
@@ -1556,6 +1560,7 @@ export function CaptionTranslator() {
     settings.enabledSteps,
     settings.audioDir,
     settings.autoFitAudio,
+    settings.fitAudioWorkers,
     settings.trimAudioEnabled,
     settings.hardwareAcceleration,
     settings.style,
@@ -5043,8 +5048,15 @@ export function CaptionTranslator() {
         const trimResults = (stepData.trimResults && typeof stepData.trimResults === 'object')
           ? stepData.trimResults as Record<string, unknown>
           : null;
+        const fitResults = (stepData.fitResults && typeof stepData.fitResults === 'object')
+          ? stepData.fitResults as Record<string, unknown>
+          : null;
         const trimAudioEnabled = metrics.trimAudioEnabled === true || !!trimResults;
+        const fitAudioWorkers = typeof metrics.fitAudioWorkers === 'number'
+          ? metrics.fitAudioWorkers
+          : (typeof fitResults?.fitAudioWorkers === 'number' ? fitResults.fitAudioWorkers : undefined);
         stepItems.push({ label: 'Trim Enabled', value: trimAudioEnabled ? 'true' : 'false' });
+        stepItems.push({ label: 'Fit Workers', value: `${fitAudioWorkers ?? DEFAULT_FIT_AUDIO_WORKERS}` });
         if (trimAudioEnabled) {
           const trimOutputDir = typeof trimResults?.trimOutputDir === 'string'
             ? (trimResults.trimOutputDir as string)
@@ -6899,8 +6911,20 @@ export function CaptionTranslator() {
                 disabled={processing.status === 'running'}
               />
             </div>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Fit workers</label>
+              <Input
+                type="number"
+                min={MIN_FIT_AUDIO_WORKERS}
+                max={MAX_FIT_AUDIO_WORKERS}
+                step={1}
+                value={settings.fitAudioWorkers}
+                onChange={(e) => settings.setFitAudioWorkers(Number(e.target.value))}
+                disabled={processing.status === 'running' || !settings.autoFitAudio}
+              />
+            </div>
             <div className={styles.stepCardHint}>
-              Khi bật, audio sẽ được trim vào thư mục <span className={styles.stepDataMono}>audio_trimmed/</span> rồi mới ghép.
+              Khi bật, audio sẽ được trim vào thư mục <span className={styles.stepDataMono}>audio_trimmed/</span> rồi fit song song tối đa {settings.fitAudioWorkers} luồng trước khi ghép.
             </div>
           </div>
           <div className={styles.stepInfoCard}>

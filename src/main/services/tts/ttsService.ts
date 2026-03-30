@@ -144,6 +144,11 @@ interface EdgeWorkerRuntimeOptions {
 
 type EdgeConversionMode = 'direct_wav' | 'mp3_to_wav' | 'mp3_to_wav_fallback' | 'mp3_direct';
 
+interface ExistingEdgeAudioLookup {
+  byIndex: Map<number, string>;
+  validPaths: Set<string>;
+}
+
 interface TTSTestVoiceSampleOptions extends TTSTestVoiceRequest {
   text: string;
   voice: string;
@@ -394,6 +399,103 @@ function getEdgeConversionModeLabel(mode: unknown): string | null {
     return 'MP3 trực tiếp';
   }
   return null;
+}
+
+function normalizePathForLookup(filePath: string): string {
+  return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+}
+
+function parseAudioIndexFromFilename(filename: string): number | null {
+  const matched = filename.match(/^(\d+)_/);
+  if (!matched) {
+    return null;
+  }
+  const parsed = Number.parseInt(matched[1], 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function looksLikeWavHeader(head: Buffer): boolean {
+  return head.length >= 12 && head.subarray(0, 4).equals(Buffer.from('RIFF')) && head.subarray(8, 12).equals(Buffer.from('WAVE'));
+}
+
+function looksLikeMp3Header(head: Buffer): boolean {
+  if (head.length >= 3 && head.subarray(0, 3).equals(Buffer.from('ID3'))) {
+    return true;
+  }
+  return head.length >= 2 && head[0] === 0xff && (head[1] & 0xe0) === 0xe0;
+}
+
+async function readFileHead(filePath: string, byteCount: number): Promise<Buffer | null> {
+  let handle: fs.FileHandle | null = null;
+  try {
+    handle = await fs.open(filePath, 'r');
+    const buf = Buffer.alloc(byteCount);
+    const { bytesRead } = await handle.read(buf, 0, byteCount, 0);
+    return bytesRead > 0 ? buf.subarray(0, bytesRead) : Buffer.alloc(0);
+  } catch {
+    return null;
+  } finally {
+    if (handle) {
+      await handle.close().catch(() => undefined);
+    }
+  }
+}
+
+async function isValidExistingAudioFile(filePath: string, outputFormat: 'wav' | 'mp3'): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    if (stat.size <= 0) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const head = await readFileHead(filePath, 12);
+  if (!head) {
+    return false;
+  }
+  return outputFormat === 'wav' ? looksLikeWavHeader(head) : looksLikeMp3Header(head);
+}
+
+async function buildExistingEdgeAudioLookup(
+  outputDir: string,
+  outputFormat: 'wav' | 'mp3'
+): Promise<ExistingEdgeAudioLookup> {
+  const byIndex = new Map<number, string>();
+  const validPaths = new Set<string>();
+
+  let entries: Array<{ isFile: () => boolean; name: string }> = [];
+  try {
+    entries = await fs.readdir(outputDir, { withFileTypes: true });
+  } catch {
+    return { byIndex, validPaths };
+  }
+
+  const expectedExt = `.${outputFormat}`;
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+    if (path.extname(entry.name).toLowerCase() !== expectedExt) {
+      continue;
+    }
+    const index = parseAudioIndexFromFilename(entry.name);
+    if (!index) {
+      continue;
+    }
+    const fullPath = path.join(outputDir, entry.name);
+    const valid = await isValidExistingAudioFile(fullPath, outputFormat);
+    if (!valid) {
+      continue;
+    }
+    validPaths.add(normalizePathForLookup(fullPath));
+    if (!byIndex.has(index)) {
+      byIndex.set(index, fullPath);
+    }
+  }
+
+  return { byIndex, validPaths };
 }
 
 function shouldPersistCapcutSecrets(
@@ -1450,6 +1552,7 @@ export async function generateAsyncioAudioWithProvider(
   const errors: string[] = [];
   let completed = 0;
   const progressSeen = new Set<number>();
+  const existingAudioLookup = await buildExistingEdgeAudioLookup(outputDir, outputFormat);
 
   const pendingItems: EdgeAsyncioItem[] = [];
   for (const entry of entries) {
@@ -1460,28 +1563,31 @@ export async function generateAsyncioAudioWithProvider(
     const filename = getSafeFilename(entry.index, cleanText, outputFormat);
     const outputPath = path.join(outputDir, filename);
 
-    try {
-      const existing = await fs.stat(outputPath);
-      if (existing.size > 0) {
-        audioFiles.push({
-          index: entry.index,
-          path: outputPath,
-          startMs: entry.startMs,
-          durationMs: entry.durationMs,
-          success: true,
-        });
-        completed++;
-        progressCallback?.({
-          current: completed,
-          total: entries.length,
-          status: 'generating',
-          currentFile: filename,
-          message: `[${providerLabel}] Skip (existed): ${filename}`,
-        });
-        continue;
-      }
-    } catch {
-      // File chưa tồn tại => đưa vào danh sách xử lý
+    const normalizedExpectedPath = normalizePathForLookup(outputPath);
+    const indexMatchedPath = existingAudioLookup.byIndex.get(entry.index);
+    const reusedPath = existingAudioLookup.validPaths.has(normalizedExpectedPath)
+      ? outputPath
+      : indexMatchedPath;
+    if (reusedPath) {
+      const reusedName = path.basename(reusedPath);
+      audioFiles.push({
+        index: entry.index,
+        path: reusedPath,
+        startMs: entry.startMs,
+        durationMs: entry.durationMs,
+        success: true,
+      });
+      completed++;
+      progressCallback?.({
+        current: completed,
+        total: entries.length,
+        status: 'generating',
+        currentFile: reusedName,
+        message: reusedPath === outputPath
+          ? `[${providerLabel}] Skip (existed): ${reusedName}`
+          : `[${providerLabel}] Skip (matched index): ${reusedName}`,
+      });
+      continue;
     }
 
     pendingItems.push({

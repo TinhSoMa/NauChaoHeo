@@ -978,6 +978,7 @@ export interface CaptionProjectSettingsValues {
   audioDir?: string;
   trimAudioEnabled?: boolean;
   autoFitAudio?: boolean;
+  fitAudioWorkers?: number;
   hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
