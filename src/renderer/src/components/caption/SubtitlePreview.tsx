@@ -261,9 +261,9 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
 
   let mainInfo: string | null = `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`;
   if (preview.mode === 'text_primary') {
-    mainInfo = `Text1 Rel ${preview.textPrimaryPositionRel.x.toFixed(3)}, ${preview.textPrimaryPositionRel.y.toFixed(3)}`;
+    mainInfo = `T1 Rel ${preview.textPrimaryPositionRel.x.toFixed(3)}, ${preview.textPrimaryPositionRel.y.toFixed(3)}`;
   } else if (preview.mode === 'text_secondary') {
-    mainInfo = `Text2 Rel ${preview.textSecondaryPositionRel.x.toFixed(3)}, ${preview.textSecondaryPositionRel.y.toFixed(3)}`;
+    mainInfo = `T2 Rel ${preview.textSecondaryPositionRel.x.toFixed(3)}, ${preview.textSecondaryPositionRel.y.toFixed(3)}`;
   } else if (preview.mode === 'logo') {
     mainInfo = `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`;
   } else if (preview.mode === 'blackout') {
@@ -276,7 +276,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
       {/* Mode toggle */}
       <div className={styles.modeBar}>
         {renderSnapshotMode && (
-          <span className={styles.snapshotBadge}>Render Snapshot</span>
+          <span className={styles.snapshotBadge} title="Render Snapshot">Chụp</span>
         )}
         {canUseRealPreview && (
           <div className={styles.previewModeSwitch}>
@@ -286,7 +286,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               onClick={() => realPreview.setMode('live')}
               title="Preview live với layer tương tác local"
             >
-              Live
+              Trực
             </button>
             <button
               type="button"
@@ -295,7 +295,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               disabled={Boolean(realPreviewDisabledReason)}
               title={realPreviewDisabledReason || 'Render 1 frame thật từ backend theo config hiện tại'}
             >
-              Preview thật
+              Thật
             </button>
           </div>
         )}
@@ -306,7 +306,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           disabled={isInteractionDisabled || isRealPreviewMode || renderSubtitle === false}
         >
           <Crosshair size={13} />
-          Sub
+          Phụ
         </button>
         <button
           className={`${styles.modeBtn} ${preview.mode === 'blackout' ? styles.modeBtnActive : ''}`}
@@ -322,7 +322,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           disabled={isInteractionDisabled || isRealPreviewMode || renderMark === false}
         >
           <Square size={13} />
-          {isPortraitMode ? 'Blur' : 'Mask'}
+          {isPortraitMode ? 'Mờ' : 'Che'}
         </button>
         {isPortraitMode && (
           <>
@@ -494,7 +494,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
             disabled={isInteractionDisabled}
             title="Reset zoom/pan"
           >
-            <RotateCcw size={12} /> Zoom {Math.round(preview.zoom * 100)}%
+            <RotateCcw size={12} /> Phóng {Math.round(preview.zoom * 100)}%
           </button>
         </div>
       )}
@@ -549,7 +549,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               title="Xóa position, dùng alignment mặc định"
               disabled={isInteractionDisabled}
             >
-              Vị trí auto
+              Tự
             </button>
           )}
 
@@ -583,15 +583,15 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               title="Đưa vùng chữ nhật về mặc định"
               disabled={isInteractionDisabled || renderMode === 'black_bg'}
             >
-              <RotateCcw size={12} /> Reset Quad
+              <RotateCcw size={12} /> Đặt lại vùng
             </button>
           )}
         </div>
       </div>
 
       {!videoPath && (
-        <div className={styles.hint}>
-          Chọn thư mục CapCut có video để xem preview
+        <div className={styles.hint} title="Chọn thư mục CapCut có video để xem preview">
+          Chọn thư mục để preview
         </div>
       )}
     </div>

@@ -725,7 +725,7 @@ export function ThumbnailPreviewPanel({
               className={`${styles.tabBtn} ${previewState.tab === 'real' ? styles.tabBtnActive : ''}`}
               onClick={() => previewState.setTab('real')}
             >
-              Preview thật
+              Thật
             </button>
           </div>
           <button
@@ -735,7 +735,7 @@ export function ThumbnailPreviewPanel({
             disabled={!videoPath || isDownloading}
             title={!videoPath ? 'Chưa có video nguồn để tải thumbnail' : 'Lưu thumbnail PNG'}
           >
-            {isDownloading ? 'Đang tải...' : 'Tải thumbnail PNG'}
+            {isDownloading ? 'Đang tải...' : 'Tải PNG'}
           </button>
         </div>
       </div>
@@ -764,7 +764,7 @@ export function ThumbnailPreviewPanel({
                   onClick={() => previewState.setActiveLayer('primary')}
                   disabled={!hasPrimaryText}
                 >
-                  Text1
+                  T1
                 </button>
                 <button
                   type="button"
@@ -772,7 +772,7 @@ export function ThumbnailPreviewPanel({
                   onClick={() => previewState.setActiveLayer('secondary')}
                   disabled={!hasSecondaryText}
                 >
-                  Text2
+                  T2
                 </button>
               </div>
               {showConstrainToggle && (

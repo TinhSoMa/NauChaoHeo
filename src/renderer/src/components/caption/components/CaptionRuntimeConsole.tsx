@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from './CaptionRuntimeConsole.module.css';
 import type { AppLogEntry, AppLogLevel } from '@shared/types/appLogs';
 
@@ -82,8 +82,6 @@ export function CaptionRuntimeConsole({ open, onClose }: CaptionRuntimeConsolePr
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [logs.length]);
 
-  const logCountLabel = useMemo(() => `${logs.length} dòng`, [logs.length]);
-
   if (!open) {
     return null;
   }
@@ -100,13 +98,12 @@ export function CaptionRuntimeConsole({ open, onClose }: CaptionRuntimeConsolePr
         <div className={styles.header}>
           <div className={styles.title}>Console Caption</div>
           <div className={styles.meta}>
-            <span className={styles.count}>{logCountLabel}</span>
             <button
               type="button"
               className={styles.clearButton}
               onClick={() => setLogs([])}
             >
-              Clear log
+              Xóa log
             </button>
             <button
               type="button"

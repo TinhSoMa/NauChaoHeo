@@ -166,7 +166,7 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
             disabled={props.manualSaveDisabled || props.items.length === 0 || props.manualSaveState === 'saving'}
             title="Lưu thủ công Text1/Text2 cho tất cả folder"
           >
-            {props.manualSaveState === 'saving' ? 'Đang lưu...' : 'Lưu Text1/Text2'}
+            {props.manualSaveState === 'saving' ? 'Đang lưu...' : 'Lưu T1/T2'}
           </button>
           <button
             type="button"
@@ -177,7 +177,7 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
             disabled={props.items.length === 0}
             title="Copy danh sách tên file video"
           >
-            Copy name video
+            Chép tên
           </button>
         </div>
       </div>
@@ -249,7 +249,7 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
               disabled={!props.secondaryGlobalText.trim() || props.items.length === 0}
               title="Áp dụng Text2 cho tất cả folder"
             >
-              Áp dụng Text2
+              Áp dụng T2
             </button>
           </div>
         </div>
@@ -264,7 +264,7 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
               disabled={props.items.length === 0}
               title="Copy toàn bộ Text1 thumbnail sang Video Text1"
             >
-              Đồng bộ Text1 → Video
+              Đồng bộ T1 → Video
             </button>
             <button
               type="button"
@@ -273,7 +273,7 @@ export function ThumbnailListPanel(props: ThumbnailListPanelProps) {
               disabled={props.items.length === 0}
               title="Copy toàn bộ Text2 thumbnail sang Video Text2"
             >
-              Đồng bộ Text2 → Video
+              Đồng bộ T2 → Video
             </button>
           </div>
         </div>

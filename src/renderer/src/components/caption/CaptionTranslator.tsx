@@ -4719,13 +4719,13 @@ export function CaptionTranslator() {
   };
 
   const STEP_SHORT_LABELS: Record<Step, string> = {
-    1: 'Input',
+    1: 'Nguồn',
     2: 'Tách',
     3: 'Dịch',
     4: 'TTS',
-    5: 'Trim',
+    5: 'Cắt',
     6: 'Ghép',
-    7: 'Render',
+    7: 'Xuất',
   };
   const STEP_INSPECTOR_LIST: Step[] = [1, 2, 3, 4, 6, 7];
 
@@ -5380,7 +5380,7 @@ export function CaptionTranslator() {
   const commonConfigBar = (
     <div className={styles.commonConfigBar}>
       <div className={styles.commonConfigTop}>
-        <div className={styles.commonConfigTitle}>Common Config</div>
+        <div className={styles.commonConfigTitle}>Cấu hình chung</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             type="button"
@@ -5389,7 +5389,7 @@ export function CaptionTranslator() {
             disabled={defaultSaveState === 'saving'}
             title="Lưu cấu hình hiện tại làm mặc định"
           >
-            {defaultSaveState === 'saving' ? 'Đang lưu...' : 'Save as default'}
+            {defaultSaveState === 'saving' ? 'Đang lưu...' : 'Lưu mặc định'}
           </button>
           {defaultSaveMessage && (
             <span className={styles.textMuted} style={{ fontSize: '12px' }}>
@@ -5405,21 +5405,21 @@ export function CaptionTranslator() {
           className={`${styles.commonConfigTabBtn} ${commonConfigTab === 'render' ? styles.commonConfigTabBtnActive : ''}`}
           onClick={() => setCommonConfigTab('render')}
         >
-          Render
+          Hình ảnh
         </button>
         <button
           type="button"
           className={`${styles.commonConfigTabBtn} ${commonConfigTab === 'typography' ? styles.commonConfigTabBtnActive : ''}`}
           onClick={() => setCommonConfigTab('typography')}
         >
-          Typography
+          Chữ
         </button>
         <button
           type="button"
           className={`${styles.commonConfigTabBtn} ${commonConfigTab === 'audio' ? styles.commonConfigTabBtnActive : ''}`}
           onClick={() => setCommonConfigTab('audio')}
         >
-          Audio
+          Âm thanh
         </button>
       </div>
 
@@ -5427,7 +5427,7 @@ export function CaptionTranslator() {
         {commonConfigTab === 'render' && (
           <div className={styles.commonConfigSection}>
             <div className={styles.commonInlineSection}>
-              <span className={styles.label}>Landscape mode</span>
+              <span className={styles.label}>Chế độ ngang</span>
               <div className={styles.commonPillRow}>
                 <button
                   type="button"
@@ -5448,7 +5448,7 @@ export function CaptionTranslator() {
 
             <div className={styles.grid2}>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Render resolution</label>
+                <label className={styles.label} title="Render resolution">Độ phân giải</label>
                 <select
                   value={settings.renderResolution}
                   onChange={(e) => settings.setRenderResolution(e.target.value as any)}
@@ -5473,7 +5473,7 @@ export function CaptionTranslator() {
                 </select>
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Container</label>
+                <label className={styles.label}>Định dạng</label>
                 <select
                   value={settings.renderContainer || 'mp4'}
                   onChange={(e) => settings.setRenderContainer(e.target.value as 'mp4' | 'mov')}
@@ -5487,7 +5487,7 @@ export function CaptionTranslator() {
 
             <div className={styles.grid2}>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Hardware</label>
+                <label className={styles.label} title="Hardware">Tăng tốc</label>
                 <select
                   className={styles.select}
                   value={settings.hardwareAcceleration}
@@ -5499,7 +5499,7 @@ export function CaptionTranslator() {
                 </select>
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Mask mode</label>
+                <label className={styles.label}>Chế độ che</label>
                 <select
                   className={styles.select}
                   value={settings.coverMode || 'blackout_bottom'}
@@ -5507,25 +5507,25 @@ export function CaptionTranslator() {
                   disabled={settings.renderMode === 'black_bg' || settings.renderMark === false}
                 >
                   <option value="blackout_bottom">Che đen đáy</option>
-                  <option value="copy_from_above">Copy vùng trên</option>
+                  <option value="copy_from_above">Chép vùng trên</option>
                 </select>
               </div>
             </div>
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
-                <span className={styles.label}>Render layers</span>
+                <span className={styles.label} title="Render layers">Lớp render</span>
               </div>
               <div className={styles.commonInlineActions}>
                 <Checkbox
-                  label="Render subtitle (ASS)"
-                  description="Tắt để bỏ lớp ASS subtitle, giữ text overlay Step 7 và logo/audio"
+                  label="Phụ đề (ASS)"
+                  description="Tắt để bỏ ASS, giữ text/logo/audio"
                   checked={settings.renderSubtitle !== false}
                   onChange={(checked) => settings.setRenderSubtitle(checked)}
                 />
                 <Checkbox
-                  label="Render mask/mark"
-                  description="Tắt để bỏ blackout/copy_from_above"
+                  label="Che (mask)"
+                  description="Tắt để bỏ vùng che"
                   checked={settings.renderMark !== false}
                   onChange={(checked) => settings.setRenderMark(checked)}
                   disabled={settings.renderMode === 'black_bg'}
@@ -5551,10 +5551,10 @@ export function CaptionTranslator() {
               />
               <div className={styles.commonInlineActions}>
                 <button type="button" className={styles.resetBtnLike} onClick={() => settings.setBlackoutTop(null)}>
-                  Auto
+                  Tự động
                 </button>
                 <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverQuad(DEFAULT_COVER_QUAD)}>
-                  Reset cover quad
+                  Đặt lại khung
                 </button>
               </div>
             </div>
@@ -5562,13 +5562,13 @@ export function CaptionTranslator() {
             {settings.renderMark !== false && settings.coverMode === 'copy_from_above' && (
               <div className={styles.commonInlineSection}>
                 <div className={styles.commonInlineHeader}>
-                  <span className={styles.label}>Feather viền copy</span>
+                  <span className={styles.label}>Mềm viền copy</span>
                   <span className={styles.commonInlineValue}>
                     LR {Math.round(settings.coverFeatherHorizontalPercent ?? 20)}% | TB {Math.round(settings.coverFeatherVerticalPercent ?? 20)}%
                   </span>
                 </div>
                 <div className={styles.commonInlineActions}>
-                  <label className={styles.label}>Trái / Phải</label>
+                  <label className={styles.label}>Trái/Phải</label>
                   <input
                     type="range"
                     min={0}
@@ -5578,11 +5578,11 @@ export function CaptionTranslator() {
                     onChange={(e) => settings.setCoverFeatherHorizontalPercent(Number(e.target.value))}
                   />
                   <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherHorizontalPercent(20)}>
-                    LR mặc định 20%
+                    LR 20%
                   </button>
                 </div>
                 <div className={styles.commonInlineActions}>
-                  <label className={styles.label}>Trên / Dưới</label>
+                  <label className={styles.label}>Trên/Dưới</label>
                   <input
                     type="range"
                     min={0}
@@ -5592,7 +5592,7 @@ export function CaptionTranslator() {
                     onChange={(e) => settings.setCoverFeatherVerticalPercent(Number(e.target.value))}
                   />
                   <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherVerticalPercent(20)}>
-                    TB mặc định 20%
+                    TB 20%
                   </button>
                   <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherPx(20)}>
                     Đồng bộ 20%
@@ -5604,7 +5604,7 @@ export function CaptionTranslator() {
             {settings.renderMode === 'hardsub_portrait_9_16' && (
               <div className={styles.commonInlineSection}>
                 <div className={styles.commonInlineHeader}>
-                  <span className={styles.label}>Crop ngang foreground</span>
+                  <span className={styles.label}>Cắt ngang foreground</span>
                   <span className={styles.commonInlineValue}>{Math.round(settings.portraitForegroundCropPercent ?? 0)}%</span>
                 </div>
                 <input
@@ -5619,7 +5619,7 @@ export function CaptionTranslator() {
             )}
 
             <div className={styles.inputGroup}>
-              <label className={styles.label}>Thumb duration (s)</label>
+              <label className={styles.label}>Thời lượng ảnh (s)</label>
               <Input
                 type="number"
                 min={0.1}
@@ -5634,7 +5634,7 @@ export function CaptionTranslator() {
               <div className={styles.commonInlineHeader}>
                 <span className={styles.label}>Logo</span>
                 <span className={styles.commonInlineValue}>
-                  {settings.logoPath ? `${Math.round((settings.logoScale || 1) * 100)}%` : 'Off'}
+                  {settings.logoPath ? `${Math.round((settings.logoScale || 1) * 100)}%` : 'Tắt'}
                 </span>
               </div>
               <div className={styles.commonInlineActions}>
@@ -5655,7 +5655,7 @@ export function CaptionTranslator() {
                   onClick={() => settings.setLogoPosition(undefined)}
                   disabled={!settings.logoPath}
                 >
-                  Reset vị trí
+                  Đặt lại vị trí
                 </button>
               </div>
               <div className={styles.commonHint}>
@@ -5671,7 +5671,7 @@ export function CaptionTranslator() {
           <div className={styles.commonConfigSection}>
             <div className={styles.grid2}>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Font subtitle</label>
+                <label className={styles.label}>Font phụ đề</label>
                 <select
                   className={styles.select}
                   value={settings.style?.fontName || 'ZYVNA Fairy'}
@@ -5685,7 +5685,7 @@ export function CaptionTranslator() {
                 </select>
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Size subtitle (relative)</label>
+                <label className={styles.label}>Cỡ phụ đề</label>
                 <Input
                   type="number"
                   min={SUBTITLE_FONT_SIZE_MIN}
@@ -5706,7 +5706,7 @@ export function CaptionTranslator() {
 
             <div className={styles.grid2}>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Màu subtitle</label>
+                <label className={styles.label}>Màu phụ đề</label>
                 <input
                   className={styles.colorInput}
                   type="color"
@@ -5718,7 +5718,7 @@ export function CaptionTranslator() {
                 {renderColorHistory(settings.style?.fontColor || '#FFFF00', commitSubtitleFontColor)}
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Shadow subtitle</label>
+                <label className={styles.label}>Bóng chữ</label>
                 <Input
                   type="number"
                   min={0}
@@ -5734,7 +5734,7 @@ export function CaptionTranslator() {
               <>
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Font Text1 Video (Hardsub 9:16)</label>
+                    <label className={styles.label} title="Font Text1 Video (Hardsub 9:16)">Font T1 Video (9:16)</label>
                     <select
                       className={styles.select}
                       value={settings.portraitTextPrimaryFontName || settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
@@ -5748,7 +5748,7 @@ export function CaptionTranslator() {
                     </select>
                   </div>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Size Text1 Video (relative)</label>
+                    <label className={styles.label} title="Size Text1 Video (relative)">Size T1 Video</label>
                     <Input
                       type="number"
                       min={THUMBNAIL_FONT_SIZE_MIN}
@@ -5769,7 +5769,7 @@ export function CaptionTranslator() {
 
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Màu Text1 Video</label>
+                    <label className={styles.label} title="Màu Text1 Video">Màu T1 Video</label>
                     <input
                       className={styles.colorInput}
                       type="color"
@@ -5781,7 +5781,7 @@ export function CaptionTranslator() {
                     {renderColorHistory(settings.portraitTextPrimaryColor || '#FFFF00', commitPortraitTextPrimaryColor)}
                   </div>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Line height</label>
+                    <label className={styles.label}>Giãn dòng</label>
                     <Input
                       type="number"
                       min={0}
@@ -5795,7 +5795,7 @@ export function CaptionTranslator() {
 
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Font Text2 Video (Hardsub 9:16)</label>
+                    <label className={styles.label} title="Font Text2 Video (Hardsub 9:16)">Font T2 Video (9:16)</label>
                     <select
                       className={styles.select}
                       value={settings.portraitTextSecondaryFontName || settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
@@ -5809,7 +5809,7 @@ export function CaptionTranslator() {
                     </select>
                   </div>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Size Text2 Video (relative)</label>
+                    <label className={styles.label} title="Size Text2 Video (relative)">Size T2 Video</label>
                     <Input
                       type="number"
                       min={THUMBNAIL_FONT_SIZE_MIN}
@@ -5830,7 +5830,7 @@ export function CaptionTranslator() {
 
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Màu Text2 Video</label>
+                    <label className={styles.label} title="Màu Text2 Video">Màu T2 Video</label>
                     <input
                       className={styles.colorInput}
                       type="color"
@@ -5847,7 +5847,7 @@ export function CaptionTranslator() {
               <>
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Font Text1 Thumbnail</label>
+                    <label className={styles.label} title="Font Text1 Thumbnail">Font T1 Thumb</label>
                     <select
                       className={styles.select}
                       value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
@@ -5861,7 +5861,7 @@ export function CaptionTranslator() {
                     </select>
                   </div>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Size Text1 Thumbnail (relative)</label>
+                    <label className={styles.label} title="Size Text1 Thumbnail (relative)">Size T1 Thumb</label>
                     <Input
                       type="number"
                       min={THUMBNAIL_FONT_SIZE_MIN}
@@ -5882,7 +5882,7 @@ export function CaptionTranslator() {
 
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Màu Text1 Thumbnail</label>
+                    <label className={styles.label} title="Màu Text1 Thumbnail">Màu T1 Thumb</label>
                     <input
                       className={styles.colorInput}
                       type="color"
@@ -5894,7 +5894,7 @@ export function CaptionTranslator() {
                     {renderColorHistory(settings.thumbnailTextPrimaryColor || '#FFFF00', commitThumbnailTextPrimaryColor)}
                   </div>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Line height</label>
+                    <label className={styles.label}>Giãn dòng</label>
                     <Input
                       type="number"
                       min={0}
@@ -5908,7 +5908,7 @@ export function CaptionTranslator() {
 
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Font Text2 Thumbnail</label>
+                    <label className={styles.label} title="Font Text2 Thumbnail">Font T2 Thumb</label>
                     <select
                       className={styles.select}
                       value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
@@ -5922,7 +5922,7 @@ export function CaptionTranslator() {
                     </select>
                   </div>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Size Text2 Thumbnail (relative)</label>
+                    <label className={styles.label} title="Size Text2 Thumbnail (relative)">Size T2 Thumb</label>
                     <Input
                       type="number"
                       min={THUMBNAIL_FONT_SIZE_MIN}
@@ -5943,7 +5943,7 @@ export function CaptionTranslator() {
 
                 <div className={styles.grid2}>
                   <div className={styles.inputGroup}>
-                    <label className={styles.label}>Màu Text2 Thumbnail</label>
+                    <label className={styles.label} title="Màu Text2 Thumbnail">Màu T2 Thumb</label>
                     <input
                       className={styles.colorInput}
                       type="color"
@@ -5964,7 +5964,7 @@ export function CaptionTranslator() {
           <div className={styles.commonConfigSection}>
             <div className={styles.grid2}>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Scale SRT (step4/6/7)</label>
+                <label className={styles.label} title="Scale SRT (step4/6/7)">Tốc độ SRT</label>
                 <Input
                   type="number"
                   value={settings.srtSpeed}
@@ -5975,7 +5975,7 @@ export function CaptionTranslator() {
                 />
               </div>
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Render audio speed</label>
+                <label className={styles.label} title="Render audio speed">Tốc độ audio</label>
                 <Input
                   type="number"
                   value={settings.renderAudioSpeed}
@@ -6012,7 +6012,7 @@ export function CaptionTranslator() {
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
-                <span className={styles.label}>Âm lượng TTS render (x)</span>
+                <span className={styles.label}>Âm lượng TTS (x)</span>
                 <span className={styles.commonInlineValue}>{formatMultiplierDisplay(audioVolumeMultiplier, 1)}x</span>
               </div>
               <input
@@ -6034,7 +6034,7 @@ export function CaptionTranslator() {
             </div>
 
             <div className={styles.commonHint}>
-              Video {formatDuration(originalVideoDuration)} | Sync {formatDuration(videoSubBaseDuration)} | Audio {formatDuration(audioExpectedDuration)} | Marker {formatDuration(videoMarkerSec)}
+              Video {formatDuration(originalVideoDuration)} | Sync {formatDuration(videoSubBaseDuration)} | Audio {formatDuration(audioExpectedDuration)} | Mốc {formatDuration(videoMarkerSec)}
             </div>
           </div>
         )}
@@ -6047,7 +6047,6 @@ export function CaptionTranslator() {
       return (
         <div className={styles.panelSection}>
           <div className={styles.configSummaryTitle}>Step 3 Batch</div>
-          <div className={styles.commonHint}>Tab này chỉ áp dụng khi đang chọn Step 3.</div>
         </div>
       );
     }
@@ -6056,7 +6055,6 @@ export function CaptionTranslator() {
       return (
         <div className={styles.panelSection}>
           <div className={styles.configSummaryTitle}>Step 3 Batch</div>
-          <div className={styles.commonHint}>Chưa có dữ liệu batch trong session.</div>
         </div>
       );
     }
@@ -6065,7 +6063,6 @@ export function CaptionTranslator() {
       return (
         <div className={styles.panelSection}>
           <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
-          <div className={styles.commonHint}>Chưa chạy Step 3 hoặc chưa nhận được batch progress.</div>
         </div>
       );
     }
@@ -6086,7 +6083,7 @@ export function CaptionTranslator() {
               disabled={processing.status === 'running'}
               title="Nhập JSON cho nhiều batch"
             >
-              Bulk JSON
+              JSON nhiều
             </button>
           </div>
           <div className={styles.step3BatchSummaryGrid}>
@@ -6195,13 +6192,16 @@ export function CaptionTranslator() {
   const thumbnailConfigBar = (
     <div className={styles.panelSection}>
       <div className={styles.configSummaryTitle}>Thumbnail Config</div>
-      <div className={styles.commonHint}>
-        Quản lý text/style/frame/vị trí thumbnail tại panel phải. Kéo-thả vẫn thực hiện trên canvas preview bên trái.
+      <div
+        className={styles.commonHint}
+        title="Quản lý text/style/frame/vị trí thumbnail tại panel phải. Kéo-thả vẫn thực hiện trên canvas preview bên trái."
+      >
+        Text/style ở panel phải · Kéo trên preview
       </div>
       <div className={styles.commonConfigSection}>
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Text1</label>
+            <label className={styles.label} title="Text1">T1</label>
             <textarea
               className={styles.input}
               rows={2}
@@ -6211,7 +6211,7 @@ export function CaptionTranslator() {
             />
           </div>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Text2</label>
+            <label className={styles.label} title="Text2">T2</label>
             <textarea
               className={styles.input}
               rows={2}
@@ -6224,7 +6224,7 @@ export function CaptionTranslator() {
 
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Video Text1</label>
+            <label className={styles.label} title="Video Text1">Video T1</label>
             <textarea
               className={styles.input}
               rows={2}
@@ -6234,7 +6234,7 @@ export function CaptionTranslator() {
             />
           </div>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Video Text2</label>
+            <label className={styles.label} title="Video Text2">Video T2</label>
             <textarea
               className={styles.input}
               rows={2}
@@ -6251,20 +6251,20 @@ export function CaptionTranslator() {
             className={styles.thumbnailAutoFillBtn}
             onClick={handleSyncVideoText1}
           >
-            Đồng bộ Text1 → Video
+            Đồng bộ T1 → Video
           </button>
           <button
             type="button"
             className={styles.thumbnailAutoFillBtn}
             onClick={handleSyncVideoText2}
           >
-            Đồng bộ Text2 → Video
+            Đồng bộ T2 → Video
           </button>
         </div>
 
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Font Text1</label>
+            <label className={styles.label} title="Font Text1">Font T1</label>
             <select
               className={styles.select}
               value={settings.thumbnailTextPrimaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
@@ -6278,7 +6278,7 @@ export function CaptionTranslator() {
             </select>
           </div>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Size Text1 (relative)</label>
+            <label className={styles.label} title="Size Text1 (relative)">Size T1</label>
             <Input
               type="number"
               min={THUMBNAIL_FONT_SIZE_MIN}
@@ -6292,7 +6292,7 @@ export function CaptionTranslator() {
 
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Màu Text1</label>
+            <label className={styles.label} title="Màu Text1">Màu T1</label>
             <input
               className={styles.colorInput}
               type="color"
@@ -6318,7 +6318,7 @@ export function CaptionTranslator() {
 
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Font Text2</label>
+            <label className={styles.label} title="Font Text2">Font T2</label>
             <select
               className={styles.select}
               value={settings.thumbnailTextSecondaryFontName || settings.thumbnailFontName || 'BrightwallPersonal'}
@@ -6332,7 +6332,7 @@ export function CaptionTranslator() {
             </select>
           </div>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Size Text2 (relative)</label>
+            <label className={styles.label} title="Size Text2 (relative)">Size T2</label>
             <Input
               type="number"
               min={THUMBNAIL_FONT_SIZE_MIN}
@@ -6346,7 +6346,7 @@ export function CaptionTranslator() {
 
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Màu Text2</label>
+            <label className={styles.label} title="Màu Text2">Màu T2</label>
             <input
               className={styles.colorInput}
               type="color"
@@ -6408,7 +6408,7 @@ export function CaptionTranslator() {
 
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Text1 Position</label>
+            <label className={styles.label} title="Text1 Position">Vị trí T1</label>
             <div className={styles.grid2}>
               <Input
                 type="number"
@@ -6433,12 +6433,12 @@ export function CaptionTranslator() {
                 className={styles.resetBtnLike}
                 onClick={() => settings.setThumbnailTextPrimaryPosition({ x: 0.5, y: 0.5 })}
               >
-                Reset Text1
+                Đặt lại T1
               </button>
             </div>
           </div>
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Text2 Position</label>
+            <label className={styles.label} title="Text2 Position">Vị trí T2</label>
             <div className={styles.grid2}>
               <Input
                 type="number"
@@ -6463,7 +6463,7 @@ export function CaptionTranslator() {
                 className={styles.resetBtnLike}
                 onClick={() => settings.setThumbnailTextSecondaryPosition({ x: 0.5, y: 0.64 })}
               >
-                Reset Text2
+                Đặt lại T2
               </button>
             </div>
           </div>
@@ -6495,10 +6495,15 @@ export function CaptionTranslator() {
                 name="inputType"
               />
             </div>
-            <div className={styles.stepCardHint}>
-              {settings.inputType === 'draft'
+            <div
+              className={styles.stepCardHint}
+              title={settings.inputType === 'draft'
                 ? 'Draft cho phép chọn nhiều folder trong cùng một lần duyệt.'
                 : 'SRT chọn nhiều folder và tự dò file phụ đề ngay trong từng folder (không quét thư mục con).'}
+            >
+              {settings.inputType === 'draft'
+                ? 'Draft: nhiều folder'
+                : 'SRT: dò file trong từng folder'}
             </div>
           </div>
 
@@ -6650,10 +6655,17 @@ export function CaptionTranslator() {
               </div>
             )}
             {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
-              <div className={styles.stepCardHint}>
-                Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.
+              <div
+                className={styles.stepCardHint}
+                title={`Có thể chọn nhiều folder cùng lúc bằng Ctrl/Shift trong hộp thoại.${
+                  draftDurationFilterMode !== 'all'
+                    ? ` Đang lọc theo mốc ${draftDurationFilterThresholdMinutes} phút (bao gồm ngưỡng).`
+                    : ''
+                }`}
+              >
+                Ctrl/Shift để chọn nhiều folder.
                 {draftDurationFilterMode !== 'all'
-                  ? ` Đang lọc theo mốc ${draftDurationFilterThresholdMinutes} phút (bao gồm ngưỡng).`
+                  ? ` Lọc ≥ ${draftDurationFilterThresholdMinutes}m`
                   : ''}
               </div>
             )}
@@ -6734,8 +6746,11 @@ export function CaptionTranslator() {
                 />
               </RadioButton>
             </div>
-            <div className={styles.stepCardHint}>
-              Chọn một cách tách để tối ưu batch dịch và xử lý audio.
+            <div
+              className={styles.stepCardHint}
+              title="Chọn một cách tách để tối ưu batch dịch và xử lý audio."
+            >
+              Chọn cách tách để tối ưu batch/audio.
             </div>
           </div>
         </div>
@@ -6756,7 +6771,7 @@ export function CaptionTranslator() {
                 className={styles.stepCompactBtn}
               >
                 <Download size={13} />
-                Prompt
+                Mẫu
               </Button>
             </div>
             <div className={styles.stepOptionRow}>
@@ -6801,14 +6816,23 @@ export function CaptionTranslator() {
                 ))}
               </select>
             </div>
-            <div className={styles.stepCardHint}>
-              {settings.translateMethod === 'impit'
+            <div
+              className={styles.stepCardHint}
+              title={settings.translateMethod === 'impit'
                 ? 'Impit bỏ qua model API.'
                 : settings.translateMethod === 'gemini_webapi_queue'
                   ? 'GeminiWebApi Queue chạy tuần tự 1 job, chờ theo setting send interval; account lỗi sẽ đổi account khác, hết account thì dừng Step 3.'
                   : settings.translateMethod === 'grok_ui'
                     ? 'Grok UI dùng Grok3API qua trình duyệt, không phụ thuộc Gemini model.'
                     : 'API sẽ dùng model đã chọn để dịch batch.'}
+            >
+              {settings.translateMethod === 'impit'
+                ? 'Impit: bỏ qua model'
+                : settings.translateMethod === 'gemini_webapi_queue'
+                  ? 'Queue: tuần tự, đổi account'
+                  : settings.translateMethod === 'grok_ui'
+                    ? 'Grok UI: qua browser'
+                    : 'API: dùng model đã chọn'}
             </div>
           </div>
           <div className={styles.stepCard}>
@@ -6850,8 +6874,11 @@ export function CaptionTranslator() {
                 <span className={styles.stepRuntimeTimer}>{step3TokenRuntimeLabel}</span>
               </div>
             </div>
-            <div className={styles.stepCardHint}>
-              Runtime lấy từ progress Step 3 hiện tại. Nếu backend chưa gửi token cụ thể, UI dùng giá trị dự phòng.
+            <div
+              className={styles.stepCardHint}
+              title="Runtime lấy từ progress Step 3 hiện tại. Nếu backend chưa gửi token cụ thể, UI dùng giá trị dự phòng."
+            >
+              Runtime theo progress Step 3.
             </div>
           </div>
         </div>
@@ -7012,18 +7039,20 @@ export function CaptionTranslator() {
                   />
                 </div>
               </div>
-              <div className={styles.stepCardHint}>
-                Format {String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} |
-                {' '}
-                Batch {safeEdgeBatchSizeForUi} (mặc định {DEFAULT_EDGE_TTS_BATCH_SIZE}) |
-                {' '}Jobs ~ {estimatedEdgeJobCount} = ceil({knownStep4TotalItems}/{safeEdgeBatchSizeForUi}) |
-                {' '}Đồng thời ~ {edgeConcurrentAudioLimit} audio ({estimatedEdgeJobCount} x {edgeConcurrentAudioPerJob}).
+              <div
+                className={styles.stepCardHint}
+                title={`Format ${String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} | Batch ${safeEdgeBatchSizeForUi} (mặc định ${DEFAULT_EDGE_TTS_BATCH_SIZE}) | Jobs ~ ${estimatedEdgeJobCount} = ceil(${knownStep4TotalItems}/${safeEdgeBatchSizeForUi}) | Đồng thời ~ ${edgeConcurrentAudioLimit} audio (${estimatedEdgeJobCount} x ${edgeConcurrentAudioPerJob}).`}
+              >
+                Format {String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} · Batch {safeEdgeBatchSizeForUi} · Jobs ~ {estimatedEdgeJobCount} · Audio ~ {edgeConcurrentAudioLimit}
               </div>
             </div>
           )}
           {isCapCutVoiceSelected && (
-            <div className={styles.stepInfoCard}>
-              Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge.
+            <div
+              className={styles.stepInfoCard}
+              title="Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge."
+            >
+              CapCut: dùng config mặc định.
             </div>
           )}
           {ttsErrorItems.length > 0 && (
@@ -7057,8 +7086,11 @@ export function CaptionTranslator() {
               </div>
             </div>
           )}
-          <div className={styles.stepInfoNote}>
-            Các tham số đồng bộ render/audio đã chuyển sang Common Config &gt; Audio.
+          <div
+            className={styles.stepInfoNote}
+            title="Các tham số đồng bộ render/audio đã chuyển sang Chung > Âm thanh."
+          >
+            Sync render/audio → Chung &gt; Âm thanh.
           </div>
         </div>
       );
@@ -7100,15 +7132,21 @@ export function CaptionTranslator() {
                 disabled={processing.status === 'running' || !settings.autoFitAudio}
               />
             </div>
-            <div className={styles.stepCardHint}>
-              Khi bật, audio sẽ được trim vào thư mục <span className={styles.stepDataMono}>audio_trimmed/</span> rồi fit song song tối đa {settings.fitAudioWorkers} luồng trước khi ghép.
+            <div
+              className={styles.stepCardHint}
+              title={`Khi bật, audio sẽ được trim vào thư mục audio_trimmed/ rồi fit song song tối đa ${settings.fitAudioWorkers} luồng trước khi ghép.`}
+            >
+              Auto fit: trim → audio_trimmed/ → {settings.fitAudioWorkers} luồng.
             </div>
           </div>
           <div className={styles.stepInfoCard}>
             Step 6 dùng cấu hình audio ở các bước trước.
           </div>
-          <div className={styles.stepInfoNote}>
-            Tốc độ/volume render đang lấy từ Common Config &gt; Audio.
+          <div
+            className={styles.stepInfoNote}
+            title="Tốc độ/volume render đang lấy từ Chung > Âm thanh."
+          >
+            Speed/volume lấy từ Chung &gt; Âm thanh.
           </div>
         </div>
       );
@@ -7304,7 +7342,7 @@ export function CaptionTranslator() {
           <div className={styles.stageHeader}>
             <div className={styles.stageTitle}>
               <Eye size={14} />
-              Preview
+              Xem
             </div>
             <div className={styles.previewTabGroup}>
               <button
@@ -7312,14 +7350,14 @@ export function CaptionTranslator() {
                 className={`${styles.resetBtnLike} ${activePreviewTab === 'subtitle' ? styles.previewModeBtnActive : ''}`}
                 onClick={() => setActivePreviewTab('subtitle')}
               >
-                Subtitle
+                Phụ đề
               </button>
               <button
                 type="button"
                 className={`${styles.resetBtnLike} ${activePreviewTab === 'thumbnail' ? styles.previewModeBtnActive : ''}`}
                 onClick={() => setActivePreviewTab('thumbnail')}
               >
-                Thumbnail
+                Ảnh
               </button>
             </div>
             {activePreviewTab === 'thumbnail' && (settings.inputType === 'draft' || settings.inputType === 'srt') && isMultiFolder && (
@@ -7605,14 +7643,14 @@ export function CaptionTranslator() {
                 className={`${styles.stepDataModeBtn} ${inspectorViewMode === 'summary' ? styles.stepDataModeBtnActive : ''}`}
                 onClick={() => setInspectorViewMode('summary')}
               >
-                Summary
+                Tóm tắt
               </button>
               <button
                 type="button"
                 className={`${styles.stepDataModeBtn} ${inspectorViewMode === 'json' ? styles.stepDataModeBtnActive : ''}`}
                 onClick={() => setInspectorViewMode('json')}
               >
-                Xem JSON
+                JSON
               </button>
             </div>
 
@@ -7630,7 +7668,7 @@ export function CaptionTranslator() {
               {!inspectorError && stepInspectionViewModel && inspectorViewMode === 'summary' && (
                 <div className={styles.stepDataSummaryGrid}>
                   <section className={styles.stepDataSection}>
-                    <div className={styles.stepDataSectionTitle}>Summary</div>
+                    <div className={styles.stepDataSectionTitle}>Tóm tắt</div>
                     {stepInspectionViewModel.summaryItems.map((item) => (
                       <div key={`summary-${item.label}`} className={styles.stepDataSummaryRow}>
                         <span className={styles.stepDataSummaryLabel}>{item.label}</span>
@@ -7715,7 +7753,7 @@ export function CaptionTranslator() {
                 }}
                 disabled={!stepInspectionViewModel}
               >
-                Copy JSON step
+                Chép JSON
               </button>
               <button
                 type="button"
@@ -7725,7 +7763,7 @@ export function CaptionTranslator() {
                 }}
                 disabled={!inspectorSessionPath}
               >
-                Copy session path
+                Chép path
               </button>
               <span className={styles.stepDataCopyNotice}>{inspectorCopyNotice || ' '}</span>
             </div>
@@ -7735,15 +7773,23 @@ export function CaptionTranslator() {
 
       <div className={styles.runBar}>
         <div className={styles.runBarHeader}>
-          <div className={styles.runBarTitle}>Chạy & Tiến độ</div>
-          <span className={`${styles.statusBadge} ${styles.statusIdle}`}>{processing.status}</span>
+          <div className={styles.runBarTitle}>Chạy</div>
+          <span className={`${styles.statusBadge} ${styles.statusIdle}`}>
+            {processing.status === 'idle'
+              ? 'Chờ'
+              : processing.status === 'running'
+                ? 'Đang'
+                : processing.status === 'success'
+                  ? 'Xong'
+                  : 'Lỗi'}
+          </span>
           <button
             type="button"
             className={styles.resetBtnLike}
             onClick={() => setIsCaptionConsoleOpen(true)}
             title="Mở console Caption"
           >
-            Debug
+            Log
           </button>
         </div>
 
@@ -7776,7 +7822,7 @@ export function CaptionTranslator() {
                 onClick={() => settings.setProcessingMode('folder-first')}
                 title="Xong từng folder"
               >
-                Folder-first
+                Theo folder
               </button>
               <button
                 className={styles.resetBtnLike}
@@ -7792,7 +7838,7 @@ export function CaptionTranslator() {
                 onClick={() => settings.setProcessingMode('step-first')}
                 title="Xong từng step"
               >
-                Step-first
+                Theo step
               </button>
             </div>
           )}
@@ -7844,14 +7890,14 @@ export function CaptionTranslator() {
             </div>
           )}
           {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
-            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <span>{videoInfo?.name ?? 'Video'}</span>
+            <div style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', marginBottom: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <span title={videoInfo?.name ?? 'Video'}>{shortenMiddle(videoInfo?.name ?? 'Video', 40)}</span>
               <span>{formatDuration(originalVideoDuration)}</span>
               <span>Sync: {formatDuration(videoSubBaseDuration)}</span>
-              <span>Audio: {formatDuration(audioExpectedDuration)}</span>
-              <span>Marker: {formatDuration(videoMarkerSec)}</span>
+              <span>Âm: {formatDuration(audioExpectedDuration)}</span>
+              <span>Mốc: {formatDuration(videoMarkerSec)}</span>
               <span style={{ color: autoVideoSpeed < 0.8 || autoVideoSpeed > 1.2 ? 'var(--color-warning, #f59e0b)' : 'inherit' }}>
-                Speed: {autoVideoSpeed.toFixed(2)}x
+                Tốc: {autoVideoSpeed.toFixed(2)}x
               </span>
             </div>
           )}

@@ -590,8 +590,8 @@
 /* Step Checkboxes */
 .stepCheckboxes {
   display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 6px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 
@@ -670,7 +670,7 @@
 /* Buttons Row */
 .buttonsRow {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .resetBtnLike {
@@ -692,15 +692,26 @@
   color: var(--color-text-primary);
 }
 
+.runBarHeader .statusBadge {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 999px;
+}
+
+.runBarHeader .resetBtnLike {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
 /* Progress Section */
 .progressSection {
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .progressHeader {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 /* File Type Selection */
@@ -2930,16 +2941,16 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-card);
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .runBarHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .runBarTitle {
@@ -2951,7 +2962,7 @@
 .runBarControls {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(200px, 1fr) minmax(180px, 1fr);
-  gap: var(--cap-gap);
+  gap: 8px;
   align-items: start;
 }
 

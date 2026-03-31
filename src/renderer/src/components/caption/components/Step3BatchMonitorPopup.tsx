@@ -108,7 +108,6 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
         <div className={styles.header}>
           <div>
             <div className={styles.title}>Step 3 Batch #{props.batchIndex}</div>
-            <div className={styles.subtitle}>Dòng: {props.lineRangeLabel} · Tổng: {draftLines.length}</div>
           </div>
           <button
             type="button"
@@ -153,7 +152,7 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
 
           {props.error && <div className={styles.error}>{props.error}</div>}
           <div className={styles.hint}>
-            Xóa dòng = clear translatedText của dòng đó trong batch. Dữ liệu lưu vào caption_session khi bấm Lưu.
+            Xóa dòng = clear bản dịch. Lưu vào caption_session khi bấm Lưu.
           </div>
         </div>
 
