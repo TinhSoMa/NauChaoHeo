@@ -126,31 +126,144 @@ const Utils = {
 // ============================================
 // VALIDATION
 // ============================================
-function validateTranslationCount(expectedCount, responseObject, rawText) {
+const SAMPLE_COMPARE_SIZE = 5;
+
+function extractIndexesFromResponse(responseObject, rawText) {
     const indexes = [];
+
     if (responseObject && Array.isArray(responseObject.translations)) {
         for (const item of responseObject.translations) {
-            if (item && typeof item.index === 'number') {
-                indexes.push(item.index);
+            const idx = Number(item?.index);
+            if (Number.isInteger(idx)) {
+                indexes.push(idx);
             }
         }
     }
+
     if (indexes.length === 0 && rawText) {
         const matches = rawText.match(/"index"\s*:\s*(\d+)/g);
         if (matches && matches.length > 0) {
             for (const m of matches) {
-                const num = parseInt(m.replace(/^\D+/, ''), 10);
-                if (!Number.isNaN(num)) indexes.push(num);
+                const digits = m.match(/(\d+)/);
+                const num = digits ? parseInt(digits[1], 10) : Number.NaN;
+                if (!Number.isNaN(num)) {
+                    indexes.push(num);
+                }
             }
         }
     }
+
+    return indexes;
+}
+
+function buildSampleIndices(expectedCount, sampleSize = SAMPLE_COMPARE_SIZE) {
+    const size = Math.max(0, Math.min(sampleSize, expectedCount));
+    return Array.from({ length: size }, (_, i) => i + 1);
+}
+
+function buildTranslatedSample(responseObject, expectedCount, sampleSize = SAMPLE_COMPARE_SIZE) {
+    const sampleIndices = buildSampleIndices(expectedCount, sampleSize);
+    const translatedByIndex = new Map();
+
+    if (responseObject && Array.isArray(responseObject.translations)) {
+        for (const item of responseObject.translations) {
+            const idx = Number(item?.index);
+            if (!Number.isInteger(idx) || translatedByIndex.has(idx)) {
+                continue;
+            }
+            const translated = item?.translated;
+            if (translated === undefined || translated === null) {
+                continue;
+            }
+            translatedByIndex.set(idx, String(translated));
+        }
+    }
+
+    return sampleIndices.map((index) => ({
+        index,
+        translated: translatedByIndex.has(index) ? translatedByIndex.get(index) : null
+    }));
+}
+
+function isSampleResponseIdentical(previousSample, currentSample) {
+    if (!Array.isArray(previousSample) || !Array.isArray(currentSample)) {
+        return false;
+    }
+    if (previousSample.length === 0 || previousSample.length !== currentSample.length) {
+        return false;
+    }
+
+    for (let i = 0; i < previousSample.length; i++) {
+        const prev = previousSample[i];
+        const curr = currentSample[i];
+        if (!prev || !curr) {
+            return false;
+        }
+        if (prev.index !== curr.index) {
+            return false;
+        }
+        // Nếu thiếu text ở một trong hai phía thì coi là "khác" (đúng theo yêu cầu chống nhầm response).
+        if (prev.translated === null || curr.translated === null) {
+            return false;
+        }
+        if (prev.translated !== curr.translated) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function validateTranslationCount(expectedCount, responseObject, rawText) {
+    const indexes = extractIndexesFromResponse(responseObject, rawText);
+    const sortedIndexes = [...indexes].sort((a, b) => a - b);
+
+    const duplicates = [];
+    for (let i = 1; i < sortedIndexes.length; i++) {
+        if (sortedIndexes[i] === sortedIndexes[i - 1] && !duplicates.includes(sortedIndexes[i])) {
+            duplicates.push(sortedIndexes[i]);
+        }
+    }
+
     const unique = Array.from(new Set(indexes)).sort((a, b) => a - b);
+    const outOfRange = unique.filter((idx) => idx < 1 || idx > expectedCount);
     const missing = [];
     for (let i = 1; i <= expectedCount; i++) {
         if (!unique.includes(i)) missing.push(i);
     }
-    const ok = missing.length === 0 && unique.length === expectedCount;
-    return { ok, uniqueCount: unique.length, missing };
+
+    const strictSequence = missing.length === 0 &&
+        duplicates.length === 0 &&
+        outOfRange.length === 0 &&
+        unique.length === expectedCount &&
+        unique.every((value, index) => value === index + 1);
+
+    let reasonCode = null;
+    if (!strictSequence) {
+        if (missing.length > 0) {
+            reasonCode = 'MISSING_INDEX';
+        } else if (duplicates.length > 0) {
+            reasonCode = 'DUPLICATE_INDEX';
+        } else if (outOfRange.length > 0) {
+            reasonCode = 'OUT_OF_RANGE_INDEX';
+        } else if (unique.length !== expectedCount) {
+            reasonCode = 'COUNT_MISMATCH';
+        } else {
+            reasonCode = 'INDEX_VALIDATION_FAILED';
+        }
+    }
+
+    return {
+        ok: strictSequence,
+        uniqueCount: unique.length,
+        expectedCount,
+        extractedCount: indexes.length,
+        missing,
+        duplicates,
+        outOfRange,
+        reasonCode,
+        indexes: unique
+    };
 }
 
 function isChannelClosedError(message) {
@@ -614,6 +727,9 @@ async function processLoop(runId) {
         const expectedCount = batchData.lines.length;
         const MAX_RETRY = 2;
         let retryCount = 0;
+        let previousAttemptSample = null;
+        const sampleIndices = buildSampleIndices(expectedCount);
+        const fileIdx = (batchData.index !== undefined ? batchData.index : currentIndex);
 
         while (true) {
             if (State.copyOnlyMode) {
@@ -662,25 +778,65 @@ async function processLoop(runId) {
                 }
             }
 
+            const currentAttemptSample = buildTranslatedSample(responseObject, expectedCount);
+            if (!State.copyOnlyMode && previousAttemptSample && isSampleResponseIdentical(previousAttemptSample, currentAttemptSample)) {
+                Utils.log(`STALE_RESPONSE_IDENTICAL: Attempt ${retryCount + 1} trùng hệt attempt trước tại index mẫu (${sampleIndices.join(', ')})`, 'error');
+                Utils.log(`Dừng extension để tránh nhầm bản dịch của file trước.`, 'error');
+
+                const filesData = await chrome.storage.local.get(['batchFiles']);
+                const latestBatchFiles = filesData.batchFiles || [];
+                if (latestBatchFiles[fileIdx]) {
+                    latestBatchFiles[fileIdx].completed = false;
+                    latestBatchFiles[fileIdx].status = 'error';
+                    latestBatchFiles[fileIdx].errorReason = 'STALE_SAME_AS_PREVIOUS_ATTEMPT';
+                    latestBatchFiles[fileIdx].retryCount = retryCount;
+                    latestBatchFiles[fileIdx].sampleIndices = sampleIndices;
+                    latestBatchFiles[fileIdx].previousAttemptSample = previousAttemptSample;
+                    latestBatchFiles[fileIdx].currentAttemptSample = currentAttemptSample;
+                    if (rawResponseText) {
+                        latestBatchFiles[fileIdx].rawText = rawResponseText;
+                    }
+                }
+
+                State.isRunning = false;
+                State.runId += 1;
+                await chrome.storage.local.set({
+                    batchFiles: latestBatchFiles,
+                    isRunning: false
+                });
+                await Utils.sendProgressUpdate("Lỗi: AI trả về nội dung trùng prompt trước. Đã dừng.");
+                return;
+            }
+            previousAttemptSample = currentAttemptSample;
+
             const validation = validateTranslationCount(expectedCount, responseObject, rawResponseText);
             if (validation.ok) {
                 break;
             }
 
             const receivedCount = validation.uniqueCount;
-            Utils.log(`ERROR_COUNT_MISMATCH: nhận ${receivedCount}/${expectedCount}`, 'error');
-            Utils.log(`Thiếu index: ${validation.missing.join(', ') || 'không rõ'}`, 'error');
+            Utils.log(`INDEX_VALIDATION_FAILED: ${validation.reasonCode || 'INDEX_VALIDATION_FAILED'} (${receivedCount}/${expectedCount})`, 'error');
+            if (validation.missing.length > 0) {
+                Utils.log(`Thiếu index: ${validation.missing.join(', ')}`, 'error');
+            }
+            if (validation.duplicates.length > 0) {
+                Utils.log(`Index trùng: ${validation.duplicates.join(', ')}`, 'error');
+            }
+            if (validation.outOfRange.length > 0) {
+                Utils.log(`Index ngoài phạm vi 1..${expectedCount}: ${validation.outOfRange.join(', ')}`, 'error');
+            }
 
             if (retryCount >= MAX_RETRY) {
                 Utils.log(`Fail cuối sau ${retryCount} retry. Đánh dấu lỗi và chuyển batch kế.`, 'error');
                 const filesData = await chrome.storage.local.get(['batchFiles']);
                 const batchFiles = filesData.batchFiles || [];
-                const fileIdx = (batchData.index !== undefined ? batchData.index : currentIndex);
                 if (batchFiles[fileIdx]) {
                     batchFiles[fileIdx].completed = false;
                     batchFiles[fileIdx].status = 'error';
-                    batchFiles[fileIdx].errorReason = 'ERROR_COUNT_MISMATCH';
+                    batchFiles[fileIdx].errorReason = validation.reasonCode || 'INDEX_VALIDATION_FAILED';
                     batchFiles[fileIdx].missingIndices = validation.missing;
+                    batchFiles[fileIdx].duplicateIndices = validation.duplicates;
+                    batchFiles[fileIdx].outOfRangeIndices = validation.outOfRange;
                     batchFiles[fileIdx].retryCount = retryCount;
                     if (rawResponseText) batchFiles[fileIdx].rawText = rawResponseText;
                     await chrome.storage.local.set({ batchFiles });
