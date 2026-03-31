@@ -23,6 +23,7 @@ const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
 const STORY_GEMINI_WEB_QUEUE_FEATURE = 'story.translate.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_SERVICE_ID = 'story-translator-ui';
 const STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS = GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+const STORY_GEMINI_WEB_QUEUE_MAX_ATTEMPTS = 2; // 1 lan chay dau + 1 lan retry
 
 interface StoryTranslateChapterWithGeminiWebQueueOptions {
   prompt: any;
@@ -156,7 +157,7 @@ export class StoryService {
         jobType: 'translate-chapter',
         priority: options.priority ?? 'normal',
         requiredCapabilities: ['story_translate', 'gemini_webapi'],
-        maxAttempts: 3,
+        maxAttempts: STORY_GEMINI_WEB_QUEUE_MAX_ATTEMPTS,
         timeoutMs: options.timeoutMs ?? 120_000,
         metadata: options.metadata,
         payload: { promptText },
@@ -174,9 +175,11 @@ export class StoryService {
           if (!response.success) {
             const errorMessage = response.error || 'GeminiWebApi execution failed';
             if (response.errorCode === 'GEMINI_TIMEOUT') {
+              GeminiChatService.markConfigError(ctx.resource.resourceId, errorMessage);
               throw new RotationJobExecutionError('TIMEOUT', errorMessage);
             }
             if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+              GeminiChatService.markConfigError(ctx.resource.resourceId, errorMessage);
               throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
             }
             throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
@@ -564,6 +567,7 @@ export class StoryService {
             id,
             name,
             is_active,
+            is_error,
             "__Secure-1PSID" AS secure_1psid,
             "__Secure-1PSIDTS" AS secure_1psidts
           FROM gemini_chat_config
@@ -574,6 +578,7 @@ export class StoryService {
       id: string;
       name: string;
       is_active: number;
+        is_error: number;
       secure_1psid: string | null;
       secure_1psidts: string | null;
     }>;
@@ -582,8 +587,9 @@ export class StoryService {
 
     for (const row of rows) {
       const isActive = row.is_active === 1;
+      const isError = row.is_error === 1;
       const hasSecureCookies = !!row.secure_1psid?.trim() && !!row.secure_1psidts?.trim();
-      const enabled = isActive && hasSecureCookies;
+      const enabled = isActive && !isError && hasSecureCookies;
 
       queue.upsertResource({
         poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,

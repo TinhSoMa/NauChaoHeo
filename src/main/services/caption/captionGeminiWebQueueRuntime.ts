@@ -21,6 +21,7 @@ interface GeminiWebQueueAccountRow {
   id: string;
   name: string;
   is_active: number;
+  is_error: number;
   secure_1psid: string | null;
   secure_1psidts: string | null;
 }
@@ -63,6 +64,7 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
           id,
           name,
           is_active,
+          is_error,
           "__Secure-1PSID" AS secure_1psid,
           "__Secure-1PSIDTS" AS secure_1psidts
         FROM gemini_chat_config
@@ -76,8 +78,9 @@ export function ensureCaptionGeminiWebQueueRuntime(): CaptionGeminiWebQueueRunti
 
   for (const row of rows) {
     const isActive = row.is_active === 1;
+    const isError = row.is_error === 1;
     const hasSecureCookies = !!row.secure_1psid?.trim() && !!row.secure_1psidts?.trim();
-    const enabled = isActive && hasSecureCookies;
+    const enabled = isActive && !isError && hasSecureCookies;
     const label = row.name?.trim() || row.id;
 
     queue.upsertResource({

@@ -16,6 +16,7 @@ import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type 
 import { AppSettingsService } from '../appSettings';
 import { type KeyInfo } from '../../../shared/types/gemini';
 import { getApiManager } from '../gemini/apiManager';
+import { GeminiChatService } from '../chatGemini/geminiChatService';
 import { callGeminiImpitAutoSelect } from '../shared';
 import { getGrokUiRuntime } from '../grokUi';
 import { getGeminiWebApiRuntime } from '../geminiWebApi';
@@ -49,6 +50,7 @@ const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
 const GROK_UI_RATE_LIMIT_MESSAGE = 'Grok UI: tất cả profile bị rate limit, dừng dịch.';
 const GROK_UI_HARD_STOP_MESSAGE = 'Grok UI batch failed, stopped.';
 const GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE = 'ALL_GEMINI_WEB_ACCOUNTS_FAILED';
+const CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS = 2; // 1 lan dau + 1 lan retry
 let activeTranslateRunId: string | undefined;
 let translateStopRequested = false;
 let translateStopRunId: string | undefined;
@@ -505,6 +507,11 @@ async function translateBatchGeminiWebQueue(
         };
         const storedConversationMetadata = getCaptionGeminiConversation(conversationScope);
         const hasStoredConversation = isConversationMetadata(storedConversationMetadata);
+        const markCookieErrorIfNeeded = (errorCode?: string, errorMessage?: string) => {
+          if (errorCode === 'COOKIE_INVALID' || errorCode === 'COOKIE_NOT_FOUND' || errorCode === 'GEMINI_TIMEOUT') {
+            GeminiChatService.markConfigError(accountConfigId, errorMessage || errorCode);
+          }
+        };
         console.log(
           `[CaptionTranslator] [GeminiWebQueue] Batch ${batch.batchIndex + 1} cookie-sync accountConfigId=${accountConfigId} (${resourceLabel})`
         );
@@ -521,9 +528,11 @@ async function translateBatchGeminiWebQueue(
         if (!response.success) {
           const errorMessage = response.error || 'GeminiWebApi execution failed';
           if (response.errorCode === 'GEMINI_TIMEOUT') {
+            markCookieErrorIfNeeded(response.errorCode, errorMessage);
             throw new RotationJobExecutionError('TIMEOUT', errorMessage);
           }
           if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+            markCookieErrorIfNeeded(response.errorCode, errorMessage);
             throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
           }
           throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
@@ -564,9 +573,11 @@ async function translateBatchGeminiWebQueue(
           if (!response.success) {
             const errorMessage = response.error || 'GeminiWebApi execution failed after conversation reset';
             if (response.errorCode === 'GEMINI_TIMEOUT') {
+              markCookieErrorIfNeeded(response.errorCode, errorMessage);
               throw new RotationJobExecutionError('TIMEOUT', errorMessage);
             }
             if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+              markCookieErrorIfNeeded(response.errorCode, errorMessage);
               throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
             }
             throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
@@ -1129,7 +1140,7 @@ export async function translateAll(
       : `${MAX_CONCURRENT} song song, pacing ${queueGapSecLabel}s`;
     let progressTokenLabel = defaultTokenLabel;
     const totalAttempts = useGeminiWebQueue
-      ? Math.max(1, geminiInitialEnabledCount)
+      ? CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS
       : Math.max(1, MAX_BATCH_RETRY + 1);
     let attempt = 0;
     let bestTexts: string[] = Array.from({ length: batch.texts.length }, () => '');
@@ -1553,11 +1564,13 @@ export async function translateAll(
         if (typeof restoreEnabled !== 'boolean') {
           continue;
         }
+        const config = GeminiChatService.getById(resourceId);
+        const shouldRemainDisabled = !!config && (!config.isActive || config.isError);
         try {
           geminiWebQueueRuntimeForRestore.queue.setResourceEnabled(
             CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
             resourceId,
-            restoreEnabled,
+            shouldRemainDisabled ? false : restoreEnabled,
           );
         } catch (error) {
           console.warn(

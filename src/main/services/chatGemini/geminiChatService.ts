@@ -363,6 +363,10 @@ export class GeminiChatServiceClass {
     /** Ghi nhận lỗi cho config (Lưu vào DB) */
     markConfigError(configId: string, _errorMessage: string): void {
         try {
+            const config = this.getById(configId);
+            if (!config || config.isError) {
+                return;
+            }
             this.update(configId, { isError: true } as any);
         } catch (e) {
             console.error('[GeminiChatService] Failed to mark error:', e);
