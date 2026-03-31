@@ -854,8 +854,7 @@ export async function translateAll(
     let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
     let geminiSequentialNextDispatchAtMs: number | null = null;
     let geminiExhaustedError: string | null = null;
-    let geminiRoundRobinCursor = 0;
-    let geminiInitialEnabledCount = 0;
+    let geminiStickyResourceId: string | null = null;
     const MAX_BATCH_RETRY_DEFAULT = 2;
     const MAX_BATCH_RETRY = useGrokUi ? 2 : MAX_BATCH_RETRY_DEFAULT;
 
@@ -934,7 +933,6 @@ export async function translateAll(
     const enabledResources = snapshot.resources.filter(
       (resource) => resource.poolId === CAPTION_GEMINI_WEB_QUEUE_POOL_ID && resource.enabled
     );
-    geminiInitialEnabledCount = enabledResources.length;
     if (enabledResources.length === 0) {
       const errorMessage = 'Không có account Gemini Web hợp lệ (is_active + __Secure-1PSID + __Secure-1PSIDTS).';
       const missingGlobalLineIndexes = collectMissingGlobalLineIndexes(batches);
@@ -977,15 +975,48 @@ export async function translateAll(
       .map((resource) => resource.resourceId);
   };
 
-  const pickNextGeminiResourceId = (): string | null => {
+  const isGeminiAccountFailoverError = (batchResult: BatchTranslationResult): boolean => {
+    const normalizedCode = (batchResult.errorCode || '').trim().toUpperCase();
+    const normalizedError = (batchResult.error || '').trim().toLowerCase();
+
+    if (
+      normalizedCode === 'RESOURCE_UNAVAILABLE'
+      || normalizedCode === 'COOKIE_INVALID'
+      || normalizedCode === 'COOKIE_NOT_FOUND'
+      || normalizedCode === 'GEMINI_TIMEOUT'
+    ) {
+      return true;
+    }
+
+    if (normalizedCode === 'TIMEOUT' && normalizedError.includes('gemini timeout')) {
+      return true;
+    }
+
+    if (
+      normalizedError.includes('cookie_invalid')
+      || normalizedError.includes('cookie_not_found')
+      || normalizedError.includes('__secure-1psid')
+      || normalizedError.includes('gemini timeout')
+    ) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const resolveGeminiStickyResourceId = (): string | null => {
     const resourceIds = getGeminiEnabledResourceIds();
     if (resourceIds.length === 0) {
+      geminiStickyResourceId = null;
       return null;
     }
-    const index = geminiRoundRobinCursor % resourceIds.length;
-    const picked = resourceIds[index];
-    geminiRoundRobinCursor = (index + 1) % resourceIds.length;
-    return picked;
+
+    if (geminiStickyResourceId && resourceIds.includes(geminiStickyResourceId)) {
+      return geminiStickyResourceId;
+    }
+
+    geminiStickyResourceId = resourceIds[0];
+    return geminiStickyResourceId;
   };
 
   const disableGeminiResourceForCurrentRun = (resourceId: string, reason: string): void => {
@@ -1152,7 +1183,7 @@ export async function translateAll(
       assertNotStopped();
       attempt += 1;
       const isRetryAttempt = attempt > 1;
-      const preferredGeminiResourceId = useGeminiWebQueue ? pickNextGeminiResourceId() : null;
+      const preferredGeminiResourceId = useGeminiWebQueue ? resolveGeminiStickyResourceId() : null;
       if (useGeminiWebQueue && !preferredGeminiResourceId) {
         geminiExhaustedError = `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Không còn account Gemini Web khả dụng để dịch Step 3.`;
         lastResult = {
@@ -1271,6 +1302,12 @@ export async function translateAll(
       if (batchResult.resourceLabel || batchResult.resourceId) {
         progressTokenLabel = batchResult.resourceLabel || batchResult.resourceId || progressTokenLabel;
       }
+      if (useGeminiWebQueue) {
+        const resolvedResourceId = (batchResult.resourceId || '').trim();
+        if (resolvedResourceId) {
+          geminiStickyResourceId = resolvedResourceId;
+        }
+      }
 
       const normalizedTexts = Array.from({ length: batch.texts.length }, (_, idx) => batchResult.translatedTexts?.[idx] ?? '');
       const translatedLineCount = countTranslatedLines(normalizedTexts);
@@ -1286,11 +1323,15 @@ export async function translateAll(
 
       if (useGeminiWebQueue) {
         const failedResourceId = (batchResult.resourceId || '').trim();
-        if (failedResourceId) {
+        const shouldFailover = isGeminiAccountFailoverError(batchResult);
+        if (shouldFailover && failedResourceId) {
           disableGeminiResourceForCurrentRun(failedResourceId, batchResult.error || batchResult.errorCode || 'ACCOUNT_FAILED');
+          if (geminiStickyResourceId === failedResourceId) {
+            geminiStickyResourceId = null;
+          }
         }
-        const remainingResourceIds = getGeminiEnabledResourceIds();
-        if (remainingResourceIds.length === 0) {
+        const remainingResourceIds = shouldFailover ? getGeminiEnabledResourceIds() : [];
+        if (shouldFailover && remainingResourceIds.length === 0) {
           geminiExhaustedError = `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Tất cả account Gemini Web đều lỗi trong run hiện tại.`;
           lastResult = {
             ...batchResult,

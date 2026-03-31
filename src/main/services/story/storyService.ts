@@ -24,6 +24,8 @@ const STORY_GEMINI_WEB_QUEUE_FEATURE = 'story.translate.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_SERVICE_ID = 'story-translator-ui';
 const STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS = GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
 const STORY_GEMINI_WEB_QUEUE_MAX_ATTEMPTS = 2; // 1 lan chay dau + 1 lan retry
+const STORY_STICKY_BATCH_CAPABILITY_PREFIX = 'story_batch_sticky::';
+const STORY_STICKY_STATE_TTL_MS = 6 * 60 * 60 * 1000;
 
 interface StoryTranslateChapterWithGeminiWebQueueOptions {
   prompt: any;
@@ -53,10 +55,20 @@ interface StoryWebQueueTimingPayload {
   nextAllowedAt?: number;
 }
 
+interface StoryBatchStickyAccountState {
+  batchId: string;
+  capability: string;
+  stickyResourceId: string | null;
+  failedResourceIds: Set<string>;
+  lastTouchedAt: number;
+}
+
 /**
  * Story Service - Handles story translation logic
  */
 export class StoryService {
+  private static readonly storyStickyAccountByBatchId = new Map<string, StoryBatchStickyAccountState>();
+
   /**
    * Translates a chapter using prepared prompt and Gemini API
    * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
@@ -124,6 +136,10 @@ export class StoryService {
   static async translateChapterWithGeminiWebQueue(
     options: StoryTranslateChapterWithGeminiWebQueueOptions
   ): Promise<StoryTranslateChapterWithGeminiWebQueueResult> {
+    const batchId = this.resolveStoryBatchId(options);
+    this.pruneStoryBatchStickyStates();
+    const stickyState = this.getOrCreateStoryBatchStickyState(batchId);
+
     try {
       if (!this.isStoryGeminiWebQueueEnabled()) {
         return {
@@ -131,7 +147,10 @@ export class StoryService {
           error: 'Story Gemini Web Queue is disabled by feature flag.',
           errorCode: 'EXECUTION_ERROR',
           queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-          metadata: options.metadata
+          metadata: {
+            ...(options.metadata ?? {}),
+            batchId,
+          }
         };
       }
 
@@ -142,73 +161,149 @@ export class StoryService {
           error: 'Prompt text is empty.',
           errorCode: 'EXECUTION_ERROR',
           queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-          metadata: options.metadata
+          metadata: {
+            ...(options.metadata ?? {}),
+            batchId,
+          }
         };
       }
+      const timeoutMs = options.timeoutMs ?? 120_000;
+      const maxAttempts = Math.max(1, STORY_GEMINI_WEB_QUEUE_MAX_ATTEMPTS);
 
-      this.ensureStoryGeminiWebQueueResources();
-      const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
-      const queueGapMs = this.getStoryWebQueueGapMs();
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        this.ensureStoryGeminiWebQueueResources();
+        const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+        const queueGapMs = this.getStoryWebQueueGapMs();
+        const stickyResourceId = this.selectStoryStickyResourceId(queue, stickyState);
 
-      const queued = await queue.enqueue<{ promptText: string }, string>({
-        poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
-        feature: STORY_GEMINI_WEB_QUEUE_FEATURE,
-        serviceId: STORY_GEMINI_WEB_QUEUE_SERVICE_ID,
-        jobType: 'translate-chapter',
-        priority: options.priority ?? 'normal',
-        requiredCapabilities: ['story_translate', 'gemini_webapi'],
-        maxAttempts: STORY_GEMINI_WEB_QUEUE_MAX_ATTEMPTS,
-        timeoutMs: options.timeoutMs ?? 120_000,
-        metadata: options.metadata,
-        payload: { promptText },
-        execute: async (ctx) => {
-          const response = await getGeminiWebApiRuntime().generateContent({
-            prompt: ctx.payload.promptText,
-            timeoutMs: options.timeoutMs ?? 120_000,
-            accountConfigId: ctx.resource.resourceId,
-            conversationKey: options.conversationKey,
-            resetConversation: options.resetConversation,
-            useChatSession: !!options.conversationKey,
-            proxyScope: 'story',
-          });
-
-          if (!response.success) {
-            const errorMessage = response.error || 'GeminiWebApi execution failed';
-            if (response.errorCode === 'GEMINI_TIMEOUT') {
-              GeminiChatService.markConfigError(ctx.resource.resourceId, errorMessage);
-              throw new RotationJobExecutionError('TIMEOUT', errorMessage);
+        if (!stickyResourceId) {
+          const exhaustedError = 'Không còn account Gemini Web khả dụng cho batch hiện tại.';
+          return {
+            success: false,
+            error: exhaustedError,
+            errorCode: 'RESOURCE_UNAVAILABLE',
+            queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+            metadata: {
+              ...(options.metadata ?? {}),
+              batchId,
+              stickyMode: 'strict_single_account',
             }
-            if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
-              GeminiChatService.markConfigError(ctx.resource.resourceId, errorMessage);
-              throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
+          };
+        }
+
+        // Re-apply resources so only the sticky account has this batch capability.
+        this.ensureStoryGeminiWebQueueResources();
+
+        const requestMetadata = {
+          ...(options.metadata ?? {}),
+          batchId,
+          stickyMode: 'strict_single_account',
+          stickyResourceId,
+          attempt,
+          maxAttempts,
+        };
+
+        const queued = await queue.enqueue<{ promptText: string }, string>({
+          poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
+          feature: STORY_GEMINI_WEB_QUEUE_FEATURE,
+          serviceId: STORY_GEMINI_WEB_QUEUE_SERVICE_ID,
+          jobType: 'translate-chapter',
+          priority: options.priority ?? 'normal',
+          requiredCapabilities: ['story_translate', 'gemini_webapi', stickyState.capability],
+          preferredResourceId: stickyResourceId,
+          maxAttempts: 1,
+          timeoutMs,
+          metadata: requestMetadata,
+          payload: { promptText },
+          execute: async (ctx) => {
+            const response = await getGeminiWebApiRuntime().generateContent({
+              prompt: ctx.payload.promptText,
+              timeoutMs,
+              accountConfigId: ctx.resource.resourceId,
+              conversationKey: options.conversationKey,
+              resetConversation: options.resetConversation,
+              useChatSession: !!options.conversationKey,
+              proxyScope: 'story',
+            });
+
+            if (!response.success) {
+              const errorMessage = response.error || 'GeminiWebApi execution failed';
+              if (response.errorCode === 'GEMINI_TIMEOUT') {
+                GeminiChatService.markConfigError(ctx.resource.resourceId, errorMessage);
+                throw new RotationJobExecutionError('TIMEOUT', errorMessage);
+              }
+              if (response.errorCode === 'COOKIE_INVALID' || response.errorCode === 'COOKIE_NOT_FOUND') {
+                GeminiChatService.markConfigError(ctx.resource.resourceId, errorMessage);
+                throw new RotationJobExecutionError('RESOURCE_UNAVAILABLE', errorMessage);
+              }
+              throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
             }
-            throw new RotationJobExecutionError('EXECUTION_ERROR', errorMessage);
+
+            return response.text || '';
+          }
+        });
+
+        const timingPayload = this.buildStoryWebQueueTimingPayload(queued, queueGapMs);
+        const metadataWithTiming = this.mergeStoryWebQueueMetadata(requestMetadata, timingPayload);
+
+        if (queued.success) {
+          this.touchStoryBatchStickyState(stickyState);
+          return {
+            success: true,
+            data: queued.result || '',
+            resourceId: queued.resourceId,
+            queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+            metadata: metadataWithTiming
+          };
+        }
+
+        const shouldFailover = this.isStoryAccountFailoverError(queued.errorCode, queued.error);
+        if (shouldFailover) {
+          const failedResourceId = (queued.resourceId || stickyResourceId || '').trim();
+          if (failedResourceId) {
+            this.markStoryStickyResourceFailed(
+              stickyState,
+              failedResourceId,
+              queued.error || queued.errorCode || 'ACCOUNT_FAILED'
+            );
           }
 
-          return response.text || '';
+          const queueAfterFail = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
+          const remaining = this.getStoryEnabledResourceIdsForBatch(queueAfterFail, stickyState);
+          if (remaining.length === 0) {
+            return {
+              success: false,
+              error: `${queued.error || 'Queue job failed'} (all Gemini Web accounts failed for this batch)`,
+              errorCode: 'RESOURCE_UNAVAILABLE',
+              resourceId: queued.resourceId,
+              queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+              metadata: metadataWithTiming
+            };
+          }
         }
-      });
 
-      const timingPayload = this.buildStoryWebQueueTimingPayload(queued, queueGapMs);
-      const metadataWithTiming = this.mergeStoryWebQueueMetadata(options.metadata, timingPayload);
-
-      if (!queued.success) {
-        return {
-          success: false,
-          error: queued.error || 'Queue job failed',
-          errorCode: queued.errorCode,
-          resourceId: queued.resourceId,
-          queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-          metadata: metadataWithTiming
-        };
+        if (attempt >= maxAttempts) {
+          return {
+            success: false,
+            error: queued.error || 'Queue job failed',
+            errorCode: queued.errorCode,
+            resourceId: queued.resourceId,
+            queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+            metadata: metadataWithTiming
+          };
+        }
       }
 
       return {
-        success: true,
-        data: queued.result || '',
-        resourceId: queued.resourceId,
+        success: false,
+        error: 'Queue job failed',
+        errorCode: 'EXECUTION_ERROR',
         queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-        metadata: metadataWithTiming
+        metadata: {
+          ...(options.metadata ?? {}),
+          batchId,
+          stickyMode: 'strict_single_account',
+        }
       };
     } catch (error) {
       return {
@@ -216,7 +311,10 @@ export class StoryService {
         error: String(error),
         errorCode: 'EXECUTION_ERROR',
         queueRuntimeKey: STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY,
-        metadata: options.metadata
+        metadata: {
+          ...(options.metadata ?? {}),
+          batchId,
+        }
       };
     }
   }
@@ -515,11 +613,199 @@ export class StoryService {
       cancelledJobIds
     });
 
+    this.clearStoryBatchStickyState(normalizedBatchId, 'cancelled_by_user');
+
     return {
       success: true,
       cancelledJobIds,
       requestedJobCount: matchingJobs.length
     };
+  }
+
+  private static resolveStoryBatchId(options: StoryTranslateChapterWithGeminiWebQueueOptions): string {
+    const metadataBatchId =
+      typeof options.metadata?.batchId === 'string'
+        ? options.metadata.batchId.trim()
+        : '';
+    if (metadataBatchId) {
+      return metadataBatchId;
+    }
+
+    const conversationKey = typeof options.conversationKey === 'string'
+      ? options.conversationKey.trim()
+      : '';
+    if (conversationKey) {
+      return `conversation:${conversationKey}`;
+    }
+
+    return 'story-webqueue-default';
+  }
+
+  private static buildStoryStickyCapability(batchId: string): string {
+    const sanitizedBatchId = batchId.replace(/[^a-zA-Z0-9:_-]/g, '_').slice(0, 120);
+    return `${STORY_STICKY_BATCH_CAPABILITY_PREFIX}${sanitizedBatchId || 'default'}`;
+  }
+
+  private static getOrCreateStoryBatchStickyState(batchId: string): StoryBatchStickyAccountState {
+    const normalizedBatchId = batchId.trim() || 'story-webqueue-default';
+    const existing = this.storyStickyAccountByBatchId.get(normalizedBatchId);
+    if (existing) {
+      this.touchStoryBatchStickyState(existing);
+      return existing;
+    }
+
+    const created: StoryBatchStickyAccountState = {
+      batchId: normalizedBatchId,
+      capability: this.buildStoryStickyCapability(normalizedBatchId),
+      stickyResourceId: null,
+      failedResourceIds: new Set<string>(),
+      lastTouchedAt: Date.now(),
+    };
+    this.storyStickyAccountByBatchId.set(normalizedBatchId, created);
+    return created;
+  }
+
+  private static touchStoryBatchStickyState(state: StoryBatchStickyAccountState): void {
+    state.lastTouchedAt = Date.now();
+  }
+
+  private static clearStoryBatchStickyState(batchId: string, reason: string): void {
+    const normalizedBatchId = batchId.trim();
+    if (!normalizedBatchId) {
+      return;
+    }
+    if (!this.storyStickyAccountByBatchId.delete(normalizedBatchId)) {
+      return;
+    }
+    console.log(
+      `[StoryGeminiWebQueue][Sticky] Cleared sticky state batchId=${normalizedBatchId} reason=${reason}`
+    );
+  }
+
+  private static pruneStoryBatchStickyStates(nowMs = Date.now()): void {
+    for (const [batchId, state] of this.storyStickyAccountByBatchId.entries()) {
+      if (nowMs - state.lastTouchedAt <= STORY_STICKY_STATE_TTL_MS) {
+        continue;
+      }
+      this.storyStickyAccountByBatchId.delete(batchId);
+      console.log(
+        `[StoryGeminiWebQueue][Sticky] Pruned stale state batchId=${batchId}`
+      );
+    }
+  }
+
+  private static isStoryAccountFailoverError(errorCode?: string, errorText?: string): boolean {
+    const normalizedCode = String(errorCode || '').trim().toUpperCase();
+    const normalizedError = String(errorText || '').toLowerCase();
+
+    if (
+      normalizedCode === 'RESOURCE_UNAVAILABLE'
+      || normalizedCode === 'COOKIE_INVALID'
+      || normalizedCode === 'COOKIE_NOT_FOUND'
+      || normalizedCode === 'GEMINI_TIMEOUT'
+    ) {
+      return true;
+    }
+
+    if (normalizedCode === 'TIMEOUT' && normalizedError.includes('gemini timeout')) {
+      return true;
+    }
+
+    return (
+      normalizedError.includes('cookie_invalid')
+      || normalizedError.includes('cookie_not_found')
+      || normalizedError.includes('__secure-1psid')
+      || normalizedError.includes('gemini timeout')
+    );
+  }
+
+  private static buildStoryStickyCapabilitiesByResource(): Map<string, Set<string>> {
+    const map = new Map<string, Set<string>>();
+    for (const stickyState of this.storyStickyAccountByBatchId.values()) {
+      const stickyResourceId = stickyState.stickyResourceId?.trim();
+      if (!stickyResourceId) {
+        continue;
+      }
+      if (stickyState.failedResourceIds.has(stickyResourceId)) {
+        continue;
+      }
+
+      const capabilitySet = map.get(stickyResourceId) || new Set<string>();
+      capabilitySet.add(stickyState.capability);
+      map.set(stickyResourceId, capabilitySet);
+    }
+    return map;
+  }
+
+  private static getStoryEnabledResourceIdsForBatch(
+    queue: ReturnType<typeof getQueueRuntimeOrCreate>,
+    stickyState: StoryBatchStickyAccountState
+  ): string[] {
+    const snapshot = queue.getSnapshot();
+    return snapshot.resources
+      .filter((resource) => {
+        if (resource.poolId !== STORY_GEMINI_WEB_QUEUE_POOL_ID) {
+          return false;
+        }
+        if (!resource.enabled) {
+          return false;
+        }
+        if (stickyState.failedResourceIds.has(resource.resourceId)) {
+          return false;
+        }
+        return true;
+      })
+      .map((resource) => resource.resourceId);
+  }
+
+  private static selectStoryStickyResourceId(
+    queue: ReturnType<typeof getQueueRuntimeOrCreate>,
+    stickyState: StoryBatchStickyAccountState
+  ): string | null {
+    const enabledResourceIds = this.getStoryEnabledResourceIdsForBatch(queue, stickyState);
+    if (enabledResourceIds.length === 0) {
+      stickyState.stickyResourceId = null;
+      this.touchStoryBatchStickyState(stickyState);
+      return null;
+    }
+
+    const currentSticky = stickyState.stickyResourceId?.trim() || null;
+    if (currentSticky && enabledResourceIds.includes(currentSticky)) {
+      this.touchStoryBatchStickyState(stickyState);
+      return currentSticky;
+    }
+
+    if (currentSticky) {
+      console.warn(
+        `[StoryGeminiWebQueue][Sticky] Sticky account unavailable batchId=${stickyState.batchId} resourceId=${currentSticky}`
+      );
+    }
+
+    stickyState.stickyResourceId = enabledResourceIds[0];
+    this.touchStoryBatchStickyState(stickyState);
+    console.log(
+      `[StoryGeminiWebQueue][Sticky] Locked account batchId=${stickyState.batchId} resourceId=${stickyState.stickyResourceId}`
+    );
+    return stickyState.stickyResourceId;
+  }
+
+  private static markStoryStickyResourceFailed(
+    stickyState: StoryBatchStickyAccountState,
+    resourceId: string,
+    reason: string
+  ): void {
+    const normalizedResourceId = resourceId.trim();
+    if (!normalizedResourceId) {
+      return;
+    }
+    stickyState.failedResourceIds.add(normalizedResourceId);
+    if (stickyState.stickyResourceId === normalizedResourceId) {
+      stickyState.stickyResourceId = null;
+    }
+    this.touchStoryBatchStickyState(stickyState);
+    console.warn(
+      `[StoryGeminiWebQueue][Sticky] Failover batchId=${stickyState.batchId} failedResourceId=${normalizedResourceId} reason=${reason}`
+    );
   }
 
   private static extractPromptText(preparedPrompt: any): string {
@@ -544,11 +830,13 @@ export class StoryService {
   }
 
   private static ensureStoryGeminiWebQueueResources(): void {
+    this.pruneStoryBatchStickyStates();
     const queue = getQueueRuntimeOrCreate(STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY);
     const settings = AppSettingsService.getAll();
     const minIntervalMs = normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
     const maxIntervalMs = normalizeGeminiMaxSendIntervalMs(settings.geminiMaxSendIntervalMs, minIntervalMs);
     const intervalMode = normalizeGeminiSendIntervalMode(settings.geminiSendIntervalMode);
+    const stickyCapabilitiesByResource = this.buildStoryStickyCapabilitiesByResource();
     const queueGapMs = minIntervalMs;
     queue.registerPool({
       poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
@@ -590,12 +878,18 @@ export class StoryService {
       const isError = row.is_error === 1;
       const hasSecureCookies = !!row.secure_1psid?.trim() && !!row.secure_1psidts?.trim();
       const enabled = isActive && !isError && hasSecureCookies;
+      const stickyCapabilities = stickyCapabilitiesByResource.get(row.id);
+      const capabilities = [
+        'story_translate',
+        'gemini_webapi',
+        ...(stickyCapabilities ? Array.from(stickyCapabilities) : []),
+      ];
 
       queue.upsertResource({
         poolId: STORY_GEMINI_WEB_QUEUE_POOL_ID,
         resourceId: row.id,
         label: row.name?.trim() || row.id,
-        capabilities: ['story_translate', 'gemini_webapi'],
+        capabilities,
         enabled,
         maxConcurrency: 1,
         cooldownMinMs: intervalMode === 'random' ? minIntervalMs : 0,
