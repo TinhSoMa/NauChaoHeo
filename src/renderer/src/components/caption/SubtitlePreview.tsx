@@ -78,6 +78,20 @@ interface SubtitlePreviewProps {
   hydrationSeq?: number;
 }
 
+function formatPreviewTime(seconds: number): string {
+  const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+  const secsLabel = secs.toFixed(2).padStart(5, '0');
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${secsLabel}`;
+  }
+
+  return `${String(minutes).padStart(2, '0')}:${secsLabel}`;
+}
+
 export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq }: SubtitlePreviewProps) {
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
@@ -193,13 +207,6 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
   }, [videoPath]);
 
   useEffect(() => {
-    if (!videoPath || isRealPreviewMode) {
-      return;
-    }
-    preview.loadFrameAt(preview.frameTimeSec);
-  }, [hydrationSeq, isRealPreviewMode, preview.frameTimeSec, preview.loadFrameAt, videoPath]);
-
-  useEffect(() => {
     if (!videoPath || preview.videoDuration <= 0 || isRealPreviewMode) {
       return;
     }
@@ -207,7 +214,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
       preview.loadFrameAt(preview.frameTimeSec);
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [videoPath, preview.videoDuration, preview.frameTimeSec, preview.loadFrameAt, isRealPreviewMode]);
+  }, [hydrationSeq, videoPath, preview.videoDuration, preview.frameTimeSec, preview.loadFrameAt, isRealPreviewMode]);
 
   useEffect(() => {
     if (renderSnapshotMode && realPreview.mode !== 'live') {
@@ -426,7 +433,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
             disabled={isInteractionDisabled || preview.isLoading}
           />
           <span className={styles.scrubberHint}>
-            {preview.frameTimeSec.toFixed(2)}s / {preview.videoDuration.toFixed(2)}s
+            {formatPreviewTime(preview.frameTimeSec)} / {formatPreviewTime(preview.videoDuration)}
           </span>
         </div>
       )}

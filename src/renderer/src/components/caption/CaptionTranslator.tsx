@@ -34,6 +34,7 @@ import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 import { useHardsubSettings } from './hooks/useHardsubSettings';
 import { ensureCaptionFontLoaded } from './hooks/captionFontLoader';
+import { getVideoMetadataCached } from './hooks/videoMetadataClientCache';
 import {
   getInputPaths,
   getSessionPathForInputPath,
@@ -3568,8 +3569,7 @@ export function CaptionTranslator() {
     let cancelled = false;
     const loadVideoMeta = async () => {
       try {
-        const api = (window.electronAPI as any).captionVideo;
-        const res = await api.getVideoMetadata(thumbnailPreviewVideoPath);
+        const res = await getVideoMetadataCached(thumbnailPreviewVideoPath);
         if (cancelled || !res?.success || !res?.data) {
           return;
         }

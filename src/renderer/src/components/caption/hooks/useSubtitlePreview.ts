@@ -19,6 +19,7 @@ import {
 } from '@shared/utils/maskCoverGeometry';
 import { buildSubtitleShadowLayers } from '@shared/utils/subtitleShadowProfile';
 import { ensureCaptionFontsLoaded } from './captionFontLoader';
+import { getVideoMetadataCached } from './videoMetadataClientCache';
 
 interface SubtitlePreviewState {
   frameData: string | null;
@@ -898,7 +899,7 @@ export function useSubtitlePreview({
     try {
       const api = (window.electronAPI as any).captionVideo;
 
-      const metaRes = await api.getVideoMetadata(videoPath);
+      const metaRes = await getVideoMetadataCached(videoPath);
       let vw = 1920, vh = 1080;
       if (metaRes?.success && metaRes.data) {
         vw = metaRes.data.width;

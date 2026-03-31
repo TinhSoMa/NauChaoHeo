@@ -17,17 +17,10 @@ import {
   ThumbnailPreviewSourceStatus,
   ThumbnailPreviewTab,
 } from '../CaptionTypes';
+import { getVideoMetadataCached } from './videoMetadataClientCache';
 
 type RenderMode = 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
 type RenderResolution = 'original' | '1080p' | '720p' | '540p' | '360p';
-
-type VideoMeta = {
-  width: number;
-  height: number;
-  actualHeight?: number;
-  duration: number;
-  fps: number;
-};
 
 interface UseThumbnailPreviewStateOptions {
   videoPath: string | null;
@@ -186,7 +179,6 @@ export function useThumbnailPreviewState(
   const realRequestRef = useRef(0);
   const sourceHashRef = useRef('');
   const contextRef = useRef(contextId);
-  const videoMetaCacheRef = useRef(new Map<string, VideoMeta>());
   const sourceFrameCacheRef = useRef(new Map<string, string>());
   const realFrameCacheRef = useRef(new Map<string, { frameData: string; size: { width: number; height: number } | null }>());
   const runtimePatchRef = useRef<Partial<ThumbnailPreviewRuntimeState> | null>(null);
@@ -398,23 +390,14 @@ export function useThumbnailPreviewState(
       setVideoFps(30);
       return;
     }
-    const cached = videoMetaCacheRef.current.get(videoPath);
-    if (cached) {
-      setVideoDuration(cached.duration && cached.duration > 0 ? cached.duration : 5);
-      setVideoFps(cached.fps && cached.fps > 0 ? cached.fps : 30);
-      return;
-    }
     let cancelled = false;
     const loadMeta = async () => {
       try {
-        const api = (window.electronAPI as any).captionVideo;
-        const metaRes = await api.getVideoMetadata(videoPath);
+        const metaRes = await getVideoMetadataCached(videoPath);
         if (cancelled) return;
         if (metaRes?.success && metaRes.data) {
-          const meta = metaRes.data as VideoMeta;
-          videoMetaCacheRef.current.set(videoPath, meta);
-          setVideoDuration(meta.duration && meta.duration > 0 ? meta.duration : 5);
-          setVideoFps(meta.fps && meta.fps > 0 ? meta.fps : 30);
+          setVideoDuration(metaRes.data.duration && metaRes.data.duration > 0 ? metaRes.data.duration : 5);
+          setVideoFps(metaRes.data.fps && metaRes.data.fps > 0 ? metaRes.data.fps : 30);
         }
       } catch {}
     };
