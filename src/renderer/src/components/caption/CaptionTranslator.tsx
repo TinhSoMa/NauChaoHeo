@@ -2836,6 +2836,7 @@ export function CaptionTranslator() {
   const [renderedPreviewVideoPath, setRenderedPreviewVideoPath] = useState<string | null>(null);
   const [previewSourceLabel, setPreviewSourceLabel] = useState<string>('live_video');
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('live');
+  const [hasShownFirstPreviewFrame, setHasShownFirstPreviewFrame] = useState(false);
   const lastHydratedInputPathRef = useRef<string>('');
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
@@ -3451,6 +3452,13 @@ export function CaptionTranslator() {
   const previewVideoPath = effectivePreviewMode === 'render'
     ? renderedPreviewVideoPath
     : livePreviewVideoPath;
+  useEffect(() => {
+    setHasShownFirstPreviewFrame(false);
+  }, [displayPath, previewVideoPath]);
+  const handlePreviewFirstFrameReady = useCallback(() => {
+    setHasShownFirstPreviewFrame(true);
+  }, []);
+
   const previewEntries = effectivePreviewMode === 'render'
     ? []
     : (sessionPreviewEntries.length > 0 ? sessionPreviewEntries : fileManager.entries);
@@ -3773,6 +3781,9 @@ export function CaptionTranslator() {
   useEffect(() => {
     let mounted = true;
     const fetchDiskDuration = async () => {
+      if (!hasShownFirstPreviewFrame) {
+        return;
+      }
       if (!displayOutputDir) {
         if (mounted) setDiskAudioDuration(null);
         return;
@@ -3858,6 +3869,7 @@ export function CaptionTranslator() {
     processing.currentFolder?.path,
     processing.status,
     projectId,
+    hasShownFirstPreviewFrame,
     settings.inputType,
     settings.srtSpeed,
   ]);
@@ -3875,6 +3887,9 @@ export function CaptionTranslator() {
   useEffect(() => {
     let mounted = true;
     const fetchDiskSubtitleDuration = async () => {
+      if (!hasShownFirstPreviewFrame) {
+        return;
+      }
       if (!displayOutputDir) {
         if (mounted) {
           setDiskSubtitleDuration(null);
@@ -3917,7 +3932,7 @@ export function CaptionTranslator() {
       fetchDiskSubtitleDuration();
     }
     return () => { mounted = false; };
-  }, [displayOutputDir, srtTimeScale, processing.status]);
+  }, [displayOutputDir, hasShownFirstPreviewFrame, srtTimeScale, processing.status]);
 
   const scaledSrtDurationSec = srtDurationMs > 0 ? (srtDurationMs / 1000) * srtTimeScale : 0;
   const subtitleSyncDurationSec = (diskSubtitleDuration && diskSubtitleDuration > 0)
@@ -7377,6 +7392,7 @@ export function CaptionTranslator() {
                       ? 'Pipeline đang chạy. Tạm khóa preview thật để tránh tranh chấp FFmpeg.'
                       : undefined
                   }
+                  onFirstFrameReady={handlePreviewFirstFrameReady}
                 />
               </div>
             ) : (

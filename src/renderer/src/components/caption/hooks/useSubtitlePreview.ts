@@ -513,6 +513,7 @@ export function useSubtitlePreview({
   // Video metadata for frame scrubbing (path, fps, duration) — không trigger re-render
   const videoMetaRef = useRef<{ path: string; fps: number; duration: number } | null>(null);
   const frameRequestSerialRef = useRef(0);
+  const skipNextLoadFrameRef = useRef<{ path: string; frameNumber: number } | null>(null);
 
   const [frameTimeSec, setFrameTimeSec] = useState(0);
   const initialSubtitlePosition = normalizeLayerPosition(
@@ -892,6 +893,7 @@ export function useSubtitlePreview({
     const shouldResetFrame = videoMetaRef.current?.path !== videoPath;
     if (shouldResetFrame) {
       resetViewTransform();
+      skipNextLoadFrameRef.current = null;
     }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
@@ -924,6 +926,7 @@ export function useSubtitlePreview({
       const targetSecRaw = preferredTimeSec ?? 0;
       const targetSec = Math.max(0, Math.min(activeMeta?.duration || targetSecRaw, targetSecRaw));
       const frameNumber = Math.round(targetSec * (activeMeta?.fps || 30));
+      skipNextLoadFrameRef.current = { path: videoPath, frameNumber };
       const requestSerial = ++frameRequestSerialRef.current;
       const frameRes = await api.extractFrame(videoPath, frameNumber);
       if (requestSerial !== frameRequestSerialRef.current) {
@@ -962,6 +965,7 @@ export function useSubtitlePreview({
           };
         });
       } else {
+        skipNextLoadFrameRef.current = null;
         setState(prev => ({
           ...prev,
           isLoading: false,
@@ -978,10 +982,15 @@ export function useSubtitlePreview({
     const meta = videoMetaRef.current;
     if (!meta) return;
     const clampedTime = Math.max(0, Math.min(meta.duration || timeSec, timeSec));
+    const frameNumber = Math.round(clampedTime * meta.fps);
+    const skipNext = skipNextLoadFrameRef.current;
+    if (skipNext && skipNext.path === meta.path && skipNext.frameNumber === frameNumber) {
+      skipNextLoadFrameRef.current = null;
+      return;
+    }
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const api = (window.electronAPI as any).captionVideo;
-      const frameNumber = Math.round(clampedTime * meta.fps);
       const requestSerial = ++frameRequestSerialRef.current;
       const frameRes = await api.extractFrame(meta.path, frameNumber);
       if (requestSerial !== frameRequestSerialRef.current) {
@@ -1023,9 +1032,10 @@ export function useSubtitlePreview({
 
     const cw = containerSize.width || 400;
     const ch = containerSize.height || 225;
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const pixelW = Math.max(1, Math.floor(cw * dpr));
-    const pixelH = Math.max(1, Math.floor(ch * dpr));
+    const baseDpr = Math.max(1, window.devicePixelRatio || 1);
+    const renderDpr = state.isLoading ? 1 : baseDpr;
+    const pixelW = Math.max(1, Math.floor(cw * renderDpr));
+    const pixelH = Math.max(1, Math.floor(ch * renderDpr));
     hostCanvas.width = pixelW;
     hostCanvas.height = pixelH;
     hostCanvas.style.width = `${cw}px`;
@@ -1043,7 +1053,7 @@ export function useSubtitlePreview({
     const canvas = worldCanvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
@@ -1055,12 +1065,12 @@ export function useSubtitlePreview({
       hostCtx.save();
       const viewOffset = resolveViewOffsetWithPan(previewZoom, cw, ch, viewPan);
       hostCtx.setTransform(
-        dpr * previewZoom,
+        renderDpr * previewZoom,
         0,
         0,
-        dpr * previewZoom,
-        viewOffset.x * dpr,
-        viewOffset.y * dpr
+        renderDpr * previewZoom,
+        viewOffset.x * renderDpr,
+        viewOffset.y * renderDpr
       );
       hostCtx.imageSmoothingEnabled = true;
       hostCtx.imageSmoothingQuality = 'high';
@@ -1129,7 +1139,7 @@ export function useSubtitlePreview({
       const fgSrcH = img.height;
       const fgSrcY = 0;
 
-      if (layoutStrategy === 'blur_composite') {
+      if (layoutStrategy === 'blur_composite' && !state.isLoading) {
         // Giữ phong cách nền blur hiện tại.
         ctx.save();
         ctx.filter = 'blur(18px)';
@@ -1252,7 +1262,7 @@ export function useSubtitlePreview({
         if (scratchCtx) {
           scratchCtx.setTransform(1, 0, 0, 1, 0, 0);
           scratchCtx.clearRect(0, 0, scratch.width, scratch.height);
-          scratchCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          scratchCtx.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
           scratchCtx.imageSmoothingEnabled = true;
           scratchCtx.imageSmoothingQuality = 'high';
           scratchCtx.drawImage(canvas, 0, 0, cw, ch);
@@ -1370,8 +1380,8 @@ export function useSubtitlePreview({
             scratch = document.createElement('canvas');
             blurScratchRef.current = scratch;
           }
-          const scratchW = Math.max(1, Math.floor(cw * dpr));
-          const scratchH = Math.max(1, Math.floor(ch * dpr));
+          const scratchW = Math.max(1, Math.floor(cw * renderDpr));
+          const scratchH = Math.max(1, Math.floor(ch * renderDpr));
           if (scratch.width !== scratchW || scratch.height !== scratchH) {
             scratch.width = scratchW;
             scratch.height = scratchH;
@@ -1393,20 +1403,22 @@ export function useSubtitlePreview({
               ctx.restore();
             };
 
-            drawBackgroundOnlyBand(() => {
-              ctx.filter = 'blur(14px)';
-              ctx.drawImage(
-                scratch,
-                0,
-                0,
-                scratch.width,
-                scratch.height,
-                0,
-                0,
-                cw,
-                ch
-              );
-            });
+            if (!state.isLoading) {
+              drawBackgroundOnlyBand(() => {
+                ctx.filter = 'blur(14px)';
+                ctx.drawImage(
+                  scratch,
+                  0,
+                  0,
+                  scratch.width,
+                  scratch.height,
+                  0,
+                  0,
+                  cw,
+                  ch
+                );
+              });
+            }
 
             drawBackgroundOnlyBand(() => {
               ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
@@ -1697,7 +1709,7 @@ export function useSubtitlePreview({
     }
 
     presentWorldCanvas();
-  }, [state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
+  }, [state.isLoading, state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
 
   // Load video frame image
   useEffect(() => {
