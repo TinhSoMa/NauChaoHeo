@@ -389,6 +389,7 @@ details[open] > .sectionSummary::after {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
 .sectionTitle {
@@ -743,6 +744,11 @@ details[open] > .sectionSummary::after {
   height: 0;
 }
 
+.tableDragging {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--glass-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
 .tableContainer::-webkit-scrollbar {
   width: 6px;
 }
@@ -778,15 +784,40 @@ details[open] > .sectionSummary::after {
 .draggableRow {
   cursor: grab;
   user-select: none;
+  transition: background-color 0.12s ease, outline-color 0.12s ease;
 }
 
 .draggableRow:active {
   cursor: grabbing;
 }
 
+.draggingRow {
+  cursor: grabbing;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  opacity: 0.82;
+}
+
 .dragOverRow {
-  outline: 1px dashed color-mix(in srgb, var(--color-primary) 55%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.dropBeforeRow {
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--color-primary) 90%, white 10%);
+}
+
+.dropAfterRow {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--color-primary) 90%, white 10%);
+}
+
+.dragStatusPill {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .table tr:last-child td {

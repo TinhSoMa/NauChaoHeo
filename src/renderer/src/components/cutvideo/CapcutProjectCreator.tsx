@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../common/Button';
 import styles from './CutVideo.module.css';
 import { FolderPlus, Play, Square, Trash2, ArrowLeft } from 'lucide-react';
+import { useDragAutoScroll } from '../../hooks/useDragAutoScroll';
 
 interface CapcutVideoItem {
   fileName: string;
@@ -59,12 +60,17 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [logs, setLogs] = useState<CapcutLog[]>([]);
   const [createdProjects, setCreatedProjects] = useState<CapcutProjectResult[]>([]);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const [progress, setProgress] = useState<CapcutProgress>({
     total: 0,
     current: 0,
     percent: 0,
     stage: 'preflight',
     message: 'Sẵn sàng tạo project CapCut.',
+  });
+  const dragAutoScroll = useDragAutoScroll(tableContainerRef, dragIndex !== null, {
+    edgeThreshold: 56,
+    maxSpeed: 22,
   });
 
   useEffect(() => {
@@ -252,43 +258,83 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
 
   const handleClearLogs = () => setLogs([]);
 
-  const handleDragStart = (index: number, event: React.DragEvent<HTMLTableRowElement>) => {
-    if (isCreating) return;
-    setDragIndex(index);
-    setDragOverIndex(index);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', scanItems[index]?.fullPath || String(index));
-  };
-
-  const handleDragOver = (index: number, event: React.DragEvent<HTMLTableRowElement>) => {
-    if (isCreating || dragIndex === null) return;
-    event.preventDefault();
-    if (dragOverIndex !== index) {
-      setDragOverIndex(index);
-    }
-  };
-
-  const handleDrop = (index: number) => {
-    if (isCreating || dragIndex === null || dragIndex === index) {
-      setDragIndex(null);
-      setDragOverIndex(null);
+  const commitReorder = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= scanItems.length || toIndex >= scanItems.length) {
       return;
     }
     setScanItems((prev) => {
-      if (dragIndex === null) return prev;
       const next = [...prev];
-      const [moved] = next.splice(dragIndex, 1);
-      next.splice(index, 0, moved);
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
       return next;
     });
-    setDragIndex(null);
-    setDragOverIndex(null);
   };
 
-  const handleDragEnd = () => {
-    setDragIndex(null);
-    setDragOverIndex(null);
+  const handlePointerDragStart = (index: number, event: React.MouseEvent<HTMLTableRowElement>) => {
+    if (isCreating || event.button !== 0) return;
+    event.preventDefault();
+    setDragIndex(index);
+    setDragOverIndex(index);
   };
+
+  useEffect(() => {
+    if (dragIndex === null || isCreating) {
+      return undefined;
+    }
+
+    const container = tableContainerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    document.body.style.userSelect = 'none';
+
+    const findTargetIndex = (clientX: number, clientY: number): number | null => {
+      const element = document.elementFromPoint(clientX, clientY);
+      if (!element) return null;
+
+      const row = element.closest('tr[data-row-index]') as HTMLElement | null;
+      if (row?.dataset.rowIndex) {
+        const parsed = Number.parseInt(row.dataset.rowIndex, 10);
+        if (Number.isInteger(parsed)) return parsed;
+      }
+
+      const rect = container.getBoundingClientRect();
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+        return null;
+      }
+      if (scanItems.length === 0) return null;
+      if (clientY <= rect.top + 24) return 0;
+      if (clientY >= rect.bottom - 24) return scanItems.length - 1;
+      return null;
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      dragAutoScroll.handlePointerMove(event.clientX, event.clientY);
+      const nextIndex = findTargetIndex(event.clientX, event.clientY);
+      if (nextIndex !== null && nextIndex !== dragOverIndex) {
+        setDragOverIndex(nextIndex);
+      }
+    };
+
+    const onMouseUp = () => {
+      const toIndex = dragOverIndex ?? dragIndex;
+      commitReorder(dragIndex, toIndex);
+      setDragIndex(null);
+      setDragOverIndex(null);
+      dragAutoScroll.stopAutoScroll();
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp, { once: true });
+
+    return () => {
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      dragAutoScroll.stopAutoScroll();
+    };
+  }, [dragAutoScroll, dragIndex, dragOverIndex, isCreating, scanItems.length]);
 
   const renderLogBadge = (status: CapcutLog['status']) => {
     if (status === 'success') return <span className={`${styles.badge} ${styles.badgeSuccess}`}>OK</span>;
@@ -354,17 +400,26 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
           <div className={`${styles.section} ${styles.sectionStretch}`}>
             <div className={styles.sectionHeader}>
               <h3 className={styles.sectionTitle}>Danh sách video quét được</h3>
+              {dragIndex !== null && dragOverIndex !== null ? (
+                <span className={styles.dragStatusPill}>
+                  {`Dang keo #${dragIndex + 1} -> #${dragOverIndex + 1}`}
+                </span>
+              ) : null}
               <Button variant="secondary" onClick={handleScan} disabled={isCreating || isScanning || !sourceFolderPath}>
                 Quét lại
               </Button>
             </div>
-            <div className={`${styles.tableContainer} ${styles.tableContainerStretch}`}>
+            <div
+              ref={tableContainerRef}
+              className={`${styles.tableContainer} ${styles.tableContainerStretch} ${dragIndex !== null ? styles.tableDragging : ''}`}
+              onWheelCapture={(event) => dragAutoScroll.handleWheelWhileDragging(event as React.WheelEvent<HTMLElement>)}
+            >
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th style={{ width: '60px' }}>STT</th>
                     <th>Video</th>
-                    <th>Project preview</th>
+                    <th>Project</th>
                     <th>Path</th>
                   </tr>
                 </thead>
@@ -379,12 +434,15 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
                     scanItems.map((item, index) => (
                       <tr
                         key={item.fullPath}
-                        draggable={!isCreating}
-                        onDragStart={(event) => handleDragStart(index, event)}
-                        onDragOver={(event) => handleDragOver(index, event)}
-                        onDrop={() => handleDrop(index)}
-                        onDragEnd={handleDragEnd}
-                        className={`${styles.draggableRow} ${dragOverIndex === index ? styles.dragOverRow : ''}`}
+                        data-row-index={index}
+                        onMouseDown={(event) => handlePointerDragStart(index, event)}
+                        className={[
+                          styles.draggableRow,
+                          dragIndex === index ? styles.draggingRow : '',
+                          dragOverIndex === index ? styles.dragOverRow : '',
+                          dragOverIndex === index && dragIndex !== null && dragOverIndex < dragIndex ? styles.dropBeforeRow : '',
+                          dragOverIndex === index && dragIndex !== null && dragOverIndex > dragIndex ? styles.dropAfterRow : '',
+                        ].join(' ').trim()}
                         aria-grabbed={dragIndex === index}
                       >
                         <td>{index + 1}</td>
