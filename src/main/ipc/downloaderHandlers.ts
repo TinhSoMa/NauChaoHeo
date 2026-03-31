@@ -36,16 +36,24 @@ export function registerDownloaderHandlers(): void {
     }
   })
 
-  ipcMain.handle('downloader:checkPlaylist', async (_event, url: string) => {
+  ipcMain.handle('downloader:checkPlaylist', async (_event, payload: string | { url: string; limit?: number }) => {
+    const url = typeof payload === 'string' ? payload : payload?.url
+    const limit = typeof payload === 'string' ? undefined : payload?.limit
     if (!url) return { success: false, error: 'Missing URL' }
     try {
+      console.log('[Downloader][Playlist] checkPlaylist', { url, limit })
       const cookie = cookieDatabase.getByDomain(url)
       let tmpPath: string | undefined
       if (cookie) {
         tmpPath = ytDlpService.writeTempCookie(cookie.content)
       }
       try {
-        const info: PlaylistInfo = await ytDlpService.fetchPlaylistInfo(url, tmpPath)
+        const info: PlaylistInfo = await ytDlpService.fetchPlaylistInfo(url, tmpPath, typeof limit === 'number' ? limit : undefined)
+        console.log('[Downloader][Playlist] result', {
+          title: info.title,
+          entryCount: info.entryCount,
+          entries: info.entries?.length || 0,
+        })
         return { success: true, data: info, cookieFound: !!cookie, cookieDomain: cookie?.domain }
       } finally {
         if (tmpPath) ytDlpService.cleanupTempCookie(tmpPath)
@@ -71,6 +79,27 @@ export function registerDownloaderHandlers(): void {
       }
     } catch (err: any) {
       return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('downloader:fetchPlaylistMetadata', async (_event, payload: { urls: string[] }) => {
+    const urls = payload?.urls || []
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return { success: false, error: 'Missing urls' }
+    }
+    const sampleUrl = urls.find((u) => typeof u === 'string' && u.startsWith('http')) || ''
+    let tmpPath: string | undefined
+    try {
+      const cookie = sampleUrl ? cookieDatabase.getByDomain(sampleUrl) : null
+      if (cookie) {
+        tmpPath = ytDlpService.writeTempCookie(cookie.content)
+      }
+      const items = await ytDlpService.fetchVideoMetadataBatch(urls, tmpPath)
+      return { success: true, data: { items } }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    } finally {
+      if (tmpPath) ytDlpService.cleanupTempCookie(tmpPath)
     }
   })
 

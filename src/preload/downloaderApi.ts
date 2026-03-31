@@ -9,7 +9,7 @@ export interface DownloaderAPI {
     cookieDomain?: string
     error?: string
   }>
-  checkPlaylist: (url: string) => Promise<{
+  checkPlaylist: (payload: string | { url: string; limit?: number }) => Promise<{
     success: boolean
     data?: PlaylistInfo
     cookieFound?: boolean
@@ -21,6 +21,19 @@ export interface DownloaderAPI {
     data?: string
     cookieFound?: boolean
     cookieDomain?: string
+    error?: string
+  }>
+  fetchPlaylistMetadata: (payload: { urls: string[] }) => Promise<{
+    success: boolean
+    data?: {
+      items: Record<string, {
+        id?: string
+        title?: string
+        duration?: number
+        uploader?: string
+        url?: string
+      }>
+    }
     error?: string
   }>
   startDownload: (options: DownloadOptions) => Promise<{ success: boolean; error?: string }>
@@ -42,8 +55,9 @@ export interface DownloaderAPI {
 
 export const downloaderApi: DownloaderAPI = {
   fetchInfo: (payload) => ipcRenderer.invoke('downloader:fetchInfo', payload),
-  checkPlaylist: (url) => ipcRenderer.invoke('downloader:checkPlaylist', url),
+  checkPlaylist: (payload) => ipcRenderer.invoke('downloader:checkPlaylist', payload),
   fetchPreview: (url) => ipcRenderer.invoke('downloader:fetchPreview', url),
+  fetchPlaylistMetadata: (payload) => ipcRenderer.invoke('downloader:fetchPlaylistMetadata', payload),
   startDownload: (options) => ipcRenderer.invoke('downloader:startDownload', options),
   stopDownload: () => ipcRenderer.invoke('downloader:stopDownload'),
 

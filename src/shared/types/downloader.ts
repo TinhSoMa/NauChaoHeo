@@ -35,6 +35,8 @@ export interface PlaylistEntry {
   id?: string
   title?: string
   url?: string
+  duration?: number
+  uploader?: string
 }
 
 export interface PlaylistInfo {
@@ -77,6 +79,8 @@ export interface DownloadOptions {
   noLogoPolicy?: DownloadNoLogoPolicy
   /** allow downloading playlists */
   allowPlaylist?: boolean
+  /** specific playlist item indexes (1-based) */
+  playlistItems?: number[]
 }
 
 export interface DownloadProgress {

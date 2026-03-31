@@ -14,13 +14,16 @@ import type {
   DownloadOptions,
   DownloadProgress,
   PlaylistInfo,
+  PlaylistEntry,
   DownloadSpeedProfile,
   DownloadNoLogoPolicy,
 } from '@shared/types/downloader'
 import styles from './DownloaderPage.module.css'
+import { PlaylistPickerModal } from './components/PlaylistPickerModal'
 
 type StatusTone = 'idle' | 'fetching' | 'ready' | 'running' | 'done' | 'error'
 type DownloadMode = 'single' | 'multi'
+type SingleDownloadType = 'video' | 'playlist'
 type QueueStatus = 'queued' | 'running' | 'done' | 'error' | 'stopped'
 
 type QueueItem = {
@@ -284,13 +287,34 @@ function CookieManager({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </div>
+
     </div>
   )
+}
+
+function resolvePlaylistEntryUrl(playlistUrl: string, entry: PlaylistEntry): string | undefined {
+  const rawEntry = entry.url || entry.id || ''
+  if (rawEntry.startsWith('http')) return rawEntry
+  try {
+    const host = new URL(playlistUrl).hostname.replace(/^www\./, '').toLowerCase()
+    if (host.includes('bilibili.com')) {
+      const id = entry.id || entry.url
+      if (id) return `https://www.bilibili.com/video/${id}`
+    }
+    if (host.includes('youtube.com') || host.includes('youtu.be')) {
+      const id = entry.id || entry.url
+      if (id) return `https://www.youtube.com/watch?v=${id}`
+    }
+  } catch {
+    // ignore
+  }
+  return rawEntry || undefined
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export const DownloaderPage = () => {
   const [mode, setMode] = useState<DownloadMode>('single')
+  const [singleType, setSingleType] = useState<SingleDownloadType>('video')
   const [url, setUrl] = useState('')
   const [multiText, setMultiText] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
@@ -301,6 +325,14 @@ export const DownloaderPage = () => {
   const [playlistInfo, setPlaylistInfo] = useState<PlaylistInfo | null>(null)
   const [playlistError, setPlaylistError] = useState<string | null>(null)
   const [isCheckingPlaylist, setIsCheckingPlaylist] = useState(false)
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false)
+  const [playlistPickerEntries, setPlaylistPickerEntries] = useState<PlaylistEntry[]>([])
+  const [playlistPickerLoading, setPlaylistPickerLoading] = useState(false)
+  const [playlistPickerError, setPlaylistPickerError] = useState<string | null>(null)
+  const [playlistMetaLoading, setPlaylistMetaLoading] = useState(false)
+  const [playlistMetaLoadedCount, setPlaylistMetaLoadedCount] = useState(0)
+  const [selectedPlaylistIndexes, setSelectedPlaylistIndexes] = useState<number[] | null>(null)
+  const [playlistSelectionUrl, setPlaylistSelectionUrl] = useState('')
   const [previewDirectUrl, setPreviewDirectUrl] = useState('')
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -314,7 +346,7 @@ export const DownloaderPage = () => {
   const [mergeAudio, setMergeAudio] = useState(true)
   const [downloadSeparateAudio, setDownloadSeparateAudio] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
-  const [downloadAllSubs, setDownloadAllSubs] = useState(false)
+  const [downloadAllSubs, setDownloadAllSubs] = useState(true)
   const [skipDanmakuConvert, setSkipDanmakuConvert] = useState(true)
   const [speedProfile, setSpeedProfile] = useState<DownloadSpeedProfile>('auto')
   const [noLogoPolicy, setNoLogoPolicy] = useState<DownloadNoLogoPolicy>('auto')
@@ -376,6 +408,32 @@ export const DownloaderPage = () => {
     }
   }, [])
 
+  useEffect(() => {
+    if (mode !== 'single') return
+    const shouldAllow = singleType === 'playlist'
+    if (allowPlaylist !== shouldAllow) {
+      setAllowPlaylist(shouldAllow)
+    }
+    if (singleType === 'video') {
+      setPlaylistInfo(null)
+      setPlaylistError(null)
+      setSelectedPlaylistIndexes(null)
+      setPlaylistSelectionUrl('')
+      setPlaylistPickerEntries([])
+      setPlaylistPickerError(null)
+      setPlaylistMetaLoadedCount(0)
+    }
+  }, [mode, singleType, allowPlaylist])
+
+  useEffect(() => {
+    if (!allowPlaylist) {
+      setSelectedPlaylistIndexes(null)
+      setPlaylistSelectionUrl('')
+      setPlaylistPickerEntries([])
+      setPlaylistPickerError(null)
+    }
+  }, [allowPlaylist])
+
   // Subscribe to yt-dlp events
   useEffect(() => {
     const unsubLog = api()?.onLog((line: string) =>
@@ -400,12 +458,18 @@ export const DownloaderPage = () => {
 
   // ── Debounced fetchInfo on URL change ──
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const playlistCheckTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const lastSingleTypeRef = useRef<SingleDownloadType>('video')
   const fetchInfoForUrl = useCallback((newUrl: string) => {
     setVideoInfo(null)
     setFetchError(null)
     setCookieFoundDomain(null)
     setPlaylistInfo(null)
     setPlaylistError(null)
+    setSelectedPlaylistIndexes(null)
+    setPlaylistSelectionUrl('')
+    setPlaylistPickerEntries([])
+    setPlaylistPickerError(null)
     clearTimeout(fetchTimer.current)
     const trimmed = newUrl.trim()
     if (!trimmed || !trimmed.startsWith('http')) return
@@ -414,7 +478,8 @@ export const DownloaderPage = () => {
       setIsFetching(true)
       setStatus('fetching')
       try {
-        const res = await api().fetchInfo({ url: trimmed, allowPlaylist: false })
+        const allowPlaylistFetch = mode === 'single' && singleType === 'playlist'
+        const res = await api().fetchInfo({ url: trimmed, allowPlaylist: allowPlaylistFetch })
         if (res.success && res.data) {
           setVideoInfo(res.data)
           setCookieFoundDomain(res.cookieDomain ?? null)
@@ -441,7 +506,96 @@ export const DownloaderPage = () => {
         setIsFetching(false)
       }
     }, 900)
+  }, [mode, singleType])
+
+  const fetchFormatInfoForPlaylist = useCallback(async (entryUrl: string) => {
+    if (!entryUrl || !entryUrl.startsWith('http')) return
+    try {
+      const res = await api().fetchInfo({ url: entryUrl, allowPlaylist: false })
+      if (res.success && res.data) {
+        setVideoInfo(res.data)
+        const nextFormats = res.data.formats.filter((format: VideoFormat) => (
+          format.vcodec && format.vcodec !== 'none'
+        ))
+        const bestH264WithAudio = nextFormats.find((format: VideoFormat) => (
+          isH264Codec(format.vcodec) && isAacCodec(format.acodec)
+        ))
+        const bestH264 = nextFormats.find((format: VideoFormat) => isH264Codec(format.vcodec))
+        const bestWithAudio = nextFormats.find((format: VideoFormat) => isAacCodec(format.acodec))
+        const best = bestH264WithAudio || bestH264 || bestWithAudio || nextFormats[0]
+        setSelectedFormatId(best ? best.id : '')
+      }
+    } catch {
+      // ignore format preview errors
+    }
   }, [])
+
+  const applyPlaylistMetadata = useCallback((metaItems: Record<string, {
+    id?: string
+    title?: string
+    duration?: number
+    uploader?: string
+    url?: string
+  }>) => {
+    const metaById: Record<string, typeof metaItems[string]> = {}
+    for (const key of Object.keys(metaItems)) {
+      const value = metaItems[key]
+      if (value?.id) metaById[value.id] = value
+    }
+
+    const mergeEntry = (entry: PlaylistEntry): PlaylistEntry => {
+      const meta = (entry.url && metaItems[entry.url]) || (entry.id ? metaById[entry.id] : undefined)
+      if (!meta) return entry
+      return {
+        ...entry,
+        title: meta.title || entry.title,
+        duration: meta.duration ?? entry.duration,
+        uploader: meta.uploader || entry.uploader,
+        url: meta.url || entry.url,
+        id: meta.id || entry.id,
+      }
+    }
+
+    setPlaylistPickerEntries((prev) => prev.map(mergeEntry))
+    setPlaylistInfo((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        entries: prev.entries.map(mergeEntry),
+      }
+    })
+  }, [])
+
+  const loadPlaylistMetadataBatch = useCallback(async (entries: PlaylistEntry[], startIndex: number) => {
+    if (playlistMetaLoading) return
+    if (!entries.length) return
+    const slice = entries.slice(startIndex, startIndex + 200)
+    const urls = slice.map((entry) => entry.url).filter((u): u is string => !!u)
+    if (urls.length === 0) {
+      setPlaylistMetaLoadedCount((prev) => Math.max(prev, startIndex + slice.length))
+      return
+    }
+    setPlaylistMetaLoading(true)
+    try {
+      const res = await api().fetchPlaylistMetadata({ urls })
+      if (res.success && res.data?.items) {
+        applyPlaylistMetadata(res.data.items)
+      }
+    } catch {
+      // ignore metadata errors
+    } finally {
+      setPlaylistMetaLoading(false)
+      setPlaylistMetaLoadedCount((prev) => Math.max(prev, startIndex + slice.length))
+    }
+  }, [applyPlaylistMetadata, playlistMetaLoading])
+
+  useEffect(() => {
+    if (mode !== 'single') return
+    if (lastSingleTypeRef.current === singleType) return
+    lastSingleTypeRef.current = singleType
+    if (!url.trim().startsWith('http')) return
+    fetchInfoForUrl(url)
+  }, [mode, singleType, url, fetchInfoForUrl])
 
   const handleUrlChange = (newUrl: string) => {
     setUrl(newUrl)
@@ -575,13 +729,20 @@ export const DownloaderPage = () => {
   }, [downloadSubtitle, downloadAllSubs, allLangs.length, selectedSubLangs])
 
   const toggleLang = (lang: string) => {
-    setDownloadAllSubs(false)
+    setDownloadAllSubs(true)
     setSelectedSubLangs(prev =>
       prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
     )
   }
 
   const activeUrl = mode === 'single' ? url : previewUrl
+
+  const playlistTotalCount = playlistInfo?.entryCount || playlistInfo?.entries?.length || playlistPickerEntries.length || 0
+  const playlistSelectedCount = selectedPlaylistIndexes ? selectedPlaylistIndexes.length : playlistTotalCount
+  const playlistSelectionLabel = allowPlaylist && playlistTotalCount > 0
+    ? (selectedPlaylistIndexes ? `Đã chọn ${playlistSelectedCount}/${playlistTotalCount}` : `Đang chọn: tất cả (${playlistTotalCount})`)
+    : ''
+  const playlistCanLoadMore = playlistMetaLoadedCount < (playlistPickerEntries.length || 0)
 
   const canDownload = (mode === 'single'
     ? url.trim().startsWith('http')
@@ -604,14 +765,38 @@ export const DownloaderPage = () => {
 
   const handleCheckPlaylist = async () => {
     const target = activeUrl.trim()
+    if (mode === 'single' && singleType !== 'playlist') {
+      setPlaylistError('Đang ở chế độ Video đơn. Hãy chuyển sang Playlist để kiểm tra.')
+      return
+    }
     if (!target.startsWith('http')) return
     setIsCheckingPlaylist(true)
     setPlaylistError(null)
     setPlaylistInfo(null)
     try {
-      const res = await api().checkPlaylist(target)
+      const res = await api().checkPlaylist({ url: target, limit: 6 })
       if (res.success && res.data) {
-        setPlaylistInfo(res.data)
+        const rawEntries = res.data.entries || []
+        const entries = rawEntries.map((entry) => {
+          const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
+          return {
+            ...entry,
+            url: resolvedUrl || entry.url,
+            title: entry.title || entry.id || entry.url,
+          }
+        })
+        const count = res.data.entryCount || entries.length || 0
+        if (count <= 0 && mode === 'single' && singleType === 'playlist') {
+          setPlaylistError('Link không phải playlist hoặc playlist rỗng.')
+        }
+        setPlaylistInfo({ ...res.data, entryCount: count, entries })
+        setPlaylistMetaLoadedCount(0)
+        if (mode === 'single' && singleType === 'playlist' && res.data.entries?.length) {
+          const entryUrl = resolvePlaylistEntryUrl(target, entries[0])
+          if (entryUrl) {
+            fetchFormatInfoForPlaylist(entryUrl)
+          }
+        }
       } else {
         setPlaylistError(res.error || 'Không kiểm tra được playlist')
       }
@@ -620,6 +805,123 @@ export const DownloaderPage = () => {
     } finally {
       setIsCheckingPlaylist(false)
     }
+  }
+
+  useEffect(() => {
+    if (mode !== 'single' || singleType !== 'playlist') return
+    const target = activeUrl.trim()
+    if (!target.startsWith('http')) return
+    if (status === 'running') return
+    clearTimeout(playlistCheckTimer.current)
+    playlistCheckTimer.current = setTimeout(() => {
+      handleCheckPlaylist()
+    }, 600)
+    return () => clearTimeout(playlistCheckTimer.current)
+  }, [mode, singleType, activeUrl, status])
+
+  const openPlaylistPicker = async () => {
+    const target = activeUrl.trim()
+    if (mode === 'single' && singleType !== 'playlist') {
+      setPlaylistPickerError('Đang ở chế độ Video đơn. Hãy chuyển sang Playlist để chọn video.')
+      setShowPlaylistPicker(true)
+      return
+    }
+    if (!target.startsWith('http')) return
+    if (playlistPickerLoading) return
+    if (playlistSelectionUrl === target && playlistPickerEntries.length > 0) {
+      if (playlistMetaLoadedCount === 0) {
+        void loadPlaylistMetadataBatch(playlistPickerEntries, 0)
+      }
+      setShowPlaylistPicker(true)
+      return
+    }
+    if (playlistSelectionUrl === target && playlistPickerEntries.length === 0 && playlistInfo?.entries?.length) {
+      const entries = playlistInfo.entries.map((entry) => {
+        const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
+        return {
+          ...entry,
+          url: resolvedUrl || entry.url,
+          title: entry.title || entry.id || entry.url,
+        }
+      })
+      setPlaylistPickerEntries(entries)
+      if (playlistMetaLoadedCount === 0) {
+        void loadPlaylistMetadataBatch(entries, 0)
+      }
+      setShowPlaylistPicker(true)
+      return
+    }
+    setShowPlaylistPicker(true)
+    setPlaylistPickerLoading(true)
+    setPlaylistPickerError(null)
+    console.log('[Downloader][Playlist] openPicker', { url: target })
+    try {
+      const res = await api().checkPlaylist({ url: target, limit: 0 })
+      if (res.success && res.data) {
+        const rawEntries = res.data.entries || []
+        console.log('[Downloader][Playlist] openPicker raw entries', rawEntries.slice(0, 3))
+        const entries = rawEntries.map((entry) => {
+          const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
+          return {
+            ...entry,
+            url: resolvedUrl || entry.url,
+            title: entry.title || entry.id || entry.url,
+          }
+        })
+        console.log('[Downloader][Playlist] openPicker mapped entries', entries.slice(0, 3))
+        if (!res.data.entryCount) {
+          setPlaylistInfo({ ...res.data, entryCount: entries.length, entries })
+        }
+        setPlaylistPickerEntries(entries)
+        setPlaylistMetaLoadedCount(0)
+        if (playlistSelectionUrl !== target) {
+          setSelectedPlaylistIndexes(entries.map((_, idx) => idx + 1))
+          setPlaylistSelectionUrl(target)
+        } else if (selectedPlaylistIndexes) {
+          const maxIndex = entries.length
+          setSelectedPlaylistIndexes(selectedPlaylistIndexes.filter((index) => index >= 1 && index <= maxIndex))
+        }
+        if (mode === 'single' && singleType === 'playlist' && entries.length) {
+          const entryUrl = resolvePlaylistEntryUrl(target, entries[0])
+          if (entryUrl) {
+            fetchFormatInfoForPlaylist(entryUrl)
+          }
+        }
+        if (entries.length) {
+          void loadPlaylistMetadataBatch(entries, 0)
+        }
+      } else {
+        setPlaylistPickerError(res.error || 'Không lấy được danh sách playlist')
+      }
+    } catch (e: any) {
+      setPlaylistPickerError(e?.message || 'Không lấy được danh sách playlist')
+    } finally {
+      setPlaylistPickerLoading(false)
+    }
+  }
+
+  const handleTogglePlaylistIndex = (index: number) => {
+    setSelectedPlaylistIndexes((prev) => {
+      const next = new Set(prev || [])
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return Array.from(next).sort((a, b) => a - b)
+    })
+  }
+
+  const handleSelectAllPlaylist = () => {
+    setSelectedPlaylistIndexes(playlistPickerEntries.map((_, idx) => idx + 1))
+  }
+
+  const handleClearPlaylist = () => {
+    setSelectedPlaylistIndexes([])
+  }
+
+  const handleApplyPlaylist = () => {
+    setShowPlaylistPicker(false)
   }
 
   const updateQueueItem = useCallback((id: string, patch: Partial<QueueItem>) => {
@@ -637,17 +939,56 @@ export const DownloaderPage = () => {
     if (mode === 'single') {
       const targetUrl = url.trim()
       const shouldStopAfter = () => stopRequestedRef.current
+      if (singleType === 'video') {
+        try {
+          const resPlaylist = await api().checkPlaylist({ url: targetUrl, limit: 2 })
+          const count = resPlaylist.success && resPlaylist.data
+            ? (resPlaylist.data.entryCount || resPlaylist.data.entries?.length || 0)
+            : 0
+          if (count > 1) {
+            setLogs(prev => [...prev, 'ERROR: Link là playlist. Hãy chuyển sang chế độ Playlist.'])
+            setPlaylistError('Link là playlist. Hãy chuyển sang chế độ Playlist.')
+            setStatus('error')
+            return
+          }
+        } catch {
+          // ignore detection errors
+        }
+      }
       let playlistMeta = playlistInfo
       if (allowPlaylist && !playlistMeta) {
         try {
           const resPlaylist = await api().checkPlaylist(targetUrl)
-          if (resPlaylist.success && resPlaylist.data && resPlaylist.data.entryCount > 1) {
-            playlistMeta = resPlaylist.data
-            setPlaylistInfo(resPlaylist.data)
+          if (resPlaylist.success && resPlaylist.data) {
+            const count = resPlaylist.data.entryCount || resPlaylist.data.entries?.length || 0
+            if (count > 0) {
+              playlistMeta = resPlaylist.data
+              setPlaylistInfo(resPlaylist.data)
+            }
           }
         } catch {
           // ignore playlist check errors
         }
+      }
+      if (singleType === 'playlist') {
+        if (!playlistMeta) {
+          try {
+            const resPlaylist = await api().checkPlaylist({ url: targetUrl, limit: 0 })
+            if (resPlaylist.success && resPlaylist.data) {
+              playlistMeta = resPlaylist.data
+              setPlaylistInfo(resPlaylist.data)
+            }
+          } catch {
+            // ignore
+          }
+        }
+        const playlistCount = playlistMeta?.entryCount || playlistMeta?.entries?.length || 0
+        if (playlistCount <= 0) {
+    setLogs(prev => [...prev, 'ERROR: Link không phải playlist hoặc playlist rỗng.'])
+    setPlaylistError('Link không phải playlist hoặc playlist rỗng.')
+    setStatus('error')
+    return
+  }
       }
       let resolvedDir = ''
       try {
@@ -702,6 +1043,21 @@ export const DownloaderPage = () => {
         }
       }
 
+      let playlistItems: number[] | undefined = undefined
+      if (allowPlaylist && mode === 'single' && selectedPlaylistIndexes) {
+        const totalCount = playlistInfo?.entryCount || playlistPickerEntries.length || selectedPlaylistIndexes.length
+        const normalized = selectedPlaylistIndexes.filter((value) => Number.isFinite(value) && value >= 1 && value <= totalCount)
+        if (normalized.length === 0) {
+          setLogs(prev => [...prev, 'ERROR: Chưa chọn video nào trong playlist.'])
+          alert('Chưa chọn video nào trong playlist.')
+          setStatus('error')
+          return
+        }
+        if (totalCount > 0 && normalized.length < totalCount) {
+          playlistItems = normalized
+        }
+      }
+
       const options: DownloadOptions = {
         url: targetUrl,
         outputDir: resolvedDir,
@@ -718,6 +1074,7 @@ export const DownloaderPage = () => {
         speedProfile,
         noLogoPolicy,
         allowPlaylist,
+        playlistItems,
       }
 
       const res = await api().startDownload(options)
@@ -886,6 +1243,12 @@ export const DownloaderPage = () => {
     multiUrls,
     videoInfo,
     playlistInfo,
+    playlistPickerEntries,
+    selectedPlaylistIndexes,
+    singleType,
+    fetchFormatInfoForPlaylist,
+    loadPlaylistMetadataBatch,
+    playlistMetaLoadedCount,
     downloadVideo,
     downloadSubtitle,
     downloadThumbnail,
@@ -923,6 +1286,9 @@ export const DownloaderPage = () => {
     setDownloadVideo(true); setDownloadSubtitle(false); setDownloadThumbnail(false)
     setMergeAudio(true); setDownloadSeparateAudio(false)
     setAllowPlaylist(false); setPlaylistInfo(null); setPlaylistError(null)
+    setSingleType('video')
+    setShowPlaylistPicker(false); setPlaylistPickerEntries([]); setPlaylistPickerError(null); setSelectedPlaylistIndexes(null); setPlaylistSelectionUrl('')
+    setPlaylistMetaLoadedCount(0); setPlaylistMetaLoading(false)
     setQueue([]); setActiveQueueId(null); setMultiText(''); setPreviewUrl('')
     setLastResolvedOutputDir('')
     setIsCheckingPlaylist(false)
@@ -1225,6 +1591,12 @@ export const DownloaderPage = () => {
                   <Checkbox label="Subtitles" checked={downloadSubtitle} onChange={setDownloadSubtitle} />
                   <Checkbox label="Thumbnail" checked={downloadThumbnail} onChange={setDownloadThumbnail} />
                   <Checkbox label="Ghép audio" checked={mergeAudio} onChange={setMergeAudio} />
+                  {downloadSubtitle && (
+                    <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
+                  )}
+                  {downloadSubtitle && (
+                    <Checkbox label="Bỏ danmaku" checked={skipDanmakuConvert} onChange={setSkipDanmakuConvert} />
+                  )}
                 </div>
                 {!mergeAudio && (
                   <div className={styles.inlineRow}>
@@ -1245,11 +1617,6 @@ export const DownloaderPage = () => {
                     <option value="balanced">Balanced</option>
                     <option value="antiThrottle">IDM-like (aria2 segmented)</option>
                   </select>
-                  <p className={styles.helperTextMuted}>
-                    {speedProfile === 'auto' && isBilibiliUrl(activeUrl)
-                      ? 'Link Bilibili: tự động dùng IDM-like segmented.'
-                      : 'Auto sẽ tự chọn profile phù hợp theo website (Bilibili -> IDM-like).'}
-                  </p>
                 </div>
 
                 <div className={`${styles.fieldGroup} ${styles.quickControlItem}`}>
@@ -1263,13 +1630,6 @@ export const DownloaderPage = () => {
                     <option value="sourcePreferred">Luôn ưu tiên nguồn sạch</option>
                     <option value="off">Tắt</option>
                   </select>
-                  <p className={styles.helperTextMuted}>
-                    {noLogoPolicy === 'off'
-                      ? 'Không áp dụng lọc no-logo.'
-                      : isBilibiliUrl(activeUrl)
-                        ? 'Đang bật lọc nguồn/subtitle để giảm khả năng dính logo (best effort).'
-                        : 'No-logo hiện chỉ áp dụng chủ yếu cho link Bilibili.'}
-                  </p>
                 </div>
 
                 <div className={`${styles.fieldGroup} ${styles.quickControlItem}`}>
@@ -1313,45 +1673,72 @@ export const DownloaderPage = () => {
                       <option>Tắt tải video nên không cần chọn audio</option>
                     </select>
                   )}
-                  <p className={styles.helperTextMuted}>
-                    {downloadVideo && (mergeAudio || downloadSeparateAudio)
-                      ? 'Chọn cụ thể hoặc để tự động.'
-                      : 'Audio phụ thuộc tuỳ chọn Video/Ghép.'}
-                  </p>
                 </div>
               </div>
 
-              <div className={styles.fieldGroup}>
-                <div className={styles.inlineRow}>
-                  <Checkbox label="Tải playlist" checked={allowPlaylist} onChange={setAllowPlaylist} />
-                  <Button
-                    variant="secondary"
-                    onClick={handleCheckPlaylist}
-                    disabled={!activeUrl.trim().startsWith('http') || isCheckingPlaylist || status === 'running'}
-                  >
-                    {isCheckingPlaylist ? <Loader2 size={13} className={styles.spin} /> : <ListOrdered size={13} />}
-                    Kiểm tra playlist
-                  </Button>
-                  {playlistInfo && playlistInfo.entryCount > 1 && (
-                    <span className={styles.successText}>
-                      <CheckCircle2 size={12} /> Playlist: {playlistInfo.entryCount} video
-                    </span>
+              {mode === 'single' && (
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Loại tải</label>
+                  <div className={styles.modeSwitch}>
+                    <button
+                      className={`${styles.modeButton} ${singleType === 'video' ? styles.modeButtonActive : ''}`}
+                      onClick={() => setSingleType('video')}
+                    >
+                      Video đơn
+                    </button>
+                    <button
+                      className={`${styles.modeButton} ${singleType === 'playlist' ? styles.modeButtonActive : ''}`}
+                      onClick={() => setSingleType('playlist')}
+                    >
+                      Playlist
+                    </button>
+                  </div>
+                  {singleType === 'video' && playlistError && (
+                    <p className={styles.errorText}>{playlistError}</p>
                   )}
                 </div>
-                {playlistInfo && (
-                  <div className={styles.playlistInfoBox}>
-                    <div className={styles.playlistTitle}>{playlistInfo.title}</div>
-                    {playlistInfo.entries.length > 0 && (
-                      <div className={styles.playlistEntries}>
-                        {playlistInfo.entries.map((e, idx) => (
-                          <div key={`${e.id || idx}`} className={styles.playlistEntry}>• {e.title || e.id || e.url || 'item'}</div>
-                        ))}
-                      </div>
+              )}
+
+              {(mode === 'multi' || singleType === 'playlist') && (
+                <div className={styles.fieldGroup}>
+                  <div className={styles.inlineRow}>
+                    {mode === 'multi' && (
+                      <Checkbox label="Tải playlist" checked={allowPlaylist} onChange={setAllowPlaylist} />
+                    )}
+                    <Button
+                      variant="secondary"
+                      onClick={handleCheckPlaylist}
+                      disabled={!activeUrl.trim().startsWith('http') || isCheckingPlaylist || status === 'running'}
+                    >
+                      {isCheckingPlaylist ? <Loader2 size={13} className={styles.spin} /> : <ListOrdered size={13} />}
+                      Kiểm tra playlist
+                    </Button>
+                  {(singleType === 'playlist' || allowPlaylist) && playlistInfo && (playlistInfo.entryCount > 0 || playlistInfo.entries.length > 0) && (
+                    <Button
+                      variant="secondary"
+                      onClick={openPlaylistPicker}
+                      disabled={status === 'running' || isCheckingPlaylist}
+                    >
+                      Chọn video
+                    </Button>
+                  )}
+                    {playlistInfo && (playlistInfo.entryCount > 0 || playlistInfo.entries.length > 0) && (
+                      <span className={styles.successText}>
+                        <CheckCircle2 size={12} /> Playlist: {playlistInfo.entryCount || playlistInfo.entries.length} video
+                      </span>
                     )}
                   </div>
-                )}
-                {playlistError && <p className={styles.errorText}>{playlistError}</p>}
-              </div>
+                  {playlistInfo && (
+                    <div className={styles.playlistInfoBox}>
+                      <div className={styles.playlistTitle}>{playlistInfo.title}</div>
+                      {playlistSelectionLabel && (
+                        <div className={styles.helperTextMuted}>{playlistSelectionLabel}</div>
+                      )}
+                    </div>
+                  )}
+                  {playlistError && <p className={styles.errorText}>{playlistError}</p>}
+                </div>
+              )}
 
               {downloadVideo && (
                 <div className={styles.fieldGroup}>
@@ -1387,16 +1774,6 @@ export const DownloaderPage = () => {
 
               {downloadSubtitle && (
                 <div className={styles.fieldGroup}>
-                  {/* {!downloadAllSubs && resolvedSubLangs.length === 0 && (
-                    <p className={styles.warningText}>Chưa chọn ngôn ngữ phụ đề.</p>
-                  )} */}
-                  <div className={styles.inlineRow}>
-                    <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
-                    {/* {downloadAllSubs && (
-                      <span className={styles.successText}>Sub sẽ tải: all</span>
-                    )} */}
-                  </div>
-
                   {allLangs.length > 0 ? (
                     <div className={styles.subLangsRow}>
                       {allLangs.map(lang => (
@@ -1427,16 +1804,6 @@ export const DownloaderPage = () => {
                       <option value="vtt">vtt</option>
                       <option value="ass">ass</option>
                     </select>
-                  </div>
-                  <div className={styles.inlineRow}>
-                    <Checkbox
-                      label="Bỏ qua danmaku khi convert"
-                      checked={skipDanmakuConvert}
-                      onChange={setSkipDanmakuConvert}
-                    />
-                    {/* {skipDanmakuConvert && (resolvedSubLangs.includes('danmaku') || resolvedSubLangs.includes('all')) && (
-                      <span className={styles.warningText}>Có danmaku → tắt convert</span>
-                    )} */}
                   </div>
                 </div>
               )}
@@ -1626,6 +1993,25 @@ export const DownloaderPage = () => {
           )}
         </div>
       </div>
+
+      <PlaylistPickerModal
+        isOpen={showPlaylistPicker}
+        title={playlistInfo?.title}
+        entries={playlistPickerEntries}
+        selectedIndexes={selectedPlaylistIndexes || []}
+        loading={playlistPickerLoading}
+        error={playlistPickerError}
+        metaLoading={playlistMetaLoading}
+        loadedCount={Math.min(playlistMetaLoadedCount, playlistPickerEntries.length)}
+        totalCount={playlistPickerEntries.length}
+        canLoadMore={playlistCanLoadMore}
+        onLoadMore={() => loadPlaylistMetadataBatch(playlistPickerEntries, playlistMetaLoadedCount)}
+        onToggleIndex={handleTogglePlaylistIndex}
+        onSelectAll={handleSelectAllPlaylist}
+        onClearAll={handleClearPlaylist}
+        onApply={handleApplyPlaylist}
+        onClose={() => setShowPlaylistPicker(false)}
+      />
     </div>
   )
 }

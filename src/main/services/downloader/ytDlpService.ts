@@ -244,6 +244,38 @@ function resolveNoLogoPolicy(url: string, requested?: DownloadOptions['noLogoPol
   return 'sourcePreferred'
 }
 
+function normalizeVideoUrl(raw: string): string {
+  if (!raw) return raw
+  try {
+    const parsed = new URL(raw)
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+    if (host.includes('bilibili.com')) {
+      const match = parsed.pathname.match(/\/video\/([a-zA-Z0-9]+)/)
+      if (match?.[1]) return `https://www.bilibili.com/video/${match[1]}`
+    }
+    if (host === 'youtu.be') {
+      const id = parsed.pathname.slice(1)
+      if (id) return `https://www.youtube.com/watch?v=${id}`
+    }
+    if (host.includes('youtube.com')) {
+      const id = parsed.searchParams.get('v') || parsed.pathname.split('/').pop()
+      if (id) return `https://www.youtube.com/watch?v=${id}`
+    }
+    return parsed.toString()
+  } catch {
+    return raw
+  }
+}
+
+function chunkArray<T>(list: T[], size: number): T[][] {
+  if (size <= 0) return [list]
+  const chunks: T[][] = []
+  for (let i = 0; i < list.length; i += size) {
+    chunks.push(list.slice(i, i + size))
+  }
+  return chunks
+}
+
 function getSpeedArgs(profile: ResolvedSpeedProfile): string[] {
   if (profile === 'antiThrottle') {
     return [
@@ -413,6 +445,7 @@ class YtDlpService {
     ]
     if (cookiePath) args.push('--cookies', cookiePath)
     args.push(url)
+    console.log('[Downloader][Playlist] yt-dlp args', args.join(' '))
 
     return new Promise((resolve, reject) => {
       let stdout = ''
@@ -430,17 +463,30 @@ class YtDlpService {
         try {
           const json = JSON.parse(stdout.trim())
           const entries = Array.isArray(json.entries) ? json.entries : []
-          const mapped = entries.slice(0, limit).map((entry: any) => ({
+          const sliced = limit > 0 ? entries.slice(0, limit) : entries
+          const mapped = sliced.map((entry: any) => ({
             id: entry.id ? String(entry.id) : undefined,
             title: entry.title,
             url: entry.url || entry.webpage_url,
+            duration: Number.isFinite(entry.duration) ? Number(entry.duration) : undefined,
+            uploader: entry.uploader || entry.channel || entry.uploader_id,
           }))
-          resolve({
+          const result = {
             id: json.id ? String(json.id) : undefined,
             title: json.title || 'Playlist',
             entryCount: entries.length,
             entries: mapped,
+          }
+          console.log('[Downloader][Playlist] parsed', {
+            title: result.title,
+            entryCount: result.entryCount,
+            returnedEntries: result.entries.length,
+            limit,
           })
+          if (result.entries.length > 0) {
+            console.log('[Downloader][Playlist] sample entry', result.entries[0])
+          }
+          resolve(result)
         } catch (e: any) {
           reject(new Error('Failed to parse yt-dlp output: ' + e.message))
         }
@@ -454,6 +500,71 @@ class YtDlpService {
         }
       })
     })
+  }
+
+  async fetchVideoMetadataBatch(urls: string[], cookiePath?: string): Promise<Record<string, {
+    id?: string
+    title?: string
+    duration?: number
+    uploader?: string
+    url?: string
+  }>> {
+    if (!Array.isArray(urls) || urls.length === 0) return {}
+    const uniqueUrls = Array.from(new Set(urls.filter((u) => typeof u === 'string' && u.trim()))).map((u) => u.trim())
+    const chunks = chunkArray(uniqueUrls, 20)
+    const concurrency = 4
+    const results: Record<string, { id?: string; title?: string; duration?: number; uploader?: string; url?: string }> = {}
+
+    let index = 0
+    const workers = Array.from({ length: Math.min(concurrency, chunks.length) }).map(async () => {
+      while (index < chunks.length) {
+        const current = chunks[index]
+        index += 1
+        const args = ['--dump-json', '--no-warnings', '--no-playlist', '--skip-download']
+        if (cookiePath) args.push('--cookies', cookiePath)
+        args.push(...current)
+
+        const stdout = await new Promise<string>((resolve, reject) => {
+          let out = ''
+          let err = ''
+          const proc = spawn(this.ytDlpBin, args)
+          proc.stdout.on('data', (d) => (out += d.toString()))
+          proc.stderr.on('data', (d) => (err += d.toString()))
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              const msg = err.split('\n').find(l => l.includes('ERROR:')) || err.slice(-300)
+              reject(new Error(msg || `yt-dlp exited with code ${code}`))
+              return
+            }
+            resolve(out)
+          })
+          proc.on('error', (error) => reject(error))
+        })
+
+        const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line)
+            const id = json.id ? String(json.id) : undefined
+            const webpage = json.webpage_url || json.original_url || json.url || ''
+            const normalized = normalizeVideoUrl(webpage)
+            if (!normalized) continue
+            results[normalized] = {
+              id,
+              title: json.title,
+              duration: Number.isFinite(json.duration) ? Number(json.duration) : undefined,
+              uploader: json.uploader || json.channel || json.uploader_id,
+              url: normalized,
+            }
+          } catch {
+            // ignore parse errors
+          }
+        }
+      }
+    })
+
+    await Promise.all(workers)
+    return results
   }
 
   /**
@@ -964,6 +1075,16 @@ function buildArgs(
 
   if (options.allowPlaylist) {
     args.push('--yes-playlist')
+    if (options.playlistItems && options.playlistItems.length > 0) {
+      const sanitized = options.playlistItems
+        .map((value) => Math.floor(Number(value)))
+        .filter((value) => Number.isFinite(value) && value > 0)
+      if (sanitized.length > 0) {
+        const uniqueSorted = Array.from(new Set(sanitized)).sort((a, b) => a - b)
+        console.log('[Downloader][Playlist] apply --playlist-items', uniqueSorted.join(','))
+        args.push('--playlist-items', uniqueSorted.join(','))
+      }
+    }
   } else {
     args.push('--no-playlist')
   }
