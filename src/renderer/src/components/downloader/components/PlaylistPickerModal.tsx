@@ -68,6 +68,11 @@ export const PlaylistPickerModal: React.FC<PlaylistPickerModalProps> = ({
   const selectedSet = useMemo(() => new Set(selectedIndexes), [selectedIndexes]);
   const selectedCount = selectedSet.size;
   const totalEntries = totalCount || entries.length;
+  const [lastClickedIndex, setLastClickedIndex] = React.useState<number | null>(null);
+  const entryIndexes = useMemo(
+    () => entries.map((entry: PlaylistEntry, idx: number) => entry.playlistIndex ?? (idx + 1)),
+    [entries]
+  );
   const durationClassMap: Record<DurationTone, string> = {
     short: styles.durationShort,
     medium: styles.durationMedium,
@@ -156,8 +161,8 @@ export const PlaylistPickerModal: React.FC<PlaylistPickerModalProps> = ({
               <div>Uploader</div>
             </div>
             <div className={styles.playlistModalBody}>
-              {entries.map((entry, idx) => {
-                const index = idx + 1;
+              {entries.map((entry: PlaylistEntry, idx: number) => {
+                const index = entry.playlistIndex ?? (idx + 1);
                 const checked = selectedSet.has(index);
                 const titleText = entry.title || entry.id || entry.url || 'item';
                 return (
@@ -166,7 +171,32 @@ export const PlaylistPickerModal: React.FC<PlaylistPickerModalProps> = ({
                       type="checkbox"
                       className={styles.playlistModalCheckbox}
                       checked={checked}
-                      onChange={() => onToggleIndex(index)}
+                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                        const isShift = Boolean((event.nativeEvent as MouseEvent).shiftKey);
+                        const shouldSelect = !checked;
+                        if (isShift && lastClickedIndex != null) {
+                          const currentPos = entryIndexes.indexOf(index);
+                          const lastPos = entryIndexes.indexOf(lastClickedIndex);
+                          if (currentPos !== -1 && lastPos !== -1) {
+                            const start = Math.min(currentPos, lastPos);
+                            const end = Math.max(currentPos, lastPos);
+                            const range = entryIndexes.slice(start, end + 1);
+                            range.forEach((value) => {
+                              const isSelected = selectedSet.has(value);
+                              if (shouldSelect && !isSelected) {
+                                onToggleIndex(value);
+                              } else if (!shouldSelect && isSelected) {
+                                onToggleIndex(value);
+                              }
+                            });
+                          } else {
+                            onToggleIndex(index);
+                          }
+                        } else {
+                          onToggleIndex(index);
+                        }
+                        setLastClickedIndex(index);
+                      }}
                     />
                     <div className={styles.playlistModalIndex}>{index}</div>
                     <div className={styles.playlistModalTitleCell}>

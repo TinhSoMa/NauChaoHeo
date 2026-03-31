@@ -35,6 +35,7 @@ export interface PlaylistEntry {
   id?: string
   title?: string
   url?: string
+  playlistIndex?: number
   duration?: number
   uploader?: string
 }

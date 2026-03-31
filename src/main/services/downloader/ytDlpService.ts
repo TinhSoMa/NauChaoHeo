@@ -464,13 +464,18 @@ class YtDlpService {
           const json = JSON.parse(stdout.trim())
           const entries = Array.isArray(json.entries) ? json.entries : []
           const sliced = limit > 0 ? entries.slice(0, limit) : entries
-          const mapped = sliced.map((entry: any) => ({
-            id: entry.id ? String(entry.id) : undefined,
-            title: entry.title,
-            url: entry.url || entry.webpage_url,
-            duration: Number.isFinite(entry.duration) ? Number(entry.duration) : undefined,
-            uploader: entry.uploader || entry.channel || entry.uploader_id,
-          }))
+          const mapped = sliced.map((entry: any) => {
+            const parsedIndex = Number(entry.playlist_index)
+            const rawIndex = Number.isFinite(parsedIndex) ? parsedIndex : undefined
+            return {
+              id: entry.id ? String(entry.id) : undefined,
+              title: entry.title,
+              url: entry.url || entry.webpage_url,
+              playlistIndex: rawIndex && rawIndex > 0 ? rawIndex : undefined,
+              duration: Number.isFinite(entry.duration) ? Number(entry.duration) : undefined,
+              uploader: entry.uploader || entry.channel || entry.uploader_id,
+            }
+          })
           const result = {
             id: json.id ? String(json.id) : undefined,
             title: json.title || 'Playlist',
@@ -688,6 +693,9 @@ class YtDlpService {
         onLog('[Downloader] IDM-like: bỏ danmaku subtitle để tránh lỗi aria2 gzip decode')
       }
       effectiveOptions.subtitleLangs = after
+    }
+    if (effectiveOptions.allowPlaylist && effectiveOptions.formatId) {
+      onLog('[Downloader] Playlist: ưu tiên chất lượng đã chọn, sẽ fallback nếu video thiếu định dạng')
     }
 
     const args = buildArgs(effectiveOptions, ffmpegLocation || undefined, speedProfile, useAria2, noLogoPolicy)
@@ -969,6 +977,7 @@ function buildArgs(
   const mergeAudio = options.mergeAudio !== false
   const audioFormatId = options.audioFormatId?.trim()
   const hasAudioFormat = !!audioFormatId
+  const allowPlaylist = options.allowPlaylist === true
   const shouldApplyNoLogoSource = noLogoPolicy === 'sourcePreferred' && isBilibiliUrl(options.url)
   const avcMp4Selector = shouldApplyNoLogoSource
     ? withBilibiliNoLogoSelector('bestvideo[vcodec^=avc][ext=mp4]')
@@ -986,13 +995,37 @@ function buildArgs(
   if (shouldDownloadVideo) {
     if (options.formatId) {
       if (mergeAudio) {
-        args.push('-f', hasAudioFormat ? `${options.formatId}+${audioFormatId}` : options.formatId)
+        if (allowPlaylist) {
+          const preferred = hasAudioFormat
+            ? `${options.formatId}+${audioFormatId}`
+            : `${options.formatId}+bestaudio[acodec^=mp4a]`
+          const fallback = hasAudioFormat
+            ? `${avcMp4Selector}+${audioFormatId}/${avcSelector}+${audioFormatId}/best`
+            : `${avcMp4Selector}+bestaudio[acodec^=mp4a]/${avcSelector}+bestaudio[acodec^=mp4a]/best`
+          args.push('-f', `${preferred}/${fallback}`)
+        } else {
+          args.push('-f', hasAudioFormat ? `${options.formatId}+${audioFormatId}` : options.formatId)
+        }
       } else if (options.downloadSeparateAudio) {
-        args.push('-f', hasAudioFormat
-          ? `${options.formatId},${audioFormatId}`
-          : `${options.formatId},bestaudio[acodec^=mp4a]/${options.formatId},bestaudio`)
+        if (allowPlaylist) {
+          const preferred = hasAudioFormat
+            ? `${options.formatId},${audioFormatId}`
+            : `${options.formatId},bestaudio[acodec^=mp4a]`
+          const fallback = hasAudioFormat
+            ? `${avcMp4Selector},${audioFormatId}/${avcSelector},${audioFormatId}/bestvideo,bestaudio`
+            : `${avcMp4Selector},bestaudio[acodec^=mp4a]/${avcSelector},bestaudio[acodec^=mp4a]/bestvideo,bestaudio`
+          args.push('-f', `${preferred}/${fallback}`)
+        } else {
+          args.push('-f', hasAudioFormat
+            ? `${options.formatId},${audioFormatId}`
+            : `${options.formatId},bestaudio[acodec^=mp4a]/${options.formatId},bestaudio`)
+        }
       } else {
-        args.push('-f', options.formatId)
+        if (allowPlaylist) {
+          args.push('-f', `${options.formatId}/${avcMp4Selector}/${avcSelector}/bestvideo`)
+        } else {
+          args.push('-f', options.formatId)
+        }
       }
     } else if (mergeAudio) {
       if (hasAudioFormat) {

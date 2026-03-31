@@ -124,16 +124,6 @@ function resolveEmbedUrl(rawUrl: string): { provider?: 'youtube' | 'bilibili'; e
   return {}
 }
 
-function isBilibiliUrl(rawUrl: string): boolean {
-  if (!rawUrl || !rawUrl.startsWith('http')) return false
-  try {
-    const host = new URL(rawUrl).hostname.replace(/^www\./, '').toLowerCase()
-    return host.includes('bilibili.com') || host.includes('b23.tv')
-  } catch {
-    return false
-  }
-}
-
 function pickDefaultSubtitleLangs(langs: string[]): string[] {
   if (langs.length === 0) return []
   const preferred = ['vi', 'en', 'ja']
@@ -309,6 +299,43 @@ function resolvePlaylistEntryUrl(playlistUrl: string, entry: PlaylistEntry): str
     // ignore
   }
   return rawEntry || undefined
+}
+
+function normalizePlaylistEntries(entries: PlaylistEntry[]): PlaylistEntry[] {
+  if (!entries.length) return entries
+  const usedIndexes = new Set<number>()
+  for (const entry of entries) {
+    const raw = Number(entry.playlistIndex)
+    if (Number.isFinite(raw) && raw > 0) {
+      usedIndexes.add(Math.floor(raw))
+    }
+  }
+  return entries.map((entry, idx) => ({
+    ...entry,
+    playlistIndex: (() => {
+      const raw = Number(entry.playlistIndex)
+      if (Number.isFinite(raw) && raw > 0) {
+        return Math.floor(raw)
+      }
+      let fallback = idx + 1
+      while (usedIndexes.has(fallback)) {
+        fallback += 1
+      }
+      usedIndexes.add(fallback)
+      return fallback
+    })(),
+  }))
+}
+
+function getPlaylistIndexes(entries: PlaylistEntry[]): number[] {
+  return entries
+    .map((entry, idx) => {
+      const raw = Number(entry.playlistIndex)
+      if (Number.isFinite(raw) && raw > 0) return Math.floor(raw)
+      return idx + 1
+    })
+    .filter((value, idx, arr) => arr.indexOf(value) === idx)
+    .sort((a, b) => a - b)
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -777,14 +804,14 @@ export const DownloaderPage = () => {
       const res = await api().checkPlaylist({ url: target, limit: 6 })
       if (res.success && res.data) {
         const rawEntries = res.data.entries || []
-        const entries = rawEntries.map((entry) => {
+        const entries = normalizePlaylistEntries(rawEntries.map((entry: PlaylistEntry) => {
           const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
           return {
             ...entry,
             url: resolvedUrl || entry.url,
             title: entry.title || entry.id || entry.url,
           }
-        })
+        }))
         const count = res.data.entryCount || entries.length || 0
         if (count <= 0 && mode === 'single' && singleType === 'playlist') {
           setPlaylistError('Link không phải playlist hoặc playlist rỗng.')
@@ -836,14 +863,14 @@ export const DownloaderPage = () => {
       return
     }
     if (playlistSelectionUrl === target && playlistPickerEntries.length === 0 && playlistInfo?.entries?.length) {
-      const entries = playlistInfo.entries.map((entry) => {
+      const entries = normalizePlaylistEntries(playlistInfo.entries.map((entry: PlaylistEntry) => {
         const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
         return {
           ...entry,
           url: resolvedUrl || entry.url,
           title: entry.title || entry.id || entry.url,
         }
-      })
+      }))
       setPlaylistPickerEntries(entries)
       if (playlistMetaLoadedCount === 0) {
         void loadPlaylistMetadataBatch(entries, 0)
@@ -860,14 +887,14 @@ export const DownloaderPage = () => {
       if (res.success && res.data) {
         const rawEntries = res.data.entries || []
         console.log('[Downloader][Playlist] openPicker raw entries', rawEntries.slice(0, 3))
-        const entries = rawEntries.map((entry) => {
+        const entries = normalizePlaylistEntries(rawEntries.map((entry: PlaylistEntry) => {
           const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
           return {
             ...entry,
             url: resolvedUrl || entry.url,
             title: entry.title || entry.id || entry.url,
           }
-        })
+        }))
         console.log('[Downloader][Playlist] openPicker mapped entries', entries.slice(0, 3))
         if (!res.data.entryCount) {
           setPlaylistInfo({ ...res.data, entryCount: entries.length, entries })
@@ -875,11 +902,11 @@ export const DownloaderPage = () => {
         setPlaylistPickerEntries(entries)
         setPlaylistMetaLoadedCount(0)
         if (playlistSelectionUrl !== target) {
-          setSelectedPlaylistIndexes(entries.map((_, idx) => idx + 1))
+          setSelectedPlaylistIndexes(getPlaylistIndexes(entries))
           setPlaylistSelectionUrl(target)
         } else if (selectedPlaylistIndexes) {
-          const maxIndex = entries.length
-          setSelectedPlaylistIndexes(selectedPlaylistIndexes.filter((index) => index >= 1 && index <= maxIndex))
+          const validIndexes = new Set(getPlaylistIndexes(entries))
+          setSelectedPlaylistIndexes(selectedPlaylistIndexes.filter((index) => validIndexes.has(index)))
         }
         if (mode === 'single' && singleType === 'playlist' && entries.length) {
           const entryUrl = resolvePlaylistEntryUrl(target, entries[0])
@@ -913,7 +940,7 @@ export const DownloaderPage = () => {
   }
 
   const handleSelectAllPlaylist = () => {
-    setSelectedPlaylistIndexes(playlistPickerEntries.map((_, idx) => idx + 1))
+    setSelectedPlaylistIndexes(getPlaylistIndexes(playlistPickerEntries))
   }
 
   const handleClearPlaylist = () => {
@@ -1045,15 +1072,25 @@ export const DownloaderPage = () => {
 
       let playlistItems: number[] | undefined = undefined
       if (allowPlaylist && mode === 'single' && selectedPlaylistIndexes) {
-        const totalCount = playlistInfo?.entryCount || playlistPickerEntries.length || selectedPlaylistIndexes.length
-        const normalized = selectedPlaylistIndexes.filter((value) => Number.isFinite(value) && value >= 1 && value <= totalCount)
+        const entrySource = playlistPickerEntries.length > 0
+          ? playlistPickerEntries
+          : (playlistInfo?.entries ?? [])
+        const validIndexSet = new Set(getPlaylistIndexes(entrySource))
+        const normalized = Array.from(new Set(
+          selectedPlaylistIndexes
+            .map((value) => Math.floor(Number(value)))
+            .filter((value) => Number.isFinite(value) && value > 0 && (validIndexSet.size === 0 || validIndexSet.has(value)))
+        )).sort((a, b) => a - b)
         if (normalized.length === 0) {
           setLogs(prev => [...prev, 'ERROR: Chưa chọn video nào trong playlist.'])
           alert('Chưa chọn video nào trong playlist.')
           setStatus('error')
           return
         }
-        if (totalCount > 0 && normalized.length < totalCount) {
+        const totalSelectable = validIndexSet.size > 0
+          ? validIndexSet.size
+          : (playlistInfo?.entryCount || playlistPickerEntries.length || selectedPlaylistIndexes.length)
+        if (totalSelectable > 0 && normalized.length < totalSelectable) {
           playlistItems = normalized
         }
       }
