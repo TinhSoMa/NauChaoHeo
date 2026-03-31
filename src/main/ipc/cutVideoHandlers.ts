@@ -254,10 +254,11 @@ export function registerCutVideoHandlers(): void {
 
   // ---- Video Merger Handlers ----
   ipcMain.handle('cutVideo:scanRenderedForMerge', async (_, options: {
-    folders: string[];
+    folders?: string[];
+    videoPaths?: string[];
     mode: '16_9' | '9_16';
   }) => {
-    return await videoMergerService.scanFoldersForRenderedVideos(options);
+    return await videoMergerService.scanRenderedForMerge(options);
   });
 
   ipcMain.handle('cutVideo:stopVideoMerge', async () => {
@@ -266,7 +267,8 @@ export function registerCutVideoHandlers(): void {
   });
 
   ipcMain.handle('cutVideo:startVideoMerge', async (event, options: {
-    folders: string[];
+    folders?: string[];
+    videoPaths?: string[];
     mode: '16_9' | '9_16';
     outputDir: string;
   }) => {

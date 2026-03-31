@@ -39,7 +39,8 @@ export interface ScanRenderedForMergeResult {
 }
 
 export interface MergeRenderedVideosOptions {
-  folders: string[];
+  folders?: string[];
+  videoPaths?: string[];
   mode: MergeAspectMode;
   outputDir: string;
   outputFileName?: string;
@@ -384,8 +385,132 @@ class VideoMergerService {
     };
   }
 
+  private async scanSelectedVideosForMerge(options: {
+    videoPaths: string[];
+    mode: MergeAspectMode;
+  }): Promise<ScanRenderedForMergeResult> {
+    const { videoPaths } = options;
+    if (!Array.isArray(videoPaths) || videoPaths.length === 0) {
+      return { success: false, error: 'Chưa có video để quét' };
+    }
+
+    const items: ScanRenderedItem[] = [];
+
+    for (const videoPath of videoPaths) {
+      const fileName = path.basename(videoPath);
+      const scanDir = path.dirname(videoPath);
+
+      if (!fsSync.existsSync(videoPath)) {
+        items.push({
+          inputFolder: scanDir,
+          scanDir,
+          status: 'missing',
+          message: 'File không tồn tại',
+          fileName,
+        });
+        continue;
+      }
+
+      const ext = path.extname(videoPath).toLowerCase();
+      if (!SUPPORTED_EXTS.has(ext)) {
+        items.push({
+          inputFolder: scanDir,
+          scanDir,
+          status: 'invalid',
+          message: `Không hỗ trợ định dạng ${ext || 'unknown'}`,
+          matchedFilePath: videoPath,
+          fileName,
+        });
+        continue;
+      }
+
+      const probe = await this.probeVideoProfile(videoPath);
+      if (!probe.success || !probe.profile) {
+        items.push({
+          inputFolder: scanDir,
+          scanDir,
+          status: 'invalid',
+          message: probe.error || 'Không đọc được metadata video',
+          matchedFilePath: videoPath,
+          fileName,
+        });
+        continue;
+      }
+
+      items.push({
+        inputFolder: scanDir,
+        scanDir,
+        status: 'ok',
+        matchedFilePath: videoPath,
+        fileName,
+        metadata: probe.profile,
+      });
+    }
+
+    const okItemsBeforeValidation = items.filter((item) => item.status === 'ok' && item.metadata);
+    const baseline = okItemsBeforeValidation[0]?.metadata;
+    if (baseline) {
+      for (const item of okItemsBeforeValidation) {
+        const reason = compareProfiles(baseline, item.metadata as MergeVideoProfile);
+        if (reason) {
+          item.status = 'mismatch';
+          item.message = reason;
+        }
+      }
+    }
+
+    const okItems = items.filter((item) => item.status === 'ok' && item.matchedFilePath);
+    okItems.sort((a, b) => {
+      const aName = path.basename(a.matchedFilePath as string, path.extname(a.matchedFilePath as string));
+      const bName = path.basename(b.matchedFilePath as string, path.extname(b.matchedFilePath as string));
+      const nameCmp = NATURAL_NAME_COLLATOR.compare(aName, bName);
+      if (nameCmp !== 0) return nameCmp;
+      return NATURAL_NAME_COLLATOR.compare(a.matchedFilePath as string, b.matchedFilePath as string);
+    });
+
+    const sortedVideoPaths = okItems.map((item) => item.matchedFilePath as string);
+    const allVideosValid = items.length > 0 && items.every((item) => item.status === 'ok');
+    const canMerge = allVideosValid && sortedVideoPaths.length >= 2;
+
+    let blockingReason: string | undefined;
+    if (items.length < 2) {
+      blockingReason = 'Cần ít nhất 2 video để nối.';
+    } else if (!allVideosValid) {
+      const firstBad = items.find((item) => item.status !== 'ok');
+      const label = firstBad?.fileName || path.basename(firstBad?.matchedFilePath || firstBad?.scanDir || 'unknown');
+      blockingReason = `File lỗi: ${label} - ${firstBad?.message || firstBad?.status}`;
+    } else if (sortedVideoPaths.length < 2) {
+      blockingReason = 'Cần ít nhất 2 video hợp lệ để nối.';
+    }
+
+    return {
+      success: true,
+      data: {
+        canMerge,
+        outputAspect: options.mode,
+        items,
+        sortedVideoPaths,
+        blockingReason,
+      },
+    };
+  }
+
+  async scanRenderedForMerge(options: {
+    folders?: string[];
+    videoPaths?: string[];
+    mode: MergeAspectMode;
+  }): Promise<ScanRenderedForMergeResult> {
+    if (options.videoPaths && options.videoPaths.length > 0) {
+      return await this.scanSelectedVideosForMerge({ videoPaths: options.videoPaths, mode: options.mode });
+    }
+    if (options.folders && options.folders.length > 0) {
+      return await this.scanFoldersForRenderedVideos({ folders: options.folders, mode: options.mode });
+    }
+    return { success: false, error: 'Chưa có danh sách video hoặc folder để quét' };
+  }
+
   async mergeRenderedVideos(options: MergeRenderedVideosOptions): Promise<MergeRenderedVideosResult> {
-    const { folders, mode, outputDir, onProgress, onLog } = options;
+    const { folders, videoPaths, mode, outputDir, onProgress, onLog } = options;
     if (this.activeMergeProcess) {
       return { success: false, error: 'Đang có tiến trình nối video khác chạy.' };
     }
@@ -405,9 +530,20 @@ class VideoMergerService {
       onProgress?.({ percent: Math.max(0, Math.min(100, Math.round(percent))), stage, message, currentFile });
     };
 
+    const hasVideoPaths = Array.isArray(videoPaths) && videoPaths.length > 0;
+    const hasFolders = Array.isArray(folders) && folders.length > 0;
+    if (!hasVideoPaths && !hasFolders) {
+      return { success: false, error: 'Chưa có danh sách video hoặc folder để nối.' };
+    }
+
     emitProgress(2, 'scan', 'Đang quét video render theo mode...');
-    emitLog('processing', `Bắt đầu quét ${folders.length} folder theo mode ${mode === '9_16' ? '9:16' : '16:9'}.`);
-    const scanResult = await this.scanFoldersForRenderedVideos({ folders, mode });
+    emitLog(
+      'processing',
+      hasVideoPaths
+        ? `Bắt đầu quét ${videoPaths?.length || 0} video theo mode ${mode === '9_16' ? '9:16' : '16:9'}.`
+        : `Bắt đầu quét ${folders?.length || 0} folder theo mode ${mode === '9_16' ? '9:16' : '16:9'}.`
+    );
+    const scanResult = await this.scanRenderedForMerge({ folders, videoPaths, mode });
     if (!scanResult.success || !scanResult.data) {
       emitProgress(0, 'error', scanResult.error || 'Quét video thất bại');
       emitLog('error', scanResult.error || 'Quét video thất bại');

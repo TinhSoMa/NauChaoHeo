@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FolderPlus, Link2, Square, Trash2, X, ArrowLeft } from 'lucide-react';
+import { FolderPlus, Link2, Square, Trash2, X, ArrowLeft, FilePlus } from 'lucide-react';
 import { Button } from '../common/Button';
 import styles from './CutVideo.module.css';
-import { useProjectContext } from '../../context/ProjectContext';
 
 type MergeMode = '16_9' | '9_16';
+type MergeSourceMode = 'folder' | 'file';
 
 interface MergeScanItem {
   inputFolder: string;
@@ -46,8 +46,9 @@ function formatDuration(sec: number): string {
 }
 
 export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
+  const [sourceMode, setSourceMode] = useState<MergeSourceMode>('folder');
   const [folders, setFolders] = useState<Array<{ path: string }>>([]);
-  const { paths } = useProjectContext();
+  const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
   const [mode, setMode] = useState<MergeMode>('9_16');
   const [scanItems, setScanItems] = useState<MergeScanItem[]>([]);
   const [sortedVideoPaths, setSortedVideoPaths] = useState<string[]>([]);
@@ -62,12 +63,11 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     message: 'Sẵn sàng quét.',
   });
   const [outputPath, setOutputPath] = useState<string>('');
+  const [outputDir, setOutputDir] = useState<string>('');
+  const [outputDirTouched, setOutputDirTouched] = useState(false);
   const [autoScanKey, setAutoScanKey] = useState<string>('');
 
-  const outputDir = useMemo(
-    () => (paths?.caption ? `${paths.caption.replace(/[\\/]+$/, '')}/merged_output` : ''),
-    [paths?.caption]
-  );
+  const outputDirLabel = useMemo(() => outputDir || 'Chưa chọn thư mục output', [outputDir]);
 
   useEffect(() => {
     if (!window.electronAPI?.cutVideo) return;
@@ -92,7 +92,20 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     setBlockingReason('');
     setOutputPath('');
     setProgress({ percent: 0, stage: 'scan', message: 'Đã đổi mode, hãy quét lại.' });
-  }, [mode]);
+    if (!outputDirTouched) {
+      setOutputDir('');
+    }
+  }, [mode, sourceMode]);
+
+  useEffect(() => {
+    if (outputDirTouched || sourceMode !== 'file') return;
+    if (selectedVideos.length === 0) {
+      setOutputDir('');
+      return;
+    }
+    const firstPath = selectedVideos[0];
+    setOutputDir(firstPath.replace(/[\\/][^\\/]+$/, ''));
+  }, [selectedVideos, sourceMode, outputDirTouched]);
 
   const handleAddFolders = async () => {
     try {
@@ -117,13 +130,61 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     }
   };
 
+  const handleAddVideos = async () => {
+    try {
+      // @ts-ignore
+      const result = await window.electronAPI.invoke('dialog:openFile', {
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Video', extensions: ['mp4', 'mov'] }],
+      }) as { canceled: boolean; filePaths: string[] };
+      if (result?.canceled || !result?.filePaths?.length) {
+        return;
+      }
+      setSelectedVideos((prev) => {
+        const next = [...prev];
+        for (const p of result.filePaths) {
+          if (!next.includes(p)) {
+            next.push(p);
+          }
+        }
+        return next;
+      });
+    } catch (error) {
+      console.error('Lỗi thêm video merge:', error);
+    }
+  };
+
   const handleRemoveFolder = (folderPath: string) => {
     setFolders((prev) => prev.filter((item) => item.path !== folderPath));
   };
 
+  const handleRemoveVideo = (videoPath: string) => {
+    setSelectedVideos((prev) => prev.filter((item) => item !== videoPath));
+  };
+
+  const handleSelectOutputDir = async () => {
+    try {
+      // @ts-ignore
+      const result = await window.electronAPI.invoke('dialog:openFile', {
+        properties: ['openDirectory'],
+      }) as { canceled: boolean; filePaths: string[] };
+      if (result?.canceled || !result?.filePaths?.length) {
+        return;
+      }
+      setOutputDir(result.filePaths[0]);
+      setOutputDirTouched(true);
+    } catch (error) {
+      console.error('Lỗi chọn thư mục output:', error);
+    }
+  };
+
   const handleScan = async () => {
-    if (!folders.length) {
+    if (sourceMode === 'folder' && !folders.length) {
       alert('Vui lòng thêm ít nhất 1 folder chứa video.');
+      return;
+    }
+    if (sourceMode === 'file' && !selectedVideos.length) {
+      alert('Vui lòng chọn ít nhất 1 video để nối.');
       return;
     }
     setIsScanning(true);
@@ -137,7 +198,8 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     try {
       const folderPaths = folders.map((f) => f.path);
       const res = await window.electronAPI.cutVideo.scanRenderedForMerge({
-        folders: folderPaths,
+        folders: sourceMode === 'folder' ? folderPaths : undefined,
+        videoPaths: sourceMode === 'file' ? selectedVideos : undefined,
         mode,
       });
       if (!res.success || !res.data) {
@@ -151,6 +213,10 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
       setSortedVideoPaths(res.data.sortedVideoPaths || []);
       setCanMerge(!!res.data.canMerge);
       setBlockingReason(res.data.blockingReason || '');
+      if (!outputDirTouched && res.data.sortedVideoPaths?.length) {
+        const firstPath = res.data.sortedVideoPaths[0];
+        setOutputDir(firstPath.replace(/[\\/][^\\/]+$/, ''));
+      }
       setProgress({
         percent: res.data.canMerge ? 100 : 0,
         stage: res.data.canMerge ? 'preflight' : 'error',
@@ -168,23 +234,32 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   };
 
   useEffect(() => {
-    const signature = `${mode}::${folders.map((f) => f.path).sort().join('|')}`;
-    if (!folders.length || signature === autoScanKey || isScanning || isMerging) return;
+    const listSignature =
+      sourceMode === 'folder'
+        ? folders.map((f) => f.path).sort().join('|')
+        : selectedVideos.join('|');
+    const signature = `${sourceMode}::${mode}::${listSignature}`;
+    const hasItems = sourceMode === 'folder' ? folders.length > 0 : selectedVideos.length > 0;
+    if (!hasItems || signature === autoScanKey || isScanning || isMerging) return;
     setAutoScanKey(signature);
     const timer = setTimeout(() => {
       handleScan();
     }, 200);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folders, mode]);
+  }, [folders, selectedVideos, mode, sourceMode]);
 
   const handleStartMerge = async () => {
-    if (!folders.length) {
+    if (sourceMode === 'folder' && !folders.length) {
       alert('Vui lòng chọn folder trước khi nối.');
       return;
     }
+    if (sourceMode === 'file' && !selectedVideos.length) {
+      alert('Vui lòng chọn video trước khi nối.');
+      return;
+    }
     if (!outputDir) {
-      alert('Không tìm thấy đường dẫn project caption. Hãy mở project trước.');
+      alert('Vui lòng chọn thư mục output trước khi nối.');
       return;
     }
     if (!canMerge) {
@@ -196,7 +271,8 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
     setOutputPath('');
     try {
       const res = await window.electronAPI.cutVideo.startVideoMerge({
-        folders: folders.map((f) => f.path),
+        folders: sourceMode === 'folder' ? folders.map((f) => f.path) : undefined,
+        videoPaths: sourceMode === 'file' ? selectedVideos : undefined,
         mode,
         outputDir,
       });
@@ -247,17 +323,30 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
         <div className={styles.panelColumn}>
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
-              <h3 className={styles.sectionTitle}>Folder chứa video</h3>
-              <Button variant="secondary" onClick={handleAddFolders} disabled={isMerging}>
-                <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm folder
-              </Button>
+              <h3 className={styles.sectionTitle}>Nguồn video</h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant={sourceMode === 'folder' ? 'primary' : 'secondary'}
+                  onClick={() => setSourceMode('folder')}
+                  disabled={isMerging}
+                >
+                  Folder
+                </Button>
+                <Button
+                  variant={sourceMode === 'file' ? 'primary' : 'secondary'}
+                  onClick={() => setSourceMode('file')}
+                  disabled={isMerging}
+                >
+                  Chọn file
+                </Button>
+              </div>
             </div>
             <div className={styles.folderGrid}>
-              {folders.length === 0 ? (
+              {sourceMode === 'folder' && folders.length === 0 ? (
                 <div className={styles.emptyState} style={{ gridColumn: '1 / -1' }}>
                   Chưa có folder nào. Nhấn Thêm folder để bắt đầu.
                 </div>
-              ) : (
+              ) : sourceMode === 'folder' ? (
                 folders.map((folder, idx) => {
                   const folderName = folder.path.split(/[/\\]/).pop() || folder.path;
                   return (
@@ -277,6 +366,42 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                     </div>
                   );
                 })
+              ) : selectedVideos.length === 0 ? (
+                <div className={styles.emptyState} style={{ gridColumn: '1 / -1' }}>
+                  Chưa có video nào. Nhấn Thêm video để bắt đầu.
+                </div>
+              ) : (
+                selectedVideos.map((videoPath, idx) => {
+                  const fileName = videoPath.split(/[/\\]/).pop() || videoPath;
+                  const folderPath = videoPath.replace(/[\\/][^\\/]+$/, '');
+                  return (
+                    <div key={`${videoPath}-${idx}`} className={styles.folderBox} title={videoPath}>
+                      <div className={styles.folderBoxHeader}>
+                        <span className={styles.folderName}>{fileName}</span>
+                      </div>
+                      <div className={styles.folderBoxSubText}>{folderPath}</div>
+                      <button
+                        className={styles.removeFolderBoxBtn}
+                        onClick={() => handleRemoveVideo(videoPath)}
+                        title="Xóa video"
+                        disabled={isMerging}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div style={{ marginTop: '10px' }}>
+              {sourceMode === 'folder' ? (
+                <Button variant="secondary" onClick={handleAddFolders} disabled={isMerging}>
+                  <FolderPlus size={16} style={{ marginRight: '8px' }} /> Thêm folder
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={handleAddVideos} disabled={isMerging}>
+                  <FilePlus size={16} style={{ marginRight: '8px' }} /> Thêm video
+                </Button>
               )}
             </div>
           </div>
@@ -297,7 +422,12 @@ export const VideoMerger: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
               </div>
               <div>
                 <label className={styles.label}>Thư mục output</label>
-                <input className={styles.input} value={outputDir || 'Chưa có project caption path'} readOnly />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input className={styles.input} value={outputDirLabel} readOnly />
+                  <Button variant="secondary" onClick={handleSelectOutputDir} disabled={isMerging}>
+                    Chọn
+                  </Button>
+                </div>
               </div>
             </div>
             {!!blockingReason && <div className={styles.mergeWarning}>{blockingReason}</div>}

@@ -248,7 +248,8 @@ interface CutVideoAPI {
   onSplitLog: (callback: (data: { clipName: string; status: string; time: string }) => void) => () => void;
 
   scanRenderedForMerge: (options: {
-    folders: string[];
+    folders?: string[];
+    videoPaths?: string[];
     mode: '16_9' | '9_16';
   }) => Promise<{
     success: boolean;
@@ -278,7 +279,8 @@ interface CutVideoAPI {
     error?: string;
   }>;
   startVideoMerge: (options: {
-    folders: string[];
+    folders?: string[];
+    videoPaths?: string[];
     mode: '16_9' | '9_16';
     outputDir: string;
   }) => Promise<{ success: boolean; data?: { outputPath: string }; error?: string }>;
