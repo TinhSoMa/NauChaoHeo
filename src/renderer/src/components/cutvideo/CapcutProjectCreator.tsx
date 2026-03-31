@@ -304,6 +304,37 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
           <ArrowLeft size={14} />
           Quay lại danh sách
         </button>
+        <div className={styles.panelTopPathGrid}>
+          <div className={styles.panelTopPathField}>
+            <label className={styles.label}>Folder video nguồn</label>
+            <div className={styles.inputGroup}>
+              <input
+                className={styles.input}
+                value={sourceFolderPath}
+                readOnly
+                placeholder="Chọn folder chứa video"
+              />
+              <Button variant="secondary" onClick={handlePickSourceFolder} disabled={isCreating || isScanning}>
+                <FolderPlus size={14} />
+              </Button>
+            </div>
+          </div>
+          <div className={styles.panelTopPathField}>
+            <label className={styles.label}>Folder drafts (project CapCut)</label>
+            <div className={styles.inputGroup}>
+              <input
+                className={styles.input}
+                value={capcutDraftsPath}
+                onChange={(e) => setCapcutDraftsPath(e.target.value)}
+                onBlur={() => void saveDraftsPath(capcutDraftsPath)}
+                placeholder="Chọn folder chứa project CapCut"
+              />
+              <Button variant="secondary" onClick={handlePickCapcutDraftsFolder} disabled={isCreating || isScanning}>
+                <FolderPlus size={14} />
+              </Button>
+            </div>
+          </div>
+        </div>
         <div className={styles.panelTopActions}>
           <Button variant="danger" onClick={handleStop} disabled={!isCreating}>
             <Square size={16} style={{ marginRight: '8px' }} /> Dừng
@@ -313,56 +344,21 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
             onClick={handleStart}
             disabled={isCreating || isScanning || scanItems.length === 0}
           >
-            <Play size={16} style={{ marginRight: '8px' }} /> Bắt đầu tạo project
+            <Play size={16} style={{ marginRight: '8px' }} /> Tạo
           </Button>
         </div>
       </div>
 
       <div className={styles.panelLayout}>
         <div className={styles.panelColumn}>
-          <div className={styles.section}>
-            <h3 className={styles.sectionTitle}>Đường dẫn</h3>
-            <div className={styles.grid2}>
-              <div>
-                <label className={styles.label}>Folder video nguồn</label>
-                <div className={styles.inputGroup}>
-                  <input
-                    className={styles.input}
-                    value={sourceFolderPath}
-                    readOnly
-                    placeholder="Chọn folder chứa video"
-                  />
-                  <Button variant="secondary" onClick={handlePickSourceFolder} disabled={isCreating || isScanning}>
-                    <FolderPlus size={14} />
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <label className={styles.label}>Folder drafts (project CapCut)</label>
-                <div className={styles.inputGroup}>
-                  <input
-                    className={styles.input}
-                    value={capcutDraftsPath}
-                    onChange={(e) => setCapcutDraftsPath(e.target.value)}
-                    onBlur={() => void saveDraftsPath(capcutDraftsPath)}
-                    placeholder="Chọn folder chứa project CapCut"
-                  />
-                  <Button variant="secondary" onClick={handlePickCapcutDraftsFolder} disabled={isCreating || isScanning}>
-                    <FolderPlus size={14} />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.section}>
+          <div className={`${styles.section} ${styles.sectionStretch}`}>
             <div className={styles.sectionHeader}>
               <h3 className={styles.sectionTitle}>Danh sách video quét được</h3>
               <Button variant="secondary" onClick={handleScan} disabled={isCreating || isScanning || !sourceFolderPath}>
                 Quét lại
               </Button>
             </div>
-            <div className={styles.tableContainer}>
+            <div className={`${styles.tableContainer} ${styles.tableContainerStretch}`}>
               <table className={styles.table}>
                 <thead>
                   <tr>

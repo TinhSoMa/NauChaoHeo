@@ -37,7 +37,7 @@ export const AppLayout = () => {
           <header className="absolute top-0 right-0 p-4 z-10">
             {/* Header Controls (Minimize, Close) if needed, or user profile */}
           </header>
-          <div className="p-8 min-h-full">
+          <div className="h-full min-h-0 p-8 overflow-auto">
             <TabHost />
           </div>
         </main>

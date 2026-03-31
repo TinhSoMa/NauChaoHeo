@@ -101,12 +101,12 @@ export function TabHost() {
     : [...openedTabs, activeTabId]
 
   return (
-    <div className="min-h-full">
+    <div className="h-full min-h-0">
       {TAB_ENTRIES.map((tab) => {
         if (!visibleTabs.includes(tab.id)) return null
         const isActive = tab.id === activeTabId
         return (
-          <div key={tab.id} className={isActive ? 'block' : 'hidden'}>
+          <div key={tab.id} className={isActive ? 'block h-full min-h-0' : 'hidden'}>
             <TabErrorBoundary resetKey={tab.id}>
               <Suspense
                 fallback={
