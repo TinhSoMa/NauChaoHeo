@@ -47,6 +47,7 @@ export interface VideoFilterBuildInput {
   needsScale: boolean;
   renderWidth: number;
   renderHeight: number;
+  renderMark?: boolean;
   blackoutTop?: number | null; // 0-1 từ trên xuống; dùng cho nhánh landscape (tô đen đáy)
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
@@ -57,6 +58,7 @@ export interface VideoFilterBuildInput {
   coverFeatherVerticalPercent?: number;
   featherStrategy?: CoverFeatherStrategy;
   videoSpeedMultiplier: number;
+  renderSubtitle?: boolean;
   subtitleFilter: string;
 }
 
@@ -69,11 +71,13 @@ export interface PortraitVideoFilterBuildInput {
   inputLabel: string;
   outputWidth: number;
   outputHeight: number;
+  renderSubtitle?: boolean;
   subtitleFilter: string;
   videoSpeedMultiplier: number;
   sourceAspect: number;
   layoutStrategy: 'blur_composite' | 'direct_fit_no_blur';
   foregroundCropPercent: number;
+  renderMark?: boolean;
   blackoutTop?: number | null; // 0-1 theo output; với portrait: mốc bắt đầu blur vùng đáy của foreground
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;

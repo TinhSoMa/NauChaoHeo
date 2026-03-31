@@ -550,6 +550,8 @@ export interface RenderVideoOptions {
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  renderSubtitle?: boolean; // Bật/tắt lớp ASS subtitle
+  renderMark?: boolean; // Bật/tắt lớp mask/cover (blackout/copy_from_above)
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
   blackoutTop?: number;   // Tỉ lệ 0-1 từ trên xuống; landscape = tô đen đáy, portrait = mốc bắt đầu blur đáy foreground
   coverMode?: CaptionCoverMode; // Chế độ che video (legacy mặc định: blackout_bottom)
@@ -694,6 +696,8 @@ export interface RenderVideoPreviewFrameOptions {
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  renderSubtitle?: boolean;
+  renderMark?: boolean;
   position?: { x: number; y: number };
   blackoutTop?: number;
   coverMode?: 'blackout_bottom' | 'copy_from_above';
@@ -985,6 +989,8 @@ export interface CaptionProjectSettingsValues {
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   renderContainer?: 'mp4' | 'mov';
+  renderSubtitle?: boolean;
+  renderMark?: boolean;
   blackoutTop?: number | null;
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;

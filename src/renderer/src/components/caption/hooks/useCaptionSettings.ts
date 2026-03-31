@@ -1215,6 +1215,8 @@ export function useCaptionSettings() {
 
   const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv' | 'nvenc'>('qsv');
   const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
+  const [renderSubtitle, setRenderSubtitle] = useState(true);
+  const [renderMark, setRenderMark] = useState(true);
   const [audioSpeed, setAudioSpeed] = useState<number>(1.0);
   const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0);
   const [videoVolume, setVideoVolumeState] = useState<number>(100);
@@ -1863,6 +1865,8 @@ export function useCaptionSettings() {
       renderMode,
       renderResolution: activeProfile.renderResolution,
       renderContainer: activeProfile.renderContainer,
+      renderSubtitle,
+      renderMark,
       blackoutTop: activeProfile.blackoutTop,
       coverMode: activeProfile.coverMode,
       coverQuad: activeProfile.coverQuad,
@@ -1955,6 +1959,8 @@ export function useCaptionSettings() {
       hardwareAcceleration,
       activeProfile,
       renderMode,
+      renderSubtitle,
+      renderMark,
       audioSpeed,
       renderAudioSpeed,
       videoVolume,
@@ -1992,6 +1998,8 @@ export function useCaptionSettings() {
       setHardwareAcceleration(saved.hardwareAcceleration);
     }
     if (saved.renderMode) setRenderMode(saved.renderMode as RenderMode);
+    if (typeof saved.renderSubtitle === 'boolean') setRenderSubtitle(saved.renderSubtitle);
+    if (typeof saved.renderMark === 'boolean') setRenderMark(saved.renderMark);
     if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
     if (typeof saved.renderAudioSpeed === 'number') setRenderAudioSpeed(saved.renderAudioSpeed);
     if (typeof saved.videoVolume === 'number') {
@@ -2354,6 +2362,8 @@ export function useCaptionSettings() {
     setSubtitleFontSizeRel,
     setStyle,
     renderMode, setRenderMode,
+    renderSubtitle, setRenderSubtitle,
+    renderMark, setRenderMark,
     renderResolution: activeProfile.renderResolution,
     setRenderResolution,
     renderContainer: activeProfile.renderContainer,

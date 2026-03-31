@@ -752,6 +752,8 @@ export function registerCaptionHandlers(): void {
         logoScale?: number;
         portraitForegroundCropPercent?: number;
         thumbnailEnabled?: boolean;
+        renderSubtitle?: boolean;
+        renderMark?: boolean;
         thumbnailDurationSec?: number;
         thumbnailTimeSec?: number;
         thumbnailText?: string;

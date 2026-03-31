@@ -1028,14 +1028,17 @@ export async function renderHardsubVideo(
   };
 
   const prep = await prepareSubtitleAndDuration(renderOptions);
-  const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
-  const coverMode = options.coverMode || 'blackout_bottom';
+  const renderSubtitle = options.renderSubtitle !== false;
+  const renderMark = options.renderMark !== false;
+  const subtitleFilter = renderSubtitle ? getSubtitleFilter(prep.tempAssPath) : 'null';
+  const coverMode = renderMark ? (options.coverMode || 'blackout_bottom') : undefined;
   const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
   const videoFilter = buildVideoFilter({
     inputLabel: '[0:v]',
     needsScale: prep.needsScale,
     renderWidth: prep.renderWidth,
     renderHeight: prep.renderHeight,
+    renderMark,
     blackoutTop: options.blackoutTop,
     coverMode,
     coverQuad: options.coverQuad,
@@ -1046,6 +1049,7 @@ export async function renderHardsubVideo(
     coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
     featherStrategy: effectiveFeatherStrategy,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
+    renderSubtitle,
     subtitleFilter,
   });
 
@@ -1462,8 +1466,10 @@ export async function renderHardsubPortraitVideo(
   };
 
   const prep = await prepareSubtitleAndDurationPortrait(renderOptions, portraitCanvas);
-  const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
-  const coverMode = options.coverMode || 'blackout_bottom';
+  const renderSubtitle = options.renderSubtitle !== false;
+  const renderMark = options.renderMark !== false;
+  const subtitleFilter = renderSubtitle ? getSubtitleFilter(prep.tempAssPath) : 'null';
+  const coverMode = renderMark ? (options.coverMode || 'blackout_bottom') : undefined;
   const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
   const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
     coverMode,
@@ -1572,11 +1578,13 @@ export async function renderHardsubPortraitVideo(
     inputLabel: '[0:v]',
     outputWidth: portraitCanvas.width,
     outputHeight: portraitCanvas.height,
+    renderSubtitle,
     subtitleFilter,
     sourceAspect,
     layoutStrategy,
     foregroundCropPercent,
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
+    renderMark,
     blackoutTop: options.blackoutTop,
     coverMode,
     coverQuad: options.coverQuad,
@@ -1997,7 +2005,8 @@ export async function renderBlackBackgroundVideo(
   };
 
   const prep = await prepareSubtitleAndDuration(renderOptions);
-  const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+  const renderSubtitle = options.renderSubtitle !== false;
+  const subtitleFilter = renderSubtitle ? getSubtitleFilter(prep.tempAssPath) : 'null';
 
   const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
     thumbnailEnabled: Boolean(options.thumbnailEnabled),
@@ -2264,6 +2273,8 @@ export async function renderVideoPreviewFrame(
       style: options.style,
       renderMode,
       renderResolution: options.renderResolution,
+      renderSubtitle: options.renderSubtitle,
+      renderMark: options.renderMark,
       position: options.position,
       blackoutTop: options.blackoutTop,
       coverMode: options.coverMode,
@@ -2339,7 +2350,7 @@ export async function renderVideoPreviewFrame(
       prepTempAssPath = prep.tempAssPath;
       outputWidth = prep.finalWidth;
       outputHeight = prep.finalHeight;
-      const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+      const subtitleFilter = options.renderSubtitle === false ? 'null' : getSubtitleFilter(prep.tempAssPath);
       inputArgs = [
         '-f', 'lavfi',
         '-i', `color=black:s=${prep.finalWidth}x${prep.finalHeight}:r=24`,
@@ -2355,12 +2366,12 @@ export async function renderVideoPreviewFrame(
       prepTempAssPath = prep.tempAssPath;
       outputWidth = prep.renderWidth;
       outputHeight = prep.renderHeight;
-      const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+      const subtitleFilter = options.renderSubtitle === false ? 'null' : getSubtitleFilter(prep.tempAssPath);
       const even = (value: number) => {
         const rounded = Math.max(2, Math.round(value));
         return rounded % 2 === 0 ? rounded : rounded + 1;
       };
-      const coverMode = options.coverMode || 'blackout_bottom';
+      const coverMode = options.renderMark === false ? undefined : (options.coverMode || 'blackout_bottom');
       const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
       const sourceAspect = sourceWidth / Math.max(1, sourceHeight);
       const outputAspect = portraitCanvas.width / portraitCanvas.height;
@@ -2375,11 +2386,13 @@ export async function renderVideoPreviewFrame(
         inputLabel: '[0:v]',
         outputWidth: portraitCanvas.width,
         outputHeight: portraitCanvas.height,
+        renderSubtitle: options.renderSubtitle,
         subtitleFilter,
         sourceAspect,
         layoutStrategy,
         foregroundCropPercent,
         videoSpeedMultiplier: 1.0,
+        renderMark: options.renderMark,
         blackoutTop: options.blackoutTop,
         coverMode,
         coverQuad: options.coverQuad,
@@ -2485,14 +2498,15 @@ export async function renderVideoPreviewFrame(
       prepTempAssPath = prep.tempAssPath;
       outputWidth = prep.renderWidth;
       outputHeight = prep.renderHeight;
-      const subtitleFilter = getSubtitleFilter(prep.tempAssPath);
+      const subtitleFilter = options.renderSubtitle === false ? 'null' : getSubtitleFilter(prep.tempAssPath);
       const videoFilter = buildVideoFilter({
         inputLabel: '[0:v]',
         needsScale: prep.needsScale,
         renderWidth: prep.renderWidth,
         renderHeight: prep.renderHeight,
+        renderMark: options.renderMark,
         blackoutTop: options.blackoutTop,
-        coverMode: options.coverMode || 'blackout_bottom',
+        coverMode: options.renderMark === false ? undefined : (options.coverMode || 'blackout_bottom'),
         coverQuad: options.coverQuad,
         coverFeatherPx: options.coverFeatherPx,
         coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
@@ -2501,6 +2515,7 @@ export async function renderVideoPreviewFrame(
         coverFeatherVerticalPercent: options.coverFeatherVerticalPercent,
         featherStrategy,
         videoSpeedMultiplier: 1.0,
+        renderSubtitle: options.renderSubtitle,
         subtitleFilter,
       });
       inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];

@@ -32,6 +32,8 @@ function appendBackgroundBottomBlur(
 
 export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): PortraitVideoFilterBuildOutput {
   const parts: string[] = [];
+  const enableMark = input.renderMark !== false;
+  const enableSubtitle = input.renderSubtitle !== false;
   const outputAspect = (input.outputWidth / input.outputHeight).toFixed(6);
   const sourceAspect = Number.isFinite(input.sourceAspect) ? input.sourceAspect : 0;
   const cropPercent = Math.min(20, Math.max(0, Number.isFinite(input.foregroundCropPercent) ? input.foregroundCropPercent : 0));
@@ -57,13 +59,13 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
       `scale=${input.outputWidth}:${input.outputHeight}[bg_blur]`
     );
     parts.push(`[fg]${fgScaleFilter}[fg_fit]`);
-    const bgLabel = appendBackgroundBottomBlur(parts, input, 'bg_blur');
+    const bgLabel = enableMark ? appendBackgroundBottomBlur(parts, input, 'bg_blur') : 'bg_blur';
     parts.push(`[${bgLabel}][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v_canvas]`);
   }
 
   let currentLabel = '[v_canvas]';
 
-  if (input.coverMode === 'copy_from_above') {
+  if (enableMark && input.coverMode === 'copy_from_above') {
     const cover = buildCopyFromAboveFilter({
       inputLabel: currentLabel,
       outputLabel: 'v_canvas_covered',
@@ -91,7 +93,7 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
     currentLabel = '[v_timed]';
   }
 
-  parts.push(`${currentLabel}${input.subtitleFilter}[v_subbed]`);
+  parts.push(`${currentLabel}${enableSubtitle ? input.subtitleFilter : 'null'}[v_subbed]`);
   // Dùng yuv420p để tránh artifact nửa khung xanh trên một số pipeline decode/render preview.
   parts.push('[v_subbed]format=yuv420p[v_portrait_out]');
   return {

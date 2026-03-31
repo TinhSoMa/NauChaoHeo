@@ -20,6 +20,8 @@ interface UseSubtitleRenderPreviewStateOptions {
   style: ASSStyleConfig;
   renderMode?: RenderVideoOptions['renderMode'];
   renderResolution?: RenderVideoOptions['renderResolution'];
+  renderSubtitle?: boolean;
+  renderMark?: boolean;
   subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;
   coverMode?: 'blackout_bottom' | 'copy_from_above';
@@ -73,6 +75,8 @@ interface RenderVideoPreviewFrameRequest {
   style?: ASSStyleConfig;
   renderMode?: RenderVideoOptions['renderMode'];
   renderResolution?: RenderVideoOptions['renderResolution'];
+  renderSubtitle?: boolean;
+  renderMark?: boolean;
   position?: { x: number; y: number };
   blackoutTop?: number;
   coverMode?: 'blackout_bottom' | 'copy_from_above';
@@ -195,6 +199,8 @@ export function useSubtitleRenderPreviewState(
       style: options.style,
       renderMode: options.renderMode,
       renderResolution: options.renderResolution,
+      renderSubtitle: options.renderSubtitle,
+      renderMark: options.renderMark,
       position: options.subtitlePosition || undefined,
       blackoutTop: options.blackoutTop == null ? undefined : options.blackoutTop,
       coverMode: options.coverMode,
@@ -271,8 +277,10 @@ export function useSubtitleRenderPreviewState(
     options.thumbnailLineHeightRatio,
     options.portraitTextPrimaryPosition,
     options.portraitTextSecondaryPosition,
+    options.renderMark,
     options.renderMode,
     options.renderResolution,
+    options.renderSubtitle,
     options.style,
     options.subtitlePosition,
     options.videoPath,

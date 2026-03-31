@@ -240,6 +240,8 @@ interface UseCaptionProcessingProps {
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
     renderContainer?: 'mp4' | 'mov';
+    renderSubtitle?: boolean;
+    renderMark?: boolean;
     subtitlePosition?: { x: number; y: number } | null;
     blackoutTop?: number | null;
     coverMode?: 'blackout_bottom' | 'copy_from_above';
@@ -4750,6 +4752,8 @@ export function useCaptionProcessing({
           style: cfg.style,
           renderMode: cfg.renderMode,
           renderResolution: cfg.renderResolution,
+          renderSubtitle: cfg.renderSubtitle,
+          renderMark: cfg.renderMark,
           position: cfg.subtitlePosition || undefined,
           blackoutTop: (cfg.blackoutTop != null && cfg.blackoutTop < 1)
             ? cfg.blackoutTop : undefined,

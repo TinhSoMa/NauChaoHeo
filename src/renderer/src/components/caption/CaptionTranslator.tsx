@@ -1495,6 +1495,8 @@ export function CaptionTranslator() {
     renderMode: settings.renderMode,
     renderResolution: settings.renderResolution,
     renderContainer: settings.renderContainer,
+    renderSubtitle: settings.renderSubtitle,
+    renderMark: settings.renderMark,
     blackoutTop: settings.blackoutTop,
     coverMode: settings.coverMode,
     coverQuad: settings.coverQuad,
@@ -1576,6 +1578,8 @@ export function CaptionTranslator() {
     settings.renderMode,
     settings.renderResolution,
     settings.renderContainer,
+    settings.renderSubtitle,
+    settings.renderMark,
     settings.blackoutTop,
     settings.coverMode,
     settings.coverQuad,
@@ -5500,11 +5504,32 @@ export function CaptionTranslator() {
                   className={styles.select}
                   value={settings.coverMode || 'blackout_bottom'}
                   onChange={(e) => settings.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above')}
-                  disabled={settings.renderMode === 'black_bg'}
+                  disabled={settings.renderMode === 'black_bg' || settings.renderMark === false}
                 >
                   <option value="blackout_bottom">Che đen đáy</option>
                   <option value="copy_from_above">Copy vùng trên</option>
                 </select>
+              </div>
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Render layers</span>
+              </div>
+              <div className={styles.commonInlineActions}>
+                <Checkbox
+                  label="Render subtitle (ASS)"
+                  description="Tắt để bỏ lớp ASS subtitle, giữ text overlay Step 7 và logo/audio"
+                  checked={settings.renderSubtitle !== false}
+                  onChange={(checked) => settings.setRenderSubtitle(checked)}
+                />
+                <Checkbox
+                  label="Render mask/mark"
+                  description="Tắt để bỏ blackout/copy_from_above"
+                  checked={settings.renderMark !== false}
+                  onChange={(checked) => settings.setRenderMark(checked)}
+                  disabled={settings.renderMode === 'black_bg'}
+                />
               </div>
             </div>
 
@@ -5522,7 +5547,7 @@ export function CaptionTranslator() {
                 step={0.01}
                 value={settings.blackoutTop ?? 0.9}
                 onChange={(e) => settings.setBlackoutTop(Number(e.target.value))}
-                disabled={settings.renderMode === 'black_bg'}
+                disabled={settings.renderMode === 'black_bg' || settings.renderMark === false}
               />
               <div className={styles.commonInlineActions}>
                 <button type="button" className={styles.resetBtnLike} onClick={() => settings.setBlackoutTop(null)}>
@@ -5534,7 +5559,7 @@ export function CaptionTranslator() {
               </div>
             </div>
 
-            {settings.coverMode === 'copy_from_above' && (
+            {settings.renderMark !== false && settings.coverMode === 'copy_from_above' && (
               <div className={styles.commonInlineSection}>
                 <div className={styles.commonInlineHeader}>
                   <span className={styles.label}>Feather viền copy</span>
@@ -5551,7 +5576,6 @@ export function CaptionTranslator() {
                     step={1}
                     value={settings.coverFeatherHorizontalPercent ?? 20}
                     onChange={(e) => settings.setCoverFeatherHorizontalPercent(Number(e.target.value))}
-                    disabled={settings.renderMode === 'black_bg'}
                   />
                   <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherHorizontalPercent(20)}>
                     LR mặc định 20%
@@ -5566,7 +5590,6 @@ export function CaptionTranslator() {
                     step={1}
                     value={settings.coverFeatherVerticalPercent ?? 20}
                     onChange={(e) => settings.setCoverFeatherVerticalPercent(Number(e.target.value))}
-                    disabled={settings.renderMode === 'black_bg'}
                   />
                   <button type="button" className={styles.resetBtnLike} onClick={() => settings.setCoverFeatherVerticalPercent(20)}>
                     TB mặc định 20%
@@ -7335,6 +7358,8 @@ export function CaptionTranslator() {
                   coverFeatherVerticalPercent={settings.coverFeatherVerticalPercent}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
+                  renderSubtitle={settings.renderSubtitle}
+                  renderMark={settings.renderMark}
                   hardwareAcceleration={settings.hardwareAcceleration}
                   previewLayoutValue={activeLayoutSwitch}
                   onPreviewLayoutChange={handlePreviewLayoutChange}

@@ -883,6 +883,8 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       renderMode: settings.renderMode,
       renderResolution: settings.renderResolution,
       renderContainer: settings.renderContainer,
+      renderSubtitle: settings.renderSubtitle,
+      renderMark: settings.renderMark,
       hardwareAcceleration: settings.hardwareAcceleration,
       renderAudioSpeed: settings.renderAudioSpeed,
       videoVolume: settings.videoVolume,

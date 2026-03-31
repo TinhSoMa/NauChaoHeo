@@ -266,6 +266,8 @@ export interface CaptionVideoAPI {
     portraitForegroundCropPercent?: number;
     style?: any;
     thumbnailEnabled?: boolean;
+    renderSubtitle?: boolean;
+    renderMark?: boolean;
     thumbnailDurationSec?: number;
     thumbnailTimeSec?: number;
     thumbnailText?: string;

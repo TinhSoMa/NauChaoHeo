@@ -8,6 +8,8 @@ function ensureLabelRef(value: string): string {
 export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuildOutput {
   const filterParts: string[] = [];
   let currentLabel = ensureLabelRef(input.inputLabel);
+  const enableMark = input.renderMark !== false;
+  const enableSubtitle = input.renderSubtitle !== false;
 
   if (input.needsScale) {
     const scaledLabel = '[v_scaled]';
@@ -17,7 +19,7 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
     currentLabel = scaledLabel;
   }
 
-  if (input.coverMode === 'copy_from_above') {
+  if (enableMark && input.coverMode === 'copy_from_above') {
     const cover = buildCopyFromAboveFilter({
       inputLabel: currentLabel,
       outputLabel: 'v_covered',
@@ -37,7 +39,7 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
       console.warn('[VideoFilter][Cover] Skip copy_from_above:', cover.reason || 'unknown_reason');
     }
     currentLabel = cover.outputLabel;
-  } else if (input.blackoutTop != null && input.blackoutTop < 1) {
+  } else if (enableMark && input.blackoutTop != null && input.blackoutTop < 1) {
     const blackoutY = Math.round(input.blackoutTop * input.renderHeight);
     const blackoutH = input.renderHeight - blackoutY;
     const blackoutLabel = '[v_covered]';
@@ -55,7 +57,7 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
   }
 
   const outputLabel = '[v_subbed]';
-  filterParts.push(`${currentLabel}${input.subtitleFilter}${outputLabel}`);
+  filterParts.push(`${currentLabel}${enableSubtitle ? input.subtitleFilter : 'null'}${outputLabel}`);
 
   return {
     filterParts,
