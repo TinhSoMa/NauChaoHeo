@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import styles from '../CaptionTranslator.module.css';
+import { useDragAutoScroll } from '../../../hooks/useDragAutoScroll';
 
 export type Step3BulkFileItem = {
   id: string;
@@ -40,11 +41,42 @@ function formatFileSize(bytes: number): string {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function normalizeRange(first: number, second: number): { start: number; end: number } {
+  return {
+    start: Math.min(first, second),
+    end: Math.max(first, second),
+  };
+}
+
+function isIndexInRange(index: number, range: { start: number; end: number } | null): boolean {
+  if (!range) return false;
+  return index >= range.start && index <= range.end;
+}
+
+function isInsertionInsideRange(
+  range: { start: number; end: number } | null,
+  targetIndex: number,
+  position: 'before' | 'after',
+): boolean {
+  if (!range) return false;
+  const rawInsertIndex = targetIndex + (position === 'after' ? 1 : 0);
+  return rawInsertIndex >= range.start && rawInsertIndex <= range.end + 1;
+}
+
 export function Step3BulkMultiFolderModal(props: Step3BulkMultiFolderModalProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileListRef = useRef<HTMLDivElement | null>(null);
   const autoOpenRef = useRef(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null);
+  const [selectedRange, setSelectedRange] = useState<{ start: number; end: number } | null>(null);
+  const [dragSelectionRange, setDragSelectionRange] = useState<{ start: number; end: number } | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>('before');
+  const isPointerDragging = dragSelectionRange !== null && !props.busy;
+  const dragAutoScroll = useDragAutoScroll(fileListRef, isPointerDragging, {
+    edgeThreshold: 52,
+    maxSpeed: 18,
+  });
 
   useEffect(() => {
     if (!props.visible) {
@@ -57,9 +89,16 @@ export function Step3BulkMultiFolderModal(props: Step3BulkMultiFolderModalProps)
     }
   }, [props.autoPickOnOpen, props.files.length, props.visible]);
 
-  if (!props.visible) {
-    return null;
-  }
+  useEffect(() => {
+    if (!props.visible || props.busy || props.files.length === 0) {
+      setSelectionAnchorIndex(null);
+      setSelectedRange(null);
+      setDragSelectionRange(null);
+      setDragOverIndex(null);
+      setDragOverPosition('before');
+      dragAutoScroll.stopAutoScroll();
+    }
+  }, [dragAutoScroll, props.busy, props.files.length, props.visible]);
 
   const countMismatch = props.files.length !== props.folders.length;
   const isApplyDisabled =
@@ -74,6 +113,128 @@ export function Step3BulkMultiFolderModal(props: Step3BulkMultiFolderModalProps)
     }));
   }, [props.files, props.folders]);
 
+  const commitRangeReorder = useCallback((
+    range: { start: number; end: number },
+    targetIndex: number,
+    position: 'before' | 'after',
+  ) => {
+    if (targetIndex < 0 || targetIndex >= props.files.length) {
+      return range;
+    }
+
+    const blockLength = range.end - range.start + 1;
+    const rawInsertIndex = targetIndex + (position === 'after' ? 1 : 0);
+    if (rawInsertIndex >= range.start && rawInsertIndex <= range.end + 1) {
+      return range;
+    }
+
+    if (rawInsertIndex < range.start) {
+      let insertIndex = rawInsertIndex;
+      for (let from = range.start; from <= range.end; from += 1) {
+        props.onMoveFile(from, insertIndex);
+        insertIndex += 1;
+      }
+      return {
+        start: rawInsertIndex,
+        end: rawInsertIndex + blockLength - 1,
+      };
+    }
+
+    const moveToIndex = Math.min(rawInsertIndex - 1, props.files.length - 1);
+    for (let from = range.end; from >= range.start; from -= 1) {
+      props.onMoveFile(from, moveToIndex);
+    }
+    const nextStart = rawInsertIndex - blockLength;
+    return {
+      start: nextStart,
+      end: nextStart + blockLength - 1,
+    };
+  }, [props.files.length, props.onMoveFile]);
+
+  useEffect(() => {
+    if (!props.visible || props.busy || dragSelectionRange === null || props.files.length === 0) {
+      return undefined;
+    }
+
+    const container = fileListRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    document.body.style.userSelect = 'none';
+
+    const findTargetIndex = (clientX: number, clientY: number): { index: number; position: 'before' | 'after' } | null => {
+      const element = document.elementFromPoint(clientX, clientY);
+      if (!element) return null;
+
+      const row = element.closest('[data-file-row-index]') as HTMLElement | null;
+      if (row?.dataset.fileRowIndex) {
+        const parsed = Number.parseInt(row.dataset.fileRowIndex, 10);
+        if (Number.isInteger(parsed)) {
+          const rowRect = row.getBoundingClientRect();
+          const position = clientY <= rowRect.top + rowRect.height / 2 ? 'before' : 'after';
+          return { index: parsed, position };
+        }
+      }
+
+      const rect = container.getBoundingClientRect();
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+        return null;
+      }
+      if (props.files.length === 0) return null;
+      if (clientY <= rect.top + 18) return { index: 0, position: 'before' };
+      if (clientY >= rect.bottom - 18) return { index: props.files.length - 1, position: 'after' };
+      return null;
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      dragAutoScroll.handlePointerMove(event.clientX, event.clientY);
+      const target = findTargetIndex(event.clientX, event.clientY);
+      if (!target) return;
+
+      if (dragOverIndex !== target.index) {
+        setDragOverIndex(target.index);
+      }
+      if (dragOverPosition !== target.position) {
+        setDragOverPosition(target.position);
+      }
+    };
+
+    const onMouseUp = () => {
+      const targetIndex = dragOverIndex ?? dragSelectionRange.start;
+      const nextRange = commitRangeReorder(dragSelectionRange, targetIndex, dragOverPosition);
+      setSelectedRange(nextRange);
+      setSelectionAnchorIndex(nextRange.start);
+      setDragSelectionRange(null);
+      setDragOverIndex(null);
+      setDragOverPosition('before');
+      dragAutoScroll.stopAutoScroll();
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp, { once: true });
+
+    return () => {
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      dragAutoScroll.stopAutoScroll();
+    };
+  }, [
+    dragAutoScroll,
+    commitRangeReorder,
+    dragOverIndex,
+    dragOverPosition,
+    dragSelectionRange,
+    props.busy,
+    props.files.length,
+    props.visible,
+  ]);
+
+  if (!props.visible) {
+    return null;
+  }
+
   const handlePickClick = () => {
     fileInputRef.current?.click();
   };
@@ -83,35 +244,34 @@ export function Step3BulkMultiFolderModal(props: Step3BulkMultiFolderModalProps)
     event.target.value = '';
   };
 
-  const handleDragStart = (index: number) => (event: DragEvent<HTMLDivElement>) => {
-    setDraggingIndex(index);
+  const handlePointerDragStart = (index: number, event: ReactMouseEvent<HTMLDivElement>) => {
+    if (props.busy || event.button !== 0) {
+      return;
+    }
+
+    if (event.shiftKey) {
+      event.preventDefault();
+      if (selectionAnchorIndex === null) {
+        const range = { start: index, end: index };
+        setSelectionAnchorIndex(index);
+        setSelectedRange(range);
+      } else {
+        setSelectedRange(normalizeRange(selectionAnchorIndex, index));
+      }
+      return;
+    }
+
+    event.preventDefault();
+
+    const nextDragRange = isIndexInRange(index, selectedRange)
+      ? (selectedRange ?? { start: index, end: index })
+      : { start: index, end: index };
+
+    setSelectionAnchorIndex(index);
+    setSelectedRange(nextDragRange);
+    setDragSelectionRange(nextDragRange);
     setDragOverIndex(index);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', String(index));
-  };
-
-  const handleDragOver = (index: number) => (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (dragOverIndex !== index) {
-      setDragOverIndex(index);
-    }
-    event.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (index: number) => (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const raw = event.dataTransfer.getData('text/plain');
-    const fromIndex = raw ? Number.parseInt(raw, 10) : draggingIndex;
-    if (Number.isFinite(fromIndex) && fromIndex !== null && fromIndex !== index) {
-      props.onMoveFile(fromIndex as number, index);
-    }
-    setDragOverIndex(null);
-    setDraggingIndex(null);
-  };
-
-  const handleDragEnd = () => {
-    setDragOverIndex(null);
-    setDraggingIndex(null);
+    setDragOverPosition('before');
   };
 
   return (
@@ -192,31 +352,43 @@ export function Step3BulkMultiFolderModal(props: Step3BulkMultiFolderModalProps)
 
             <div className={styles.step3BulkMultiColumn}>
               <div className={styles.step3BulkMultiColumnTitle}>File TXT (kéo thả để đổi thứ tự)</div>
-              <div className={styles.step3BulkMultiList}>
+              <div
+                ref={fileListRef}
+                className={[styles.step3BulkMultiList, isPointerDragging ? styles.step3BulkMultiListDragging : ''].join(' ').trim()}
+                onWheelCapture={(event) => dragAutoScroll.handleWheelWhileDragging(event)}
+              >
                 {props.files.length === 0 && (
                   <div className={styles.step3BulkMultiEmpty}>Chưa có file TXT</div>
                 )}
-                {props.files.map((item, idx) => (
-                  <div
-                    key={item.id}
-                    className={[
-                      styles.step3BulkMultiRow,
-                      styles.step3BulkMultiFileRow,
-                      draggingIndex === idx ? styles.step3BulkMultiRowDragging : '',
-                      dragOverIndex === idx ? styles.step3BulkMultiRowOver : '',
-                    ].join(' ').trim()}
-                    draggable={!props.busy}
-                    onDragStart={handleDragStart(idx)}
-                    onDragOver={handleDragOver(idx)}
-                    onDrop={handleDrop(idx)}
-                    onDragEnd={handleDragEnd}
-                    title={item.file.name}
-                  >
-                    <span className={styles.step3BulkMultiBadge}>#{idx + 1}</span>
-                    <span className={styles.step3BulkMultiText}>{item.file.name}</span>
-                    <span className={styles.step3BulkMultiMeta}>{formatFileSize(item.file.size)}</span>
-                  </div>
-                ))}
+                {props.files.map((item, idx) => {
+                  const isSelected = isIndexInRange(idx, selectedRange);
+                  const isDragging = isIndexInRange(idx, dragSelectionRange);
+                  const showDropIndicator = dragSelectionRange !== null
+                    && dragOverIndex === idx
+                    && !isInsertionInsideRange(dragSelectionRange, dragOverIndex, dragOverPosition);
+                  return (
+                    <div
+                      key={item.id}
+                      data-file-row-index={idx}
+                      className={[
+                        styles.step3BulkMultiRow,
+                        styles.step3BulkMultiFileRow,
+                        isSelected ? styles.step3BulkMultiRowSelected : '',
+                        isDragging ? styles.step3BulkMultiRowDragging : '',
+                        showDropIndicator ? styles.step3BulkMultiRowOver : '',
+                        showDropIndicator && dragOverPosition === 'before' ? styles.step3BulkMultiRowDropBefore : '',
+                        showDropIndicator && dragOverPosition === 'after' ? styles.step3BulkMultiRowDropAfter : '',
+                      ].join(' ').trim()}
+                      onMouseDown={(event) => handlePointerDragStart(idx, event)}
+                      aria-grabbed={isDragging}
+                      title={item.file.name}
+                    >
+                      <span className={styles.step3BulkMultiBadge}>#{idx + 1}</span>
+                      <span className={styles.step3BulkMultiText}>{item.file.name}</span>
+                      <span className={styles.step3BulkMultiMeta}>{formatFileSize(item.file.size)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

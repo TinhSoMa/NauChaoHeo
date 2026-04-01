@@ -2404,6 +2404,10 @@
   overflow: auto;
 }
 
+.step3BulkMultiListDragging {
+  cursor: grabbing;
+}
+
 .step3BulkMultiRow {
   display: flex;
   align-items: center;
@@ -2418,6 +2422,11 @@
   cursor: grab;
 }
 
+.step3BulkMultiRowSelected {
+  border-color: color-mix(in srgb, var(--color-accent, #4a9eff) 40%, transparent);
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 10%, var(--color-card));
+}
+
 .step3BulkMultiRowDragging {
   opacity: 0.6;
   cursor: grabbing;
@@ -2425,6 +2434,14 @@
 
 .step3BulkMultiRowOver {
   border-color: var(--color-accent, #4a9eff);
+}
+
+.step3BulkMultiRowDropBefore {
+  box-shadow: inset 0 2px 0 var(--color-accent, #4a9eff);
+}
+
+.step3BulkMultiRowDropAfter {
+  box-shadow: inset 0 -2px 0 var(--color-accent, #4a9eff);
 }
 
 .step3BulkMultiBadge {
