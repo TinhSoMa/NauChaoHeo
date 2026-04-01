@@ -787,6 +787,10 @@ details[open] > .sectionSummary::after {
   transition: background-color 0.12s ease, outline-color 0.12s ease;
 }
 
+.selectedRow {
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+}
+
 .draggableRow:active {
   cursor: grabbing;
 }
@@ -795,6 +799,12 @@ details[open] > .sectionSummary::after {
   cursor: grabbing;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   opacity: 0.82;
+}
+
+.draggingSelectionRow {
+  cursor: grabbing;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  opacity: 0.86;
 }
 
 .dragOverRow {

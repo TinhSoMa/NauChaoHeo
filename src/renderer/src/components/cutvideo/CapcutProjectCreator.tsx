@@ -56,8 +56,11 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
   const [scanItems, setScanItems] = useState<CapcutVideoItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>('before');
+  const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null);
+  const [selectedRange, setSelectedRange] = useState<{ start: number; end: number } | null>(null);
+  const [dragSelectionRange, setDragSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [logs, setLogs] = useState<CapcutLog[]>([]);
   const [createdProjects, setCreatedProjects] = useState<CapcutProjectResult[]>([]);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
@@ -68,7 +71,7 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
     stage: 'preflight',
     message: 'Sẵn sàng tạo project CapCut.',
   });
-  const dragAutoScroll = useDragAutoScroll(tableContainerRef, dragIndex !== null, {
+  const dragAutoScroll = useDragAutoScroll(tableContainerRef, dragSelectionRange !== null, {
     edgeThreshold: 56,
     maxSpeed: 22,
   });
@@ -258,27 +261,99 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
 
   const handleClearLogs = () => setLogs([]);
 
-  const commitReorder = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= scanItems.length || toIndex >= scanItems.length) {
-      return;
+  const normalizeRange = (first: number, second: number) => ({
+    start: Math.min(first, second),
+    end: Math.max(first, second),
+  });
+
+  const isIndexInRange = (index: number, range: { start: number; end: number } | null) => {
+    if (!range) return false;
+    return index >= range.start && index <= range.end;
+  };
+
+  const isInsertionInsideRange = (
+    range: { start: number; end: number } | null,
+    targetIndex: number,
+    position: 'before' | 'after',
+  ) => {
+    if (!range) return false;
+    const rawInsertIndex = targetIndex + (position === 'after' ? 1 : 0);
+    return rawInsertIndex >= range.start && rawInsertIndex <= range.end + 1;
+  };
+
+  const commitRangeReorder = (
+    range: { start: number; end: number },
+    targetIndex: number,
+    position: 'before' | 'after',
+  ) => {
+    if (targetIndex < 0 || targetIndex >= scanItems.length) {
+      return range;
     }
+
+    let nextSelectedRange = range;
+
     setScanItems((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
+      const blockLength = range.end - range.start + 1;
+      const rawInsertIndex = targetIndex + (position === 'after' ? 1 : 0);
+      if (rawInsertIndex >= range.start && rawInsertIndex <= range.end + 1) {
+        nextSelectedRange = range;
+        return prev;
+      }
+
+      const movingBlock = prev.slice(range.start, range.end + 1);
+      const rest = [...prev.slice(0, range.start), ...prev.slice(range.end + 1)];
+
+      let insertIndex = rawInsertIndex;
+      if (rawInsertIndex > range.end + 1) {
+        insertIndex -= blockLength;
+      }
+      insertIndex = Math.max(0, Math.min(insertIndex, rest.length));
+
+      const next = [
+        ...rest.slice(0, insertIndex),
+        ...movingBlock,
+        ...rest.slice(insertIndex),
+      ];
+      nextSelectedRange = {
+        start: insertIndex,
+        end: insertIndex + blockLength - 1,
+      };
       return next;
     });
+
+    return nextSelectedRange;
   };
 
   const handlePointerDragStart = (index: number, event: React.MouseEvent<HTMLTableRowElement>) => {
     if (isCreating || event.button !== 0) return;
+
+    if (event.shiftKey) {
+      event.preventDefault();
+      if (selectionAnchorIndex === null) {
+        const range = { start: index, end: index };
+        setSelectionAnchorIndex(index);
+        setSelectedRange(range);
+      } else {
+        setSelectedRange(normalizeRange(selectionAnchorIndex, index));
+      }
+      return;
+    }
+
     event.preventDefault();
-    setDragIndex(index);
+
+    const nextDragRange = isIndexInRange(index, selectedRange)
+      ? (selectedRange ?? { start: index, end: index })
+      : { start: index, end: index };
+
+    setSelectionAnchorIndex(index);
+    setSelectedRange(nextDragRange);
+    setDragSelectionRange(nextDragRange);
     setDragOverIndex(index);
+    setDragOverPosition('before');
   };
 
   useEffect(() => {
-    if (dragIndex === null || isCreating) {
+    if (dragSelectionRange === null || isCreating) {
       return undefined;
     }
 
@@ -289,14 +364,18 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
 
     document.body.style.userSelect = 'none';
 
-    const findTargetIndex = (clientX: number, clientY: number): number | null => {
+    const findTargetIndex = (clientX: number, clientY: number): { index: number; position: 'before' | 'after' } | null => {
       const element = document.elementFromPoint(clientX, clientY);
       if (!element) return null;
 
       const row = element.closest('tr[data-row-index]') as HTMLElement | null;
       if (row?.dataset.rowIndex) {
         const parsed = Number.parseInt(row.dataset.rowIndex, 10);
-        if (Number.isInteger(parsed)) return parsed;
+        if (Number.isInteger(parsed)) {
+          const rowRect = row.getBoundingClientRect();
+          const position = clientY <= rowRect.top + rowRect.height / 2 ? 'before' : 'after';
+          return { index: parsed, position };
+        }
       }
 
       const rect = container.getBoundingClientRect();
@@ -304,24 +383,32 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
         return null;
       }
       if (scanItems.length === 0) return null;
-      if (clientY <= rect.top + 24) return 0;
-      if (clientY >= rect.bottom - 24) return scanItems.length - 1;
+      if (clientY <= rect.top + 24) return { index: 0, position: 'before' };
+      if (clientY >= rect.bottom - 24) return { index: scanItems.length - 1, position: 'after' };
       return null;
     };
 
     const onMouseMove = (event: MouseEvent) => {
       dragAutoScroll.handlePointerMove(event.clientX, event.clientY);
-      const nextIndex = findTargetIndex(event.clientX, event.clientY);
-      if (nextIndex !== null && nextIndex !== dragOverIndex) {
+      const target = findTargetIndex(event.clientX, event.clientY);
+      if (!target) return;
+      const { index: nextIndex, position } = target;
+      if (nextIndex !== dragOverIndex) {
         setDragOverIndex(nextIndex);
+      }
+      if (position !== dragOverPosition) {
+        setDragOverPosition(position);
       }
     };
 
     const onMouseUp = () => {
-      const toIndex = dragOverIndex ?? dragIndex;
-      commitReorder(dragIndex, toIndex);
-      setDragIndex(null);
+      const targetIndex = dragOverIndex ?? dragSelectionRange.start;
+      const nextRange = commitRangeReorder(dragSelectionRange, targetIndex, dragOverPosition);
+      setSelectedRange(nextRange);
+      setSelectionAnchorIndex(nextRange.start);
+      setDragSelectionRange(null);
       setDragOverIndex(null);
+      setDragOverPosition('before');
       dragAutoScroll.stopAutoScroll();
     };
 
@@ -334,7 +421,7 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
       window.removeEventListener('mouseup', onMouseUp);
       dragAutoScroll.stopAutoScroll();
     };
-  }, [dragAutoScroll, dragIndex, dragOverIndex, isCreating, scanItems.length]);
+  }, [dragAutoScroll, dragOverIndex, dragOverPosition, dragSelectionRange, isCreating, scanItems.length]);
 
   const renderLogBadge = (status: CapcutLog['status']) => {
     if (status === 'success') return <span className={`${styles.badge} ${styles.badgeSuccess}`}>OK</span>;
@@ -400,9 +487,11 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
           <div className={`${styles.section} ${styles.sectionStretch}`}>
             <div className={styles.sectionHeader}>
               <h3 className={styles.sectionTitle}>Danh sách video quét được</h3>
-              {dragIndex !== null && dragOverIndex !== null ? (
+              {dragSelectionRange !== null && dragOverIndex !== null ? (
                 <span className={styles.dragStatusPill}>
-                  {`Dang keo #${dragIndex + 1} -> #${dragOverIndex + 1}`}
+                  {dragSelectionRange.start === dragSelectionRange.end
+                    ? `Dang keo #${dragSelectionRange.start + 1} -> #${dragOverIndex + 1}`
+                    : `Dang keo #${dragSelectionRange.start + 1}-#${dragSelectionRange.end + 1} -> #${dragOverIndex + 1}`}
                 </span>
               ) : null}
               <Button variant="secondary" onClick={handleScan} disabled={isCreating || isScanning || !sourceFolderPath}>
@@ -411,7 +500,7 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
             </div>
             <div
               ref={tableContainerRef}
-              className={`${styles.tableContainer} ${styles.tableContainerStretch} ${dragIndex !== null ? styles.tableDragging : ''}`}
+              className={`${styles.tableContainer} ${styles.tableContainerStretch} ${dragSelectionRange !== null ? styles.tableDragging : ''}`}
               onWheelCapture={(event) => dragAutoScroll.handleWheelWhileDragging(event as React.WheelEvent<HTMLElement>)}
             >
               <table className={styles.table}>
@@ -432,24 +521,35 @@ export const CapcutProjectCreator: React.FC<{ onBack?: () => void }> = ({ onBack
                     </tr>
                   ) : (
                     scanItems.map((item, index) => (
+                      (() => {
+                        const isSelected = isIndexInRange(index, selectedRange);
+                        const isDragging = isIndexInRange(index, dragSelectionRange);
+                        const showDropIndicator = dragSelectionRange !== null
+                          && dragOverIndex === index
+                          && !isInsertionInsideRange(dragSelectionRange, dragOverIndex, dragOverPosition);
+
+                        return (
                       <tr
                         key={item.fullPath}
                         data-row-index={index}
                         onMouseDown={(event) => handlePointerDragStart(index, event)}
                         className={[
                           styles.draggableRow,
-                          dragIndex === index ? styles.draggingRow : '',
-                          dragOverIndex === index ? styles.dragOverRow : '',
-                          dragOverIndex === index && dragIndex !== null && dragOverIndex < dragIndex ? styles.dropBeforeRow : '',
-                          dragOverIndex === index && dragIndex !== null && dragOverIndex > dragIndex ? styles.dropAfterRow : '',
+                          isSelected ? styles.selectedRow : '',
+                          isDragging ? styles.draggingSelectionRow : '',
+                          showDropIndicator ? styles.dragOverRow : '',
+                          showDropIndicator && dragOverPosition === 'before' ? styles.dropBeforeRow : '',
+                          showDropIndicator && dragOverPosition === 'after' ? styles.dropAfterRow : '',
                         ].join(' ').trim()}
-                        aria-grabbed={dragIndex === index}
+                        aria-grabbed={isDragging}
                       >
                         <td>{index + 1}</td>
                         <td>{item.fileName}</td>
                         <td>{previewProjectName(index + 1)}</td>
                         <td title={item.fullPath}>{item.fullPath}</td>
                       </tr>
+                        );
+                      })()
                     ))
                   )}
                 </tbody>
