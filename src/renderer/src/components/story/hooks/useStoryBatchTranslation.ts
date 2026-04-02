@@ -107,10 +107,11 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       try {
         const result = await window.electronAPI.appSettings.getAll();
         if (result.success && result.data) {
-          const raw = Number(result.data.apiWorkerCount);
+          const settingsData = result.data as unknown as Record<string, unknown>;
+          const raw = Number(settingsData.apiWorkerCount);
           const normalized = Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
           setApiWorkerCountSetting(normalized);
-          const rawDelay = Number(result.data.apiRequestDelayMs);
+          const rawDelay = Number(settingsData.apiRequestDelayMs);
           const delayMs = Number.isFinite(rawDelay) ? Math.min(30000, Math.max(0, Math.floor(rawDelay))) : 500;
           setApiRequestDelayMs(delayMs);
         }

@@ -3,7 +3,6 @@ import { PromptService } from '../promptService';
 import { GeminiChatService } from '../chatGemini/geminiChatService';
 import {
   AppSettingsService,
-  GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
   normalizeGeminiMinSendIntervalMs,
   normalizeGeminiMaxSendIntervalMs,
   normalizeGeminiSendIntervalMode,
@@ -22,7 +21,7 @@ const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
 const STORY_GEMINI_WEB_QUEUE_FEATURE = 'story.translate.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_SERVICE_ID = 'story-translator-ui';
-const STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS = GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS;
+const STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS = 1_000;
 const STORY_GEMINI_WEB_QUEUE_MAX_ATTEMPTS = 2; // 1 lan chay dau + 1 lan retry
 const STORY_STICKY_BATCH_CAPABILITY_PREFIX = 'story_batch_sticky::';
 const STORY_STICKY_STATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -917,13 +916,7 @@ export class StoryService {
   }
 
   private static getStoryWebQueueGapMs(): number {
-    try {
-      const settings = AppSettingsService.getAll();
-      return normalizeGeminiMinSendIntervalMs(settings.geminiMinSendIntervalMs);
-    } catch (error) {
-      console.warn('[StoryService] Failed to read geminiMinSendIntervalMs from AppSettings, fallback default.', error);
-      return STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS;
-    }
+    return STORY_GEMINI_WEB_QUEUE_DEFAULT_GAP_MS;
   }
 
   private static buildStoryWebQueueTimingPayload(
