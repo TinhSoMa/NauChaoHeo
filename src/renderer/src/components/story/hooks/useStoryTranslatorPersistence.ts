@@ -20,6 +20,7 @@ interface StoryTranslatorStateSetters {
   setSelectedChapterId: (id: string | null) => void;
   setSummaries: (summaries: Map<string, string>) => void;
   setSummaryTitles: (titles: Map<string, string>) => void;
+  setChapterScrollPositions: (positions: Map<string, number>) => void;
   setChapters: (chapters: Chapter[]) => void;
 }
 
@@ -41,6 +42,7 @@ interface StoryTranslatorStateValues {
   selectedChapterId: string | null;
   summaries: Map<string, string>;
   summaryTitles: Map<string, string>;
+  chapterScrollPositions: Map<string, number>;
 }
 
 export function useStoryTranslatorPersistence(
@@ -68,6 +70,7 @@ export function useStoryTranslatorPersistence(
     selectedChapterId?: string | null;
     summaries?: Array<[string, string]>;
     summaryTitles?: Array<[string, string]>;
+    chapterScrollPositions?: Array<[string, number]>;
   }>({
     feature: 'story',
     fileName: STORY_STATE_FILE,
@@ -107,7 +110,8 @@ export function useStoryTranslatorPersistence(
         tokenContexts: Array.from(values.tokenContexts.entries()),
         viewMode: values.viewMode as 'original' | 'translated' | 'summary',
         excludedChapterIds: Array.from(values.excludedChapterIds.values()),
-        selectedChapterId: values.selectedChapterId
+        selectedChapterId: values.selectedChapterId,
+        chapterScrollPositions: Array.from(values.chapterScrollPositions.entries())
       };
     },
     deserialize: async (saved: any) => {
@@ -145,6 +149,7 @@ export function useStoryTranslatorPersistence(
       if (saved.viewMode) setters.setViewMode(saved.viewMode);
       if (saved.excludedChapterIds) setters.setExcludedChapterIds(new Set(saved.excludedChapterIds));
       if (typeof saved.selectedChapterId !== 'undefined') setters.setSelectedChapterId(saved.selectedChapterId);
+      if (saved.chapterScrollPositions) setters.setChapterScrollPositions(new Map(saved.chapterScrollPositions));
     },
     deps: [
       values.filePath,
@@ -161,7 +166,8 @@ export function useStoryTranslatorPersistence(
       values.tokenContexts,
       values.viewMode,
       values.excludedChapterIds,
-      values.selectedChapterId
+      values.selectedChapterId,
+      values.chapterScrollPositions
     ],
   });
 

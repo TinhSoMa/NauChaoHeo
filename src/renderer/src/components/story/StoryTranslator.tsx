@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Chapter, STORY_IPC_CHANNELS } from '@shared/types';
 import { StoryStatus } from './types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
@@ -18,6 +18,17 @@ import { useStoryExport } from './hooks/useStoryExport';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
+
+const READER_MODE_BREAKPOINT = 1024;
+const READER_PAGE_OVERLAP_PX = 72;
+const READER_MIN_PAGE_STEP = 220;
+
+const getInitialViewportWidth = (): number => {
+  if (typeof window === 'undefined') {
+    return READER_MODE_BREAKPOINT + 1;
+  }
+  return window.innerWidth;
+};
 
 export function StoryTranslator() {
   const [filePath, setFilePath] = useState('');
@@ -66,6 +77,12 @@ export function StoryTranslator() {
   const [fontSize, setFontSize] = useState<number>(18);
   const [lineHeight, setLineHeight] = useState<number>(1.8);
   const [retranslateExisting, setRetranslateExisting] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState<number>(getInitialViewportWidth);
+  const [chapterScrollPositions, setChapterScrollPositions] = useState<Map<string, number>>(new Map());
+  const isReaderMode = viewportWidth <= READER_MODE_BREAKPOINT;
+  const contentScrollRef = useRef<HTMLDivElement | null>(null);
+  const chapterScrollPositionsRef = useRef<Map<string, number>>(new Map());
+  const scrollFlushTimeoutRef = useRef<number | null>(null);
 
   // Proxy settings hook
   const { useProxy } = useProxySettings();
@@ -182,7 +199,8 @@ export function StoryTranslator() {
       excludedChapterIds,
       selectedChapterId,
       summaries,
-      summaryTitles
+      summaryTitles,
+      chapterScrollPositions
     },
     {
       setFilePath,
@@ -201,10 +219,217 @@ export function StoryTranslator() {
       setSelectedChapterId,
       setSummaries,
       setSummaryTitles,
+      setChapterScrollPositions,
       setChapters
     },
     fileManagement.parseFile
   );
+
+  useEffect(() => {
+    chapterScrollPositionsRef.current = new Map(chapterScrollPositions);
+  }, [chapterScrollPositions]);
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const getScrollKey = useCallback(
+    (chapterId: string, mode: 'original' | 'translated' | 'summary') => `${mode}:${chapterId}`,
+    []
+  );
+
+  const flushScrollPositions = useCallback(() => {
+    setChapterScrollPositions(new Map(chapterScrollPositionsRef.current));
+  }, []);
+
+  const saveCurrentScrollPosition = useCallback(() => {
+    if (!selectedChapterId || !contentScrollRef.current) {
+      return;
+    }
+    const key = getScrollKey(selectedChapterId, viewMode);
+    const next = new Map(chapterScrollPositionsRef.current);
+    next.set(key, contentScrollRef.current.scrollTop);
+    chapterScrollPositionsRef.current = next;
+  }, [getScrollKey, selectedChapterId, viewMode]);
+
+  const scheduleScrollFlush = useCallback(() => {
+    if (scrollFlushTimeoutRef.current !== null) {
+      window.clearTimeout(scrollFlushTimeoutRef.current);
+    }
+    scrollFlushTimeoutRef.current = window.setTimeout(() => {
+      scrollFlushTimeoutRef.current = null;
+      flushScrollPositions();
+    }, 300);
+  }, [flushScrollPositions]);
+
+  const handleContentScroll = useCallback(() => {
+    if (!selectedChapterId || !contentScrollRef.current) {
+      return;
+    }
+    const key = getScrollKey(selectedChapterId, viewMode);
+    const next = new Map(chapterScrollPositionsRef.current);
+    next.set(key, contentScrollRef.current.scrollTop);
+    chapterScrollPositionsRef.current = next;
+    scheduleScrollFlush();
+  }, [getScrollKey, scheduleScrollFlush, selectedChapterId, viewMode]);
+
+  const handleViewModeChange = useCallback(
+    (nextMode: 'original' | 'translated' | 'summary') => {
+      if (nextMode === viewMode) {
+        return;
+      }
+      saveCurrentScrollPosition();
+      flushScrollPositions();
+      setViewMode(nextMode);
+    },
+    [flushScrollPositions, saveCurrentScrollPosition, viewMode]
+  );
+
+  const handleSelectChapter = useCallback(
+    (chapterId: string) => {
+      if (chapterId === selectedChapterId) {
+        return;
+      }
+      saveCurrentScrollPosition();
+      flushScrollPositions();
+      setSelectedChapterId(chapterId);
+      if (translatedChapters.has(chapterId)) {
+        setViewMode('translated');
+      } else {
+        setViewMode('original');
+      }
+    },
+    [flushScrollPositions, saveCurrentScrollPosition, selectedChapterId, translatedChapters]
+  );
+
+  const navigableChapterIds = useMemo(() => {
+    const included = chapters.filter((chapter) => isChapterIncluded(chapter.id)).map((chapter) => chapter.id);
+    return included.length > 0 ? included : chapters.map((chapter) => chapter.id);
+  }, [chapters, isChapterIncluded]);
+
+  const goToAdjacentChapter = useCallback(
+    (direction: -1 | 1) => {
+      if (navigableChapterIds.length === 0) {
+        return;
+      }
+
+      const currentIndex = selectedChapterId ? navigableChapterIds.indexOf(selectedChapterId) : -1;
+      const targetIndex =
+        currentIndex === -1
+          ? direction > 0
+            ? 0
+            : navigableChapterIds.length - 1
+          : Math.min(Math.max(currentIndex + direction, 0), navigableChapterIds.length - 1);
+
+      if (targetIndex === currentIndex) {
+        return;
+      }
+
+      const nextChapterId = navigableChapterIds[targetIndex];
+      if (!nextChapterId) {
+        return;
+      }
+
+      saveCurrentScrollPosition();
+      flushScrollPositions();
+      setSelectedChapterId(nextChapterId);
+      if (translatedChapters.has(nextChapterId)) {
+        setViewMode('translated');
+      } else {
+        setViewMode('original');
+      }
+    },
+    [flushScrollPositions, navigableChapterIds, saveCurrentScrollPosition, selectedChapterId, translatedChapters]
+  );
+
+  const scrollReaderByPage = useCallback((direction: -1 | 1) => {
+    const container = contentScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const viewportHeight = container.clientHeight;
+    const pageStep = Math.max(READER_MIN_PAGE_STEP, viewportHeight - READER_PAGE_OVERLAP_PX);
+    const maxScrollTop = Math.max(0, container.scrollHeight - viewportHeight);
+    const targetTop = Math.min(
+      maxScrollTop,
+      Math.max(0, container.scrollTop + direction * pageStep)
+    );
+
+    container.scrollTo({ top: targetTop, behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    if (!isReaderMode || selectedChapterId || navigableChapterIds.length === 0) {
+      return;
+    }
+    const firstChapterId = navigableChapterIds[0];
+    setSelectedChapterId(firstChapterId);
+    if (translatedChapters.has(firstChapterId)) {
+      setViewMode('translated');
+    }
+  }, [isReaderMode, navigableChapterIds, selectedChapterId, translatedChapters]);
+
+  useEffect(() => {
+    const container = contentScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const key = selectedChapterId ? getScrollKey(selectedChapterId, viewMode) : null;
+    const targetScrollTop = key ? chapterScrollPositionsRef.current.get(key) ?? 0 : 0;
+    const frameId = window.requestAnimationFrame(() => {
+      container.scrollTop = targetScrollTop;
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [getScrollKey, selectedChapterId, viewMode]);
+
+  useEffect(() => {
+    return () => {
+      saveCurrentScrollPosition();
+      if (scrollFlushTimeoutRef.current !== null) {
+        window.clearTimeout(scrollFlushTimeoutRef.current);
+      }
+      flushScrollPositions();
+    };
+  }, [flushScrollPositions, saveCurrentScrollPosition]);
+
+  useEffect(() => {
+    if (!isReaderMode) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (target?.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') {
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        goToAdjacentChapter(-1);
+        return;
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        goToAdjacentChapter(1);
+        return;
+      }
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        scrollReaderByPage(event.key === 'ArrowUp' ? -1 : 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [goToAdjacentChapter, isReaderMode, scrollReaderByPage]);
 
   // Export ebook hook
   const { exportStatus, handleExportEbook } = useStoryExport({
@@ -355,6 +580,7 @@ export function StoryTranslator() {
   return (
     <div className="flex flex-col w-full h-[calc(100vh-4rem)] min-h-0 gap-3 overflow-hidden">
       {/* Configuration Section */}
+      {!isReaderMode && (
       <div className="grid grid-cols-1 md:grid-cols-12 gap-2 p-2.5 bg-card border border-border rounded-xl shrink-0 overflow-hidden">
         <div className="md:col-span-3 flex flex-col gap-1 min-w-0">
            <label className="text-sm font-medium text-text-secondary">File</label>
@@ -578,10 +804,12 @@ export function StoryTranslator() {
           </label>
         </div>
       </div>
+      )}
 
       {/* Main Split View */}
-      <div className="flex-1 flex gap-3 min-h-0 overflow-hidden">
+      <div className={`flex-1 flex min-h-0 overflow-hidden ${isReaderMode ? '' : 'gap-3'}`}>
         {/* Left Panel: Chapter List */}
+        {!isReaderMode && (
         <div className="w-[320px] max-w-[35%] min-w-[280px] bg-card border border-border rounded-xl flex flex-col overflow-hidden">
           {/* Header voi toggle buttons */}
           <div className="p-3 border-b border-border bg-surface/50">
@@ -661,15 +889,7 @@ export function StoryTranslator() {
                 
                 {/* Chapter title */}
                 <button
-                  onClick={() => {
-                    setSelectedChapterId(chapter.id);
-                    // Tự động chuyển sang view translated nếu đã có bản dịch
-                    if (translatedChapters.has(chapter.id)) {
-                      setViewMode('translated');
-                    } else {
-                      setViewMode('original');
-                    }
-                  }}
+                  onClick={() => handleSelectChapter(chapter.id)}
                   className="min-w-0 flex-1 text-left flex items-center gap-2"
                 >
                   <span className={`break-words leading-5 ${
@@ -752,29 +972,31 @@ export function StoryTranslator() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Right Panel: Content */}
-        <div className="flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <div className={`${isReaderMode ? 'flex-1 flex flex-col overflow-hidden border-0 rounded-none bg-transparent' : 'flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden'}`}>
+          {!isReaderMode && (
            <div className="p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex flex-wrap justify-between items-start gap-2">
             <div className="flex items-center gap-3 min-w-0 flex-wrap">
               <span>Nội dung</span>
               {selectedChapterId && (
                 <div className="flex gap-1 bg-surface rounded p-1">
                   <button 
-                    onClick={() => setViewMode('original')}
+                    onClick={() => handleViewModeChange('original')}
                     className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'original' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary'}`}
                   >
                     Gốc
                   </button>
                   <button 
-                    onClick={() => setViewMode('translated')}
+                    onClick={() => handleViewModeChange('translated')}
                     disabled={!selectedChapterId || !translatedChapters.has(selectedChapterId)}
                     className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'translated' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
                   >
                     Bản dịch
                   </button>
                   <button 
-                    onClick={() => setViewMode('summary')}
+                    onClick={() => handleViewModeChange('summary')}
                     disabled={!selectedChapterId || !summaries.has(selectedChapterId)}
                     className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
                   >
@@ -843,8 +1065,11 @@ export function StoryTranslator() {
               </div>
             )}
           </div>
+          )}
           <div 
-            className="flex-1 overflow-y-auto px-8 py-6 text-text-primary"
+            ref={contentScrollRef}
+            onScroll={handleContentScroll}
+            className={`flex-1 overflow-y-auto text-text-primary ${isReaderMode ? 'px-2 py-2' : 'px-8 py-6'}`}
             style={{
               fontSize: `${fontSize}px`,
               lineHeight: lineHeight,
@@ -853,7 +1078,7 @@ export function StoryTranslator() {
               wordSpacing: '0.05em'
             }}
           >
-            <div className="max-w-4xl mx-auto">
+            <div className={`${isReaderMode ? 'w-full max-w-none' : 'mx-auto max-w-4xl'}`}>
               {selectedChapterId ? (
                 viewMode === 'original' ? (
                   <div className="whitespace-pre-wrap wrap-break-word">
