@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
-import { GeminiChatConfigLite, TokenContext, ProcessingChapterInfo, StoryStatus } from '../types';
+import { GeminiChatConfigLite, TokenContext, ProcessingChapterInfo, StoryChapterMethod, StoryStatus } from '../types';
 import { getRandomInt } from '@shared/utils/delayUtils';
 
 interface UseStorySummaryGenerationProps {
@@ -14,12 +14,12 @@ interface UseStorySummaryGenerationProps {
   summaries: Map<string, string>;
   summaryTitles: Map<string, string>;
   chapterModels: Map<string, string>;
-  chapterMethods: Map<string, 'api' | 'token'>;
+  chapterMethods: Map<string, StoryChapterMethod>;
   tokenContexts: Map<string, TokenContext>;
   setSummaries: Dispatch<SetStateAction<Map<string, string>>>;
   setSummaryTitles: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterModels: Dispatch<SetStateAction<Map<string, string>>>;
-  setChapterMethods: Dispatch<SetStateAction<Map<string, 'api' | 'token'>>>;
+  setChapterMethods: Dispatch<SetStateAction<Map<string, StoryChapterMethod>>>;
   setTokenContexts: Dispatch<SetStateAction<Map<string, TokenContext>>>;
   setProcessingChapters: (update: (prev: Map<string, ProcessingChapterInfo>) => Map<string, ProcessingChapterInfo>) => void;
   setStatus: (status: StoryStatus) => void;

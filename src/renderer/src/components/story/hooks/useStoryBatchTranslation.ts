@@ -3,14 +3,20 @@ import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types'
 import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
 import { getRandomInt } from '@shared/utils/delayUtils';
-import type { GeminiChatConfigLite, ProcessingChapterInfo, StoryStatus } from '../types';
+import type {
+  GeminiChatConfigLite,
+  ProcessingChapterInfo,
+  StoryChapterMethod,
+  StoryStatus,
+  StoryTranslationMethod
+} from '../types';
 
 interface UseStoryBatchTranslationParams {
   chapters: Chapter[];
   sourceLang: string;
   targetLang: string;
   model: string;
-  translateMode: 'api' | 'token' | 'both';
+  translationMethod: StoryTranslationMethod;
   retranslateExisting: boolean;
   useProxy: boolean;
   isChapterIncluded: (id: string) => boolean;
@@ -22,7 +28,7 @@ interface UseStoryBatchTranslationParams {
   setTranslatedChapters: Dispatch<SetStateAction<Map<string, string>>>;
   setTranslatedTitles: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterModels: Dispatch<SetStateAction<Map<string, string>>>;
-  setChapterMethods: Dispatch<SetStateAction<Map<string, 'api' | 'token'>>>;
+  setChapterMethods: Dispatch<SetStateAction<Map<string, StoryChapterMethod>>>;
   setTokenContexts: Dispatch<SetStateAction<Map<string, { conversationId: string; responseId: string; choiceId: string }>>>;
 }
 
@@ -44,7 +50,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     sourceLang,
     targetLang,
     model,
-    translateMode,
+    translationMethod,
     retranslateExisting,
     useProxy,
     isChapterIncluded,
@@ -134,6 +140,20 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       clearTimeout(timeout);
     }
     spawnTimeoutsRef.current = [];
+
+    // Hard-stop UI immediately. In-flight requests may still resolve, but commit paths are run-guarded.
+    setBatchProgress(null);
+    setStatus('idle');
+    setProcessingChapters((prev) => {
+      const next = new Map(prev);
+      for (const [chapterId, info] of next.entries()) {
+        if (info.source !== 'story_web_queue') {
+          next.delete(chapterId);
+        }
+      }
+      return next;
+    });
+    setIsStopping(false);
   };
 
 
@@ -246,7 +266,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             return next;
         });
         setChapterModels(prev => new Map(prev).set(chapter.id, model));
-        setChapterMethods(prev => new Map(prev).set(chapter.id, channel));
+        setChapterMethods(prev => new Map(prev).set(chapter.id, channel === 'token' ? 'token' : 'api'));
 
         if (translateResult.context && tokenKey) {
             setTokenContexts(prev => new Map(prev).set(tokenKey, translateResult.context!));
@@ -373,7 +393,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   // Hot-add token workers when new configs become active during batch translation
   useEffect(() => {
     if (!isBatchRunningRef.current || shouldStopRef.current) return;
-    if (translateMode !== 'token' && translateMode !== 'both') return;
+    if (translationMethod !== 'token') return;
     
     // Check if there are remaining chapters to translate
     if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) return;
@@ -396,18 +416,30 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       startWorkerRef.current?.('token', config, runId);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenConfigs, translateMode, getDistinctActiveTokenConfigs]);
+  }, [tokenConfigs, translationMethod, getDistinctActiveTokenConfigs]);
 
   // Main batch translation function
-  const handleTranslateAll = async () => {
+  const handleTranslateAll = async (options?: { chapterIds?: string[] }) => {
     if (isBatchRunningRef.current && currentBatchRunIdRef.current) {
       alert('Batch dịch đang chạy. Vui lòng dừng batch hiện tại trước khi chạy lại.');
       return;
     }
 
+    const chapterIdsSet = options?.chapterIds ? new Set(options.chapterIds) : null;
+
+    const shouldUseTokenWorkers = translationMethod === 'token';
+    const shouldUseApiWorkers = translationMethod === 'api' || translationMethod === 'api_gemini_webapi_queue';
+
+    if (!shouldUseApiWorkers && !shouldUseTokenWorkers) {
+      return;
+    }
+
     // 1. Get chapters to translate
     const chaptersToTranslate = chapters.filter(
-      c => isChapterIncluded(c.id) && (retranslateExisting || !translatedChapters.has(c.id))
+      c =>
+        (!chapterIdsSet || chapterIdsSet.has(c.id)) &&
+        isChapterIncluded(c.id) &&
+        (retranslateExisting || !translatedChapters.has(c.id))
     );
     
     if (chaptersToTranslate.length === 0) {
@@ -417,7 +449,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
     // 2. Prepare Configs
     let tokenConfigsForRun: GeminiChatConfigLite[] = [];
-    if (translateMode === 'token' || translateMode === 'both') {
+     if (shouldUseTokenWorkers) {
        tokenConfigsForRun = getDistinctActiveTokenConfigs(tokenConfigs);
        if (tokenConfigsForRun.length === 0) {
           console.error('[useStoryBatchTranslation] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
@@ -454,7 +486,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
     // 5. Async Checks (Max Browsers)
     let maxImpitBrowsers = Infinity;
-    if (translateMode === 'token' || translateMode === 'both') {
+    if (shouldUseTokenWorkers) {
       try {
         await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
         const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
@@ -466,11 +498,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       }
     }
 
-    const apiWorkerCount = translateMode === 'api'
-      ? apiWorkerCountSetting
-      : translateMode === 'both'
-        ? apiWorkerCountSetting
-        : 0;
+    const apiWorkerCount = shouldUseApiWorkers ? apiWorkerCountSetting : 0;
     let tokenWorkerCount = tokenConfigsForRun.length;
     
     if (tokenWorkerCount > maxImpitBrowsers) {

@@ -13,6 +13,14 @@ export type TokenContext = {
   choiceId: string;
 };
 
+export type StoryTranslationMethod =
+  | 'api'
+  | 'token'
+  | 'gemini_webapi_queue'
+  | 'api_gemini_webapi_queue';
+
+export type StoryChapterMethod = 'api' | 'token' | 'gemini_webapi_queue';
+
 export interface ProcessingChapterInfo {
   startTime: number;
   workerId: number;

@@ -1,17 +1,46 @@
 import { useProjectFeatureState } from '../../../hooks/useProjectFeatureState';
 import type { Chapter } from '@shared/types';
-import type { TokenContext } from '../types';
+import type { StoryChapterMethod, StoryTranslationMethod, TokenContext } from '../types';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
+
+type LegacyTranslateMode = 'api' | 'token' | 'both';
+
+function mapLegacyTranslateModeToMethod(mode: LegacyTranslateMode | undefined): StoryTranslationMethod {
+  if (mode === 'token') {
+    return 'token';
+  }
+  if (mode === 'both') {
+    return 'api_gemini_webapi_queue';
+  }
+  return 'api';
+}
+
+function toLegacyTranslateMode(method: StoryTranslationMethod): LegacyTranslateMode {
+  if (method === 'token') {
+    return 'token';
+  }
+  if (method === 'api_gemini_webapi_queue') {
+    return 'both';
+  }
+  return 'api';
+}
+
+function normalizeChapterMethod(method: unknown): StoryChapterMethod {
+  if (method === 'token' || method === 'gemini_webapi_queue') {
+    return method;
+  }
+  return 'api';
+}
 
 interface StoryTranslatorStateSetters {
   setFilePath: (path: string) => void;
   setSourceLang: (lang: string) => void;
   setTargetLang: (lang: string) => void;
   setModel: (model: string) => void;
-  setTranslateMode: (mode: 'api' | 'token' | 'both') => void;
+  setTranslationMethod: (mode: StoryTranslationMethod) => void;
   setTranslatedChapters: (chapters: Map<string, string>) => void;
   setChapterModels: (models: Map<string, string>) => void;
-  setChapterMethods: (methods: Map<string, 'api' | 'token'>) => void;
+  setChapterMethods: (methods: Map<string, StoryChapterMethod>) => void;
   setTranslatedTitles: (titles: Map<string, string>) => void;
   setTokenConfigId: (id: string | null) => void;
   setTokenContexts: (contexts: Map<string, TokenContext>) => void;
@@ -29,11 +58,11 @@ interface StoryTranslatorStateValues {
   sourceLang: string;
   targetLang: string;
   model: string;
-  translateMode: 'api' | 'token' | 'both';
+  translationMethod: StoryTranslationMethod;
   chapters: Chapter[];
   translatedChapters: Map<string, string>;
   chapterModels: Map<string, string>;
-  chapterMethods: Map<string, 'api' | 'token'>;
+  chapterMethods: Map<string, StoryChapterMethod>;
   translatedTitles: Map<string, string>;
   tokenConfigId: string | null;
   tokenContexts: Map<string, TokenContext>;
@@ -57,10 +86,11 @@ export function useStoryTranslatorPersistence(
     sourceLang?: string;
     targetLang?: string;
     model?: string;
-    translateMode?: 'api' | 'token' | 'both';
+    translationMethod?: StoryTranslationMethod;
+    translateMode?: LegacyTranslateMode;
     translatedEntries?: Array<[string, string]>;
     chapterModels?: Array<[string, string]>;
-    chapterMethods?: Array<[string, 'api' | 'token']>;
+    chapterMethods?: Array<[string, StoryChapterMethod | 'api' | 'token']>;
     translatedTitles?: Array<{ id: string; title: string }>;
     tokenConfigId?: string | null;
     tokenContext?: TokenContext | null;
@@ -85,8 +115,13 @@ export function useStoryTranslatorPersistence(
       });
 
       const orderedChapterMethods = orderedTranslatedEntries.map(([chapterId]) => {
-        const usedMethod = values.chapterMethods.get(chapterId) || (values.translateMode === 'token' ? 'token' : 'api');
-        return [chapterId, usedMethod] as [string, 'api' | 'token'];
+        const defaultMethod: StoryChapterMethod = values.translationMethod === 'token'
+          ? 'token'
+          : values.translationMethod === 'gemini_webapi_queue'
+            ? 'gemini_webapi_queue'
+            : 'api';
+        const usedMethod = values.chapterMethods.get(chapterId) || defaultMethod;
+        return [chapterId, usedMethod] as [string, StoryChapterMethod];
       });
 
       const serializedTitles = orderedTranslatedEntries.map(([chapterId, content]) => ({
@@ -101,7 +136,9 @@ export function useStoryTranslatorPersistence(
         sourceLang: values.sourceLang,
         targetLang: values.targetLang,
         model: values.model,
-        translateMode: values.translateMode,
+        translationMethod: values.translationMethod,
+        // Keep legacy field for backward compatibility with older builds.
+        translateMode: toLegacyTranslateMode(values.translationMethod),
         translatedEntries: orderedTranslatedEntries,
         chapterModels: orderedChapterModels,
         chapterMethods: orderedChapterMethods,
@@ -118,10 +155,20 @@ export function useStoryTranslatorPersistence(
       if (saved.sourceLang) setters.setSourceLang(saved.sourceLang);
       if (saved.targetLang) setters.setTargetLang(saved.targetLang);
       if (saved.model) setters.setModel(saved.model);
-      if (saved.translateMode) setters.setTranslateMode(saved.translateMode);
+      if (saved.translationMethod) {
+        setters.setTranslationMethod(saved.translationMethod);
+      } else if (saved.translateMode) {
+        setters.setTranslationMethod(mapLegacyTranslateModeToMethod(saved.translateMode));
+      }
       if (saved.translatedEntries) setters.setTranslatedChapters(new Map(saved.translatedEntries));
       if (saved.chapterModels) setters.setChapterModels(new Map(saved.chapterModels));
-      if (saved.chapterMethods) setters.setChapterMethods(new Map(saved.chapterMethods));
+      if (saved.chapterMethods) {
+        const normalized = new Map<string, StoryChapterMethod>();
+        for (const [chapterId, method] of saved.chapterMethods) {
+          normalized.set(chapterId, normalizeChapterMethod(method));
+        }
+        setters.setChapterMethods(normalized);
+      }
       if (saved.translatedTitles) {
         setters.setTranslatedTitles(new Map(saved.translatedTitles.map((t: any) => [t.id, t.title] as [string, string])));
       }
@@ -156,7 +203,7 @@ export function useStoryTranslatorPersistence(
       values.sourceLang,
       values.targetLang,
       values.model,
-      values.translateMode,
+      values.translationMethod,
       values.chapters,
       values.translatedChapters,
       values.chapterModels,

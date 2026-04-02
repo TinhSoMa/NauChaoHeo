@@ -10,7 +10,7 @@ import {
   StoryTranslateGeminiWebQueueResult
 } from '@shared/types';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
-import type { ProcessingChapterInfo, StoryStatus } from '../types';
+import type { ProcessingChapterInfo, StoryChapterMethod, StoryStatus } from '../types';
 
 export type StoryWebQueueMode = 'sequential' | 'multi_auto';
 
@@ -28,7 +28,7 @@ interface UseStoryGeminiWebQueueTranslationParams {
   setTranslatedChapters: Dispatch<SetStateAction<Map<string, string>>>;
   setTranslatedTitles: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterModels: Dispatch<SetStateAction<Map<string, string>>>;
-  setChapterMethods: Dispatch<SetStateAction<Map<string, 'api' | 'token'>>>;
+  setChapterMethods: Dispatch<SetStateAction<Map<string, StoryChapterMethod>>>;
 }
 
 const AUTO_WORKERS_MAX = 8;
@@ -153,6 +153,11 @@ export function useStoryGeminiWebQueueTranslation(
   const currentBatchIdRef = useRef<string | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
 
+  const isActiveBatch = (batchId?: string): boolean => {
+    const activeBatchId = currentBatchIdRef.current;
+    return Boolean(activeBatchId && batchId && batchId === activeBatchId);
+  };
+
   const getEligibleChapters = (): Chapter[] => {
     return chapters.filter((chapter) => {
       if (!isChapterIncluded(chapter.id)) {
@@ -168,9 +173,27 @@ export function useStoryGeminiWebQueueTranslation(
   const handleStopTranslation = async () => {
     shouldStopRef.current = true;
     currentRunIdRef.current = null;
-    setIsStopping(true);
     const batchId = currentBatchIdRef.current;
+    setIsStopping(true);
+
+    // Hard-stop UI immediately. Late responses/events are ignored by run/batch guards.
+    currentBatchIdRef.current = null;
+    setIsTranslating(false);
+    setBatchProgress(null);
+    setResolvedWorkerCount(null);
+    setStatus('idle');
+    setProcessingChapters((prev) => {
+      const next = new Map(prev);
+      for (const [chapterId, info] of next.entries()) {
+        if (info.source === 'story_web_queue') {
+          next.delete(chapterId);
+        }
+      }
+      return next;
+    });
+
     if (!batchId) {
+      setIsStopping(false);
       return;
     }
 
@@ -184,6 +207,8 @@ export function useStoryGeminiWebQueueTranslation(
       }
     } catch (error) {
       console.warn('[StoryGeminiWebQueue] Cancel batch failed:', error);
+    } finally {
+      setIsStopping(false);
     }
   };
 
@@ -192,6 +217,9 @@ export function useStoryGeminiWebQueueTranslation(
       STORY_IPC_CHANNELS.GEMINI_WEB_QUEUE_STREAM_EVENT,
       (payload: unknown) => {
         const event = payload as StoryGeminiWebQueueStreamEvent;
+        if (!isActiveBatch(event.batchId)) {
+          return;
+        }
         setProcessingChapters((prev) => applyStoryQueueEventToProcessingMap(prev, event));
       }
     );
@@ -199,15 +227,28 @@ export function useStoryGeminiWebQueueTranslation(
       STORY_IPC_CHANNELS.GEMINI_WEB_QUEUE_STREAM_SNAPSHOT,
       (payload: unknown) => {
         const snapshot = payload as StoryGeminiWebQueueSnapshot;
-        setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, snapshot));
+        const activeBatchId = currentBatchIdRef.current;
+        if (!activeBatchId) {
+          return;
+        }
+        const filteredSnapshot: StoryGeminiWebQueueSnapshot = {
+          ...snapshot,
+          jobs: snapshot.jobs.filter((job) => job.batchId === activeBatchId)
+        };
+        setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, filteredSnapshot));
       }
     );
 
     void window.electronAPI.invoke(STORY_IPC_CHANNELS.START_GEMINI_WEB_QUEUE_STREAM);
     void window.electronAPI.invoke(STORY_IPC_CHANNELS.GET_GEMINI_WEB_QUEUE_SNAPSHOT).then((result) => {
       const snapshotResult = result as { success?: boolean; data?: StoryGeminiWebQueueSnapshot };
-      if (snapshotResult?.success && snapshotResult.data) {
-        setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, snapshotResult.data!));
+      const activeBatchId = currentBatchIdRef.current;
+      if (snapshotResult?.success && snapshotResult.data && activeBatchId) {
+        const filteredSnapshot: StoryGeminiWebQueueSnapshot = {
+          ...snapshotResult.data,
+          jobs: snapshotResult.data.jobs.filter((job) => job.batchId === activeBatchId)
+        };
+        setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, filteredSnapshot));
       }
     });
 
@@ -356,7 +397,7 @@ export function useStoryGeminiWebQueueTranslation(
           return next;
         });
         setChapterModels((prev) => new Map(prev).set(expectedChapterId, model));
-        setChapterMethods((prev) => new Map(prev).set(expectedChapterId, 'token'));
+        setChapterMethods((prev) => new Map(prev).set(expectedChapterId, 'gemini_webapi_queue'));
       } else {
         console.error(
           `[StoryGeminiWebQueue] Translate failed for chapter ${expectedChapterId}:`,
@@ -385,8 +426,11 @@ export function useStoryGeminiWebQueueTranslation(
     }
   };
 
-  const handleTranslateAll = async () => {
-    const chaptersToTranslate = getEligibleChapters();
+  const handleTranslateAll = async (options?: { chapterIds?: string[] }) => {
+    const chapterIdsSet = options?.chapterIds ? new Set(options.chapterIds) : null;
+    const chaptersToTranslate = getEligibleChapters().filter((chapter) =>
+      chapterIdsSet ? chapterIdsSet.has(chapter.id) : true
+    );
     if (chaptersToTranslate.length === 0) {
       alert('Không có chương hợp lệ để dịch Web Queue.');
       return;
