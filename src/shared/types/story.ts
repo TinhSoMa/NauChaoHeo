@@ -27,6 +27,11 @@ export interface StoryTranslateGeminiWebQueuePayload {
 }
 
 export interface StoryTranslateGeminiWebQueueMetadata extends Record<string, unknown> {
+  runId?: string;
+  chapterId?: string;
+  chapterTitle?: string;
+  batchId?: string;
+  workerId?: number;
   queuePacingMode?: 'dispatch_spacing_global';
   queueGapMs?: number;
   startedAt?: number;

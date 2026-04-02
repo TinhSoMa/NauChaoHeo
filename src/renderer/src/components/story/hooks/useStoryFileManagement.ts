@@ -6,6 +6,7 @@ interface UseStoryFileManagementParams {
   sourceLang: string;
   targetLang: string;
   model: string;
+  isTranslationActive?: boolean;
   setFilePath: Dispatch<SetStateAction<string>>;
   setChapters: Dispatch<SetStateAction<Chapter[]>>;
   setExcludedChapterIds: Dispatch<SetStateAction<Set<string>>>;
@@ -29,6 +30,7 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
     sourceLang,
     targetLang,
     model,
+    isTranslationActive = false,
     setFilePath,
     setChapters,
     setExcludedChapterIds,
@@ -39,6 +41,11 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
   } = params;
 
   const handleBrowse = async () => {
+    if (isTranslationActive) {
+      alert('Đang có tiến trình dịch. Vui lòng dừng dịch trước khi đổi file.');
+      return;
+    }
+
     const result = await window.electronAPI.invoke('dialog:openFile', {
       filters: [{ name: 'Text/Epub', extensions: ['txt', 'epub'] }]
     }) as { canceled: boolean; filePaths: string[] };
@@ -46,7 +53,7 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
     if (!result.canceled && result.filePaths.length > 0) {
       const path = result.filePaths[0];
       setFilePath(path);
-      parseFile(path);
+      await parseFile(path);
     }
   };
 
@@ -54,7 +61,15 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
     path: string,
     options?: ParseFileOptions
   ): Promise<boolean> => {
-    setStatus('running');
+    if (isTranslationActive && !options?.keepTranslations) {
+      console.warn('[useStoryFileManagement] Parse blocked while translation is running.');
+      return false;
+    }
+
+    const shouldManageStatus = !isTranslationActive;
+    if (shouldManageStatus) {
+      setStatus('running');
+    }
     try {
       const parseResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PARSE, path) as ParseStoryResult;
       if (parseResult.success && parseResult.chapters) {
@@ -78,7 +93,9 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
       console.error('[useStoryFileManagement] Loi invoke story:parse:', error);
       return false;
     } finally {
-      setStatus('idle');
+      if (shouldManageStatus) {
+        setStatus('idle');
+      }
     }
   };
 

@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction } from 'react';
+import { Dispatch, SetStateAction, useRef } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
@@ -52,6 +52,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     setViewMode,
     translatedChapters
   } = params;
+  const activeRunIdRef = useRef<string | null>(null);
 
   const handleTranslate = async (selectedChapterId: string | null) => {
     if (!selectedChapterId) return;
@@ -68,6 +69,14 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     
     const chapter = chapters.find(c => c.id === selectedChapterId);
     if (!chapter) return;
+
+    if (activeRunIdRef.current) {
+      alert('Đang có tiến trình dịch chương khác. Vui lòng đợi hoàn tất.');
+      return;
+    }
+
+    const runId = `story-single-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    activeRunIdRef.current = runId;
 
     setStatus('running');
     
@@ -121,14 +130,33 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
         webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
         useProxy: method === 'IMPIT' && useProxy,
         metadata: { 
+          runId,
           chapterId: selectedChapterId,
           validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
         }
-      }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
+      }) as {
+        success: boolean;
+        data?: string;
+        error?: string;
+        context?: { conversationId: string; responseId: string; choiceId: string };
+        configId?: string;
+        metadata?: { chapterId?: string; runId?: string };
+      };
+
+      if (activeRunIdRef.current !== runId) {
+        console.warn('[useStoryTranslation] Drop stale response from old run:', runId);
+        return;
+      }
 
       if (translateResult.success && translateResult.data) {
+        const responseRunId = translateResult.metadata?.runId;
+        if (responseRunId && responseRunId !== runId) {
+          console.error(`[useStoryTranslation] ⚠️ STALE RUN DETECTED! ${responseRunId} !== ${runId}`);
+          throw new Error('Run metadata validation failed - stale response detected');
+        }
+
         // Validate metadata to prevent race condition
-        if (translateResult.metadata?.chapterId !== selectedChapterId) {
+        if (translateResult.metadata?.chapterId && translateResult.metadata.chapterId !== selectedChapterId) {
           console.error(`[useStoryTranslation] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== selected (${selectedChapterId})`);
           throw new Error('Metadata validation failed - race condition detected');
         }
@@ -185,7 +213,10 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
         next.delete(chapter.id);
         return next;
       });
-      setStatus('idle');
+      if (activeRunIdRef.current === runId) {
+        activeRunIdRef.current = null;
+        setStatus('idle');
+      }
     }
   };
 

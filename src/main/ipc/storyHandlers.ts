@@ -48,6 +48,35 @@ function toOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(value) ? Number(value) : undefined;
 }
 
+function toMetadataObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function validateStoryResponseMetadata(
+  requestMetadata: Record<string, unknown>,
+  responseMetadata: Record<string, unknown>
+): { ok: boolean; message?: string } {
+  const requestChapterId = toOptionalString(requestMetadata.chapterId);
+  const responseChapterId = toOptionalString(responseMetadata.chapterId);
+  if (requestChapterId && responseChapterId && requestChapterId !== responseChapterId) {
+    return {
+      ok: false,
+      message: `Chapter mismatch request=${requestChapterId} response=${responseChapterId}`
+    };
+  }
+
+  const requestRunId = toOptionalString(requestMetadata.runId);
+  const responseRunId = toOptionalString(responseMetadata.runId);
+  if (requestRunId && responseRunId && requestRunId !== responseRunId) {
+    return {
+      ok: false,
+      message: `Run mismatch request=${requestRunId} response=${responseRunId}`
+    };
+  }
+
+  return { ok: true };
+}
+
 function toStoryStateFromEventType(
   eventType: StoryGeminiWebQueueStreamEvent['eventType']
 ): StoryGeminiWebQueueStreamEvent['state'] {
@@ -282,7 +311,25 @@ export function registerStoryHandlers(): void {
         }
       };
       
-      return await StoryService.StoryService.translateChapter(options);
+      const result = await StoryService.StoryService.translateChapter(options);
+      const requestMetadata = toMetadataObject(options?.metadata);
+      const responseMetadata = toMetadataObject(result?.metadata);
+
+      if (result?.success) {
+        const validation = validateStoryResponseMetadata(requestMetadata, responseMetadata);
+        if (!validation.ok) {
+          console.error(`[StoryHandlers] Drop stale TRANSLATE_CHAPTER response: ${validation.message}`);
+          return {
+            success: false,
+            error: validation.message,
+            errorCode: 'STALE_RESPONSE',
+            retryable: true,
+            metadata: responseMetadata
+          };
+        }
+      }
+
+      return result;
     }
   );
 
@@ -292,7 +339,25 @@ export function registerStoryHandlers(): void {
       _event: IpcMainInvokeEvent,
       payload: StoryTranslateGeminiWebQueuePayload
     ): Promise<StoryTranslateGeminiWebQueueResult> => {
-      return await StoryService.StoryService.translateChapterWithGeminiWebQueue(payload);
+      const result = await StoryService.StoryService.translateChapterWithGeminiWebQueue(payload);
+      const requestMetadata = toMetadataObject(payload?.metadata);
+      const responseMetadata = toMetadataObject(result?.metadata);
+
+      if (result?.success) {
+        const validation = validateStoryResponseMetadata(requestMetadata, responseMetadata);
+        if (!validation.ok) {
+          console.error(`[StoryHandlers] Drop stale TRANSLATE_CHAPTER_GEMINI_WEB_QUEUE response: ${validation.message}`);
+          return {
+            success: false,
+            error: validation.message,
+            errorCode: 'STALE_RESPONSE',
+            queueRuntimeKey: result.queueRuntimeKey,
+            metadata: result.metadata
+          };
+        }
+      }
+
+      return result;
     }
   );
 

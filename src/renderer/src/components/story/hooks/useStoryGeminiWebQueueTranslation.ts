@@ -151,6 +151,7 @@ export function useStoryGeminiWebQueueTranslation(
   const [isStopping, setIsStopping] = useState(false);
   const [resolvedWorkerCount, setResolvedWorkerCount] = useState<number | null>(null);
   const currentBatchIdRef = useRef<string | null>(null);
+  const currentRunIdRef = useRef<string | null>(null);
 
   const getEligibleChapters = (): Chapter[] => {
     return chapters.filter((chapter) => {
@@ -166,6 +167,7 @@ export function useStoryGeminiWebQueueTranslation(
 
   const handleStopTranslation = async () => {
     shouldStopRef.current = true;
+    currentRunIdRef.current = null;
     setIsStopping(true);
     const batchId = currentBatchIdRef.current;
     if (!batchId) {
@@ -241,12 +243,19 @@ export function useStoryGeminiWebQueueTranslation(
       conversationKey?: string;
       resetConversation?: boolean;
       batchId?: string;
+      runId?: string;
     }
   ): Promise<void> => {
+    const expectedChapterId = chapter.id;
+    const runId = options?.runId;
+    if (!runId || currentRunIdRef.current !== runId || shouldStopRef.current) {
+      return;
+    }
+
     const queuedAt = Date.now();
     setProcessingChapters((prev) => {
       const next = new Map(prev);
-      next.set(chapter.id, {
+      next.set(expectedChapterId, {
         startTime: queuedAt,
         workerId,
         channel: 'token',
@@ -271,11 +280,11 @@ export function useStoryGeminiWebQueueTranslation(
       ) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
-        console.error(`[StoryGeminiWebQueue] Prepare prompt failed for chapter ${chapter.id}:`, prepareResult.error);
+        console.error(`[StoryGeminiWebQueue] Prepare prompt failed for chapter ${expectedChapterId}:`, prepareResult.error);
         return;
       }
 
-      if (shouldStopRef.current) {
+      if (shouldStopRef.current || currentRunIdRef.current !== runId) {
         return;
       }
 
@@ -288,7 +297,8 @@ export function useStoryGeminiWebQueueTranslation(
           conversationKey: options?.conversationKey,
           resetConversation: options?.resetConversation ?? true,
           metadata: {
-            chapterId: chapter.id,
+            runId,
+            chapterId: expectedChapterId,
             chapterTitle: chapter.title,
             batchId: options?.batchId,
             workerId,
@@ -299,28 +309,57 @@ export function useStoryGeminiWebQueueTranslation(
       const pacingDebug = toQueuePacingDebug(translateResult.metadata);
       if (pacingDebug) {
         console.log('[StoryGeminiWebQueue][Pacing]', {
-          chapterId: chapter.id,
+          chapterId: expectedChapterId,
           resourceId: translateResult.resourceId,
           ...pacingDebug
         });
       }
 
       if (translateResult.success && translateResult.data) {
+        if (shouldStopRef.current || currentRunIdRef.current !== runId) {
+          console.warn('[StoryGeminiWebQueue] Drop stale success after stop/run change', {
+            expectedChapterId,
+            runId,
+            activeRunId: currentRunIdRef.current
+          });
+          return;
+        }
+
+        const responseRunId = translateResult.metadata?.runId;
+        if (responseRunId && responseRunId !== runId) {
+          console.warn('[StoryGeminiWebQueue] Drop stale response due to runId mismatch', {
+            expectedChapterId,
+            runId,
+            responseRunId
+          });
+          return;
+        }
+
+        const responseChapterId = translateResult.metadata?.chapterId;
+        if (responseChapterId && responseChapterId !== expectedChapterId) {
+          console.error('[StoryGeminiWebQueue] Drop mismatched response chapter', {
+            expectedChapterId,
+            responseChapterId,
+            runId
+          });
+          return;
+        }
+
         setTranslatedChapters((prev) => {
           const next = new Map(prev);
-          next.set(chapter.id, translateResult.data!);
+          next.set(expectedChapterId, translateResult.data!);
           return next;
         });
         setTranslatedTitles((prev) => {
           const next = new Map(prev);
-          next.set(chapter.id, extractTranslatedTitle(translateResult.data!, chapter.id));
+          next.set(expectedChapterId, extractTranslatedTitle(translateResult.data!, expectedChapterId));
           return next;
         });
-        setChapterModels((prev) => new Map(prev).set(chapter.id, model));
-        setChapterMethods((prev) => new Map(prev).set(chapter.id, 'token'));
+        setChapterModels((prev) => new Map(prev).set(expectedChapterId, model));
+        setChapterMethods((prev) => new Map(prev).set(expectedChapterId, 'token'));
       } else {
         console.error(
-          `[StoryGeminiWebQueue] Translate failed for chapter ${chapter.id}:`,
+          `[StoryGeminiWebQueue] Translate failed for chapter ${expectedChapterId}:`,
           translateResult.errorCode,
           translateResult.error
         );
@@ -329,12 +368,17 @@ export function useStoryGeminiWebQueueTranslation(
         }
       }
     } catch (error) {
-      console.error(`[StoryGeminiWebQueue] Unexpected error at chapter ${chapter.id}:`, error);
+      console.error(`[StoryGeminiWebQueue] Unexpected error at chapter ${expectedChapterId}:`, error);
     } finally {
       setProcessingChapters((prev) => {
         const next = new Map(prev);
-        if (next.get(chapter.id)?.source === 'story_web_queue') {
-          next.delete(chapter.id);
+        const current = next.get(expectedChapterId);
+        if (
+          current?.source === 'story_web_queue'
+          && current.workerId === workerId
+          && current.queuedAt === queuedAt
+        ) {
+          next.delete(expectedChapterId);
         }
         return next;
       });
@@ -349,6 +393,8 @@ export function useStoryGeminiWebQueueTranslation(
     }
 
     shouldStopRef.current = false;
+    const runId = `story-webqueue-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    currentRunIdRef.current = runId;
     setIsTranslating(true);
     setIsStopping(false);
     setStatus('running');
@@ -375,6 +421,7 @@ export function useStoryGeminiWebQueueTranslation(
             }
             const chapter = chaptersToTranslate[chapterIndex];
             await processChapter(chapter, workerId, {
+              runId,
               batchId,
               conversationKey: `${batchId}-${chapter.id}`,
               resetConversation: true
@@ -401,6 +448,7 @@ export function useStoryGeminiWebQueueTranslation(
             break;
           }
           await processChapter(chapter, 1, {
+            runId,
             conversationKey: batchConversationKey,
             resetConversation: isFirstTurn,
             batchId: batchConversationKey
@@ -417,12 +465,15 @@ export function useStoryGeminiWebQueueTranslation(
         }
       }
     } finally {
-      setIsTranslating(false);
-      setIsStopping(false);
-      setStatus('idle');
-      setBatchProgress(null);
-      setResolvedWorkerCount(null);
-      currentBatchIdRef.current = null;
+      if (currentRunIdRef.current === runId || currentRunIdRef.current === null) {
+        currentRunIdRef.current = null;
+        setIsTranslating(false);
+        setIsStopping(false);
+        setStatus('idle');
+        setBatchProgress(null);
+        setResolvedWorkerCount(null);
+        currentBatchIdRef.current = null;
+      }
     }
   };
 

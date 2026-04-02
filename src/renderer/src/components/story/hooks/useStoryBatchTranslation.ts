@@ -86,10 +86,11 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   
   // Ref to track if batch is currently running (for hot-add workers)
   const isBatchRunningRef = useRef(false);
+  const currentBatchRunIdRef = useRef<string | null>(null);
   const activeWorkerCountRef = useRef(0);
   const spawnTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   // Ref to latest startWorker function for use in effects
-  const startWorkerRef = useRef<((channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => Promise<void>) | null>(null);
+  const startWorkerRef = useRef<((channel: 'api' | 'token', tokenConfig: GeminiChatConfigLite | null, runId: string) => Promise<void>) | null>(null);
 
   // Update elapsed time every second
   useEffect(() => {
@@ -125,6 +126,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   const handleStopTranslation = () => {
     console.log('[useStoryBatchTranslation] Dừng dịch thủ công...');
     shouldStopRef.current = true;
+    currentBatchRunIdRef.current = null;
     setShouldStop(true);
     isBatchRunningRef.current = false;
     setIsStopping(true);
@@ -142,9 +144,10 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     index: number,
     workerId: number,
     channel: 'api' | 'token',
-    tokenConfig: GeminiChatConfigLite | null
+    tokenConfig: GeminiChatConfigLite | null,
+    runId: string
   ): Promise<{ id: string; text: string } | { retryable: boolean } | null> => {
-    if (shouldStopRef.current) return null;
+    if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) return null;
 
     // Mark as processing
     setProcessingChapters(prev => {
@@ -195,18 +198,40 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
           webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
           useProxy: method === 'IMPIT' && useProxy,
           metadata: { 
+              runId,
               chapterId: chapter.id,
               chapterTitle: chapter.title,
               tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
           }
         }
-      ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
+      ) as {
+        success: boolean;
+        data?: string;
+        error?: string;
+        context?: { conversationId: string; responseId: string; choiceId: string };
+        configId?: string;
+        metadata?: { chapterId?: string; runId?: string };
+        retryable?: boolean;
+      };
+
+      if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+        return null;
+      }
 
       if (translateResult.success && translateResult.data) {
+        if (translateResult.metadata?.runId && translateResult.metadata.runId !== runId) {
+            console.warn(`[useStoryBatchTranslation] ⚠️ STALE RUN: ${translateResult.metadata.runId} !== ${runId}`);
+            return null;
+        }
+
         if (translateResult.metadata?.chapterId !== chapter.id) {
             console.error(`[useStoryBatchTranslation] ⚠️ RACE CONDITION: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
-            return null;
+            return { retryable: true };
+        }
+
+        if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+          return null;
         }
 
         // Update UI hooks
@@ -245,7 +270,11 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   };
 
   // Worker function - processes chapters from the queue
-  const startWorker = async (channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
+  const startWorker = async (channel: 'api' | 'token', tokenConfig: GeminiChatConfigLite | null, runId: string) => {
+    if (currentBatchRunIdRef.current !== runId) {
+      return;
+    }
+
     const workerId = ++workerIdRef.current;
     activeWorkerCountRef.current += 1;
     console.log(`[useStoryBatchTranslation] 🚀 Worker ${workerId} started (${channel})`);
@@ -257,8 +286,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     }
 
     try {
-        while (!shouldStopRef.current) {
-            if (shouldStopRef.current) break;
+      while (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
+        if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) break;
             
             // Check availability
             if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) break;
@@ -288,10 +317,10 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
                      await new Promise(r => setTimeout(r, 2000 * retryCount));
                 }
                 
-                result = await processChapter(chapter, index, workerId, channel, tokenConfig || null);
+                result = await processChapter(chapter, index, workerId, channel, tokenConfig, runId);
 
                 if (result && 'retryable' in result && result.retryable) {
-                    if (shouldStopRef.current) {
+                  if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
                         break;
                     }
                     retryCount++;
@@ -305,7 +334,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             }
 
             if (result && !('retryable' in result) && result !== null) {
-                 if (shouldStopRef.current) {
+                if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
                     break;
                  }
                  batchStateRef.current.completed++;
@@ -322,6 +351,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         // Check if all workers are done
         if (
           activeWorkerCountRef.current === 0 &&
+          (currentBatchRunIdRef.current === runId || currentBatchRunIdRef.current === null) &&
           (
             shouldStopRef.current ||
             batchStateRef.current.completed >= batchStateRef.current.chapters.length ||
@@ -329,6 +359,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
           )
         ) {
           isBatchRunningRef.current = false;
+          currentBatchRunIdRef.current = null;
           setIsStopping(false);
           setStatus('idle');
           setBatchProgress(null);
@@ -358,13 +389,22 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     
     for (const config of newConfigs) {
       console.log(`[useStoryBatchTranslation] 🚀 Hot-starting worker for ${config.email || config.id}`);
-      startWorkerRef.current?.('token', config);
+      const runId = currentBatchRunIdRef.current;
+      if (!runId) {
+        break;
+      }
+      startWorkerRef.current?.('token', config, runId);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokenConfigs, translateMode, getDistinctActiveTokenConfigs]);
 
   // Main batch translation function
   const handleTranslateAll = async () => {
+    if (isBatchRunningRef.current && currentBatchRunIdRef.current) {
+      alert('Batch dịch đang chạy. Vui lòng dừng batch hiện tại trước khi chạy lại.');
+      return;
+    }
+
     // 1. Get chapters to translate
     const chaptersToTranslate = chapters.filter(
       c => isChapterIncluded(c.id) && (retranslateExisting || !translatedChapters.has(c.id))
@@ -403,6 +443,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     spawnTimeoutsRef.current = [];
 
     // 4. Set Status
+    const runId = `story-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    currentBatchRunIdRef.current = runId;
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     shouldStopRef.current = false;
@@ -446,7 +488,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
     // Start API workers
     for (let i = 0; i < apiWorkerCount; i += 1) {
-      startWorker('api');
+      startWorker('api', null, runId);
     }
 
     // Start Token workers with staggered delays
@@ -459,15 +501,15 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       
       if (i === 0) {
         console.log(`[useStoryBatchTranslation] 🚀 Starting worker 1/${finalConfigsToUse.length} immediately`);
-        startWorker('token', config);
+        startWorker('token', config, runId);
       } else {
         const spawnDelay = getRandomInt(MIN_SPAWN_DELAY, MAX_SPAWN_DELAY);
         cumulativeDelay += spawnDelay;
         console.log(`[useStoryBatchTranslation] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
         spawnTimeoutsRef.current.push(setTimeout(() => {
-          if (!shouldStopRef.current) {
+          if (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
             console.log(`[useStoryBatchTranslation] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`);
-            startWorker('token', config);
+            startWorker('token', config, runId);
           }
         }, cumulativeDelay));
       }

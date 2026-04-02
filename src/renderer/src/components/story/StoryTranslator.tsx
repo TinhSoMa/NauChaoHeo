@@ -92,6 +92,7 @@ export function StoryTranslator() {
     sourceLang,
     targetLang,
     model,
+    isTranslationActive: status === 'running',
     setFilePath,
     setChapters,
     setExcludedChapterIds,
@@ -591,7 +592,13 @@ export function StoryTranslator() {
                onChange={(e) => setFilePath(e.target.value)}
                containerClassName="flex-1"
              />
-             <Button onClick={handleBrowse} variant="secondary" className="shrink-0 h-8 px-2 text-xs">
+             <Button
+               onClick={handleBrowse}
+               variant="secondary"
+               className="shrink-0 h-8 px-2 text-xs"
+               disabled={status === 'running'}
+               title={status === 'running' ? 'Đang chạy tiến trình, tạm thời không đổi file' : 'Chọn file truyện'}
+             >
                <FileText size={16} />
              </Button>
            </div>
