@@ -1711,6 +1711,26 @@ export const DownloaderPage = () => {
                     </select>
                   )}
                 </div>
+
+                <div className={`${styles.fieldGroup} ${styles.quickControlItem}`}>
+                  <label className={styles.fieldLabel}>Định dạng subtitle</label>
+                  <select
+                    className={downloadSubtitle ? styles.selectInput : styles.selectDisabled}
+                    value={convertSubs}
+                    onChange={e => setConvertSubs(e.target.value)}
+                    disabled={!downloadSubtitle}
+                  >
+                    {downloadSubtitle ? (
+                      <>
+                        <option value="srt">srt</option>
+                        <option value="vtt">vtt</option>
+                        <option value="ass">ass</option>
+                      </>
+                    ) : (
+                      <option value="srt">Bật subtitles để chọn</option>
+                    )}
+                  </select>
+                </div>
               </div>
 
               {mode === 'single' && (
@@ -1830,18 +1850,6 @@ export const DownloaderPage = () => {
                       {isFetching ? 'Đang tải...' : 'Không có danh sách phụ đề để chọn.'}
                     </p>
                   )} */}
-                  <div className={styles.subFormatRow}>
-                    <label className={styles.subFormatLabel}>Định dạng</label>
-                    <select
-                      className={styles.subFormatSelect}
-                      value={convertSubs}
-                      onChange={e => setConvertSubs(e.target.value)}
-                    >
-                      <option value="srt">srt</option>
-                      <option value="vtt">vtt</option>
-                      <option value="ass">ass</option>
-                    </select>
-                  </div>
                 </div>
               )}
             </div>
