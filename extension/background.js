@@ -157,12 +157,37 @@ function extractIndexesFromResponse(responseObject, rawText) {
 }
 
 function buildSampleIndices(expectedCount, sampleSize = SAMPLE_COMPARE_SIZE) {
-    const size = Math.max(0, Math.min(sampleSize, expectedCount));
+    const normalizedCount = Number.isFinite(expectedCount) ? Math.max(0, Math.floor(expectedCount)) : 0;
+    const size = Math.max(0, Math.min(sampleSize, normalizedCount));
     return Array.from({ length: size }, (_, i) => i + 1);
 }
 
-function buildTranslatedSample(responseObject, expectedCount, sampleSize = SAMPLE_COMPARE_SIZE) {
-    const sampleIndices = buildSampleIndices(expectedCount, sampleSize);
+function buildRandomSampleIndices(expectedCount, sampleSize = SAMPLE_COMPARE_SIZE) {
+    const normalizedCount = Number.isFinite(expectedCount) ? Math.max(0, Math.floor(expectedCount)) : 0;
+    const size = Math.max(0, Math.min(sampleSize, normalizedCount));
+    if (size === 0) {
+        return [];
+    }
+
+    const indices = Array.from({ length: normalizedCount }, (_, i) => i + 1);
+
+    // Nếu số caption <= sample size thì lấy toàn bộ index, tránh random dư thừa.
+    if (size === normalizedCount) {
+        return indices;
+    }
+
+    for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+
+    return indices.slice(0, size).sort((a, b) => a - b);
+}
+
+function buildTranslatedSample(responseObject, expectedCountOrIndices, sampleSize = SAMPLE_COMPARE_SIZE) {
+    const sampleIndices = Array.isArray(expectedCountOrIndices)
+        ? expectedCountOrIndices.filter((idx) => Number.isInteger(idx))
+        : buildSampleIndices(expectedCountOrIndices, sampleSize);
     const translatedByIndex = new Map();
 
     if (responseObject && Array.isArray(responseObject.translations)) {
@@ -724,12 +749,34 @@ async function processLoop(runId) {
 
         let responseObject;
         let rawResponseText = null;
-        const expectedCount = batchData.lines.length;
+        const expectedCount = Array.isArray(batchData.lines) ? batchData.lines.length : 0;
+        const fileIdx = (batchData.index !== undefined ? batchData.index : currentIndex);
+
+        if (expectedCount <= 0) {
+            Utils.log(`BATCH_EMPTY_OR_INVALID: ${batchData.name || `Batch ${currentIndex + 1}`} không có caption hợp lệ để xử lý.`, 'error');
+
+            const filesData = await chrome.storage.local.get(['batchFiles']);
+            const latestBatchFiles = filesData.batchFiles || [];
+            if (latestBatchFiles[fileIdx]) {
+                latestBatchFiles[fileIdx].completed = false;
+                latestBatchFiles[fileIdx].status = 'error';
+                latestBatchFiles[fileIdx].errorReason = 'EMPTY_BATCH_OR_NO_CAPTIONS';
+                latestBatchFiles[fileIdx].expectedCount = expectedCount;
+            }
+            await chrome.storage.local.set({ batchFiles: latestBatchFiles });
+
+            await BatchProcessor.moveToNextBatch(fileIdx);
+            Utils.log("✓ Đã chuyển batch (batch rỗng/không hợp lệ)", 'warning');
+            processLoop(runId);
+            return;
+        }
+
+        const sampleIndices = buildRandomSampleIndices(expectedCount, SAMPLE_COMPARE_SIZE);
+        Utils.log(`Sample index random để kiểm tra stale-response: ${sampleIndices.join(', ')}`);
+
         const MAX_RETRY = 2;
         let retryCount = 0;
         let previousAttemptSample = null;
-        const sampleIndices = buildSampleIndices(expectedCount);
-        const fileIdx = (batchData.index !== undefined ? batchData.index : currentIndex);
 
         while (true) {
             if (State.copyOnlyMode) {
@@ -778,7 +825,7 @@ async function processLoop(runId) {
                 }
             }
 
-            const currentAttemptSample = buildTranslatedSample(responseObject, expectedCount);
+            const currentAttemptSample = buildTranslatedSample(responseObject, sampleIndices);
             if (!State.copyOnlyMode && previousAttemptSample && isSampleResponseIdentical(previousAttemptSample, currentAttemptSample)) {
                 Utils.log(`STALE_RESPONSE_IDENTICAL: Attempt ${retryCount + 1} trùng hệt attempt trước tại index mẫu (${sampleIndices.join(', ')})`, 'error');
                 Utils.log(`Dừng extension để tránh nhầm bản dịch của file trước.`, 'error');
@@ -791,6 +838,8 @@ async function processLoop(runId) {
                     latestBatchFiles[fileIdx].errorReason = 'STALE_SAME_AS_PREVIOUS_ATTEMPT';
                     latestBatchFiles[fileIdx].retryCount = retryCount;
                     latestBatchFiles[fileIdx].sampleIndices = sampleIndices;
+                    latestBatchFiles[fileIdx].sampleMethod = 'random_per_batch';
+                    latestBatchFiles[fileIdx].expectedCount = expectedCount;
                     latestBatchFiles[fileIdx].previousAttemptSample = previousAttemptSample;
                     latestBatchFiles[fileIdx].currentAttemptSample = currentAttemptSample;
                     if (rawResponseText) {
