@@ -46,7 +46,12 @@ import {
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { BulkApplyResult, ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
-import { Step3BulkFileItem, Step3BulkMultiFolderModal } from './components/Step3BulkMultiFolderModal';
+import {
+  Step3BulkFileItem,
+  Step3BulkMultiFolderModal,
+  type Step3BulkMultiFolderApplyResult,
+  type Step3BulkMultiFolderPreviewResult,
+} from './components/Step3BulkMultiFolderModal';
 import { Step3BatchMonitorPopup, type Step3BatchEditableLine } from './components/Step3BatchMonitorPopup';
 import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
 import { SubtitlePreview } from './SubtitlePreview';
@@ -130,6 +135,73 @@ const DEFAULT_COVER_QUAD: CoverQuad = {
   br: { x: 1, y: 1 },
   bl: { x: 0, y: 1 },
 };
+
+function parseBatchIndexValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const normalized = Math.floor(value);
+    return normalized > 0 ? normalized : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function countBatchIndexesInBulkRaw(raw: string): number {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return 0;
+
+  const batchIndexes = new Set<number>();
+  const collectFromRecord = (record: Record<string, unknown>) => {
+    const normalized = parseBatchIndexValue(record.batchIndex);
+    if (normalized !== null) {
+      batchIndexes.add(normalized);
+    }
+  };
+
+  const collectFromParsed = (parsed: unknown) => {
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          collectFromRecord(item as Record<string, unknown>);
+        }
+      }
+      return;
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      collectFromRecord(parsed as Record<string, unknown>);
+    }
+  };
+
+  try {
+    collectFromParsed(JSON.parse(trimmed));
+  } catch {
+    const lines = trimmed.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      try {
+        collectFromParsed(JSON.parse(line));
+      } catch {
+        // Ignore invalid line while counting batch indexes for UI hint.
+      }
+    }
+  }
+
+  for (const match of trimmed.matchAll(/(?:"batchIndex"|batchIndex)\s*:\s*(-?\d+)/gi)) {
+    const normalized = parseBatchIndexValue(match[1]);
+    if (normalized !== null) {
+      batchIndexes.add(normalized);
+    }
+  }
+
+  return batchIndexes.size;
+}
 
 interface TtsUiVoiceOption {
   value: string;
@@ -2825,8 +2897,10 @@ export function CaptionTranslator() {
   const step3ManualValidateTokenRef = useRef(0);
   const [step3BulkMultiModalOpen, setStep3BulkMultiModalOpen] = useState(false);
   const [step3BulkMultiFiles, setStep3BulkMultiFiles] = useState<Step3BulkFileItem[]>([]);
+  const [step3BulkMultiFolderBatchCounts, setStep3BulkMultiFolderBatchCounts] = useState<Record<number, number | null>>({});
   const [step3BulkMultiError, setStep3BulkMultiError] = useState('');
   const [step3BulkMultiMessage, setStep3BulkMultiMessage] = useState('');
+  const [step3BulkMultiApplyResults, setStep3BulkMultiApplyResults] = useState<Step3BulkMultiFolderApplyResult[]>([]);
   const [step3BulkMultiBusy, setStep3BulkMultiBusy] = useState(false);
   const [step3RuntimeTimer, setStep3RuntimeTimer] = useState<Step3RuntimeTimer>({
     apiLabel: '',
@@ -3177,8 +3251,10 @@ export function CaptionTranslator() {
   const openStep3ManualBulk = useCallback(() => {
     if (isStep3MultiFolderMode) {
       setStep3BulkMultiModalOpen(true);
+      setStep3BulkMultiFolderBatchCounts({});
       setStep3BulkMultiError('');
       setStep3BulkMultiMessage('');
+      setStep3BulkMultiApplyResults([]);
       return;
     }
     setStep3ManualModal({ mode: 'bulk' });
@@ -3315,11 +3391,45 @@ export function CaptionTranslator() {
   const closeStep3BulkMultiModal = useCallback(() => {
     if (step3BulkMultiBusy) return;
     setStep3BulkMultiModalOpen(false);
+    setStep3BulkMultiFolderBatchCounts({});
     setStep3BulkMultiError('');
     setStep3BulkMultiMessage('');
+    setStep3BulkMultiApplyResults([]);
   }, [step3BulkMultiBusy]);
 
-  const handleStep3BulkMultiPickFiles = useCallback((files: FileList | null) => {
+  useEffect(() => {
+    if (!step3BulkMultiModalOpen) {
+      return;
+    }
+    const folderPaths = processingInputPaths;
+    if (folderPaths.length === 0) {
+      setStep3BulkMultiFolderBatchCounts({});
+      return;
+    }
+
+    let cancelled = false;
+    const loadFolderBatchCounts = async () => {
+      const pairs = await Promise.all(folderPaths.map(async (folderPath, index) => {
+        const result = await processing.getManualFolderBatchCount({ inputPath: folderPath });
+        return [index, result.ok ? (result.batchCount ?? 0) : null] as const;
+      }));
+      if (cancelled) {
+        return;
+      }
+      const nextCounts: Record<number, number | null> = {};
+      for (const [index, count] of pairs) {
+        nextCounts[index] = count;
+      }
+      setStep3BulkMultiFolderBatchCounts(nextCounts);
+    };
+
+    void loadFolderBatchCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [processing.getManualFolderBatchCount, processingInputPaths, step3BulkMultiModalOpen]);
+
+  const handleStep3BulkMultiPickFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const accepted = Array.from(files).filter((file) => {
       const name = file.name.toLowerCase();
@@ -3329,19 +3439,31 @@ export function CaptionTranslator() {
       setStep3BulkMultiError('Không có file TXT/JSON/JSONL hợp lệ.');
       return;
     }
-    const items: Step3BulkFileItem[] = accepted.map((file) => ({
-      id: `${file.name}::${file.size}::${file.lastModified}`,
-      file,
+    const items: Step3BulkFileItem[] = await Promise.all(accepted.map(async (file) => {
+      let batchIndexCount: number | undefined;
+      try {
+        const raw = await file.text();
+        batchIndexCount = countBatchIndexesInBulkRaw(raw);
+      } catch {
+        batchIndexCount = undefined;
+      }
+      return {
+        id: `${file.name}::${file.size}::${file.lastModified}`,
+        file,
+        batchIndexCount,
+      };
     }));
     setStep3BulkMultiFiles(items);
     setStep3BulkMultiError('');
     setStep3BulkMultiMessage('');
+    setStep3BulkMultiApplyResults([]);
   }, []);
 
   const handleStep3BulkMultiClearFiles = useCallback(() => {
     setStep3BulkMultiFiles([]);
     setStep3BulkMultiError('');
     setStep3BulkMultiMessage('');
+    setStep3BulkMultiApplyResults([]);
   }, []);
 
   const handleStep3BulkMultiMoveFile = useCallback((fromIndex: number, toIndex: number) => {
@@ -3362,6 +3484,36 @@ export function CaptionTranslator() {
     });
   }, []);
 
+  const handleStep3BulkMultiRequestPreview = useCallback(async (
+    folderIndex: number
+  ): Promise<Step3BulkMultiFolderPreviewResult> => {
+    const folderPath = processingInputPaths[folderIndex] || '';
+    if (!folderPath) {
+      return { ok: false, error: 'Không tìm thấy folder để xem chi tiết.' };
+    }
+
+    const fileItem = step3BulkMultiFiles[folderIndex] || null;
+    if (!fileItem) {
+      return {
+        ok: false,
+        error: `Folder #${folderIndex + 1} chưa có file JSON/TXT tương ứng.`,
+      };
+    }
+
+    try {
+      const raw = await fileItem.file.text();
+      return await processing.previewManualBulkResponses({
+        inputPath: folderPath,
+        raw,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }, [processing, processingInputPaths, step3BulkMultiFiles]);
+
   const handleApplyStep3BulkMultiFolder = useCallback(async () => {
     if (step3BulkMultiBusy || processing.status === 'running') {
       return;
@@ -3378,27 +3530,75 @@ export function CaptionTranslator() {
     setStep3BulkMultiBusy(true);
     setStep3BulkMultiError('');
     setStep3BulkMultiMessage('');
+    setStep3BulkMultiApplyResults([]);
     try {
+      const applyResults: Step3BulkMultiFolderApplyResult[] = [];
+      let hasAtLeastOneSuccess = false;
       for (let i = 0; i < folderPaths.length; i += 1) {
         const folderPath = folderPaths[i];
         const item = step3BulkMultiFiles[i];
         if (!item) {
-          setStep3BulkMultiError(`Thiếu file cho folder #${i + 1}.`);
-          return;
+          applyResults.push({
+            folderIndex: i,
+            folderName: folderPath.split(/[\\/]/).filter(Boolean).pop() || folderPath,
+            fileName: '--',
+            success: false,
+            appliedBatches: 0,
+            skippedBatches: 0,
+            skippedLines: 0,
+            error: 'Thiếu file để áp dụng.',
+          });
+          continue;
         }
         setStep3BulkMultiMessage(`Đang áp dụng ${i + 1}/${folderPaths.length}: ${item.file.name}`);
         const raw = await item.file.text();
         const result = await processing.applyManualBulkResponses({ inputPath: folderPath, raw });
-        if (!result.success) {
-          setStep3BulkMultiError(`Folder #${i + 1}: ${result.error || 'Không thể áp dụng.'}`);
-          setStep3BulkMultiMessage('');
-          return;
+        const folderName = folderPath.split(/[\\/]/).filter(Boolean).pop() || folderPath;
+        const folderResult: Step3BulkMultiFolderApplyResult = {
+          folderIndex: i,
+          folderName,
+          fileName: item.file.name,
+          success: !!result.success,
+          appliedBatches: result.updatedBatchIndexes?.length || 0,
+          skippedBatches: result.skippedBatches?.length || 0,
+          skippedLines: result.skippedInputLines || 0,
+          error: result.success ? undefined : (result.error || 'Không thể áp dụng dữ liệu.'),
+          batchIssues: result.batchIssues || [],
+        };
+        if (folderResult.success) {
+          hasAtLeastOneSuccess = true;
         }
+        applyResults.push(folderResult);
       }
-      await refreshActiveSession();
-      setStep3BulkMultiModalOpen(false);
-      setStep3BulkMultiFiles([]);
-      setStep3BulkMultiMessage('');
+
+      setStep3BulkMultiApplyResults(applyResults);
+
+      const successCount = applyResults.filter((result) => result.success).length;
+      const failedCount = applyResults.length - successCount;
+      const totalSkippedBatches = applyResults.reduce((sum, result) => sum + result.skippedBatches, 0);
+      const totalSkippedLines = applyResults.reduce((sum, result) => sum + result.skippedLines, 0);
+
+      if (hasAtLeastOneSuccess) {
+        await refreshActiveSession();
+      }
+
+      if (successCount === 0) {
+        setStep3BulkMultiError('Không áp dụng được folder nào. Hãy kiểm tra dữ liệu đầu vào.');
+        setStep3BulkMultiMessage('');
+        return;
+      }
+
+      setStep3BulkMultiError('');
+      setStep3BulkMultiMessage(
+        `Đã xử lý ${successCount}/${applyResults.length} folder · Skip ${totalSkippedBatches} batch · Skip ${totalSkippedLines} dòng.`
+      );
+
+      if (failedCount === 0 && totalSkippedBatches === 0 && totalSkippedLines === 0) {
+        setStep3BulkMultiModalOpen(false);
+        setStep3BulkMultiFiles([]);
+        setStep3BulkMultiApplyResults([]);
+        setStep3BulkMultiMessage('');
+      }
     } catch (error) {
       setStep3BulkMultiError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -3407,6 +3607,7 @@ export function CaptionTranslator() {
   }, [
     step3BulkMultiBusy,
     step3BulkMultiFiles,
+    setStep3BulkMultiApplyResults,
     processing.status,
     processing,
     processingInputPaths,
@@ -7947,14 +8148,17 @@ export function CaptionTranslator() {
           visible={step3BulkMultiModalOpen}
           folders={processingInputPaths}
           files={step3BulkMultiFiles}
+          folderBatchCounts={step3BulkMultiFolderBatchCounts}
           busy={step3BulkMultiBusy}
           error={step3BulkMultiError}
           message={step3BulkMultiMessage}
+          applyResults={step3BulkMultiApplyResults}
           autoPickOnOpen={false}
           onClose={closeStep3BulkMultiModal}
           onPickFiles={handleStep3BulkMultiPickFiles}
           onClearFiles={handleStep3BulkMultiClearFiles}
           onMoveFile={handleStep3BulkMultiMoveFile}
+          onRequestPreview={handleStep3BulkMultiRequestPreview}
           onApply={handleApplyStep3BulkMultiFolder}
         />
       )}

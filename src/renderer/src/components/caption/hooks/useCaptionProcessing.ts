@@ -959,9 +959,70 @@ function collectBatchMissingInfo(
   };
 }
 
+type ManualParseStats = {
+  expectedCount: number;
+  acceptedIndexes: number[];
+  missingIndexes: number[];
+  duplicateIndexes: number[];
+  outOfRangeIndexes: number[];
+  invalidItems: number;
+  source?: 'json' | 'text';
+};
+
 type ManualParseResult =
-  | { ok: true; translatedTexts: string[] }
+  | { ok: true; translatedTexts: string[]; stats: ManualParseStats }
   | { ok: false; errorCode: string; errorMessage: string };
+
+export type ManualBulkPreviewIssue = {
+  code: string;
+  message: string;
+  level: 'error' | 'warning';
+  lineNo?: number;
+};
+
+export type ManualBulkPreviewLineStatus =
+  | 'unchanged'
+  | 'changed'
+  | 'missing'
+  | 'empty'
+  | 'error';
+
+export type ManualBulkPreviewLine = {
+  lineNo: number;
+  globalIndex: number;
+  originalText: string;
+  currentText: string;
+  importedText: string;
+  status: ManualBulkPreviewLineStatus;
+  issueCodes: string[];
+};
+
+export type ManualBulkPreviewBatch = {
+  batchIndex: number;
+  startIndex: number;
+  endIndex: number;
+  expectedLines: number;
+  importedLines: number;
+  status: 'ok' | 'warning' | 'error';
+  missingIndexes: number[];
+  duplicateIndexes: number[];
+  outOfRangeIndexes: number[];
+  issues: ManualBulkPreviewIssue[];
+  lines: ManualBulkPreviewLine[];
+};
+
+export type ManualBulkPreviewResult = {
+  ok: boolean;
+  error?: string;
+  totalBatches?: number;
+  okBatches?: number;
+  warningBatches?: number;
+  errorBatches?: number;
+  inputLines?: number;
+  acceptedLines?: number;
+  skippedLines?: number;
+  batches?: ManualBulkPreviewBatch[];
+};
 
 function parseCount(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -974,6 +1035,297 @@ function parseCount(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function appendMissingClosingCurlyBraces(raw: string): string {
+  let balance = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      balance += 1;
+      continue;
+    }
+    if (ch === '}') {
+      balance = Math.max(0, balance - 1);
+    }
+  }
+
+  return balance > 0 ? `${raw}${'}'.repeat(balance)}` : raw;
+}
+
+function tryParseJsonLoose(raw: string): unknown | null {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const repairedQuotes = repairTranslatedQuotes(trimmed);
+  const candidates = [
+    trimmed,
+    repairedQuotes,
+    appendMissingClosingCurlyBraces(trimmed),
+    appendMissingClosingCurlyBraces(repairedQuotes),
+  ];
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const normalized = candidate.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    try {
+      return JSON.parse(normalized);
+    } catch {
+      // Keep trying remaining candidates.
+    }
+  }
+
+  return null;
+}
+
+function decodeEscapedJsonString(raw: string): string {
+  try {
+    return JSON.parse(`"${raw}"`) as string;
+  } catch {
+    return raw
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\');
+  }
+}
+
+type LooseExtractedTranslation = {
+  index: number;
+  translated: string | null;
+};
+
+function extractLooseStatusFromText(raw: string): string {
+  const statusMatch = raw.match(/(?:"status"|status)\s*:\s*"?([a-zA-Z_]+)"?/i);
+  return statusMatch?.[1]?.trim()?.toLowerCase() || '';
+}
+
+function extractLooseTranslationsFromText(raw: string): LooseExtractedTranslation[] {
+  const indexRegex = /(?:"index"|index)\s*:\s*(-?\d+)/gi;
+  const indexMatches = Array.from(raw.matchAll(indexRegex));
+  if (indexMatches.length === 0) {
+    return [];
+  }
+
+  const extracted: LooseExtractedTranslation[] = [];
+  for (let i = 0; i < indexMatches.length; i += 1) {
+    const current = indexMatches[i];
+    const next = indexMatches[i + 1];
+    const rawIndex = parseCount(current[1]);
+    if (rawIndex === null) {
+      continue;
+    }
+
+    const start = (current.index ?? 0) + current[0].length;
+    const end = next?.index ?? raw.length;
+    const segment = raw.slice(start, end);
+
+    const translatedMatch = segment.match(
+      /(?:"translated"|"translation"|"text"|translated|translation|text)\s*:\s*"((?:\\.|[^"\\])*)"/i
+    );
+
+    extracted.push({
+      index: rawIndex,
+      translated: translatedMatch ? decodeEscapedJsonString(translatedMatch[1]) : null,
+    });
+  }
+
+  return extracted;
+}
+
+function pushPreviewIssue(
+  list: ManualBulkPreviewIssue[],
+  issue: ManualBulkPreviewIssue,
+  dedupeSet?: Set<string>
+): void {
+  const dedupeKey = `${issue.code}::${issue.level}::${issue.lineNo ?? 0}::${issue.message}`;
+  if (dedupeSet && dedupeSet.has(dedupeKey)) {
+    return;
+  }
+  if (dedupeSet) {
+    dedupeSet.add(dedupeKey);
+  }
+  list.push(issue);
+}
+
+function resolveManualResponseRoot(parsed: Record<string, unknown>): Record<string, unknown> {
+  const hasDirectStatus = typeof parsed.status === 'string';
+  const hasDirectDataObject = !!(
+    parsed.data
+    && typeof parsed.data === 'object'
+    && !Array.isArray(parsed.data)
+  );
+  if (hasDirectStatus || hasDirectDataObject) {
+    return parsed;
+  }
+
+  const wrappedSuccess = (
+    parsed.success
+    && typeof parsed.success === 'object'
+    && !Array.isArray(parsed.success)
+  )
+    ? (parsed.success as Record<string, unknown>)
+    : null;
+  if (!wrappedSuccess) {
+    return parsed;
+  }
+
+  const hasWrappedStatus = typeof wrappedSuccess.status === 'string';
+  const hasWrappedDataObject = !!(
+    wrappedSuccess.data
+    && typeof wrappedSuccess.data === 'object'
+    && !Array.isArray(wrappedSuccess.data)
+  );
+  if (hasWrappedStatus || hasWrappedDataObject) {
+    return wrappedSuccess;
+  }
+
+  return parsed;
+}
+
+function parseManualResponseForPreview(
+  responseJson: string,
+  expectedCount: number
+): {
+  importedByLine: Map<number, string>;
+  issues: ManualBulkPreviewIssue[];
+  missingIndexes: number[];
+  duplicateIndexes: number[];
+  outOfRangeIndexes: number[];
+} {
+  const safeExpectedCount = Math.max(0, Math.floor(expectedCount));
+  const importedByLine = new Map<number, string>();
+  const issues: ManualBulkPreviewIssue[] = [];
+  const dedupeSet = new Set<string>();
+
+  const raw = typeof responseJson === 'string' ? responseJson.trim() : '';
+  if (!raw) {
+    pushPreviewIssue(issues, {
+      code: 'JSON_PARSE_FAILED',
+      message: 'Response rỗng.',
+      level: 'error',
+    }, dedupeSet);
+    return {
+      importedByLine,
+      issues,
+      missingIndexes: Array.from({ length: safeExpectedCount }, (_, idx) => idx + 1),
+      duplicateIndexes: [],
+      outOfRangeIndexes: [],
+    };
+  }
+
+  const parsed = parseJsonTranslationResponseForManual(raw, safeExpectedCount);
+  if (!parsed.ok) {
+    pushPreviewIssue(issues, {
+      code: parsed.errorCode,
+      message: parsed.errorMessage,
+      level: 'error',
+    }, dedupeSet);
+    return {
+      importedByLine,
+      issues,
+      missingIndexes: Array.from({ length: safeExpectedCount }, (_, idx) => idx + 1),
+      duplicateIndexes: [],
+      outOfRangeIndexes: [],
+    };
+  }
+
+  if (parsed.stats.source === 'text') {
+    pushPreviewIssue(issues, {
+      code: 'TEXT_RECOVERED',
+      message: 'Dữ liệu được trích xuất từ text lỗi định dạng JSON.',
+      level: 'warning',
+    }, dedupeSet);
+  }
+
+  for (const acceptedIndex of parsed.stats.acceptedIndexes) {
+    const value = parsed.translatedTexts[acceptedIndex - 1] ?? '';
+    importedByLine.set(acceptedIndex, value);
+    if (!value.trim()) {
+      pushPreviewIssue(issues, {
+        code: 'EMPTY_TRANSLATED',
+        message: `Index ${acceptedIndex} có translated rỗng.`,
+        level: 'warning',
+        lineNo: acceptedIndex,
+      }, dedupeSet);
+    }
+  }
+
+  for (const duplicatedIndex of parsed.stats.duplicateIndexes) {
+    pushPreviewIssue(issues, {
+      code: 'DUPLICATE_INDEX',
+      message: `Trùng index: ${duplicatedIndex}`,
+      level: 'error',
+      lineNo: duplicatedIndex,
+    }, dedupeSet);
+  }
+
+  for (const outOfRangeIndex of parsed.stats.outOfRangeIndexes) {
+    pushPreviewIssue(issues, {
+      code: 'OUT_OF_RANGE_INDEX',
+      message: `Index ngoài phạm vi: ${outOfRangeIndex} > ${safeExpectedCount}`,
+      level: 'error',
+      lineNo: outOfRangeIndex,
+    }, dedupeSet);
+  }
+
+  if (parsed.stats.invalidItems > 0) {
+    pushPreviewIssue(issues, {
+      code: 'ERROR_INVALID_INPUT',
+      message: `${parsed.stats.invalidItems} item không hợp lệ.`,
+      level: 'error',
+    }, dedupeSet);
+  }
+
+  const missingIndexes: number[] = [];
+  for (let i = 1; i <= safeExpectedCount; i += 1) {
+    if (!importedByLine.has(i)) {
+      missingIndexes.push(i);
+      pushPreviewIssue(issues, {
+        code: 'MISSING_INDEX',
+        message: `Thiếu index ${i}.`,
+        level: 'error',
+        lineNo: i,
+      }, dedupeSet);
+    }
+  }
+
+  return {
+    importedByLine,
+    issues,
+    missingIndexes,
+    duplicateIndexes: parsed.stats.duplicateIndexes,
+    outOfRangeIndexes: parsed.stats.outOfRangeIndexes,
+  };
 }
 
 function failManualParse(
@@ -999,35 +1351,23 @@ function parseJsonTranslationResponseForManual(
   if (!raw) {
     return failManualParse(translatedTexts, 'JSON_PARSE_FAILED', 'Response rỗng');
   }
-  if (!raw.startsWith('{') || !raw.endsWith('}')) {
-    return failManualParse(
-      translatedTexts,
-      'JSON_PARSE_FAILED',
-      'Response không phải JSON thuần túy (có text thừa ngoài JSON)'
-    );
-  }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    return failManualParse(
-      translatedTexts,
-      'JSON_PARSE_FAILED',
-      `JSON.parse thất bại: ${String(error)}`
-    );
-  }
+  const parsed = tryParseJsonLoose(raw);
+  const root = (
+    parsed
+    && typeof parsed === 'object'
+    && !Array.isArray(parsed)
+  )
+    ? resolveManualResponseRoot(parsed as Record<string, unknown>)
+    : null;
 
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: root phải là object');
-  }
-
-  const root = parsed as Record<string, unknown>;
-  const status = typeof root.status === 'string' ? root.status.trim() : '';
+  const status = root && typeof root.status === 'string'
+    ? root.status.trim().toLowerCase()
+    : extractLooseStatusFromText(raw);
 
   if (status === 'error') {
     const errorNode =
-      root.error && typeof root.error === 'object' && !Array.isArray(root.error)
+      root?.error && typeof root.error === 'object' && !Array.isArray(root.error)
         ? (root.error as Record<string, unknown>)
         : {};
     const upstreamCode = typeof errorNode.code === 'string' ? errorNode.code.trim() : '';
@@ -1039,47 +1379,55 @@ function parseJsonTranslationResponseForManual(
     );
   }
 
-  if (status !== 'success') {
+  let source: 'json' | 'text' = 'json';
+  const dataNode =
+    root?.data && typeof root.data === 'object' && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : null;
+  let translations = Array.isArray(dataNode?.translations) ? dataNode.translations : null;
+
+  if (!translations) {
+    const extracted = extractLooseTranslationsFromText(raw);
+    if (extracted.length > 0) {
+      source = 'text';
+      translations = extracted.map((item) => ({
+        index: item.index,
+        translated: item.translated,
+      }));
+    }
+  }
+
+  if (!translations) {
     return failManualParse(
       translatedTexts,
       'ERROR_INVALID_INPUT',
-      'Schema không hợp lệ: status phải là "success" hoặc "error"'
+      'Không tìm thấy data.translations[] hoặc cặp index/translated trong text.'
     );
   }
 
-  const dataNode =
-    root.data && typeof root.data === 'object' && !Array.isArray(root.data)
-      ? (root.data as Record<string, unknown>)
-      : null;
-  if (!dataNode) {
-    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data object');
-  }
-
-  const translations = Array.isArray(dataNode.translations) ? dataNode.translations : null;
-  if (!translations) {
-    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data.translations[]');
-  }
-
   const seenIndexes = new Set<number>();
+  const duplicateIndexes = new Set<number>();
+  const outOfRangeIndexes = new Set<number>();
+  let invalidItems = 0;
 
   for (const item of translations) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: item translations phải là object');
+      invalidItems += 1;
+      continue;
     }
     const typed = item as Record<string, unknown>;
     const parsedIndex = parseCount(typed.index);
     if (parsedIndex === null || parsedIndex <= 0) {
-      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: index phải là số nguyên >= 1');
+      invalidItems += 1;
+      continue;
     }
     if (parsedIndex > safeExpectedCount) {
-      return failManualParse(
-        translatedTexts,
-        'ERROR_COUNT_MISMATCH',
-        `Index ngoài phạm vi: ${parsedIndex} > ${safeExpectedCount}`
-      );
+      outOfRangeIndexes.add(parsedIndex);
+      continue;
     }
     if (seenIndexes.has(parsedIndex)) {
-      return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', `Trùng index trong translations: ${parsedIndex}`);
+      duplicateIndexes.add(parsedIndex);
+      continue;
     }
     const translatedValue =
       typeof typed.translated === 'string'
@@ -1088,59 +1436,41 @@ function parseJsonTranslationResponseForManual(
             ? typed.translation
             : (typeof typed.text === 'string' ? typed.text : null));
     if (translatedValue === null) {
-      return failManualParse(
-        translatedTexts,
-        'ERROR_INVALID_INPUT',
-        `Schema không hợp lệ tại index ${parsedIndex}: thiếu translated string`
-      );
+      invalidItems += 1;
+      continue;
     }
 
     seenIndexes.add(parsedIndex);
     translatedTexts[parsedIndex - 1] = translatedValue.trim();
   }
 
-  if (seenIndexes.size !== safeExpectedCount) {
+  if (safeExpectedCount > 0 && seenIndexes.size === 0) {
     return failManualParse(
       translatedTexts,
-      'ERROR_COUNT_MISMATCH',
-      `Số dòng dịch không khớp: nhận ${seenIndexes.size}/${safeExpectedCount}`
+      'ERROR_INVALID_INPUT',
+      'Không có index hợp lệ trong data.translations[]'
     );
   }
 
-  const summaryNode =
-    dataNode.summary && typeof dataNode.summary === 'object' && !Array.isArray(dataNode.summary)
-      ? (dataNode.summary as Record<string, unknown>)
-      : null;
-  if (!summaryNode) {
-    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data.summary object');
-  }
-
-  const totalSentences = parseCount(summaryNode.total_sentences);
-  const inputCount = parseCount(summaryNode.input_count);
-  const outputCount = parseCount(summaryNode.output_count);
-  const match = summaryNode.match;
-  const languageStyle = summaryNode.language_style;
-
-  if (
-    totalSentences !== safeExpectedCount ||
-    inputCount !== safeExpectedCount ||
-    outputCount !== safeExpectedCount ||
-    match !== true
-  ) {
-    return failManualParse(
-      translatedTexts,
-      'ERROR_COUNT_MISMATCH',
-      `Summary mismatch: total=${String(totalSentences)}, input=${String(inputCount)}, output=${String(outputCount)}, match=${String(match)}`
-    );
-  }
-
-  if (typeof languageStyle !== 'string' || !languageStyle.trim()) {
-    return failManualParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: summary.language_style phải là string');
+  const missingIndexes: number[] = [];
+  for (let i = 1; i <= safeExpectedCount; i += 1) {
+    if (!seenIndexes.has(i)) {
+      missingIndexes.push(i);
+    }
   }
 
   return {
     ok: true,
     translatedTexts,
+    stats: {
+      expectedCount: safeExpectedCount,
+      acceptedIndexes: Array.from(seenIndexes).sort((a, b) => a - b),
+      missingIndexes,
+      duplicateIndexes: Array.from(duplicateIndexes).sort((a, b) => a - b),
+      outOfRangeIndexes: Array.from(outOfRangeIndexes).sort((a, b) => a - b),
+      invalidItems,
+      source,
+    },
   };
 }
 
@@ -1149,9 +1479,30 @@ type ManualBatchInput = {
   responseJson: string;
 };
 
+type ManualBulkSkippedLineReason =
+  | 'json_invalid'
+  | 'invalid_shape'
+  | 'missing_fields';
+
+type ManualBulkSkippedLine = {
+  lineNo: number;
+  reason: ManualBulkSkippedLineReason;
+  message: string;
+};
+
 type ManualBulkParseResult =
-  | { ok: true; items: ManualBatchInput[] }
-  | { ok: false; errorMessage: string };
+  | {
+      ok: true;
+      items: ManualBatchInput[];
+      skippedLines: ManualBulkSkippedLine[];
+      totalLines: number;
+    }
+  | {
+      ok: false;
+      errorMessage: string;
+      skippedLines?: ManualBulkSkippedLine[];
+      totalLines?: number;
+    };
 
 function repairTranslatedQuotes(raw: string): string {
   const target = '"translated"';
@@ -1207,15 +1558,71 @@ function repairTranslatedQuotes(raw: string): string {
   return out;
 }
 
+function extractManualBatchInputFromMalformedLine(rawLine: string): ManualBatchInput | null {
+  const batchMatch = rawLine.match(/(?:"batchIndex"|batchIndex)\s*:\s*(-?\d+)/i);
+  if (!batchMatch) {
+    return null;
+  }
+
+  const batchIndex = parseCount(batchMatch[1]);
+  if (batchIndex === null || batchIndex <= 0) {
+    return null;
+  }
+
+  const responseKeyMatch = rawLine.match(/(?:"response"|response)\s*:/i);
+  if (!responseKeyMatch || responseKeyMatch.index === undefined) {
+    return null;
+  }
+
+  const responseRaw = rawLine
+    .slice(responseKeyMatch.index + responseKeyMatch[0].length)
+    .trim();
+  if (!responseRaw) {
+    return null;
+  }
+
+  const responseObjectStart = responseRaw.indexOf('{');
+  const responseCandidate = responseObjectStart >= 0
+    ? responseRaw.slice(responseObjectStart)
+    : responseRaw;
+
+  const parsedResponse = tryParseJsonLoose(responseCandidate);
+  if (parsedResponse && typeof parsedResponse === 'object' && !Array.isArray(parsedResponse)) {
+    return {
+      batchIndex,
+      responseJson: JSON.stringify(parsedResponse),
+    };
+  }
+
+  const extractedTranslations = extractLooseTranslationsFromText(responseCandidate);
+  if (extractedTranslations.length === 0) {
+    return null;
+  }
+
+  const extractedStatus = extractLooseStatusFromText(responseCandidate) || 'success';
+  return {
+    batchIndex,
+    responseJson: JSON.stringify({
+      status: extractedStatus,
+      data: {
+        translations: extractedTranslations.map((item) => ({
+          index: item.index,
+          translated: item.translated,
+        })),
+      },
+    }),
+  };
+}
+
 function parseManualBulkInput(raw: string): ManualBulkParseResult {
   const trimmed = (raw || '').trim();
   if (!trimmed) {
     return { ok: false, errorMessage: 'Input rỗng.' };
   }
+  const skippedLines: ManualBulkSkippedLine[] = [];
 
   const normalizeItem = (item: Record<string, unknown>): ManualBatchInput | null => {
-    const batchIndexRaw = item.batchIndex;
-    const batchIndex = typeof batchIndexRaw === 'number' ? Math.floor(batchIndexRaw) : null;
+    const batchIndex = parseCount(item.batchIndex);
     if (!batchIndex || batchIndex <= 0) {
       return null;
     }
@@ -1229,75 +1636,112 @@ function parseManualBulkInput(raw: string): ManualBulkParseResult {
     return null;
   };
 
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) {
-      const items: ManualBatchInput[] = [];
-      for (const item of parsed) {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-          return { ok: false, errorMessage: 'JSON array phải chứa object {batchIndex, response}.' };
-        }
-        const normalized = normalizeItem(item as Record<string, unknown>);
-        if (!normalized) {
-          return { ok: false, errorMessage: 'Thiếu batchIndex hoặc response trong JSON array.' };
-        }
-        items.push(normalized);
+  const toNoValidError = (totalLines: number): ManualBulkParseResult => ({
+    ok: false,
+    errorMessage: 'Không có dòng hợp lệ.',
+    skippedLines,
+    totalLines,
+  });
+
+  const collectFromParsedArray = (parsed: unknown[]): ManualBulkParseResult => {
+    const items: ManualBatchInput[] = [];
+    const totalLines = parsed.length;
+    for (let i = 0; i < parsed.length; i += 1) {
+      const item = parsed[i];
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        skippedLines.push({
+          lineNo: i + 1,
+          reason: 'invalid_shape',
+          message: 'Dòng không phải object {batchIndex, response}.',
+        });
+        continue;
       }
-      return { ok: true, items };
-    }
-  } catch {
-    // try repair for JSON array
-    try {
-      const repaired = repairTranslatedQuotes(trimmed);
-      const parsed = JSON.parse(repaired);
-      if (Array.isArray(parsed)) {
-        const items: ManualBatchInput[] = [];
-        for (const item of parsed) {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            return { ok: false, errorMessage: 'JSON array phải chứa object {batchIndex, response}.' };
-          }
-          const normalized = normalizeItem(item as Record<string, unknown>);
-          if (!normalized) {
-            return { ok: false, errorMessage: 'Thiếu batchIndex hoặc response trong JSON array.' };
-          }
-          items.push(normalized);
-        }
-        return { ok: true, items };
+      const normalized = normalizeItem(item as Record<string, unknown>);
+      if (!normalized) {
+        skippedLines.push({
+          lineNo: i + 1,
+          reason: 'missing_fields',
+          message: 'Thiếu batchIndex hoặc response hợp lệ.',
+        });
+        continue;
       }
-    } catch {
-      // fallback to NDJSON
+      items.push(normalized);
     }
+    return items.length > 0
+      ? { ok: true, items, skippedLines, totalLines }
+      : toNoValidError(totalLines);
+  };
+
+  const collectFromSingleObject = (parsed: Record<string, unknown>): ManualBulkParseResult => {
+    const normalized = normalizeItem(parsed);
+    if (!normalized) {
+      skippedLines.push({
+        lineNo: 1,
+        reason: 'missing_fields',
+        message: 'Thiếu batchIndex hoặc response hợp lệ.',
+      });
+      return toNoValidError(1);
+    }
+    return {
+      ok: true,
+      items: [normalized],
+      skippedLines,
+      totalLines: 1,
+    };
+  };
+
+  const parsedWhole = tryParseJsonLoose(trimmed);
+  if (Array.isArray(parsedWhole)) {
+    return collectFromParsedArray(parsedWhole);
+  }
+  if (parsedWhole && typeof parsedWhole === 'object' && !Array.isArray(parsedWhole)) {
+    return collectFromSingleObject(parsedWhole as Record<string, unknown>);
   }
 
   const lines = trimmed.split(/\r?\n/);
   const items: ManualBatchInput[] = [];
+  let totalLines = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    let parsedLine: unknown;
-    try {
-      parsedLine = JSON.parse(line);
-    } catch (error) {
-      try {
-        const repaired = repairTranslatedQuotes(line);
-        parsedLine = JSON.parse(repaired);
-      } catch {
-        return { ok: false, errorMessage: `Line ${i + 1}: JSON không hợp lệ.` };
+    totalLines += 1;
+    const parsedLine = tryParseJsonLoose(line);
+    if (!parsedLine) {
+      const extractedLine = extractManualBatchInputFromMalformedLine(line);
+      if (extractedLine) {
+        items.push(extractedLine);
+        continue;
       }
+      skippedLines.push({
+        lineNo: i + 1,
+        reason: 'json_invalid',
+        message: 'JSON lỗi định dạng và không trích xuất được dữ liệu.',
+      });
+      continue;
     }
     if (!parsedLine || typeof parsedLine !== 'object' || Array.isArray(parsedLine)) {
-      return { ok: false, errorMessage: `Line ${i + 1}: cần object {batchIndex, response}.` };
+      skippedLines.push({
+        lineNo: i + 1,
+        reason: 'invalid_shape',
+        message: 'Dòng không phải object {batchIndex, response}.',
+      });
+      continue;
     }
     const normalized = normalizeItem(parsedLine as Record<string, unknown>);
     if (!normalized) {
-      return { ok: false, errorMessage: `Line ${i + 1}: thiếu batchIndex hoặc response.` };
+      skippedLines.push({
+        lineNo: i + 1,
+        reason: 'missing_fields',
+        message: 'Thiếu batchIndex hoặc response hợp lệ.',
+      });
+      continue;
     }
     items.push(normalized);
   }
 
   return items.length > 0
-    ? { ok: true, items }
-    : { ok: false, errorMessage: 'Không có dòng hợp lệ.' };
+    ? { ok: true, items, skippedLines, totalLines }
+    : toNoValidError(totalLines);
 }
 
 function buildFailedBatchReportFromEntries(
@@ -1866,6 +2310,16 @@ export function useCaptionProcessing({
     updatedBatchIndexes?: number[];
     completed?: boolean;
     missingBatches?: number;
+    skippedBatches?: Array<{ batchIndex: number; reason: string }>;
+    batchIssues?: Array<{
+      batchIndex: number;
+      level: 'error' | 'warning';
+      message: string;
+      indexes?: number[];
+      count?: number;
+    }>;
+    skippedInputLines?: number;
+    totalInputLines?: number;
   };
 
   type ManualValidateResult = {
@@ -1875,7 +2329,7 @@ export function useCaptionProcessing({
 
   const applyManualBatchUpdates = useCallback(async (
     inputPath: string,
-    updates: Array<{ batchIndex: number; translatedTexts: string[] }>
+    updates: Array<{ batchIndex: number; translatedTexts: string[]; touchedLineNos?: number[] }>
   ): Promise<ManualApplyResult> => {
     const trimmedPath = inputPath?.trim();
     if (!trimmedPath) {
@@ -1931,8 +2385,18 @@ export function useCaptionProcessing({
             continue;
           }
           const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+          const touchedLineSet = Array.isArray(update.touchedLineNos) && update.touchedLineNos.length > 0
+            ? new Set(
+                update.touchedLineNos
+                  .map((value) => Math.floor(value))
+                  .filter((value) => Number.isFinite(value) && value >= 1 && value <= expectedLines)
+              )
+            : null;
           const translatedTexts = Array.from({ length: expectedLines }, (_, idx) => update.translatedTexts[idx] ?? '');
           for (let i = 0; i < expectedLines; i++) {
+            if (touchedLineSet && !touchedLineSet.has(i + 1)) {
+              continue;
+            }
             const entryIndex = plan.startIndex + i;
             if (entryIndex < 0 || entryIndex >= workingEntries.length) {
               continue;
@@ -2103,6 +2567,7 @@ export function useCaptionProcessing({
       return await applyManualBatchUpdates(trimmedPath, [{
         batchIndex,
         translatedTexts: parsed.translatedTexts,
+        touchedLineNos: parsed.stats.acceptedIndexes,
       }]);
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -2224,22 +2689,117 @@ export function useCaptionProcessing({
         }
       }
 
-      const updates: Array<{ batchIndex: number; translatedTexts: string[] }> = [];
+      const updates: Array<{ batchIndex: number; translatedTexts: string[]; touchedLineNos?: number[] }> = [];
+      const skippedBatches: Array<{ batchIndex: number; reason: string }> = [];
+      const batchIssues: Array<{
+        batchIndex: number;
+        level: 'error' | 'warning';
+        message: string;
+        indexes?: number[];
+        count?: number;
+      }> = [];
+      let skippedInputLines = bulkParsed.skippedLines.length;
+
       for (const item of bulkParsed.items) {
         const batchIndex = Math.max(1, Math.floor(item.batchIndex));
         const plan = planMap.get(batchIndex);
         if (!plan) {
-          return { success: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+          skippedBatches.push({
+            batchIndex,
+            reason: 'Không tìm thấy batch trong plan.',
+          });
+          batchIssues.push({
+            batchIndex,
+            level: 'error',
+            message: 'Không tìm thấy batch trong plan.',
+          });
+          continue;
         }
         const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
         const parsed = parseJsonTranslationResponseForManual(item.responseJson, expectedLines);
         if (!parsed.ok) {
-          return { success: false, error: `Batch #${batchIndex} ${parsed.errorCode}: ${parsed.errorMessage}` };
+          skippedBatches.push({
+            batchIndex,
+            reason: `${parsed.errorCode}: ${parsed.errorMessage}`,
+          });
+          batchIssues.push({
+            batchIndex,
+            level: 'error',
+            message: `${parsed.errorCode}: ${parsed.errorMessage}`,
+          });
+          continue;
         }
-        updates.push({ batchIndex, translatedTexts: parsed.translatedTexts });
+
+        if (parsed.stats.source === 'text') {
+          batchIssues.push({
+            batchIndex,
+            level: 'warning',
+            message: 'Dữ liệu được trích xuất từ text lỗi định dạng JSON.',
+          });
+        }
+
+        if (parsed.stats.missingIndexes.length > 0) {
+          batchIssues.push({
+            batchIndex,
+            level: 'warning',
+            message: `Thiếu index: ${formatIndexRanges(parsed.stats.missingIndexes)}.`,
+            indexes: parsed.stats.missingIndexes,
+          });
+        }
+        if (parsed.stats.duplicateIndexes.length > 0) {
+          batchIssues.push({
+            batchIndex,
+            level: 'warning',
+            message: `Trùng index (giữ bản đầu): ${formatIndexRanges(parsed.stats.duplicateIndexes)}.`,
+            indexes: parsed.stats.duplicateIndexes,
+          });
+        }
+        if (parsed.stats.outOfRangeIndexes.length > 0) {
+          batchIssues.push({
+            batchIndex,
+            level: 'warning',
+            message: `Index ngoài phạm vi (max ${expectedLines}): ${formatIndexRanges(parsed.stats.outOfRangeIndexes)}.`,
+            indexes: parsed.stats.outOfRangeIndexes,
+          });
+        }
+        if (parsed.stats.invalidItems > 0) {
+          batchIssues.push({
+            batchIndex,
+            level: 'warning',
+            message: `${parsed.stats.invalidItems} item không hợp lệ.`,
+            count: parsed.stats.invalidItems,
+          });
+        }
+
+        skippedInputLines += parsed.stats.duplicateIndexes.length;
+        skippedInputLines += parsed.stats.outOfRangeIndexes.length;
+        skippedInputLines += parsed.stats.invalidItems;
+        updates.push({
+          batchIndex,
+          translatedTexts: parsed.translatedTexts,
+          touchedLineNos: parsed.stats.acceptedIndexes,
+        });
       }
 
-      return await applyManualBatchUpdates(trimmedPath, updates);
+      if (updates.length === 0) {
+        return {
+          success: false,
+          error: 'Không có batch hợp lệ để áp dụng.',
+          skippedBatches,
+          batchIssues,
+          skippedInputLines,
+          totalInputLines: bulkParsed.totalLines,
+        };
+      }
+
+      const applyResult = await applyManualBatchUpdates(trimmedPath, updates);
+      return {
+        ...applyResult,
+        skippedBatches,
+        batchIssues,
+        skippedInputLines,
+        totalInputLines: bulkParsed.totalLines,
+      };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
@@ -2276,23 +2836,208 @@ export function useCaptionProcessing({
           planMap.set(Math.floor(plan.batchIndex), plan);
         }
       }
+      let validBatches = 0;
       for (const item of bulkParsed.items) {
         const batchIndex = Math.max(1, Math.floor(item.batchIndex));
         const plan = planMap.get(batchIndex);
         if (!plan) {
-          return { ok: false, error: `Không tìm thấy batch #${batchIndex} trong plan.` };
+          continue;
         }
         const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
         const parsed = parseJsonTranslationResponseForManual(item.responseJson, expectedLines);
-        if (!parsed.ok) {
-          return { ok: false, error: `Batch #${batchIndex} ${parsed.errorCode}: ${parsed.errorMessage}` };
+        if (parsed.ok) {
+          validBatches += 1;
         }
+      }
+      if (validBatches === 0) {
+        return { ok: false, error: 'Không có batch hợp lệ để kiểm tra.' };
       }
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }, [inputType, projectId, resolveFolderPath, resolveSourcePath]);
+
+  const getManualFolderBatchCount = useCallback(async (payload: {
+    inputPath: string;
+  }): Promise<{ ok: boolean; batchCount?: number; error?: string }> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { ok: false, error: 'Thiếu input path để lấy số batch.' };
+    }
+
+    try {
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+      const folderPath = resolveFolderPath(trimmedPath);
+      const fallback = {
+        projectId,
+        inputType: inputType as 'srt' | 'draft',
+        sourcePath: resolveSourcePath(trimmedPath),
+        folderPath,
+      };
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      return {
+        ok: true,
+        batchCount: step2BatchPlan.length,
+      };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [inputType, projectId, resolveFolderPath, resolveSourcePath]);
+
+  const previewManualBulkResponses = useCallback(async (payload: {
+    inputPath: string;
+    raw: string;
+  }): Promise<ManualBulkPreviewResult> => {
+    const trimmedPath = payload.inputPath?.trim();
+    if (!trimmedPath) {
+      return { ok: false, error: 'Thiếu input path để phân tích preview.' };
+    }
+
+    const bulkParsed = parseManualBulkInput(payload.raw);
+    if (!bulkParsed.ok) {
+      return { ok: false, error: bulkParsed.errorMessage };
+    }
+
+    try {
+      const sessionPath = getSessionPathForInputPath(inputType as 'srt' | 'draft', trimmedPath);
+      const folderPath = resolveFolderPath(trimmedPath);
+      const fallback = {
+        projectId,
+        inputType: inputType as 'srt' | 'draft',
+        sourcePath: resolveSourcePath(trimmedPath),
+        folderPath,
+      };
+      const session = await readCaptionSession(sessionPath, fallback);
+      const step2BatchPlan = Array.isArray(session.data.step2BatchPlan)
+        ? (session.data.step2BatchPlan as StepBatchPlanItem[])
+        : [];
+      if (step2BatchPlan.length === 0) {
+        return {
+          ok: false,
+          error: 'Chưa có dữ liệu Step 2 trong session. Hãy chạy Step 2 trước.',
+        };
+      }
+
+      const planMap = new Map<number, StepBatchPlanItem>();
+      for (const plan of step2BatchPlan) {
+        if (typeof plan.batchIndex === 'number') {
+          planMap.set(Math.floor(plan.batchIndex), plan);
+        }
+      }
+
+      const baseEntries = Array.isArray(session.data.translatedEntries) && session.data.translatedEntries.length > 0
+        ? (session.data.translatedEntries as SubtitleEntry[])
+        : (Array.isArray(session.data.extractedEntries) ? (session.data.extractedEntries as SubtitleEntry[]) : entries);
+
+      const previewBatches: ManualBulkPreviewBatch[] = [];
+      for (const item of bulkParsed.items) {
+        const batchIndex = Math.max(1, Math.floor(item.batchIndex));
+        const plan = planMap.get(batchIndex);
+        if (!plan) {
+          previewBatches.push({
+            batchIndex,
+            startIndex: 0,
+            endIndex: 0,
+            expectedLines: 0,
+            importedLines: 0,
+            status: 'error',
+            missingIndexes: [],
+            duplicateIndexes: [],
+            outOfRangeIndexes: [],
+            issues: [{
+              code: 'BATCH_NOT_FOUND',
+              message: `Không tìm thấy batch #${batchIndex} trong plan.`,
+              level: 'error',
+            }],
+            lines: [],
+          });
+          continue;
+        }
+
+        const expectedLines = Math.max(0, plan.lineCount || (plan.endIndex - plan.startIndex + 1));
+        const parsedPreview = parseManualResponseForPreview(item.responseJson, expectedLines);
+        const issueByLineNo = new Map<number, string[]>();
+        for (const issue of parsedPreview.issues) {
+          if (!issue.lineNo || issue.lineNo < 1 || issue.lineNo > expectedLines) {
+            continue;
+          }
+          const existing = issueByLineNo.get(issue.lineNo) || [];
+          issueByLineNo.set(issue.lineNo, [...existing, issue.code]);
+        }
+
+        const lines: ManualBulkPreviewLine[] = Array.from({ length: expectedLines }, (_, offset) => {
+          const lineNo = offset + 1;
+          const globalZeroIndex = plan.startIndex + offset;
+          const entry = baseEntries[globalZeroIndex];
+          const originalText = typeof entry?.text === 'string' ? entry.text : '';
+          const currentText = typeof entry?.translatedText === 'string' ? entry.translatedText : '';
+          const importedText = parsedPreview.importedByLine.get(lineNo) || '';
+          const issueCodes = issueByLineNo.get(lineNo) || [];
+
+          let status: ManualBulkPreviewLineStatus;
+          if (issueCodes.length > 0) {
+            status = issueCodes.includes('MISSING_INDEX') ? 'missing' : 'error';
+          } else if (!parsedPreview.importedByLine.has(lineNo)) {
+            status = 'missing';
+          } else if (!importedText.trim()) {
+            status = 'empty';
+          } else if (importedText.trim() === (currentText || '').trim()) {
+            status = 'unchanged';
+          } else {
+            status = 'changed';
+          }
+
+          return {
+            lineNo,
+            globalIndex: globalZeroIndex + 1,
+            originalText,
+            currentText,
+            importedText,
+            status,
+            issueCodes,
+          };
+        });
+
+        const hasError = parsedPreview.issues.some((issue) => issue.level === 'error');
+        const hasWarning = parsedPreview.issues.some((issue) => issue.level === 'warning');
+        previewBatches.push({
+          batchIndex,
+          startIndex: plan.startIndex,
+          endIndex: plan.endIndex,
+          expectedLines,
+          importedLines: parsedPreview.importedByLine.size,
+          status: hasError ? 'error' : (hasWarning ? 'warning' : 'ok'),
+          missingIndexes: parsedPreview.missingIndexes,
+          duplicateIndexes: parsedPreview.duplicateIndexes,
+          outOfRangeIndexes: parsedPreview.outOfRangeIndexes,
+          issues: parsedPreview.issues,
+          lines,
+        });
+      }
+
+      previewBatches.sort((a, b) => a.batchIndex - b.batchIndex);
+      const okBatches = previewBatches.filter((batch) => batch.status === 'ok').length;
+      const warningBatches = previewBatches.filter((batch) => batch.status === 'warning').length;
+      const errorBatches = previewBatches.filter((batch) => batch.status === 'error').length;
+      return {
+        ok: true,
+        totalBatches: previewBatches.length,
+        okBatches,
+        warningBatches,
+        errorBatches,
+        inputLines: bulkParsed.totalLines,
+        acceptedLines: bulkParsed.items.length,
+        skippedLines: bulkParsed.skippedLines.length,
+        batches: previewBatches,
+      };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }, [entries, inputType, projectId, resolveFolderPath, resolveSourcePath]);
 
   const handleStart = useCallback(async () => {
     const steps = Array.from(enabledSteps).filter((step) => step !== 5).sort() as Step[];
@@ -5253,7 +5998,9 @@ export function useCaptionProcessing({
     handleStop,
     applyManualBatchResponse,
     applyManualBatchTranslatedTexts,
+    getManualFolderBatchCount,
     applyManualBulkResponses,
+    previewManualBulkResponses,
     validateManualBatchResponse,
     validateManualBulkResponses,
     handleStep7AudioPreview,
