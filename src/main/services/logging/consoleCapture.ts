@@ -1,10 +1,15 @@
 import util from 'util';
+import { app } from 'electron';
 import type { AppLogLevel } from '../../../shared/types/appLogs';
 import { getAppLogStore } from './appLogStore';
 
 type ConsoleMethod = (...args: unknown[]) => void;
 
 let installed = false;
+
+function isAppLogsDisabledInPackagedBuild(): boolean {
+  return app.isPackaged && process.env.NODE_ENV === 'production';
+}
 
 function formatMessage(args: unknown[]): string {
   try {
@@ -15,6 +20,9 @@ function formatMessage(args: unknown[]): string {
 }
 
 function appendLog(level: AppLogLevel, args: unknown[]): void {
+  if (isAppLogsDisabledInPackagedBuild()) {
+    return;
+  }
   try {
     getAppLogStore().append({
       level,
@@ -31,6 +39,7 @@ export function installMainConsoleCapture(): void {
     return;
   }
   installed = true;
+  const shouldPrintToConsole = !isAppLogsDisabledInPackagedBuild();
 
   const originalLog: ConsoleMethod = console.log.bind(console);
   const originalInfo: ConsoleMethod = console.info.bind(console);
@@ -38,19 +47,27 @@ export function installMainConsoleCapture(): void {
   const originalError: ConsoleMethod = console.error.bind(console);
 
   console.log = (...args: unknown[]) => {
-    originalLog(...args);
+    if (shouldPrintToConsole) {
+      originalLog(...args);
+    }
     appendLog('info', args);
   };
   console.info = (...args: unknown[]) => {
-    originalInfo(...args);
+    if (shouldPrintToConsole) {
+      originalInfo(...args);
+    }
     appendLog('info', args);
   };
   console.warn = (...args: unknown[]) => {
-    originalWarn(...args);
+    if (shouldPrintToConsole) {
+      originalWarn(...args);
+    }
     appendLog('warn', args);
   };
   console.error = (...args: unknown[]) => {
-    originalError(...args);
+    if (shouldPrintToConsole) {
+      originalError(...args);
+    }
     appendLog('error', args);
   };
 
@@ -64,7 +81,9 @@ export function installMainConsoleCapture(): void {
         stack: error instanceof Error ? error.stack : undefined
       }
     });
-    originalError(error);
+    if (shouldPrintToConsole) {
+      originalError(error);
+    }
   });
 
   process.on('unhandledRejection', (reason) => {
@@ -77,6 +96,8 @@ export function installMainConsoleCapture(): void {
         stack: reason instanceof Error ? reason.stack : undefined
       }
     });
-    originalError(reason);
+    if (shouldPrintToConsole) {
+      originalError(reason);
+    }
   });
 }

@@ -2,6 +2,10 @@ type ConsoleMethod = (...args: unknown[]) => void;
 
 let installed = false;
 
+function isAppLogsDisabledInBuild(): boolean {
+  return import.meta.env.PROD;
+}
+
 function safeStringify(value: unknown): string {
   if (value instanceof Error) {
     return value.stack || value.message;
@@ -38,6 +42,9 @@ function formatMessage(args: unknown[]): string {
 }
 
 function appendToMain(level: 'info' | 'warn' | 'error', args: unknown[]): void {
+  if (isAppLogsDisabledInBuild()) {
+    return;
+  }
   const api = window.electronAPI?.appLogs;
   if (!api) {
     return;
@@ -55,6 +62,7 @@ export function installRendererConsoleCapture(): void {
     return;
   }
   installed = true;
+  const shouldPrintToConsole = !isAppLogsDisabledInBuild();
 
   const originalLog: ConsoleMethod = console.log.bind(console);
   const originalInfo: ConsoleMethod = console.info.bind(console);
@@ -62,19 +70,27 @@ export function installRendererConsoleCapture(): void {
   const originalError: ConsoleMethod = console.error.bind(console);
 
   console.log = (...args: unknown[]) => {
-    originalLog(...args);
+    if (shouldPrintToConsole) {
+      originalLog(...args);
+    }
     appendToMain('info', args);
   };
   console.info = (...args: unknown[]) => {
-    originalInfo(...args);
+    if (shouldPrintToConsole) {
+      originalInfo(...args);
+    }
     appendToMain('info', args);
   };
   console.warn = (...args: unknown[]) => {
-    originalWarn(...args);
+    if (shouldPrintToConsole) {
+      originalWarn(...args);
+    }
     appendToMain('warn', args);
   };
   console.error = (...args: unknown[]) => {
-    originalError(...args);
+    if (shouldPrintToConsole) {
+      originalError(...args);
+    }
     appendToMain('error', args);
   };
 
