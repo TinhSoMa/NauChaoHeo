@@ -20,7 +20,6 @@ Versions are pinned in `requirements-pycapcut-lock.txt`:
 - `comtypes==1.4.15`
 - `numpy==2.3.4`
 - `pillow==11.3.0`
-- `undetected-chromedriver==3.5.5`
 - `grok3api` (bundled từ local repo)
 
 ## External Python Packages (Not Bundled)

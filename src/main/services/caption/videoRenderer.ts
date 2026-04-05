@@ -3139,6 +3139,7 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
   // Ưu tiên video gốc; chỉ fallback sang video render nội bộ nếu không có lựa chọn nào khác.
   const preferredCandidates = potentialVideos.filter((video) => !video.isGeneratedRender);
   const candidatePool = preferredCandidates.length > 0 ? preferredCandidates : potentialVideos;
+  const minShorterSidePx = 360;
 
   type VideoStat = {
     path: string;
@@ -3153,9 +3154,10 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
     const videoPath = candidate.path;
     const res = await probeGetVideoMetadata(videoPath);
     if (res.success && res.metadata) {
-      const realHeight = res.metadata.actualHeight || 1080;
-      const maxDim = Math.max(res.metadata.width, realHeight);
-      if (maxDim >= 720 && realHeight > 500) {
+      const realWidth = res.metadata.width || 0;
+      const realHeight = res.metadata.actualHeight || res.metadata.height || 0;
+      const shorterSide = Math.min(realWidth, realHeight);
+      if (shorterSide >= minShorterSidePx) {
         let mtimeMs = 0;
         try {
           const stat = await fs.stat(videoPath);
@@ -3164,7 +3166,7 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
         validVideos.push({
           path: videoPath,
           metadata: res.metadata,
-          area: res.metadata.width * realHeight,
+          area: realWidth * realHeight,
           isGeneratedRender: candidate.isGeneratedRender,
           mtimeMs,
         });
@@ -3173,7 +3175,7 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
   }
 
   if (validVideos.length === 0) {
-    return { success: false, error: 'Không có video nào đạt độ phân giải > 750p' };
+    return { success: false, error: 'Không có video nào đạt độ phân giải tối thiểu 360p' };
   }
 
   validVideos.sort((a, b) => {

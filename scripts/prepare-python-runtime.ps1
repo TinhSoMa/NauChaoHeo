@@ -97,6 +97,9 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
   throw "Embedded python.exe not found at: $pythonExe"
 }
 
+# Prevent embedded runtime from loading user/site Python packages.
+$env:PYTHONNOUSERSITE = "1"
+
 $sitePackages = Join-Path $runtimeDir "Lib\site-packages"
 Ensure-Directory -PathValue $sitePackages
 
@@ -109,10 +112,13 @@ Write-Host "[Python Runtime] Installing pip..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @($getPipPath, "--disable-pip-version-check", "--no-warn-script-location")
 
 Write-Host "[Python Runtime] Upgrading pip/setuptools/wheel..."
-Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "--disable-pip-version-check")
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "--upgrade", "pip", "setuptools", "wheel", "--disable-pip-version-check")
 
 Write-Host "[Python Runtime] Installing locked pycapcut dependencies..."
-Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "install", "-r", $requirementsPath, "--disable-pip-version-check", "--no-warn-script-location")
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "-r", $requirementsPath, "--disable-pip-version-check", "--no-warn-script-location")
+
+Write-Host "[Python Runtime] Removing unused speech/browser automation packages (funasr-onnx, selenium, undetected-chromedriver)..."
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "uninstall", "-y", "funasr-onnx", "selenium", "undetected-chromedriver", "--disable-pip-version-check")
 
 Write-Host "[Python Runtime] Running smoke test..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @(
@@ -130,13 +136,13 @@ if (Test-Path -LiteralPath $pythonLicensePath) {
   Copy-Item -LiteralPath $pythonLicensePath -Destination (Join-Path $licensesDir "PYTHON_LICENSE.txt") -Force
 }
 
-$packages = @("pycapcut", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "undetected-chromedriver")
+$packages = @("pycapcut", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow")
 foreach ($pkg in $packages) {
   $pkgDir = Join-Path $licensesDir $pkg
   Ensure-Directory -PathValue $pkgDir
 
   $pipShowPath = Join-Path $pkgDir "pip-show.txt"
-  $pipShowOutput = & $pythonExe -m pip show $pkg | Out-String
+  $pipShowOutput = & $pythonExe -m pip --isolated show $pkg | Out-String
   Set-Content -LiteralPath $pipShowPath -Value $pipShowOutput -Encoding UTF8
 
   $candidateDistInfos = @(

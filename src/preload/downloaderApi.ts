@@ -1,5 +1,5 @@
 import { ipcRenderer } from 'electron'
-import type { VideoInfo, DownloadOptions, DownloadProgress, CookieEntry, PlaylistInfo } from '../../shared/types/downloader'
+import type { VideoInfo, DownloadOptions, DownloadProgress, CookieEntry, PlaylistInfo } from '../shared/types/downloader'
 
 export interface DownloaderAPI {
   fetchInfo: (payload: { url: string; allowPlaylist?: boolean }) => Promise<{
