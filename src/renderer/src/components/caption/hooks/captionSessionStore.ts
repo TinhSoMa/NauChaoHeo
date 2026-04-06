@@ -873,6 +873,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
     },
     step6Merge: {
       trimAudioEnabled: settings.trimAudioEnabled,
+      trimAudioWorkers: settings.trimAudioWorkers,
       autoFitAudio: settings.autoFitAudio,
       fitAudioWorkers: settings.fitAudioWorkers,
     },

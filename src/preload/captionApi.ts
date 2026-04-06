@@ -18,6 +18,9 @@ import {
   TTSTestVoiceResponse,
   MergeResult,
   FitAudioResponse,
+  FitAudioAuditItem,
+  FitAudioAuditFromSessionsRequest,
+  FitAudioAuditResponse,
   CheckFilesResult,
   TrimSilencePathItem,
   TrimSilenceResult,
@@ -96,13 +99,25 @@ export interface TTSAPI {
   // Trim Silence
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
-  trimSilenceToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
-  trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceToPaths: (
+    targets: TrimSilencePathItem[],
+    options?: { concurrency?: number }
+  ) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceEndToPaths: (
+    targets: TrimSilencePathItem[],
+    options?: { concurrency?: number }
+  ) => Promise<IpcApiResponse<TrimSilenceResult>>;
 
   // Fit Audio to Duration
   fitAudio: (
     audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>
   ) => Promise<IpcApiResponse<FitAudioResponse>>;
+  auditFitAudio: (
+    audioItems: FitAudioAuditItem[]
+  ) => Promise<IpcApiResponse<FitAudioAuditResponse>>;
+  auditFitAudioFromSessions: (
+    request: FitAudioAuditFromSessionsRequest
+  ) => Promise<IpcApiResponse<FitAudioAuditResponse>>;
   checkAudioFiles: (paths: string[]) => Promise<IpcApiResponse<CheckFilesResult>>;
 }
 
@@ -189,14 +204,18 @@ export function createTTSAPI(): TTSAPI {
     trimSilenceEnd: (audioPaths: string[]) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END, audioPaths),
 
-    trimSilenceToPaths: (targets: TrimSilencePathItem[]) =>
-      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_TO_PATHS, targets),
+    trimSilenceToPaths: (targets: TrimSilencePathItem[], options?: { concurrency?: number }) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_TO_PATHS, targets, options),
 
-    trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) =>
-      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END_TO_PATHS, targets),
+    trimSilenceEndToPaths: (targets: TrimSilencePathItem[], options?: { concurrency?: number }) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE_END_TO_PATHS, targets, options),
 
     fitAudio: (audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_FIT_AUDIO, audioItems),
+    auditFitAudio: (audioItems: FitAudioAuditItem[]) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_AUDIT_FIT_AUDIO, audioItems),
+    auditFitAudioFromSessions: (request: FitAudioAuditFromSessionsRequest) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_AUDIT_FIT_AUDIO_FROM_SESSIONS, request),
     checkAudioFiles: (paths: string[]) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_CHECK_FILES, paths),
   };

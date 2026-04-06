@@ -306,6 +306,69 @@ export interface FitAudioResponse {
   scaledCount: number;
   skippedCount: number;
   pathMapping: FitAudioPathMapping[];
+  auditRows?: Array<{
+    originalPath: string;
+    outputPath: string;
+    allowedDurationMs: number;
+    originalDurationMs: number;
+    outputDurationMs: number;
+    isScaled: boolean;
+  }>;
+}
+
+export interface FitAudioAuditItem {
+  folderPath?: string;
+  folderLabel?: string;
+  originalPath: string;
+  outputPath: string;
+  allowedDurationMs: number;
+  originalDurationMsHint?: number;
+  outputDurationMsHint?: number;
+  isScaledHint?: boolean;
+}
+
+export interface FitAudioAuditRow {
+  folderPath?: string;
+  folderLabel?: string;
+  originalPath: string;
+  outputPath: string;
+  allowedDurationMs: number;
+  originalDurationMs: number;
+  outputDurationMs: number;
+  speedRatio: number;
+  outputVsAllowedRatio: number;
+  isScaled: boolean;
+  withinAllowed: boolean;
+  isTooFast: boolean;
+  error?: string;
+}
+
+export interface FitAudioAuditSummary {
+  totalItems: number;
+  validItems: number;
+  scaledCount: number;
+  skippedCount: number;
+  tooFastCount: number;
+  withinAllowedCount: number;
+  scaledPercent: number;
+  tooFastPercent: number;
+  withinAllowedPercent: number;
+  minSpeedRatio: number;
+  avgSpeedRatio: number;
+  maxSpeedRatio: number;
+  speedWarningThreshold: number;
+}
+
+export interface FitAudioAuditResponse {
+  summary: FitAudioAuditSummary;
+  rows: FitAudioAuditRow[];
+  topFastest: FitAudioAuditRow[];
+}
+
+export interface FitAudioAuditFromSessionsRequest {
+  inputType: 'srt' | 'draft';
+  inputPaths: string[];
+  topFastest?: number;
 }
 
 export interface CheckFilesResult {
@@ -339,6 +402,8 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_TRIM_SILENCE_TO_PATHS: 'tts:trimSilenceToPaths',
   TTS_TRIM_SILENCE_END_TO_PATHS: 'tts:trimSilenceEndToPaths',
   TTS_FIT_AUDIO: 'tts:fitAudio',
+  TTS_AUDIT_FIT_AUDIO: 'tts:auditFitAudio',
+  TTS_AUDIT_FIT_AUDIO_FROM_SESSIONS: 'tts:auditFitAudioFromSessions',
   TTS_CHECK_FILES: 'tts:checkFiles',
   
   // Audio Merge
@@ -984,6 +1049,7 @@ export interface CaptionProjectSettingsValues {
   enabledSteps?: number[];
   audioDir?: string;
   trimAudioEnabled?: boolean;
+  trimAudioWorkers?: number;
   autoFitAudio?: boolean;
   fitAudioWorkers?: number;
   hardwareAcceleration?: 'none' | 'qsv' | 'nvenc';

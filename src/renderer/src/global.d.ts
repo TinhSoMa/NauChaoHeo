@@ -477,6 +477,69 @@ interface FitAudioResponse {
   scaledCount: number;
   skippedCount: number;
   pathMapping: Array<{ originalPath: string; outputPath: string }>;
+  auditRows?: Array<{
+    originalPath: string;
+    outputPath: string;
+    allowedDurationMs: number;
+    originalDurationMs: number;
+    outputDurationMs: number;
+    isScaled: boolean;
+  }>;
+}
+
+interface FitAudioAuditItem {
+  folderPath?: string;
+  folderLabel?: string;
+  originalPath: string;
+  outputPath: string;
+  allowedDurationMs: number;
+  originalDurationMsHint?: number;
+  outputDurationMsHint?: number;
+  isScaledHint?: boolean;
+}
+
+interface FitAudioAuditRow {
+  folderPath?: string;
+  folderLabel?: string;
+  originalPath: string;
+  outputPath: string;
+  allowedDurationMs: number;
+  originalDurationMs: number;
+  outputDurationMs: number;
+  speedRatio: number;
+  outputVsAllowedRatio: number;
+  isScaled: boolean;
+  withinAllowed: boolean;
+  isTooFast: boolean;
+  error?: string;
+}
+
+interface FitAudioAuditSummary {
+  totalItems: number;
+  validItems: number;
+  scaledCount: number;
+  skippedCount: number;
+  tooFastCount: number;
+  withinAllowedCount: number;
+  scaledPercent: number;
+  tooFastPercent: number;
+  withinAllowedPercent: number;
+  minSpeedRatio: number;
+  avgSpeedRatio: number;
+  maxSpeedRatio: number;
+  speedWarningThreshold: number;
+}
+
+interface FitAudioAuditResponse {
+  summary: FitAudioAuditSummary;
+  rows: FitAudioAuditRow[];
+  topFastest: FitAudioAuditRow[];
+}
+
+interface FitAudioAuditFromSessionsRequest {
+  inputType: 'srt' | 'draft';
+  inputPaths: string[];
+  topFastest?: number;
 }
 
 interface CheckFilesResult {
@@ -507,9 +570,17 @@ interface TTSAPI {
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
-  trimSilenceToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
-  trimSilenceEndToPaths: (targets: TrimSilencePathItem[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceToPaths: (
+    targets: TrimSilencePathItem[],
+    options?: { concurrency?: number }
+  ) => Promise<IpcApiResponse<TrimSilenceResult>>;
+  trimSilenceEndToPaths: (
+    targets: TrimSilencePathItem[],
+    options?: { concurrency?: number }
+  ) => Promise<IpcApiResponse<TrimSilenceResult>>;
   fitAudio: (audioItems: Array<{ path: string; durationMs: number; speedLabel?: string }>) => Promise<IpcApiResponse<FitAudioResponse>>;
+  auditFitAudio: (audioItems: FitAudioAuditItem[]) => Promise<IpcApiResponse<FitAudioAuditResponse>>;
+  auditFitAudioFromSessions: (request: FitAudioAuditFromSessionsRequest) => Promise<IpcApiResponse<FitAudioAuditResponse>>;
   checkAudioFiles: (paths: string[]) => Promise<IpcApiResponse<CheckFilesResult>>;
 }
 

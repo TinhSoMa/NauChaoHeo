@@ -23,6 +23,9 @@ import {
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,
   MAX_FIT_AUDIO_WORKERS,
+  DEFAULT_TRIM_AUDIO_WORKERS,
+  MIN_TRIM_AUDIO_WORKERS,
+  MAX_TRIM_AUDIO_WORKERS,
   LINES_PER_FILE_OPTIONS,
   normalizeVoiceValue,
 } from '../../config/captionConfig';
@@ -58,11 +61,13 @@ import {
 } from './components/Step3BulkMultiFolderModal';
 import { Step3BatchMonitorPopup, type Step3BatchEditableLine } from './components/Step3BatchMonitorPopup';
 import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
+import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { AlertCircle, Download, Eye, Power, PowerOff } from 'lucide-react';
 import {
   CaptionProjectSettingsValues,
+  FitAudioAuditResponse,
   CaptionSessionV1,
   CoverQuad,
   TranslationBatchReport as SharedTranslationBatchReport,
@@ -1568,6 +1573,7 @@ export function CaptionTranslator() {
     autoFitAudio: settings.autoFitAudio,
     fitAudioWorkers: settings.fitAudioWorkers,
     trimAudioEnabled: settings.trimAudioEnabled,
+    trimAudioWorkers: settings.trimAudioWorkers,
     hardwareAcceleration: settings.hardwareAcceleration,
     style: settings.style,
     renderMode: settings.renderMode,
@@ -1653,6 +1659,7 @@ export function CaptionTranslator() {
     settings.autoFitAudio,
     settings.fitAudioWorkers,
     settings.trimAudioEnabled,
+    settings.trimAudioWorkers,
     settings.hardwareAcceleration,
     settings.style,
     settings.renderMode,
@@ -2910,6 +2917,10 @@ export function CaptionTranslator() {
   const [step3BulkMultiMessage, setStep3BulkMultiMessage] = useState('');
   const [step3BulkMultiApplyResults, setStep3BulkMultiApplyResults] = useState<Step3BulkMultiFolderApplyResult[]>([]);
   const [step3BulkMultiBusy, setStep3BulkMultiBusy] = useState(false);
+  const [fitAudioAuditOpen, setFitAudioAuditOpen] = useState(false);
+  const [fitAudioAuditBusy, setFitAudioAuditBusy] = useState(false);
+  const [fitAudioAuditError, setFitAudioAuditError] = useState('');
+  const [fitAudioAuditData, setFitAudioAuditData] = useState<FitAudioAuditResponse | null>(null);
   const [step3RuntimeTimer, setStep3RuntimeTimer] = useState<Step3RuntimeTimer>({
     apiLabel: '',
     tokenLabel: '',
@@ -4342,6 +4353,15 @@ export function CaptionTranslator() {
   const bulkExportTitle = thumbnailBulkExportState.message
     ? thumbnailBulkExportState.message
     : 'Xuất thumbnail hàng loạt (16:9 + 9:16)';
+  const canQuickFitAudioAudit = (
+    processing.enabledSteps.has(7)
+    && settings.autoFitAudio
+    && processingInputPaths.length > 0
+  );
+  const fitAudioAuditLabel = fitAudioAuditBusy ? 'Đang audit fit...' : 'Kiểm tra audio fit';
+  const fitAudioAuditTitle = settings.autoFitAudio
+    ? 'Quét thống kê Step 6: tỷ lệ fit, % quá nhanh, top file tăng tốc mạnh.'
+    : 'Bật Auto fit audio ở Step 6 để dùng audit fit.';
   const isAutoShutdownScheduled = shutdownStatus?.active === true;
   const autoShutdownCountdownLabel = isAutoShutdownScheduled
     ? formatCountdownShort(shutdownStatus?.secondsRemaining || 0)
@@ -4350,6 +4370,41 @@ export function CaptionTranslator() {
   const autoShutdownQuickTitle = autoShutdownEnabled
     ? `Đang bật auto shutdown (${autoShutdownDelayMinutes} phút)`
     : `Đang tắt auto shutdown (${autoShutdownDelayMinutes} phút)`;
+
+  const handleOpenFitAudioAudit = useCallback(async () => {
+    setFitAudioAuditOpen(true);
+    setFitAudioAuditBusy(true);
+    setFitAudioAuditError('');
+
+    try {
+      const result = await window.electronAPI.tts.auditFitAudioFromSessions({
+        inputType: settings.inputType as 'srt' | 'draft',
+        inputPaths: processingInputPaths,
+      });
+      if (result?.success && result.data) {
+        const totalItems = typeof result.data.summary?.totalItems === 'number'
+          ? result.data.summary.totalItems
+          : 0;
+        const hasAnyRows = totalItems > 0 || (Array.isArray(result.data.rows) && result.data.rows.length > 0);
+        if (!hasAnyRows) {
+          setFitAudioAuditData(null);
+          setFitAudioAuditError('Không tìm thấy dữ liệu fit audio từ Step 6. Hãy chạy Step 6 với Auto fit audio trước.');
+          return;
+        }
+        setFitAudioAuditData(result.data);
+        setFitAudioAuditError('');
+        return;
+      }
+
+      setFitAudioAuditData(null);
+      setFitAudioAuditError(result?.error || 'Không thể audit fit audio.');
+    } catch (error) {
+      setFitAudioAuditData(null);
+      setFitAudioAuditError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFitAudioAuditBusy(false);
+    }
+  }, [settings.inputType, processingInputPaths]);
 
   const handleQuickStep7AudioToggle = useCallback(() => {
     if (isStep7AudioPlaying) {
@@ -5394,10 +5449,14 @@ export function CaptionTranslator() {
           ? stepData.fitResults as Record<string, unknown>
           : null;
         const trimAudioEnabled = metrics.trimAudioEnabled === true || !!trimResults;
+        const trimAudioWorkers = typeof metrics.trimAudioWorkers === 'number'
+          ? metrics.trimAudioWorkers
+          : (typeof trimResults?.trimAudioWorkers === 'number' ? trimResults.trimAudioWorkers : undefined);
         const fitAudioWorkers = typeof metrics.fitAudioWorkers === 'number'
           ? metrics.fitAudioWorkers
           : (typeof fitResults?.fitAudioWorkers === 'number' ? fitResults.fitAudioWorkers : undefined);
         stepItems.push({ label: 'Trim Enabled', value: trimAudioEnabled ? 'true' : 'false' });
+        stepItems.push({ label: 'Trim Workers', value: `${trimAudioWorkers ?? DEFAULT_TRIM_AUDIO_WORKERS}` });
         stepItems.push({ label: 'Fit Workers', value: `${fitAudioWorkers ?? DEFAULT_FIT_AUDIO_WORKERS}` });
         if (trimAudioEnabled) {
           const trimOutputDir = typeof trimResults?.trimOutputDir === 'string'
@@ -7365,6 +7424,18 @@ export function CaptionTranslator() {
               />
             </div>
             <div className={styles.inputGroup}>
+              <label className={styles.label}>Trim workers</label>
+              <Input
+                type="number"
+                min={MIN_TRIM_AUDIO_WORKERS}
+                max={MAX_TRIM_AUDIO_WORKERS}
+                step={1}
+                value={settings.trimAudioWorkers}
+                onChange={(e) => settings.setTrimAudioWorkers(Number(e.target.value))}
+                disabled={processing.status === 'running' || !settings.trimAudioEnabled}
+              />
+            </div>
+            <div className={styles.inputGroup}>
               <label className={styles.label}>Fit workers</label>
               <Input
                 type="number"
@@ -7378,9 +7449,9 @@ export function CaptionTranslator() {
             </div>
             <div
               className={styles.stepCardHint}
-              title={`Khi bật, audio sẽ được trim vào thư mục audio_trimmed/ rồi fit song song tối đa ${settings.fitAudioWorkers} luồng trước khi ghép.`}
+              title={`Khi bật, trim chạy song song tối đa ${settings.trimAudioWorkers} luồng vào thư mục audio_trimmed/, sau đó fit tối đa ${settings.fitAudioWorkers} luồng trước khi ghép.`}
             >
-              Auto fit: trim → audio_trimmed/ → {settings.fitAudioWorkers} luồng.
+              Trim: {settings.trimAudioWorkers} luồng · Fit: {settings.fitAudioWorkers} luồng.
             </div>
           </div>
           <div className={styles.stepInfoCard}>
@@ -7523,6 +7594,19 @@ export function CaptionTranslator() {
           </div>
 
           <div className={styles.stepRailQuick}>
+            {canQuickFitAudioAudit && (
+              <button
+                type="button"
+                className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${fitAudioAuditData?.summary.tooFastCount ? styles.stepRailQuickBtnError : ''} ${fitAudioAuditOpen ? styles.stepRailQuickBtnActive : ''}`}
+                onClick={() => {
+                  void handleOpenFitAudioAudit();
+                }}
+                disabled={processing.status === 'running' || fitAudioAuditBusy}
+                title={fitAudioAuditTitle}
+              >
+                <span className={styles.stepRailQuickBtnLabel}>{fitAudioAuditLabel}</span>
+              </button>
+            )}
             {canBulkExportThumbnails && (
               <button
                 type="button"
@@ -8184,6 +8268,16 @@ export function CaptionTranslator() {
         </div>
       </div>
       <CaptionRuntimeConsole open={isCaptionConsoleOpen} onClose={() => setIsCaptionConsoleOpen(false)} />
+      <FitAudioAuditPopup
+        visible={fitAudioAuditOpen}
+        busy={fitAudioAuditBusy}
+        data={fitAudioAuditData}
+        error={fitAudioAuditError}
+        onClose={() => setFitAudioAuditOpen(false)}
+        onRefresh={() => {
+          void handleOpenFitAudioAudit();
+        }}
+      />
       </div>
 
       {step3BulkMultiModalOpen && (

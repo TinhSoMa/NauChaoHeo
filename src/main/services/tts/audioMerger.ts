@@ -955,6 +955,8 @@ export async function trimSilenceEndToPath(
 export interface FitAudioResult {
   scaled: boolean;      // true nếu đã scale, false nếu giữ nguyên
   outputPath: string;   // Đường dẫn file output (scaled hoặc gốc)
+  originalDurationMs: number;
+  outputDurationMsEstimate: number;
 }
 
 /**
@@ -977,7 +979,12 @@ export async function fitAudioToDuration(
     console.warn(
       `[AudioMerger] fitAudio ERROR: ${fileName} actualDuration=${actualDurationMs}ms, allowed=${allowedDurationMs}ms (bỏ qua)`
     );
-    return { scaled: false, outputPath: audioPath };
+    return {
+      scaled: false,
+      outputPath: audioPath,
+      originalDurationMs: actualDurationMs,
+      outputDurationMsEstimate: actualDurationMs,
+    };
   }
 
   // Nếu audio không bị tràn, không cần scale → dùng file gốc
@@ -985,7 +992,12 @@ export async function fitAudioToDuration(
     // console.log(
     //   `[AudioMerger] fitAudio SKIP: ${fileName} actual=${actualDurationMs}ms <= allowed=${allowedDurationMs}ms`
     // );
-    return { scaled: false, outputPath: audioPath };
+    return {
+      scaled: false,
+      outputPath: audioPath,
+      originalDurationMs: actualDurationMs,
+      outputDurationMsEstimate: actualDurationMs,
+    };
   }
 
   // const speedLabelForLog = (typeof speedLabel === 'string' && speedLabel.trim())
@@ -1045,7 +1057,12 @@ export async function fitAudioToDuration(
     try {
       throwIfTtsStopped();
     } catch {
-      resolve({ scaled: false, outputPath: audioPath });
+      resolve({
+        scaled: false,
+        outputPath: audioPath,
+        originalDurationMs: actualDurationMs,
+        outputDurationMsEstimate: actualDurationMs,
+      });
       return;
     }
     const args = [
@@ -1072,15 +1089,30 @@ export async function fitAudioToDuration(
       if (code === 0) {
         const savedName = path.basename(scaledPath);
         // console.log(`[AudioMerger] fitAudio SAVED: ${savedName}`);
-        resolve({ scaled: true, outputPath: scaledPath });
+        resolve({
+          scaled: true,
+          outputPath: scaledPath,
+          originalDurationMs: actualDurationMs,
+          outputDurationMsEstimate: allowedDurationMs,
+        });
       } else {
         try { await fs.unlink(scaledPath); } catch {}
-        resolve({ scaled: false, outputPath: audioPath });
+        resolve({
+          scaled: false,
+          outputPath: audioPath,
+          originalDurationMs: actualDurationMs,
+          outputDurationMsEstimate: actualDurationMs,
+        });
       }
     });
 
     proc.on('error', () => {
-      resolve({ scaled: false, outputPath: audioPath });
+      resolve({
+        scaled: false,
+        outputPath: audioPath,
+        originalDurationMs: actualDurationMs,
+        outputDurationMsEstimate: actualDurationMs,
+      });
     });
   });
 }

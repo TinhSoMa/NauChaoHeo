@@ -84,6 +84,9 @@ export const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 200;
 export const DEFAULT_FIT_AUDIO_WORKERS = 5;
 export const MIN_FIT_AUDIO_WORKERS = 1;
 export const MAX_FIT_AUDIO_WORKERS = 16;
+export const DEFAULT_TRIM_AUDIO_WORKERS = 4;
+export const MIN_TRIM_AUDIO_WORKERS = 1;
+export const MAX_TRIM_AUDIO_WORKERS = 16;
 
 export function normalizeEdgeOutputFormat(value?: string | null): EdgeOutputFormat {
   const normalized = (value || '').trim().toLowerCase();
@@ -108,6 +111,18 @@ export function normalizeEdgeWorkerItemConcurrency(value?: number | null): numbe
     return DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
   }
   return Math.min(MAX_EDGE_WORKER_ITEM_CONCURRENCY, rounded);
+}
+
+export function normalizeTrimAudioWorkers(value?: number | null): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_TRIM_AUDIO_WORKERS;
+  }
+  const rounded = Math.round(numeric);
+  if (rounded < MIN_TRIM_AUDIO_WORKERS) {
+    return DEFAULT_TRIM_AUDIO_WORKERS;
+  }
+  return Math.min(MAX_TRIM_AUDIO_WORKERS, rounded);
 }
 
 // ============================================

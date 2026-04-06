@@ -46,6 +46,9 @@ import {
   validateStepOutputForSkip,
 } from './captionSessionStore';
 import {
+  DEFAULT_TRIM_AUDIO_WORKERS,
+  MIN_TRIM_AUDIO_WORKERS,
+  MAX_TRIM_AUDIO_WORKERS,
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,
   MAX_FIT_AUDIO_WORKERS,
@@ -136,6 +139,17 @@ function normalizeFitAudioWorkers(value: number | undefined): number {
     return DEFAULT_FIT_AUDIO_WORKERS;
   }
   return Math.min(MAX_FIT_AUDIO_WORKERS, Math.max(MIN_FIT_AUDIO_WORKERS, rounded));
+}
+
+function normalizeTrimAudioWorkers(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_TRIM_AUDIO_WORKERS;
+  }
+  const rounded = Math.round(value as number);
+  if (rounded < MIN_TRIM_AUDIO_WORKERS) {
+    return DEFAULT_TRIM_AUDIO_WORKERS;
+  }
+  return Math.min(MAX_TRIM_AUDIO_WORKERS, Math.max(MIN_TRIM_AUDIO_WORKERS, rounded));
 }
 
 function getPathBaseName(pathValue: string): string {
@@ -237,6 +251,7 @@ interface UseCaptionProcessingProps {
     audioDir: string;
     setAudioDir: (dir: string) => void;
     trimAudioEnabled?: boolean;
+    trimAudioWorkers?: number;
     hardwareAcceleration: 'none' | 'qsv' | 'nvenc';
     style?: any;
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
@@ -3505,6 +3520,7 @@ export function useCaptionProcessing({
       },
       step6Merge: {
         trimAudioEnabled: cfg.trimAudioEnabled,
+        trimAudioWorkers: cfg.trimAudioWorkers,
         autoFitAudio: cfg.autoFitAudio,
         fitAudioWorkers: cfg.fitAudioWorkers,
       },
@@ -3615,6 +3631,7 @@ export function useCaptionProcessing({
       enabledSteps: steps,
       audioDir: cfg.audioDir,
       autoFitAudio: cfg.autoFitAudio,
+      trimAudioWorkers: cfg.trimAudioWorkers,
       fitAudioWorkers: cfg.fitAudioWorkers,
       trimAudioEnabled: cfg.trimAudioEnabled,
       hardwareAcceleration: cfg.hardwareAcceleration,
@@ -4745,10 +4762,19 @@ export function useCaptionProcessing({
         let trimmedCount = 0;
         let trimFailedCount = 0;
         let trimErrors: string[] = [];
+        let trimAudioWorkersUsed = 0;
         let fitOutputDir = '';
         let fitScaledCount = 0;
         let fitOutputPaths: string[] = [];
         let fitPathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+        let fitAuditRows: Array<{
+          originalPath: string;
+          outputPath: string;
+          allowedDurationMs: number;
+          originalDurationMs: number;
+          outputDurationMs: number;
+          isScaled: boolean;
+        }> = [];
         let fitSourceFiles: string[] = [];
         let fitSpeed = 1.0;
         let fitSpeedLabel = '';
@@ -4756,6 +4782,8 @@ export function useCaptionProcessing({
         let fitAudioWorkersUsed = 0;
         const stepSessionFolderPath = resolveFolderPath(currentPath);
         if (cfg.trimAudioEnabled) {
+          const safeTrimAudioWorkers = normalizeTrimAudioWorkers(cfg.trimAudioWorkers);
+          trimAudioWorkersUsed = safeTrimAudioWorkers;
           const previousTrimResults = toRecord(sessionBeforeStep.data?.trimResults);
           const previousTrimFiles = Array.isArray(previousTrimResults.trimFiles)
             ? previousTrimResults.trimFiles
@@ -4805,35 +4833,158 @@ export function useCaptionProcessing({
                 outputPath: joinFilePath(trimOutputDir, fileName),
               };
             });
-            setProgress({ current: 0, total: trimTargets.length, message: msgCtx('Bước 6: Đang trim audio...') });
-            const trimEndTargets = trimTargets.map((item) => ({
-              inputPath: item.outputPath,
-              outputPath: item.outputPath,
-            }));
-            // @ts-ignore
-            const trimResult = await window.electronAPI.tts.trimSilenceToPaths(trimTargets);
-            // @ts-ignore
-            const trimEndResult = await window.electronAPI.tts.trimSilenceEndToPaths(trimEndTargets);
-            if (trimResult.success && trimResult.data && trimEndResult.success && trimEndResult.data) {
-              const trimmedMiddleData = trimResult.data;
-              const trimmedEndData = trimEndResult.data;
-              trimmedCount = trimmedEndData.trimmedCount;
-              trimFailedCount = trimmedEndData.failedCount;
-              trimErrors = Array.isArray(trimmedEndData.errors) ? trimmedEndData.errors : [];
-              setProgress({ current: trimmedCount, total: trimTargets.length, message: msgCtx(`Bước 6: Đã trim ${trimmedCount} files`) });
+            const outputMap = new Map<string, string>();
+            const candidateTrimOutputs = trimTargets.map((item) => item.outputPath);
+            let missingTrimOutputs = candidateTrimOutputs;
+            if (candidateTrimOutputs.length > 0) {
+              // @ts-ignore
+              const trimOutputCheck = await window.electronAPI.tts.checkAudioFiles(candidateTrimOutputs);
+              if (trimOutputCheck?.success && trimOutputCheck.data) {
+                missingTrimOutputs = trimOutputCheck.data.missingPaths || [];
+              }
+            }
+
+            const missingTrimSet = new Set(missingTrimOutputs.map((value) => normalizePathKey(value)));
+            const pendingTrimTargets = trimTargets.filter((target) => missingTrimSet.has(normalizePathKey(target.outputPath)));
+            const reusedTrimTargets = trimTargets.filter((target) => !missingTrimSet.has(normalizePathKey(target.outputPath)));
+
+            for (const target of reusedTrimTargets) {
+              outputMap.set(target.inputPath, target.outputPath);
+            }
+
+            trimmedCount = reusedTrimTargets.length;
+            let processedTrimCount = reusedTrimTargets.length;
+
+            if (reusedTrimTargets.length > 0) {
+              setProgress({
+                current: processedTrimCount,
+                total: trimTargets.length,
+                message: msgCtx(`Bước 6: Dùng lại audio đã trim ${processedTrimCount}/${trimTargets.length}`),
+              });
+            }
+
+            if (pendingTrimTargets.length === 0) {
               trimResults = {
-                trimmedMiddle: trimmedMiddleData,
-                trimmedEnd: trimmedEndData,
+                trimmedMiddle: {
+                  success: true,
+                  trimmedCount,
+                  failedCount: 0,
+                },
+                trimmedEnd: {
+                  success: true,
+                  trimmedCount,
+                  failedCount: 0,
+                },
                 trimOutputDir,
                 trimFiles: trimTargets.map((item) => item.outputPath),
+                trimAudioWorkers: safeTrimAudioWorkers,
               };
-              const outputMap = new Map(trimTargets.map((item) => [item.inputPath, item.outputPath]));
               filesToMerge = filesToMerge.map((file) => {
                 const outputPath = outputMap.get(file.path);
                 return outputPath ? { ...file, path: outputPath, success: true } : file;
               });
             } else {
-              throw new Error(`[${folderName}] Lỗi trim silence: ${trimResult.error || trimEndResult.error}`);
+              const trimWorkerCount = Math.max(1, Math.min(safeTrimAudioWorkers, pendingTrimTargets.length));
+            let nextTrimTargetIndex = 0;
+            let trimWorkerError: Error | null = null;
+
+              setProgress({ current: processedTrimCount, total: trimTargets.length, message: msgCtx(`Bước 6: Đang trim audio (${processedTrimCount}/${trimTargets.length}) - ${trimWorkerCount} workers`) });
+
+            const runTrimWorker = async (workerNo: number) => {
+              while (true) {
+                if (trimWorkerError) {
+                  return;
+                }
+                if (abortRef.current) {
+                  trimWorkerError = new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                  return;
+                }
+
+                const currentTrimIndex = nextTrimTargetIndex;
+                nextTrimTargetIndex += 1;
+                if (currentTrimIndex >= pendingTrimTargets.length) {
+                  return;
+                }
+
+                const target = pendingTrimTargets[currentTrimIndex];
+                const audioName = getPathBaseName(target.inputPath) || `audio_${currentTrimIndex + 1}`;
+                setProgress({
+                  current: processedTrimCount,
+                  total: trimTargets.length,
+                  message: msgCtx(`Bước 6: Đang trim ${processedTrimCount}/${trimTargets.length} - w${workerNo} - ${audioName}`),
+                });
+
+                // @ts-ignore
+                const trimStartResult = await window.electronAPI.tts.trimSilenceToPaths([target], { concurrency: 1 });
+                if (!trimStartResult?.success) {
+                  if ((trimStartResult?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current) {
+                    trimWorkerError = new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                    return;
+                  }
+                  trimFailedCount++;
+                  trimErrors.push(`[${audioName}] trim đầu lỗi: ${trimStartResult?.error || 'unknown error'}`);
+                  processedTrimCount++;
+                  continue;
+                }
+
+                // @ts-ignore
+                const trimEndResult = await window.electronAPI.tts.trimSilenceEndToPaths([
+                  { inputPath: target.outputPath, outputPath: target.outputPath },
+                ], { concurrency: 1 });
+                if (!trimEndResult?.success) {
+                  if ((trimEndResult?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current) {
+                    trimWorkerError = new Error(CAPTION_PROCESS_STOP_SIGNAL);
+                    return;
+                  }
+                  trimFailedCount++;
+                  trimErrors.push(`[${audioName}] trim cuối lỗi: ${trimEndResult?.error || 'unknown error'}`);
+                  processedTrimCount++;
+                  continue;
+                }
+
+                trimmedCount++;
+                processedTrimCount++;
+                outputMap.set(target.inputPath, target.outputPath);
+                setProgress({
+                  current: processedTrimCount,
+                  total: trimTargets.length,
+                  message: msgCtx(`Bước 6: Đang trim ${processedTrimCount}/${trimTargets.length} - w${workerNo} - ${audioName}`),
+                });
+              }
+            };
+
+              await Promise.all(Array.from({ length: trimWorkerCount }, (_, index) => runTrimWorker(index + 1)));
+
+              if (trimWorkerError) {
+                throw trimWorkerError;
+              }
+
+              if (trimFailedCount > 0) {
+                throw new Error(`[${folderName}] Lỗi trim silence: ${trimErrors.slice(0, 3).join(' | ')}`);
+              }
+
+              setProgress({ current: trimmedCount, total: trimTargets.length, message: msgCtx(`Bước 6: Đã trim ${trimmedCount}/${trimTargets.length} audio`) });
+              trimResults = {
+                trimmedMiddle: {
+                  success: trimFailedCount === 0,
+                  trimmedCount,
+                  failedCount: trimFailedCount,
+                  errors: trimErrors.length > 0 ? trimErrors : undefined,
+                },
+                trimmedEnd: {
+                  success: trimFailedCount === 0,
+                  trimmedCount,
+                  failedCount: trimFailedCount,
+                  errors: trimErrors.length > 0 ? trimErrors : undefined,
+                },
+                trimOutputDir,
+                trimFiles: trimTargets.map((item) => item.outputPath),
+                trimAudioWorkers: safeTrimAudioWorkers,
+              };
+              filesToMerge = filesToMerge.map((file) => {
+                const outputPath = outputMap.get(file.path);
+                return outputPath ? { ...file, path: outputPath, success: true } : file;
+              });
             }
           }
         }
@@ -4968,6 +5119,14 @@ export function useCaptionProcessing({
               let processedCount = 0;
               let scaledCount = 0;
               const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+              const auditRows: Array<{
+                originalPath: string;
+                outputPath: string;
+                allowedDurationMs: number;
+                originalDurationMs: number;
+                outputDurationMs: number;
+                isScaled: boolean;
+              }> = [];
               let nextFitItemIndex = 0;
               let fitWorkerError: Error | null = null;
 
@@ -5000,11 +5159,38 @@ export function useCaptionProcessing({
                     const fitData = fitResult.data as {
                       scaledCount?: number;
                       pathMapping?: Array<{ originalPath: string; outputPath: string }>;
+                      auditRows?: Array<{
+                        originalPath?: string;
+                        outputPath?: string;
+                        allowedDurationMs?: number;
+                        originalDurationMs?: number;
+                        outputDurationMs?: number;
+                        isScaled?: boolean;
+                      }>;
                     };
                     const itemScaledCount = Number.isFinite(fitData.scaledCount) ? (fitData.scaledCount as number) : 0;
                     const itemMapping = Array.isArray(fitData.pathMapping) ? fitData.pathMapping : [];
+                    const itemAuditRows = Array.isArray(fitData.auditRows) ? fitData.auditRows : [];
                     scaledCount += itemScaledCount;
                     pathMapping.push(...itemMapping);
+                    for (const row of itemAuditRows) {
+                      const originalPath = typeof row.originalPath === 'string' ? row.originalPath : '';
+                      const outputPath = typeof row.outputPath === 'string' ? row.outputPath : '';
+                      const allowedDurationMs = typeof row.allowedDurationMs === 'number' ? row.allowedDurationMs : 0;
+                      const originalDurationMs = typeof row.originalDurationMs === 'number' ? row.originalDurationMs : 0;
+                      const outputDurationMs = typeof row.outputDurationMs === 'number' ? row.outputDurationMs : 0;
+                      if (!originalPath || !outputPath || allowedDurationMs <= 0) {
+                        continue;
+                      }
+                      auditRows.push({
+                        originalPath,
+                        outputPath,
+                        allowedDurationMs,
+                        originalDurationMs,
+                        outputDurationMs,
+                        isScaled: !!row.isScaled,
+                      });
+                    }
                   } else {
                     if ((fitResult?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current) {
                       fitWorkerError = new Error(CAPTION_PROCESS_STOP_SIGNAL);
@@ -5038,6 +5224,7 @@ export function useCaptionProcessing({
 
               fitScaledCount = scaledCount;
               fitPathMapping = pathMapping;
+              fitAuditRows = auditRows;
               for (const mapping of pathMapping) {
                 const idx = filesToMerge.findIndex(f => f.path === mapping.originalPath);
                 if (idx !== -1) {
@@ -5089,6 +5276,14 @@ export function useCaptionProcessing({
             originalPath: toSessionStoredPath(mapping.originalPath, stepSessionFolderPath),
             outputPath: toSessionStoredPath(mapping.outputPath, stepSessionFolderPath),
           }));
+          const storedFitAuditRows = fitAuditRows.map((row) => ({
+            originalPath: toSessionStoredPath(row.originalPath, stepSessionFolderPath),
+            outputPath: toSessionStoredPath(row.outputPath, stepSessionFolderPath),
+            allowedDurationMs: row.allowedDurationMs,
+            originalDurationMs: row.originalDurationMs,
+            outputDurationMs: row.outputDurationMs,
+            isScaled: row.isScaled,
+          }));
           const storedFilesToMerge = toSessionStoredAudioFiles(filesToMerge, stepSessionFolderPath);
           const mergeResultPayload: Record<string, unknown> = result.data
             ? {
@@ -5113,6 +5308,7 @@ export function useCaptionProcessing({
             fitFiles: storedFitOutputPaths,
             sourceFiles: storedFitSourceFiles,
             pathMapping: storedFitPathMapping,
+            fitAuditRows: storedFitAuditRows,
             fitScaledCount,
             fitAudioWorkers: fitAudioWorkersUsed,
           } : undefined;
@@ -5182,6 +5378,7 @@ export function useCaptionProcessing({
                     srtSpeed: safeSrtSpeed,
                     speedLabel,
                     trimAudioEnabled: !!cfg.trimAudioEnabled,
+                    trimAudioWorkers: cfg.trimAudioEnabled ? trimAudioWorkersUsed : undefined,
                     trimOutputDir: cfg.trimAudioEnabled ? storedTrimOutputDir : undefined,
                     trimmedCount: trimmedCount,
                     trimFailedCount: trimFailedCount,

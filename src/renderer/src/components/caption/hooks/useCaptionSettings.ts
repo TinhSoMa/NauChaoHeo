@@ -11,6 +11,10 @@ import {
   DEFAULT_EDGE_WORKER_ENGINE,
   DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
   normalizeEdgeWorkerItemConcurrency,
+  DEFAULT_TRIM_AUDIO_WORKERS,
+  MIN_TRIM_AUDIO_WORKERS,
+  MAX_TRIM_AUDIO_WORKERS,
+  normalizeTrimAudioWorkers,
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,
   MAX_FIT_AUDIO_WORKERS,
@@ -1210,8 +1214,13 @@ export function useCaptionSettings() {
 
   const [audioDir, setAudioDir] = useState('');
   const [trimAudioEnabled, setTrimAudioEnabled] = useState(true);
+  const [trimAudioWorkers, setTrimAudioWorkersState] = useState(DEFAULT_TRIM_AUDIO_WORKERS);
   const [autoFitAudio, setAutoFitAudio] = useState(false);
   const [fitAudioWorkers, setFitAudioWorkersState] = useState(DEFAULT_FIT_AUDIO_WORKERS);
+
+  const setTrimAudioWorkers = useCallback((value: number) => {
+    setTrimAudioWorkersState(normalizeTrimAudioWorkers(value));
+  }, []);
 
   const setFitAudioWorkers = useCallback((value: number) => {
     if (!Number.isFinite(value)) {
@@ -1874,6 +1883,7 @@ export function useCaptionSettings() {
       enabledSteps: Array.from(enabledSteps.values()),
       audioDir,
       trimAudioEnabled,
+      trimAudioWorkers,
       autoFitAudio,
       fitAudioWorkers,
       hardwareAcceleration,
@@ -1972,6 +1982,7 @@ export function useCaptionSettings() {
       enabledSteps,
       audioDir,
       trimAudioEnabled,
+      trimAudioWorkers,
       autoFitAudio,
       fitAudioWorkers,
       hardwareAcceleration,
@@ -2012,6 +2023,7 @@ export function useCaptionSettings() {
     }
     if (saved.audioDir) setAudioDir(saved.audioDir);
     if (typeof saved.trimAudioEnabled === 'boolean') setTrimAudioEnabled(saved.trimAudioEnabled);
+    if (typeof saved.trimAudioWorkers === 'number') setTrimAudioWorkers(saved.trimAudioWorkers);
     if (saved.autoFitAudio !== undefined) setAutoFitAudio(saved.autoFitAudio);
     if (typeof saved.fitAudioWorkers === 'number') setFitAudioWorkers(saved.fitAudioWorkers);
     if (saved.hardwareAcceleration === 'none' || saved.hardwareAcceleration === 'qsv' || saved.hardwareAcceleration === 'nvenc') {
@@ -2375,6 +2387,7 @@ export function useCaptionSettings() {
     enabledSteps, setEnabledSteps,
     audioDir, setAudioDir,
     trimAudioEnabled, setTrimAudioEnabled,
+    trimAudioWorkers, setTrimAudioWorkers,
     autoFitAudio, setAutoFitAudio,
     fitAudioWorkers, setFitAudioWorkers,
     hardwareAcceleration, setHardwareAcceleration,
