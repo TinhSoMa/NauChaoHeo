@@ -1578,6 +1578,7 @@ export function CaptionTranslator() {
     style: settings.style,
     renderMode: settings.renderMode,
     renderResolution: settings.renderResolution,
+    renderFps: settings.renderFps,
     renderContainer: settings.renderContainer,
     renderSubtitle: settings.renderSubtitle,
     renderMark: settings.renderMark,
@@ -1665,6 +1666,7 @@ export function CaptionTranslator() {
     settings.style,
     settings.renderMode,
     settings.renderResolution,
+    settings.renderFps,
     settings.renderContainer,
     settings.renderSubtitle,
     settings.renderMark,
@@ -5781,6 +5783,18 @@ export function CaptionTranslator() {
                   <option value="blur_selected_region">Làm mờ vùng chọn (nhanh)</option>
                 </select>
               </div>
+            </div>
+
+            <div className={styles.inputGroup}>
+              <label className={styles.label} title="FPS">FPS render</label>
+              <Input
+                type="number"
+                min={1}
+                max={120}
+                step={1}
+                value={settings.renderFps}
+                onChange={(e) => settings.setRenderFps(Number(e.target.value))}
+              />
             </div>
 
             {settings.renderMark !== false && settings.coverMode === 'blur_selected_region' && (

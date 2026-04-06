@@ -213,6 +213,13 @@ function clampVolumePercent(value: number | undefined, min: number, max: number,
   return Math.min(max, Math.max(min, value as number));
 }
 
+function resolveRenderFps(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return 24;
+  }
+  return Math.min(120, Math.max(1, Math.round(value as number)));
+}
+
 function isFinitePoint(value: unknown): value is { x: number; y: number } {
   if (!value || typeof value !== 'object') {
     return false;
@@ -1182,7 +1189,7 @@ export async function renderHardsubVideo(
     filterComplexParts.push(`${videoFilter.outputLabel}null[v_out]`);
   }
 
-  const fps = 24;
+  const fps = resolveRenderFps(options.renderFps);
   const inlineMainAudioLabel = options.thumbnailEnabled
     ? ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_main_concat_hardsub')
     : (audioMix.mapAudioArg && audioMix.mapAudioArg.startsWith('[') ? audioMix.mapAudioArg : null);
@@ -1706,7 +1713,7 @@ export async function renderHardsubPortraitVideo(
     textFileBasePath: path.join(os.tmpdir(), 'caption_portrait_main_text'),
   });
 
-  const fps = 24;
+  const fps = resolveRenderFps(options.renderFps);
   const inlineMainAudioLabel = options.thumbnailEnabled
     ? ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_main_concat_portrait')
     : (audioMix.mapAudioArg && audioMix.mapAudioArg.startsWith('[') ? audioMix.mapAudioArg : null);
@@ -2015,7 +2022,7 @@ export async function renderBlackBackgroundVideo(
   });
 
   const finalDurationStr = prep.newAudioDuration.toFixed(3);
-  const fps = 24;
+  const fps = resolveRenderFps(options.renderFps);
   const inputArgs = [
     '-f', 'lavfi',
     '-i', `color=black:s=${prep.finalWidth}x${prep.finalHeight}:r=${fps}`,

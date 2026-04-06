@@ -616,6 +616,7 @@ export interface RenderVideoOptions {
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  renderFps?: number; // FPS render đầu ra (default: 24)
   renderSubtitle?: boolean; // Bật/tắt lớp ASS subtitle
   renderMark?: boolean; // Bật/tắt lớp mask/cover (blackout/copy_from_above)
   position?: { x: number; y: number }; // Vị trí subtitle (ASS \pos), nếu set sẽ override alignment
@@ -1058,6 +1059,7 @@ export interface CaptionProjectSettingsValues {
   style?: ASSStyleConfig;
   renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
+  renderFps?: number;
   renderContainer?: 'mp4' | 'mov';
   renderSubtitle?: boolean;
   renderMark?: boolean;

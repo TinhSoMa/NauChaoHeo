@@ -87,6 +87,7 @@ export const MAX_FIT_AUDIO_WORKERS = 16;
 export const DEFAULT_TRIM_AUDIO_WORKERS = 4;
 export const MIN_TRIM_AUDIO_WORKERS = 1;
 export const MAX_TRIM_AUDIO_WORKERS = 16;
+export const DEFAULT_RENDER_FPS = 24;
 
 export function normalizeEdgeOutputFormat(value?: string | null): EdgeOutputFormat {
   const normalized = (value || '').trim().toLowerCase();

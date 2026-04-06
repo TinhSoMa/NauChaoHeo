@@ -11,6 +11,7 @@ import {
   DEFAULT_EDGE_WORKER_ENGINE,
   DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
   normalizeEdgeWorkerItemConcurrency,
+  DEFAULT_RENDER_FPS,
   DEFAULT_TRIM_AUDIO_WORKERS,
   MIN_TRIM_AUDIO_WORKERS,
   MAX_TRIM_AUDIO_WORKERS,
@@ -179,6 +180,8 @@ const DEFAULT_COVER_FEATHER_PERCENT = 20;
 const MIN_INPLACE_BLUR_STRENGTH = 0;
 const MAX_INPLACE_BLUR_STRENGTH = 100;
 const DEFAULT_INPLACE_BLUR_STRENGTH = 65;
+const MIN_RENDER_FPS = 1;
+const MAX_RENDER_FPS = 120;
 
 function clampPercent(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) {
@@ -190,6 +193,14 @@ function clampPercent(value: number, min: number, max: number, fallback: number)
 
 function clamp(value: number, minValue: number, maxValue: number): number {
   return Math.min(maxValue, Math.max(minValue, value));
+}
+
+function normalizeRenderFps(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_RENDER_FPS;
+  }
+  const rounded = Math.round(value as number);
+  return clamp(rounded, MIN_RENDER_FPS, MAX_RENDER_FPS);
 }
 
 function normalizeCoverFeatherPxValue(value: number | undefined, fallback: number): number {
@@ -1253,12 +1264,17 @@ export function useCaptionSettings() {
   const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
   const [renderSubtitle, setRenderSubtitle] = useState(true);
   const [renderMark, setRenderMark] = useState(true);
+  const [renderFps, setRenderFpsState] = useState<number>(DEFAULT_RENDER_FPS);
   const [audioSpeed, setAudioSpeed] = useState<number>(1.0);
   const [renderAudioSpeed, setRenderAudioSpeed] = useState<number>(1.0);
   const [videoVolume, setVideoVolumeState] = useState<number>(100);
   const [audioVolume, setAudioVolumeState] = useState<number>(100);
 
   const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfilesState>(createDefaultLayoutProfiles);
+
+  const setRenderFps = useCallback((value: number) => {
+    setRenderFpsState(normalizeRenderFps(value));
+  }, []);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 6, 7]));
   const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui'>('api');
@@ -1912,6 +1928,7 @@ export function useCaptionSettings() {
       style: activeProfile.style,
       renderMode,
       renderResolution: activeProfile.renderResolution,
+      renderFps,
       renderContainer: activeProfile.renderContainer,
       renderSubtitle,
       renderMark,
@@ -2011,6 +2028,7 @@ export function useCaptionSettings() {
       hardwareAcceleration,
       activeProfile,
       renderMode,
+      renderFps,
       renderSubtitle,
       renderMark,
       audioSpeed,
@@ -2053,6 +2071,7 @@ export function useCaptionSettings() {
       setHardwareAcceleration(saved.hardwareAcceleration);
     }
     if (saved.renderMode) setRenderMode(saved.renderMode as RenderMode);
+    if (typeof saved.renderFps === 'number') setRenderFps(saved.renderFps);
     if (typeof saved.renderSubtitle === 'boolean') setRenderSubtitle(saved.renderSubtitle);
     if (typeof saved.renderMark === 'boolean') setRenderMark(saved.renderMark);
     if (typeof saved.audioSpeed === 'number') setAudioSpeed(saved.audioSpeed);
@@ -2143,7 +2162,7 @@ export function useCaptionSettings() {
       landscape: mergedLegacyLandscape,
       portrait: mergedLegacyPortrait,
     });
-  }, [setAudioVolume, setVideoVolume, setVoice]);
+  }, [setAudioVolume, setRenderFps, setVideoVolume, setVoice]);
 
   const parseStandaloneCaptionPayload = useCallback((raw: string | null | undefined): any | null => {
     if (typeof raw !== 'string' || !raw.trim()) {
@@ -2421,6 +2440,7 @@ export function useCaptionSettings() {
     setSubtitleFontSizeRel,
     setStyle,
     renderMode, setRenderMode,
+    renderFps, setRenderFps,
     renderSubtitle, setRenderSubtitle,
     renderMark, setRenderMark,
     renderResolution: activeProfile.renderResolution,

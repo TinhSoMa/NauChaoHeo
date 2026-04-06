@@ -256,6 +256,7 @@ interface UseCaptionProcessingProps {
     style?: any;
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
+    renderFps?: number;
     renderContainer?: 'mp4' | 'mov';
     renderSubtitle?: boolean;
     renderMark?: boolean;
@@ -3534,6 +3535,7 @@ export function useCaptionProcessing({
         subtitleFontSizeRel: cfg.subtitleFontSizeRel,
         renderMode: cfg.renderMode,
         renderResolution: cfg.renderResolution,
+        renderFps: cfg.renderFps,
         renderContainer: cfg.renderContainer || 'mp4',
         hardwareAcceleration: cfg.hardwareAcceleration,
         renderAudioSpeed: cfg.renderAudioSpeed,
@@ -3644,6 +3646,7 @@ export function useCaptionProcessing({
       style: cfg.style,
       renderMode: cfg.renderMode,
       renderResolution: cfg.renderResolution,
+      renderFps: cfg.renderFps,
       renderContainer: cfg.renderContainer || 'mp4',
       blackoutTop: cfg.blackoutTop,
       coverMode: cfg.coverMode || 'blackout_bottom',
@@ -5709,6 +5712,7 @@ export function useCaptionProcessing({
           style: cfg.style,
           renderMode: cfg.renderMode,
           renderResolution: cfg.renderResolution,
+          renderFps: cfg.renderFps,
           renderSubtitle: cfg.renderSubtitle,
           renderMark: cfg.renderMark,
           position: cfg.subtitlePosition || undefined,
