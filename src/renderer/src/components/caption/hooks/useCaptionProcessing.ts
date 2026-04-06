@@ -231,6 +231,8 @@ interface UseCaptionProcessingProps {
     volume: string;
     edgeOutputFormat?: 'wav' | 'mp3';
     edgeTtsBatchSize?: number;
+    edgeWorkerEngine?: 'python' | 'go' | 'auto';
+    edgeWorkerItemConcurrency?: number;
     srtSpeed: number;
     audioDir: string;
     setAudioDir: (dir: string) => void;
@@ -3496,6 +3498,8 @@ export function useCaptionProcessing({
         volume: cfg.volume,
         edgeOutputFormat: cfg.edgeOutputFormat,
         edgeTtsBatchSize: cfg.edgeTtsBatchSize,
+        edgeWorkerEngine: cfg.edgeWorkerEngine,
+        edgeWorkerItemConcurrency: cfg.edgeWorkerItemConcurrency,
         srtSpeed: cfg.srtSpeed,
         autoFitAudio: cfg.autoFitAudio,
       },
@@ -3601,8 +3605,10 @@ export function useCaptionProcessing({
       rate: cfg.rate,
       volume: cfg.volume,
       edgeOutputFormat: cfg.edgeOutputFormat,
-        edgeTtsBatchSize: cfg.edgeTtsBatchSize,
-        srtSpeed: cfg.srtSpeed,
+      edgeTtsBatchSize: cfg.edgeTtsBatchSize,
+      edgeWorkerEngine: cfg.edgeWorkerEngine,
+      edgeWorkerItemConcurrency: cfg.edgeWorkerItemConcurrency,
+      srtSpeed: cfg.srtSpeed,
       splitByLines: cfg.splitByLines,
       linesPerFile: cfg.linesPerFile,
       numberOfParts: cfg.numberOfParts,
@@ -4654,6 +4660,8 @@ export function useCaptionProcessing({
           ttsGenerateOptions.rate = cfg.rate;
           ttsGenerateOptions.volume = cfg.volume;
           ttsGenerateOptions.edgeTtsBatchSize = cfg.edgeTtsBatchSize;
+          ttsGenerateOptions.edgeWorkerEngine = cfg.edgeWorkerEngine;
+          ttsGenerateOptions.edgeWorkerItemConcurrency = cfg.edgeWorkerItemConcurrency;
         }
         // @ts-ignore
         const result = await window.electronAPI.tts.generate(currentEntries, ttsGenerateOptions);

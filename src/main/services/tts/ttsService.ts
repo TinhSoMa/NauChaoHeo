@@ -41,11 +41,13 @@ const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
 const MIN_EDGE_TTS_BATCH_SIZE = 1;
 const MAX_EDGE_TTS_BATCH_SIZE = 500;
 const DEFAULT_EDGE_WAV_MODE = 'auto';
-const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 2;
+const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 10;
 const MIN_EDGE_WORKER_ITEM_CONCURRENCY = 1;
-const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 32;
+const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 200;
 const DEFAULT_EDGE_WORKER_TIMEOUT_MS = 75000;
 const TTS_STOP_MESSAGE = 'Đã gửi tín hiệu dừng TTS.';
+const GO_WORKER_SCAFFOLD_SIGNATURE = 'Go Edge worker scaffold is not implemented yet';
+const MAX_TTS_ERROR_ITEMS = 80;
 
 const activeTtsProcesses = new Set<ChildProcess>();
 let ttsStopRequested = false;
@@ -140,6 +142,13 @@ interface EdgeWorkerRuntimeOptions {
   timeoutMs?: number;
   wavMode: EdgeWavMode;
   itemConcurrency: number;
+}
+
+type EdgeWorkerKind = 'python' | 'go';
+
+interface EdgeWorkerResolution {
+  kind: EdgeWorkerKind;
+  workerPath: string;
 }
 
 type EdgeConversionMode = 'direct_wav' | 'mp3_to_wav' | 'mp3_to_wav_fallback' | 'mp3_direct';
@@ -311,21 +320,58 @@ function normalizeHeaderMap(headers: Record<string, string> | null | undefined):
   return normalized;
 }
 
-function resolveEdgeTtsWorkerPath(): string {
+function shouldUseGoEdgeWorkerByEnv(): boolean {
+  const raw = String(process.env.EDGE_TTS_USE_GO_WORKER || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+function normalizeEdgeWorkerEngine(value: unknown): 'python' | 'go' | 'auto' {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'go') {
+    return 'go';
+  }
+  if (normalized === 'auto') {
+    return 'auto';
+  }
+  return 'python';
+}
+
+function resolveEdgeTtsWorker(preferredEngine?: unknown): EdgeWorkerResolution {
   const appPath = app.getAppPath();
-  const candidates = [
+  const normalizedEngine = normalizeEdgeWorkerEngine(preferredEngine);
+  const useGoWorker = normalizedEngine === 'go'
+    || (normalizedEngine === 'auto' && shouldUseGoEdgeWorkerByEnv());
+  const goCandidates = [
+    path.join(process.resourcesPath || '', 'tts', 'go', 'edge_tts_worker.exe'),
+    path.join(appPath, 'resources', 'tts', 'go', 'edge_tts_worker.exe'),
+    path.join(process.cwd(), 'resources', 'tts', 'go', 'edge_tts_worker.exe'),
+    path.join(appPath, 'out', 'resources', 'tts', 'go', 'edge_tts_worker.exe'),
+    path.join(appPath, 'dist', 'resources', 'tts', 'go', 'edge_tts_worker.exe'),
+    path.join(appPath, 'src', 'main', 'services', 'tts', 'go', 'edge_tts_worker.exe'),
+  ];
+  const pythonCandidates = [
     path.join(process.resourcesPath || '', 'tts', 'python', 'edge_tts_worker.py'),
     path.join(appPath, 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
     path.join(process.cwd(), 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
     path.join(appPath, 'out', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
     path.join(appPath, 'dist', 'main', 'src', 'main', 'services', 'tts', 'python', 'edge_tts_worker.py'),
   ];
-  for (const candidate of candidates) {
+
+  if (useGoWorker) {
+    for (const candidate of goCandidates) {
+      if (existsSync(candidate)) {
+        return { kind: 'go', workerPath: candidate };
+      }
+    }
+    return { kind: 'go', workerPath: goCandidates[0] };
+  }
+
+  for (const candidate of pythonCandidates) {
     if (existsSync(candidate)) {
-      return candidate;
+      return { kind: 'python', workerPath: candidate };
     }
   }
-  return candidates[0];
+  return { kind: 'python', workerPath: pythonCandidates[0] };
 }
 
 function toProxyUrl(proxy: ProxyConfig): string {
@@ -380,6 +426,27 @@ function normalizeEdgeWorkerTimeoutMs(value: unknown): number {
   }
   const rounded = Math.round(num);
   return rounded > 0 ? rounded : DEFAULT_EDGE_WORKER_TIMEOUT_MS;
+}
+
+async function isGoWorkerScaffoldBinary(workerPath: string): Promise<boolean> {
+  try {
+    const content = await fs.readFile(workerPath);
+    return content.toString('utf8').includes(GO_WORKER_SCAFFOLD_SIGNATURE);
+  } catch {
+    return false;
+  }
+}
+
+function summarizeTtsErrors(errors: string[]): string[] | undefined {
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return undefined;
+  }
+  if (errors.length <= MAX_TTS_ERROR_ITEMS) {
+    return errors;
+  }
+  const head = errors.slice(0, MAX_TTS_ERROR_ITEMS);
+  head.push(`... và ${errors.length - MAX_TTS_ERROR_ITEMS} lỗi khác`);
+  return head;
 }
 
 function getEdgeConversionModeLabel(mode: unknown): string | null {
@@ -1316,7 +1383,7 @@ async function generateBatchAudioWithProvider(
     totalGenerated,
     totalFailed,
     outputDir,
-    errors: errors.length > 0 ? errors : undefined,
+    errors: summarizeTtsErrors(errors),
   };
 }
 
@@ -1346,8 +1413,8 @@ export async function generateBatchAudioEdge(
 
 async function runEdgeTtsWorker(
   jobs: EdgeAsyncioJob[],
-  runtime: { command: string; baseArgs: string[] },
-  workerPath: string,
+  worker: EdgeWorkerResolution,
+  runtime: { command: string; baseArgs: string[] } | undefined,
   workerRuntime?: EdgeWorkerRuntimeOptions,
   onProgress?: (event: {
     index: number;
@@ -1359,6 +1426,16 @@ async function runEdgeTtsWorker(
   }) => void,
 ): Promise<{ results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>; errors: string[] }> {
   throwIfTtsStopped();
+  const isPythonWorker = worker.kind === 'python';
+  if (isPythonWorker && !runtime) {
+    return {
+      results: new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>(),
+      errors: ['Python runtime unavailable for edge_tts_worker.py'],
+    };
+  }
+
+  const command = isPythonWorker ? runtime!.command : worker.workerPath;
+  const args = isPythonWorker ? [...runtime!.baseArgs, worker.workerPath] : [];
   const payload = {
     jobs,
     ...(workerRuntime?.timeoutMs ? { timeoutMs: workerRuntime.timeoutMs } : {}),
@@ -1373,16 +1450,21 @@ async function runEdgeTtsWorker(
     let stderr = '';
     let buffer = '';
 
-    console.log(`[TTS][EDGE][asyncio] Spawn worker: ${runtime.command} ${runtime.baseArgs.join(' ')} ${workerPath}`);
+    console.log(`[TTS][EDGE][asyncio] Worker kind=${worker.kind}`);
+    console.log(`[TTS][EDGE][asyncio] Spawn worker: ${command} ${args.join(' ')}`);
     console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${jobs.reduce((sum, job) => sum + job.items.length, 0)}`);
 
-    const proc = spawn(runtime.command, [...runtime.baseArgs, workerPath], {
+    const proc = spawn(command, args, {
       windowsHide: true,
       shell: false,
       env: {
         ...process.env,
-        PYTHONUTF8: '1',
-        PYTHONIOENCODING: 'utf-8',
+        ...(isPythonWorker
+          ? {
+            PYTHONUTF8: '1',
+            PYTHONIOENCODING: 'utf-8',
+          }
+          : {}),
       },
     });
     registerActiveTtsProcess(proc);
@@ -1403,12 +1485,12 @@ async function runEdgeTtsWorker(
             // progress event: just capture last known error/success
             if (typeof event.success === 'boolean') {
               results.set(event.index, { success: event.success, error: event.error, conversionMode });
-              if (!event.success) {
-                console.warn(
-                  `[TTS][EDGE][asyncio] Failed index=${event.index} file=${event.filename || 'n/a'} ` +
-                  `proxyId=${event.proxyId || 'direct'} error=${event.error || 'unknown'}`
-                );
-              }
+              // if (!event.success) {
+              //   console.warn(
+              //     `[TTS][EDGE][asyncio] Failed index=${event.index} file=${event.filename || 'n/a'} ` +
+              //     `proxyId=${event.proxyId || 'direct'} error=${event.error || 'unknown'}`
+              //   );
+              // }
             }
             if (onProgress) {
               onProgress({
@@ -1448,7 +1530,7 @@ async function runEdgeTtsWorker(
 
     proc.on('close', (code) => {
       if (!doneReceived) {
-        const err = (stderr || `Python worker exited with code ${code ?? 'unknown'}`).trim();
+        const err = (stderr || `Edge worker exited with code ${code ?? 'unknown'}`).trim();
         if (err) errors.push(err);
       }
       if (stderr.trim()) {
@@ -1511,41 +1593,63 @@ export async function generateAsyncioAudioWithProvider(
   await fs.mkdir(outputDir, { recursive: true });
   throwIfTtsStopped();
 
-  const availability = await checkPythonModuleAvailability(['edge_tts']);
-  if (!availability.success || !availability.runtime) {
-    const error = availability.error || 'Thiếu module Python edge_tts.';
-    console.error(`[TTS][EDGE][asyncio] Python runtime/module check failed: ${error}`);
-    return {
-      success: false,
-      audioFiles: entries.map((entry) => ({
-        index: entry.index,
-        path: path.join(outputDir, getSafeFilename(entry.index, entry.translatedText || entry.text, outputFormat)),
-        startMs: entry.startMs,
-        durationMs: entry.durationMs,
-        success: false,
-        error,
-      })),
-      totalGenerated: 0,
-      totalFailed: entries.length,
-      outputDir,
-      errors: [error],
-    };
-  }
-  throwIfTtsStopped();
-
-  const workerPath = resolveEdgeTtsWorkerPath();
-  if (!existsSync(workerPath)) {
-    console.error(`[TTS][EDGE][asyncio] Worker not found: ${workerPath}`);
+  let worker = resolveEdgeTtsWorker(options.edgeWorkerEngine);
+  if (!existsSync(worker.workerPath)) {
+    console.error(`[TTS][EDGE][asyncio] Worker not found (${worker.kind}): ${worker.workerPath}`);
     return {
       success: false,
       audioFiles: [],
       totalGenerated: 0,
       totalFailed: entries.length,
       outputDir,
-      errors: [`Không tìm thấy edge_tts_worker.py (${workerPath})`],
+      errors: [
+        worker.kind === 'go'
+          ? `Không tìm thấy edge_tts_worker.exe (${worker.workerPath})`
+          : `Không tìm thấy edge_tts_worker.py (${worker.workerPath})`,
+      ],
     };
   }
+
+  if (worker.kind === 'go') {
+    const scaffoldDetected = await isGoWorkerScaffoldBinary(worker.workerPath);
+    if (scaffoldDetected) {
+      return {
+        success: false,
+        audioFiles: [],
+        totalGenerated: 0,
+        totalFailed: entries.length,
+        outputDir,
+        errors: ['Go worker hiện chỉ là scaffold. Đã tắt fallback sang Python theo cấu hình.'],
+      };
+    }
+  }
   throwIfTtsStopped();
+
+  let pythonRuntime: { command: string; baseArgs: string[] } | undefined;
+  if (worker.kind === 'python') {
+    const availability = await checkPythonModuleAvailability(['edge_tts']);
+    if (!availability.success || !availability.runtime) {
+      const error = availability.error || 'Thiếu module Python edge_tts.';
+      console.error(`[TTS][EDGE][asyncio] Python runtime/module check failed: ${error}`);
+      return {
+        success: false,
+        audioFiles: entries.map((entry) => ({
+          index: entry.index,
+          path: path.join(outputDir, getSafeFilename(entry.index, entry.translatedText || entry.text, outputFormat)),
+          startMs: entry.startMs,
+          durationMs: entry.durationMs,
+          success: false,
+          error,
+        })),
+        totalGenerated: 0,
+        totalFailed: entries.length,
+        outputDir,
+        errors: [error],
+      };
+    }
+    pythonRuntime = availability.runtime;
+    throwIfTtsStopped();
+  }
 
   const providerLabel = 'EDGE';
   const audioFiles: AudioFile[] = [];
@@ -1598,7 +1702,7 @@ export async function generateAsyncioAudioWithProvider(
       durationMs: entry.durationMs,
       filename,
     });
-    console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
+    // console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
   }
 
   const proxyManager = getProxyManager();
@@ -1685,8 +1789,8 @@ export async function generateAsyncioAudioWithProvider(
     const jobs = buildJobs(remaining);
     const runResult = await runEdgeTtsWorker(
       jobs,
-      availability.runtime,
-      workerPath,
+      worker,
+      pythonRuntime,
       {
         timeoutMs: edgeWorkerTimeoutMs,
         wavMode: edgeWavMode,
@@ -1823,7 +1927,7 @@ export async function generateAsyncioAudioWithProvider(
     totalGenerated,
     totalFailed,
     outputDir,
-    errors: errors.length > 0 ? errors : undefined,
+    errors: summarizeTtsErrors(errors),
   };
 }
 

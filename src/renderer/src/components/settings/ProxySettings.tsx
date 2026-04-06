@@ -35,7 +35,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
     caption: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
     story: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
     chat: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
-    tts: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'socks5' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
+    tts: { mode: 'off' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'socks5' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
     other: { mode: 'direct-list' as 'off' | 'direct-list' | 'rotating-endpoint', typePreference: 'any' as 'any' | 'http' | 'https' | 'socks5', rotatingEndpoint: '' },
   });
   const emptyRotatingForm: RotatingForm = {
@@ -113,7 +113,7 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
       caption: { mode, typePreference: 'any' as const, rotatingEndpoint },
       story: { mode, typePreference: 'any' as const, rotatingEndpoint },
       chat: { mode, typePreference: 'any' as const, rotatingEndpoint },
-      tts: { mode, typePreference: 'socks5' as const, rotatingEndpoint },
+      tts: { mode: 'off' as const, typePreference: 'socks5' as const, rotatingEndpoint },
       other: { mode, typePreference: 'any' as const, rotatingEndpoint },
     };
   };

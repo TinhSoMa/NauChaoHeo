@@ -489,11 +489,12 @@ function buildProxyScopesFromLegacy(
   const useProxy = legacy?.useProxy !== false;
   const mode = useProxy ? normalizeProxyMode(legacy?.proxyMode) : 'off';
   const rotatingEndpoint = normalizeRotatingProxyEndpoint(legacy?.rotatingProxyEndpoint);
+  const ttsMode: ProxyScopeMode = 'off';
   return {
     caption: { mode, typePreference: 'any', rotatingEndpoint },
     story: { mode, typePreference: 'any', rotatingEndpoint },
     chat: { mode, typePreference: 'any', rotatingEndpoint },
-    tts: { mode, typePreference: 'socks5', rotatingEndpoint },
+    tts: { mode: ttsMode, typePreference: 'socks5', rotatingEndpoint },
     other: { mode, typePreference: 'any', rotatingEndpoint },
   };
 }

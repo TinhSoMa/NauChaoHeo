@@ -13,9 +13,13 @@ import {
   RATE_OPTIONS,
   VOLUME_OPTIONS,
   EDGE_OUTPUT_FORMAT_OPTIONS,
+  EDGE_WORKER_ENGINE_OPTIONS,
   DEFAULT_EDGE_OUTPUT_FORMAT,
+  DEFAULT_EDGE_WORKER_ENGINE,
   DEFAULT_EDGE_TTS_BATCH_SIZE,
   DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
+  MIN_EDGE_WORKER_ITEM_CONCURRENCY,
+  MAX_EDGE_WORKER_ITEM_CONCURRENCY,
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,
   MAX_FIT_AUDIO_WORKERS,
@@ -1553,6 +1557,8 @@ export function CaptionTranslator() {
     volume: settings.volume,
     edgeOutputFormat: settings.edgeOutputFormat,
     edgeTtsBatchSize: settings.edgeTtsBatchSize,
+    edgeWorkerEngine: settings.edgeWorkerEngine,
+    edgeWorkerItemConcurrency: settings.edgeWorkerItemConcurrency,
     srtSpeed: settings.srtSpeed,
     splitByLines: settings.splitByLines,
     linesPerFile: settings.linesPerFile,
@@ -1636,6 +1642,8 @@ export function CaptionTranslator() {
     settings.volume,
     settings.edgeOutputFormat,
     settings.edgeTtsBatchSize,
+    settings.edgeWorkerEngine,
+    settings.edgeWorkerItemConcurrency,
     settings.srtSpeed,
     settings.splitByLines,
     settings.linesPerFile,
@@ -7108,7 +7116,15 @@ export function CaptionTranslator() {
       const estimatedEdgeJobCount = knownStep4TotalItems > 0
         ? Math.ceil(knownStep4TotalItems / safeEdgeBatchSizeForUi)
         : 0;
-      const edgeConcurrentAudioPerJob = DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
+      const edgeConcurrentAudioPerJob = Math.min(
+        MAX_EDGE_WORKER_ITEM_CONCURRENCY,
+        Math.max(
+          MIN_EDGE_WORKER_ITEM_CONCURRENCY,
+          Number.isFinite(settings.edgeWorkerItemConcurrency)
+            ? Math.round(settings.edgeWorkerItemConcurrency)
+            : DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY
+        )
+      );
       const edgeConcurrentAudioLimit = estimatedEdgeJobCount * edgeConcurrentAudioPerJob;
       const step4VoiceTestStatusLabel = step4VoiceTestState === 'testing'
         ? 'đang test'
@@ -7229,6 +7245,20 @@ export function CaptionTranslator() {
                   </select>
                 </div>
                 <div className={styles.inputGroup}>
+                  <label className={styles.label}>Worker engine (Edge)</label>
+                  <select
+                    value={settings.edgeWorkerEngine || DEFAULT_EDGE_WORKER_ENGINE}
+                    onChange={(e) => settings.setEdgeWorkerEngine(e.target.value)}
+                    className={styles.select}
+                  >
+                    {EDGE_WORKER_ENGINE_OPTIONS.map((engine) => (
+                      <option key={engine} value={engine}>
+                        {engine.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.inputGroup}>
                   <label className={styles.label}>Batch size (Edge)</label>
                   <Input
                     type="number"
@@ -7239,6 +7269,19 @@ export function CaptionTranslator() {
                     onChange={(e) => settings.setEdgeTtsBatchSize(Number(e.target.value))}
                   />
                 </div>
+                {(settings.edgeWorkerEngine || DEFAULT_EDGE_WORKER_ENGINE) === 'go' && (
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Go concurrency (audio song song)</label>
+                    <Input
+                      type="number"
+                      min={MIN_EDGE_WORKER_ITEM_CONCURRENCY}
+                      max={MAX_EDGE_WORKER_ITEM_CONCURRENCY}
+                      step={1}
+                      value={settings.edgeWorkerItemConcurrency}
+                      onChange={(e) => settings.setEdgeWorkerItemConcurrency(Number(e.target.value))}
+                    />
+                  </div>
+                )}
               </div>
               <div
                 className={styles.stepCardHint}

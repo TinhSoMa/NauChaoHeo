@@ -1,6 +1,6 @@
 {
   "name": "nauchaoheo",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "description": "Tính Vipro akn1",
   "main": "./out/main/index.js",
   "scripts": {
@@ -8,10 +8,12 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
+    "build:go-worker": "powershell -NoProfile -Command \"$goCmd = (Get-Command go -ErrorAction SilentlyContinue).Source; if (-not $goCmd -or $goCmd.Trim() -eq '') { $commonGo = 'D:/Program Files/Go/bin/go.exe'; if (Test-Path $commonGo) { $goCmd = $commonGo } }; if (-not $goCmd -or $goCmd.Trim() -eq '') { throw 'Go executable not found in PATH or common install location.' }; New-Item -ItemType Directory -Force -Path './resources/tts/go' | Out-Null; & $goCmd build -C ./src/main/services/tts/go -o ../../../../../resources/tts/go/edge_tts_worker.exe .\"",
+    "prepare:go-worker": "npm run build:go-worker",
     "prepare:python-runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-python-runtime.ps1",
     "prepare:yt-dlp": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-yt-dlp.ps1",
     "prepare:aria2c": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-aria2c.ps1",
-    "build:win": "npm run prepare:yt-dlp && npm run prepare:aria2c && npm run prepare:python-runtime && npm run build && electron-builder --win",
+    "build:win": "npm run prepare:yt-dlp && npm run prepare:aria2c && npm run prepare:go-worker && npm run prepare:python-runtime && npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
     "bench:edge-tts-worker": "node ./scripts/benchmark-edge-tts-worker.js",

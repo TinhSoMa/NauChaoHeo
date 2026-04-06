@@ -406,6 +406,8 @@ interface TTSOptions {
   volume?: string;
   pitch?: string;
   outputFormat?: 'wav' | 'mp3';
+  edgeWorkerEngine?: 'python' | 'go' | 'auto';
+  edgeWorkerItemConcurrency?: number;
   outputDir: string;
   maxConcurrent?: number;
   runId?: string;

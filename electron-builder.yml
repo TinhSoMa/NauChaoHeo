@@ -60,6 +60,10 @@ extraResources:
     to: tts/python
     filter:
       - "edge_tts_worker.py"
+  - from: resources/tts/go
+    to: tts/go
+    filter:
+      - "edge_tts_worker.exe"
 
 # Cấu hình Windows
 win:

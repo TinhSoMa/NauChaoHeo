@@ -8,6 +8,9 @@ import {
   DEFAULT_SRT_SPEED,
   DEFAULT_EDGE_TTS_BATCH_SIZE,
   DEFAULT_EDGE_OUTPUT_FORMAT,
+  DEFAULT_EDGE_WORKER_ENGINE,
+  DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
+  normalizeEdgeWorkerItemConcurrency,
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,
   MAX_FIT_AUDIO_WORKERS,
@@ -15,6 +18,7 @@ import {
   DEFAULT_LINES_PER_FILE,
   DEFAULT_NUMBER_OF_PARTS,
   normalizeEdgeOutputFormat,
+  normalizeEdgeWorkerEngine,
   normalizeVoiceValue,
   InputType,
 } from '../../../config/captionConfig';
@@ -1171,6 +1175,8 @@ export function useCaptionSettings() {
   const [srtSpeed, setSrtSpeed] = useState(DEFAULT_SRT_SPEED);
   const [edgeOutputFormat, setEdgeOutputFormatState] = useState(DEFAULT_EDGE_OUTPUT_FORMAT);
   const [edgeTtsBatchSize, setEdgeTtsBatchSizeState] = useState(DEFAULT_EDGE_TTS_BATCH_SIZE);
+  const [edgeWorkerEngine, setEdgeWorkerEngineState] = useState(DEFAULT_EDGE_WORKER_ENGINE);
+  const [edgeWorkerItemConcurrency, setEdgeWorkerItemConcurrencyState] = useState(DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY);
 
   const setEdgeOutputFormat = useCallback((value: string) => {
     setEdgeOutputFormatState(normalizeEdgeOutputFormat(value));
@@ -1188,6 +1194,14 @@ export function useCaptionSettings() {
     }
     const normalized = clamp(rounded, MIN_EDGE_TTS_BATCH_SIZE, MAX_EDGE_TTS_BATCH_SIZE);
     setEdgeTtsBatchSizeState(normalized);
+  }, []);
+
+  const setEdgeWorkerEngine = useCallback((value: string) => {
+    setEdgeWorkerEngineState(normalizeEdgeWorkerEngine(value));
+  }, []);
+
+  const setEdgeWorkerItemConcurrency = useCallback((value: number) => {
+    setEdgeWorkerItemConcurrencyState(normalizeEdgeWorkerItemConcurrency(value));
   }, []);
 
   const [splitByLines, setSplitByLines] = useState(DEFAULT_SPLIT_BY_LINES);
@@ -1851,6 +1865,8 @@ export function useCaptionSettings() {
       volume,
       edgeOutputFormat,
       edgeTtsBatchSize,
+      edgeWorkerEngine,
+      edgeWorkerItemConcurrency,
       srtSpeed,
       splitByLines,
       linesPerFile,
@@ -1947,6 +1963,8 @@ export function useCaptionSettings() {
       volume,
       edgeOutputFormat,
       edgeTtsBatchSize,
+      edgeWorkerEngine,
+      edgeWorkerItemConcurrency,
       srtSpeed,
       splitByLines,
       linesPerFile,
@@ -1982,6 +2000,8 @@ export function useCaptionSettings() {
     if (saved.volume) setVolume(String(saved.volume));
     if (saved.edgeOutputFormat !== undefined) setEdgeOutputFormat(String(saved.edgeOutputFormat));
     if (typeof saved.edgeTtsBatchSize === 'number') setEdgeTtsBatchSize(saved.edgeTtsBatchSize);
+    if (saved.edgeWorkerEngine !== undefined) setEdgeWorkerEngine(String(saved.edgeWorkerEngine));
+    if (typeof saved.edgeWorkerItemConcurrency === 'number') setEdgeWorkerItemConcurrency(saved.edgeWorkerItemConcurrency);
     if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
     if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
     if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
@@ -2346,6 +2366,8 @@ export function useCaptionSettings() {
     volume, setVolume,
     edgeOutputFormat, setEdgeOutputFormat,
     edgeTtsBatchSize, setEdgeTtsBatchSize,
+    edgeWorkerEngine, setEdgeWorkerEngine,
+    edgeWorkerItemConcurrency, setEdgeWorkerItemConcurrency,
     srtSpeed, setSrtSpeed,
     splitByLines, setSplitByLines,
     linesPerFile, setLinesPerFile,

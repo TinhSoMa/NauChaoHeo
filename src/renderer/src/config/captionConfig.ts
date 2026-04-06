@@ -69,13 +69,18 @@ export const RATE_OPTIONS = ['+0%', '+10%', '+20%', '+30%', '+40%', '+50%'];
 export const VOLUME_OPTIONS = ['+0%', '+10%', '+20%', '+30%'];
 export const EDGE_OUTPUT_FORMAT_OPTIONS = ['wav', 'mp3'] as const;
 export type EdgeOutputFormat = typeof EDGE_OUTPUT_FORMAT_OPTIONS[number];
+export const EDGE_WORKER_ENGINE_OPTIONS = ['python', 'go'] as const;
+export type EdgeWorkerEngine = typeof EDGE_WORKER_ENGINE_OPTIONS[number];
 
 export const DEFAULT_RATE = '+30%';
 export const DEFAULT_VOLUME = '+30%';
 export const DEFAULT_SRT_SPEED = 1.0;
 export const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
 export const DEFAULT_EDGE_OUTPUT_FORMAT: EdgeOutputFormat = 'wav';
-export const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 2;
+export const DEFAULT_EDGE_WORKER_ENGINE: EdgeWorkerEngine = 'python';
+export const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 10;
+export const MIN_EDGE_WORKER_ITEM_CONCURRENCY = 1;
+export const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 200;
 export const DEFAULT_FIT_AUDIO_WORKERS = 5;
 export const MIN_FIT_AUDIO_WORKERS = 1;
 export const MAX_FIT_AUDIO_WORKERS = 16;
@@ -86,6 +91,23 @@ export function normalizeEdgeOutputFormat(value?: string | null): EdgeOutputForm
     return 'mp3';
   }
   return 'wav';
+}
+
+export function normalizeEdgeWorkerEngine(value?: string | null): EdgeWorkerEngine {
+  const normalized = (value || '').trim().toLowerCase();
+  return normalized === 'go' ? 'go' : 'python';
+}
+
+export function normalizeEdgeWorkerItemConcurrency(value?: number | null): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
+  }
+  const rounded = Math.round(numeric);
+  if (rounded < MIN_EDGE_WORKER_ITEM_CONCURRENCY) {
+    return DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
+  }
+  return Math.min(MAX_EDGE_WORKER_ITEM_CONCURRENCY, rounded);
 }
 
 // ============================================

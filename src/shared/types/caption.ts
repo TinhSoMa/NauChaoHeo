@@ -163,8 +163,9 @@ export interface TTSOptions {
   outputDir: string;      // Thư mục output
   maxConcurrent: number;  // Số file tạo song song (default: 5)
   edgeTtsBatchSize?: number;  // Batch size for Edge TTS (default: 50), only for Edge provider
+  edgeWorkerEngine?: 'python' | 'go' | 'auto'; // Chọn worker Edge TTS ưu tiên từ UI/env
   edgeWavMode?: 'auto' | 'direct' | 'convert'; // Edge WAV strategy: direct ws / convert fallback / convert-only
-  edgeWorkerItemConcurrency?: number; // Items chạy song song trong mỗi Python job
+  edgeWorkerItemConcurrency?: number; // Mức song song item cho Edge worker (Python/Go)
   edgeWorkerTimeoutMs?: number; // Timeout cho mỗi item trong Python worker
   runId?: string;
 }
@@ -972,6 +973,7 @@ export interface CaptionProjectSettingsValues {
   volume?: string;
   edgeOutputFormat?: 'wav' | 'mp3';
   edgeTtsBatchSize?: number;
+  edgeWorkerEngine?: 'python' | 'go' | 'auto';
   edgeWavMode?: 'auto' | 'direct' | 'convert';
   edgeWorkerItemConcurrency?: number;
   edgeWorkerTimeoutMs?: number;
