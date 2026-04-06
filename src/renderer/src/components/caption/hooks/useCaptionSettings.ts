@@ -52,6 +52,7 @@ interface LayoutProfile {
   blackoutTop: number | null;
   coverMode: CaptionCoverMode;
   coverQuad: CoverQuad;
+  inPlaceBlurStrength: number;
   coverFeatherPx: number;
   coverFeatherHorizontalPx: number;
   coverFeatherVerticalPx: number;
@@ -175,6 +176,9 @@ const DEFAULT_COVER_FEATHER_PX = 18;
 const MIN_COVER_FEATHER_PERCENT = 0;
 const MAX_COVER_FEATHER_PERCENT = 50;
 const DEFAULT_COVER_FEATHER_PERCENT = 20;
+const MIN_INPLACE_BLUR_STRENGTH = 0;
+const MAX_INPLACE_BLUR_STRENGTH = 100;
+const DEFAULT_INPLACE_BLUR_STRENGTH = 65;
 
 function clampPercent(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) {
@@ -339,6 +343,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   blackoutTop: 0.9,
   coverMode: 'blackout_bottom',
   coverQuad: normalizeQuad(),
+  inPlaceBlurStrength: DEFAULT_INPLACE_BLUR_STRENGTH,
   coverFeatherPx: DEFAULT_COVER_FEATHER_PX,
   coverFeatherHorizontalPx: DEFAULT_COVER_FEATHER_PX,
   coverFeatherVerticalPx: DEFAULT_COVER_FEATHER_PX,
@@ -424,6 +429,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   blackoutTop: 0.9,
   coverMode: 'blackout_bottom',
   coverQuad: normalizeQuad(),
+  inPlaceBlurStrength: DEFAULT_INPLACE_BLUR_STRENGTH,
   coverFeatherPx: DEFAULT_COVER_FEATHER_PX,
   coverFeatherHorizontalPx: DEFAULT_COVER_FEATHER_PX,
   coverFeatherVerticalPx: DEFAULT_COVER_FEATHER_PX,
@@ -693,8 +699,15 @@ function normalizeProfile(
   if (patch.blackoutTop === null || typeof patch.blackoutTop === 'number') {
     next.blackoutTop = patch.blackoutTop as number | null;
   }
-  if (patch.coverMode === 'blackout_bottom' || patch.coverMode === 'copy_from_above') {
+  if (patch.coverMode === 'blackout_bottom' || patch.coverMode === 'copy_from_above' || patch.coverMode === 'blur_selected_region') {
     next.coverMode = patch.coverMode as CaptionCoverMode;
+  }
+  if (typeof patch.inPlaceBlurStrength === 'number' && Number.isFinite(patch.inPlaceBlurStrength)) {
+    next.inPlaceBlurStrength = clamp(
+      Math.round(patch.inPlaceBlurStrength),
+      MIN_INPLACE_BLUR_STRENGTH,
+      MAX_INPLACE_BLUR_STRENGTH
+    );
   }
   if (patch.coverQuad && typeof patch.coverQuad === 'object') {
     const normalized = normalizeQuad(patch.coverQuad as Partial<CoverQuad>);
@@ -1444,6 +1457,15 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, coverMode: value }));
   }, [updateActiveProfile]);
 
+  const setInPlaceBlurStrength = useCallback((value: number) => {
+    const normalized = clamp(
+      Number.isFinite(value) ? Math.round(value) : DEFAULT_INPLACE_BLUR_STRENGTH,
+      MIN_INPLACE_BLUR_STRENGTH,
+      MAX_INPLACE_BLUR_STRENGTH
+    );
+    updateActiveProfile((current) => ({ ...current, inPlaceBlurStrength: normalized }));
+  }, [updateActiveProfile]);
+
   const setCoverQuad = useCallback((value: CoverQuad) => {
     const normalized = normalizeQuad(value);
     if (!isConvexQuad(normalized)) {
@@ -1896,6 +1918,7 @@ export function useCaptionSettings() {
       blackoutTop: activeProfile.blackoutTop,
       coverMode: activeProfile.coverMode,
       coverQuad: activeProfile.coverQuad,
+      inPlaceBlurStrength: activeProfile.inPlaceBlurStrength,
       coverFeatherPx: activeProfile.coverFeatherPx,
       coverFeatherHorizontalPx: activeProfile.coverFeatherHorizontalPx,
       coverFeatherVerticalPx: activeProfile.coverFeatherVerticalPx,
@@ -2074,6 +2097,7 @@ export function useCaptionSettings() {
       blackoutTop: saved.blackoutTop,
       coverMode: saved.coverMode,
       coverQuad: saved.coverQuad,
+      inPlaceBlurStrength: saved.inPlaceBlurStrength,
       coverFeatherPx: saved.coverFeatherPx,
       coverFeatherHorizontalPx: saved.coverFeatherHorizontalPx,
       coverFeatherVerticalPx: saved.coverFeatherVerticalPx,
@@ -2409,6 +2433,8 @@ export function useCaptionSettings() {
     setCoverMode,
     coverQuad: activeProfile.coverQuad,
     setCoverQuad,
+    inPlaceBlurStrength: activeProfile.inPlaceBlurStrength,
+    setInPlaceBlurStrength,
     coverFeatherPx: activeProfile.coverFeatherPx,
     coverFeatherHorizontalPx: activeProfile.coverFeatherHorizontalPx,
     coverFeatherVerticalPx: activeProfile.coverFeatherVerticalPx,

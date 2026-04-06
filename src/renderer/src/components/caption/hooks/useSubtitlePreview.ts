@@ -38,8 +38,9 @@ export interface UseSubtitlePreviewOptions {
   entries?: SubtitleEntry[];
   subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;  // fraction 0-1 (persisted from settings)
-  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
   coverQuad?: CoverQuad;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -78,7 +79,7 @@ export interface UseSubtitlePreviewOptions {
   portraitTextSecondaryPosition?: { x: number; y: number };
   onPositionChange?: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (top: number | null) => void;
-  onCoverModeChange?: (mode: 'blackout_bottom' | 'copy_from_above') => void;
+  onCoverModeChange?: (mode: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region') => void;
   onCoverQuadChange?: (quad: CoverQuad) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
@@ -427,6 +428,18 @@ function applyEdgeFeatherMask(
   ctx.restore();
 }
 
+function normalizeInPlaceBlurStrength(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return 65;
+  }
+  return clampNumber(Math.round(value as number), 0, 100);
+}
+
+function resolveInPlaceBlurRadius(strength: number): number {
+  const normalized = Math.max(0, Math.min(1, strength / 100));
+  return 4.2 + normalized * 15.0;
+}
+
 function rectToQuad(rect: CoverRect): CoverQuad {
   return {
     tl: { x: rect.left, y: rect.top },
@@ -453,6 +466,7 @@ export function useSubtitlePreview({
   blackoutTop,
   coverMode,
   coverQuad,
+  inPlaceBlurStrength,
   coverFeatherPx,
   coverFeatherHorizontalPx,
   coverFeatherVerticalPx,
@@ -559,7 +573,7 @@ export function useSubtitlePreview({
 
   // Local blackout top (fraction 0-1) for live dragging — synced from prop
   const [localBlackoutTop, setLocalBlackoutTop] = useState<number | null>(blackoutTop ?? null);
-  const [localCoverMode, setLocalCoverMode] = useState<'blackout_bottom' | 'copy_from_above'>(coverMode || 'blackout_bottom');
+  const [localCoverMode, setLocalCoverMode] = useState<'blackout_bottom' | 'copy_from_above' | 'blur_selected_region'>(coverMode || 'blackout_bottom');
   const initialCoverQuad = rectToQuad(quadToRect(normalizeQuad(coverQuad)));
   const [localCoverQuad, setLocalCoverQuad] = useState<CoverQuad>(initialCoverQuad);
   const localCoverQuadRef = useRef<CoverQuad>(initialCoverQuad);
@@ -1207,13 +1221,17 @@ export function useSubtitlePreview({
     }
 
     // ===== Draw cover/mask layer =====
-    if (renderMark !== false && localCoverMode === 'copy_from_above') {
+    if (renderMark !== false && (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region')) {
       const quad = normalizeQuad(localCoverQuad);
       const region = coverRegion;
       const rectPx = resolveCoverRectPixels(quad, previewWidth, previewHeight);
+      const blurModeSelected = localCoverMode === 'blur_selected_region';
       const normOffset = computeCopyOffset(quad);
       const offset = Math.max(0, Math.round(normOffset * previewHeight));
-      const sourceYPx = resolveCopySourceY(rectPx.y, rectPx.h, offset, previewHeight);
+      const sourceYPx = blurModeSelected
+        ? rectPx.y
+        : resolveCopySourceY(rectPx.y, rectPx.h, offset, previewHeight);
+      const blurStrength = normalizeInPlaceBlurStrength(inPlaceBlurStrength);
       setCopyOffsetPx(offset);
       const validQuad = isConvexQuad(quad);
       setCoverQuadValid(validQuad);
@@ -1252,7 +1270,7 @@ export function useSubtitlePreview({
         height: rectCanvasH,
       };
 
-      if (validQuad && offset > 0 && rectCanvasW > 0 && rectCanvasH > 0) {
+      if (validQuad && (offset > 0 || blurModeSelected) && rectCanvasW > 0 && rectCanvasH > 0) {
         let scratch = blurScratchRef.current;
         if (!scratch) {
           scratch = document.createElement('canvas');
@@ -1271,7 +1289,7 @@ export function useSubtitlePreview({
           scratchCtx.imageSmoothingQuality = 'high';
           scratchCtx.drawImage(canvas, 0, 0, cw, ch);
 
-          if (coverFeatherPair.horizontalPercent <= 0 && coverFeatherPair.verticalPercent <= 0) {
+          if (!blurModeSelected && coverFeatherPair.horizontalPercent <= 0 && coverFeatherPair.verticalPercent <= 0) {
             ctx.drawImage(
               scratch,
               rectCanvasX,
@@ -1301,24 +1319,46 @@ export function useSubtitlePreview({
               patchCtx.clearRect(0, 0, patchCanvas.width, patchCanvas.height);
               patchCtx.imageSmoothingEnabled = true;
               patchCtx.imageSmoothingQuality = 'high';
-              patchCtx.drawImage(
-                scratch,
-                rectCanvasX,
-                sourceCanvasY,
-                rectCanvasW,
-                rectCanvasH,
-                0,
-                0,
-                patchCanvas.width,
-                patchCanvas.height
-              );
-              applyEdgeFeatherMask(
-                patchCtx,
-                patchCanvas.width,
-                patchCanvas.height,
-                Math.max(0, Math.round((patchCanvas.width * coverFeatherPair.horizontalPercent) / 100)),
-                Math.max(0, Math.round((patchCanvas.height * coverFeatherPair.verticalPercent) / 100))
-              );
+
+              if (blurModeSelected && blurStrength > 0) {
+                const blurRadius = resolveInPlaceBlurRadius(blurStrength);
+                patchCtx.filter = `blur(${blurRadius.toFixed(2)}px)`;
+                patchCtx.drawImage(
+                  scratch,
+                  rectCanvasX,
+                  sourceCanvasY,
+                  rectCanvasW,
+                  rectCanvasH,
+                  0,
+                  0,
+                  patchCanvas.width,
+                  patchCanvas.height
+                );
+                patchCtx.filter = 'none';
+              } else {
+                patchCtx.drawImage(
+                  scratch,
+                  rectCanvasX,
+                  sourceCanvasY,
+                  rectCanvasW,
+                  rectCanvasH,
+                  0,
+                  0,
+                  patchCanvas.width,
+                  patchCanvas.height
+                );
+              }
+
+              if (!blurModeSelected) {
+                applyEdgeFeatherMask(
+                  patchCtx,
+                  patchCanvas.width,
+                  patchCanvas.height,
+                  Math.max(0, Math.round((patchCanvas.width * coverFeatherPair.horizontalPercent) / 100)),
+                  Math.max(0, Math.round((patchCanvas.height * coverFeatherPair.verticalPercent) / 100))
+                );
+              }
+
               ctx.drawImage(
                 patchCanvas,
                 rectCanvasX,
@@ -1359,7 +1399,7 @@ export function useSubtitlePreview({
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(
-        `copy ${Math.round((1 - bbox.minY) * 100)}% | off=${offset}px`,
+        `${blurModeSelected ? 'blur' : 'copy'} ${Math.round((1 - bbox.minY) * 100)}% | off=${offset}px`,
         rectCanvasX + 6,
         rectCanvasY + 6
       );
@@ -1718,7 +1758,7 @@ export function useSubtitlePreview({
     }
 
     presentWorldCanvas();
-  }, [state.isLoading, state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, renderSubtitle, renderMark, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
+  }, [state.isLoading, state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, renderSubtitle, renderMark, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
 
   // Load video frame image
   useEffect(() => {
@@ -1976,7 +2016,7 @@ export function useSubtitlePreview({
         setIsDragging(false);
         return;
       }
-      if (localCoverMode === 'copy_from_above') {
+      if (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region') {
         const edgeKey = hitCoverEdge(wx, wy);
         if (edgeKey) {
           coverDragEdgeRef.current = {
@@ -2075,7 +2115,7 @@ export function useSubtitlePreview({
         setCanvasCursor('crosshair');
       } else if (mode === 'blackout' && renderMark === false) {
         setCanvasCursor('not-allowed');
-      } else if (mode === 'blackout' && localCoverMode === 'copy_from_above') {
+      } else if (mode === 'blackout' && (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region')) {
         const edgeKey = hitCoverEdge(wx, wy);
         if (edgeKey === 'left' || edgeKey === 'right') {
           setCanvasCursor('ew-resize');
@@ -2119,7 +2159,7 @@ export function useSubtitlePreview({
       if (renderMark === false) {
         return;
       }
-      if (localCoverMode === 'copy_from_above') {
+      if (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region') {
         if (coverDragEdgeRef.current) {
           const nextPoint = canvasToCoverNormalized(wx, wy);
           const resized = resizeCoverRectByEdge(
@@ -2253,7 +2293,7 @@ export function useSubtitlePreview({
       return;
     }
 
-    if (localCoverMode === 'copy_from_above') {
+    if (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region') {
       const deltaX = dxPx / maxW;
       const deltaY = dyPx / maxH;
       const moved = translateQuad(localCoverQuadRef.current, deltaX, deltaY);
@@ -2337,7 +2377,7 @@ export function useSubtitlePreview({
       if (renderMark === false) {
         return;
       }
-      if (localCoverMode === 'copy_from_above') {
+      if (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region') {
         coverDragEdgeRef.current = null;
         coverDragWholeRef.current = null;
         onCoverQuadChange?.(localCoverQuadRef.current);
@@ -2377,7 +2417,7 @@ export function useSubtitlePreview({
       return { ...prev, subtitlePosition: center };
     });
 
-    if (localCoverMode === 'copy_from_above') {
+    if (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region') {
       const currentQuad = localCoverQuadRef.current;
       if (currentQuad) {
         const bbox = quadBoundingBox(currentQuad);
@@ -2461,7 +2501,7 @@ export function useSubtitlePreview({
     onBlackoutChange?.(null);
   }, [onBlackoutChange]);
 
-  const setCoverMode = useCallback((value: 'blackout_bottom' | 'copy_from_above') => {
+  const setCoverMode = useCallback((value: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region') => {
     setLocalCoverMode(value);
     onCoverModeChange?.(value);
   }, [onCoverModeChange]);

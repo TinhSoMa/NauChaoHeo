@@ -563,7 +563,7 @@ export interface ASSStyleConfig {
   alignment: number; // 2: bottom center, 5: middle center, 8: top center
 }
 
-export type CaptionCoverMode = 'blackout_bottom' | 'copy_from_above';
+export type CaptionCoverMode = 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
 
 export interface CoverQuadPoint {
   x: number;
@@ -622,6 +622,7 @@ export interface RenderVideoOptions {
   blackoutTop?: number;   // Tỉ lệ 0-1 từ trên xuống; landscape = tô đen đáy, portrait = mốc bắt đầu blur đáy foreground
   coverMode?: CaptionCoverMode; // Chế độ che video (legacy mặc định: blackout_bottom)
   coverQuad?: CoverQuad; // Tứ giác normalized (0..1) cho mode copy_from_above
+  inPlaceBlurStrength?: number; // Cường độ blur cho mode blur_selected_region (0..100)
   coverFeatherPx?: number; // Feather viền vùng copy_from_above (px), không dùng blur
   coverFeatherHorizontalPx?: number; // Feather trái/phải cho copy_from_above (px)
   coverFeatherVerticalPx?: number; // Feather trên/dưới cho copy_from_above (px)
@@ -766,8 +767,9 @@ export interface RenderVideoPreviewFrameOptions {
   renderMark?: boolean;
   position?: { x: number; y: number };
   blackoutTop?: number;
-  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -1062,6 +1064,7 @@ export interface CaptionProjectSettingsValues {
   blackoutTop?: number | null;
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -1141,6 +1144,7 @@ export interface CaptionProjectSettingsValues {
       blackoutTop?: number | null;
       coverMode?: CaptionCoverMode;
       coverQuad?: CoverQuad | null;
+      inPlaceBlurStrength?: number;
       coverFeatherPx?: number;
       coverFeatherHorizontalPx?: number;
       coverFeatherVerticalPx?: number;
@@ -1213,6 +1217,7 @@ export interface CaptionProjectSettingsValues {
       blackoutTop?: number | null;
       coverMode?: CaptionCoverMode;
       coverQuad?: CoverQuad | null;
+      inPlaceBlurStrength?: number;
       coverFeatherPx?: number;
       coverFeatherHorizontalPx?: number;
       coverFeatherVerticalPx?: number;

@@ -1584,6 +1584,7 @@ export function CaptionTranslator() {
     blackoutTop: settings.blackoutTop,
     coverMode: settings.coverMode,
     coverQuad: settings.coverQuad,
+    inPlaceBlurStrength: settings.inPlaceBlurStrength,
     coverFeatherPx: settings.coverFeatherPx,
     coverFeatherHorizontalPx: settings.coverFeatherHorizontalPx,
     coverFeatherVerticalPx: settings.coverFeatherVerticalPx,
@@ -1670,6 +1671,7 @@ export function CaptionTranslator() {
     settings.blackoutTop,
     settings.coverMode,
     settings.coverQuad,
+    settings.inPlaceBlurStrength,
     settings.coverFeatherPx,
     settings.coverFeatherHorizontalPx,
     settings.coverFeatherVerticalPx,
@@ -5771,14 +5773,32 @@ export function CaptionTranslator() {
                 <select
                   className={styles.select}
                   value={settings.coverMode || 'blackout_bottom'}
-                  onChange={(e) => settings.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above')}
+                  onChange={(e) => settings.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region')}
                   disabled={settings.renderMode === 'black_bg' || settings.renderMark === false}
                 >
                   <option value="blackout_bottom">Che đen đáy</option>
                   <option value="copy_from_above">Chép vùng trên</option>
+                  <option value="blur_selected_region">Làm mờ vùng chọn (nhanh)</option>
                 </select>
               </div>
             </div>
+
+            {settings.renderMark !== false && settings.coverMode === 'blur_selected_region' && (
+              <div className={styles.commonInlineSection}>
+                <div className={styles.commonInlineHeader}>
+                  <span className={styles.label}>Cường độ blur vùng chọn</span>
+                  <span className={styles.commonInlineValue}>{Math.round(settings.inPlaceBlurStrength ?? 65)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={settings.inPlaceBlurStrength ?? 65}
+                  onChange={(e) => settings.setInPlaceBlurStrength(Number(e.target.value))}
+                />
+              </div>
+            )}
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
@@ -7717,6 +7737,7 @@ export function CaptionTranslator() {
                   blackoutTop={settings.blackoutTop}
                   coverMode={settings.coverMode}
                   coverQuad={settings.coverQuad}
+                  inPlaceBlurStrength={settings.inPlaceBlurStrength ?? 65}
                   coverFeatherPx={settings.coverFeatherPx}
                   coverFeatherHorizontalPx={settings.coverFeatherHorizontalPx}
                   coverFeatherVerticalPx={settings.coverFeatherVerticalPx}
@@ -7761,6 +7782,7 @@ export function CaptionTranslator() {
                   onPositionChange={settings.setSubtitlePosition}
                   onBlackoutChange={settings.setBlackoutTop}
                   onCoverModeChange={settings.setCoverMode}
+                  onInPlaceBlurStrengthChange={settings.setInPlaceBlurStrength}
                   onCoverQuadChange={settings.setCoverQuad}
                   onRenderResolutionChange={settings.setRenderResolution}
                   onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}

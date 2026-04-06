@@ -725,7 +725,7 @@ export function registerCaptionHandlers(): void {
         renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
         position?: { x: number; y: number };
         blackoutTop?: number;
-        coverMode?: 'blackout_bottom' | 'copy_from_above';
+        coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
         coverQuad?: {
           tl: { x: number; y: number };
           tr: { x: number; y: number };
@@ -737,6 +737,7 @@ export function registerCaptionHandlers(): void {
         coverFeatherVerticalPx?: number;
         coverFeatherHorizontalPercent?: number;
         coverFeatherVerticalPercent?: number;
+        inPlaceBlurStrength?: number;
         audioSpeed?: number;
         step7AudioSpeedInput?: number;
         srtTimeScale?: number;

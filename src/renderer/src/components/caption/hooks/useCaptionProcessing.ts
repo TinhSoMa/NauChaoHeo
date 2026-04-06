@@ -261,13 +261,14 @@ interface UseCaptionProcessingProps {
     renderMark?: boolean;
     subtitlePosition?: { x: number; y: number } | null;
     blackoutTop?: number | null;
-    coverMode?: 'blackout_bottom' | 'copy_from_above';
+    coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
     coverQuad?: CoverQuad;
     coverFeatherPx?: number;
     coverFeatherHorizontalPx?: number;
     coverFeatherVerticalPx?: number;
     coverFeatherHorizontalPercent?: number;
     coverFeatherVerticalPercent?: number;
+    inPlaceBlurStrength?: number;
     autoFitAudio: boolean;
     fitAudioWorkers?: number;
     audioSpeed?: number;
@@ -418,9 +419,9 @@ function readCoverQuad(record: LooseRecord, key: string): CoverQuad | undefined 
 function readCoverMode(
   record: LooseRecord,
   key: string
-): 'blackout_bottom' | 'copy_from_above' | undefined {
+): 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region' | undefined {
   const value = record[key];
-  if (value === 'blackout_bottom' || value === 'copy_from_above') {
+  if (value === 'blackout_bottom' || value === 'copy_from_above' || value === 'blur_selected_region') {
     return value;
   }
   return undefined;
@@ -564,6 +565,10 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
     coverFeatherVerticalPercent: withFallback(
       readNumber(profile, 'coverFeatherVerticalPercent'),
       settings.coverFeatherVerticalPercent
+    ),
+    inPlaceBlurStrength: withFallback(
+      readNumber(profile, 'inPlaceBlurStrength'),
+      settings.inPlaceBlurStrength
     ),
     subtitlePosition: subtitlePosition === null
       ? null
@@ -3541,6 +3546,7 @@ export function useCaptionProcessing({
         coverFeatherVerticalPx: cfg.coverFeatherVerticalPx,
         coverFeatherHorizontalPercent: cfg.coverFeatherHorizontalPercent,
         coverFeatherVerticalPercent: cfg.coverFeatherVerticalPercent,
+        inPlaceBlurStrength: cfg.inPlaceBlurStrength,
         style: cfg.style,
         thumbnailFrameTimeSec: cfg.thumbnailFrameTimeSec,
         thumbnailDurationSec: cfg.thumbnailDurationSec,
@@ -3647,6 +3653,7 @@ export function useCaptionProcessing({
       ...(cfg.coverFeatherVerticalPx != null ? { coverFeatherVerticalPx: cfg.coverFeatherVerticalPx } : {}),
       ...(cfg.coverFeatherHorizontalPercent != null ? { coverFeatherHorizontalPercent: cfg.coverFeatherHorizontalPercent } : {}),
       ...(cfg.coverFeatherVerticalPercent != null ? { coverFeatherVerticalPercent: cfg.coverFeatherVerticalPercent } : {}),
+      ...(cfg.inPlaceBlurStrength != null ? { inPlaceBlurStrength: cfg.inPlaceBlurStrength } : {}),
       audioSpeed: cfg.audioSpeed,
       renderAudioSpeed: cfg.renderAudioSpeed,
       videoVolume: cfg.videoVolume,
@@ -5714,6 +5721,7 @@ export function useCaptionProcessing({
           coverFeatherVerticalPx: cfg.coverFeatherVerticalPx,
           coverFeatherHorizontalPercent: cfg.coverFeatherHorizontalPercent,
           coverFeatherVerticalPercent: cfg.coverFeatherVerticalPercent,
+          inPlaceBlurStrength: cfg.inPlaceBlurStrength,
           audioPath: mergedAudioPathForRender,
           audioSpeed: cfg.renderAudioSpeed,
           step7AudioSpeedInput: step7AudioSpeed,

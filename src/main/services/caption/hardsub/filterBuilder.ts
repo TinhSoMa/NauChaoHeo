@@ -1,4 +1,4 @@
-import { buildCopyFromAboveFilter } from './coverMaskFilterBuilder';
+import { buildCopyFromAboveFilter, buildInPlaceBlurFilter } from './coverMaskFilterBuilder';
 import { VideoFilterBuildInput, VideoFilterBuildOutput } from './types';
 
 function ensureLabelRef(value: string): string {
@@ -19,7 +19,22 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
     currentLabel = scaledLabel;
   }
 
-  if (enableMark && input.coverMode === 'copy_from_above') {
+  if (enableMark && input.coverMode === 'blur_selected_region') {
+    const blurCover = buildInPlaceBlurFilter({
+      inputLabel: currentLabel,
+      outputLabel: 'v_covered',
+      renderWidth: input.renderWidth,
+      renderHeight: input.renderHeight,
+      coverQuad: input.coverQuad,
+      inPlaceBlurStrength: input.inPlaceBlurStrength,
+      labelPrefix: 'landscape_blur',
+    });
+    filterParts.push(...blurCover.filterParts);
+    if (!blurCover.applied) {
+      console.warn('[VideoFilter][Cover] Skip blur_selected_region:', blurCover.reason || 'unknown_reason');
+    }
+    currentLabel = blurCover.outputLabel;
+  } else if (enableMark && input.coverMode === 'copy_from_above') {
     const cover = buildCopyFromAboveFilter({
       inputLabel: currentLabel,
       outputLabel: 'v_covered',

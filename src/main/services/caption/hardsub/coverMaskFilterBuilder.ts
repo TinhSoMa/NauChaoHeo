@@ -27,6 +27,16 @@ interface BuildCopyFromAboveFilterInput {
   labelPrefix?: string;
 }
 
+interface BuildInPlaceBlurFilterInput {
+  inputLabel: string;
+  outputLabel: string;
+  renderWidth: number;
+  renderHeight: number;
+  coverQuad?: CoverQuad | null;
+  inPlaceBlurStrength?: number;
+  labelPrefix?: string;
+}
+
 export interface BuildCopyFromAboveFilterOutput {
   filterParts: string[];
   outputLabel: string;
@@ -122,6 +132,92 @@ function resolveFeatherStrategy(
     return strategy;
   }
   return DEFAULT_FEATHER_STRATEGY;
+}
+
+function normalizeInPlaceBlurStrength(value: unknown): number {
+  if (!Number.isFinite(value)) {
+    return 65;
+  }
+  return Math.max(0, Math.min(100, Math.round(value as number)));
+}
+
+function resolveInPlaceBlurRadius(strength: number): number {
+  const normalized = Math.max(0, Math.min(1, strength / 100));
+  return Math.max(2, Number((2 + normalized * 18).toFixed(3)));
+}
+
+export function buildInPlaceBlurFilter(
+  input: BuildInPlaceBlurFilterInput
+): BuildCopyFromAboveFilterOutput {
+  const outputLabelName = normalizeLabelName(input.outputLabel);
+  const outputLabel = `[${outputLabelName}]`;
+  const normalized = normalizeQuad(input.coverQuad);
+
+  if (!isConvexQuad(normalized)) {
+    return {
+      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      outputLabel,
+      applied: false,
+      reason: 'cover_quad_not_convex',
+    };
+  }
+
+  const bbox = quadBoundingBox(normalized);
+  const normHeight = quadHeight(normalized);
+  if (normHeight <= 0.001 || bbox.maxX - bbox.minX <= 0.001) {
+    return {
+      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      outputLabel,
+      applied: false,
+      reason: 'cover_quad_too_small',
+    };
+  }
+
+  const rectPx = resolveCoverRectPixels(normalized, input.renderWidth, input.renderHeight);
+  const blurStrength = normalizeInPlaceBlurStrength(input.inPlaceBlurStrength);
+  const blurRadius = resolveInPlaceBlurRadius(blurStrength);
+  const prefix = (input.labelPrefix || 'cover_blur').replace(/[^A-Za-z0-9_]/g, '_');
+  const baseLabel = `[${prefix}_base]`;
+  const patchLabel = `[${prefix}_patch]`;
+  const patchBlurredLabel = `[${prefix}_patch_blur]`;
+
+  const filterParts: string[] = [
+    `${ensureLabelRef(input.inputLabel)}split=2${baseLabel}[${prefix}_src]`,
+    `[${prefix}_src]format=rgb24,crop=${rectPx.w}:${rectPx.h}:${rectPx.x}:${rectPx.y}${patchLabel}`,
+  ];
+
+  if (blurRadius > 0) {
+    const chromaRadius = Math.max(1, Number((blurRadius * 0.6).toFixed(3)));
+    filterParts.push(
+      `${patchLabel}boxblur=luma_radius=${blurRadius}:luma_power=1:` +
+      `chroma_radius=${chromaRadius}:chroma_power=1${patchBlurredLabel}`
+    );
+  } else {
+    filterParts.push(`${patchLabel}null${patchBlurredLabel}`);
+  }
+
+  filterParts.push(
+    `${baseLabel}${patchBlurredLabel}overlay=${rectPx.x}:${rectPx.y}:eval=init:format=auto${outputLabel}`
+  );
+
+  return {
+    filterParts,
+    outputLabel,
+    applied: true,
+    debug: {
+      mode: 'blur_selected_region',
+      blurType: 'boxblur',
+      blurStrength,
+      blurRadius,
+      bbox,
+      patch: {
+        x: rectPx.x,
+        y: rectPx.y,
+        w: rectPx.w,
+        h: rectPx.h,
+      },
+    },
+  };
 }
 
 function buildRectFeatherMaskByGblur(

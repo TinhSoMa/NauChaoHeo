@@ -51,6 +51,7 @@ export interface VideoFilterBuildInput {
   blackoutTop?: number | null; // 0-1 từ trên xuống; dùng cho nhánh landscape (tô đen đáy)
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -81,6 +82,7 @@ export interface PortraitVideoFilterBuildInput {
   blackoutTop?: number | null; // 0-1 theo output; với portrait: mốc bắt đầu blur vùng đáy của foreground
   coverMode?: CaptionCoverMode;
   coverQuad?: CoverQuad | null;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;

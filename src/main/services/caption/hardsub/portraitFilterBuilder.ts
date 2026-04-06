@@ -1,12 +1,12 @@
 import { PortraitVideoFilterBuildInput, PortraitVideoFilterBuildOutput } from './types';
-import { buildCopyFromAboveFilter } from './coverMaskFilterBuilder';
+import { buildCopyFromAboveFilter, buildInPlaceBlurFilter } from './coverMaskFilterBuilder';
 
 function appendBackgroundBottomBlur(
   parts: string[],
   input: PortraitVideoFilterBuildInput,
   bgLabel: string
 ): string {
-  if (input.coverMode === 'copy_from_above') {
+  if (input.coverMode === 'copy_from_above' || input.coverMode === 'blur_selected_region') {
     return bgLabel;
   }
   if (input.blackoutTop == null || input.blackoutTop >= 1) {
@@ -65,7 +65,22 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
 
   let currentLabel = '[v_canvas]';
 
-  if (enableMark && input.coverMode === 'copy_from_above') {
+  if (enableMark && input.coverMode === 'blur_selected_region') {
+    const blurCover = buildInPlaceBlurFilter({
+      inputLabel: currentLabel,
+      outputLabel: 'v_canvas_covered',
+      renderWidth: input.outputWidth,
+      renderHeight: input.outputHeight,
+      coverQuad: input.coverQuad,
+      inPlaceBlurStrength: input.inPlaceBlurStrength,
+      labelPrefix: 'portrait_blur',
+    });
+    parts.push(...blurCover.filterParts);
+    if (!blurCover.applied) {
+      console.warn('[PortraitFilter][Cover] Skip blur_selected_region:', blurCover.reason || 'unknown_reason');
+    }
+    currentLabel = blurCover.outputLabel;
+  } else if (enableMark && input.coverMode === 'copy_from_above') {
     const cover = buildCopyFromAboveFilter({
       inputLabel: currentLabel,
       outputLabel: 'v_canvas_covered',

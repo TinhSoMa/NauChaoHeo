@@ -18,8 +18,9 @@ interface SubtitlePreviewProps {
   entries?: SubtitleEntry[];
   subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;
-  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
   coverQuad?: CoverQuad;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -61,7 +62,8 @@ interface SubtitlePreviewProps {
   portraitTextSecondaryPosition?: { x: number; y: number };
   onPositionChange: (pos: { x: number; y: number } | null) => void;
   onBlackoutChange?: (value: number | null) => void;
-  onCoverModeChange?: (value: 'blackout_bottom' | 'copy_from_above') => void;
+  onCoverModeChange?: (value: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region') => void;
+  onInPlaceBlurStrengthChange?: (value: number) => void;
   onCoverQuadChange?: (value: CoverQuad) => void;
   onRenderResolutionChange?: (value: 'original' | '1080p' | '720p' | '540p' | '360p') => void;
   previewLayoutValue?: 'landscape' | 'portrait';
@@ -95,7 +97,7 @@ function formatPreviewTime(seconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${secsLabel}`;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, renderSubtitle, renderMark, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq, onFirstFrameReady }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, renderSubtitle, renderMark, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onInPlaceBlurStrengthChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq, onFirstFrameReady }: SubtitlePreviewProps) {
   const notifiedFramePathRef = useRef('');
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
@@ -106,6 +108,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     blackoutTop,
     coverMode,
     coverQuad,
+    inPlaceBlurStrength,
     coverFeatherPx,
     coverFeatherHorizontalPx,
     coverFeatherVerticalPx,
@@ -167,6 +170,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     blackoutTop,
     coverMode,
     coverQuad,
+    inPlaceBlurStrength,
     coverFeatherPx,
     coverFeatherHorizontalPx,
     coverFeatherVerticalPx,
@@ -317,6 +321,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               :
             preview.coverMode === 'copy_from_above'
               ? 'Kéo cạnh trái/phải/top/bottom hoặc kéo cả vùng để copy vùng phía trên che nội dung'
+              : preview.coverMode === 'blur_selected_region'
+                ? 'Kéo cạnh trái/phải/top/bottom hoặc kéo cả vùng để làm mờ trực tiếp trong vùng chọn'
               : (isPortraitMode ? 'Kéo để đặt vùng blur đáy video chính' : 'Kéo để đặt vùng tô đen phía dưới video')
           }
           disabled={isInteractionDisabled || isRealPreviewMode || renderMark === false}
@@ -403,7 +409,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
       ) : (
         <div
           ref={preview.containerRef}
-          className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? (preview.coverMode === 'copy_from_above' ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
+          className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? ((preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
         >
           <canvas
             ref={preview.canvasRef}
@@ -557,13 +563,27 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
             <select
               className={styles.resolutionSelect}
               value={preview.coverMode}
-              onChange={(e) => preview.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above')}
+              onChange={(e) => preview.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region')}
               disabled={isInteractionDisabled || renderMode === 'black_bg'}
               title="Chọn kiểu che video"
             >
               <option value="blackout_bottom">Che đen đáy</option>
               <option value="copy_from_above">Copy vùng trên (hình chữ nhật)</option>
+              <option value="blur_selected_region">Blur vùng đã chọn (nhanh)</option>
             </select>
+          )}
+
+          {preview.mode === 'blackout' && preview.coverMode === 'blur_selected_region' && (
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.max(0, Math.min(100, Math.round(inPlaceBlurStrength ?? 65)))}
+              onChange={(e) => onInPlaceBlurStrengthChange?.(Number(e.target.value))}
+              disabled={isInteractionDisabled || renderMode === 'black_bg' || renderMark === false}
+              title="Cường độ blur trong vùng chọn"
+            />
           )}
           
           {preview.mode === 'blackout' && preview.coverMode === 'blackout_bottom' && preview.blackoutTop !== null && (
@@ -576,7 +596,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
               <Trash2 size={12} /> Xóa
             </button>
           )}
-          {preview.mode === 'blackout' && preview.coverMode === 'copy_from_above' && (
+          {preview.mode === 'blackout' && (preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') && (
             <button
               className={styles.resetBtn}
               onClick={preview.resetCoverQuad}

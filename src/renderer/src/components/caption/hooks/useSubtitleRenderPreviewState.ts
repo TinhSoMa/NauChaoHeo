@@ -24,8 +24,9 @@ interface UseSubtitleRenderPreviewStateOptions {
   renderMark?: boolean;
   subtitlePosition?: { x: number; y: number } | null;
   blackoutTop?: number | null;
-  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
   coverQuad?: CoverQuad;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -79,8 +80,9 @@ interface RenderVideoPreviewFrameRequest {
   renderMark?: boolean;
   position?: { x: number; y: number };
   blackoutTop?: number;
-  coverMode?: 'blackout_bottom' | 'copy_from_above';
+  coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
   coverQuad?: CoverQuad;
+  inPlaceBlurStrength?: number;
   coverFeatherPx?: number;
   coverFeatherHorizontalPx?: number;
   coverFeatherVerticalPx?: number;
@@ -205,6 +207,7 @@ export function useSubtitleRenderPreviewState(
       blackoutTop: options.blackoutTop == null ? undefined : options.blackoutTop,
       coverMode: options.coverMode,
       coverQuad: options.coverQuad,
+      inPlaceBlurStrength: options.inPlaceBlurStrength,
       coverFeatherPx: options.coverFeatherPx,
       coverFeatherHorizontalPx: options.coverFeatherHorizontalPx,
       coverFeatherVerticalPx: options.coverFeatherVerticalPx,
@@ -244,6 +247,7 @@ export function useSubtitleRenderPreviewState(
     options.blackoutTop,
     options.coverMode,
     options.coverQuad,
+    options.inPlaceBlurStrength,
     options.coverFeatherPx,
     options.coverFeatherHorizontalPx,
     options.coverFeatherVerticalPx,
