@@ -62,6 +62,7 @@ import {
 import { Step3BatchMonitorPopup, type Step3BatchEditableLine } from './components/Step3BatchMonitorPopup';
 import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
 import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
+import { Step4ProxyTestPopup } from './components/Step4ProxyTestPopup';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
 import { AlertCircle, Download, Eye, Power, PowerOff } from 'lucide-react';
@@ -72,6 +73,7 @@ import {
   CoverQuad,
   TranslationBatchReport as SharedTranslationBatchReport,
   VoiceInfo,
+  TTSTestProxyResponse,
 } from '@shared/types/caption';
 
 type TtsVoiceProvider = 'edge' | 'capcut';
@@ -136,6 +138,7 @@ const AUDIO_VOLUME_PERCENT_MIN = 0;
 const AUDIO_VOLUME_PERCENT_MAX = 400;
 const VOLUME_MULTIPLIER_STEP = 0.01;
 const STEP4_VOICE_TEST_DEFAULT_TEXT = 'kiểm thử giọng đọc';
+const STEP4_PROXY_TEST_DEFAULT_TEXT = 'Kiểm thử âm thanh';
 const DRAFT_DURATION_FILTER_DEFAULT_MINUTES = 10;
 
 const DEFAULT_COVER_QUAD: CoverQuad = {
@@ -1343,6 +1346,11 @@ export function CaptionTranslator() {
   const [step4VoiceTestMessage, setStep4VoiceTestMessage] = useState('');
   const [isStep4VoiceTestPlaying, setIsStep4VoiceTestPlaying] = useState(false);
   const step4VoiceTestAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [step4ProxyTestOpen, setStep4ProxyTestOpen] = useState(false);
+  const [step4ProxyTestText, setStep4ProxyTestText] = useState(STEP4_PROXY_TEST_DEFAULT_TEXT);
+  const [step4ProxyTestBusy, setStep4ProxyTestBusy] = useState(false);
+  const [step4ProxyTestError, setStep4ProxyTestError] = useState('');
+  const [step4ProxyTestResult, setStep4ProxyTestResult] = useState<TTSTestProxyResponse | null>(null);
 
   const stopStep4VoiceTestPlayback = useCallback(() => {
     const audio = step4VoiceTestAudioRef.current;
@@ -2543,6 +2551,60 @@ export function CaptionTranslator() {
     step4VoiceTestState,
     step4VoiceTestText,
     stopStep4VoiceTestPlayback,
+  ]);
+
+  const step4ProxyTestOutputRoot = useMemo(() => {
+    const audioDir = (settings.audioDir || '').trim();
+    if (audioDir) {
+      return audioDir;
+    }
+    return captionFolder ? `${captionFolder}\\audio` : '';
+  }, [captionFolder, settings.audioDir]);
+
+  const handleStep4ProxyTest = useCallback(async () => {
+    if (processing.status === 'running' || step4ProxyTestBusy) {
+      return;
+    }
+
+    const sampleText = (step4ProxyTestText || '').trim() || STEP4_PROXY_TEST_DEFAULT_TEXT;
+    const outputDir = step4ProxyTestOutputRoot.trim();
+    if (!outputDir) {
+      setStep4ProxyTestError('Chua co output dir cho Step4 proxy test. Hay chon output audio truoc.');
+      return;
+    }
+
+    setStep4ProxyTestBusy(true);
+    setStep4ProxyTestError('');
+
+    try {
+      const response = await window.electronAPI.tts.testProxies({
+        text: sampleText,
+        voice: settings.voice,
+        rate: settings.rate,
+        volume: settings.volume,
+        outputFormat: 'mp3',
+        outputDir,
+        edgeWorkerEngine: settings.edgeWorkerEngine,
+        edgeWorkerItemConcurrency: 1,
+      });
+      if (!response?.success || !response.data) {
+        throw new Error(response?.error || 'Test proxy that bai.');
+      }
+      setStep4ProxyTestResult(response.data);
+    } catch (error) {
+      setStep4ProxyTestError(error instanceof Error ? error.message : 'Test proxy that bai.');
+    } finally {
+      setStep4ProxyTestBusy(false);
+    }
+  }, [
+    processing.status,
+    settings.voice,
+    settings.rate,
+    settings.volume,
+    settings.edgeWorkerEngine,
+    step4ProxyTestBusy,
+    step4ProxyTestText,
+    step4ProxyTestOutputRoot,
   ]);
 
   useEffect(() => {
@@ -4357,15 +4419,16 @@ export function CaptionTranslator() {
   const bulkExportTitle = thumbnailBulkExportState.message
     ? thumbnailBulkExportState.message
     : 'Xuất thumbnail hàng loạt (16:9 + 9:16)';
-  const canQuickFitAudioAudit = (
-    processing.enabledSteps.has(7)
-    && settings.autoFitAudio
-    && processingInputPaths.length > 0
-  );
+  const canQuickFitAudioAudit = settings.autoFitAudio && processingInputPaths.length > 0;
   const fitAudioAuditLabel = fitAudioAuditBusy ? 'Đang audit fit...' : 'Kiểm tra audio fit';
-  const fitAudioAuditTitle = settings.autoFitAudio
-    ? 'Quét thống kê Step 6: tỷ lệ fit, % quá nhanh, top file tăng tốc mạnh.'
-    : 'Bật Auto fit audio ở Step 6 để dùng audit fit.';
+  const fitAudioAuditTitle = !settings.autoFitAudio
+    ? 'Bật Auto fit audio ở Step 6 để dùng audit fit.'
+    : processingInputPaths.length === 0
+      ? 'Chưa có input path để audit.'
+      : 'Quét thống kê Step 6: tỷ lệ fit, % quá nhanh, top file tăng tốc mạnh.';
+  const bulkExportQuickTitle = canBulkExportThumbnails
+    ? bulkExportTitle
+    : 'Cần input Draft/SRT multi-folder, chế độ hardsub và có folder được chọn để xuất thumbnail.';
   const isAutoShutdownScheduled = shutdownStatus?.active === true;
   const autoShutdownCountdownLabel = isAutoShutdownScheduled
     ? formatCountdownShort(shutdownStatus?.secondsRemaining || 0)
@@ -7278,6 +7341,15 @@ export function CaptionTranslator() {
                 >
                   {isStep4VoiceTesting ? 'Đang test...' : 'Test giọng'}
                 </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setStep4ProxyTestOpen(true)}
+                  disabled={isStep4PipelineRunning || step4ProxyTestBusy}
+                  className={styles.stepCompactBtn}
+                  title={isStep4PipelineRunning ? 'Dang chay pipeline, tam khoa test proxy.' : 'Test tung proxy TTS'}
+                >
+                  {step4ProxyTestBusy ? 'Proxy dang test...' : 'Test proxy'}
+                </Button>
                 {isStep4VoiceTestPlaying && (
                   <Button
                     variant="secondary"
@@ -7628,30 +7700,26 @@ export function CaptionTranslator() {
           </div>
 
           <div className={styles.stepRailQuick}>
-            {canQuickFitAudioAudit && (
-              <button
-                type="button"
-                className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${fitAudioAuditData?.summary.tooFastCount ? styles.stepRailQuickBtnError : ''} ${fitAudioAuditOpen ? styles.stepRailQuickBtnActive : ''}`}
-                onClick={() => {
-                  void handleOpenFitAudioAudit();
-                }}
-                disabled={processing.status === 'running' || fitAudioAuditBusy}
-                title={fitAudioAuditTitle}
-              >
-                <span className={styles.stepRailQuickBtnLabel}>{fitAudioAuditLabel}</span>
-              </button>
-            )}
-            {canBulkExportThumbnails && (
-              <button
-                type="button"
-                className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn}`}
-                onClick={handleBulkExportThumbnails}
-                disabled={processing.status === 'running' || isBulkExportRunning}
-                title={bulkExportTitle}
-              >
-                <span className={styles.stepRailQuickBtnLabel}>{bulkExportLabel}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${fitAudioAuditData?.summary.tooFastCount ? styles.stepRailQuickBtnError : ''} ${fitAudioAuditOpen ? styles.stepRailQuickBtnActive : ''}`}
+              onClick={() => {
+                void handleOpenFitAudioAudit();
+              }}
+              disabled={processing.status === 'running' || fitAudioAuditBusy || !canQuickFitAudioAudit}
+              title={fitAudioAuditTitle}
+            >
+              <span className={styles.stepRailQuickBtnLabel}>{fitAudioAuditLabel}</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn}`}
+              onClick={handleBulkExportThumbnails}
+              disabled={processing.status === 'running' || isBulkExportRunning || !canBulkExportThumbnails}
+              title={bulkExportQuickTitle}
+            >
+              <span className={styles.stepRailQuickBtnLabel}>{bulkExportLabel}</span>
+            </button>
             <button
               type="button"
               className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn} ${styles.stepRailQuickBtnShutdown} ${autoShutdownEnabled ? styles.stepRailQuickBtnShutdownOn : styles.stepRailQuickBtnShutdownOff}`}
@@ -8312,6 +8380,23 @@ export function CaptionTranslator() {
         onClose={() => setFitAudioAuditOpen(false)}
         onRefresh={() => {
           void handleOpenFitAudioAudit();
+        }}
+      />
+      <Step4ProxyTestPopup
+        visible={step4ProxyTestOpen}
+        busy={step4ProxyTestBusy}
+        text={step4ProxyTestText}
+        outputDir={step4ProxyTestOutputRoot}
+        error={step4ProxyTestError}
+        result={step4ProxyTestResult}
+        onClose={() => {
+          if (!step4ProxyTestBusy) {
+            setStep4ProxyTestOpen(false);
+          }
+        }}
+        onTextChange={setStep4ProxyTestText}
+        onRun={() => {
+          void handleStep4ProxyTest();
         }}
       />
       </div>

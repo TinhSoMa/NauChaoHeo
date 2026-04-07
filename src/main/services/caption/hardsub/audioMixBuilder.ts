@@ -8,6 +8,22 @@ function clampVolumePercent(value: number, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeSpeed(value: number | undefined): number {
+  if (!Number.isFinite(value) || (value as number) <= 0) {
+    return 1;
+  }
+  return value as number;
+}
+
+function buildAtempoSuffix(value: number | undefined): string {
+  const safeSpeed = normalizeSpeed(value);
+  if (Math.abs(safeSpeed - 1.0) < 0.0001) {
+    return '';
+  }
+  const atempo = buildAtempoFilter(safeSpeed);
+  return atempo ? `,${atempo}` : '';
+}
+
 export function buildHardsubAudioMix(input: HardsubAudioMixBuildInput): HardsubAudioMixBuildOutput {
   const filterParts: string[] = [];
 
@@ -15,8 +31,8 @@ export function buildHardsubAudioMix(input: HardsubAudioMixBuildInput): HardsubA
   const safeAudioVolume = clampVolumePercent(input.audioVolume, 0, 400, 100);
   const volVid = safeVideoVolume / 100;
   const volAud = safeAudioVolume / 100;
-  const vidAtempo = (input.videoSpeedMultiplier !== 1.0) ? `,${buildAtempoFilter(input.videoSpeedMultiplier)}` : '';
-  const audAtempo = (input.audioSpeed !== 1.0) ? `,${buildAtempoFilter(input.audioSpeed)}` : '';
+  const vidAtempo = buildAtempoSuffix(input.videoSpeedMultiplier);
+  const audAtempo = buildAtempoSuffix(input.audioSpeed);
 
   if (input.hasVideoAudio && input.hasTtsAudio) {
     filterParts.push(`[0:a]aformat=channel_layouts=stereo,volume=${volVid}${vidAtempo},apad[a_vid]`);

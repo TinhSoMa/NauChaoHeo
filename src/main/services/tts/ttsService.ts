@@ -23,6 +23,9 @@ import {
   TTSProgress,
   TTSProvider,
   TTSResult,
+  TTSTestProxyRequest,
+  TTSTestProxyResponse,
+  TTSTestProxyItemResult,
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
   CAPTION_PROCESS_STOP_SIGNAL,
@@ -470,6 +473,33 @@ function getEdgeConversionModeLabel(mode: unknown): string | null {
 
 function normalizePathForLookup(filePath: string): string {
   return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+}
+
+function sanitizeProxyFolderToken(value: string): string {
+  const clean = String(value || '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return clean || 'proxy';
+}
+
+function buildProxyLabel(proxy: ProxyConfig): string {
+  return `${proxy.host}:${proxy.port}`;
+}
+
+function resolveProxyTestRootDir(outputRootDir: string): string {
+  const trimmed = (outputRootDir || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  const baseName = path.basename(trimmed).toLowerCase();
+  if (baseName === 'audio') {
+    return path.join(path.dirname(trimmed), 'test');
+  }
+  if (baseName === 'caption_output') {
+    return path.join(trimmed, 'test');
+  }
+  return path.join(trimmed, 'test');
 }
 
 function parseAudioIndexFromFilename(filename: string): number | null {
@@ -1548,6 +1578,187 @@ async function runEdgeTtsWorker(
     proc.stdin?.write(Buffer.from(JSON.stringify(payload), 'utf8'));
     proc.stdin?.end();
   });
+}
+
+export async function testEdgeTtsProxies(request: TTSTestProxyRequest): Promise<TTSTestProxyResponse> {
+  throwIfTtsStopped();
+
+  const sampleText = (request.text || 'Kiểm thử âm thanh').trim() || 'Kiểm thử âm thanh';
+  const outputRootDir = (request.outputDir || '').trim();
+  if (!outputRootDir) {
+    throw new Error('outputDir is required');
+  }
+
+  const voiceSelection = resolveVoiceSelection({
+    voice: request.voice,
+    provider: 'edge',
+  });
+  if (voiceSelection.provider !== 'edge') {
+    throw new Error('Proxy test chỉ hỗ trợ Edge TTS.');
+  }
+
+  const outputFormat: 'wav' | 'mp3' = request.outputFormat === 'wav' ? 'wav' : 'mp3';
+  const rate = request.rate || DEFAULT_RATE;
+  const volume = request.volume || DEFAULT_VOLUME;
+  const proxyTestRootDir = resolveProxyTestRootDir(outputRootDir);
+  const runDir = path.join(proxyTestRootDir, `run_${Date.now()}`);
+  await fs.mkdir(runDir, { recursive: true });
+  console.log(`[TTS][EDGE][proxy-test] outputRootDir=${outputRootDir}`);
+  console.log(`[TTS][EDGE][proxy-test] proxyTestRootDir=${proxyTestRootDir}`);
+  console.log(`[TTS][EDGE][proxy-test] runDir=${runDir}`);
+
+  const proxyManager = getProxyManager();
+  const proxies = proxyManager.getAvailableProxies(undefined, 'tts');
+  if (proxies.length === 0) {
+    throw new Error('Không có proxy khả dụng cho scope TTS.');
+  }
+
+  let worker = resolveEdgeTtsWorker(request.edgeWorkerEngine);
+  if (!existsSync(worker.workerPath)) {
+    throw new Error(
+      worker.kind === 'go'
+        ? `Không tìm thấy edge_tts_worker.exe (${worker.workerPath})`
+        : `Không tìm thấy edge_tts_worker.py (${worker.workerPath})`
+    );
+  }
+
+  if (worker.kind === 'go') {
+    const scaffoldDetected = await isGoWorkerScaffoldBinary(worker.workerPath);
+    if (scaffoldDetected) {
+      worker = resolveEdgeTtsWorker('python');
+    }
+  }
+
+  let pythonRuntime: { command: string; baseArgs: string[] } | undefined;
+  if (worker.kind === 'python') {
+    const availability = await checkPythonModuleAvailability(['edge_tts']);
+    if (!availability.success || !availability.runtime) {
+      throw new Error(availability.error || 'Python runtime unavailable for edge_tts_worker.py');
+    }
+    pythonRuntime = availability.runtime;
+  }
+
+  const edgeWavMode = normalizeEdgeWavMode(request.edgeWavMode || process.env.EDGE_TTS_WAV_MODE);
+  const edgeWorkerItemConcurrency = normalizeEdgeWorkerItemConcurrency(
+    request.edgeWorkerItemConcurrency ?? 1
+  );
+  const edgeWorkerTimeoutMs = normalizeEdgeWorkerTimeoutMs(
+    request.edgeWorkerTimeoutMs ?? process.env.EDGE_TTS_ITEM_TIMEOUT_MS
+  );
+
+  const results: TTSTestProxyItemResult[] = [];
+  const workerErrors: string[] = [];
+
+  for (let i = 0; i < proxies.length; i += 1) {
+    throwIfTtsStopped();
+    const proxy = proxies[i];
+    const proxyId = proxy.id || `proxy_${i + 1}`;
+    const proxyLabel = buildProxyLabel(proxy);
+    const proxyDir = path.join(runDir, `${String(i + 1).padStart(2, '0')}_${sanitizeProxyFolderToken(proxyId)}`);
+    const outputPath = path.join(proxyDir, `test_audio.${outputFormat}`);
+    await fs.mkdir(proxyDir, { recursive: true });
+
+    const startedAt = Date.now();
+    const runResult = await runEdgeTtsWorker(
+      [{
+        proxyId,
+        proxyUrl: toProxyUrl(proxy),
+        items: [{
+          index: 1,
+          text: sampleText,
+          outputPath,
+          startMs: 0,
+          durationMs: 0,
+          filename: path.basename(outputPath),
+        }],
+        voice: voiceSelection.voiceId,
+        rate,
+        volume,
+        outputFormat,
+      }],
+      worker,
+      pythonRuntime,
+      {
+        timeoutMs: edgeWorkerTimeoutMs,
+        wavMode: edgeWavMode,
+        itemConcurrency: edgeWorkerItemConcurrency,
+      }
+    );
+    const elapsedMs = Date.now() - startedAt;
+    if (runResult.errors.length > 0) {
+      workerErrors.push(...runResult.errors);
+    }
+
+    const item = runResult.results.get(1);
+    const successFromWorker = Boolean(item?.success);
+    let verifiedFileOk = false;
+    if (successFromWorker) {
+      try {
+        const stat = await fs.stat(outputPath);
+        verifiedFileOk = stat.size > 0;
+      } catch {
+        verifiedFileOk = false;
+      }
+    }
+
+    if (successFromWorker && verifiedFileOk) {
+      proxyManager.markProxySuccess(proxyId);
+      const durationMs = await getAudioDuration(outputPath);
+      console.log(`[TTS][EDGE][proxy-test] PASS proxy=${proxyLabel} path=${outputPath}`);
+      results.push({
+        proxyId,
+        proxyLabel,
+        proxyType: proxy.type,
+        success: true,
+        audioPath: outputPath,
+        durationMs: durationMs > 0 ? durationMs : undefined,
+        elapsedMs,
+      });
+    } else {
+      const workerError = item?.error || runResult.errors[0] || '';
+      const errorText = successFromWorker && !verifiedFileOk
+        ? `Worker báo thành công nhưng không thấy file audio hoặc file rỗng: ${outputPath}`
+        : (workerError || 'Proxy test failed');
+      proxyManager.markProxyFailed(proxyId, errorText);
+      console.warn(`[TTS][EDGE][proxy-test] FAIL proxy=${proxyLabel} error=${errorText}`);
+      results.push({
+        proxyId,
+        proxyLabel,
+        proxyType: proxy.type,
+        success: false,
+        elapsedMs,
+        error: errorText,
+      });
+    }
+  }
+
+  const passed = results.filter((row) => row.success).length;
+  const failed = results.length - passed;
+
+  const response: TTSTestProxyResponse = {
+    text: sampleText,
+    voice: voiceSelection.canonicalValue,
+    outputFormat,
+    outputRootDir: proxyTestRootDir,
+    runDir,
+    tested: results.length,
+    passed,
+    failed,
+    results,
+  };
+
+  const summaryPayload: Record<string, unknown> = {
+    ...response,
+    workerErrors: summarizeTtsErrors(workerErrors),
+    generatedAt: new Date().toISOString(),
+  };
+  await fs.writeFile(
+    path.join(runDir, 'summary.json'),
+    JSON.stringify(summaryPayload, null, 2),
+    'utf8'
+  ).catch(() => undefined);
+
+  return response;
 }
 
 export async function generateAsyncioAudioWithProvider(

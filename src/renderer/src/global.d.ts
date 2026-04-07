@@ -455,6 +455,42 @@ interface TTSTestVoiceResponse {
   voice: string;
 }
 
+interface TTSTestProxyRequest {
+  text?: string;
+  voice: string;
+  rate?: string;
+  volume?: string;
+  outputFormat?: 'wav' | 'mp3';
+  outputDir: string;
+  edgeWorkerEngine?: 'python' | 'go' | 'auto';
+  edgeWavMode?: 'auto' | 'direct' | 'convert';
+  edgeWorkerItemConcurrency?: number;
+  edgeWorkerTimeoutMs?: number;
+}
+
+interface TTSTestProxyItemResult {
+  proxyId: string;
+  proxyLabel: string;
+  proxyType: 'http' | 'https' | 'socks5';
+  success: boolean;
+  audioPath?: string;
+  durationMs?: number;
+  elapsedMs?: number;
+  error?: string;
+}
+
+interface TTSTestProxyResponse {
+  text: string;
+  voice: string;
+  outputFormat: 'wav' | 'mp3';
+  outputRootDir: string;
+  runDir: string;
+  tested: number;
+  passed: number;
+  failed: number;
+  results: TTSTestProxyItemResult[];
+}
+
 interface MergeResult {
   success: boolean;
   outputPath: string;
@@ -563,6 +599,7 @@ interface VoiceInfo {
 interface TTSAPI {
   getVoices: () => Promise<IpcApiResponse<VoiceInfo[]>>;
   testVoice: (request: TTSTestVoiceRequest) => Promise<IpcApiResponse<TTSTestVoiceResponse>>;
+  testProxies: (request: TTSTestProxyRequest) => Promise<IpcApiResponse<TTSTestProxyResponse>>;
   generate: (entries: SubtitleEntry[], options: Partial<TTSOptions>) => Promise<IpcApiResponse<TTSResult>>;
   stop: () => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   onProgress: (callback: (progress: TTSProgress) => void) => void;

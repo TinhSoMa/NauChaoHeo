@@ -15,6 +15,8 @@ import {
   FitAudioAuditRow,
   FitAudioAuditSummary,
   SubtitleEntry,
+  TTSTestProxyRequest,
+  TTSTestProxyResponse,
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
   TTSOptions,
@@ -580,6 +582,32 @@ export function registerTTSHandlers(): void {
         return { success: true, data };
       } catch (error) {
         console.error('[TTSHandlers] Lỗi test voice:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.TTS_TEST_PROXIES,
+    async (
+      _event: IpcMainInvokeEvent,
+      request: TTSTestProxyRequest
+    ): Promise<IpcResponse<TTSTestProxyResponse>> => {
+      try {
+        const sampleVoice = (request?.voice || '').trim();
+        const outputDir = (request?.outputDir || '').trim();
+        if (!sampleVoice) {
+          return { success: false, error: 'Voice test proxy không hợp lệ.' };
+        }
+        if (!outputDir) {
+          return { success: false, error: 'Thiếu outputDir để lưu audio test proxy.' };
+        }
+
+        console.log(`[TTSHandlers] Test proxies with voice: ${sampleVoice}`);
+        const data = await TTSService.testEdgeTtsProxies(request);
+        return { success: true, data };
+      } catch (error) {
+        console.error('[TTSHandlers] Lỗi test proxy TTS:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }

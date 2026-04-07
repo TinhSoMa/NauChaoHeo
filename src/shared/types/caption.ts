@@ -227,6 +227,42 @@ export interface TTSTestVoiceResponse {
   voice: string;
 }
 
+export interface TTSTestProxyRequest {
+  text?: string;
+  voice: string;
+  rate?: string;
+  volume?: string;
+  outputFormat?: 'wav' | 'mp3';
+  outputDir: string;
+  edgeWorkerEngine?: 'python' | 'go' | 'auto';
+  edgeWavMode?: 'auto' | 'direct' | 'convert';
+  edgeWorkerItemConcurrency?: number;
+  edgeWorkerTimeoutMs?: number;
+}
+
+export interface TTSTestProxyItemResult {
+  proxyId: string;
+  proxyLabel: string;
+  proxyType: 'http' | 'https' | 'socks5';
+  success: boolean;
+  audioPath?: string;
+  durationMs?: number;
+  elapsedMs?: number;
+  error?: string;
+}
+
+export interface TTSTestProxyResponse {
+  text: string;
+  voice: string;
+  outputFormat: 'wav' | 'mp3';
+  outputRootDir: string;
+  runDir: string;
+  tested: number;
+  passed: number;
+  failed: number;
+  results: TTSTestProxyItemResult[];
+}
+
 // ============================================
 // AUDIO MERGE
 // ============================================
@@ -396,6 +432,7 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_PROGRESS: 'tts:progress',
   TTS_GET_VOICES: 'tts:getVoices',
   TTS_TEST_VOICE: 'tts:testVoice',
+  TTS_TEST_PROXIES: 'tts:testProxies',
   TTS_STOP: 'tts:stop',
   TTS_TRIM_SILENCE: 'tts:trimSilence',
   TTS_TRIM_SILENCE_END: 'tts:trimSilenceEnd',

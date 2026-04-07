@@ -14,6 +14,8 @@ import {
   TTSOptions,
   TTSResult,
   TTSProgress,
+  TTSTestProxyRequest,
+  TTSTestProxyResponse,
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
   MergeResult,
@@ -76,6 +78,7 @@ export interface TTSAPI {
   // Voice
   getVoices: () => Promise<IpcApiResponse<VoiceInfo[]>>;
   testVoice: (request: TTSTestVoiceRequest) => Promise<IpcApiResponse<TTSTestVoiceResponse>>;
+  testProxies: (request: TTSTestProxyRequest) => Promise<IpcApiResponse<TTSTestProxyResponse>>;
 
   // Generate Audio
   generate: (
@@ -179,6 +182,8 @@ export function createTTSAPI(): TTSAPI {
     getVoices: () => ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_GET_VOICES),
     testVoice: (request: TTSTestVoiceRequest) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TEST_VOICE, request),
+    testProxies: (request: TTSTestProxyRequest) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TEST_PROXIES, request),
 
     generate: (entries: SubtitleEntry[], options: Partial<TTSOptions>) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_GENERATE, entries, options),

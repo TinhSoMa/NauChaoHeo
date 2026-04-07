@@ -6,6 +6,7 @@
 export {
   generateSingleAudio,
   testVoiceSample,
+  testEdgeTtsProxies,
   generateBatchAudio,
   generateBatchAudioEdge,
   generateBatchAudioCapCut,
