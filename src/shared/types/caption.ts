@@ -167,6 +167,11 @@ export interface TTSOptions {
   edgeWavMode?: 'auto' | 'direct' | 'convert'; // Edge WAV strategy: direct ws / convert fallback / convert-only
   edgeWorkerItemConcurrency?: number; // Mức song song item cho Edge worker (Python/Go)
   edgeWorkerTimeoutMs?: number; // Timeout cho mỗi item trong Python worker
+  edgeProxyAlgorithmMode?: 'standard' | 'optimized'; // Chỉ áp dụng khi bật proxy
+  edgeProxyMaxWorkers?: number; // Số worker process song song cho proxy mode
+  edgeProxyMinChunkSize?: number; // Chunk size tối thiểu khi scheduler phân job proxy
+  edgeProxyMaxChunkSize?: number; // Chunk size tối đa khi scheduler phân job proxy
+  edgeProxyCooldownMs?: number; // Cooldown cho proxy đang degrade
   runId?: string;
 }
 

@@ -188,7 +188,7 @@ export function registerProxyHandlers(): void {
     ): Promise<{ success: boolean; added?: number; skipped?: number; error?: string }> => {
       try {
         console.log('[ProxyHandlers] Bulk import Webshare proxies...');
-        const { parseWebshareProxies } = await import('../utils/webshareParser');
+        const { parseWebshareProxies } = await import('../utils/webshareParser.js');
 
         const text = typeof payload === 'string' ? payload : payload?.text || '';
         const preferredType = typeof payload === 'string' ? undefined : payload?.type;
@@ -231,7 +231,7 @@ export function registerProxyHandlers(): void {
     async (): Promise<{ success: boolean; added?: number; error?: string }> => {
       try {
         console.log('[ProxyHandlers] Quick add Webshare free proxies...');
-        const { getWebshareFreeProxies } = await import('../utils/webshareParser');
+        const { getWebshareFreeProxies } = await import('../utils/webshareParser.js');
         
         const proxiesToAdd = getWebshareFreeProxies();
         

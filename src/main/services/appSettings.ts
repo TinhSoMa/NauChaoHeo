@@ -189,16 +189,17 @@ function normalizeGrokUiProfiles(
       if (!entry || typeof entry !== 'object') {
         return null;
       }
-      const raw = entry as Partial<GrokUiProfileConfig>;
+      const raw = entry as Partial<GrokUiProfileConfig> & Record<string, unknown>;
       const anonymous = raw.anonymous === true;
       const profileDir = anonymous ? null : (normalizeStringOrNull(raw.profileDir) ?? null);
       const profileName = anonymous ? null : (normalizeStringOrNull(raw.profileName) ?? 'Default');
       const id = typeof raw.id === 'string' && raw.id.trim().length > 0
         ? raw.id.trim()
         : createGrokUiProfileId(`grok-${index + 1}`);
-      const enabled = raw.enabled === false
-        || (typeof raw.enabled === 'string' && raw.enabled.trim().toLowerCase() === 'false')
-        || raw.enabled === 0
+      const rawEnabled: unknown = (raw as Record<string, unknown>).enabled;
+      const enabled = rawEnabled === false
+        || (typeof rawEnabled === 'string' && rawEnabled.trim().toLowerCase() === 'false')
+        || rawEnabled === 0
         ? false
         : true;
       return {

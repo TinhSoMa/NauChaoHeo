@@ -471,18 +471,15 @@ async function collectFitAudioAuditItemsFromSessions(
         .map((value) => resolveSessionStoredPath(String(value), folderPath))
       : [];
 
-    const ttsAudioFiles = Array.isArray(session?.data?.ttsAudioFiles)
-      ? session.data.ttsAudioFiles
+    const ttsAudioFilesRaw: unknown[] = Array.isArray(session?.data?.ttsAudioFiles)
+      ? session.data.ttsAudioFiles as unknown[]
       : [];
 
     const durationBySourcePath = new Map<string, number>();
     const durationByAudioPath = new Map<string, number>();
 
-    for (let index = 0; index < ttsAudioFiles.length; index += 1) {
-      const file = ttsAudioFiles[index] as Record<string, unknown>;
-      if (!file || typeof file !== 'object') {
-        continue;
-      }
+    for (let index = 0; index < ttsAudioFilesRaw.length; index += 1) {
+      const file = toRecord(ttsAudioFilesRaw[index]);
 
       const durationMs = typeof file.durationMs === 'number' ? Number(file.durationMs) : 0;
       if (!Number.isFinite(durationMs) || durationMs <= 0) {

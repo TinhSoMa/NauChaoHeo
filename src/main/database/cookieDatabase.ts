@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'node:crypto'
 import { getDatabase } from './schema'
 import type { CookieEntry } from '../../shared/types/downloader'
 
@@ -63,7 +63,7 @@ export const cookieDatabase = {
         db.prepare('SELECT * FROM downloader_cookies WHERE id = ?').get(existing.id)
       )
     } else {
-      const id = uuidv4()
+      const id = randomUUID()
       db.prepare(
         'INSERT INTO downloader_cookies (id, domain, label, content, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
       ).run(id, domain, entry.label, entry.content, now, now)

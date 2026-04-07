@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,16 @@ type itemResult struct {
 	conversionMode string
 }
 
+type jobExecutionStats struct {
+	order       int
+	proxyID     string
+	items       int
+	success     int
+	failed      int
+	timeoutFail int
+	elapsedMs   int64
+}
+
 var proxyEnvMu sync.Mutex
 
 const (
@@ -93,7 +104,6 @@ func emit(v any) {
 		line = fallback
 	}
 	_, _ = os.Stdout.Write(append(line, '\n'))
-	_ = os.Stdout.Sync()
 }
 
 func normalizeWavMode(v string) string {
@@ -139,6 +149,15 @@ func normalizeJobConcurrency(totalJobs int, itemConcurrency int) int {
 	return jobConcurrency
 }
 
+func hasProxyJobs(jobs []edgeJob) bool {
+	for _, job := range jobs {
+		if trimVisible(job.ProxyURL) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func trimVisible(s string) string {
 	out := strings.TrimSpace(s)
 	if out == "" {
@@ -180,6 +199,39 @@ func findFFmpegCommand() (string, error) {
 		}
 	}
 	return "", errors.New("ffmpeg not found in PATH/resources")
+}
+
+func ffprobeCandidates(ffmpegPath string) []string {
+	result := make([]string, 0, 10)
+	if p, err := exec.LookPath("ffprobe"); err == nil {
+		result = append(result, p)
+	}
+	if runtime.GOOS == "windows" {
+		if p, err := exec.LookPath("ffprobe.exe"); err == nil {
+			result = append(result, p)
+		}
+	}
+	if trimVisible(ffmpegPath) != "" {
+		dir := filepath.Dir(ffmpegPath)
+		result = append(result, filepath.Join(dir, "ffprobe"))
+		if runtime.GOOS == "windows" {
+			result = append(result, filepath.Join(dir, "ffprobe.exe"))
+		}
+	}
+	return result
+}
+
+func findFFprobeCommand(ffmpegPath string) string {
+	for _, c := range ffprobeCandidates(ffmpegPath) {
+		if c == "" {
+			continue
+		}
+		clean := filepath.Clean(c)
+		if _, err := os.Stat(clean); err == nil {
+			return clean
+		}
+	}
+	return ""
 }
 
 func makeTempMP3Path(targetPath string) string {
@@ -229,31 +281,19 @@ func runNativeEdgeTTS(ctx context.Context, job edgeJob, item edgeItem, outputPat
 		return fmt.Errorf("create output dir failed: %w", err)
 	}
 
-	err := withProxyEnv(job.ProxyURL, func() error {
-		communicate := edgetts.NewCommunicate(
-			item.Text,
-			defaultIfEmpty(job.Voice, "vi-VN-HoaiMyNeural"),
-			edgetts.WithRate(defaultIfEmpty(job.Rate, "+0%")),
-			edgetts.WithVolume(defaultIfEmpty(job.Volume, "+0%")),
-		)
+	communicate := edgetts.NewCommunicate(
+		item.Text,
+		defaultIfEmpty(job.Voice, "vi-VN-HoaiMyNeural"),
+		edgetts.WithRate(defaultIfEmpty(job.Rate, "+0%")),
+		edgetts.WithVolume(defaultIfEmpty(job.Volume, "+0%")),
+	)
 
-		done := make(chan error, 1)
-		go func() {
-			done <- communicate.Save(context.Background(), outputPath, "")
-		}()
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-done:
-			if err != nil {
-				return fmt.Errorf("native edge-tts failed: %w", err)
-			}
-			return nil
-		}
-	})
+	err := communicate.Save(ctx, outputPath, "")
 	if err != nil {
-		return err
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("native edge-tts failed: %w", err)
 	}
 
 	stat, err := os.Stat(outputPath)
@@ -304,9 +344,81 @@ func convertMP3ToWAV(ctx context.Context, ffmpegPath string, srcPath string, dst
 	return nil
 }
 
+func probeAudioDurationMs(ctx context.Context, ffprobePath string, audioPath string) (int64, error) {
+	if trimVisible(ffprobePath) == "" {
+		return 0, errors.New("ffprobe unavailable")
+	}
+	args := []string{
+		"-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		audioPath,
+	}
+	command := exec.CommandContext(ctx, ffprobePath, args...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		msg := trimVisible(string(output))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return 0, fmt.Errorf("ffprobe failed: %s", msg)
+	}
+	raw := trimVisible(string(output))
+	if raw == "" {
+		return 0, errors.New("ffprobe duration is empty")
+	}
+	durationSec, err := strconv.ParseFloat(strings.Fields(raw)[0], 64)
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe duration parse failed: %w", err)
+	}
+	if durationSec <= 0 {
+		return 0, errors.New("audio duration is 0s")
+	}
+	return int64(durationSec*1000 + 0.5), nil
+}
+
+func validateGeneratedAudioFile(
+	ctx context.Context,
+	ffmpegCmd string,
+	ffprobeCmd string,
+	filePath string,
+) error {
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("output missing: %w", err)
+	}
+	if stat.Size() <= 0 {
+		return errors.New("output is empty")
+	}
+
+	// Decode pass with ffmpeg to ensure container/frames are actually readable.
+	decode := exec.CommandContext(ctx, ffmpegCmd, "-v", "error", "-i", filePath, "-f", "null", "-")
+	decodeOutput, decodeErr := decode.CombinedOutput()
+	if decodeErr != nil {
+		msg := trimVisible(string(decodeOutput))
+		if msg == "" {
+			msg = decodeErr.Error()
+		}
+		return fmt.Errorf("decode validation failed: %s", msg)
+	}
+
+	if trimVisible(ffprobeCmd) != "" {
+		durationMs, probeErr := probeAudioDurationMs(ctx, ffprobeCmd, filePath)
+		if probeErr != nil {
+			return probeErr
+		}
+		if durationMs <= 0 {
+			return errors.New("audio duration is 0ms")
+		}
+	}
+
+	return nil
+}
+
 func processItem(
 	ctx context.Context,
 	ffmpegCmd string,
+	ffprobeCmd string,
 	wavMode string,
 	job edgeJob,
 	item edgeItem,
@@ -324,6 +436,11 @@ func processItem(
 	switch outFormat {
 	case "mp3":
 		err := runNativeEdgeTTS(ctx, job, item, item.OutputPath)
+		if err != nil {
+			res.errorText = err.Error()
+			return res
+		}
+		err = validateGeneratedAudioFile(ctx, ffmpegCmd, ffprobeCmd, item.OutputPath)
 		if err != nil {
 			res.errorText = err.Error()
 			return res
@@ -347,6 +464,11 @@ func processItem(
 			res.errorText = err.Error()
 			return res
 		}
+		err = validateGeneratedAudioFile(ctx, ffmpegCmd, ffprobeCmd, item.OutputPath)
+		if err != nil {
+			res.errorText = err.Error()
+			return res
+		}
 		res.success = true
 		if wavMode == "auto" || wavMode == "direct" {
 			res.conversionMode = "mp3_to_wav_fallback"
@@ -364,57 +486,90 @@ func executeJob(
 	payload workerPayload,
 	job edgeJob,
 	ffmpegCmd string,
+	ffprobeCmd string,
 	results []doneItem,
 	resultMu *sync.Mutex,
-) {
-	itemConcurrency := normalizeItemConcurrency(payload.ItemConcurrency)
-	timeoutMs := normalizeTimeoutMs(payload.TimeoutMs)
-	wavMode := normalizeWavMode(payload.WavMode)
-	itemSem := make(chan struct{}, itemConcurrency)
-	var wg sync.WaitGroup
-
-	for _, item := range job.Items {
-		it := item
-		if it.Index <= 0 {
-			continue
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			itemSem <- struct{}{}
-			defer func() { <-itemSem }()
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
-			defer cancel()
-
-			res := processItem(ctx, ffmpegCmd, wavMode, job, it)
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) && !res.success {
-				res.errorText = "timeout exceeded"
-			}
-
-			evt := progressEvent{
-				Event:          "progress",
-				Index:          res.index,
-				Filename:       res.filename,
-				ProxyID:        res.proxyID,
-				Success:        res.success,
-				Error:          res.errorText,
-				ConversionMode: res.conversionMode,
-			}
-			emit(evt)
-
-			resultMu.Lock()
-			results[res.index] = doneItem{
-				Index:          res.index,
-				Success:        res.success,
-				Error:          res.errorText,
-				ConversionMode: res.conversionMode,
-			}
-			resultMu.Unlock()
-		}()
+) jobExecutionStats {
+	startedAt := time.Now()
+	stats := jobExecutionStats{
+		proxyID: job.ProxyID,
+		items:   len(job.Items),
 	}
 
-	wg.Wait()
+	run := func() {
+		itemConcurrency := normalizeItemConcurrency(payload.ItemConcurrency)
+		timeoutMs := normalizeTimeoutMs(payload.TimeoutMs)
+		wavMode := normalizeWavMode(payload.WavMode)
+		itemSem := make(chan struct{}, itemConcurrency)
+		var wg sync.WaitGroup
+		var statsMu sync.Mutex
+
+		for _, item := range job.Items {
+			it := item
+			if it.Index <= 0 {
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				itemSem <- struct{}{}
+				defer func() { <-itemSem }()
+
+				ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+				defer cancel()
+
+				res := processItem(ctx, ffmpegCmd, ffprobeCmd, wavMode, job, it)
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) && !res.success {
+					res.errorText = "timeout exceeded"
+				}
+
+				statsMu.Lock()
+				if res.success {
+					stats.success++
+				} else {
+					stats.failed++
+					if strings.Contains(strings.ToLower(res.errorText), "timeout") {
+						stats.timeoutFail++
+					}
+				}
+				statsMu.Unlock()
+
+				evt := progressEvent{
+					Event:          "progress",
+					Index:          res.index,
+					Filename:       res.filename,
+					ProxyID:        res.proxyID,
+					Success:        res.success,
+					Error:          res.errorText,
+					ConversionMode: res.conversionMode,
+				}
+				emit(evt)
+
+				resultMu.Lock()
+				results[res.index] = doneItem{
+					Index:          res.index,
+					Success:        res.success,
+					Error:          res.errorText,
+					ConversionMode: res.conversionMode,
+				}
+				resultMu.Unlock()
+			}()
+		}
+
+		wg.Wait()
+	}
+
+	if trimVisible(job.ProxyURL) != "" {
+		_ = withProxyEnv(job.ProxyURL, func() error {
+			run()
+			return nil
+		})
+	} else {
+		run()
+	}
+
+	stats.elapsedMs = time.Since(startedAt).Milliseconds()
+	return stats
 }
 
 func collectOrderedResults(resultMap []doneItem) []doneItem {
@@ -458,6 +613,10 @@ func main() {
 		emit(doneEvent{Event: "done", Results: []doneItem{{Index: 0, Success: false, Error: err.Error()}}})
 		return
 	}
+	ffprobeCmd := findFFprobeCommand(ffmpegCmd)
+	if trimVisible(ffprobeCmd) == "" {
+		fmt.Fprintln(os.Stderr, "[GO_EDGE_WORKER] ffprobe not found, duration validation disabled")
+	}
 
 	maxIndex := 0
 	for _, job := range payload.Jobs {
@@ -476,19 +635,52 @@ func main() {
 	var resultMu sync.Mutex
 	itemConcurrency := normalizeItemConcurrency(payload.ItemConcurrency)
 	jobConcurrency := normalizeJobConcurrency(len(payload.Jobs), itemConcurrency)
+	if hasProxyJobs(payload.Jobs) {
+		jobConcurrency = 1
+	}
+	fmt.Fprintf(os.Stderr, "[GO_EDGE_WORKER] start jobs=%d itemConcurrency=%d jobConcurrency=%d timeoutMs=%d wavMode=%s\n",
+		len(payload.Jobs), itemConcurrency, jobConcurrency, normalizeTimeoutMs(payload.TimeoutMs), normalizeWavMode(payload.WavMode))
+	jobStats := make([]jobExecutionStats, len(payload.Jobs))
+	var statsMu sync.Mutex
+	workerStartedAt := time.Now()
 	jobsSem := make(chan struct{}, jobConcurrency)
 	var jobsWg sync.WaitGroup
-	for _, job := range payload.Jobs {
+	for i, job := range payload.Jobs {
+		jobOrder := i
 		j := job
 		jobsWg.Add(1)
 		go func() {
 			defer jobsWg.Done()
 			jobsSem <- struct{}{}
 			defer func() { <-jobsSem }()
-			executeJob(payload, j, ffmpegCmd, resultsMap, &resultMu)
+			stats := executeJob(payload, j, ffmpegCmd, ffprobeCmd, resultsMap, &resultMu)
+			stats.order = jobOrder + 1
+			statsMu.Lock()
+			jobStats[jobOrder] = stats
+			statsMu.Unlock()
 		}()
 	}
 	jobsWg.Wait()
+
+	workerElapsedMs := time.Since(workerStartedAt).Milliseconds()
+	totalOK := 0
+	totalFail := 0
+	totalTimeout := 0
+	for _, stat := range jobStats {
+		totalOK += stat.success
+		totalFail += stat.failed
+		totalTimeout += stat.timeoutFail
+		proxyLabel := stat.proxyID
+		if strings.TrimSpace(proxyLabel) == "" {
+			proxyLabel = "direct"
+		}
+		fmt.Fprintf(os.Stderr,
+			"[GO_EDGE_WORKER] job#%d proxy=%s items=%d ok=%d fail=%d timeout=%d elapsedMs=%d\n",
+			stat.order, proxyLabel, stat.items, stat.success, stat.failed, stat.timeoutFail, stat.elapsedMs)
+	}
+	fmt.Fprintf(os.Stderr,
+		"[GO_EDGE_WORKER] done elapsedMs=%d totalOk=%d totalFail=%d timeoutFail=%d\n",
+		workerElapsedMs, totalOK, totalFail, totalTimeout)
 
 	emit(doneEvent{Event: "done", Results: collectOrderedResults(resultsMap)})
 }

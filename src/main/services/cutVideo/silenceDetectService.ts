@@ -99,10 +99,11 @@ export async function detectSilences(options: DetectSilenceOptions): Promise<Det
       const finalized: SilenceInterval[] = [];
       for (const item of silences) {
         const startSec = item.startSec;
-        const endSec = item.endSec ?? (durationSec > 0 ? durationSec : undefined);
-        if (!Number.isFinite(startSec) || !Number.isFinite(endSec)) {
+        const endSecCandidate = item.endSec ?? (durationSec > 0 ? durationSec : null);
+        if (!Number.isFinite(startSec) || typeof endSecCandidate !== 'number' || !Number.isFinite(endSecCandidate)) {
           continue;
         }
+        const endSec = endSecCandidate;
         if (endSec <= startSec) {
           continue;
         }

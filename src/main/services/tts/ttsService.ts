@@ -13,6 +13,8 @@ import WebSocket, { RawData } from 'ws';
 import { AppSettingsService } from '../appSettings';
 import { getProxyManager } from '../proxy/proxyManager';
 import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
+import { getFFprobePath } from '../../utils/ffmpegPath';
+import { EdgeProxyScheduler } from './edgeProxyScheduler';
 import {
   AudioFile,
   DEFAULT_RATE,
@@ -38,7 +40,7 @@ const PROVIDER_PREFIX_PATTERN = /^(edge|capcut):(.*)$/i;
 const DEFAULT_CAPCUT_WS_URL = 'wss://sami-normal-sg.capcutapi.com/internal/api/v1/ws';
 const DEFAULT_CAPCUT_USER_AGENT = 'Cronet/TTNetVersion:e159bc05 2022-08-16 QuicVersion:68cae75d 2021-08-12';
 const DEFAULT_CAPCUT_X_SS_DP = '359289';
-const MAX_TTS_RETRIES = 3;
+const MAX_TTS_RETRIES = 1;
 const CAPCUT_BATCH_SIZE = 1000;
 const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
 const MIN_EDGE_TTS_BATCH_SIZE = 1;
@@ -48,6 +50,20 @@ const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 10;
 const MIN_EDGE_WORKER_ITEM_CONCURRENCY = 1;
 const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 200;
 const DEFAULT_EDGE_WORKER_TIMEOUT_MS = 75000;
+const DEFAULT_EDGE_PROXY_ALGORITHM_MODE = 'optimized';
+const DEFAULT_EDGE_PROXY_MAX_WORKERS = 8;
+const MIN_EDGE_PROXY_MAX_WORKERS = 1;
+const MAX_EDGE_PROXY_MAX_WORKERS = 16;
+const DEFAULT_EDGE_PROXY_MIN_CHUNK_SIZE = 12;
+const DEFAULT_EDGE_PROXY_MAX_CHUNK_SIZE = 120;
+const MIN_EDGE_PROXY_CHUNK_SIZE = 1;
+const MAX_EDGE_PROXY_CHUNK_SIZE = 500;
+const DEFAULT_EDGE_PROXY_ITEM_TIMEOUT_MS = 30000;
+const DEFAULT_EDGE_PROXY_COOLDOWN_MS = 20000;
+const MIN_EDGE_PROXY_COOLDOWN_MS = 1000;
+const MAX_EDGE_PROXY_COOLDOWN_MS = 180000;
+const DEFAULT_EDGE_PROXY_MAX_CONSECUTIVE_FAILURES = 3;
+const DEFAULT_EDGE_PROXY_MAX_IN_FLIGHT_PER_PROXY = 2;
 const TTS_STOP_MESSAGE = 'Đã gửi tín hiệu dừng TTS.';
 const GO_WORKER_SCAFFOLD_SIGNATURE = 'Go Edge worker scaffold is not implemented yet';
 const MAX_TTS_ERROR_ITEMS = 80;
@@ -431,6 +447,43 @@ function normalizeEdgeWorkerTimeoutMs(value: unknown): number {
   return rounded > 0 ? rounded : DEFAULT_EDGE_WORKER_TIMEOUT_MS;
 }
 
+function normalizeEdgeProxyAlgorithmMode(value: unknown): 'standard' | 'optimized' {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (raw === 'standard' || raw === 'legacy') {
+    return 'standard';
+  }
+  if (raw === 'optimized' || raw === 'v2') {
+    return 'optimized';
+  }
+  return DEFAULT_EDGE_PROXY_ALGORITHM_MODE as 'optimized';
+}
+
+function normalizeEdgeProxyMaxWorkers(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    return DEFAULT_EDGE_PROXY_MAX_WORKERS;
+  }
+  const rounded = Math.round(num);
+  return Math.min(MAX_EDGE_PROXY_MAX_WORKERS, Math.max(MIN_EDGE_PROXY_MAX_WORKERS, rounded));
+}
+
+function normalizeEdgeProxyChunkSize(value: unknown, fallback: number): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    return Math.min(MAX_EDGE_PROXY_CHUNK_SIZE, Math.max(MIN_EDGE_PROXY_CHUNK_SIZE, Math.round(fallback)));
+  }
+  return Math.min(MAX_EDGE_PROXY_CHUNK_SIZE, Math.max(MIN_EDGE_PROXY_CHUNK_SIZE, Math.round(num)));
+}
+
+function normalizeEdgeProxyCooldownMs(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    return DEFAULT_EDGE_PROXY_COOLDOWN_MS;
+  }
+  const rounded = Math.round(num);
+  return Math.min(MAX_EDGE_PROXY_COOLDOWN_MS, Math.max(MIN_EDGE_PROXY_COOLDOWN_MS, rounded));
+}
+
 async function isGoWorkerScaffoldBinary(workerPath: string): Promise<boolean> {
   try {
     const content = await fs.readFile(workerPath);
@@ -553,6 +606,28 @@ async function isValidExistingAudioFile(filePath: string, outputFormat: 'wav' | 
     return false;
   }
   return outputFormat === 'wav' ? looksLikeWavHeader(head) : looksLikeMp3Header(head);
+}
+
+async function ensureGeneratedAudioIntegrity(filePath: string, outputFormat: 'wav' | 'mp3'): Promise<void> {
+  const stat = await fs.stat(filePath);
+  if (stat.size <= 0) {
+    throw new Error('file rỗng');
+  }
+
+  const head = await readFileHead(filePath, 12);
+  if (!head || head.length === 0) {
+    throw new Error('không đọc được header audio');
+  }
+
+  const headerValid = outputFormat === 'wav' ? looksLikeWavHeader(head) : looksLikeMp3Header(head);
+  if (!headerValid) {
+    throw new Error(`header không hợp lệ cho định dạng ${outputFormat}`);
+  }
+
+  const durationMs = await getAudioDuration(filePath);
+  if (durationMs <= 0) {
+    throw new Error('thời lượng audio bằng 0ms');
+  }
 }
 
 async function buildExistingEdgeAudioLookup(
@@ -1466,23 +1541,67 @@ async function runEdgeTtsWorker(
 
   const command = isPythonWorker ? runtime!.command : worker.workerPath;
   const args = isPythonWorker ? [...runtime!.baseArgs, worker.workerPath] : [];
+  const totalPayloadItems = jobs.reduce((sum, job) => sum + job.items.length, 0);
+  const configuredItemConcurrency = workerRuntime?.itemConcurrency || DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY;
+  const effectiveItemConcurrency = Math.max(
+    MIN_EDGE_WORKER_ITEM_CONCURRENCY,
+    Math.min(configuredItemConcurrency, Math.max(MIN_EDGE_WORKER_ITEM_CONCURRENCY, totalPayloadItems))
+  );
   const payload = {
     jobs,
     ...(workerRuntime?.timeoutMs ? { timeoutMs: workerRuntime.timeoutMs } : {}),
     wavMode: workerRuntime?.wavMode || DEFAULT_EDGE_WAV_MODE,
-    itemConcurrency: workerRuntime?.itemConcurrency || DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY,
+    itemConcurrency: effectiveItemConcurrency,
   };
   const errors: string[] = [];
   const results = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>();
+
+  const isTimeoutErrorText = (value: string | undefined): boolean => {
+    const text = String(value || '').toLowerCase();
+    return text.includes('timeout') || text.includes('deadline exceeded');
+  };
+
+  const summarizeJobResult = (
+    job: EdgeAsyncioJob,
+    resultMap: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>
+  ): { success: number; failed: number; timeout: number; missing: number } => {
+    let success = 0;
+    let failed = 0;
+    let timeout = 0;
+    let missing = 0;
+    for (const item of job.items) {
+      const itemResult = resultMap.get(item.index);
+      if (!itemResult) {
+        missing += 1;
+        continue;
+      }
+      if (itemResult.success) {
+        success += 1;
+      } else {
+        failed += 1;
+        if (isTimeoutErrorText(itemResult.error)) {
+          timeout += 1;
+        }
+      }
+    }
+    return { success, failed, timeout, missing };
+  };
 
   return new Promise((resolve) => {
     let doneReceived = false;
     let stderr = '';
     let buffer = '';
+    const startedAt = Date.now();
+    let progressEvents = 0;
+    let progressSuccess = 0;
+    let progressFailed = 0;
+    const progressByProxy = new Map<string, { ok: number; fail: number }>();
+
+    const expectedItems = jobs.reduce((sum, job) => sum + job.items.length, 0);
 
     console.log(`[TTS][EDGE][asyncio] Worker kind=${worker.kind}`);
     console.log(`[TTS][EDGE][asyncio] Spawn worker: ${command} ${args.join(' ')}`);
-    console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${jobs.reduce((sum, job) => sum + job.items.length, 0)}`);
+    console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${expectedItems}`);
 
     const proc = spawn(command, args, {
       windowsHide: true,
@@ -1509,11 +1628,29 @@ async function runEdgeTtsWorker(
         try {
           const event = JSON.parse(line);
           if (event?.event === 'progress' && typeof event.index === 'number') {
+            progressEvents += 1;
             const conversionMode = typeof event.conversionMode === 'string'
               ? event.conversionMode as EdgeConversionMode
               : undefined;
             // progress event: just capture last known error/success
             if (typeof event.success === 'boolean') {
+              if (event.success) {
+                progressSuccess += 1;
+              } else {
+                progressFailed += 1;
+              }
+
+              const proxyKey = typeof event.proxyId === 'string' && event.proxyId.trim()
+                ? event.proxyId
+                : 'direct';
+              const row = progressByProxy.get(proxyKey) || { ok: 0, fail: 0 };
+              if (event.success) {
+                row.ok += 1;
+              } else {
+                row.fail += 1;
+              }
+              progressByProxy.set(proxyKey, row);
+
               results.set(event.index, { success: event.success, error: event.error, conversionMode });
               // if (!event.success) {
               //   console.warn(
@@ -1559,6 +1696,7 @@ async function runEdgeTtsWorker(
     });
 
     proc.on('close', (code) => {
+      const elapsedMs = Date.now() - startedAt;
       if (!doneReceived) {
         const err = (stderr || `Edge worker exited with code ${code ?? 'unknown'}`).trim();
         if (err) errors.push(err);
@@ -1566,6 +1704,35 @@ async function runEdgeTtsWorker(
       if (stderr.trim()) {
         console.warn(`[TTS][EDGE][asyncio] Worker stderr:\n${stderr.trim()}`);
       }
+
+      const reportedItems = results.size;
+      const missingItems = Math.max(0, expectedItems - reportedItems);
+      const timeoutFailed = Array.from(results.values()).reduce((acc, row) => (
+        !row.success && isTimeoutErrorText(row.error) ? acc + 1 : acc
+      ), 0);
+      console.log(
+        `[TTS][EDGE][asyncio] Worker summary elapsedMs=${elapsedMs} expected=${expectedItems} `
+        + `reported=${reportedItems} missing=${missingItems} progressEvents=${progressEvents} `
+        + `ok=${progressSuccess} fail=${progressFailed} timeoutFail=${timeoutFailed}`
+      );
+
+      for (let i = 0; i < jobs.length; i += 1) {
+        const job = jobs[i];
+        const stat = summarizeJobResult(job, results);
+        const proxyLabel = job.proxyId || 'direct';
+        console.log(
+          `[TTS][EDGE][asyncio] Job#${i + 1} proxy=${proxyLabel} items=${job.items.length} `
+          + `ok=${stat.success} fail=${stat.failed} timeout=${stat.timeout} missing=${stat.missing}`
+        );
+      }
+
+      if (progressByProxy.size > 0) {
+        const proxyRows = Array.from(progressByProxy.entries()).map(([proxyId, stat]) => (
+          `${proxyId}:ok=${stat.ok},fail=${stat.fail}`
+        ));
+        console.log(`[TTS][EDGE][asyncio] Progress by proxy => ${proxyRows.join(' | ')}`);
+      }
+
       console.log(`[TTS][EDGE][asyncio] Worker closed code=${code ?? 'unknown'} done=${doneReceived}`);
       resolve({ results, errors });
     });
@@ -1578,6 +1745,451 @@ async function runEdgeTtsWorker(
     proc.stdin?.write(Buffer.from(JSON.stringify(payload), 'utf8'));
     proc.stdin?.end();
   });
+}
+
+async function runGoProxyJobsInParallel(
+  jobs: EdgeAsyncioJob[],
+  worker: EdgeWorkerResolution,
+  runtime: { command: string; baseArgs: string[] } | undefined,
+  workerRuntime: EdgeWorkerRuntimeOptions | undefined,
+  maxWorkers: number,
+  onProgress?: (event: {
+    index: number;
+    success?: boolean;
+    error?: string;
+    filename?: string;
+    proxyId?: string;
+    conversionMode?: EdgeConversionMode;
+  }) => void,
+): Promise<{
+  results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>;
+  errors: string[];
+  jobElapsedMsByOrder: Map<number, number>;
+}> {
+  const mergedResults = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>();
+  const mergedErrors: string[] = [];
+  const jobElapsedMsByOrder = new Map<number, number>();
+  const concurrency = Math.max(1, Math.min(maxWorkers, jobs.length));
+  let cursor = 0;
+
+  const runNext = async (): Promise<void> => {
+    while (true) {
+      const order = cursor;
+      cursor += 1;
+      if (order >= jobs.length) {
+        return;
+      }
+
+      throwIfTtsStopped();
+      const startedAt = Date.now();
+      const result = await runEdgeTtsWorker(
+        [jobs[order]],
+        worker,
+        runtime,
+        workerRuntime,
+        onProgress,
+      );
+      jobElapsedMsByOrder.set(order, Date.now() - startedAt);
+
+      for (const [index, item] of result.results.entries()) {
+        mergedResults.set(index, item);
+      }
+      if (result.errors.length > 0) {
+        mergedErrors.push(...result.errors);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, () => runNext()));
+  return { results: mergedResults, errors: mergedErrors, jobElapsedMsByOrder };
+}
+
+async function generateEdgeAudioWithProxyOptimized(args: {
+  entries: SubtitleEntry[];
+  pendingItems: EdgeAsyncioItem[];
+  audioFiles: AudioFile[];
+  errors: string[];
+  progressSeen: Set<number>;
+  completed: number;
+  outputDir: string;
+  providerLabel: string;
+  worker: EdgeWorkerResolution;
+  pythonRuntime?: { command: string; baseArgs: string[] };
+  edgeWorkerTimeoutMs: number;
+  edgeWavMode: EdgeWavMode;
+  edgeWorkerItemConcurrency: number;
+  effectiveBatchSize: number;
+  outputFormat: 'wav' | 'mp3';
+  voiceSelection: ResolvedVoiceSelection;
+  rate: string;
+  volume: string;
+  proxyManager: ReturnType<typeof getProxyManager>;
+  preferredType?: ProxyConfig['type'];
+  useRotatingEndpoint: boolean;
+  options: Partial<TTSOptions>;
+  progressCallback?: (progress: TTSProgress) => void;
+}): Promise<TTSResult> {
+  const {
+    entries,
+    pendingItems,
+    audioFiles,
+    errors,
+    progressSeen,
+    outputDir,
+    providerLabel,
+    worker,
+    pythonRuntime,
+    edgeWorkerTimeoutMs,
+    edgeWavMode,
+    edgeWorkerItemConcurrency,
+    effectiveBatchSize,
+    outputFormat,
+    voiceSelection,
+    rate,
+    volume,
+    proxyManager,
+    preferredType,
+    useRotatingEndpoint,
+    options,
+    progressCallback,
+  } = args;
+
+  let completed = args.completed;
+  let remaining = pendingItems.slice();
+  let attempt = 0;
+
+  const maxWorkers = normalizeEdgeProxyMaxWorkers(
+    options.edgeProxyMaxWorkers ?? process.env.EDGE_TTS_PROXY_MAX_WORKERS,
+  );
+  const cooldownMs = normalizeEdgeProxyCooldownMs(
+    options.edgeProxyCooldownMs ?? process.env.EDGE_TTS_PROXY_COOLDOWN_MS,
+  );
+  const proxyMinChunkSize = normalizeEdgeProxyChunkSize(
+    options.edgeProxyMinChunkSize,
+    DEFAULT_EDGE_PROXY_MIN_CHUNK_SIZE,
+  );
+  const proxyMaxChunkSize = Math.max(
+    proxyMinChunkSize,
+    normalizeEdgeProxyChunkSize(options.edgeProxyMaxChunkSize, DEFAULT_EDGE_PROXY_MAX_CHUNK_SIZE),
+  );
+  const effectiveProxyItemTimeoutMs = Math.min(edgeWorkerTimeoutMs, DEFAULT_EDGE_PROXY_ITEM_TIMEOUT_MS);
+
+  const scheduler = !useRotatingEndpoint
+    ? new EdgeProxyScheduler(
+      proxyManager.getAvailableProxies(preferredType, 'tts'),
+      {
+        defaultChunkSize: effectiveBatchSize,
+        minChunkSize: proxyMinChunkSize,
+        maxChunkSize: proxyMaxChunkSize,
+        cooldownMs,
+        maxConsecutiveFailures: DEFAULT_EDGE_PROXY_MAX_CONSECUTIVE_FAILURES,
+        maxInFlightPerProxy: DEFAULT_EDGE_PROXY_MAX_IN_FLIGHT_PER_PROXY,
+      },
+    )
+    : null;
+
+  if (!useRotatingEndpoint && (!scheduler || scheduler.getProxyCount() === 0)) {
+    return {
+      success: false,
+      audioFiles,
+      totalGenerated: audioFiles.filter((file) => file.success).length,
+      totalFailed: entries.length,
+      outputDir,
+      errors: ['Không còn proxy khả dụng để chạy chế độ optimized.'],
+    };
+  }
+
+  while (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
+    throwIfTtsStopped();
+    attempt += 1;
+    const attemptStartedAt = Date.now();
+
+    const jobs: EdgeAsyncioJob[] = [];
+    let cursor = 0;
+    while (cursor < remaining.length) {
+      let proxy: ProxyConfig | null = null;
+      if (useRotatingEndpoint) {
+        proxy = proxyManager.getNextProxy(undefined, 'tts');
+      } else {
+        proxy = scheduler?.acquireProxy() || null;
+      }
+
+      if (!proxy) {
+        proxy = proxyManager.getNextProxy(preferredType, 'tts') || proxyManager.getNextProxy(undefined, 'tts');
+      }
+
+      if (!proxy) {
+        break;
+      }
+
+      const recommendedChunkSize = !useRotatingEndpoint && proxy.id
+        ? scheduler?.getRecommendedChunkSize(proxy.id, effectiveBatchSize) || effectiveBatchSize
+        : effectiveBatchSize;
+      const chunkSize = Math.min(proxyMaxChunkSize, Math.max(proxyMinChunkSize, recommendedChunkSize));
+      const chunk = remaining.slice(cursor, cursor + chunkSize);
+      if (chunk.length === 0) {
+        break;
+      }
+
+      console.log(
+        `[TTS][EDGE][proxy-optimized] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`,
+      );
+      jobs.push({
+        proxyId: proxy.id || null,
+        proxyUrl: toProxyUrl(proxy),
+        items: chunk,
+        voice: voiceSelection.voiceId,
+        rate,
+        volume,
+        outputFormat,
+      });
+      cursor += chunk.length;
+    }
+
+    const unscheduledItems = cursor < remaining.length ? remaining.slice(cursor) : [];
+
+    if (jobs.length === 0) {
+      const err = 'Không build được proxy jobs (không còn proxy khả dụng).';
+      errors.push(err);
+      break;
+    }
+
+    const planningSummary = jobs.map((job, idx) => {
+      const first = job.items[0]?.index;
+      const last = job.items[job.items.length - 1]?.index;
+      return `#${idx + 1}:${job.proxyId || 'direct'}(${job.items.length}|${first || 0}-${last || 0})`;
+    });
+    console.log(`[TTS][EDGE][proxy-optimized] Attempt plan => ${planningSummary.join(' | ')}`);
+
+    console.log(
+      `[TTS][EDGE][proxy-optimized] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, jobs=${jobs.length}, remaining=${remaining.length}`,
+    );
+
+    const workerRuntime: EdgeWorkerRuntimeOptions = {
+      timeoutMs: effectiveProxyItemTimeoutMs,
+      wavMode: edgeWavMode,
+      itemConcurrency: edgeWorkerItemConcurrency,
+    };
+
+    const onProgress = (event: {
+      index: number;
+      success?: boolean;
+      error?: string;
+      filename?: string;
+      proxyId?: string;
+      conversionMode?: EdgeConversionMode;
+    }) => {
+      if (event?.success !== true) return;
+      if (progressSeen.has(event.index)) return;
+      progressSeen.add(event.index);
+      completed += 1;
+      const modeLabel = getEdgeConversionModeLabel(event.conversionMode);
+      progressCallback?.({
+        current: completed,
+        total: entries.length,
+        status: 'generating',
+        currentFile: event.filename || '',
+        message: event.filename
+          ? `[${providerLabel}] Đã tạo: ${event.filename}${modeLabel ? ` (${modeLabel})` : ''}`
+          : `[${providerLabel}] Đã tạo audio #${event.index}${modeLabel ? ` (${modeLabel})` : ''}`,
+      });
+    };
+
+    let runResult: {
+      results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>;
+      errors: string[];
+    };
+    let jobElapsedMsByOrder = new Map<number, number>();
+
+    if (worker.kind === 'go' && jobs.length > 1) {
+      const parallel = await runGoProxyJobsInParallel(
+        jobs,
+        worker,
+        pythonRuntime,
+        workerRuntime,
+        maxWorkers,
+        onProgress,
+      );
+      runResult = { results: parallel.results, errors: parallel.errors };
+      jobElapsedMsByOrder = parallel.jobElapsedMsByOrder;
+    } else {
+      const startedAt = Date.now();
+      runResult = await runEdgeTtsWorker(
+        jobs,
+        worker,
+        pythonRuntime,
+        workerRuntime,
+        onProgress,
+      );
+      const perJobElapsed = jobs.length > 0 ? Math.max(1, Math.round((Date.now() - startedAt) / jobs.length)) : 0;
+      for (let i = 0; i < jobs.length; i += 1) {
+        jobElapsedMsByOrder.set(i, perJobElapsed);
+      }
+    }
+
+    if (runResult.errors.length > 0) {
+      console.warn(`[TTS][EDGE][proxy-optimized] Worker errors: ${runResult.errors.join(' | ')}`);
+      errors.push(...runResult.errors);
+    }
+
+    console.log(
+      `[TTS][EDGE][proxy-optimized] Attempt ${attempt} completed in ${Date.now() - attemptStartedAt}ms `
+      + `(results=${runResult.results.size}, errors=${runResult.errors.length})`
+    );
+
+    if (runResult.results.size === 0 && runResult.errors.length > 0) {
+      const fatal = runResult.errors.join(' | ').trim() || 'Edge worker exited unexpectedly';
+      for (const item of remaining) {
+        audioFiles.push({
+          index: item.index,
+          path: item.outputPath,
+          startMs: item.startMs,
+          durationMs: item.durationMs,
+          success: false,
+          error: fatal,
+        });
+        if (!progressSeen.has(item.index)) {
+          progressSeen.add(item.index);
+          completed += 1;
+        }
+      }
+      remaining = [];
+      break;
+    }
+
+    const nextRemaining: EdgeAsyncioItem[] = [];
+    for (let jobOrder = 0; jobOrder < jobs.length; jobOrder += 1) {
+      const job = jobs[jobOrder];
+      let jobFailed = false;
+      let jobFailedReason: string | undefined;
+      let jobSuccessCount = 0;
+      let jobFailedCount = 0;
+      let jobTimeoutCount = 0;
+
+      for (const item of job.items) {
+        const result = runResult.results.get(item.index);
+        let itemSuccess = !!result?.success;
+        let itemError = result?.error;
+
+        if (itemSuccess) {
+          try {
+            await ensureGeneratedAudioIntegrity(item.outputPath, outputFormat);
+          } catch (error) {
+            itemSuccess = false;
+            itemError = `Worker báo success nhưng file output không hợp lệ (${item.outputPath}): ${String(error)}`;
+          }
+        }
+
+        if (itemSuccess) {
+          jobSuccessCount += 1;
+          audioFiles.push({
+            index: item.index,
+            path: item.outputPath,
+            startMs: item.startMs,
+            durationMs: item.durationMs,
+            success: true,
+          });
+          if (!progressSeen.has(item.index)) {
+            progressSeen.add(item.index);
+            completed += 1;
+            const modeLabel = getEdgeConversionModeLabel(result?.conversionMode);
+            progressCallback?.({
+              current: completed,
+              total: entries.length,
+              status: 'generating',
+              currentFile: item.filename,
+              message: `[${providerLabel}] Đã tạo: ${item.filename}${modeLabel ? ` (${modeLabel})` : ''}`,
+            });
+          }
+          continue;
+        }
+
+        jobFailed = true;
+        jobFailedCount += 1;
+        const errorText = itemError || 'Unknown error';
+        if (/timeout/i.test(errorText)) {
+          jobTimeoutCount += 1;
+        }
+        if (!jobFailedReason) {
+          jobFailedReason = errorText;
+        }
+
+        if (attempt <= MAX_TTS_RETRIES) {
+          nextRemaining.push(item);
+        } else {
+          errors.push(`${item.filename}: ${errorText}`);
+          audioFiles.push({
+            index: item.index,
+            path: item.outputPath,
+            startMs: item.startMs,
+            durationMs: item.durationMs,
+            success: false,
+            error: errorText,
+          });
+          if (!progressSeen.has(item.index)) {
+            progressSeen.add(item.index);
+            completed += 1;
+            progressCallback?.({
+              current: completed,
+              total: entries.length,
+              status: 'generating',
+              currentFile: item.filename,
+              message: `[${providerLabel}] Lỗi: ${item.filename}`,
+            });
+          }
+        }
+      }
+
+      if (job.proxyId && !useRotatingEndpoint) {
+        scheduler?.releaseProxy(job.proxyId, {
+          successCount: jobSuccessCount,
+          failedCount: jobFailedCount,
+          timeoutCount: jobTimeoutCount,
+          elapsedMs: jobElapsedMsByOrder.get(jobOrder) || edgeWorkerTimeoutMs,
+        });
+      }
+      if (job.proxyId) {
+        if (jobFailed) {
+          proxyManager.markProxyFailed(job.proxyId, jobFailedReason);
+        } else {
+          proxyManager.markProxySuccess(job.proxyId);
+        }
+      }
+    }
+
+    if (unscheduledItems.length > 0) {
+      nextRemaining.push(...unscheduledItems);
+      console.warn(
+        `[TTS][EDGE][proxy-optimized] Unscheduled items due to proxy pressure: ${unscheduledItems.length}`
+      );
+    }
+
+    remaining = nextRemaining;
+    if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
+      console.log(`[TTS][EDGE][proxy-optimized] Requeue ${remaining.length} items for next attempt.`);
+    }
+  }
+
+  audioFiles.sort((a, b) => a.startMs - b.startMs);
+  const totalGenerated = audioFiles.filter((file) => file.success).length;
+  const totalFailed = audioFiles.filter((file) => !file.success).length;
+
+  progressCallback?.({
+    current: entries.length,
+    total: entries.length,
+    status: 'completed',
+    currentFile: '',
+    message: `[${providerLabel}] Hoàn thành: ${totalGenerated}/${entries.length} files`,
+  });
+
+  return {
+    success: totalFailed === 0,
+    audioFiles,
+    totalGenerated,
+    totalFailed,
+    outputDir,
+    errors: summarizeTtsErrors(errors),
+  };
 }
 
 export async function testEdgeTtsProxies(request: TTSTestProxyRequest): Promise<TTSTestProxyResponse> {
@@ -1934,6 +2546,12 @@ export async function generateAsyncioAudioWithProvider(
   const hasPreferredProxy = !useRotatingEndpoint
     && useProxySetting
     && proxyManager.getAvailableProxies(preferredType, 'tts').length > 0;
+  const effectiveProxyAwareTimeoutMs = useProxySetting
+    ? Math.min(edgeWorkerTimeoutMs, DEFAULT_EDGE_PROXY_ITEM_TIMEOUT_MS)
+    : edgeWorkerTimeoutMs;
+  const proxyAlgorithmMode = normalizeEdgeProxyAlgorithmMode(
+    options.edgeProxyAlgorithmMode ?? process.env.EDGE_TTS_PROXY_ALGORITHM_MODE,
+  );
   console.log(
     `[TTS][EDGE][asyncio] useProxy=${useProxySetting}`
     + (useRotatingEndpoint
@@ -1942,6 +2560,35 @@ export async function generateAsyncioAudioWithProvider(
   );
   if (useProxySetting && !hasPreferredProxy && !useRotatingEndpoint) {
     console.warn('[TTS][EDGE][asyncio] Không có proxy theo typePreference khả dụng, fallback dùng proxy thường nếu có.');
+  }
+
+  if (useProxySetting && proxyAlgorithmMode === 'optimized') {
+    console.log('[TTS][EDGE][proxy-optimized] Dedicated proxy pipeline enabled');
+    return generateEdgeAudioWithProxyOptimized({
+      entries,
+      pendingItems,
+      audioFiles,
+      errors,
+      progressSeen,
+      completed,
+      outputDir,
+      providerLabel,
+      worker,
+      pythonRuntime,
+      edgeWorkerTimeoutMs,
+      edgeWavMode,
+      edgeWorkerItemConcurrency,
+      effectiveBatchSize,
+      outputFormat,
+      voiceSelection,
+      rate,
+      volume,
+      proxyManager,
+      preferredType,
+      useRotatingEndpoint,
+      options,
+      progressCallback,
+    });
   }
 
   const buildJobs = (items: EdgeAsyncioItem[]): EdgeAsyncioJob[] => {
@@ -1996,14 +2643,23 @@ export async function generateAsyncioAudioWithProvider(
   while (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
     throwIfTtsStopped();
     attempt++;
+    const attemptStartedAt = Date.now();
     console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`);
     const jobs = buildJobs(remaining);
+    if (useProxySetting) {
+      const planningSummary = jobs.map((job, idx) => {
+        const first = job.items[0]?.index;
+        const last = job.items[job.items.length - 1]?.index;
+        return `#${idx + 1}:${job.proxyId || 'direct'}(${job.items.length}|${first || 0}-${last || 0})`;
+      });
+      console.log(`[TTS][EDGE][asyncio] Attempt plan => ${planningSummary.join(' | ')}`);
+    }
     const runResult = await runEdgeTtsWorker(
       jobs,
       worker,
       pythonRuntime,
       {
-        timeoutMs: edgeWorkerTimeoutMs,
+        timeoutMs: effectiveProxyAwareTimeoutMs,
         wavMode: edgeWavMode,
         itemConcurrency: edgeWorkerItemConcurrency,
       },
@@ -2029,6 +2685,12 @@ export async function generateAsyncioAudioWithProvider(
       console.warn(`[TTS][EDGE][asyncio] Worker errors: ${runResult.errors.join(' | ')}`);
       errors.push(...runResult.errors);
     }
+    if (useProxySetting) {
+      console.log(
+        `[TTS][EDGE][asyncio] Attempt ${attempt} completed in ${Date.now() - attemptStartedAt}ms `
+        + `(results=${runResult.results.size}, errors=${runResult.errors.length})`
+      );
+    }
 
     const nextRemaining: EdgeAsyncioItem[] = [];
     for (const job of jobs) {
@@ -2042,10 +2704,7 @@ export async function generateAsyncioAudioWithProvider(
 
         if (itemSuccess) {
           try {
-            const stats = await fs.stat(item.outputPath);
-            if (stats.size <= 0) {
-              throw new Error('file rỗng');
-            }
+            await ensureGeneratedAudioIntegrity(item.outputPath, outputFormat);
           } catch (error) {
             itemSuccess = false;
             itemError = `Worker báo success nhưng file output không hợp lệ (${item.outputPath}): ${String(error)}`;
@@ -2394,8 +3053,12 @@ export async function generateBatchAudio(
  */
 export async function getAudioDuration(audioPath: string): Promise<number> {
   return new Promise((resolve) => {
+    const bundledFfprobePath = getFFprobePath();
+    const ffprobeCommand = existsSync(bundledFfprobePath)
+      ? bundledFfprobePath
+      : (process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
     const proc = spawn(
-      'ffprobe',
+      ffprobeCommand,
       ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', audioPath],
       {
         windowsHide: true,

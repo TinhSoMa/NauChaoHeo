@@ -45,7 +45,7 @@ export async function callGeminiApi(
 
     // Sử dụng proxy client nếu enabled
     if (useProxy) {
-      const { makeRequestWithProxy } = await import('../apiClient');
+      const { makeRequestWithProxy } = await import('../apiClient.js');
       
       const result = await makeRequestWithProxy(url, {
         method: 'POST',

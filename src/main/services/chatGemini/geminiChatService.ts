@@ -3,7 +3,7 @@
  * Luu tru trong SQLite database
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../../database/schema';
 import { getConfigurationService } from '../gemini/configurationService';
 import { getSessionContextManager } from '../gemini/sessionContextManager';
@@ -914,7 +914,7 @@ export class GeminiChatServiceClass {
   create(data: CreateGeminiChatConfigDTO): GeminiChatConfig {
     const db = getDatabase();
     const now = Date.now();
-    const id = uuidv4();
+    const id = randomUUID();
     const normalizedCookie = (data.cookie || '').trim();
     const secureTokens = this.extractSecureCookieTokens(normalizedCookie);
     if (!secureTokens) {

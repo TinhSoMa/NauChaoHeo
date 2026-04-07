@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 // HL_LANG (Host Language): Ngôn ngữ giao diện
 export const HL_LANG = "vi";
@@ -90,7 +90,7 @@ export function buildRequestPayload(
         return JSON.stringify([null, JSON.stringify(innerPayload)]);
     }
 
-    const reqUuid = uuidv4().toUpperCase();
+    const reqUuid = randomUUID().toUpperCase();
     const reqStruct = [
         [message, 0, null, null, null, null, 0],
         ["vi"],

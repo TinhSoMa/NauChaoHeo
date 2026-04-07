@@ -3,7 +3,7 @@
  * Sử dụng SQLite database
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../database/schema';
 import {
   CreatePromptDTO,
@@ -99,10 +99,10 @@ export class PromptService {
     const promptType = normalizePromptType(data.promptType, data.name);
     const languageBucket = toLanguageBucket(data.sourceLang, data.targetLang);
     const groupId = data.groupId ?? this.ensureDefaultGroup(languageBucket).id;
-    const familyId = (data.familyId && data.familyId.trim()) ? data.familyId.trim() : uuidv4();
+    const familyId = (data.familyId && data.familyId.trim()) ? data.familyId.trim() : randomUUID();
     const versionNo = this.getNextVersionNo(familyId);
     const prompt: TranslationPrompt = {
-      id: uuidv4(),
+      id: randomUUID(),
       ...data,
       isDefault: data.isDefault || false,
       promptType,
@@ -241,7 +241,7 @@ export class PromptService {
       return this.mapGroupRow(existing);
     }
     const now = Date.now();
-    const id = uuidv4();
+    const id = randomUUID();
     db.prepare(`
       INSERT INTO prompt_groups (id, language_bucket, name, normalized_name, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -435,7 +435,7 @@ export class PromptService {
       return this.mapGroupRow(existing);
     }
     const now = Date.now();
-    const id = uuidv4();
+    const id = randomUUID();
     db.prepare(`
       INSERT INTO prompt_groups (id, language_bucket, name, normalized_name, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
