@@ -630,6 +630,18 @@ async function ensureGeneratedAudioIntegrity(filePath: string, outputFormat: 'wa
   }
 }
 
+async function cleanupBrokenGeneratedAudio(filePath: string): Promise<void> {
+  const cleanPath = (filePath || '').trim();
+  if (!cleanPath) {
+    return;
+  }
+  try {
+    await fs.unlink(cleanPath);
+  } catch {
+    // ignore cleanup error
+  }
+}
+
 async function buildExistingEdgeAudioLookup(
   outputDir: string,
   outputFormat: 'wav' | 'mp3'
@@ -2040,6 +2052,7 @@ async function generateEdgeAudioWithProxyOptimized(args: {
     if (runResult.results.size === 0 && runResult.errors.length > 0) {
       const fatal = runResult.errors.join(' | ').trim() || 'Edge worker exited unexpectedly';
       for (const item of remaining) {
+        await cleanupBrokenGeneratedAudio(item.outputPath);
         audioFiles.push({
           index: item.index,
           path: item.outputPath,
@@ -2077,6 +2090,7 @@ async function generateEdgeAudioWithProxyOptimized(args: {
           } catch (error) {
             itemSuccess = false;
             itemError = `Worker báo success nhưng file output không hợp lệ (${item.outputPath}): ${String(error)}`;
+            await cleanupBrokenGeneratedAudio(item.outputPath);
           }
         }
 
@@ -2115,9 +2129,11 @@ async function generateEdgeAudioWithProxyOptimized(args: {
         }
 
         if (attempt <= MAX_TTS_RETRIES) {
+          await cleanupBrokenGeneratedAudio(item.outputPath);
           nextRemaining.push(item);
         } else {
           errors.push(`${item.filename}: ${errorText}`);
+          await cleanupBrokenGeneratedAudio(item.outputPath);
           audioFiles.push({
             index: item.index,
             path: item.outputPath,
@@ -2708,6 +2724,7 @@ export async function generateAsyncioAudioWithProvider(
           } catch (error) {
             itemSuccess = false;
             itemError = `Worker báo success nhưng file output không hợp lệ (${item.outputPath}): ${String(error)}`;
+            await cleanupBrokenGeneratedAudio(item.outputPath);
           }
         }
 
@@ -2737,10 +2754,12 @@ export async function generateAsyncioAudioWithProvider(
           }
           jobFailed = true;
           if (attempt <= MAX_TTS_RETRIES) {
+            await cleanupBrokenGeneratedAudio(item.outputPath);
             nextRemaining.push(item);
           } else {
             const errorText = itemError || 'Unknown error';
             errors.push(`${item.filename}: ${errorText}`);
+            await cleanupBrokenGeneratedAudio(item.outputPath);
             audioFiles.push({
               index: item.index,
               path: item.outputPath,

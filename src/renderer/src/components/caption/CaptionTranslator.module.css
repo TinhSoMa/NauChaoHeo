@@ -1449,12 +1449,18 @@
   padding-right: 2px;
 }
 
+.stepStatusRow {
+  position: relative;
+}
+
 .stepStatusBtn {
   width: 100%;
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   border-radius: 7px;
-  padding: 5px 6px;
+  padding: 5px 30px 5px 6px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1530,6 +1536,35 @@
   padding: 2px 5px;
   min-width: 34px;
   text-align: center;
+}
+
+.stepStatusRerunBtn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-primary);
+  border-radius: 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stepStatusRerunBtn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent, #4a9eff) 70%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 12%, var(--color-card));
+}
+
+.stepStatusRerunBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .stepToneIdle {

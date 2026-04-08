@@ -45,9 +45,11 @@ import { getVideoMetadataCached } from './hooks/videoMetadataClientCache';
 import {
   getInputPaths,
   getSessionPathForInputPath,
+  makeStepError,
   readCaptionSession,
   scheduleSessionSettingsRetry,
   syncSessionWithProjectSettings,
+  toStepKey,
   updateCaptionSession,
 } from './hooks/captionSessionStore';
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
@@ -65,7 +67,7 @@ import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
 import { Step4ProxyTestPopup } from './components/Step4ProxyTestPopup';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { AlertCircle, Download, Eye, Power, PowerOff } from 'lucide-react';
+import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw } from 'lucide-react';
 import {
   CaptionProjectSettingsValues,
   FitAudioAuditResponse,
@@ -3001,6 +3003,7 @@ export function CaptionTranslator() {
   const [previewMode, setPreviewMode] = useState<'render' | 'live'>('live');
   const [hasShownFirstPreviewFrame, setHasShownFirstPreviewFrame] = useState(false);
   const lastHydratedInputPathRef = useRef<string>('');
+  const [stepManualRerunBusyStep, setStepManualRerunBusyStep] = useState<Step | null>(null);
 
   // Output dir cho folder đang display (theo dõi real-time trong multi-folder)
   const displayOutputDir = displayPath
@@ -3235,6 +3238,67 @@ export function CaptionTranslator() {
     processingInputPaths,
     settings.inputType,
     fileManager.filePath,
+  ]);
+
+  const canManualRerunStep = useMemo(
+    () => resolveActiveInputPath().trim().length > 0,
+    [resolveActiveInputPath]
+  );
+
+  const handleMarkStepErrorForRerun = useCallback(async (step: Step) => {
+    if (processing.status === 'running' || stepManualRerunBusyStep !== null) {
+      return;
+    }
+    const activeInputPath = resolveActiveInputPath().trim();
+    if (!activeInputPath) {
+      return;
+    }
+
+    setStepManualRerunBusyStep(step);
+    try {
+      const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
+      await updateCaptionSession(
+        sessionPath,
+        (session) => {
+          const stepKey = toStepKey(step);
+          const prevState = session.steps[stepKey];
+          return {
+            ...session,
+            runtime: {
+              ...session.runtime,
+              lastMessage: `Bước ${step}: đánh dấu lỗi thủ công để chạy lại.`,
+            },
+            steps: {
+              ...session.steps,
+              [stepKey]: {
+                ...makeStepError(prevState, 'MANUAL_RERUN_REQUESTED'),
+                blockedReason: undefined,
+              },
+            },
+          };
+        },
+        {
+          projectId,
+          inputType: settings.inputType,
+          sourcePath: activeInputPath,
+          folderPath: settings.inputType === 'draft' || settings.inputType === 'srt'
+            ? activeInputPath
+            : activeInputPath.replace(/[^/\\]+$/, ''),
+        }
+      );
+      await refreshActiveSession();
+    } catch (error) {
+      console.warn(`[CaptionTranslator] Không thể đánh dấu lại lỗi cho Step ${step}`, error);
+    } finally {
+      setStepManualRerunBusyStep(null);
+    }
+  }, [
+    processing.status,
+    projectId,
+    refreshActiveSession,
+    resolveActiveInputPath,
+    settings.inputType,
+    stepManualRerunBusyStep,
   ]);
 
   const buildStep3BatchEditorLines = useCallback((row: Step3BatchViewRow): Step3BatchEditableLine[] => {
@@ -6563,6 +6627,17 @@ export function CaptionTranslator() {
       >
         Text/style ở panel phải · Kéo trên preview
       </div>
+      <div className={styles.commonInlineActions}>
+        <button
+          type="button"
+          className={styles.resetBtnLike}
+          onClick={handleBulkExportThumbnails}
+          disabled={processing.status === 'running' || isBulkExportRunning || !canBulkExportThumbnails}
+          title={bulkExportQuickTitle}
+        >
+          {bulkExportLabel}
+        </button>
+      </div>
       <div className={styles.commonConfigSection}>
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
@@ -7676,25 +7751,40 @@ export function CaptionTranslator() {
               const elapsedLabel = getStepElapsedLabel(step);
               const isActive = activeStep === step;
               const isCurrent = processing.currentStep === step && processing.status === 'running';
+              const rerunBusy = stepManualRerunBusyStep === step;
+              const rerunDisabled = processing.status === 'running' || !canManualRerunStep || stepManualRerunBusyStep !== null;
               return (
-                <button
-                  key={step}
-                  type="button"
-                  className={`${styles.stepStatusBtn} ${isActive ? styles.stepStatusBtnActive : ''} ${isCurrent ? styles.stepStatusBtnCurrent : ''}`}
-                  onClick={() => {
-                    setActiveStep(step);
-                    setInspectorPane('step');
-                  }}
-                  title={`B${step} ${STEP_SHORT_LABELS[step]} - ${badge.label}`}
-                >
-                  <span className={`${styles.stepStatusDot} ${toneClass}`} />
-                  <span className={styles.stepStatusMain}>
-                    <span className={styles.stepStatusCode}>B{step}</span>
-                    <span className={styles.stepStatusName}>{STEP_SHORT_LABELS[step]}</span>
-                    <span className={styles.stepStatusElapsed}>{elapsedLabel}</span>
-                  </span>
-                  <span className={`${styles.stepStatusState} ${toneClass}`}>{compactStatus}</span>
-                </button>
+                <div key={step} className={styles.stepStatusRow}>
+                  <button
+                    type="button"
+                    className={`${styles.stepStatusBtn} ${isActive ? styles.stepStatusBtnActive : ''} ${isCurrent ? styles.stepStatusBtnCurrent : ''}`}
+                    onClick={() => {
+                      setActiveStep(step);
+                      setInspectorPane('step');
+                    }}
+                    title={`B${step} ${STEP_SHORT_LABELS[step]} - ${badge.label}`}
+                  >
+                    <span className={`${styles.stepStatusDot} ${toneClass}`} />
+                    <span className={styles.stepStatusMain}>
+                      <span className={styles.stepStatusCode}>B{step}</span>
+                      <span className={styles.stepStatusName}>{STEP_SHORT_LABELS[step]}</span>
+                      <span className={styles.stepStatusElapsed}>{elapsedLabel}</span>
+                    </span>
+                    <span className={`${styles.stepStatusState} ${toneClass}`}>{compactStatus}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.stepStatusRerunBtn}
+                    disabled={rerunDisabled}
+                    onClick={() => {
+                      void handleMarkStepErrorForRerun(step);
+                    }}
+                    aria-label={`Chạy lại bước ${step}`}
+                    title={`Đánh dấu B${step} là lỗi để chạy lại`}
+                  >
+                    {rerunBusy ? '...' : <RotateCcw size={12} strokeWidth={2} />}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -7710,15 +7800,6 @@ export function CaptionTranslator() {
               title={fitAudioAuditTitle}
             >
               <span className={styles.stepRailQuickBtnLabel}>{fitAudioAuditLabel}</span>
-            </button>
-            <button
-              type="button"
-              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn}`}
-              onClick={handleBulkExportThumbnails}
-              disabled={processing.status === 'running' || isBulkExportRunning || !canBulkExportThumbnails}
-              title={bulkExportQuickTitle}
-            >
-              <span className={styles.stepRailQuickBtnLabel}>{bulkExportLabel}</span>
             </button>
             <button
               type="button"
@@ -7752,18 +7833,6 @@ export function CaptionTranslator() {
             >
               <span className={styles.stepRailQuickBtnLabel}>{step7QuickAudioLabel}</span>
               {isStep7AudioError && !isStep7AudioMixing && <AlertCircle size={13} className={`${styles.stepRailQuickBtnIcon} ${styles.stepRailQuickBtnIconError}`} />}
-            </button>
-            <button
-              type="button"
-              className={`${styles.resetBtnLike} ${styles.stepRailQuickBtn}`}
-              onClick={() => {
-                setActiveStep(1);
-                setInspectorPane('step');
-                void fileManager.handleBrowseFile();
-              }}
-              title={settings.inputType === 'draft' ? 'Chọn lại/ thêm nhiều folder' : 'Chọn folder SRT'}
-            >
-              Nguồn vào
             </button>
           </div>
         </aside>

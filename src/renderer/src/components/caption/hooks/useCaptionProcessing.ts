@@ -835,6 +835,49 @@ function joinFilePath(baseDir: string, fileName: string): string {
   return `${normalizedBase}${separator}${fileName}`;
 }
 
+function resolveExpectedFitOutputPath(inputPath: string, speedDirLabel: string): string {
+  const cleanInputPath = (inputPath || '').trim();
+  if (!cleanInputPath) {
+    return '';
+  }
+
+  const fileName = getPathBaseName(cleanInputPath);
+  const audioDir = resolveParentDir(cleanInputPath);
+  if (!fileName || !audioDir) {
+    return '';
+  }
+
+  const normalizedAudioDir = audioDir.replace(/[\\/]+$/, '');
+  const audioDirNameRaw = getPathBaseName(normalizedAudioDir);
+  const audioDirName = audioDirNameRaw.toLowerCase();
+  const audioParentDir = resolveParentDir(normalizedAudioDir);
+  const audioParentNameRaw = getPathBaseName(audioParentDir);
+  const audioParentName = audioParentNameRaw.toLowerCase();
+
+  let baseFitDir = normalizedAudioDir;
+  if (audioDirName === 'audio_fit') {
+    baseFitDir = normalizedAudioDir;
+  } else if (audioParentName === 'audio_fit') {
+    baseFitDir = audioParentDir;
+  } else if (audioDirName === 'audio' || audioDirName === 'audio_trimmed' || audioDirName === 'audio_scaled') {
+    baseFitDir = joinFilePath(audioParentDir, 'audio_fit');
+  } else {
+    baseFitDir = joinFilePath(normalizedAudioDir, 'audio_fit');
+  }
+
+  const safeLabel = (speedDirLabel || '').trim().replace(/[\\/]+/g, '_');
+  let fitDir = baseFitDir;
+  if (safeLabel) {
+    if (audioParentName === 'audio_fit' && audioDirNameRaw === safeLabel) {
+      fitDir = normalizedAudioDir;
+    } else {
+      fitDir = joinFilePath(baseFitDir, safeLabel);
+    }
+  }
+
+  return joinFilePath(fitDir, fileName);
+}
+
 type StepBatchPlanItem = {
   batchIndex: number;
   startIndex: number;
@@ -3835,12 +3878,30 @@ export function useCaptionProcessing({
         if (step === 7) currentDataSource = 'session_translated_entries+session_merged_audio';
 
         const currentSrtSpeed = cfg.srtSpeed > 0 ? cfg.srtSpeed : 1.0;
-        const skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber, {
+        let skipDecision = shouldSkipStep(sessionBeforeStep, step as CaptionStepNumber, {
           currentSrtSpeed,
           currentTrimAudioEnabled: !!cfg.trimAudioEnabled,
           currentAutoFitAudio: !!cfg.autoFitAudio,
           currentEdgeOutputFormat: cfg.edgeOutputFormat === 'mp3' ? 'mp3' : 'wav',
         });
+        if (skipDecision.skip && step === 4) {
+          const step4AudioPaths = currentAudioFiles
+            .map((file) => file.path)
+            .filter((audioPath) => typeof audioPath === 'string' && audioPath.trim().length > 0);
+          if (step4AudioPaths.length > 0) {
+            // @ts-ignore
+            const step4AudioCheck = await window.electronAPI.tts.checkAudioFiles(step4AudioPaths);
+            const missingStep4AudioPaths = step4AudioCheck?.success && step4AudioCheck.data
+              ? (step4AudioCheck.data.missingPaths || [])
+              : step4AudioPaths;
+            if (missingStep4AudioPaths.length > 0) {
+              console.warn(
+                `[${folderName}] Step 4 skip cancelled: thiếu ${missingStep4AudioPaths.length} file audio trên đĩa.`
+              );
+              skipDecision = { skip: false, reason: 'step4_audio_missing_on_disk' };
+            }
+          }
+        }
         if (step === 6 && skipDecision.reason === 'srt_scale_changed') {
           await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
             ...session,
@@ -4761,9 +4822,141 @@ export function useCaptionProcessing({
       // ========== STEP 6: MERGE AUDIO ==========
       if (step === 6) {
         let filesToMerge = normalizeAudioFiles(currentAudioFiles);
+        const forceRetrimSourcePathKeys = new Set<string>();
+        const forceRefitInputPathKeys = new Set<string>();
 
         if (filesToMerge.length === 0) {
           throw new Error(`[${folderName}] Chưa có dữ liệu audio từ Step 4 trong caption_session.json. Hãy chạy Step 4 trước.`);
+        }
+
+        const sourceAudioPaths = filesToMerge
+          .map((file) => file.path)
+          .filter((audioPath) => typeof audioPath === 'string' && audioPath.trim().length > 0);
+        if (sourceAudioPaths.length > 0) {
+          // @ts-ignore
+          const sourceCheckResult = await window.electronAPI.tts.checkAudioFiles(sourceAudioPaths);
+          const missingSourceAudioPaths = sourceCheckResult?.success && sourceCheckResult.data
+            ? (sourceCheckResult.data.missingPaths || [])
+            : sourceAudioPaths;
+          if (missingSourceAudioPaths.length > 0) {
+            if (currentEntries.length === 0) {
+              throw new Error(`[${folderName}] Thiếu audio nguồn và không có translated entries để tạo lại. Hãy chạy lại Step 3/Step 4.`);
+            }
+
+            const missingSourceSet = new Set(missingSourceAudioPaths.map((value) => normalizePathKey(value)));
+            const missingIndexes = new Set<number>();
+            const missingStartTimes = new Set<number>();
+
+            for (const file of filesToMerge) {
+              if (missingSourceSet.has(normalizePathKey(file.path))) {
+                missingIndexes.add(file.index);
+                missingStartTimes.add(file.startMs);
+              }
+            }
+
+            const missingEntries = currentEntries.filter(
+              (entry) => missingIndexes.has(entry.index) || missingStartTimes.has(entry.startMs)
+            );
+
+            if (missingEntries.length === 0) {
+              throw new Error(
+                `[${folderName}] Thiếu ${missingSourceAudioPaths.length} file audio nhưng không match được entry để tạo lại.`
+              );
+            }
+
+            const regenAudioDir = `${processOutputDir}/audio`;
+            const isCapCutVoice = typeof cfg.voice === 'string' && cfg.voice.toLowerCase().startsWith('capcut:');
+            const regenOptions: Record<string, unknown> = {
+              voice: cfg.voice,
+              outputDir: regenAudioDir,
+              outputFormat: cfg.edgeOutputFormat === 'mp3' ? 'mp3' : 'wav',
+              runId: runIdRef.current || undefined,
+            };
+            if (!isCapCutVoice) {
+              regenOptions.rate = cfg.rate;
+              regenOptions.volume = cfg.volume;
+              regenOptions.edgeTtsBatchSize = cfg.edgeTtsBatchSize;
+              regenOptions.edgeWorkerEngine = cfg.edgeWorkerEngine;
+              regenOptions.edgeWorkerItemConcurrency = cfg.edgeWorkerItemConcurrency;
+            }
+
+            setProgress({
+              current: 0,
+              total: missingEntries.length,
+              message: msgCtx(`Bước 6: Tạo lại ${missingEntries.length} audio bị thiếu từ Step 4...`),
+            });
+
+            // @ts-ignore
+            const regenResult = await window.electronAPI.tts.generate(missingEntries, regenOptions);
+            if (!(regenResult?.success && regenResult.data)) {
+              if (typeof regenResult?.error === 'string' && regenResult.error.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
+                throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+              }
+              throw new Error(
+                `[${folderName}] Không thể tạo lại audio thiếu: ${regenResult?.error || 'unknown error'}`
+              );
+            }
+
+            const regeneratedFiles = normalizeAudioFiles(
+              (regenResult.data.audioFiles || []) as PartialProcessingAudioFile[]
+            ).filter((file) => file.success !== false);
+
+            const regeneratedByIndex = new Map<number, ProcessingAudioFile>();
+            const regeneratedByStart = new Map<number, ProcessingAudioFile>();
+            for (const file of regeneratedFiles) {
+              regeneratedByIndex.set(file.index, file);
+              regeneratedByStart.set(file.startMs, file);
+            }
+
+            filesToMerge = filesToMerge.map((file) => {
+              const regenerated = regeneratedByIndex.get(file.index) || regeneratedByStart.get(file.startMs);
+              const nextFile = regenerated
+                ? {
+                    ...file,
+                    path: regenerated.path,
+                    success: true,
+                    error: undefined,
+                  }
+                : file;
+              if (regenerated) {
+                const normalizedPath = normalizePathKey(nextFile.path);
+                forceRetrimSourcePathKeys.add(normalizedPath);
+                forceRefitInputPathKeys.add(normalizedPath);
+              }
+              return nextFile;
+            });
+
+            currentAudioFiles = currentAudioFiles.map((file) => {
+              const regenerated = regeneratedByIndex.get(file.index) || regeneratedByStart.get(file.startMs);
+              return regenerated
+                ? {
+                    ...file,
+                    path: regenerated.path,
+                    success: true,
+                    error: undefined,
+                  }
+                : file;
+            });
+
+            if (!isMulti) {
+              setAudioFiles(currentAudioFiles);
+            }
+
+            const recheckPaths = filesToMerge
+              .map((file) => file.path)
+              .filter((audioPath) => typeof audioPath === 'string' && audioPath.trim().length > 0);
+            // @ts-ignore
+            const recheckResult = await window.electronAPI.tts.checkAudioFiles(recheckPaths);
+            const stillMissingPaths = recheckResult?.success && recheckResult.data
+              ? (recheckResult.data.missingPaths || [])
+              : recheckPaths;
+            if (stillMissingPaths.length > 0) {
+              const missingNames = stillMissingPaths.slice(0, 5).map((item) => getPathBaseName(item)).join(', ');
+              throw new Error(
+                `[${folderName}] Tạo lại xong nhưng vẫn thiếu ${stillMissingPaths.length} file audio: ${missingNames || 'không xác định'}`
+              );
+            }
+          }
         }
 
         let trimResults: Record<string, unknown> | null = null;
@@ -4811,11 +5004,31 @@ export function useCaptionProcessing({
               trimmedByName.set(fileName, String(filePath));
             }
           }
-          const canReuseTrim = previousTrimFiles.length > 0
+          let canReuseTrim = previousTrimFiles.length > 0
             && filesToMerge.every((file) => {
               const fileName = file.path.split(/[/\\]/).pop() || '';
               return fileName && trimmedByName.has(fileName);
             });
+
+          if (canReuseTrim && forceRetrimSourcePathKeys.size > 0) {
+            canReuseTrim = false;
+          }
+
+          if (canReuseTrim) {
+            const reuseTrimOutputs = filesToMerge.map((file) => {
+              const fileName = file.path.split(/[/\\]/).pop() || '';
+              return trimmedByName.get(fileName) || file.path;
+            });
+            // @ts-ignore
+            const trimReuseCheck = await window.electronAPI.tts.checkAudioFiles(reuseTrimOutputs);
+            const missingReuseTrimOutputs = trimReuseCheck?.success && trimReuseCheck.data
+              ? (trimReuseCheck.data.missingPaths || [])
+              : reuseTrimOutputs;
+            if (missingReuseTrimOutputs.length > 0) {
+              canReuseTrim = false;
+              console.warn(`[${folderName}] trim cache invalid: thiếu ${missingReuseTrimOutputs.length} file trim output`);
+            }
+          }
 
           if (canReuseTrim) {
             trimTargets = filesToMerge.map((file) => {
@@ -4855,11 +5068,24 @@ export function useCaptionProcessing({
             }
 
             const missingTrimSet = new Set(missingTrimOutputs.map((value) => normalizePathKey(value)));
-            const pendingTrimTargets = trimTargets.filter((target) => missingTrimSet.has(normalizePathKey(target.outputPath)));
-            const reusedTrimTargets = trimTargets.filter((target) => !missingTrimSet.has(normalizePathKey(target.outputPath)));
+            const pendingTrimTargets = trimTargets.filter((target) => {
+              if (missingTrimSet.has(normalizePathKey(target.outputPath))) {
+                return true;
+              }
+              return forceRetrimSourcePathKeys.has(normalizePathKey(target.inputPath));
+            });
+            const pendingTrimKeySet = new Set(
+              pendingTrimTargets.map((target) => `${normalizePathKey(target.inputPath)}=>${normalizePathKey(target.outputPath)}`)
+            );
+            const reusedTrimTargets = trimTargets.filter(
+              (target) => !pendingTrimKeySet.has(`${normalizePathKey(target.inputPath)}=>${normalizePathKey(target.outputPath)}`)
+            );
 
             for (const target of reusedTrimTargets) {
               outputMap.set(target.inputPath, target.outputPath);
+            }
+            for (const target of pendingTrimTargets) {
+              forceRefitInputPathKeys.add(normalizePathKey(target.outputPath));
             }
 
             trimmedCount = reusedTrimTargets.length;
@@ -5050,26 +5276,77 @@ export function useCaptionProcessing({
 
           const speedMatches = Number.isFinite(previousFitSpeed) && Math.abs((previousFitSpeed || 0) - fitSpeed) < 0.0001;
           const labelMatches = !previousSpeedLabel || previousSpeedLabel === fitSpeedDirLabel;
+          const hasKnownPreviousFitSpeed = Number.isFinite(previousFitSpeed);
+          const canProbeDiskFitCache = labelMatches && (speedMatches || !hasKnownPreviousFitSpeed);
+          const shouldSkipFullFallbackProbe = forceRefitInputPathKeys.size > 0;
+
+          if (canProbeDiskFitCache) {
+            const fallbackCandidates = filesToMerge
+              .map((file) => {
+                const normalizedInputKey = normalizePathKey(file.path);
+                if (forceRefitInputPathKeys.has(normalizedInputKey)) {
+                  return null;
+                }
+                if (normalizedOutputPathByAnyPath.has(normalizedInputKey)) {
+                  return null;
+                }
+                const fallbackOutputPath = resolveExpectedFitOutputPath(file.path, fitSpeedDirLabel);
+                if (!fallbackOutputPath || normalizePathKey(fallbackOutputPath) === normalizedInputKey) {
+                  return null;
+                }
+                return { inputPath: file.path, outputPath: fallbackOutputPath };
+              })
+              .filter((item): item is { inputPath: string; outputPath: string } => !!item);
+
+            if (fallbackCandidates.length > 0) {
+              if (shouldSkipFullFallbackProbe) {
+                for (const candidate of fallbackCandidates) {
+                  mappingByOriginal.set(candidate.inputPath, candidate.outputPath);
+                  mappingByAnyPath.set(candidate.inputPath, candidate.outputPath);
+                  mappingByAnyPath.set(candidate.outputPath, candidate.outputPath);
+
+                  const normalizedInputPath = normalizePathKey(candidate.inputPath);
+                  const normalizedOutputPath = normalizePathKey(candidate.outputPath);
+                  normalizedOutputPathByAnyPath.set(normalizedInputPath, candidate.outputPath);
+                  normalizedOutputPathByAnyPath.set(normalizedOutputPath, candidate.outputPath);
+                }
+              } else {
+                const uniqueFallbackOutputs = Array.from(new Set(fallbackCandidates.map((item) => item.outputPath)));
+                // @ts-ignore
+                const fallbackCheckResult = await window.electronAPI.tts.checkAudioFiles(uniqueFallbackOutputs);
+                const missingFallbackOutputs = fallbackCheckResult?.success && fallbackCheckResult.data
+                  ? (fallbackCheckResult.data.missingPaths || [])
+                  : uniqueFallbackOutputs;
+                const missingFallbackSet = new Set(missingFallbackOutputs.map((value) => normalizePathKey(value)));
+
+                for (const candidate of fallbackCandidates) {
+                  if (missingFallbackSet.has(normalizePathKey(candidate.outputPath))) {
+                    continue;
+                  }
+
+                  mappingByOriginal.set(candidate.inputPath, candidate.outputPath);
+                  mappingByAnyPath.set(candidate.inputPath, candidate.outputPath);
+                  mappingByAnyPath.set(candidate.outputPath, candidate.outputPath);
+
+                  const normalizedInputPath = normalizePathKey(candidate.inputPath);
+                  const normalizedOutputPath = normalizePathKey(candidate.outputPath);
+                  normalizedOutputPathByAnyPath.set(normalizedInputPath, candidate.outputPath);
+                  normalizedOutputPathByAnyPath.set(normalizedOutputPath, candidate.outputPath);
+                }
+              }
+            }
+          }
+
+          const hasForcedRefit = filesToMerge.some((file) => forceRefitInputPathKeys.has(normalizePathKey(file.path)));
           const missingMapping = filesToMerge.filter((file) => {
             const normalizedKey = normalizePathKey(file.path);
             return !normalizedOutputPathByAnyPath.has(normalizedKey);
           });
 
           let reusedFit = false;
+          const reusedFitOutputPathKeys = new Set<string>();
           if (speedMatches && labelMatches && missingMapping.length === 0 && mappingByAnyPath.size > 0) {
-            const outputPaths = filesToMerge.map((file) => {
-              const normalizedKey = normalizePathKey(file.path);
-              return normalizedOutputPathByAnyPath.get(normalizedKey)
-                || mappingByAnyPath.get(file.path)
-                || file.path;
-            });
-            const uniqueOutputs = Array.from(new Set(outputPaths));
-            // @ts-ignore
-            const checkResult = await window.electronAPI.tts.checkAudioFiles(uniqueOutputs);
-            const missingOutputs = checkResult?.success && checkResult.data
-              ? (checkResult.data.missingPaths || [])
-              : uniqueOutputs;
-            if (missingOutputs.length === 0) {
+            if (!hasForcedRefit) {
               filesToMerge = filesToMerge.map((file) => {
                 const normalizedKey = normalizePathKey(file.path);
                 const mapped = normalizedOutputPathByAnyPath.get(normalizedKey)
@@ -5097,7 +5374,42 @@ export function useCaptionProcessing({
               });
               reusedFit = true;
             } else {
-              console.warn(`[${folderName}] fit cache invalid: thiếu ${missingOutputs.length} file fit`);
+              const partialFitOutputPaths: string[] = [];
+              const partialFitMapping: Array<{ originalPath: string; outputPath: string }> = [];
+              filesToMerge = filesToMerge.map((file) => {
+                const normalizedKey = normalizePathKey(file.path);
+                const isForcedRefit = forceRefitInputPathKeys.has(normalizedKey);
+                const mapped = normalizedOutputPathByAnyPath.get(normalizedKey)
+                  || mappingByAnyPath.get(file.path);
+                if (!mapped) {
+                  return file;
+                }
+                if (isForcedRefit) {
+                  return file;
+                }
+
+                reusedFitOutputPathKeys.add(normalizePathKey(mapped));
+                partialFitMapping.push({ originalPath: file.path, outputPath: mapped });
+                if (normalizePathKey(mapped) !== normalizePathKey(file.path)) {
+                  partialFitOutputPaths.push(mapped);
+                }
+                return { ...file, path: mapped, success: true };
+              });
+
+              if (partialFitMapping.length > 0) {
+                fitPathMapping = partialFitMapping;
+                fitOutputPaths = Array.from(new Set(partialFitOutputPaths));
+                fitScaledCount = partialFitMapping.filter(
+                  (mapping) => normalizePathKey(mapping.originalPath) !== normalizePathKey(mapping.outputPath)
+                ).length;
+                fitOutputDir = previousFitOutputDir
+                  || (fitOutputPaths.length > 0 ? resolveParentDir(fitOutputPaths[0]) : fitOutputDir);
+                setProgress({
+                  current: partialFitMapping.length,
+                  total: filesToMerge.length,
+                  message: msgCtx(`Bước 6: Reuse fit ${partialFitMapping.length}/${filesToMerge.length}, xử lý tiếp phần thiếu`),
+                });
+              }
             }
           } else if (missingMapping.length > 0) {
             console.warn(`[${folderName}] fit cache invalid: thiếu mapping ${missingMapping.length} file`);
@@ -5121,14 +5433,18 @@ export function useCaptionProcessing({
                   : 0;
                 return { path: f.path, durationMs: allowedDurationMs, speedLabel: fitSpeedDirLabel };
               })
-              .filter(item => item.durationMs > 0);
+              .filter(
+                (item) => item.durationMs > 0 && !reusedFitOutputPathKeys.has(normalizePathKey(item.path))
+              );
 
             if (fitItems.length > 0) {
               const fitWorkerCount = Math.max(1, Math.min(safeFitAudioWorkers, fitItems.length));
               fitAudioWorkersUsed = fitWorkerCount;
               let processedCount = 0;
-              let scaledCount = 0;
-              const pathMapping: Array<{ originalPath: string; outputPath: string }> = [];
+              let scaledCount = fitPathMapping.filter(
+                (mapping) => normalizePathKey(mapping.originalPath) !== normalizePathKey(mapping.outputPath)
+              ).length;
+              const pathMapping: Array<{ originalPath: string; outputPath: string }> = [...fitPathMapping];
               const auditRows: Array<{
                 originalPath: string;
                 outputPath: string;
@@ -5136,7 +5452,7 @@ export function useCaptionProcessing({
                 originalDurationMs: number;
                 outputDurationMs: number;
                 isScaled: boolean;
-              }> = [];
+              }> = [...fitAuditRows];
               let nextFitItemIndex = 0;
               let fitWorkerError: Error | null = null;
 
@@ -5295,6 +5611,7 @@ export function useCaptionProcessing({
             isScaled: row.isScaled,
           }));
           const storedFilesToMerge = toSessionStoredAudioFiles(filesToMerge, stepSessionFolderPath);
+          const storedCurrentAudioFiles = toSessionStoredAudioFiles(currentAudioFiles, stepSessionFolderPath);
           const mergeResultPayload: Record<string, unknown> = result.data
             ? {
                 success: !!result.data.success,
@@ -5360,6 +5677,7 @@ export function useCaptionProcessing({
               ...session,
               data: {
                 ...session.data,
+                ttsAudioFiles: storedCurrentAudioFiles,
                 mergeResult: mergeResultPayload,
                 trimResults: trimResults
                   ? {

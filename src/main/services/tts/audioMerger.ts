@@ -74,6 +74,10 @@ function resolveFfmpegBinary(): string {
 interface BatchMergeResult {
   success: boolean;
   error?: string;
+  failingInputPath?: string;
+  suspectedInputPaths?: string[];
+  suspectedInputSummary?: string;
+  stderrTail?: string;
 }
 
 interface PadTailResult {
@@ -81,6 +85,187 @@ interface PadTailResult {
   padded: boolean;
   missingMs: number;
   error?: string;
+}
+
+interface FFmpegErrorDiagnostic {
+  shortReason: string;
+  failingInputPath?: string;
+  failingInputName?: string;
+  stderrTail: string;
+}
+
+interface AudioInputSourceInfo {
+  source: 'original' | 'trimmed' | 'fitted' | 'temp' | 'unknown';
+  label: string;
+}
+
+interface BatchInputIssue {
+  path: string;
+  reason: string;
+  sourceLabel: string;
+}
+
+function normalizeFfmpegStderrLines(stderr: string): string[] {
+  return (stderr || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function shortenForUi(value: string, maxLength = 180): string {
+  const text = (value || '').trim();
+  if (!text || text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 3)}...`;
+}
+
+function extractFailingInputPathFromFfmpeg(lines: string[]): string | undefined {
+  for (const line of lines) {
+    const directMatch = line.match(/Error opening input file\s+(.+?)(?:\.\s*|$)/i);
+    if (directMatch?.[1]) {
+      return directMatch[1].trim().replace(/^['"]|['"]$/g, '');
+    }
+  }
+
+  for (let idx = lines.length - 1; idx >= 0; idx--) {
+    const line = lines[idx];
+    const inputMatch = line.match(/Input\s+#\d+.*from\s+'([^']+)'/i);
+    if (inputMatch?.[1]) {
+      return inputMatch[1].trim();
+    }
+  }
+
+  return undefined;
+}
+
+function summarizeFfmpegReason(lines: string[], exitCode: number): string {
+  const hasLine = (keyword: RegExp) => lines.some((line) => keyword.test(line));
+
+  if (hasLine(/Failed to find two consecutive MPEG audio frames/i)) {
+    return 'File MP3 bị hỏng hoặc không có frame audio hợp lệ';
+  }
+  if (hasLine(/Invalid data found when processing input/i)) {
+    return 'Dữ liệu audio đầu vào không hợp lệ';
+  }
+  if (hasLine(/No such file or directory/i)) {
+    return 'Không tìm thấy file audio đầu vào';
+  }
+  if (hasLine(/Permission denied/i)) {
+    return 'Không có quyền truy cập file audio đầu vào';
+  }
+  if (hasLine(/Error opening input files?/i)) {
+    return 'Không mở được file audio đầu vào';
+  }
+
+  const fallbackLine = lines.find((line) => /\b(error|invalid|failed|denied|not found)\b/i.test(line));
+  if (fallbackLine) {
+    return shortenForUi(fallbackLine);
+  }
+
+  return `FFmpeg exit code ${exitCode}`;
+}
+
+function buildFfmpegErrorDiagnostic(
+  stderr: string,
+  inputFiles: Array<{ path: string }>,
+  exitCode: number
+): FFmpegErrorDiagnostic {
+  const lines = normalizeFfmpegStderrLines(stderr);
+  const parsedPath = extractFailingInputPathFromFfmpeg(lines);
+  const fallbackPath = inputFiles.length === 1 ? inputFiles[0].path : undefined;
+  const failingInputPath = parsedPath || fallbackPath;
+  const failingInputName = failingInputPath ? path.basename(failingInputPath) : undefined;
+
+  return {
+    shortReason: summarizeFfmpegReason(lines, exitCode),
+    failingInputPath,
+    failingInputName,
+    stderrTail: lines.slice(-12).join('\n'),
+  };
+}
+
+function classifyAudioInputSource(filePath?: string): AudioInputSourceInfo {
+  const normalized = (filePath || '').trim().replace(/\\/g, '/').toLowerCase();
+  if (!normalized) {
+    return { source: 'unknown', label: 'không xác định' };
+  }
+
+  if (normalized.includes('/audio_fit/')) {
+    return { source: 'fitted', label: 'audio_fit (đã fit)' };
+  }
+  if (normalized.includes('/audio_trimmed/')) {
+    return { source: 'trimmed', label: 'audio_trimmed (đã trim)' };
+  }
+  if (/_temp_\d+\.[a-z0-9]+$/i.test(normalized) || normalized.includes('/merged_audio_') || normalized.includes('/_tailpad')) {
+    return { source: 'temp', label: 'file tạm merge' };
+  }
+  if (normalized.includes('/audio/')) {
+    return { source: 'original', label: 'audio gốc (step 4)' };
+  }
+
+  return { source: 'unknown', label: 'không xác định' };
+}
+
+async function detectBatchInputIssues(
+  inputFiles: Array<{ path: string }>,
+  maxIssues = 10
+): Promise<BatchInputIssue[]> {
+  const issues: BatchInputIssue[] = [];
+  const seen = new Set<string>();
+
+  for (const file of inputFiles) {
+    if (issues.length >= maxIssues) {
+      break;
+    }
+
+    const filePath = (file.path || '').trim();
+    if (!filePath) {
+      continue;
+    }
+    const normalizedKey = filePath.replace(/\\/g, '/').toLowerCase();
+    if (seen.has(normalizedKey)) {
+      continue;
+    }
+    seen.add(normalizedKey);
+
+    const sourceInfo = classifyAudioInputSource(filePath);
+    try {
+      await fs.access(filePath);
+    } catch {
+      issues.push({
+        path: filePath,
+        reason: 'không tồn tại trên đĩa',
+        sourceLabel: sourceInfo.label,
+      });
+      continue;
+    }
+
+    const durationMs = await getAudioDuration(filePath);
+    if (durationMs <= 0) {
+      issues.push({
+        path: filePath,
+        reason: 'không đọc được thời lượng (0ms)',
+        sourceLabel: sourceInfo.label,
+      });
+    }
+  }
+
+  return issues;
+}
+
+function formatBatchInputIssueSummary(issues: BatchInputIssue[], maxDisplay = 5): string {
+  if (!issues.length) {
+    return '';
+  }
+  const display = issues.slice(0, maxDisplay).map((issue) => {
+    const fileName = shortenForUi(path.basename(issue.path), 56);
+    return `${fileName} [${issue.sourceLabel}; ${issue.reason}]`;
+  });
+  if (issues.length > maxDisplay) {
+    display.push(`... +${issues.length - maxDisplay} file`);
+  }
+  return display.join(' | ');
 }
 
 /**
@@ -365,17 +550,38 @@ async function mergeSmallBatch(
       stderr += data.toString();
     });
 
-    proc.on('close', (code) => {
+    proc.on('close', async (code) => {
       void cleanupScript();
       if (code !== 0) {
-        console.error(`[AudioMerger] FFmpeg error: ${stderr}`);
-        const errorMessage = stderr || `FFmpeg exit code: ${code}`;
+        const diagnostic = buildFfmpegErrorDiagnostic(stderr, files, typeof code === 'number' ? code : -1);
+        const suspectedIssues = await detectBatchInputIssues(files);
+        const suspectedSummary = formatBatchInputIssueSummary(suspectedIssues);
+        const failingInputPath = diagnostic.failingInputPath || suspectedIssues[0]?.path;
+        const failingInputName = failingInputPath ? path.basename(failingInputPath) : undefined;
+        const conciseLog = diagnostic.failingInputName
+          ? `${diagnostic.shortReason} | file: ${diagnostic.failingInputName}`
+          : diagnostic.shortReason;
+        const conciseWithIssues = suspectedSummary
+          ? `${conciseLog} | suspect: ${shortenForUi(suspectedSummary, 320)}`
+          : conciseLog;
+        console.error(`[AudioMerger] FFmpeg error: ${conciseWithIssues}`);
         debugLog('mergeSmallBatch thất bại', {
           outputPath,
           exitCode: code,
-          stderrTail: stderr.split('\n').slice(-20).join('\n'),
+          shortReason: diagnostic.shortReason,
+          failingInputPath,
+          suspectedInputCount: suspectedIssues.length,
+          suspectedInputSummary: suspectedSummary,
+          stderrTail: diagnostic.stderrTail,
         });
-        resolve({ success: false, error: errorMessage });
+        resolve({
+          success: false,
+          error: diagnostic.shortReason,
+          failingInputPath,
+          suspectedInputPaths: suspectedIssues.map((issue) => issue.path),
+          suspectedInputSummary: suspectedSummary || undefined,
+          stderrTail: diagnostic.stderrTail,
+        });
       } else {
         debugLog('mergeSmallBatch thành công', { outputPath });
         resolve({ success: true });
@@ -385,12 +591,16 @@ async function mergeSmallBatch(
     proc.on('error', (err) => {
       void cleanupScript();
       console.error(`[AudioMerger] Spawn error: ${err}`);
-      const errorMessage = `Spawn error: ${String(err)}`;
+      const errorMessage = `Không thể khởi chạy FFmpeg: ${String(err)}`;
       debugLog('mergeSmallBatch spawn error', {
         outputPath,
         error: String(err),
       });
-      resolve({ success: false, error: errorMessage });
+      resolve({
+        success: false,
+        error: errorMessage,
+        failingInputPath: files.length === 1 ? files[0].path : undefined,
+      });
     });
   });
 }
@@ -581,10 +791,21 @@ export async function mergeAudioFiles(
 
       const failed = results.find(r => !r.batchResult.success);
       if (failed) {
+        const failedInputName = failed.batchResult.failingInputPath
+          ? path.basename(failed.batchResult.failingInputPath)
+          : 'không xác định';
+        const failedInputSource = classifyAudioInputSource(failed.batchResult.failingInputPath);
+        const failedReason = failed.batchResult.error ?? 'FFmpeg báo lỗi không xác định';
+        const suspectedInputSummary = failed.batchResult.suspectedInputSummary;
         debugLog('Batch merge thất bại, bắt đầu cleanup temp files', {
           failedBatch: failed.batchIdx + 1,
           tempFilesCount: tempFiles.filter(Boolean).length,
-          error: failed.batchResult.error ?? 'unknown',
+          error: failedReason,
+          failingInputPath: failed.batchResult.failingInputPath,
+          failingInputSource: failedInputSource.source,
+          suspectedInputPaths: failed.batchResult.suspectedInputPaths,
+          suspectedInputSummary,
+          stderrTail: failed.batchResult.stderrTail,
         });
         for (const res of results) {
           if (res.batchResult.success) {
@@ -605,7 +826,7 @@ export async function mergeAudioFiles(
         return {
           success: false,
           outputPath: finalOutputPath,
-          error: `Lỗi ghép batch ${failed.batchIdx + 1}: ${failed.batchResult.error ?? 'unknown error'}`,
+          error: `Lỗi ghép batch ${failed.batchIdx + 1}: ${failedReason} | file: ${failedInputName} | nguồn: ${failedInputSource.label}${suspectedInputSummary ? ` | files nghi lỗi: ${suspectedInputSummary}` : ''}`,
         };
       }
 
@@ -641,10 +862,14 @@ export async function mergeAudioFiles(
           await fs.unlink(onlyTemp.path);
         } catch {}
         if (!singleFinalResult.success) {
+          const failedTempName = singleFinalResult.failingInputPath
+            ? path.basename(singleFinalResult.failingInputPath)
+            : 'không xác định';
+          const failedTempSource = classifyAudioInputSource(singleFinalResult.failingInputPath);
           return {
             success: false,
             outputPath: finalOutputPath,
-            error: `Lỗi ghép final từ 1 batch: ${singleFinalResult.error ?? 'unknown error'}`,
+            error: `Lỗi ghép final từ 1 batch: ${singleFinalResult.error ?? 'unknown error'} | file: ${failedTempName} | nguồn: ${failedTempSource.label}${singleFinalResult.suspectedInputSummary ? ` | files nghi lỗi: ${singleFinalResult.suspectedInputSummary}` : ''}`,
           };
         }
       }
@@ -699,15 +924,22 @@ export async function mergeAudioFiles(
       });
       return { success: true, outputPath: finalOutputPath };
     } else {
+      const failedFinalInputName = finalResult.failingInputPath
+        ? path.basename(finalResult.failingInputPath)
+        : 'không xác định';
+      const failedFinalInputSource = classifyAudioInputSource(finalResult.failingInputPath);
       debugLog('Final merge thất bại', {
         outputPath: finalOutputPath,
         tempFiles: tempFiles.length,
         error: finalResult.error ?? 'unknown',
+        failingInputPath: finalResult.failingInputPath,
+        failingInputSource: failedFinalInputSource.source,
+        stderrTail: finalResult.stderrTail,
       });
       return {
         success: false,
         outputPath: finalOutputPath,
-        error: `Lỗi ghép final: ${finalResult.error ?? 'unknown error'}`,
+        error: `Lỗi ghép final: ${finalResult.error ?? 'unknown error'} | file: ${failedFinalInputName} | nguồn: ${failedFinalInputSource.label}${finalResult.suspectedInputSummary ? ` | files nghi lỗi: ${finalResult.suspectedInputSummary}` : ''}`,
       };
     }
     

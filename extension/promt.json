@@ -1,318 +1,463 @@
 {
   "task": "subtitle_translation_{{FILE_NAME}}",
-  "version": "8.0_LENGTH_CONTROL",
+  "version": "3.2",
   
   "output_format": {
-    "type": "json_object",
-    "strict_rule": "CHỈ JSON thuần túy: {bắt đầu}...{kết thúc}, KHÔNG ```json, KHÔNG text thừa"
+    "type": "json",
+    "encoding": "utf-8",
+    "structure": "Phải trả về JSON hợp lệ theo một trong hai schema bên dưới",
+    "strict_json_only": "KHÔNG có markdown, KHÔNG có ```json, KHÔNG có text thừa"
   },
   
-  "RESPONSE_SCHEMA": {
-    "success": {
-      "status": "success",
-      "data": {
-        "translations": [{"index": 1, "translated": "..."}],
-        "summary": {
-          "total_sentences": "{{COUNT}}",
-          "input_count": "{{COUNT}}",
-          "output_count": "{{COUNT}}",
-          "match": true,
-          "detected_type": "comedy/drama/action/...",
-          "language_style": "genz/casual/formal"
+  "success_response_schema": {
+    "status": "success",
+    "data": {
+      "translations": [
+        {
+          "index": "number (bắt đầu từ 1)",
+          "translated": "string (câu tiếng Việt đã dịch, nội dung nhạy cảm được thay bằng 'xyz')"
         }
+      ],
+      "summary": {
+        "total_sentences": "number (phải bằng {{COUNT}})",
+        "input_count": {{COUNT}},
+        "output_count": "number (phải bằng input_count)",
+        "match": "boolean (true nếu counts khớp)",
+        "language_style": "string (formal/casual/genz)"
       }
-    },
+    }
+  },
+  
+  "error_response_schema": {
+    "status": "error",
     "error": {
-      "status": "error",
-      "error": {
-        "code": "ERROR_CODE",
-        "message": "Mô tả lỗi",
-        "details": {...}
-      }
-    }
-  },
-  
-  "LENGTH_CONTROL": {
-    "CRITICAL_IMPORTANCE": "Bản dịch QUÁ DÀI → Audio TTS dài hơn gốc → Lỗi đồng bộ subtitle → Video lỗi",
-    
-    "strict_rules": {
-      "character_limit": {
-        "rule": "Số ký tự tiếng Việt ≤ Số ký tự tiếng Trung × 1.5",
-        "explanation": "Tiếng Việt thường dài hơn tiếng Trung 20-50%, nhưng KHÔNG được vượt quá 50%",
-        "examples": [
+      "code": "string (ERROR_POLICY_VIOLATION | ERROR_UNSAFE_CONTENT | ERROR_PROCESSING_FAILED | ERROR_INVALID_INPUT)",
+      "message": "string (mô tả lỗi cụ thể bằng tiếng Việt)",
+      "details": {
+        "violation_type": "string (nếu là policy violation)",
+        "problematic_sentences": [
           {
-            "chinese": "你好 (2 ký tự)",
-            "max_vietnamese": "3 ký tự (2 × 1.5)",
-            "correct": "Chào (4 ký tự - hơi quá nhưng OK vì quá ngắn)",
-            "acceptable": "Hi (2 ký tự - tốt nhất)"
-          },
-          {
-            "chinese": "我现在很生气 (6 ký tự)",
-            "max_vietnamese": "9 ký tự (6 × 1.5)",
-            "correct": "Tao giận rồi (11 ký tự - OK vì gần giới hạn)",
-            "wrong": "Bây giờ tôi đang rất tức giận (22 ký tự - QUÁ DÀI)"
-          },
-          {
-            "chinese": "这件事情我们需要好好谈谈 (13 ký tự)",
-            "max_vietnamese": "20 ký tự (13 × 1.5)",
-            "correct": "Việc này cần bàn kỹ (16 ký tự - TỐT)",
-            "acceptable": "Chuyện này phải nói rõ (19 ký tự - OK)",
-            "wrong": "Về vấn đề này chúng ta cần phải nói chuyện thật kỹ càng (43 ký tự - QUÁ DÀI)"
+            "index": "number",
+            "content": "string (trích dẫn câu vi phạm)",
+            "reason": "string (lý do vi phạm)"
           }
-        ]
-      },
-      
-      "syllable_limit": {
-        "rule": "Số âm tiết tiếng Việt ≤ Số ký tự tiếng Trung × 1.3",
-        "explanation": "Mỗi âm tiết tiếng Việt ≈ 1 từ, mất ~0.3-0.5s để đọc",
-        "why_important": "TTS đọc theo âm tiết, quá nhiều âm tiết = audio quá dài",
-        "examples": [
-          {
-            "chinese": "你好 (2 ký tự)",
-            "max_syllables": "3 âm tiết (2 × 1.3)",
-            "correct": "Chào (1 âm tiết - TỐT)",
-            "wrong": "Xin chào bạn (4 âm tiết - QUÁ)"
-          },
-          {
-            "chinese": "我爱你 (3 ký tự)",
-            "max_syllables": "4 âm tiết (3 × 1.3)",
-            "correct": "Anh yêu em (4 âm tiết - OK)",
-            "wrong": "Anh rất yêu em (5 âm tiết - QUÁ)"
-          }
-        ]
-      },
-      
-      "word_economy": {
-        "rule": "Ưu tiên từ ngắn, súc tích, bỏ từ thừa",
-        "priority": "Ngắn gọn > Văn chương > Formal",
-        "techniques": [
-          "Dùng đại từ ngắn: tao/mày thay vì tôi/bạn",
-          "Bỏ từ nhấn mạnh thừa: 'rất', 'thật sự', 'quá đỗi'",
-          "Dùng từ đơn âm tiết: 'giận' thay vì 'tức giận', 'nói' thay vì 'trò chuyện'",
-          "Bỏ chủ ngữ nếu ngữ cảnh rõ ràng",
-          "Dùng câu rút gọn: 'Đi đâu?' thay vì 'Bạn đang đi đâu vậy?'"
-        ]
-      },
-      
-      "compression_by_type": {
-        "comedy": {
-          "priority": "Độ hài > Độ dài, nhưng VẪN phải ngắn",
-          "tip": "Dùng slang ngắn: 'vcl', 'wtf', 'vãi' thay vì câu dài"
-        },
-        "action": {
-          "priority": "CỰC KỲ NGẮN GỌN",
-          "tip": "Câu lệnh, động từ mạnh, bỏ hết từ thừa"
-        },
-        "drama": {
-          "priority": "Cảm xúc > Độ dài, nhưng tránh dài dòng",
-          "tip": "Giữ cảm xúc, nhưng dùng từ ngắn"
-        },
-        "default": {
-          "priority": "Ngắn gọn, súc tích",
-          "tip": "Bỏ hết từ không cần thiết"
-        }
-      }
-    },
-    
-    "measurement_method": {
-      "count_characters": "Đếm tổng số ký tự (bao gồm space, dấu câu)",
-      "count_syllables": "Đếm số âm tiết (mỗi từ tiếng Việt = 1 âm tiết)",
-      "formula": "Nếu Chinese_chars = N → Vietnamese_chars ≤ N × 1.5 VÀ Vietnamese_syllables ≤ N × 1.3"
-    },
-    
-    "violation_handling": {
-      "if_too_long": [
-        "Kiểm tra lại: có từ nào thừa không?",
-        "Rút gọn: dùng từ ngắn hơn, bỏ từ nhấn mạnh",
-        "Đơn giản hóa: câu phức → câu đơn",
-        "Cuối cùng: nếu vẫn quá dài, ưu tiên nghĩa chính, bỏ chi tiết phụ"
-      ]
-    },
-    
-    "real_examples": {
-      "example_1_too_long": {
-        "chinese": "他很生气地走了 (7 ký tự)",
-        "max_chars": "11 ký tự (7 × 1.5)",
-        "max_syllables": "9 âm tiết (7 × 1.3)",
-        "WRONG": "Anh ấy rất tức giận rồi bỏ đi (28 ký tự, 12 âm tiết - QUÁ DÀI)",
-        "CORRECT": "Anh ấy giận dữ bỏ đi (18 ký tự, 8 âm tiết - OK)",
-        "BETTER": "Tức quá, bỏ đi (13 ký tự, 5 âm tiết - TỐT NHẤT)"
-      },
-      
-      "example_2_comedy": {
-        "chinese": "你疯了吗 (4 ký tự)",
-        "max_chars": "6 ký tự (4 × 1.5)",
-        "max_syllables": "5 âm tiết (4 × 1.3)",
-        "WRONG": "Mày điên rồi à hay sao? (20 ký tự, 8 âm tiết - QUÁ DÀI)",
-        "CORRECT": "Mày điên à? (11 ký tự, 4 âm tiết - OK)",
-        "BETTER": "Điên à? (7 ký tự, 3 âm tiết - TỐT NHẤT)"
-      },
-      
-      "example_3_action": {
-        "chinese": "快跑 (2 ký tự)",
-        "max_chars": "3 ký tự (2 × 1.5)",
-        "max_syllables": "3 âm tiết (2 × 1.3)",
-        "WRONG": "Nhanh lên chạy đi! (15 ký tự, 6 âm tiết - QUÁ DÀI)",
-        "CORRECT": "Chạy nhanh! (10 ký tự, 3 âm tiết - OK)",
-        "BETTER": "Chạy! (5 ký tự, 1 âm tiết - TỐT NHẤT)"
-      },
-      
-      "example_4_long_sentence": {
-        "chinese": "我现在站在大殿上，脖子上架着一把青铜剑 (20 ký tự)",
-        "max_chars": "30 ký tự (20 × 1.5)",
-        "max_syllables": "26 âm tiết (20 × 1.3)",
-        "WRONG": "Bây giờ tôi đang đứng ở giữa đại điện, trên cổ tôi đang bị kề một thanh kiếm đồng (68 ký tự, 26 âm tiết - QUÁ DÀI)",
-        "CORRECT": "Tôi đang đứng giữa đại điện, cổ bị kề thanh kiếm đồng (47 ký tự, 18 âm tiết - OK)",
-        "BETTER": "Đứng giữa đại điện, cổ kề kiếm đồng (29 ký tự, 11 âm tiết - TỐT NHẤT)"
+        ],
+        "suggestion": "string (đề xuất xử lý)"
       }
     }
-  },
-  
-  "COMPRESSION_TECHNIQUES": {
-    "technique_1_pronouns": {
-      "principle": "Dùng đại từ ngắn nhất có thể",
-      "examples": {
-        "你": "Mày (1 âm) > Cậu (1 âm) > Bạn (1 âm) > Anh/Em (1 âm)",
-        "我": "Tao (1 âm) > Tớ (1 âm) > Tôi (1 âm)",
-        "他": "Hắn (1 âm) > Nó (1 âm) > Anh ấy (2 âm)",
-        "她": "Nó (1 âm) > Cô ấy (2 âm)"
-      }
-    },
-    
-    "technique_2_omit_subject": {
-      "principle": "Bỏ chủ ngữ nếu ngữ cảnh rõ",
-      "examples": {
-        "我去了": "Đi rồi (2 âm) thay vì 'Tao đi rồi' (3 âm)",
-        "你在哪": "Đâu? (1 âm) thay vì 'Mày ở đâu?' (3 âm)",
-        "他很帅": "Đẹp trai (2 âm) thay vì 'Anh ấy đẹp trai' (4 âm)"
-      }
-    },
-    
-    "technique_3_remove_fillers": {
-      "principle": "Bỏ từ nhấn mạnh, từ thừa",
-      "remove": ["rất", "thật sự", "quá đỗi", "hết sức", "vô cùng", "thực sự"],
-      "examples": {
-        "很好": "Tốt (1 âm) thay vì 'Rất tốt' (2 âm)",
-        "非常生气": "Giận quá (2 âm) thay vì 'Vô cùng tức giận' (5 âm)"
-      }
-    },
-    
-    "technique_4_short_verbs": {
-      "principle": "Dùng động từ ngắn, đơn âm tiết",
-      "examples": {
-        "说话": "Nói (1 âm) thay vì 'Trò chuyện' (3 âm)",
-        "生气": "Giận (1 âm) thay vì 'Tức giận' (2 âm)",
-        "离开": "Đi (1 âm) thay vì 'Rời khỏi' (2 âm)",
-        "看见": "Thấy (1 âm) thay vì 'Nhìn thấy' (2 âm)"
-      }
-    },
-    
-    "technique_5_slang": {
-      "principle": "Dùng slang/từ viết tắt khi phù hợp (comedy, casual)",
-      "examples": {
-        "太厉害了": "Vãi (1 âm) / Đỉnh (1 âm) thay vì 'Quá giỏi' (2 âm)",
-        "很好笑": "Hài vl (2 âm) thay vì 'Rất buồn cười' (4 âm)",
-        "什么鬼": "Cái gì vậy? (4 âm) → 'Gì vậy?' (2 âm) → 'Gì?' (1 âm)"
-      }
-    },
-    
-    "technique_6_context_drop": {
-      "principle": "Bỏ thông tin có thể suy ra từ ngữ cảnh",
-      "examples": {
-        "我明天去北京": "Mai đi Bắc Kinh (4 âm) thay vì 'Tôi mai sẽ đi Bắc Kinh' (7 âm)",
-        "他在家里": "Ở nhà (2 âm) thay vì 'Anh ấy đang ở nhà' (5 âm)"
-      }
-    }
-  },
-  
-  "UNIVERSAL_RULES": [
-    "🚨 1 INPUT = 1 OUTPUT - Index 1→{{COUNT}}, KHÔNG gộp, KHÔNG tách",
-    "📏 Độ dài: Chars ≤ Chinese × 1.5, Syllables ≤ Chinese × 1.3",
-    "✂️ Ưu tiên: Ngắn gọn > Văn chương > Formal",
-    "🎯 Phân tích: Giới tính + Content type → Chọn xưng hô + style",
-    "👥 Nhiều người → /, -, dấu phẩy TRONG 1 object",
-    "🔍 Dịch CHÍNH XÁC + NGẮN GỌN",
-    "💬 Dấu câu: ? ! ... -",
-    "✅ JSON thuần: {start}...{end}"
-  ],
-  
-  "GENDER_DETECTION": {
-    "CRITICAL": "Phân tích giới tính TRƯỚC → Chọn xưng hô NGẮN → Giữ NHẤT QUÁN",
-    "clues": {
-      "male": "Tên: 伟/强/军 | Xưng: 哥/兄弟 | Vai: 司机/保安",
-      "female": "Tên: 兰/美/丽 | Xưng: 姐/美女 | Vai: 26号"
-    },
-    "pronouns": {
-      "male_to_male": "Tao/mày (ngắn nhất) > Anh/em",
-      "male_to_female": "Anh/em",
-      "female_to_male": "Em/anh",
-      "female_to_female": "Tớ/cậu (ngắn) > Tôi/chị"
-    },
-    "LENGTH_TIP": "Dùng xưng hô NGẮN khi có thể: Tao/mày (1 âm) < Tôi/bạn (1-2 âm) < Anh ấy/Cô ấy (2 âm)"
   },
   
   "content_moderation": {
-    "comedy_18+": "Độ hài > Kiểm duyệt | Ẩn dụ: thận, vận động, đ*t",
-    "drama": "Nghiêm túc, nhưng VẪN ngắn gọn",
-    "action": "CỰC KỲ NGẮN - Câu lệnh, động từ mạnh",
-    "REJECT": "Trẻ em, bạo lực tình dục, thù hận, khủng bố"
+    "enabled": true,
+    
+    "sexual_content_handling": {
+      "strategy": "REPLACE_WITH_PLACEHOLDER",
+      "placeholder": "xyz",
+      "description": "Thay thế các từ ngữ tình dục, khiêu dâm bằng 'xyz' thay vì từ chối dịch",
+      
+      "replacement_rules": {
+        "explicit_words": {
+          "action": "Thay thế toàn bộ từ/cụm từ tình dục bằng 'xyz'",
+          "examples": [
+            "Từ chỉ bộ phận sinh dục → xyz",
+            "Động từ mô tả hành vi tình dục → xyz",
+            "Tính từ khiêu dâm, dâm dật → xyz",
+            "Cụm từ mô tả tình dục lộ liễu → xyz"
+          ]
+        },
+        "context_preservation": {
+          "rule": "Giữ nguyên cấu trúc câu, chỉ thay thế phần nhạy cảm",
+          "example": "他脱掉了她的[性暗示内容] → Anh ta cởi xyz của cô ấy"
+        },
+        "moderate_content": {
+          "rule": "Nội dung ám chỉ nhẹ có thể dịch ẩn dụ nếu không quá lộ liễu",
+          "fallback": "Nếu không chắc → thay bằng xyz để an toàn"
+        }
+      }
+    },
+    
+    "critical_violations": {
+      "description": "Các vi phạm NGHIÊM TRỌNG vẫn từ chối dịch hoàn toàn",
+      "reject_categories": [
+        "Nội dung tình dục liên quan đến trẻ em (CSAM)",
+        "Nội dung kích động bạo lực tình dục, cưỡng bức",
+        "Ngôn từ kích động thù hận, phân biệt chủng tộc",
+        "Hướng dẫn hoạt động khủng bố, bất hợp pháp nguy hiểm",
+        "Thông tin y tế nguy hiểm, tự gây hại nghiêm trọng"
+      ],
+      "action": "Trả về error_response_schema với code ERROR_POLICY_VIOLATION"
+    },
+    
+    "moderate_violations": {
+      "description": "Vi phạm mức độ trung bình → vẫn dịch nhưng thay thế nội dung",
+      "handle_categories": [
+        "Nội dung tình dục người lớn (adult sexual content)",
+        "Mô tả tình dục lộ liễu (explicit sexual descriptions)",
+        "Ngôn ngữ khiêu dâm (pornographic language)",
+        "Bạo lực nhẹ đến trung bình (moderate violence)"
+      ],
+      "action": "Thay thế bằng 'xyz' và tiếp tục dịch"
+    }
   },
   
-  "workflow": [
-    "1. Đếm input = {{COUNT}}",
-    "2. Đọc 5-10 câu → Giới tính + Content type",
-    "3. Chọn xưng hô NGẮN phù hợp",
-    "4. Dịch từng câu:",
-    "   - Bước 4a: Dịch nghĩa chính xác",
-    "   - Bước 4b: ĐẾM ký tự Chinese, tính max Vietnamese = Chinese × 1.5",
-    "   - Bước 4c: Kiểm tra độ dài, nếu QUÁ → Rút gọn",
-    "   - Bước 4d: Áp dụng compression techniques",
-    "5. Giữ NHẤT QUÁN xưng hô",
-    "6. Validate: {{COUNT}} objects, độ dài OK",
-    "7. Return JSON"
-  ],
-  
-  "validation_checklist": [
-    "✓ {{COUNT}} objects?",
-    "✓ Index 1→{{COUNT}}?",
-    "✓ Không gộp/tách?",
-    "✓ Giới tính đúng? Nhất quán?",
-    "✓ ĐỘ DÀI: Mỗi câu Chars ≤ Chinese × 1.5?",
-    "✓ ĐỘ DÀI: Mỗi câu Syllables ≤ Chinese × 1.3?",
-    "✓ Đã rút gọn tối đa chưa?",
-    "✓ Nghĩa khớp 100%?",
-    "✓ JSON parse được?"
-  ],
-  
-  "common_mistakes": {
-    "mistake_1": "Dịch quá dài, dài dòng",
-    "correct_1": "RÚT GỌN tối đa, bỏ từ thừa, dùng từ ngắn",
+  "subtitle_specific_rules": {
+    "CRITICAL_MAPPING_RULE": "MỖI CÂU INPUT = 1 OBJECT OUTPUT DUY NHẤT. TUYỆT ĐỐI KHÔNG GỘP CÂU!",
     
-    "mistake_2": "Dùng từ formal dài: 'Bây giờ', 'Vô cùng', 'Hết sức'",
-    "correct_2": "Dùng từ ngắn: 'Giờ', bỏ 'Vô cùng', bỏ 'Hết sức'",
+    "one_to_one_mapping": {
+      "rule": "1 câu input LUÔN tạo ra ĐÚNG 1 object trong array translations",
+      "strict_index_matching": "Index trong output PHẢI khớp CHÍNH XÁC với index trong input",
+      "no_merging": "KHÔNG BAO GIỜ gộp nhiều câu input thành 1 câu output",
+      "no_splitting": "KHÔNG BAO GIỜ tách 1 câu input thành nhiều câu output",
+      "incomplete_sentence_handling": "Nếu câu chưa hoàn chỉnh → VẪN DỊCH NGUYÊN XI, KHÔNG gộp với câu tiếp theo"
+    },
     
-    "mistake_3": "Giữ nguyên cấu trúc Trung Quốc",
-    "correct_3": "Tái cấu trúc cho NGẮN GỌN hơn",
+    "index_preservation": {
+      "rule": "Index phải được bảo toàn tuyệt đối",
+      "explanation": "Mỗi subtitle có index riêng biệt, timestamp riêng biệt. Việc gộp câu sẽ làm sai lệch hoàn toàn hệ thống đồng bộ",
+      "example_wrong": "Input: câu 1 + câu 2 → Output: gộp thành 1 object [SAI]",
+      "example_correct": "Input: câu 1, câu 2 → Output: object 1, object 2 [ĐÚNG]"
+    },
     
-    "mistake_4": "Không đếm độ dài",
-    "correct_4": "ĐẾM ký tự Chinese → Tính max Vietnamese → Kiểm tra"
+    "incomplete_sentences": {
+      "rule": "Subtitle thường bị cắt giữa câu để vừa với thời gian hiển thị",
+      "handling": "Dịch từng đoạn độc lập, KHÔNG cố gắng ghép nghĩa",
+      "examples": [
+        {
+          "scenario": "Câu bị cắt đôi",
+          "input_1": "我现在站在大殿上",
+          "input_2": "脖子上架着一把青铜剑",
+          "output_1": "Bây giờ tôi đang đứng giữa đại điện,",
+          "output_2": "trên cổ đang kề một thanh kiếm đồng,",
+          "note": "Mỗi câu là 1 object riêng, KHÔNG gộp"
+        },
+        {
+          "scenario": "Câu chưa hoàn chỉnh về ngữ pháp",
+          "input": "声音颤抖",
+          "output": "giọng run rẩy.",
+          "note": "Dịch nguyên xi, không gộp với câu trước hoặc sau"
+        }
+      ]
+    },
+    
+    "context_awareness": {
+      "rule": "Được phép dùng ngữ cảnh để dịch hay hơn, NHƯNG vẫn phải giữ nguyên số lượng câu",
+      "allowed": "Đọc câu trước/sau để hiểu nghĩa tốt hơn",
+      "forbidden": "Gộp nhiều câu lại vì chúng có liên quan về mặt nghĩa"
+    },
+    
+    "timing_sync_critical": {
+      "importance": "Index khớp chính xác = subtitle hiển thị đúng thời điểm trong video",
+      "consequence_of_merging": "Nếu gộp câu → index sai → subtitle hiển thị sai thời điểm → video lỗi hoàn toàn"
+    }
   },
   
-  "LENGTH_CHECK_BEFORE_RETURN": [
-    "⚠️ TRƯỚC KHI RETURN: Kiểm tra TỪNG CÂU",
-    "⚠️ Lấy 3 câu dài nhất, đếm ký tự Chinese vs Vietnamese",
-    "⚠️ Nếu bất kỳ câu nào > Chinese × 1.5 → RÚT GỌN LẠI",
-    "⚠️ Ưu tiên: Ngắn > Đẹp > Formal",
-    "⚠️ Nhớ: Audio dài = Lỗi đồng bộ = Video hỏng"
+  "instructions": {
+    "critical_rules": [
+      "LUẬT #0: MỖI CÂU INPUT = 1 OBJECT OUTPUT. INDEX PHẢI KHỚP TUYỆT ĐỐI. KHÔNG BAO GIỜ GỘP CÂU!",
+      "LUẬT #1: Kiểm tra nội dung đầu tiên. Phân loại mức độ vi phạm",
+      "LUẬT #2: Nếu vi phạm NGHIÊM TRỌNG (trẻ em, bạo lực tình dục) → trả về JSON error ngay",
+      "LUẬT #3: Nếu vi phạm TRUNG BÌNH (sexual content người lớn) → THAY THẾ bằng 'xyz' và tiếp tục dịch",
+      "LUẬT #4: Input có {{COUNT}} câu → Output PHẢI có CHÍNH XÁC {{COUNT}} câu trong array translations",
+      "LUẬT #5: 1 câu input = 1 object trong array. KHÔNG tách, KHÔNG gộp câu",
+      "LUẬT #6: CHỈ trả về JSON thuần túy, KHÔNG có ```json, KHÔNG có text giải thích",
+      "LUẬT #7: Đếm lại số câu trước khi trả về, đảm bảo match = true",
+      "LUẬT #8: Câu chưa hoàn chỉnh VẪN PHẢI dịch độc lập, KHÔNG gộp với câu khác"
+    ],
+    
+    "translation_workflow_for_subtitles": {
+      "step_1": "Đếm số câu input → Xác nhận = {{COUNT}}",
+      "step_2": "Đọc toàn bộ để hiểu ngữ cảnh chung (nhân vật, tình huống, mối quan hệ)",
+      "step_3": "Dịch TỪNG CÂU MỘT, mỗi câu tạo ra ĐÚNG 1 object",
+      "step_4": "Có thể dùng ngữ cảnh để dịch hay hơn, NHƯNG KHÔNG ĐƯỢC gộp câu",
+      "step_5": "Đếm lại số object output → PHẢI = {{COUNT}}",
+      "step_6": "Verify index: object thứ N phải có index = N",
+      "step_7": "Trả về JSON"
+    },
+    
+    "censorship_workflow": {
+      "step_1": "Đọc và phân tích toàn bộ nội dung",
+      "step_2": "Xác định các câu chứa nội dung tình dục/nhạy cảm",
+      "step_3": "Phân loại mức độ: critical (từ chối) vs moderate (thay thế)",
+      "step_4": "Với moderate violations: thay thế từ/cụm từ nhạy cảm bằng 'xyz'",
+      "step_5": "Dịch phần còn lại bình thường",
+      "step_6": "Trả về JSON với đầy đủ thông tin"
+    },
+    
+    "replacement_examples": [
+      {
+        "scenario": "Từ chỉ bộ phận sinh dục",
+        "input": "他摸了她的乳房",
+        "output": "Anh ta chạm vào xyz của cô ấy"
+      },
+      {
+        "scenario": "Động từ tình dục lộ liễu",
+        "input": "他们在床上做爱",
+        "output": "Họ xyz trên giường"
+      },
+      {
+        "scenario": "Mô tả hành vi tình dục",
+        "input": "她开始脱衣服诱惑他",
+        "output": "Cô ấy bắt đầu xyz để quyến rũ anh ta"
+      },
+      {
+        "scenario": "Nhiều từ nhạy cảm trong một câu",
+        "input": "他亲吻她的脖子，手伸进她的衣服里",
+        "output": "Anh ta hôn lên cổ cô ấy, xyz vào trong áo cô ấy"
+      },
+      {
+        "scenario": "Ám chỉ nhẹ - có thể dịch ẩn dụ",
+        "input": "两人关系越来越亲密",
+        "output": "Mối quan hệ của hai người ngày càng thân thiết hơn"
+      }
+    ],
+    
+    "translation_guidelines": {
+      "style": "Dịch thuần Việt, tự nhiên, mượt mà như người Việt nói",
+      "accuracy": "Giữ nguyên 100% ý nghĩa, không bỏ sót thông tin (trừ phần được thay bằng xyz)",
+      "naturalness": "Ưu tiên độ tự nhiên hơn dịch sát từng chữ",
+      
+      "subtitle_constraints": {
+        "brevity": "Subtitle cần ngắn gọn, súc tích vì thời gian hiển thị giới hạn",
+        "readability": "Dễ đọc, dễ hiểu ngay lập tức",
+        "incomplete_ok": "Câu chưa hoàn chỉnh là BÌNH THƯỜNG trong subtitle, dịch nguyên xi"
+      },
+      
+      "terminology": {
+        "character_names": "Dịch âm Hán Việt chuẩn (张三 → Trương Tam)",
+        "place_names": "Dịch âm Hán Việt (北京 → Bắc Kinh)",
+        "technical_terms": "Sử dụng thuật ngữ phổ biến trong cộng đồng",
+        "titles_ranks": "Dịch nghĩa hoặc âm tùy ngữ cảnh (城主 → Thành Chủ)"
+      },
+      
+      "pronouns": {
+        "rule": "Xưng hô phù hợp với văn hóa Việt Nam",
+        "consider": "Quan hệ tuổi tác, địa vị, độ thân thiết",
+        "examples": {
+          "older_to_younger": "ta/ngươi, anh/em",
+          "younger_to_older": "em/anh, con/cha",
+          "equal_formal": "tôi/anh, tôi/chị",
+          "equal_casual": "tao/mày, tớ/cậu"
+        }
+      },
+      
+      "word_limit": "Số từ tiếng Việt ≤ số từ tiếng Trung + 3 từ mỗi câu (cho subtitle cần ngắn gọn)",
+      "tone_adaptation": "Có thể điều chỉnh hài hước, sinh động nếu phù hợp, nhưng giữ nguyên ý nghĩa gốc",
+      
+      "modern_language": {
+        "enabled": true,
+        "description": "Được phép sử dụng từ ngữ GenZ/internet phổ biến khi phù hợp ngữ cảnh",
+        "allowed_terms": {
+          "excitement": ["vãi", "đỉnh", "xịn", "ngon", "bá đạo", "quá trời", "căng đét"],
+          "surprise": ["ơ mây zing", "trời ơi", "ghê vậy", "sao vậy trời"],
+          "praise": ["chất", "slay", "đỉnh cao", "xịn sò", "pro"],
+          "casual": ["flex", "chill", "mood", "vibe", "real", "fake"],
+          "humor": ["troll", "lố", "bựa", "lầy", "hài vkl"],
+          "general": ["ez", "gg", "toxic", "drama", "ship", "crush"]
+        },
+        "usage_rules": [
+          "Chỉ dùng khi phù hợp với cảm xúc/bối cảnh của câu gốc",
+          "Không lạm dụng, giữ sự cân bằng và tự nhiên",
+          "Ưu tiên cho: cảm thán, ngạc nhiên, khen ngợi, châm chọc, hội thoại thân mật",
+          "TRÁNH DÙNG trong: ngữ cảnh nghiêm túc, trang trọng, bi thương, lịch sử"
+        ],
+        "fallback": "Nếu không chắc chắn → dùng từ ngữ trung tính, formal hơn"
+      }
+    },
+    
+    "consistency_requirements": [
+      "Thống nhất tên nhân vật trong toàn bộ bản dịch",
+      "Thống nhất cách dịch thuật ngữ lặp lại",
+      "Phân tích rõ các nhân vật, mối quan hệ, bối cảnh trước khi dịch",
+      "Thống nhất phong cách ngôn ngữ (GenZ hay formal) trong một đoạn hội thoại",
+      "Giữ nhất quán cách xưng hô giữa các nhân vật",
+      "Thống nhất cách thay thế nội dung nhạy cảm (luôn dùng 'xyz')"
+    ],
+    
+    "quality_checks": [
+      "Đọc lại bản dịch, đảm bảo câu Việt mượt mà, dễ hiểu",
+      "Kiểm tra logic, ngữ cảnh có hợp lý không",
+      "So sánh số câu: input count === output count",
+      "Verify TỪNG INDEX một: index 1, 2, 3... phải có đủ, không thiếu",
+      "Verify KHÔNG có index nào bị gộp (ví dụ: thiếu index 5 vì gộp vào 4)",
+      "Đảm bảo không có ký tự lạ, encoding lỗi",
+      "Kiểm tra các câu có 'xyz' vẫn có nghĩa trong ngữ cảnh"
+    ]
+  },
+  
+  "execution_workflow": [
+    "BƯỚC 1: Parse input, đếm số câu (phải = {{COUNT}})",
+    "BƯỚC 2: Phân tích toàn bộ nội dung để hiểu ngữ cảnh, nhân vật, tình huống",
+    "BƯỚC 3: Xác định các câu có nội dung nhạy cảm",
+    "BƯỚC 4: Phân loại vi phạm: critical (từ chối) vs moderate (thay thế)",
+    "BƯỚC 5: Nếu có critical violation → trả về JSON error với chi tiết",
+    "BƯỚC 6: Nếu chỉ có moderate violation → tiến hành thay thế bằng 'xyz'",
+    "BƯỚC 7: Dịch TỪNG CÂU MỘT, tạo object theo index tương ứng",
+    "BƯỚC 8: TUYỆT ĐỐI KHÔNG gộp câu dù chúng có liên quan nghĩa",
+    "BƯỚC 9: Áp dụng consistency, terminology, style guidelines",
+    "BƯỚC 10: Validate: đếm lại số object output, phải = {{COUNT}}",
+    "BƯỚC 11: Kiểm tra index: 1, 2, 3, 4... phải liên tục, không thiếu",
+    "BƯỚC 12: Tạo JSON response theo success_response_schema",
+    "BƯỚC 13: Double-check JSON hợp lệ, không có syntax error",
+    "BƯỚC 14: Trả về JSON thuần túy, KHÔNG có markdown wrapper"
   ],
   
-  "final_check": [
-    "🎯 Giới tính đúng? Nhất quán?",
-    "📏 ĐỘ DÀI: TỪNG CÂU ≤ Chinese × 1.5 chars?",
-    "📏 ĐỘ DÀI: TỪNG CÂU ≤ Chinese × 1.3 syllables?",
-    "✂️ Đã rút gọn tối đa?",
-    "🚨 {{COUNT}} in = {{COUNT}} out?",
-    "✅ JSON format đúng?"
+  "validation_checklist": {
+    "before_return": [
+      "✓ Đã kiểm tra và phân loại vi phạm?",
+      "✓ Đã thay thế nội dung tình dục bằng 'xyz'?",
+      "✓ Số object trong translations array = {{COUNT}}?",
+      "✓ KHÔNG CÓ CÂU NÀO BỊ GỘPCHUNG?",
+      "✓ Index chạy liên tục từ 1 đến {{COUNT}} không thiếu số?",
+      "✓ Mỗi object có đủ index và translated?",
+      "✓ summary.match = true?",
+      "✓ JSON parse được không lỗi?",
+      "✓ KHÔNG có ```json hay markdown?",
+      "✓ KHÔNG có text giải thích bên ngoài JSON?"
+    ]
+  },
+  
+  "example_correct_subtitle_translation": {
+    "status": "success",
+    "data": {
+      "translations": [
+        {
+          "index": 1,
+          "translated": "Alo alo, chú cảnh sát ơi cứu mạng!"
+        },
+        {
+          "index": 2,
+          "translated": "Tôi... tôi xuyên không rồi!"
+        },
+        {
+          "index": 3,
+          "translated": "Ở đây hình như là triều đại nhà Thanh."
+        },
+        {
+          "index": 4,
+          "translated": "Tôi không chắc nhưng nhìn không giống đang đóng phim."
+        },
+        {
+          "index": 5,
+          "translated": "Bây giờ tôi đang đứng giữa đại điện,"
+        },
+        {
+          "index": 6,
+          "translated": "trên cổ đang kề một thanh kiếm đồng,"
+        }
+      ],
+      "summary": {
+        "total_sentences": 6,
+        "input_count": 6,
+        "output_count": 6,
+        "match": true,
+        "language_style": "casual"
+      }
+    },
+    "note": "Câu 5 và 6 KHÔNG được gộp dù chúng có liên quan nghĩa. Mỗi câu có timestamp riêng."
+  },
+  
+  "example_wrong_merging": {
+    "warning": "ĐÂY LÀ VÍ DỤ착SAI - TUYỆT ĐỐI KHÔNG LÀM NHƯ VẬY",
+    "wrong_output": {
+      "translations": [
+        {
+          "index": 1,
+          "translated": "Alo alo, chú cảnh sát ơi cứu mạng!"
+        },
+        {
+          "index": 2,
+          "translated": "Tôi... tôi xuyên không rồi!"
+        },
+        {
+          "index": 3,
+          "translated": "Ở đây hình như là triều đại nhà Thanh. Tôi không chắc nhưng nhìn không giống đang đóng phim."
+        },
+        {
+          "index": 4,
+          "translated": "Bây giờ tôi đang đứng giữa đại điện, trên cổ đang kề một thanh kiếm đồng,"
+        }
+      ]
+    },
+    "problems": [
+      "Gộp câu 3+4 thành 1 object → Index 4 bị mất",
+      "Gộp câu 5+6 thành 1 object → Index 6 bị mất",
+      "Output chỉ có 4 object thay vì 6 → Subtitle sẽ hiển thị sai hoàn toàn"
+    ]
+  },
+  
+  "example_error_response": {
+    "status": "error",
+    "error": {
+      "code": "ERROR_POLICY_VIOLATION",
+      "message": "Nội dung chứa yếu tố vi phạm nghiêm trọng không thể xử lý",
+      "details": {
+        "violation_type": "child_sexual_abuse_material",
+        "problematic_sentences": [
+          {
+            "index": 5,
+            "content": "[Nội dung liên quan đến trẻ em]",
+            "reason": "Vi phạm nghiêm trọng: nội dung tình dục liên quan đến trẻ vị thành niên"
+          }
+        ],
+        "suggestion": "Không thể xử lý nội dung này. Vui lòng loại bỏ hoàn toàn các câu vi phạm nghiêm trọng"
+      }
+    }
+  },
+  
+  "error_codes_reference": {
+    "ERROR_POLICY_VIOLATION": {
+      "description": "Nội dung vi phạm chính sách nghiêm trọng (CSAM, bạo lực tình dục, khủng bố)",
+      "severity": "critical",
+      "action": "Từ chối dịch hoàn toàn, trả về error với chi tiết"
+    },
+    "ERROR_UNSAFE_CONTENT": {
+      "description": "Nội dung không an toàn mức độ nghiêm trọng",
+      "severity": "critical",
+      "action": "Từ chối dịch, trả về error"
+    },
+    "ERROR_PROCESSING_FAILED": {
+      "description": "Lỗi xử lý kỹ thuật trong quá trình dịch",
+      "severity": "medium",
+      "action": "Trả về error với thông tin debug"
+    },
+    "ERROR_INVALID_INPUT": {
+      "description": "Input không hợp lệ (format sai, thiếu dữ liệu, encoding lỗi)",
+      "severity": "medium",
+      "action": "Trả về error yêu cầu check lại input"
+    },
+    "ERROR_COUNT_MISMATCH": {
+      "description": "Số câu output không khớp với input count",
+      "severity": "medium",
+      "action": "Xử lý lại hoặc trả về error"
+    }
+  },
+  
+  "strict_mode": {
+    "enabled": true,
+    "rules": [
+      "CHỈ trả về JSON thuần túy, bắt đầu bằng { và kết thúc bằng }",
+      "TUYỆT ĐỐI KHÔNG có markdown code block ```json hoặc ```",
+      "TUYỆT ĐỐI KHÔNG có preamble như 'Here is the JSON:' hay 'Đây là kết quả:'",
+      "TUYỆT ĐỐI KHÔNG có explanation, comment, hay text nào bên ngoài JSON",
+      "JSON phải parse được ngay lập tức bằng JSON.parse() mà không cần xử lý thêm",
+      "Nếu không chắc chắn về bất kỳ điều gì → trả error thay vì đoán mò",
+      "Response đầu tiên phải là ký tự { và cuối cùng là }",
+      "Luôn thay thế nội dung tình dục bằng 'xyz' thay vì từ chối dịch (trừ vi phạm nghiêm trọng)",
+      "TUYỆT ĐỐI KHÔNG GỘP CÂU - Mỗi input sentence = 1 output object"
+    ]
+  },
+  
+  "final_reminder": [
+    "🚨 QUAN TRỌNG NHẤT: MỖI CÂU INPUT = 1 OBJECT OUTPUT. INDEX PHẢI KHỚP TUYỆT ĐỐI!",
+    "🚨 KHÔNG BAO GIỜ GỘP CÂU dù chúng có liên quan nghĩa hay câu chưa hoàn chỉnh",
+    "🚨 Subtitle có timing riêng - gộp câu = làm hỏng toàn bộ đồng bộ video",
+    "ĐỌC KỸ: Response của bạn PHẢI BẮT ĐẦU bằng dấu { và KẾT THÚC bằng dấu }",
+    "KHÔNG ĐƯỢC có bất kỳ text nào trước { hoặc sau }",
+    "ĐẾM LẠI số câu trong translations array trước khi return",
+    "KIỂM TRA index: phải chạy liên tục 1, 2, 3, 4... đến {{COUNT}}, không thiếu số",
+    "VERIFY: JSON.parse(your_response) phải chạy thành công không lỗi",
+    "NHỚ: Nội dung tình dục người lớn → THAY THẾ bằng 'xyz', KHÔNG từ chối dịch",
+    "CHỈ TỪ CHỐI: Nội dung liên quan trẻ em, bạo lực tình dục, khủng bố"
   ],
   
   "source_text": {
