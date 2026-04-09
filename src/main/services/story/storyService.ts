@@ -112,8 +112,9 @@ export class StoryService {
 
       } else {
           // API METHOD (Default)
-          // Use the model from options, or fallback to FLASH_3_0
-          const modelToUse = (options.model as any) || GeminiService.GEMINI_MODELS.FLASH_3_0;
+          const modelToUse = typeof options.model === 'string' && options.model.trim().length > 0
+            ? options.model.trim()
+            : undefined;
           
           const result = await GeminiService.callGeminiWithRotation(
             options.prompt, 

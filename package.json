@@ -39,6 +39,7 @@
   "homepage": "https://github.com/TinhSoMa/NauChaoHeo#readme",
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
+    "@google/genai": "^1.49.0",
     "axios": "^1.13.3",
     "better-sqlite3": "^12.6.2",
     "clsx": "^2.1.1",

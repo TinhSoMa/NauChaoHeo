@@ -8,7 +8,7 @@ import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
 import { useProjectContext } from '../../context/ProjectContext';
 import {
-  GEMINI_MODELS,
+  GEMINI_MODELS as FALLBACK_GEMINI_MODELS,
   VOICES,
   RATE_OPTIONS,
   VOLUME_OPTIONS,
@@ -982,6 +982,9 @@ export function CaptionTranslator() {
 
   // 1. Settings Hook
   const settings = useCaptionSettings();
+  const [geminiModelOptions, setGeminiModelOptions] = useState<{ value: string; label: string }[]>(
+    FALLBACK_GEMINI_MODELS
+  );
   const [ttsVoiceOptions, setTtsVoiceOptions] = useState<TtsUiVoiceOption[]>(() =>
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
   );
@@ -990,6 +993,33 @@ export function CaptionTranslator() {
     () => `${COMMON_COLOR_HISTORY_STORAGE_PREFIX}:${projectId || 'global'}`,
     [projectId]
   );
+
+  useEffect(() => {
+    let active = true;
+    const loadGeminiModels = async () => {
+      try {
+        const res = await window.electronAPI.gemini.getModels();
+        if (!active || !res.success || !res.data) {
+          return;
+        }
+        const options = res.data
+          .filter((item) => item.enabled)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((item) => ({ value: item.modelId, label: item.label || item.name || item.modelId }));
+
+        if (options.length > 0) {
+          setGeminiModelOptions(options);
+        }
+      } catch (error) {
+        console.warn('[CaptionTranslator] Không tải được model động, dùng fallback:', error);
+      }
+    };
+
+    void loadGeminiModels();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -7249,7 +7279,7 @@ export function CaptionTranslator() {
                 disabled={settings.translateMethod !== 'api'}
                 style={settings.translateMethod !== 'api' ? { opacity: 0.4 } : undefined}
               >
-                {GEMINI_MODELS.map((m: { value: string; label: string }) => (
+                {geminiModelOptions.map((m: { value: string; label: string }) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>

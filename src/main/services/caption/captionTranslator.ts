@@ -296,7 +296,9 @@ async function translateBatch(
   model: GeminiModel,
   targetLanguage: string,
   promptTemplate?: string,
-  assignedKey?: { apiKey: string; keyInfo: KeyInfo }
+  assignedKey?: { apiKey: string; keyInfo: KeyInfo },
+  shouldStop?: () => boolean,
+  stopSignal?: AbortSignal,
 ): Promise<BatchTranslationResult> {
   const keyLabel = assignedKey ? assignedKey.keyInfo.name : 'rotation';
   console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [key: ${keyLabel}]`);
@@ -304,9 +306,26 @@ async function translateBatch(
   const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate);
 
   try {
+    const control = shouldStop
+      ? {
+          shouldStop,
+          stopErrorMessage: CAPTION_PROCESS_STOP_SIGNAL,
+          stopSignal,
+        }
+      : (stopSignal
+        ? {
+            stopSignal,
+            stopErrorMessage: CAPTION_PROCESS_STOP_SIGNAL,
+          }
+        : undefined);
+
     const response = assignedKey
-      ? await callGeminiWithAssignedKey(prompt, assignedKey, model)
-      : await callGeminiWithRotation(prompt, model);
+      ? await callGeminiWithAssignedKey(prompt, assignedKey, model, control)
+      : await callGeminiWithRotation(prompt, model, 10, control);
+
+    if (!response.success && response.error === CAPTION_PROCESS_STOP_SIGNAL) {
+      throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+    }
 
     if (!response.success || !response.data) {
       return {
@@ -338,6 +357,10 @@ async function translateBatch(
 
     return { success: true, translatedTexts, transport: 'api' };
   } catch (error) {
+    if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
+      throw error;
+    }
+
     console.error(`[CaptionTranslator] Lỗi dịch batch ${batch.batchIndex + 1}:`, error);
     return {
       success: false,
@@ -705,6 +728,12 @@ export async function translateAll(
       || error.message === GROK_UI_HARD_STOP_MESSAGE
     );
   const stopSignal = createTranslationStopSignal(runId);
+  const stopAbortController = new AbortController();
+  void stopSignal.promise.then(() => {
+    if (!stopAbortController.signal.aborted) {
+      stopAbortController.abort();
+    }
+  });
   const raceWithStop = async <T>(promise: Promise<T>): Promise<T> => (
     Promise.race([
       promise,
@@ -1279,7 +1308,15 @@ export async function translateAll(
           ? await translateBatchImpit(batch, targetLanguage, promptTemplate)
           : useGrokUi
             ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, grokUiTimeoutMs)
-            : await translateBatch(batch, model as GeminiModel, targetLanguage, promptTemplate, assignedKey);
+            : await translateBatch(
+              batch,
+              model as GeminiModel,
+              targetLanguage,
+              promptTemplate,
+              assignedKey,
+              () => shouldStopTranslation(runId),
+              stopAbortController.signal,
+            );
 
       assertNotStopped();
       lastResult = batchResult;

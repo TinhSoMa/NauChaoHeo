@@ -8,6 +8,7 @@ import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import type { GrokUiProfileConfig } from '../../shared/types/grokUi';
+import { GEMINI_MODEL_LIST } from '../../shared/types/gemini';
 import { AppSettingsService } from '../services/appSettings';
 
 type PromptRowLite = {
@@ -65,6 +66,63 @@ function buildLegacyGrokUiProfiles(settings: {
     anonymous,
     enabled: true,
   }];
+}
+
+function seedGeminiModelsIfEmpty(dbRef: Database.Database): void {
+  try {
+    const countRow = dbRef.prepare('SELECT COUNT(*) as count FROM gemini_models').get() as { count?: number };
+    const currentCount = Number(countRow?.count ?? 0);
+    if (currentCount > 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const insert = dbRef.prepare(`
+      INSERT INTO gemini_models (
+        model_id,
+        name,
+        label,
+        description,
+        enabled,
+        source,
+        sort_order,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const upsertSettings = dbRef.prepare(`
+      INSERT OR REPLACE INTO gemini_model_settings (
+        id,
+        default_model_id,
+        last_synced_at,
+        updated_at
+      ) VALUES (1, ?, NULL, ?)
+    `);
+
+    const tx = dbRef.transaction(() => {
+      GEMINI_MODEL_LIST.forEach((model, index) => {
+        insert.run(
+          model.id,
+          model.name || model.id,
+          model.label || model.id,
+          model.description || '',
+          1,
+          'seed',
+          index + 1,
+          now,
+          now,
+        );
+      });
+
+      const firstModel = GEMINI_MODEL_LIST[0]?.id || null;
+      upsertSettings.run(firstModel, now);
+    });
+
+    tx();
+    console.log(`[Database] Seeded gemini_models with ${GEMINI_MODEL_LIST.length} model(s)`);
+  } catch (error) {
+    console.error('[Database] Seed gemini_models failed:', error);
+  }
 }
 
 function normalizePromptType(raw: unknown, name: string): 'translation' | 'summary' | 'caption' {
@@ -674,6 +732,39 @@ export function initDatabase(): void {
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Create gemini_models table - lưu catalog model Gemini động
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_models (
+      model_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      label TEXT NOT NULL,
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('seed', 'manual', 'google_sync')),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Create gemini_model_settings table - lưu default model và metadata sync
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_model_settings (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      default_model_id TEXT,
+      last_synced_at INTEGER,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(default_model_id) REFERENCES gemini_models(model_id) ON DELETE SET NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_gemini_models_enabled_sort
+    ON gemini_models(enabled, sort_order);
+  `);
+
+  seedGeminiModelsIfEmpty(db);
 
   // Create grok_ui_profiles table - lưu profile Grok UI
   db.exec(`

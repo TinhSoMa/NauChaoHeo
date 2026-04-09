@@ -35,6 +35,9 @@ export function StoryTranslator() {
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
   const [model, setModel] = useState('gemini-3-flash-preview');
+  const [modelOptions, setModelOptions] = useState<Array<{ value: string; label: string }>>(
+    () => GEMINI_MODEL_LIST.map((m: { id: string; label: string }) => ({ value: m.id, label: m.label }))
+  );
   const [translationMethod, setTranslationMethod] = useState<StoryTranslationMethod>('api');
   const [status, setStatus] = useState<StoryStatus>('idle');
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
@@ -491,6 +494,32 @@ export function StoryTranslator() {
     translationMethod === 'api_gemini_webapi_queue';
 
   useEffect(() => {
+    let active = true;
+    const loadGeminiModels = async () => {
+      try {
+        const res = await window.electronAPI.gemini.getModels();
+        if (!active || !res.success || !res.data) {
+          return;
+        }
+        const options = res.data
+          .filter((item) => item.enabled)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((item) => ({ value: item.modelId, label: item.label || item.name || item.modelId }));
+        if (options.length > 0) {
+          setModelOptions(options);
+        }
+      } catch (error) {
+        console.warn('[StoryTranslator] Failed to load dynamic models, fallback to static list:', error);
+      }
+    };
+
+    void loadGeminiModels();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (translationMethod === 'token') {
       if (!tokenConfigId) {
         loadConfigurations();
@@ -711,8 +740,8 @@ export function StoryTranslator() {
             label="Model"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            options={GEMINI_MODEL_LIST.map(m => ({
-              value: m.id,
+            options={modelOptions.map(m => ({
+              value: m.value,
               label: compactModelLabel(m.label)
             }))}
           />

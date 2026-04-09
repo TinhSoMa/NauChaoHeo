@@ -51,6 +51,39 @@ interface GeminiApiResponse {
   error?: string;
 }
 
+interface GeminiCatalogModel {
+  modelId: string;
+  name: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  source: 'seed' | 'manual' | 'google_sync';
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface GeminiCatalogModelInput {
+  modelId: string;
+  name: string;
+  label: string;
+  description?: string;
+}
+
+interface GeminiCatalogModelUpdate {
+  name?: string;
+  label?: string;
+  description?: string;
+  sortOrder?: number;
+}
+
+interface GeminiSyncModelsResult {
+  syncedCount: number;
+  skippedCount: number;
+  defaultModelId: string | null;
+  syncedAt: number;
+}
+
 /**
  * Gemini API interface cho Renderer process
  */
@@ -81,6 +114,16 @@ interface GeminiAPI {
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>;
   getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
+
+  // Model Catalog Management
+  getModels: () => Promise<IpcApiResponse<GeminiCatalogModel[]>>;
+  createModel: (payload: GeminiCatalogModelInput) => Promise<IpcApiResponse<GeminiCatalogModel>>;
+  updateModel: (payload: { modelId: string; patch: GeminiCatalogModelUpdate }) => Promise<IpcApiResponse<GeminiCatalogModel>>;
+  deleteModel: (modelId: string) => Promise<IpcApiResponse<boolean>>;
+  setModelEnabled: (payload: { modelId: string; enabled: boolean }) => Promise<IpcApiResponse<boolean>>;
+  getDefaultModel: () => Promise<IpcApiResponse<string | null>>;
+  setDefaultModel: (modelId: string) => Promise<IpcApiResponse<string>>;
+  syncModelsFromGoogle: () => Promise<IpcApiResponse<GeminiSyncModelsResult>>;
 }
 
 // ============================================

@@ -8,6 +8,10 @@ import {
   KeyInfo,
   ApiStats,
   GeminiResponse,
+  GeminiCatalogModel,
+  GeminiCatalogModelInput,
+  GeminiCatalogModelUpdate,
+  GeminiSyncModelsResult,
 } from '../shared/types/gemini';
 
 // Response type từ IPC
@@ -47,6 +51,16 @@ export interface GeminiAPI {
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>; // Sử dụng any[] hoặc EmbeddedAccount[] nếu import được
   getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
+
+  // Model Catalog Management
+  getModels: () => Promise<IpcApiResponse<GeminiCatalogModel[]>>;
+  createModel: (payload: GeminiCatalogModelInput) => Promise<IpcApiResponse<GeminiCatalogModel>>;
+  updateModel: (payload: { modelId: string; patch: GeminiCatalogModelUpdate }) => Promise<IpcApiResponse<GeminiCatalogModel>>;
+  deleteModel: (modelId: string) => Promise<IpcApiResponse<boolean>>;
+  setModelEnabled: (payload: { modelId: string; enabled: boolean }) => Promise<IpcApiResponse<boolean>>;
+  getDefaultModel: () => Promise<IpcApiResponse<string | null>>;
+  setDefaultModel: (modelId: string) => Promise<IpcApiResponse<string>>;
+  syncModelsFromGoogle: () => Promise<IpcApiResponse<GeminiSyncModelsResult>>;
 }
 
 /**
@@ -100,5 +114,17 @@ export function createGeminiAPI(): GeminiAPI {
     getKeysLocation: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION),
     getAllKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL),
     getAllKeysWithStatus: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS),
+
+    // Model Catalog Management
+    getModels: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_GET_ALL),
+    createModel: (payload: GeminiCatalogModelInput) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_CREATE, payload),
+    updateModel: (payload: { modelId: string; patch: GeminiCatalogModelUpdate }) =>
+      ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_UPDATE, payload),
+    deleteModel: (modelId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_DELETE, modelId),
+    setModelEnabled: (payload: { modelId: string; enabled: boolean }) =>
+      ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_SET_ENABLED, payload),
+    getDefaultModel: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_GET_DEFAULT),
+    setDefaultModel: (modelId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_SET_DEFAULT, modelId),
+    syncModelsFromGoogle: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_SYNC_GOOGLE),
   };
 }

@@ -4,19 +4,138 @@
  */
 
 import { getApiManager } from './apiManager';
-import { AppSettingsService } from '../appSettings';
 import { 
   GeminiResponse, 
   KeyInfo,
   GEMINI_API_BASE,
   GEMINI_MODELS,
   getGeminiModelInfo,
-  type GeminiModel,
 } from '../../../shared/types/gemini';
+import { getGeminiModelsService } from './geminiModelsService';
 
 // Re-export để các module khác có thể import từ đây
 export { GEMINI_MODELS, getGeminiModelInfo };
-export type { GeminiModel };
+export type GeminiModel = string;
+
+type GeminiCallControlOptions = {
+  shouldStop?: () => boolean;
+  stopErrorMessage?: string;
+  stopSignal?: AbortSignal;
+};
+
+function resolveModelForRuntime(model?: string | null): string {
+  try {
+    return getGeminiModelsService().resolveModelId(model);
+  } catch (error) {
+    const fallback = typeof model === 'string' && model.trim().length > 0
+      ? model.trim()
+      : GEMINI_MODELS.FLASH_3_0;
+    console.warn('[GeminiService] Resolve model fallback:', fallback, error);
+    return fallback;
+  }
+}
+
+function isGeminiServerOverloadError(error?: string): boolean {
+  const text = (error || '').toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  const hasHighDemand = text.includes('high demand')
+    || text.includes('currently experiencing high demand')
+    || text.includes('service unavailable')
+    || text.includes('temporarily unavailable');
+
+  if (hasHighDemand) {
+    return true;
+  }
+
+  const has503 = text.includes('503') || text.includes('http 503') || text.includes('api error 503');
+
+  return has503;
+}
+
+function getStopErrorMessage(control?: GeminiCallControlOptions): string {
+  return control?.stopErrorMessage || 'STOP_REQUESTED';
+}
+
+function isStopRequested(control?: GeminiCallControlOptions): boolean {
+  try {
+    return control?.shouldStop?.() === true;
+  } catch {
+    return false;
+  }
+}
+
+function isControlStopped(control?: GeminiCallControlOptions): boolean {
+  return isStopRequested(control) || control?.stopSignal?.aborted === true;
+}
+
+function bindStopToAbortController(
+  controller: AbortController,
+  control?: GeminiCallControlOptions,
+): () => void {
+  const stopSignal = control?.stopSignal;
+  if (!stopSignal) {
+    return () => undefined;
+  }
+
+  const forwardAbort = (): void => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  };
+
+  if (stopSignal.aborted) {
+    forwardAbort();
+    return () => undefined;
+  }
+
+  stopSignal.addEventListener('abort', forwardAbort, { once: true });
+  return () => {
+    stopSignal.removeEventListener('abort', forwardAbort);
+  };
+}
+
+async function waitWithControl(ms: number, control?: GeminiCallControlOptions): Promise<boolean> {
+  if (ms <= 0) {
+    return isControlStopped(control);
+  }
+
+  if (isControlStopped(control)) {
+    return true;
+  }
+
+  const stopSignal = control?.stopSignal;
+  if (!stopSignal) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return isControlStopped(control);
+  }
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+
+    const finish = (stopped: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      stopSignal.removeEventListener('abort', onAbort);
+      resolve(stopped || isControlStopped(control));
+    };
+
+    const onAbort = (): void => finish(true);
+    const timer = setTimeout(() => finish(false), ms);
+
+    if (stopSignal.aborted) {
+      finish(true);
+      return;
+    }
+
+    stopSignal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * Gọi Gemini API với một prompt và API key cụ thể
@@ -24,11 +143,13 @@ export type { GeminiModel };
 export async function callGeminiApi(
   prompt: string | object,
   apiKey: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_3_0,
-  useProxy: boolean = true // Mặc định sử dụng proxy
+  model?: string,
+  useProxy: boolean = true, // Mặc định sử dụng proxy
+  abortSignal?: AbortSignal,
 ): Promise<GeminiResponse> {
   try {
-    const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+    const resolvedModel = resolveModelForRuntime(model);
+    const url = `${GEMINI_API_BASE}/${resolvedModel}:generateContent?key=${apiKey}`;
 
     // Convert prompt thành text nếu là object
     const promptText = typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2);
@@ -41,7 +162,7 @@ export async function callGeminiApi(
       ],
     };
 
-    console.log(`[GeminiService] Gọi Gemini API với model: ${model}${useProxy ? ' (via proxy)' : ''}`);
+    console.log(`[GeminiService] Gọi Gemini API với model: ${resolvedModel}${useProxy ? ' (via proxy)' : ''}`);
 
     // Sử dụng proxy client nếu enabled
     if (useProxy) {
@@ -56,6 +177,7 @@ export async function callGeminiApi(
         timeout: 30000, // 30s cho translation
         useProxy: true,
         proxyScope: 'other',
+        signal: abortSignal,
       });
 
       if (!result.success) {
@@ -86,6 +208,7 @@ export async function callGeminiApi(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
+        signal: abortSignal,
       });
 
       // Xử lý lỗi HTTP
@@ -94,7 +217,7 @@ export async function callGeminiApi(
       }
 
       if (response.status === 404) {
-        return { success: false, error: `Model ${model} không tồn tại` };
+        return { success: false, error: `Model ${resolvedModel} không tồn tại` };
       }
 
       if (!response.ok) {
@@ -123,6 +246,9 @@ export async function callGeminiApi(
       return { success: false, error: 'Response không có nội dung' };
     }
   } catch (error) {
+    if (abortSignal?.aborted) {
+      return { success: false, error: 'REQUEST_ABORTED' };
+    }
     console.error('[GeminiService] Lỗi gọi API:', error);
     return { success: false, error: String(error) };
   }
@@ -134,11 +260,14 @@ export async function callGeminiApi(
  */
 export async function callGeminiWithRotation(
   prompt: string | object,
-  model: GeminiModel = GEMINI_MODELS.FLASH_3_0,
-  maxRetries: number = 10
+  model?: string,
+  maxRetries: number = 10,
+  control?: GeminiCallControlOptions,
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
+  const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
   const stats = manager.getStats();
+  const stopErrorMessage = getStopErrorMessage(control);
 
   if (stats.totalProjects === 0) {
     return { success: false, error: 'Không có API key nào trong hệ thống' };
@@ -161,6 +290,10 @@ export async function callGeminiWithRotation(
   const triedKeys = new Set<string>();
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage };
+    }
+
     const { apiKey, keyInfo } = manager.getNextApiKey();
 
     if (!apiKey || !keyInfo) {
@@ -180,7 +313,20 @@ export async function callGeminiWithRotation(
     triedKeys.add(apiKey);
     console.log(`[GeminiService] Thử API key #${triedKeys.size} (${keyInfo.name})`);
 
-    const response = await callGeminiApi(prompt, apiKey, model, useProxySetting);
+    const requestAbortController = new AbortController();
+    const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+    const response = await callGeminiApi(
+      prompt,
+      apiKey,
+      resolvedModel,
+      useProxySetting,
+      requestAbortController.signal,
+    );
+    detachAbortForwarding();
+
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage };
+    }
 
     if (response.success) {
       manager.recordSuccess(apiKey);
@@ -195,7 +341,19 @@ export async function callGeminiWithRotation(
       rateLimitedCount++;
 
       // Nghỉ ngắn trước khi thử key tiếp theo
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (await waitWithControl(300, control)) {
+        return { success: false, error: stopErrorMessage };
+      }
+      continue;
+    }
+
+    if (isGeminiServerOverloadError(response.error)) {
+      // Lỗi 503 high-demand là lỗi hạ tầng Gemini, không phải lỗi key.
+      console.warn(`[GeminiService] Server Gemini quá tải với ${keyInfo.name}, không đánh dấu key lỗi.`);
+      lastError = response.error || 'SERVER_OVERLOADED';
+      if (await waitWithControl(800, control)) {
+        return { success: false, error: stopErrorMessage };
+      }
       continue;
     }
 
@@ -227,12 +385,32 @@ export async function callGeminiWithRotation(
 export async function callGeminiWithAssignedKey(
   prompt: string | object,
   assignedKey: { apiKey: string; keyInfo: KeyInfo },
-  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
+  model?: string,
+  control?: GeminiCallControlOptions,
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
+  const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
+  const stopErrorMessage = getStopErrorMessage(control);
+
+  if (isControlStopped(control)) {
+    return { success: false, error: stopErrorMessage };
+  }
 
   console.log(`[GeminiService] [assigned] Dùng key: ${assignedKey.keyInfo.name}`);
-  const response = await callGeminiApi(prompt, assignedKey.apiKey, model, false);
+  const requestAbortController = new AbortController();
+  const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+  const response = await callGeminiApi(
+    prompt,
+    assignedKey.apiKey,
+    resolvedModel,
+    false,
+    requestAbortController.signal,
+  );
+  detachAbortForwarding();
+
+  if (isControlStopped(control)) {
+    return { success: false, error: stopErrorMessage };
+  }
 
   if (response.success) {
     manager.recordSuccess(assignedKey.apiKey);
@@ -243,6 +421,8 @@ export async function callGeminiWithAssignedKey(
   if (response.error === 'RATE_LIMIT') {
     console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation`);
     manager.recordRateLimitError(assignedKey.apiKey);
+  } else if (isGeminiServerOverloadError(response.error)) {
+    console.warn(`[GeminiService] [assigned] Gemini server quá tải — không đánh dấu key lỗi`);
   } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
     manager.recordQuotaExhausted(assignedKey.apiKey);
   } else {
@@ -250,7 +430,7 @@ export async function callGeminiWithAssignedKey(
   }
 
   console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name}`);
-  return callGeminiWithRotation(prompt, model);
+  return callGeminiWithRotation(prompt, resolvedModel, 10, control);
 }
 
 /**
@@ -259,7 +439,7 @@ export async function callGeminiWithAssignedKey(
 export async function translateText(
   text: string,
   targetLanguage: string = 'Vietnamese',
-  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
+  model?: string
 ): Promise<GeminiResponse> {
   const prompt = {
     task: 'translation',
@@ -284,7 +464,7 @@ export async function translateText(
 export async function chat(
   message: string,
   apiKey: string,
-  model: GeminiModel = GEMINI_MODELS.FLASH_3_0
+  model?: string
 ): Promise<GeminiResponse> {
   return callGeminiApi(message, apiKey, model);
 }
@@ -292,7 +472,7 @@ export async function chat(
 /**
  * Lấy thông tin model - Alias cho getGeminiModelInfo
  */
-export function getModelInfo(model: GeminiModel): { name: string; description: string } {
+export function getModelInfo(model: string): { name: string; description: string } {
   const info = getGeminiModelInfo(model);
   return { name: info.name, description: info.description };
 }

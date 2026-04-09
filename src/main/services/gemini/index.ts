@@ -11,6 +11,7 @@ export * from './apiKeys';
 export { getSessionContextManager, SessionContextManager, type SessionContext } from './sessionContextManager';
 export { getConfigurationService, ConfigurationService, type GeminiCookieConfig, type ValidationResult } from './configurationService';
 export { getProgressTracker, ProgressTracker, type ChapterMetrics, type TranslationMetrics } from './progressTracker';
+export { getGeminiModelsService, GeminiModelsService } from './geminiModelsService';
 
 // Gemini Service
 export {

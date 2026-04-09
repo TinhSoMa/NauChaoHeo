@@ -11,6 +11,7 @@ interface RequestOptions {
   headers?: Record<string, string>;
   body?: any;
   timeout?: number;
+  signal?: AbortSignal;
   useProxy?: boolean; // Tùy chọn bật/tắt proxy cho request này
   proxyScope?: 'caption' | 'story' | 'chat' | 'tts' | 'other';
 }
@@ -35,6 +36,7 @@ export async function makeRequestWithProxy(
     headers = {},
     body = null,
     timeout = 150000, // Tăng lên 15s (proxy chậm hơn direct)
+    signal,
     useProxy: useProxyOverride,
     proxyScope = 'other',
   } = options;
@@ -61,6 +63,7 @@ export async function makeRequestWithProxy(
         headers,
         body,
         timeout,
+        signal,
         proxy: currentProxy,
       });
 
@@ -77,6 +80,13 @@ export async function makeRequestWithProxy(
 
     } catch (error: any) {
       lastError = error.message || String(error);
+
+      if (lastError === 'REQUEST_ABORTED') {
+        return {
+          success: false,
+          error: 'REQUEST_ABORTED',
+        };
+      }
       
       // Đánh dấu proxy thất bại
       if (currentProxy) {
@@ -94,6 +104,13 @@ export async function makeRequestWithProxy(
     }
   }
 
+  if (lastError === 'REQUEST_ABORTED') {
+    return {
+      success: false,
+      error: 'REQUEST_ABORTED',
+    };
+  }
+
   // Hết retry, thử fallback về direct connection
   if (useProxy && proxyManager.shouldFallbackToDirect()) {
     console.log('[ApiClient] 🔄 Fallback về direct connection...');
@@ -103,6 +120,7 @@ export async function makeRequestWithProxy(
         headers,
         body,
         timeout,
+        signal,
         proxy: null,
       });
 
@@ -136,6 +154,7 @@ async function makeRequest(
     headers: Record<string, string>;
     body?: any;
     timeout: number;
+    signal?: AbortSignal;
     proxy: ProxyConfig | null;
   }
 ): Promise<{ data: any; statusCode: number }> {
@@ -169,7 +188,23 @@ async function makeRequest(
 
   // Setup AbortController for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, options.timeout);
+
+  const forwardAbort = (): void => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  };
+
+  if (options.signal?.aborted) {
+    forwardAbort();
+  } else if (options.signal) {
+    options.signal.addEventListener('abort', forwardAbort, { once: true });
+  }
 
   try {
     // Prepare request
@@ -216,11 +251,17 @@ async function makeRequest(
   } catch (error: any) {
     // Handle timeout
     if (error.name === 'AbortError') {
+      if (options.signal?.aborted && !timedOut) {
+        throw new Error('REQUEST_ABORTED');
+      }
       throw new Error(`network timeout at: ${url}`);
     }
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    if (options.signal) {
+      options.signal.removeEventListener('abort', forwardAbort);
+    }
   }
 }
 

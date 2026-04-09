@@ -33,10 +33,45 @@ export const DEFAULT_GEMINI_MODEL = GEMINI_MODELS.FLASH_3_0;
  * Thông tin chi tiết của từng model
  */
 export interface GeminiModelInfo {
-  id: GeminiModel;
+  id: string;
   name: string;
   label: string;
   description: string;
+}
+
+export type GeminiModelSource = 'seed' | 'manual' | 'google_sync';
+
+export interface GeminiCatalogModel {
+  modelId: string;
+  name: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  source: GeminiModelSource;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface GeminiCatalogModelInput {
+  modelId: string;
+  name: string;
+  label: string;
+  description?: string;
+}
+
+export interface GeminiCatalogModelUpdate {
+  name?: string;
+  label?: string;
+  description?: string;
+  sortOrder?: number;
+}
+
+export interface GeminiSyncModelsResult {
+  syncedCount: number;
+  skippedCount: number;
+  defaultModelId: string | null;
+  syncedAt: number;
 }
 
 export const GEMINI_MODEL_LIST: GeminiModelInfo[] = [
@@ -69,7 +104,7 @@ export const GEMINI_MODEL_LIST: GeminiModelInfo[] = [
 /**
  * Helper: Lấy thông tin model từ ID
  */
-export function getGeminiModelInfo(modelId: GeminiModel): GeminiModelInfo {
+export function getGeminiModelInfo(modelId: string): GeminiModelInfo {
   return GEMINI_MODEL_LIST.find(m => m.id === modelId) || {
     id: modelId,
     name: modelId,
@@ -81,7 +116,7 @@ export function getGeminiModelInfo(modelId: GeminiModel): GeminiModelInfo {
 /**
  * Helper: Tạo URL đầy đủ để gọi Gemini API
  */
-export function buildGeminiApiUrl(model: GeminiModel, apiKey: string): string {
+export function buildGeminiApiUrl(model: string, apiKey: string): string {
   return `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
 }
 
@@ -253,5 +288,15 @@ export const GEMINI_IPC_CHANNELS = {
   KEYS_GET_LOCATION: 'gemini:keys:getLocation',
   KEYS_GET_ALL: 'gemini:keys:getAll',
   KEYS_GET_ALL_WITH_STATUS: 'gemini:keys:getAllWithStatus',
+
+  // Model Catalog Management
+  MODELS_GET_ALL: 'gemini:models:getAll',
+  MODELS_CREATE: 'gemini:models:create',
+  MODELS_UPDATE: 'gemini:models:update',
+  MODELS_DELETE: 'gemini:models:delete',
+  MODELS_SET_ENABLED: 'gemini:models:setEnabled',
+  MODELS_GET_DEFAULT: 'gemini:models:getDefault',
+  MODELS_SET_DEFAULT: 'gemini:models:setDefault',
+  MODELS_SYNC_GOOGLE: 'gemini:models:syncGoogle',
 } as const;
 
