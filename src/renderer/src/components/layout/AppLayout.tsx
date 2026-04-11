@@ -23,6 +23,7 @@ export const AppLayout = () => {
   const { setActiveTab } = useTabManager()
   const searchParams = new URLSearchParams(location.search)
   const projectId = searchParams.get('projectId')
+  const isStoryTranslatorRoute = location.pathname === '/story-translator'
 
   useEffect(() => {
     const nextTab = TAB_BY_PATH[location.pathname] ?? 'home'
@@ -37,7 +38,7 @@ export const AppLayout = () => {
           <header className="absolute top-0 right-0 p-4 z-10">
             {/* Header Controls (Minimize, Close) if needed, or user profile */}
           </header>
-          <div className="h-full min-h-0 p-8 overflow-auto">
+          <div className={`h-full min-h-0 ${isStoryTranslatorRoute ? 'p-0 overflow-hidden' : 'p-8 overflow-auto'}`}>
             <TabHost />
           </div>
         </main>

@@ -1,6 +1,6 @@
 import { useProjectFeatureState } from '../../../hooks/useProjectFeatureState';
 import type { Chapter } from '@shared/types';
-import type { StoryChapterMethod, StoryTranslationMethod, TokenContext } from '../types';
+import type { StoryChapterMethod, StoryReadingTheme, StoryTranslationMethod, TokenContext } from '../types';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
 
 type LegacyTranslateMode = 'api' | 'token' | 'both';
@@ -49,6 +49,7 @@ interface StoryTranslatorStateSetters {
   setSelectedChapterId: (id: string | null) => void;
   setSummaries: (summaries: Map<string, string>) => void;
   setSummaryTitles: (titles: Map<string, string>) => void;
+  setReadingTheme: (theme: StoryReadingTheme) => void;
   setChapterScrollPositions: (positions: Map<string, number>) => void;
   setChapters: (chapters: Chapter[]) => void;
 }
@@ -71,6 +72,7 @@ interface StoryTranslatorStateValues {
   selectedChapterId: string | null;
   summaries: Map<string, string>;
   summaryTitles: Map<string, string>;
+  readingTheme: StoryReadingTheme;
   chapterScrollPositions: Map<string, number>;
 }
 
@@ -100,6 +102,7 @@ export function useStoryTranslatorPersistence(
     selectedChapterId?: string | null;
     summaries?: Array<[string, string]>;
     summaryTitles?: Array<[string, string]>;
+    readingTheme?: StoryReadingTheme;
     chapterScrollPositions?: Array<[string, number]>;
   }>({
     feature: 'story',
@@ -148,6 +151,7 @@ export function useStoryTranslatorPersistence(
         viewMode: values.viewMode as 'original' | 'translated' | 'summary',
         excludedChapterIds: Array.from(values.excludedChapterIds.values()),
         selectedChapterId: values.selectedChapterId,
+        readingTheme: values.readingTheme,
         chapterScrollPositions: Array.from(values.chapterScrollPositions.entries())
       };
     },
@@ -196,6 +200,7 @@ export function useStoryTranslatorPersistence(
       if (saved.viewMode) setters.setViewMode(saved.viewMode);
       if (saved.excludedChapterIds) setters.setExcludedChapterIds(new Set(saved.excludedChapterIds));
       if (typeof saved.selectedChapterId !== 'undefined') setters.setSelectedChapterId(saved.selectedChapterId);
+      if (saved.readingTheme) setters.setReadingTheme(saved.readingTheme);
       if (saved.chapterScrollPositions) setters.setChapterScrollPositions(new Map(saved.chapterScrollPositions));
     },
     deps: [
@@ -214,6 +219,7 @@ export function useStoryTranslatorPersistence(
       values.viewMode,
       values.excludedChapterIds,
       values.selectedChapterId,
+      values.readingTheme,
       values.chapterScrollPositions
     ],
   });

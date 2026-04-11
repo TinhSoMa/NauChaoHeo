@@ -21,6 +21,19 @@ export type StoryTranslationMethod =
 
 export type StoryChapterMethod = 'api' | 'token' | 'gemini_webapi_queue';
 
+export type StoryReadingTheme = 'light' | 'sepia' | 'dark' | 'warm';
+
+export interface StoryReadingThemePalette {
+  panelBackground: string;
+  contentBackground: string;
+  textPrimary: string;
+  textSecondary: string;
+  borderColor: string;
+  controlBackground: string;
+  controlText: string;
+  controlBorder: string;
+}
+
 export interface ProcessingChapterInfo {
   startTime: number;
   workerId: number;

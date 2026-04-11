@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Chapter, STORY_IPC_CHANNELS } from '@shared/types';
-import { StoryChapterMethod, StoryStatus, StoryTranslationMethod } from './types';
+import type { StoryReadingTheme, StoryChapterMethod, StoryStatus, StoryTranslationMethod } from './types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -18,7 +18,8 @@ import { useStoryExport } from './hooks/useStoryExport';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
-
+import { resolveStoryReadingThemePalette } from './styles/readerThemes';
+import { ReaderPane } from './components/ReaderPane';
 const READER_MODE_BREAKPOINT = 1024;
 const READER_PAGE_OVERLAP_PX = 72;
 const READER_MIN_PAGE_STEP = 220;
@@ -79,6 +80,7 @@ export function StoryTranslator() {
   // Reading settings
   const [fontSize, setFontSize] = useState<number>(18);
   const [lineHeight, setLineHeight] = useState<number>(1.8);
+  const [readingTheme, setReadingTheme] = useState<StoryReadingTheme>('light');
   const [retranslateExisting, setRetranslateExisting] = useState(false);
   const [viewportWidth, setViewportWidth] = useState<number>(getInitialViewportWidth);
   const [chapterScrollPositions, setChapterScrollPositions] = useState<Map<string, number>>(new Map());
@@ -86,6 +88,7 @@ export function StoryTranslator() {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const chapterScrollPositionsRef = useRef<Map<string, number>>(new Map());
   const scrollFlushTimeoutRef = useRef<number | null>(null);
+  const readerPalette = useMemo(() => resolveStoryReadingThemePalette(readingTheme), [readingTheme]);
 
   // Proxy settings hook
   const { useProxy } = useProxySettings();
@@ -203,6 +206,7 @@ export function StoryTranslator() {
       selectedChapterId,
       summaries,
       summaryTitles,
+      readingTheme,
       chapterScrollPositions
     },
     {
@@ -222,6 +226,7 @@ export function StoryTranslator() {
       setSelectedChapterId,
       setSummaries,
       setSummaryTitles,
+      setReadingTheme,
       setChapterScrollPositions,
       setChapters
     },
@@ -278,16 +283,45 @@ export function StoryTranslator() {
     scheduleScrollFlush();
   }, [getScrollKey, scheduleScrollFlush, selectedChapterId, viewMode]);
 
+  const resolveViewModeForChapter = useCallback(
+    (
+      chapterId: string,
+      preferredMode: 'original' | 'translated' | 'summary'
+    ): 'original' | 'translated' | 'summary' => {
+      const hasTranslated = translatedChapters.has(chapterId);
+      const hasSummary = summaries.has(chapterId);
+
+      if (preferredMode === 'translated') {
+        if (hasTranslated) return 'translated';
+        if (hasSummary) return 'summary';
+        return 'original';
+      }
+
+      if (preferredMode === 'summary') {
+        if (hasSummary) return 'summary';
+        if (hasTranslated) return 'translated';
+        return 'original';
+      }
+
+      return 'original';
+    },
+    [summaries, translatedChapters]
+  );
+
   const handleViewModeChange = useCallback(
     (nextMode: 'original' | 'translated' | 'summary') => {
-      if (nextMode === viewMode) {
+      const resolvedMode = selectedChapterId
+        ? resolveViewModeForChapter(selectedChapterId, nextMode)
+        : nextMode;
+
+      if (resolvedMode === viewMode) {
         return;
       }
       saveCurrentScrollPosition();
       flushScrollPositions();
-      setViewMode(nextMode);
+      setViewMode(resolvedMode);
     },
-    [flushScrollPositions, saveCurrentScrollPosition, viewMode]
+    [flushScrollPositions, resolveViewModeForChapter, saveCurrentScrollPosition, selectedChapterId, viewMode]
   );
 
   const handleSelectChapter = useCallback(
@@ -298,13 +332,9 @@ export function StoryTranslator() {
       saveCurrentScrollPosition();
       flushScrollPositions();
       setSelectedChapterId(chapterId);
-      if (translatedChapters.has(chapterId)) {
-        setViewMode('translated');
-      } else {
-        setViewMode('original');
-      }
+      setViewMode(resolveViewModeForChapter(chapterId, viewMode));
     },
-    [flushScrollPositions, saveCurrentScrollPosition, selectedChapterId, translatedChapters]
+    [flushScrollPositions, resolveViewModeForChapter, saveCurrentScrollPosition, selectedChapterId, viewMode]
   );
 
   const navigableChapterIds = useMemo(() => {
@@ -338,13 +368,9 @@ export function StoryTranslator() {
       saveCurrentScrollPosition();
       flushScrollPositions();
       setSelectedChapterId(nextChapterId);
-      if (translatedChapters.has(nextChapterId)) {
-        setViewMode('translated');
-      } else {
-        setViewMode('original');
-      }
+      setViewMode(resolveViewModeForChapter(nextChapterId, viewMode));
     },
-    [flushScrollPositions, navigableChapterIds, saveCurrentScrollPosition, selectedChapterId, translatedChapters]
+    [flushScrollPositions, navigableChapterIds, resolveViewModeForChapter, saveCurrentScrollPosition, selectedChapterId, viewMode]
   );
 
   const scrollReaderByPage = useCallback((direction: -1 | 1) => {
@@ -370,10 +396,19 @@ export function StoryTranslator() {
     }
     const firstChapterId = navigableChapterIds[0];
     setSelectedChapterId(firstChapterId);
-    if (translatedChapters.has(firstChapterId)) {
-      setViewMode('translated');
+    setViewMode(resolveViewModeForChapter(firstChapterId, viewMode));
+  }, [isReaderMode, navigableChapterIds, resolveViewModeForChapter, selectedChapterId, viewMode]);
+
+  useEffect(() => {
+    if (!selectedChapterId) {
+      return;
     }
-  }, [isReaderMode, navigableChapterIds, selectedChapterId, translatedChapters]);
+
+    const resolvedMode = resolveViewModeForChapter(selectedChapterId, viewMode);
+    if (resolvedMode !== viewMode) {
+      setViewMode(resolvedMode);
+    }
+  }, [resolveViewModeForChapter, selectedChapterId, viewMode]);
 
   useEffect(() => {
     const container = contentScrollRef.current;
@@ -692,7 +727,7 @@ export function StoryTranslator() {
   // ];
 
   return (
-    <div className="flex flex-col w-full h-[calc(100vh-4rem)] min-h-0 gap-3 overflow-hidden">
+    <div className={`flex flex-col w-full h-full min-h-0 overflow-hidden ${isReaderMode ? 'gap-0' : 'gap-3'}`}>
       {/* Configuration Section */}
       {!isReaderMode && (
       <div className="grid grid-cols-1 md:grid-cols-12 gap-2 p-2.5 bg-card border border-border rounded-xl shrink-0 overflow-hidden">
@@ -909,7 +944,7 @@ export function StoryTranslator() {
       <div className={`flex-1 flex min-h-0 overflow-hidden ${isReaderMode ? '' : 'gap-3'}`}>
         {/* Left Panel: Chapter List */}
         {!isReaderMode && (
-        <div className="w-[320px] max-w-[35%] min-w-[280px] bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <div className="w-[320px] max-w-[35%] min-w-70 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
           {/* Header voi toggle buttons */}
           <div className="p-3 border-b border-border bg-surface/50">
             <div className="flex justify-between items-center mb-2">
@@ -991,7 +1026,7 @@ export function StoryTranslator() {
                   onClick={() => handleSelectChapter(chapter.id)}
                   className="min-w-0 flex-1 text-left flex items-center gap-2"
                 >
-                  <span className={`break-words leading-5 ${
+                  <span className={`wrap-break-word leading-5 ${
                     !isChapterIncluded(chapter.id)
                       ? selectedChapterId === chapter.id
                         ? 'text-white/60 italic'
@@ -1074,150 +1109,39 @@ export function StoryTranslator() {
         )}
 
         {/* Right Panel: Content */}
-        <div className={`${isReaderMode ? 'flex-1 flex flex-col overflow-hidden border-0 rounded-none bg-transparent' : 'flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden'}`}>
-          {!isReaderMode && (
-           <div className="p-3 border-b border-border font-semibold text-text-primary bg-surface/50 flex flex-wrap justify-between items-start gap-2">
-            <div className="flex items-center gap-3 min-w-0 flex-wrap">
-              <span>Nội dung</span>
-              {selectedChapterId && (
-                <div className="flex gap-1 bg-surface rounded p-1">
-                  <button 
-                    onClick={() => handleViewModeChange('original')}
-                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'original' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary'}`}
-                  >
-                    Gốc
-                  </button>
-                  <button 
-                    onClick={() => handleViewModeChange('translated')}
-                    disabled={!selectedChapterId || !translatedChapters.has(selectedChapterId)}
-                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'translated' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
-                  >
-                    Bản dịch
-                  </button>
-                  <button 
-                    onClick={() => handleViewModeChange('summary')}
-                    disabled={!selectedChapterId || !summaries.has(selectedChapterId)}
-                    className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:text-text-primary disabled:opacity-50'}`}
-                  >
-                    Tóm tắt
-                  </button>
-                </div>
-              )}
-              
-              {/* Reading Controls */}
-              {selectedChapterId && (
-                <div className="flex items-center gap-3 ml-2 pl-3 border-l border-border flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-text-secondary">Cỡ chữ:</span>
-                    <button 
-                      onClick={() => setFontSize(prev => Math.max(12, prev - 2))}
-                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
-                    >
-                      -
-                    </button>
-                    <span className="text-xs text-text-secondary min-w-8 text-center">{fontSize}px</span>
-                    <button 
-                      onClick={() => setFontSize(prev => Math.min(32, prev + 2))}
-                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
-                    >
-                      +
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-text-secondary">Giãn dòng:</span>
-                    <button 
-                      onClick={() => setLineHeight(prev => Math.max(1.2, prev - 0.2))}
-                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
-                    >
-                      -
-                    </button>
-                    <span className="text-xs text-text-secondary min-w-8 text-center">{lineHeight.toFixed(1)}</span>
-                    <button 
-                      onClick={() => setLineHeight(prev => Math.min(3, prev + 0.2))}
-                      className="w-6 h-6 rounded bg-surface hover:bg-surface/80 text-text-primary flex items-center justify-center text-sm"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            </div>
-            {selectedChapterId && (
-              <div className="flex gap-2 items-center flex-wrap justify-end min-w-0">
-                 {/* Hien thi trang thai loai tru */}
-                 {!isChapterIncluded(selectedChapterId) && (
-                   <span className="text-xs text-orange-500 bg-orange-500/10 px-2 py-1 rounded">
-                     Đã loại trừ
-                   </span>
-                 )}
-                 <Button onClick={handleSavePrompt} variant="secondary" className="text-xs h-8 px-2">
-                   Lưu Prompt Dịch
-                 </Button>
-                 <Button onClick={handleSaveSummaryPrompt} variant="secondary" className="text-xs h-8 px-2">
-                   Lưu Prompt Tóm Tắt
-                 </Button>
-                 <span className="text-xs text-text-secondary px-2 py-1 bg-surface rounded border border-border max-w-[320px] truncate">
-                   {chapters.find(c => c.id === selectedChapterId)?.title}
-                 </span>
-              </div>
-            )}
-          </div>
-          )}
-          <div 
-            ref={contentScrollRef}
-            onScroll={handleContentScroll}
-            className={`flex-1 overflow-y-auto text-text-primary ${isReaderMode ? 'px-2 py-2' : 'px-8 py-6'}`}
-            style={{
-              fontSize: `${fontSize}px`,
-              lineHeight: lineHeight,
-              fontFamily: "'Noto Sans', 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif",
-              letterSpacing: '0.01em',
-              wordSpacing: '0.05em'
-            }}
-          >
-            <div className={`${isReaderMode ? 'w-full max-w-none' : 'mx-auto max-w-4xl'}`}>
-              {selectedChapterId ? (
-                viewMode === 'original' ? (
-                  <div className="whitespace-pre-wrap wrap-break-word">
-                    {chapters.find(c => c.id === selectedChapterId)?.content}
-                  </div>
-                ) : viewMode === 'translated' ? (
-                  translatedChapters.get(selectedChapterId) ? (
-                    <div className="whitespace-pre-wrap wrap-break-word">
-                      {translatedChapters.get(selectedChapterId) || ''}
-                    </div>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
-                      <BookOpen size={48} className="mb-4" />
-                      <p className="text-base">Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.</p>
-                    </div>
-                  )
-                ) : (
-                  // Summary View
-                  summaries.get(selectedChapterId) ? (
-                    <div className="whitespace-pre-wrap wrap-break-word">
-                       {summaryTitles.get(selectedChapterId) && (
-                          <h3 className="text-lg font-bold mb-4 text-primary">{summaryTitles.get(selectedChapterId) || ''}</h3>
-                       )}
-                       {summaries.get(selectedChapterId) || ''}
-                    </div>
-                  ) : (
-                     <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
-                       <FileText size={48} className="mb-4" />
-                       <p className="text-base">Chưa có tóm tắt cho chương này.</p>
-                    </div>
-                  )
-                )
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-text-secondary opacity-50">
-                  <BookOpen size={48} className="mb-4" />
-                  <p className="text-base">Chọn một chương để xem nội dung</p>
-                </div>
-              )}
-            </div>
-          </div>
+        <div
+          className={`${
+            isReaderMode
+              ? 'flex-1 flex flex-col overflow-hidden border-0 rounded-none'
+              : 'flex-1 border rounded-xl flex flex-col overflow-hidden'
+          }`}
+          style={{
+            backgroundColor: readerPalette.panelBackground,
+            borderColor: isReaderMode ? 'transparent' : readerPalette.borderColor
+          }}
+        >
+          <ReaderPane
+            selectedChapterId={selectedChapterId}
+            chapters={chapters}
+            translatedChapters={translatedChapters}
+            summaries={summaries}
+            summaryTitles={summaryTitles}
+            skippedChapters={excludedChapterIds}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            isReaderMode={isReaderMode}
+            fontSize={fontSize}
+            lineHeight={lineHeight}
+            setFontSize={setFontSize}
+            setLineHeight={setLineHeight}
+            readingTheme={readingTheme}
+            setReadingTheme={setReadingTheme}
+            palette={readerPalette}
+            contentScrollRef={contentScrollRef}
+            onContentScroll={handleContentScroll}
+            onSavePrompt={handleSavePrompt}
+            onSaveSummaryPrompt={handleSaveSummaryPrompt}
+          />
         </div>
       </div>
     </div>
