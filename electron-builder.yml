@@ -60,6 +60,10 @@ extraResources:
     to: tts/python
     filter:
       - "edge_tts_worker.py"
+  - from: src/main/services/story/python
+    to: story/python
+    filter:
+      - "ebooklib_story_worker.py"
   - from: resources/tts/go
     to: tts/go
     filter:

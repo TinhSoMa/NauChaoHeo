@@ -123,7 +123,7 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Running smoke test..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "-c",
-  "import sys,pycapcut,numpy,pymediainfo,uiautomation; print('OK runtime=' + sys.version)"
+  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation; print('OK runtime=' + sys.version)"
 )
 
 if (Test-Path -LiteralPath $licensesDir) {
@@ -136,7 +136,7 @@ if (Test-Path -LiteralPath $pythonLicensePath) {
   Copy-Item -LiteralPath $pythonLicensePath -Destination (Join-Path $licensesDir "PYTHON_LICENSE.txt") -Force
 }
 
-$packages = @("pycapcut", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow")
+$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow")
 foreach ($pkg in $packages) {
   $pkgDir = Join-Path $licensesDir $pkg
   Ensure-Directory -PathValue $pkgDir
