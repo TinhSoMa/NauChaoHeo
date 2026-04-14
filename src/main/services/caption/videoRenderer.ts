@@ -2092,6 +2092,189 @@ export async function renderBlackBackgroundVideo(
   return renderResult;
 }
 
+async function renderAudioOnlyOutput(
+  options: RenderVideoOptions,
+  progressCallback?: (progress: RenderProgress) => void
+): Promise<RenderResult> {
+  const { outputPath } = options;
+  const outputDir = path.dirname(outputPath);
+  await fs.mkdir(outputDir, { recursive: true });
+
+  const audioSpeedInput = options.audioSpeed && options.audioSpeed > 0 ? options.audioSpeed : 1.0;
+  const adjustedAudio = await buildSpeedAdjustedAudioFile(options.audioPath, audioSpeedInput);
+  if (!adjustedAudio.success) {
+    return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted' };
+  }
+
+  const renderOptions: RenderVideoOptions = {
+    ...options,
+    audioPath: adjustedAudio.audioPath,
+    audioSpeed: 1.0,
+    step7AudioSpeedInput: audioSpeedInput,
+  };
+
+  const portraitCanvas = resolvePortraitCanvasByPreset(options.renderResolution);
+  const prep = options.renderMode === 'hardsub_portrait_9_16' && options.videoPath
+    ? await prepareSubtitleAndDurationPortrait(renderOptions, portraitCanvas)
+    : await prepareSubtitleAndDuration(renderOptions);
+
+  const stretchedVideoDuration = prep.originalVideoDuration > 0 && prep.videoSpeedMultiplier > 0
+    ? prep.originalVideoDuration / prep.videoSpeedMultiplier
+    : prep.originalVideoDuration;
+  const baseOutputDuration = Math.max(
+    stretchedVideoDuration > 0 ? stretchedVideoDuration : 0,
+    prep.newAudioDuration > 0 ? prep.newAudioDuration : 0
+  ) || prep.newAudioDuration;
+  const thumbnailDurationSec = options.thumbnailEnabled
+    ? normalizeThumbnailDurationSec(options.thumbnailDurationSec)
+    : 0;
+  const outputDuration = baseOutputDuration + thumbnailDurationSec;
+
+  const hasVideoAudio = Boolean(options.videoPath && existsSync(options.videoPath) && prep.hasVideoAudio);
+  const hasTtsAudio = Boolean(renderOptions.audioPath && existsSync(renderOptions.audioPath));
+  const safeVideoVolume = clampVolumePercent(renderOptions.videoVolume, 0, 200, 100);
+  const safeAudioVolume = clampVolumePercent(renderOptions.audioVolume, 0, 400, 100);
+  const audioMix = buildHardsubAudioMix({
+    hasVideoAudio,
+    hasTtsAudio,
+    videoVolume: safeVideoVolume,
+    audioVolume: safeAudioVolume,
+    videoSpeedMultiplier: prep.videoSpeedMultiplier,
+    audioSpeed: prep.audioSpeed,
+  });
+
+  const filterComplexParts: string[] = [...audioMix.filterParts];
+  const audioSourceLabel = ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_audio_only_src');
+  if (!audioSourceLabel) {
+    return { success: false, error: 'Không thể xác định audio stream để xuất file audio final.' };
+  }
+
+  let finalAudioLabel = audioSourceLabel;
+  if (thumbnailDurationSec > 0) {
+    const delayMs = Math.max(0, Math.round(thumbnailDurationSec * 1000));
+    filterComplexParts.push(`${audioSourceLabel}adelay=${delayMs}:all=1[a_out_audio_only]`);
+    finalAudioLabel = '[a_out_audio_only]';
+  }
+
+  const inputArgs: string[] = [];
+  if (hasVideoAudio && options.videoPath) {
+    inputArgs.push('-i', options.videoPath);
+  } else {
+    inputArgs.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+  }
+  if (hasTtsAudio && renderOptions.audioPath) {
+    inputArgs.push('-i', renderOptions.audioPath);
+  } else {
+    inputArgs.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+  }
+
+  const outputExt = path.extname(outputPath).toLowerCase();
+  const outputCodecArgs = outputExt === '.wav'
+    ? ['-c:a', 'pcm_s16le']
+    : ['-c:a', 'aac', '-b:a', '192k'];
+
+  const ffmpegThreadArgs = resolveFfmpegThreadArgs();
+  const args = [
+    ...inputArgs,
+    ...ffmpegThreadArgs,
+    '-filter_complex', filterComplexParts.join(';'),
+    '-map', finalAudioLabel,
+    '-vn',
+    '-ac', '2',
+    '-ar', '44100',
+    ...outputCodecArgs,
+    '-t', outputDuration.toFixed(3),
+    '-y',
+    outputPath,
+  ];
+
+  const step4SrtScale = prep.step4ScaleUsed && prep.step4ScaleUsed > 0
+    ? prep.step4ScaleUsed
+    : (options.step4SrtScale && options.step4SrtScale > 0 ? options.step4SrtScale : 1.0);
+  const srtTimeScaleConfigured = prep.configuredSrtTimeScale > 0 ? prep.configuredSrtTimeScale : 1.0;
+  const srtTimeScaleApplied = prep.appliedSrtTimeScale > 0 ? prep.appliedSrtTimeScale : 1.0;
+  const step7AudioSpeed = prep.step7SpeedUsed && prep.step7SpeedUsed > 0 ? prep.step7SpeedUsed : audioSpeedInput;
+  const audioEffectiveSpeed = prep.audioEffectiveSpeed;
+  let subtitleDurationOriginalSec = prep.videoSubBaseDuration > 0 ? prep.videoSubBaseDuration : 0;
+  const subtitleDurationScaledSec = prep.subRenderDuration > 0 ? prep.subRenderDuration : prep.duration;
+  const videoMarkerSec = prep.videoMarkerSec > 0 ? prep.videoMarkerSec : 0;
+  const translatedSrtPath = path.join(path.dirname(options.srtPath), 'translated.srt');
+  const translatedSrtDurationSec = subtitleDurationOriginalSec <= 0 ? await readSrtDurationSec(translatedSrtPath) : null;
+  if (subtitleDurationOriginalSec <= 0 && translatedSrtDurationSec && translatedSrtDurationSec > 0) {
+    subtitleDurationOriginalSec = translatedSrtDurationSec;
+  }
+  const audioOriginalDurationSec = await readMediaDurationSec(options.audioPath);
+  const audioAfterSpeedDurationSec = await readMediaDurationSec(renderOptions.audioPath);
+  const videoSubDurationAfterScaleSec = subtitleDurationOriginalSec * step4SrtScale;
+  const audioStartInOutputSec = hasTtsAudio ? thumbnailDurationSec : null;
+  const audioEndInOutputSec = hasTtsAudio
+    ? Math.min(outputDuration, thumbnailDurationSec + Math.max(0, prep.newAudioDuration))
+    : null;
+  const audioStartInVideoSec = hasTtsAudio ? 0 : null;
+  const audioEndInVideoSec = hasTtsAudio ? (videoMarkerSec > 0 ? videoMarkerSec : null) : null;
+  const hardsubTimingDebug = buildHardsubTimingPayload({
+    options,
+    renderOptions,
+    prep,
+    outputPath,
+    subtitleDurationOriginalSec,
+    subtitleDurationScaledSec,
+    audioOriginalDurationSec,
+    audioAfterSpeedDurationSec,
+    videoSubDurationAfterScaleSec,
+    outputDuration,
+    stretchedVideoDuration,
+    hasTtsAudio,
+    audioStartInVideoSec,
+    audioEndInVideoSec,
+    audioStartInOutputSec,
+    audioEndInOutputSec,
+    trimApplied: false,
+    adjustedAudioGenerated: adjustedAudio.generated,
+    step4SrtScale,
+    srtTimeScaleConfigured,
+    srtTimeScaleApplied,
+    step7AudioSpeed,
+    audioEffectiveSpeed,
+    videoMarkerSec,
+    thumbnail: {
+      mode: options.renderMode === 'hardsub_portrait_9_16' ? 'portrait_9_16' : 'landscape_hardsub',
+      cropStrategy: 'none',
+      fillStrategy: 'scale_to_output',
+      outputAspect: options.renderMode === 'hardsub_portrait_9_16' ? '9:16' : '16:9',
+      durationSec: thumbnailDurationSec,
+      pipeline: options.thumbnailEnabled ? 'inline_single_stream' : 'post_concat_copy',
+      audio: options.thumbnailEnabled ? 'silent_prefix' : 'none',
+    },
+  });
+
+  const totalFrames = Math.max(1, Math.floor(outputDuration * resolveRenderFps(options.renderFps)));
+  const renderResult = await runFFmpegProcess({
+    args,
+    totalFrames,
+    fps: resolveRenderFps(options.renderFps),
+    outputPath,
+    tempAssPath: prep.tempAssPath,
+    cleanupTempPaths: [],
+    duration: outputDuration,
+    progressCallback,
+    debugLabel: 'audio_only',
+  });
+
+  if (renderResult.success) {
+    renderResult.timingPayload = {
+      ...(hardsubTimingDebug as Record<string, unknown>),
+      outputType: 'audio_only',
+      perf: {
+        profile: 'speed_max',
+        ffmpegThreadArgs,
+      },
+    } as Record<string, unknown>;
+    renderResult.outputType = 'audio_only';
+  }
+  return renderResult;
+}
+
 /**
  * Route tự động theo options.renderMode
  */
@@ -2100,7 +2283,7 @@ export async function renderVideo(
   progressCallback?: (progress: RenderProgress) => void
 ): Promise<RenderResult> {
   clearRenderStopRequest();
-  console.log(`[VideoRenderer] Route to ${options.renderMode || 'black_bg'} mode`);
+  console.log(`[VideoRenderer] Route to ${options.outputType || 'video'} / ${options.renderMode || 'black_bg'} mode`);
   if (!isFFmpegAvailable()) {
     return { success: false, error: 'FFmpeg không được cài đặt' };
   }
@@ -2109,12 +2292,18 @@ export async function renderVideo(
   }
 
   let result: RenderResult;
-  if (options.renderMode === 'hardsub_portrait_9_16' && options.videoPath) {
+  if (options.outputType === 'audio_only') {
+    result = await renderAudioOnlyOutput(options, progressCallback);
+  } else if (options.renderMode === 'hardsub_portrait_9_16' && options.videoPath) {
     result = await renderHardsubPortraitVideo(options, progressCallback);
   } else if (options.renderMode === 'hardsub' && options.videoPath) {
     result = await renderHardsubVideo(options, progressCallback);
   } else {
     result = await renderBlackBackgroundVideo(options, progressCallback);
+  }
+
+  if (result.success && !result.outputType) {
+    result.outputType = options.outputType === 'audio_only' ? 'audio_only' : 'video';
   }
 
   console.log('[VideoRenderer] Thumbnail render config', {

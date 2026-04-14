@@ -3206,11 +3206,18 @@ export function CaptionTranslator() {
           : 'session_extracted_entries'
       );
 
+      const renderResultRecord = (session.data.renderResult && typeof session.data.renderResult === 'object')
+        ? session.data.renderResult as Record<string, unknown>
+        : {};
+      const renderOutputType = renderResultRecord.outputType === 'audio_only' ? 'audio_only' : 'video';
       const finalVideoPathRaw =
+        renderOutputType === 'audio_only'
+          ? null
+          :
         typeof session.artifacts.finalVideoPath === 'string' && session.artifacts.finalVideoPath.trim().length > 0
           ? session.artifacts.finalVideoPath
-          : (typeof (session.data.renderResult as Record<string, unknown> | undefined)?.outputPath === 'string'
-            ? ((session.data.renderResult as Record<string, unknown>).outputPath as string)
+          : (typeof renderResultRecord.outputPath === 'string'
+            ? (renderResultRecord.outputPath as string)
             : null);
 
       if (finalVideoPathRaw) {
@@ -4473,13 +4480,15 @@ export function CaptionTranslator() {
     const renderMode = settings.renderMode || 'black_bg';
     const accel = settings.hardwareAcceleration || 'none';
     const res = settings.renderResolution || 'original';
-    return `Step7 render: mode=${renderMode} | thumbnail=ON @${timeLabel}/${durationSec}s | accel=${accel} | res=${res}`;
+    const output = settings.renderOutputType === 'audio_only' ? 'audio_only' : 'video';
+    return `Step7 render: output=${output} | mode=${renderMode} | thumbnail=ON @${timeLabel}/${durationSec}s | accel=${accel} | res=${res}`;
   }, [
     processing.status,
     processing.currentStep,
     settings.thumbnailFrameTimeSec,
     settings.thumbnailDurationSec,
     settings.renderMode,
+    settings.renderOutputType,
     settings.hardwareAcceleration,
     settings.renderResolution,
   ]);
@@ -5172,7 +5181,10 @@ export function CaptionTranslator() {
           ? `${selectedVoiceLabel} | Rate/Volume: fixed (CapCut)`
           : `${selectedVoiceLabel} | rate ${settings.rate} | vol ${settings.volume}`,
       },
-      { key: 'Mode', value: `${settings.renderMode} / ${settings.renderResolution} / ${settings.renderContainer?.toUpperCase() || 'MP4'}` },
+      {
+        key: 'Mode',
+        value: `${settings.renderMode} / ${settings.renderResolution} / ${settings.renderContainer?.toUpperCase() || 'MP4'} / ${settings.renderOutputType === 'audio_only' ? 'AUDIO' : 'VIDEO'}`,
+      },
       { key: 'Speed', value: `audio ${settings.renderAudioSpeed}x | video ${autoVideoSpeed.toFixed(2)}x (${timingDisplaySource})` },
       {
         key: 'Âm lượng',
@@ -5231,6 +5243,7 @@ export function CaptionTranslator() {
     settings.renderMode,
     settings.renderResolution,
     settings.renderContainer,
+    settings.renderOutputType,
     settings.renderAudioSpeed,
     settings.videoVolume,
     settings.audioVolume,
@@ -5654,11 +5667,22 @@ export function CaptionTranslator() {
         const finalVideoPath = typeof inspectorSessionData.artifacts.finalVideoPath === 'string'
           ? inspectorSessionData.artifacts.finalVideoPath
           : '';
+        const finalAudioPath = typeof inspectorSessionData.artifacts.finalAudioPath === 'string'
+          ? inspectorSessionData.artifacts.finalAudioPath
+          : '';
+        const outputType = renderResult.outputType === 'audio_only' ? 'audio_only' : 'video';
         const markerSec = typeof timingPayload.videoMarkerSec === 'number'
           ? timingPayload.videoMarkerSec
           : undefined;
         stepItems.push({ label: 'Render Success', value: renderResult.success === true ? 'true' : renderResult.success === false ? 'false' : '--' });
-        stepItems.push({ label: 'Final Video Path', value: finalVideoPath || (typeof renderResult.outputPath === 'string' ? renderResult.outputPath : '--'), mono: true });
+        stepItems.push({ label: 'Output Type', value: outputType });
+        stepItems.push({
+          label: outputType === 'audio_only' ? 'Final Audio Path' : 'Final Video Path',
+          value: outputType === 'audio_only'
+            ? (finalAudioPath || (typeof renderResult.outputPath === 'string' ? renderResult.outputPath : '--'))
+            : (finalVideoPath || (typeof renderResult.outputPath === 'string' ? renderResult.outputPath : '--')),
+          mono: true,
+        });
         stepItems.push({ label: 'Marker Sec', value: typeof markerSec === 'number' ? markerSec.toFixed(3) : '--', mono: true });
         break;
       }
@@ -5697,6 +5721,7 @@ export function CaptionTranslator() {
             renderResult: stepData.renderResult || null,
             renderTimingPayload: stepData.renderTimingPayload || null,
             finalVideoPath: inspectorSessionData.artifacts.finalVideoPath || null,
+            finalAudioPath: inspectorSessionData.artifacts.finalAudioPath || null,
             step7SubtitleSource: stepData.step7SubtitleSource || null,
             step7AudioSource: stepData.step7AudioSource || null,
           };
@@ -7684,11 +7709,14 @@ export function CaptionTranslator() {
           visible={processing.enabledSteps.has(7)}
           renderSummary={{
             renderMode: settings.renderMode,
+            renderOutputType: settings.renderOutputType === 'audio_only' ? 'audio_only' : 'video',
             renderResolution: settings.renderResolution,
             renderContainer: settings.renderContainer || 'mp4',
             thumbnailDurationSec: settings.thumbnailDurationSec ?? 0.5,
             thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec ?? null,
           }}
+          onChangeRenderOutputType={settings.setRenderOutputType}
+          outputTypeDisabled={processing.status === 'running'}
           metrics={{
             isMultiFolder,
             isEstimated,

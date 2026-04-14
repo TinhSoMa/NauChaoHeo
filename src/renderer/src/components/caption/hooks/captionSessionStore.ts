@@ -701,6 +701,17 @@ export function validateStepOutputForSkip(
   if (step === 7) {
     const renderResult = toRecord(data.renderResult);
     if (renderResult.success !== true) return { ok: false, reason: 'missing_render_success' };
+    const outputType = renderResult.outputType === 'audio_only'
+      ? 'audio_only'
+      : (
+          toRecord(session.settings.step7Render).renderOutputType === 'audio_only'
+            ? 'audio_only'
+            : 'video'
+        );
+    if (outputType === 'audio_only') {
+      if (!hasNonEmptyString(artifacts.finalAudioPath)) return { ok: false, reason: 'missing_final_audio_path' };
+      return { ok: true };
+    }
     if (!hasNonEmptyString(artifacts.finalVideoPath)) return { ok: false, reason: 'missing_final_video_path' };
     return { ok: true };
   }
@@ -882,6 +893,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       subtitleFontSizeRel: settings.subtitleFontSizeRel,
       style: settings.style,
       renderMode: settings.renderMode,
+      renderOutputType: settings.renderOutputType,
       renderResolution: settings.renderResolution,
       renderContainer: settings.renderContainer,
       renderSubtitle: settings.renderSubtitle,

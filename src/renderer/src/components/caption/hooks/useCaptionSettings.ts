@@ -1262,6 +1262,7 @@ export function useCaptionSettings() {
 
   const [hardwareAcceleration, setHardwareAcceleration] = useState<'none' | 'qsv' | 'nvenc'>('qsv');
   const [renderMode, setRenderMode] = useState<RenderMode>('hardsub');
+  const [renderOutputType, setRenderOutputTypeState] = useState<'video' | 'audio_only'>('video');
   const [renderSubtitle, setRenderSubtitle] = useState(true);
   const [renderMark, setRenderMark] = useState(true);
   const [renderFps, setRenderFpsState] = useState<number>(DEFAULT_RENDER_FPS);
@@ -1274,6 +1275,9 @@ export function useCaptionSettings() {
 
   const setRenderFps = useCallback((value: number) => {
     setRenderFpsState(normalizeRenderFps(value));
+  }, []);
+  const setRenderOutputType = useCallback((value: 'video' | 'audio_only') => {
+    setRenderOutputTypeState(value === 'audio_only' ? 'audio_only' : 'video');
   }, []);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 6, 7]));
@@ -1927,6 +1931,7 @@ export function useCaptionSettings() {
       hardwareAcceleration,
       style: activeProfile.style,
       renderMode,
+      renderOutputType,
       renderResolution: activeProfile.renderResolution,
       renderFps,
       renderContainer: activeProfile.renderContainer,
@@ -2028,6 +2033,7 @@ export function useCaptionSettings() {
       hardwareAcceleration,
       activeProfile,
       renderMode,
+      renderOutputType,
       renderFps,
       renderSubtitle,
       renderMark,
@@ -2071,6 +2077,9 @@ export function useCaptionSettings() {
       setHardwareAcceleration(saved.hardwareAcceleration);
     }
     if (saved.renderMode) setRenderMode(saved.renderMode as RenderMode);
+    if (saved.renderOutputType === 'audio_only' || saved.renderOutputType === 'video') {
+      setRenderOutputType(saved.renderOutputType);
+    }
     if (typeof saved.renderFps === 'number') setRenderFps(saved.renderFps);
     if (typeof saved.renderSubtitle === 'boolean') setRenderSubtitle(saved.renderSubtitle);
     if (typeof saved.renderMark === 'boolean') setRenderMark(saved.renderMark);
@@ -2440,6 +2449,7 @@ export function useCaptionSettings() {
     setSubtitleFontSizeRel,
     setStyle,
     renderMode, setRenderMode,
+    renderOutputType, setRenderOutputType,
     renderFps, setRenderFps,
     renderSubtitle, setRenderSubtitle,
     renderMark, setRenderMark,

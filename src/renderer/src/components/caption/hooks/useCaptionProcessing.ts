@@ -198,6 +198,19 @@ function buildRenderedVideoName(
   return `${timestampPrefix}_nauchaoheo_video_${aspect}_${thumbSlug}.${renderContainer}`;
 }
 
+function buildRenderedAudioName(
+  renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16',
+  thumbnailText?: string
+): string {
+  const now = new Date();
+  const timestampPrefix =
+    `${pad4(now.getFullYear())}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}_` +
+    `${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+  const aspect = renderMode === 'hardsub_portrait_9_16' ? '9_16' : '16_9';
+  const thumbSlug = toSafeThumbSlug(thumbnailText);
+  return `${timestampPrefix}_nauchaoheo_audio_${aspect}_${thumbSlug}.wav`;
+}
+
 function buildScaledSubtitleEntries(entries: SubtitleEntry[], scale: number): SubtitleEntry[] {
   const safeScale = scale > 0 ? scale : 1.0;
   return entries.map((entry, idx) => {
@@ -255,6 +268,7 @@ interface UseCaptionProcessingProps {
     hardwareAcceleration: 'none' | 'qsv' | 'nvenc';
     style?: any;
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
+    renderOutputType?: 'video' | 'audio_only';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
     renderFps?: number;
     renderContainer?: 'mp4' | 'mov';
@@ -3251,7 +3265,7 @@ export function useCaptionProcessing({
     });
     // @ts-ignore
     window.electronAPI.captionVideo?.onRenderProgress?.((p: any) => {
-      setProgress({ current: Math.floor(p.percent || 0), total: 100, message: p.message || 'Đang render video...' });
+      setProgress({ current: Math.floor(p.percent || 0), total: 100, message: p.message || 'Đang xuất output Step 7...' });
     });
 
     const inputPaths = resolvedInputPaths;
@@ -3577,6 +3591,7 @@ export function useCaptionProcessing({
         fontSizeScaleVersion: cfg.fontSizeScaleVersion,
         subtitleFontSizeRel: cfg.subtitleFontSizeRel,
         renderMode: cfg.renderMode,
+        renderOutputType: cfg.renderOutputType || 'video',
         renderResolution: cfg.renderResolution,
         renderFps: cfg.renderFps,
         renderContainer: cfg.renderContainer || 'mp4',
@@ -3688,6 +3703,7 @@ export function useCaptionProcessing({
       hardwareAcceleration: cfg.hardwareAcceleration,
       style: cfg.style,
       renderMode: cfg.renderMode,
+      renderOutputType: cfg.renderOutputType || 'video',
       renderResolution: cfg.renderResolution,
       renderFps: cfg.renderFps,
       renderContainer: cfg.renderContainer || 'mp4',
@@ -5868,11 +5884,14 @@ export function useCaptionProcessing({
           || hardsubTextSecondaryForRender
           || ''
         ).trim();
-        const finalVideoFileName = buildRenderedVideoName(
-          cfg.renderMode,
-          cfg.renderContainer || 'mp4',
-          thumbnailTextForRender
-        );
+        const outputTypeForRender = cfg.renderOutputType === 'audio_only' ? 'audio_only' : 'video';
+        const finalOutputFileName = outputTypeForRender === 'audio_only'
+          ? buildRenderedAudioName(cfg.renderMode, thumbnailTextForRender)
+          : buildRenderedVideoName(
+              cfg.renderMode,
+              cfg.renderContainer || 'mp4',
+              thumbnailTextForRender
+            );
         let renderOutputDir = resolveRenderOutputDir(inputType, currentPath, finalVideoInputPath);
         try {
           const appSettingsRes = await window.electronAPI.appSettings.getAll();
@@ -5887,9 +5906,9 @@ export function useCaptionProcessing({
         } catch (err) {
           console.warn('[CaptionProcessing][Step7] Không tải được appSettings cho output dir:', err);
         }
-        const finalVideoPath = joinFilePath(renderOutputDir, finalVideoFileName);
+        const finalOutputPath = joinFilePath(renderOutputDir, finalOutputFileName);
         console.log(
-          `[CaptionProcessing][Step7] Output filename: ${finalVideoFileName}, outputDir: ${renderOutputDir || '(empty)'}`
+          `[CaptionProcessing][Step7] Output filename: ${finalOutputFileName}, outputDir: ${renderOutputDir || '(empty)'}, outputType=${outputTypeForRender}`
         );
         const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
         const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
@@ -5908,6 +5927,9 @@ export function useCaptionProcessing({
               translatedSrtPath: session.artifacts.translatedSrtPath,
               scaledSrtPath: storedScaledSrtPathForStep7,
               mergedAudioPath: storedMergedAudioPathForStep7,
+              ...(outputTypeForRender === 'audio_only'
+                ? { finalAudioPath: undefined }
+                : { finalVideoPath: undefined }),
             },
             timing: {
               ...session.timing,
@@ -5920,7 +5942,13 @@ export function useCaptionProcessing({
           return nextSession;
         });
 
-        setProgress({ current: 20, total: 100, message: msgCtx('Bước 7: Bắt đầu render video (có thể mất vài phút)...') });
+        setProgress({
+          current: 20,
+          total: 100,
+          message: msgCtx(outputTypeForRender === 'audio_only'
+            ? 'Bước 7: Bắt đầu xuất audio final (có thể mất vài phút)...'
+            : 'Bước 7: Bắt đầu render video (có thể mất vài phút)...'),
+        });
 
         const step7TextPrimaryFontName = cfg.renderMode === 'hardsub_portrait_9_16'
           ? (
@@ -6019,7 +6047,8 @@ export function useCaptionProcessing({
         // @ts-ignore
         const renderRes = await window.electronAPI.captionVideo.renderVideo({
           srtPath: srtFileForVideo,
-          outputPath: finalVideoPath,
+          outputPath: finalOutputPath,
+          outputType: outputTypeForRender,
           width: stripWidth,
           height: stripHeight,
           videoPath: finalVideoInputPath,
@@ -6108,7 +6137,8 @@ export function useCaptionProcessing({
         });
 
         if (renderRes.success) {
-          const renderedPath = renderRes.data?.outputPath || finalVideoPath;
+          const renderedPath = renderRes.data?.outputPath || finalOutputPath;
+          const renderedOutputType = renderRes.data?.outputType === 'audio_only' ? 'audio_only' : outputTypeForRender;
           const timingPayload = renderRes.data?.timingPayload && typeof renderRes.data.timingPayload === 'object'
             ? renderRes.data.timingPayload as Record<string, unknown>
             : undefined;
@@ -6132,10 +6162,18 @@ export function useCaptionProcessing({
           } else {
             console.warn(`[CaptionProcessing][Step7] Backend không trả timing payload cho ${folderName}.`);
           }
-          setProgress({ current: 100, total: 100, message: msgCtx(`Bước 7: Đã render video thành công! (${renderRes.data?.duration?.toFixed(1)}s)`) });
+          setProgress({
+            current: 100,
+            total: 100,
+            message: msgCtx(
+              renderedOutputType === 'audio_only'
+                ? `Bước 7: Đã xuất audio final thành công! (${renderRes.data?.duration?.toFixed(1)}s)`
+                : `Bước 7: Đã render video thành công! (${renderRes.data?.duration?.toFixed(1)}s)`
+            ),
+          });
           await updateSessionForStep(currentPath, step, folderIdx, (session) => {
             const stepArtifacts: CaptionArtifactFile[] = [];
-            pushArtifact(stepArtifacts, 'final_video', renderedPath, 'file');
+            pushArtifact(stepArtifacts, renderedOutputType === 'audio_only' ? 'final_audio' : 'final_video', renderedPath, 'file');
             pushArtifact(stepArtifacts, 'scaled_srt_for_render', srtFileForVideo, 'file');
             pushArtifact(stepArtifacts, 'merged_audio_for_render', mergedAudioPathForRender, 'file');
             pushArtifact(stepArtifacts, 'source_video', finalVideoInputPath, 'file');
@@ -6146,6 +6184,7 @@ export function useCaptionProcessing({
                 renderResult: {
                   success: true,
                   outputPath: renderedPath,
+                  outputType: renderedOutputType,
                   duration: renderRes.data?.duration || 0,
                   renderAt: nowIso(),
                 },
@@ -6155,7 +6194,9 @@ export function useCaptionProcessing({
               },
               artifacts: {
                 ...session.artifacts,
-                finalVideoPath: renderedPath,
+                ...(renderedOutputType === 'audio_only'
+                  ? { finalAudioPath: renderedPath, finalVideoPath: undefined }
+                  : { finalVideoPath: renderedPath, finalAudioPath: undefined }),
               },
               timing: {
                 ...session.timing,
@@ -6168,6 +6209,7 @@ export function useCaptionProcessing({
                     lastRenderAt: nowIso(),
                     duration: renderRes.data?.duration || 0,
                     outputPath: renderedPath,
+                    outputType: renderedOutputType,
                   }),
                   inputFingerprint: buildObjectFingerprint({
                     translatedEntries: translatedEntriesForRender.map((entry) => ({
@@ -6198,7 +6240,7 @@ export function useCaptionProcessing({
           if (stopByUser) {
             throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
           }
-          throw new Error(`[${folderName}] Lỗi render video: ${renderRes.error}`);
+          throw new Error(`[${folderName}] Lỗi xuất ${outputTypeForRender === 'audio_only' ? 'audio' : 'video'}: ${renderRes.error}`);
         }
       }
 

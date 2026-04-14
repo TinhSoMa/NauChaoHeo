@@ -772,8 +772,14 @@ export function registerCaptionHandlers(): void {
         thumbnailTextSecondaryPosition?: { x: number; y: number };
         step7SubtitleSource?: 'session_translated_entries';
         step7AudioSource?: 'session_merged_audio';
+        outputType?: 'video' | 'audio_only';
       }
-    ): Promise<IpcResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>> => {
+    ): Promise<IpcResponse<{
+      outputPath: string;
+      duration: number;
+      outputType?: 'video' | 'audio_only';
+      timingPayload?: Record<string, unknown>;
+    }>> => {
       console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);
 
       try {
@@ -792,6 +798,7 @@ export function registerCaptionHandlers(): void {
             data: {
               outputPath: result.outputPath,
               duration: result.duration || 0,
+              outputType: result.outputType,
               timingPayload: result.timingPayload,
             }
           };

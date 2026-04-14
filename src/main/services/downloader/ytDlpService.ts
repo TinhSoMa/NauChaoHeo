@@ -978,6 +978,10 @@ function buildArgs(
   const audioFormatId = options.audioFormatId?.trim()
   const hasAudioFormat = !!audioFormatId
   const allowPlaylist = options.allowPlaylist === true
+  const playlistFolderMode: 'flat' | 'per_video' =
+    ((options as DownloadOptions & { playlistFolderMode?: 'flat' | 'per_video' }).playlistFolderMode === 'per_video'
+      ? 'per_video'
+      : 'flat')
   const shouldApplyNoLogoSource = noLogoPolicy === 'sourcePreferred' && isBilibiliUrl(options.url)
   const avcMp4Selector = shouldApplyNoLogoSource
     ? withBilibiliNoLogoSelector('bestvideo[vcodec^=avc][ext=mp4]')
@@ -1078,11 +1082,16 @@ function buildArgs(
   }
 
   // Output template
-  args.push('-o', '%(title)s [%(id)s].%(ext)s')
+  const outputTemplate = allowPlaylist && playlistFolderMode === 'per_video'
+    ? '%(title)s [%(id)s]/%(title)s [%(id)s].%(ext)s'
+    : '%(title)s [%(id)s].%(ext)s'
+  args.push('-o', outputTemplate)
 
   if (shouldDownloadVideo && mergeAudio) {
     // Merge to mp4 if possible
     args.push('--merge-output-format', 'mp4')
+    // Keep source streams (including audio) after merge for reuse/debug.
+    args.push('--keep-video')
     args.push('--postprocessor-args', 'ffmpeg:-movflags +faststart')
   }
 

@@ -734,6 +734,7 @@ export interface RenderVideoOptions {
   portraitTextSecondaryPosition?: { x: number; y: number }; // Vị trí Text2 riêng cho overlay 9:16
   step7SubtitleSource?: 'session_translated_entries';
   step7AudioSource?: 'session_merged_audio';
+  outputType?: 'video' | 'audio_only';
 }
 
 /**
@@ -754,6 +755,7 @@ export interface RenderProgress {
 export interface RenderResult {
   success: boolean;
   outputPath?: string;
+  outputType?: 'video' | 'audio_only';
   duration?: number;
   timingPayload?: Record<string, unknown>;
   error?: string;
@@ -1011,6 +1013,7 @@ export interface CaptionSessionArtifacts {
   audioDir?: string;
   mergedAudioPath?: string;
   finalVideoPath?: string;
+  finalAudioPath?: string;
   // Deprecated: timing debug đã được lưu trực tiếp vào caption_session.json (data.renderTimingPayload).
   timingJsonPath?: string;
 }
@@ -1103,6 +1106,7 @@ export interface CaptionProjectSettingsValues {
   renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
   renderFps?: number;
   renderContainer?: 'mp4' | 'mov';
+  renderOutputType?: 'video' | 'audio_only';
   renderSubtitle?: boolean;
   renderMark?: boolean;
   blackoutTop?: number | null;

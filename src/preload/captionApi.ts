@@ -310,7 +310,13 @@ export interface CaptionVideoAPI {
     thumbnailTextSecondaryPosition?: { x: number; y: number };
     step7SubtitleSource?: 'session_translated_entries';
     step7AudioSource?: 'session_merged_audio';
-  }) => Promise<IpcApiResponse<{ outputPath: string; duration: number; timingPayload?: Record<string, unknown> }>>;
+    outputType?: 'video' | 'audio_only';
+  }) => Promise<IpcApiResponse<{
+    outputPath: string;
+    duration: number;
+    outputType?: 'video' | 'audio_only';
+    timingPayload?: Record<string, unknown>;
+  }>>;
 
   // Stop current render process immediately
   stopRender: () => Promise<IpcApiResponse<{ stopped: boolean; message: string }>>;

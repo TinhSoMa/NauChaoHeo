@@ -6,11 +6,14 @@ interface HardsubSettingsPanelProps {
   visible: boolean;
   renderSummary: {
     renderMode: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
+    renderOutputType: 'video' | 'audio_only';
     renderResolution: 'original' | '1080p' | '720p' | '540p' | '360p';
     renderContainer: 'mp4' | 'mov';
     thumbnailDurationSec: number;
     thumbnailFrameTimeSec: number | null;
   };
+  onChangeRenderOutputType: (value: 'video' | 'audio_only') => void;
+  outputTypeDisabled?: boolean;
   metrics: HardsubTimingMetrics;
   audioPreview: {
     status: 'idle' | 'mixing' | 'ready' | 'error';
@@ -31,7 +34,7 @@ interface HardsubSettingsPanelProps {
 }
 
 export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
-  const { visible, audioPreview, thumbnailListPanel } = props;
+  const { visible, audioPreview, thumbnailListPanel, renderSummary, onChangeRenderOutputType, outputTypeDisabled } = props;
   const formatSeconds = (value: number) => (Number.isFinite(value) ? `${value.toFixed(2)}s` : '--');
   const audioStatusLabel = audioPreview.status === 'mixing'
     ? 'Mixing'
@@ -55,6 +58,31 @@ export function HardsubSettingsPanel(props: HardsubSettingsPanelProps) {
   return (
     <div className={styles.step7Panel}>
       <div className={styles.step7AudioCard}>
+        <div className={styles.inputGroup} style={{ marginBottom: 8 }}>
+          <label className={styles.label}>Output Step 7</label>
+          <div className={styles.stepOptionRow}>
+            <label className={styles.checkboxLabel}>
+              <input
+                type="radio"
+                name="step7-output-type"
+                checked={renderSummary.renderOutputType === 'video'}
+                onChange={() => onChangeRenderOutputType('video')}
+                disabled={!!outputTypeDisabled}
+              />
+              <span>Xuất Video</span>
+            </label>
+            <label className={styles.checkboxLabel}>
+              <input
+                type="radio"
+                name="step7-output-type"
+                checked={renderSummary.renderOutputType === 'audio_only'}
+                onChange={() => onChangeRenderOutputType('audio_only')}
+                disabled={!!outputTypeDisabled}
+              />
+              <span>Chỉ Xuất Audio</span>
+            </label>
+          </div>
+        </div>
         <div className={styles.step7AudioActions}>
           <span className={`${styles.step7AudioStatusBadge} ${audioStatusClass}`}>{audioStatusLabel}</span>
           {audioPreview.progressText && (

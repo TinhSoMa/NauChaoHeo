@@ -373,6 +373,7 @@ export const DownloaderPage = () => {
   const [mergeAudio, setMergeAudio] = useState(true)
   const [downloadSeparateAudio, setDownloadSeparateAudio] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
+  const [playlistFolderMode, setPlaylistFolderMode] = useState<'flat' | 'per_video'>('flat')
   const [downloadAllSubs, setDownloadAllSubs] = useState(true)
   const [skipDanmakuConvert, setSkipDanmakuConvert] = useState(true)
   const [speedProfile, setSpeedProfile] = useState<DownloadSpeedProfile>('auto')
@@ -1113,6 +1114,7 @@ export const DownloaderPage = () => {
         allowPlaylist,
         playlistItems,
       }
+      ;(options as DownloadOptions & { playlistFolderMode?: 'flat' | 'per_video' }).playlistFolderMode = playlistFolderMode
 
       const res = await api().startDownload(options)
       if (shouldStopAfter()) {
@@ -1244,6 +1246,7 @@ export const DownloaderPage = () => {
         noLogoPolicy,
         allowPlaylist,
       }
+      ;(options as DownloadOptions & { playlistFolderMode?: 'flat' | 'per_video' }).playlistFolderMode = playlistFolderMode
 
       try {
         const res = await api().startDownload(options)
@@ -1301,6 +1304,7 @@ export const DownloaderPage = () => {
     speedProfile,
     noLogoPolicy,
     allowPlaylist,
+    playlistFolderMode,
     resolvedSubLangs,
     skipDanmakuConvert,
     resolveJobOutputDir,
@@ -1323,6 +1327,7 @@ export const DownloaderPage = () => {
     setDownloadVideo(true); setDownloadSubtitle(false); setDownloadThumbnail(false)
     setMergeAudio(true); setDownloadSeparateAudio(false)
     setAllowPlaylist(false); setPlaylistInfo(null); setPlaylistError(null)
+    setPlaylistFolderMode('flat')
     setSingleType('video')
     setShowPlaylistPicker(false); setPlaylistPickerEntries([]); setPlaylistPickerError(null); setSelectedPlaylistIndexes(null); setPlaylistSelectionUrl('')
     setPlaylistMetaLoadedCount(0); setPlaylistMetaLoading(false)
@@ -1761,6 +1766,13 @@ export const DownloaderPage = () => {
                   <div className={styles.inlineRow}>
                     {mode === 'multi' && (
                       <Checkbox label="Tải playlist" checked={allowPlaylist} onChange={setAllowPlaylist} />
+                    )}
+                    {(singleType === 'playlist' || allowPlaylist) && (
+                      <Checkbox
+                        label="Mỗi video 1 thư mục con"
+                        checked={playlistFolderMode === 'per_video'}
+                        onChange={(checked) => setPlaylistFolderMode(checked ? 'per_video' : 'flat')}
+                      />
                     )}
                     <Button
                       variant="secondary"
