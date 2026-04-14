@@ -43,6 +43,50 @@ export interface CapcutBatchResult {
   error?: string;
 }
 
+export interface CapcutAutoBatchScanResult {
+  success: boolean;
+  data?: {
+    folders: Array<{
+      folderPath: string;
+      folderName: string;
+      projectPath: string;
+      videoPath?: string;
+      videoName?: string;
+      videoSizeBytes?: number;
+      existingAudioPath?: string;
+      existingAudioName?: string;
+      existingAudioSizeBytes?: number;
+      draftStatus: 'exists' | 'create';
+      canProcess: boolean;
+      message?: string;
+    }>;
+    total: number;
+  };
+  error?: string;
+}
+
+export interface CapcutAutoBatchResult {
+  success: boolean;
+  data?: {
+    total: number;
+    successCount: number;
+    failedCount: number;
+    stopped: boolean;
+    results: Array<{
+      folderPath: string;
+      folderName: string;
+      projectPath: string;
+      draftStatus: 'exists' | 'created' | 'error';
+      audioStatus: 'existing' | 'extracted' | 'error';
+      videoPath?: string;
+      audioPath?: string;
+      status: 'success' | 'error';
+      error?: string;
+    }>;
+  };
+  error?: string;
+}
+
 export interface CutVideoAPI {
   scanFolder: (folderPath: string) => Promise<ScanFolderResult>;
   startAudioExtraction: (options: {
@@ -173,6 +217,28 @@ export interface CutVideoAPI {
     videoName?: string;
     projectName?: string;
   }) => void) => () => void;
+
+  scanCapcutAutoBatch: (folderPaths: string[]) => Promise<CapcutAutoBatchScanResult>;
+  startCapcutAutoBatch: (options: {
+    folderPaths: string[];
+    audioPolicy?: 'prefer_existing' | 'force_extract';
+  }) => Promise<CapcutAutoBatchResult>;
+  stopCapcutAutoBatch: () => Promise<{ success: boolean }>;
+  onCapcutAutoProgress: (callback: (data: {
+    total: number;
+    current: number;
+    percent: number;
+    currentFolderName?: string;
+    stage: 'preflight' | 'scanning' | 'processing' | 'completed' | 'stopped' | 'error';
+    message: string;
+  }) => void) => () => void;
+  onCapcutAutoLog: (callback: (data: {
+    time: string;
+    status: 'info' | 'processing' | 'success' | 'error';
+    message: string;
+    folderPath?: string;
+    folderName?: string;
+  }) => void) => () => void;
 }
 
 export const cutVideoApi: CutVideoAPI = {
@@ -246,5 +312,18 @@ export const cutVideoApi: CutVideoAPI = {
     const subscription = (_event: any, data: any) => callback(data);
     ipcRenderer.on('cutVideo:capcutLog', subscription);
     return () => ipcRenderer.removeListener('cutVideo:capcutLog', subscription);
+  },
+  scanCapcutAutoBatch: (folderPaths) => ipcRenderer.invoke('cutVideo:scanCapcutAutoBatch', folderPaths),
+  startCapcutAutoBatch: (options) => ipcRenderer.invoke('cutVideo:startCapcutAutoBatch', options),
+  stopCapcutAutoBatch: () => ipcRenderer.invoke('cutVideo:stopCapcutAutoBatch'),
+  onCapcutAutoProgress: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:capcutAutoProgress', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:capcutAutoProgress', subscription);
+  },
+  onCapcutAutoLog: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:capcutAutoLog', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:capcutAutoLog', subscription);
   },
 };

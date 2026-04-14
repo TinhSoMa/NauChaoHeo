@@ -669,6 +669,112 @@ class CapcutProjectBatchService {
     };
   }
 
+  async ensureDraftInProjectFolder(projectPath: string): Promise<{
+    success: boolean;
+    created: boolean;
+    message: string;
+  }> {
+    if (!projectPath) {
+      return { success: false, created: false, message: 'Thiếu projectPath.' };
+    }
+
+    const resolvedProjectPath = path.resolve(projectPath);
+    if (!fs.existsSync(resolvedProjectPath) || !fs.statSync(resolvedProjectPath).isDirectory()) {
+      return {
+        success: false,
+        created: false,
+        message: `Project folder không tồn tại: ${resolvedProjectPath}`,
+      };
+    }
+
+    const draftContentPath = path.join(resolvedProjectPath, 'draft_content.json');
+    if (fs.existsSync(draftContentPath)) {
+      return {
+        success: true,
+        created: false,
+        message: 'Project đã có draft_content.json.',
+      };
+    }
+
+    const runtimeResult = await this.getPythonRuntime();
+    if (!runtimeResult.runtime) {
+      return {
+        success: false,
+        created: false,
+        message: runtimeResult.error || 'Không chuẩn bị được runtime Python.',
+      };
+    }
+
+    const runtime = runtimeResult.runtime;
+    const projectName = path.basename(resolvedProjectPath);
+    const draftsPath = path.dirname(resolvedProjectPath);
+    const pythonScript = buildPythonCreateDraftScript();
+
+    const directCreate = await this.runCommand(
+      runtime.command,
+      [...runtime.baseArgs, '-c', pythonScript, draftsPath, projectName],
+      runtime.mode,
+    );
+
+    if (directCreate.code === 0 && fs.existsSync(draftContentPath)) {
+      return {
+        success: true,
+        created: true,
+        message: 'Đã tạo draft_content.json trực tiếp trong folder project.',
+      };
+    }
+
+    const tempName = `${projectName}__auto_draft_${Date.now()}`;
+    const tempProjectPath = path.join(draftsPath, tempName);
+    const tempCreate = await this.runCommand(
+      runtime.command,
+      [...runtime.baseArgs, '-c', pythonScript, draftsPath, tempName],
+      runtime.mode,
+    );
+
+    if (tempCreate.code !== 0 || !fs.existsSync(tempProjectPath)) {
+      const errText =
+        (directCreate.stderr || directCreate.error || directCreate.stdout || '').trim()
+        || (tempCreate.stderr || tempCreate.error || tempCreate.stdout || '').trim()
+        || 'Unknown error';
+      return {
+        success: false,
+        created: false,
+        message: `Không thể tạo draft_content.json: ${errText}`,
+      };
+    }
+
+    try {
+      this.copyDirectoryContents(tempProjectPath, resolvedProjectPath);
+    } catch (error) {
+      return {
+        success: false,
+        created: false,
+        message: `Đã tạo draft tạm nhưng copy về folder project thất bại: ${String(error)}`,
+      };
+    } finally {
+      try {
+        fs.rmSync(tempProjectPath, { recursive: true, force: true });
+      } catch {
+        // noop
+      }
+    }
+
+    if (!fs.existsSync(draftContentPath)) {
+      return {
+        success: false,
+        created: false,
+        message: 'Không tìm thấy draft_content.json sau khi copy draft tạm.',
+      };
+    }
+
+    return {
+      success: true,
+      created: true,
+      message: 'Đã tạo draft_content.json trong folder project từ draft tạm.',
+    };
+  }
+
   private resolveProjectName(
     index: number,
     fileName: string,
@@ -768,6 +874,22 @@ class CapcutProjectBatchService {
         resolve({ code: -1, stdout, stderr, error: String(error) });
       }
     });
+  }
+
+  private copyDirectoryContents(sourceDir: string, targetDir: string): void {
+    const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const sourcePath = path.join(sourceDir, entry.name);
+      const targetPath = path.join(targetDir, entry.name);
+      if (entry.isDirectory()) {
+        if (!fs.existsSync(targetPath)) {
+          fs.mkdirSync(targetPath, { recursive: true });
+        }
+        this.copyDirectoryContents(sourcePath, targetPath);
+      } else if (entry.isFile()) {
+        fs.copyFileSync(sourcePath, targetPath);
+      }
+    }
   }
 }
 

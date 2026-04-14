@@ -6,6 +6,7 @@ import { videoMergerService } from '../services/cutVideo/videoMergerService';
 import { videoAudioMixerService } from '../services/cutVideo/videoAudioMixerService';
 import { detectSilences } from '../services/cutVideo/silenceDetectService';
 import { capcutProjectBatchService, DEFAULT_CAPCUT_DRAFTS_PATH } from '../services/cutVideo/capcutProjectBatchService';
+import { capcutAutoBatchService } from '../services/cutVideo/capcutAutoBatchService';
 import { AppSettingsService } from '../services/appSettings';
 
 // To keep track of running extractions and allow stopping
@@ -374,6 +375,29 @@ export function registerCutVideoHandlers(): void {
       orderedVideoPaths: options.orderedVideoPaths,
       onProgress: (data) => sender.send('cutVideo:capcutProgress', data),
       onLog: (data) => sender.send('cutVideo:capcutLog', data),
+    });
+  });
+
+  // ---- CapCut Auto Batch Handlers (source folder == project folder) ----
+  ipcMain.handle('cutVideo:scanCapcutAutoBatch', async (_, folderPaths: string[]) => {
+    return await capcutAutoBatchService.scanFolders(folderPaths);
+  });
+
+  ipcMain.handle('cutVideo:stopCapcutAutoBatch', async () => {
+    capcutAutoBatchService.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('cutVideo:startCapcutAutoBatch', async (event, options: {
+    folderPaths: string[];
+    audioPolicy?: 'prefer_existing' | 'force_extract';
+  }) => {
+    const sender = event.sender;
+    return await capcutAutoBatchService.start({
+      folderPaths: options.folderPaths,
+      audioPolicy: options.audioPolicy,
+      onProgress: (data) => sender.send('cutVideo:capcutAutoProgress', data),
+      onLog: (data) => sender.send('cutVideo:capcutAutoLog', data),
     });
   });
 }

@@ -4,3 +4,4 @@ export { VideoSplitter } from './VideoSplitter';
 export { VideoMerger } from './VideoMerger';
 export { VideoAudioMixer } from './VideoAudioMixer';
 export { CapcutProjectCreator } from './CapcutProjectCreator';
+export { CapcutAutoFolderWorkflow } from './CapcutAutoFolderWorkflow';

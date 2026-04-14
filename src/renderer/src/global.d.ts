@@ -412,6 +412,67 @@ interface CutVideoAPI {
     videoName?: string;
     projectName?: string;
   }) => void) => () => void;
+  scanCapcutAutoBatch: (folderPaths: string[]) => Promise<{
+    success: boolean;
+    data?: {
+      folders: Array<{
+        folderPath: string;
+        folderName: string;
+        projectPath: string;
+        videoPath?: string;
+        videoName?: string;
+        videoSizeBytes?: number;
+        existingAudioPath?: string;
+        existingAudioName?: string;
+        existingAudioSizeBytes?: number;
+        draftStatus: 'exists' | 'create';
+        canProcess: boolean;
+        message?: string;
+      }>;
+      total: number;
+    };
+    error?: string;
+  }>;
+  startCapcutAutoBatch: (options: {
+    folderPaths: string[];
+    audioPolicy?: 'prefer_existing' | 'force_extract';
+  }) => Promise<{
+    success: boolean;
+    data?: {
+      total: number;
+      successCount: number;
+      failedCount: number;
+      stopped: boolean;
+      results: Array<{
+        folderPath: string;
+        folderName: string;
+        projectPath: string;
+        draftStatus: 'exists' | 'created' | 'error';
+        audioStatus: 'existing' | 'extracted' | 'error';
+        videoPath?: string;
+        audioPath?: string;
+        status: 'success' | 'error';
+        error?: string;
+      }>;
+    };
+    error?: string;
+  }>;
+  stopCapcutAutoBatch: () => Promise<{ success: boolean }>;
+  onCapcutAutoProgress: (callback: (data: {
+    total: number;
+    current: number;
+    percent: number;
+    currentFolderName?: string;
+    stage: 'preflight' | 'scanning' | 'processing' | 'completed' | 'stopped' | 'error';
+    message: string;
+  }) => void) => () => void;
+  onCapcutAutoLog: (callback: (data: {
+    time: string;
+    status: 'info' | 'processing' | 'success' | 'error';
+    message: string;
+    folderPath?: string;
+    folderName?: string;
+  }) => void) => () => void;
 }
 
 /**

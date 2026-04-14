@@ -4,10 +4,10 @@
 
 .container {
   width: 100%;
-  padding: 20px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   height: 100%;
   min-height: 100%;
 
@@ -15,6 +15,131 @@
   --glass-border: color-mix(in srgb, var(--color-border) 55%, transparent);
   --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.14);
   --glass-highlight: color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.workspaceLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.mainWorkspace {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.menuRail {
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.menuRailTitle {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  padding: 2px 2px 0;
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.menuButton {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-primary);
+  text-align: left;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+}
+
+.menuButton:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-1px);
+}
+
+.menuButtonActive {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--glass-border));
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--glass-bg));
+}
+
+.menuButtonTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menuLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.menuSubtitle {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.menuChip {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.emptyWorkspace {
+  border: 1px dashed var(--glass-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--glass-bg) 70%, transparent);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+  min-height: 220px;
+  padding: 18px;
+}
+
+.emptyWorkspaceTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.emptyWorkspaceSubtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .workspaceHeader {
@@ -246,6 +371,21 @@
 }
 
 @media (max-width: 1100px) {
+  .workspaceLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .menuRail {
+    order: -1;
+  }
+
+  .menuList {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    overflow: visible;
+  }
+
   .overviewGrid {
     grid-template-columns: 1fr;
   }
@@ -452,6 +592,27 @@ details[open] > .sectionSummary::after {
 .checkbox {
   width: 16px;
   height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  user-select: none;
+}
+
+.radio {
+  width: 15px;
+  height: 15px;
   accent-color: var(--color-primary);
 }
 
