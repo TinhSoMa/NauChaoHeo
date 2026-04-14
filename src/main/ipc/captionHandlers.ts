@@ -1167,12 +1167,14 @@ export function registerCaptionHandlers(): void {
     CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO,
     async (
       _event: IpcMainInvokeEvent,
-      folderPaths: string[]
+      payload: string[] | { folderPaths?: string[]; audioPreference?: 'all' | 'with_audio' | 'without_audio' }
     ): Promise<IpcResponse<{ videoPath?: string; metadata?: VideoMetadata }>> => {
+      const folderPaths = Array.isArray(payload) ? payload : (Array.isArray(payload?.folderPaths) ? payload.folderPaths : []);
+      const audioPreference = Array.isArray(payload) ? 'all' : (payload?.audioPreference || 'all');
       console.log(`[CaptionHandlers] Find best video in ${folderPaths.length} folders`);
 
       try {
-        const result = await CaptionService.findBestVideoInFolders(folderPaths);
+        const result = await CaptionService.findBestVideoInFolders(folderPaths, { audioPreference });
         if (result.success && result.videoPath) {
           return {
             success: true,

@@ -311,6 +311,7 @@ type PersistThumbnailSessionOverrides = {
   hardsubTextsSecondaryByOrder?: string[];
 };
 type DraftDurationFilterMode = 'all' | 'above' | 'below';
+type AudioPresenceFilterMode = 'all' | 'with_audio' | 'without_audio';
 
 const SENSITIVE_KEY_PATTERN = /(token|api[_-]?key|secret|password|authorization|cookie)/i;
 
@@ -1435,8 +1436,10 @@ export function CaptionTranslator() {
   }, []);
 
   // 2. File Management Hook
+  const [audioPresenceFilterMode, setAudioPresenceFilterMode] = useState<AudioPresenceFilterMode>('all');
   const fileManager = useCaptionFileManagement({
     inputType: settings.inputType,
+    videoSelectionAudioMode: audioPresenceFilterMode,
   });
   const [draftDurationFilterMode, setDraftDurationFilterMode] = useState<DraftDurationFilterMode>('all');
   const [draftDurationFilterMinutes, setDraftDurationFilterMinutes] = useState<number>(
@@ -2411,7 +2414,9 @@ export function CaptionTranslator() {
         if (!videoPath) {
           try {
             // @ts-ignore
-            const res = await window.electronAPI.captionVideo.findBestVideoInFolders([folderPath]);
+            const res = await window.electronAPI.captionVideo.findBestVideoInFolders([folderPath], {
+              audioPreference: audioPresenceFilterMode,
+            });
             if (res?.success && res.data?.videoPath) {
               videoPath = res.data.videoPath;
               durationSec = res.data.metadata?.duration || durationSec;
@@ -2513,6 +2518,7 @@ export function CaptionTranslator() {
       });
     })();
   }, [
+    audioPresenceFilterMode,
     fileManager.folderVideos,
     selectedRunPaths,
     hardsubSettings.selectedDraftPaths,
@@ -7074,10 +7080,29 @@ export function CaptionTranslator() {
                                 </button>
                               </div>
                             )}
-                            {vInfo && (
-                              <div className={styles.folderBoxSubText}>
-                                <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
-                                {vInfo.name}
+                            {(settings.inputType === 'draft' || settings.inputType === 'srt') && (
+                              <div className={styles.folderVideoRow}>
+                                <span
+                                  className={styles.folderBoxSubText}
+                                  title={vInfo?.fullPath || 'Chưa chọn video cho folder này'}
+                                >
+                                  <img src={videoIconUrl} alt="video" className={styles.folderVideoIcon} />
+                                  {vInfo
+                                    ? `${vInfo.name}${vInfo.hasAudio === false ? ' (không audio)' : ''}`
+                                    : 'Chưa chọn video'}
+                                </span>
+                                <button
+                                  type="button"
+                                  className={styles.folderSrtPickBtn}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void fileManager.pickVideoForFolder(path);
+                                  }}
+                                  disabled={processing.status === 'running'}
+                                  title="Chọn file video input cho folder"
+                                >
+                                  Chọn video
+                                </button>
                               </div>
                             )}
                           </div>
@@ -7111,6 +7136,17 @@ export function CaptionTranslator() {
                   <option value="all">Không lọc thời lượng</option>
                   <option value="above">{'Lọc trên (>=)'}</option>
                   <option value="below">{'Lọc dưới (<=)'}</option>
+                </select>
+                <select
+                  value={audioPresenceFilterMode}
+                  onChange={(e) => setAudioPresenceFilterMode(e.target.value as AudioPresenceFilterMode)}
+                  className={`${styles.select} ${styles.durationAudioFilterSelect}`}
+                  title="Điều kiện chọn video render trong mỗi folder"
+                  disabled={processing.status === 'running'}
+                >
+                  <option value="all">Video render: ưu tiên dung lượng</option>
+                  <option value="with_audio">Video render: ưu tiên có audio</option>
+                  <option value="without_audio">Video render: ưu tiên không audio</option>
                 </select>
                 <Input
                   type="number"

@@ -366,7 +366,10 @@ export interface CaptionVideoAPI {
   ) => Promise<IpcApiResponse<RenderThumbnailFileResult>>;
 
   // Auto-detect best video in folders
-  findBestVideoInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<{
+  findBestVideoInFolders: (
+    folderPaths: string[],
+    options?: { audioPreference?: 'all' | 'with_audio' | 'without_audio' }
+  ) => Promise<IpcApiResponse<{
     videoPath?: string;
     metadata?: VideoMetadata;
   }>>;
@@ -429,8 +432,11 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
     renderThumbnailFile: (options: RenderThumbnailFileOptions) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_FILE, options),
 
-    findBestVideoInFolders: (folderPaths: string[]) =>
-      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO, folderPaths),
+    findBestVideoInFolders: (folderPaths: string[], options?: { audioPreference?: 'all' | 'with_audio' | 'without_audio' }) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.FIND_BEST_VIDEO, {
+        folderPaths,
+        audioPreference: options?.audioPreference,
+      }),
 
     getAvailableFonts: () =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.GET_AVAILABLE_FONTS),

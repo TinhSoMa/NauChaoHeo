@@ -832,6 +832,14 @@
   width: 100%;
 }
 
+.folderVideoRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
 .folderSrtLabel {
   font-size: 11px;
   color: var(--color-text-secondary);
@@ -3265,13 +3273,17 @@
 
 .durationFilterControls {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px) auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(190px, 1fr) minmax(120px, 180px) auto;
   gap: 8px;
   align-items: center;
 }
 
 .durationFilterModeSelect {
   min-width: 180px;
+}
+
+.durationAudioFilterSelect {
+  min-width: 190px;
 }
 
 .durationFilterMinutesInput {

@@ -14,14 +14,15 @@ import {
 
 interface UseCaptionFileManagementProps {
   inputType: InputType;
+  videoSelectionAudioMode?: 'all' | 'with_audio' | 'without_audio';
   onProgress?: (progress: { current: number; total: number; message: string }) => void;
 }
 
-export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFileManagementProps) {
+export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 'all', onProgress }: UseCaptionFileManagementProps) {
   const { projectId } = useProjectContext();
   const [filePath, setFilePath] = useState('');
   const [entries, setEntries] = useState<SubtitleEntry[]>([]);
-  const [folderVideos, setFolderVideos] = useState<Record<string, { name: string; fullPath: string; duration: number }>>({});
+  const [folderVideos, setFolderVideos] = useState<Record<string, { name: string; fullPath: string; duration: number; hasAudio?: boolean }>>({});
   const [srtFilesByFolder, setSrtFilesByFolder] = useState<Record<string, string>>({});
   const [missingSrtFolders, setMissingSrtFolders] = useState<Set<string>>(new Set());
   const srtFilesByFolderRef = useRef<Record<string, string>>({});
@@ -328,18 +329,21 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
 
     const paths = getInputPaths(inputType, filePath);
     const fetchVideos = async () => {
-      const newFolderVideos: Record<string, { name: string; fullPath: string; duration: number }> = {};
+      const newFolderVideos: Record<string, { name: string; fullPath: string; duration: number; hasAudio?: boolean }> = {};
       for (const p of paths) {
         try {
           // @ts-ignore
-          const res = await window.electronAPI.captionVideo.findBestVideoInFolders([p]);
+          const res = await window.electronAPI.captionVideo.findBestVideoInFolders([p], {
+            audioPreference: videoSelectionAudioMode,
+          });
           if (res.success && res.data?.videoPath) {
              const videoName = res.data.videoPath.split(/[/\\]/).pop();
              if (videoName) {
                newFolderVideos[p] = { 
                  name: videoName, 
                  fullPath: res.data.videoPath,
-                 duration: res.data.metadata?.duration || 0
+                 duration: res.data.metadata?.duration || 0,
+                 hasAudio: res.data.metadata?.hasAudio === true,
                };
              }
           }
@@ -351,7 +355,62 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     };
 
     fetchVideos();
-  }, [filePath, inputType]);
+  }, [filePath, inputType, videoSelectionAudioMode]);
+
+  const pickVideoForFolder = useCallback(async (folderPath: string) => {
+    const targetFolder = normalizeFolderPath(folderPath);
+    if (!targetFolder) return;
+    try {
+      // @ts-ignore - electronAPI is globally defined
+      const result = await window.electronAPI.invoke('dialog:openFile', {
+        filters: [{ name: 'Video Files', extensions: ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'] }],
+        properties: ['openFile'],
+      }) as { canceled: boolean; filePaths: string[] };
+
+      if (result?.canceled || !result?.filePaths?.length) return;
+      const selectedPath = result.filePaths[0];
+      if (!selectedPath) return;
+
+      if (!isDirectChildFile(targetFolder, selectedPath)) {
+        if (onProgress) {
+          onProgress({
+            current: 0,
+            total: 0,
+            message: 'Video phải nằm trực tiếp trong folder input đã chọn.',
+          });
+        }
+        return;
+      }
+
+      // @ts-ignore
+      const metadataRes = await window.electronAPI.captionVideo.getVideoMetadata(selectedPath);
+      const duration = metadataRes?.success && metadataRes?.data?.duration
+        ? metadataRes.data.duration
+        : 0;
+      const hasAudio = metadataRes?.success ? metadataRes?.data?.hasAudio === true : undefined;
+      const videoName = selectedPath.split(/[/\\]/).pop() || selectedPath;
+
+      setFolderVideos((prev) => ({
+        ...prev,
+        [targetFolder]: {
+          name: videoName,
+          fullPath: selectedPath,
+          duration,
+          hasAudio,
+        },
+      }));
+
+      if (onProgress) {
+        onProgress({
+          current: 0,
+          total: 0,
+          message: `Đã chọn video input: ${videoName}${hasAudio === false ? ' (không có audio)' : ''}`,
+        });
+      }
+    } catch (error) {
+      console.warn('[CaptionFileManagement] Không thể chọn video cho folder:', error);
+    }
+  }, [isDirectChildFile, normalizeFolderPath, onProgress]);
 
   useEffect(() => {
     if (inputType !== 'srt') {
@@ -488,6 +547,7 @@ export function useCaptionFileManagement({ inputType, onProgress }: UseCaptionFi
     srtFilesByFolder,
     missingSrtFolders,
     pickSrtForFolder,
+    pickVideoForFolder,
     handleBrowseFile
   };
 }

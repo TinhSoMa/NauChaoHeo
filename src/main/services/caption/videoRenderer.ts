@@ -3301,7 +3301,10 @@ export async function renderThumbnailPreviewFrame(
 /**
  * Tìm video gốc tốt nhất
  */
-export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
+export async function findBestVideoInFolders(
+  folderPaths: string[],
+  options?: { audioPreference?: 'all' | 'with_audio' | 'without_audio' }
+): Promise<{
   success: boolean;
   videoPath?: string;
   metadata?: VideoMetadata;
@@ -3340,10 +3343,12 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
   const preferredCandidates = potentialVideos.filter((video) => !video.isGeneratedRender);
   const candidatePool = preferredCandidates.length > 0 ? preferredCandidates : potentialVideos;
   const minShorterSidePx = 360;
+  const audioPreference = options?.audioPreference || 'all';
 
   type VideoStat = {
     path: string;
     metadata: VideoMetadata;
+    fileSizeBytes: number;
     area: number;
     isGeneratedRender: boolean;
     mtimeMs: number;
@@ -3359,13 +3364,16 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
       const shorterSide = Math.min(realWidth, realHeight);
       if (shorterSide >= minShorterSidePx) {
         let mtimeMs = 0;
+        let fileSizeBytes = 0;
         try {
           const stat = await fs.stat(videoPath);
           mtimeMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0;
+          fileSizeBytes = Number.isFinite(stat.size) ? stat.size : 0;
         } catch {}
         validVideos.push({
           path: videoPath,
           metadata: res.metadata,
+          fileSizeBytes,
           area: realWidth * realHeight,
           isGeneratedRender: candidate.isGeneratedRender,
           mtimeMs,
@@ -3381,6 +3389,21 @@ export async function findBestVideoInFolders(folderPaths: string[]): Promise<{
   validVideos.sort((a, b) => {
     if (a.isGeneratedRender !== b.isGeneratedRender) {
       return a.isGeneratedRender ? 1 : -1;
+    }
+    // Ưu tiên theo điều kiện audio user chọn khi auto-detect video render.
+    if (audioPreference !== 'all') {
+      const aHasAudio = a.metadata?.hasAudio === true;
+      const bHasAudio = b.metadata?.hasAudio === true;
+      if (audioPreference === 'with_audio' && aHasAudio !== bHasAudio) {
+        return aHasAudio ? -1 : 1;
+      }
+      if (audioPreference === 'without_audio' && aHasAudio !== bHasAudio) {
+        return aHasAudio ? 1 : -1;
+      }
+    }
+    // Nếu có từ 2 video trở lên, ưu tiên file dung lượng lớn hơn.
+    if (a.fileSizeBytes !== b.fileSizeBytes) {
+      return b.fileSizeBytes - a.fileSizeBytes;
     }
     if (a.area !== b.area) {
       return b.area - a.area;
