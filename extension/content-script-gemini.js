@@ -1,3 +1,4 @@
+(() => {
 const GEMINI_SCRIPT_VERSION = "2026.03.30.1";
 
 if (window.__geminiScriptVersion === GEMINI_SCRIPT_VERSION) {
@@ -133,7 +134,7 @@ const runtimeMessageListener = (request, sender, sendResponse) => {
         return true; // Giữ channel mở cho async response
     } else if (request.action === "PING") {
         sendResponse({ status: "ALIVE" });
-        return true;
+        return false;
     } else if (request.action === "CANCEL_POLLING") {
         // HỦY NGAY LẬP TỨC khi nhận lệnh từ background
         if (pollingIntervalId) {
@@ -160,14 +161,15 @@ const runtimeMessageListener = (request, sender, sendResponse) => {
             data: request.data
         }, "*");
         sendResponse({ status: "OK" });
-        return true;
+        return false;
     } else if (request.action === "UPDATE_PROGRESS") {
         sendResponse({ status: "OK" });
-        return true;
+        return false;
     } else if (request.action === "GET_SCRIPT_VERSION") {
         sendResponse({ status: "OK", version: GEMINI_SCRIPT_VERSION });
-        return true;
+        return false;
     }
+    return false;
 };
 
 chrome.runtime.onMessage.addListener(runtimeMessageListener);
@@ -181,12 +183,14 @@ chrome.runtime.onMessage.addListener(runtimeMessageListener);
  */
 async function handlePasteAndSend(fullPrompt, sendResponse) {
     try {
-        const context = resolveComposerContext();
+        const context = await waitForComposerReady();
         const doc = context.doc;
         const usingPiP = context.usingPiP;
+        const normalizedPrompt = normalizePromptToSingleLine(fullPrompt);
         
         console.log(`----> Đang xử lý trong ${usingPiP ? 'PiP window' : 'tab gốc'}`);
-        console.log(`----> Độ dài prompt: ${fullPrompt.length} ký tự`);
+        console.log(`----> Độ dài prompt gốc: ${(fullPrompt || '').length} ký tự`);
+        console.log(`----> Độ dài prompt sau chuẩn hóa 1 dòng: ${normalizedPrompt.length} ký tự`);
         
         // BƯỚC 1: Tìm ô nhập liệu
         const inputBox = context.inputBox;
@@ -199,10 +203,21 @@ async function handlePasteAndSend(fullPrompt, sendResponse) {
         activeInputBox = inputBox;
         activeDocument = doc;
 
+        const existingInputTextLength = getInputTextLength(inputBox);
+        if (existingInputTextLength > 0) {
+            activeInputBox = null;
+            activeDocument = null;
+            sendResponse({
+                status: "ERROR",
+                message: `Ô nhập Gemini đang có sẵn nội dung (${existingInputTextLength} ký tự). Dừng để tránh ghi đè prompt.`
+            });
+            return;
+        }
+
         // BƯỚC 2: Điền dữ liệu vào ô Contenteditable
         // Kỹ thuật 1: Các framework hiện đại (React/Angular) không nhận diện việc gán value trực tiếp
         // Phải dispatch event 'input' để framework biết có thay đổi
-        await fillInputBox(inputBox, fullPrompt, usingPiP);
+        await fillInputBox(inputBox, normalizedPrompt, usingPiP);
 
         // Đợi UI cập nhật
         await sleep(1500);
@@ -226,6 +241,41 @@ async function handlePasteAndSend(fullPrompt, sendResponse) {
         console.error("----> Lỗi:", e);
         sendResponse({ status: "ERROR", message: e.message });
     }
+}
+
+function normalizePromptToSingleLine(prompt) {
+    return String(prompt || "")
+        .replace(/\r?\n|\r/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+async function waitForComposerReady(maxWaitMs = 120000, intervalMs = 500) {
+    const startAt = Date.now();
+    let attempt = 0;
+
+    while (Date.now() - startAt < maxWaitMs) {
+        attempt++;
+        const context = resolveComposerContext();
+        const doc = context.doc;
+        const inputBox = context.inputBox;
+        const stopButton = findVisibleStopButton(doc);
+
+        if (!stopButton && inputBox && isElementVisible(inputBox)) {
+            if (attempt > 1) {
+                console.log(`----> ✓ Gemini đã sẵn sàng nhận prompt (đợi ${attempt} lượt)`);    
+            }
+            return context;
+        }
+
+        if (attempt % 6 === 0) {
+            console.log(`----> Đang chờ Gemini hoàn tất phản hồi trước đó... (${attempt})`);
+        }
+
+        await sleep(intervalMs);
+    }
+
+    throw new Error("Gemini chưa sẵn sàng để gửi prompt mới (timeout chờ hết phản hồi trước đó)");
 }
 
 // ============================================
@@ -450,21 +500,28 @@ function submitNearestForm(inputBox) {
 }
 
 async function waitForGenerationStart(doc, inputBox, label, expectedPromptLength = 0) {
-    await sleep(900);
-    if (isGeminiGenerating(doc, inputBox)) {
-        console.log(`----> ✓ Gemini đã bắt đầu xử lý sau ${label}`);
-        return true;
-    }
-
-    // Fallback khi Gemini đổi UI và nút Send/Stop không bắt được bằng selector.
-    // Nếu input gần như trống ngay sau thao tác gửi thì coi như prompt đã được nhận.
-    const remainingLength = getInputTextLength(inputBox);
+    // Poll vài giây để chịu được UI lag/chậm render trạng thái generating.
+    const maxChecks = 12; // ~3.6s
+    const intervalMs = 300;
     const threshold = expectedPromptLength > 0
         ? Math.max(8, Math.floor(expectedPromptLength * 0.02))
         : 8;
-    if (remainingLength <= threshold) {
-        console.log(`----> ✓ Prompt đã được nhận sau ${label} (input còn ${remainingLength} ký tự)`);
-        return true;
+
+    for (let i = 0; i < maxChecks; i++) {
+        await sleep(intervalMs);
+
+        if (isGeminiGenerating(doc, inputBox)) {
+            console.log(`----> ✓ Gemini đã bắt đầu xử lý sau ${label}`);
+            return true;
+        }
+
+        // Fallback khi Gemini đổi UI và nút Send/Stop không bắt được bằng selector.
+        // Nếu input gần như trống thì coi như prompt đã được nhận.
+        const remainingLength = getInputTextLength(inputBox);
+        if (remainingLength <= threshold) {
+            console.log(`----> ✓ Prompt đã được nhận sau ${label} (input còn ${remainingLength} ký tự)`);
+            return true;
+        }
     }
 
     console.log(`----> [debug] Gemini chưa bắt đầu sau ${label}`);
@@ -484,52 +541,50 @@ function isGeminiGenerating(doc, inputBox = null) {
     return !isButtonEnabled(sendButton);
 }
 
+function robustClickButton(button) {
+    if (!button) return;
+    button.focus();
+    button.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+}
+
 async function triggerSend(doc, inputBox) {
     inputBox.focus();
     const promptLength = getInputTextLength(inputBox);
 
-    // Ưu tiên hành vi bàn phím như người dùng thật để tránh lệ thuộc selector nút
+    // Chỉ dùng Enter để gửi prompt (theo yêu cầu), nhưng thử 2 lần để chống miss khi UI lag.
     simulateEnterOnInput(inputBox, false);
-    if (await waitForGenerationStart(doc, inputBox, "Enter", promptLength)) {
+    if (await waitForGenerationStart(doc, inputBox, "Enter lần 1", promptLength)) {
         return true;
     }
 
-    simulateEnterOnInput(inputBox, true);
-    if (await waitForGenerationStart(doc, inputBox, "Ctrl+Enter", promptLength)) {
+    await sleep(200);
+    simulateEnterOnInput(inputBox, false);
+    if (await waitForGenerationStart(doc, inputBox, "Enter lần 2", promptLength)) {
         return true;
     }
 
-    if (submitNearestForm(inputBox)) {
-        if (await waitForGenerationStart(doc, inputBox, "form submit", promptLength)) {
+    // Fallback: click nút gửi khi Enter bị miss do lag UI
+    const preferredSendButton = doc.querySelector(
+        'button.send-button.submit[aria-label*="Gửi"], ' +
+        'button.send-button.submit[aria-label*="Send"], ' +
+        'button.send-button.submit[aria-label*="tin nhắn"], ' +
+        'button.send-button.submit'
+    );
+    const sendButton = preferredSendButton || findSendButton(doc, inputBox, false);
+
+    if (sendButton && isElementVisible(sendButton) && isButtonEnabled(sendButton)) {
+        robustClickButton(sendButton);
+        console.log("----> Đã fallback click nút Gửi (chuỗi mouse events) sau khi Enter thất bại");
+
+        if (await waitForGenerationStart(doc, inputBox, "fallback click Send", promptLength)) {
             return true;
         }
     }
 
-    const sendButton = findSendButton(doc, inputBox);
-    if (sendButton && isButtonEnabled(sendButton)) {
-        sendButton.focus();
-        sendButton.click();
-        console.log("----> ✓ Đã click nút Gửi");
-
-        if (await waitForGenerationStart(doc, inputBox, "click Send", promptLength)) {
-            return true;
-        }
-    }
-
-    // Click chuột thật để tránh trường hợp .click() bị framework chặn
-    if (sendButton && isButtonEnabled(sendButton)) {
-        sendButton.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
-        sendButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        sendButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-        sendButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        console.log("----> ✓ Đã gửi chuỗi sự kiện chuột tới nút Gửi");
-
-        if (await waitForGenerationStart(doc, inputBox, "mouse events", promptLength)) {
-            return true;
-        }
-    }
-
-    console.warn("----> ❌ Không kích hoạt được gửi prompt (Enter/Ctrl+Enter/form/click đều thất bại)");
+    console.warn("----> ❌ Không kích hoạt được gửi prompt (Enter x2 + fallback click Send đều thất bại)");
     return false;
 }
 
@@ -838,3 +893,4 @@ window.__geminiScriptCleanup = cleanupGeminiScript;
 console.log("----> Content Script Gemini đã sẵn sàng!");
 console.log("----> Hỗ trợ: PiP Mode (MOVE strategy), Polling mechanism, Multi-selector extraction");
 } // End of versioned Gemini content script loader
+})(); // End IIFE wrapper to avoid top-level redeclaration on re-inject

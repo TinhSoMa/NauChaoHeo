@@ -73,7 +73,11 @@ const Utils = {
             chrome.tabs.sendMessage(tabId, message, (response) => {
                 if (chrome.runtime.lastError) {
                     this.lastTabMessageError = chrome.runtime.lastError.message;
-                    console.error("Lỗi gửi tin nhắn:", chrome.runtime.lastError.message);
+                    if (isChannelClosedError(this.lastTabMessageError)) {
+                        console.warn("Kênh message tạm thời đóng:", this.lastTabMessageError);
+                    } else {
+                        console.error("Lỗi gửi tin nhắn:", this.lastTabMessageError);
+                    }
                     resolve(null);
                 } else {
                     this.lastTabMessageError = null;
