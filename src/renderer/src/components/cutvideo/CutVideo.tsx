@@ -4,11 +4,12 @@ import { AudioExtractor } from './AudioExtractor';
 import { VideoSplitter } from './VideoSplitter';
 import { VideoMerger } from './VideoMerger';
 import { VideoAudioMixer } from './VideoAudioMixer';
+import { VideoAudioReplacer } from './VideoAudioReplacer';
 import { CapcutProjectCreator } from './CapcutProjectCreator';
 import { CapcutAutoFolderWorkflow } from './CapcutAutoFolderWorkflow';
-import { Link2, Music2, Scissors, ListMusic, Clapperboard } from 'lucide-react';
+import { Link2, Music2, Scissors, ListMusic, Clapperboard, Replace } from 'lucide-react';
 
-type CutVideoTab = 'audio' | 'split' | 'merge' | 'musicMix' | 'capcut' | 'capcutAuto';
+type CutVideoTab = 'audio' | 'split' | 'merge' | 'musicMix' | 'audioReplace' | 'capcut' | 'capcutAuto';
 
 interface TabConfig {
   id: CutVideoTab;
@@ -52,6 +53,13 @@ export const CutVideo: React.FC = () => {
         chip: 'Music',
       },
       {
+        id: 'audioReplace',
+        label: 'Ghép Audio Tương Ứng',
+        subtitle: 'Batch nhiều cặp video + audio riêng',
+        icon: <Replace size={16} />,
+        chip: 'Batch',
+      },
+      {
         id: 'capcut',
         label: 'CapCut Draft',
         subtitle: 'Tạo hàng loạt project từ folder video',
@@ -70,6 +78,14 @@ export const CutVideo: React.FC = () => {
   );
 
   const activeConfig = activeTab ? tabs.find((t) => t.id === activeTab) : null;
+
+  if (activeTab === 'audioReplace') {
+    return (
+      <div className={styles.container}>
+        <VideoAudioReplacer onBack={() => setActiveTab(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.container}>

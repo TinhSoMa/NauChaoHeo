@@ -4,6 +4,7 @@ import { audioExtractorService } from '../services/cutVideo/audioExtractorServic
 import { videoSplitterService } from '../services/cutVideo/videoSplitterService';
 import { videoMergerService } from '../services/cutVideo/videoMergerService';
 import { videoAudioMixerService } from '../services/cutVideo/videoAudioMixerService';
+import { videoAudioReplaceBatchService } from '../services/cutVideo/videoAudioReplaceBatchService';
 import { detectSilences } from '../services/cutVideo/silenceDetectService';
 import { capcutProjectBatchService, DEFAULT_CAPCUT_DRAFTS_PATH } from '../services/cutVideo/capcutProjectBatchService';
 import { capcutAutoBatchService } from '../services/cutVideo/capcutAutoBatchService';
@@ -343,6 +344,29 @@ export function registerCutVideoHandlers(): void {
         onLog: emitLog,
       });
       return result;
+    } catch (err: any) {
+      return { success: false, error: err?.message || String(err) };
+    }
+  });
+
+  // ---- Video Audio Replace Batch Handlers ----
+  ipcMain.handle('cutVideo:stopVideoAudioReplaceBatch', async () => {
+    videoAudioReplaceBatchService.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('cutVideo:startVideoAudioReplaceBatch', async (event, options: {
+    items: Array<{ videoPath: string; audioPath: string; outputPath?: string }>;
+    keepOriginalAudioPercent?: number;
+  }) => {
+    const sender = event.sender;
+    try {
+      return await videoAudioReplaceBatchService.startBatch({
+        items: options.items,
+        keepOriginalAudioPercent: options.keepOriginalAudioPercent,
+        onProgress: (data) => sender.send('cutVideo:audioReplaceProgress', data),
+        onLog: (data) => sender.send('cutVideo:audioReplaceLog', data),
+      });
     } catch (err: any) {
       return { success: false, error: err?.message || String(err) };
     }

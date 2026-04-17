@@ -359,6 +359,44 @@ interface CutVideoAPI {
     message: string;
     time: string;
   }) => void) => () => void;
+  startVideoAudioReplaceBatch: (options: {
+    items: Array<{ videoPath: string; audioPath: string; outputPath?: string }>;
+    keepOriginalAudioPercent?: number;
+  }) => Promise<{
+    success: boolean;
+    data?: {
+      total: number;
+      successCount: number;
+      failedCount: number;
+      stopped: boolean;
+      results: Array<{
+        videoPath: string;
+        audioPath: string;
+        outputPath: string;
+        status: 'success' | 'error';
+        error?: string;
+      }>;
+    };
+    error?: string;
+  }>;
+  stopVideoAudioReplaceBatch: () => Promise<{ success: boolean }>;
+  onAudioReplaceProgress: (callback: (data: {
+    total: number;
+    current: number;
+    percent: number;
+    currentVideo?: string;
+    currentVideoPath?: string;
+    stage: 'preflight' | 'processing' | 'completed' | 'stopped' | 'error';
+    message: string;
+  }) => void) => () => void;
+  onAudioReplaceLog: (callback: (data: {
+    status: 'info' | 'success' | 'error' | 'processing';
+    message: string;
+    time: string;
+    videoPath?: string;
+    audioPath?: string;
+    outputPath?: string;
+  }) => void) => () => void;
 
   scanVideosForCapcut: (folderPath: string) => Promise<{
     success: boolean;

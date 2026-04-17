@@ -1,0 +1,445 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background:
+    radial-gradient(1200px 300px at 0% 0%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 60%),
+    linear-gradient(160deg, color-mix(in srgb, var(--color-card) 86%, transparent), color-mix(in srgb, var(--color-background) 92%, transparent));
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 14px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--color-card) 90%, transparent);
+}
+
+.heroMain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backButton {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--color-card) 85%, transparent);
+  color: var(--color-text-primary);
+}
+
+.backButton:hover {
+  border-color: var(--color-primary);
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.heroActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.contentGrid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(290px, 1fr);
+  gap: 14px;
+}
+
+.mainPanel,
+.card {
+  border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-card) 92%, transparent);
+}
+
+.mainPanel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+  flex-wrap: wrap;
+}
+
+.toolbarLeft {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbarRight {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 420px;
+  flex: 1;
+}
+
+.outputBox {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.outputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.outputInput {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: color-mix(in srgb, var(--color-card) 86%, transparent);
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+
+.volumeBox {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 260px;
+}
+
+.volumeLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.volumeControl {
+  display: grid;
+  grid-template-columns: 1fr 68px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.rangeInput {
+  width: 100%;
+  accent-color: var(--color-primary);
+}
+
+.numberInput {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--color-card) 86%, transparent);
+  color: var(--color-text-primary);
+}
+
+.percent {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.tableWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-card) 98%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  padding: 10px;
+}
+
+.table td {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  padding: 10px;
+  color: var(--color-text-primary);
+  vertical-align: top;
+}
+
+.fileChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fileChip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.audioCell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.outputText {
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.errorText {
+  margin-top: 4px;
+  color: var(--color-error);
+  font-size: 11px;
+}
+
+.emptyCell {
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: 22px 10px;
+}
+
+.removeButton {
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  background: transparent;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.removeButton:hover {
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
+}
+
+.sidePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  padding: 12px;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.progressRow {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.progressBar {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-border) 65%, transparent);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 75%, #fff 25%), var(--color-primary));
+  transition: width 0.25s ease;
+}
+
+.progressMeta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.logHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logClearBtn {
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logList {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 380px;
+  overflow: auto;
+}
+
+.logEmpty {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.logItem {
+  border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+  border-radius: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+}
+
+.logTop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.logTime {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.logDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dot_info { background: #7f8c8d; }
+.dot_success { background: #2ecc71; }
+.dot_error { background: #ff4d4f; }
+.dot_processing { background: #409eff; }
+
+.logMessage {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badgeReady {
+  color: var(--color-text-secondary);
+  border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+  background: color-mix(in srgb, var(--color-card) 82%, transparent);
+}
+
+.badgeSuccess {
+  color: #2ecc71;
+  border: 1px solid color-mix(in srgb, #2ecc71 30%, transparent);
+  background: color-mix(in srgb, #2ecc71 12%, transparent);
+}
+
+.badgeError {
+  color: #ff4d4f;
+  border: 1px solid color-mix(in srgb, #ff4d4f 30%, transparent);
+  background: color-mix(in srgb, #ff4d4f 12%, transparent);
+}
+
+.badgeProcessing {
+  color: #409eff;
+  border: 1px solid color-mix(in srgb, #409eff 32%, transparent);
+  background: color-mix(in srgb, #409eff 14%, transparent);
+}
+
+@media (max-width: 1200px) {
+  .contentGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sidePanel {
+    order: -1;
+  }
+}
+
+@media (max-width: 800px) {
+  .hero {
+    flex-direction: column;
+  }
+
+  .heroActions {
+    width: 100%;
+  }
+
+  .volumeBox {
+    min-width: 220px;
+    width: 100%;
+  }
+
+  .toolbarRight {
+    min-width: 220px;
+    width: 100%;
+  }
+
+  .outputRow {
+    grid-template-columns: 1fr;
+  }
+
+  .fileChip span {
+    max-width: 170px;
+  }
+}

@@ -87,6 +87,24 @@ export interface CapcutAutoBatchResult {
   error?: string;
 }
 
+export interface VideoAudioReplaceBatchResult {
+  success: boolean;
+  data?: {
+    total: number;
+    successCount: number;
+    failedCount: number;
+    stopped: boolean;
+    results: Array<{
+      videoPath: string;
+      audioPath: string;
+      outputPath: string;
+      status: 'success' | 'error';
+      error?: string;
+    }>;
+  };
+  error?: string;
+}
+
 export interface CutVideoAPI {
   scanFolder: (folderPath: string) => Promise<ScanFolderResult>;
   startAudioExtraction: (options: {
@@ -192,6 +210,28 @@ export interface CutVideoAPI {
     status: 'info' | 'success' | 'error' | 'processing';
     message: string;
     time: string;
+  }) => void) => () => void;
+  startVideoAudioReplaceBatch: (options: {
+    items: Array<{ videoPath: string; audioPath: string; outputPath?: string }>;
+    keepOriginalAudioPercent?: number;
+  }) => Promise<VideoAudioReplaceBatchResult>;
+  stopVideoAudioReplaceBatch: () => Promise<{ success: boolean }>;
+  onAudioReplaceProgress: (callback: (data: {
+    total: number;
+    current: number;
+    percent: number;
+    currentVideo?: string;
+    currentVideoPath?: string;
+    stage: 'preflight' | 'processing' | 'completed' | 'stopped' | 'error';
+    message: string;
+  }) => void) => () => void;
+  onAudioReplaceLog: (callback: (data: {
+    status: 'info' | 'success' | 'error' | 'processing';
+    message: string;
+    time: string;
+    videoPath?: string;
+    audioPath?: string;
+    outputPath?: string;
   }) => void) => () => void;
 
   scanVideosForCapcut: (folderPath: string) => Promise<ScanVideosForCapcutResult>;
@@ -299,6 +339,18 @@ export const cutVideoApi: CutVideoAPI = {
     const subscription = (_event: any, data: any) => callback(data);
     ipcRenderer.on('cutVideo:audioMixLog', subscription);
     return () => ipcRenderer.removeListener('cutVideo:audioMixLog', subscription);
+  },
+  startVideoAudioReplaceBatch: (options) => ipcRenderer.invoke('cutVideo:startVideoAudioReplaceBatch', options),
+  stopVideoAudioReplaceBatch: () => ipcRenderer.invoke('cutVideo:stopVideoAudioReplaceBatch'),
+  onAudioReplaceProgress: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:audioReplaceProgress', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:audioReplaceProgress', subscription);
+  },
+  onAudioReplaceLog: (callback) => {
+    const subscription = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cutVideo:audioReplaceLog', subscription);
+    return () => ipcRenderer.removeListener('cutVideo:audioReplaceLog', subscription);
   },
   scanVideosForCapcut: (folderPath: string) => ipcRenderer.invoke('cutVideo:scanVideosForCapcut', folderPath),
   startCapcutProjectBatch: (options) => ipcRenderer.invoke('cutVideo:startCapcutProjectBatch', options),
