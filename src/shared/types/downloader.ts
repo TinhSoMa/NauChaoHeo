@@ -62,6 +62,8 @@ export interface DownloadOptions {
   audioFormatId?: string
   /** whether to merge audio into video */
   mergeAudio?: boolean
+  /** keep original downloaded video stream files after merge */
+  keepOriginalVideo?: boolean
   /** when mergeAudio=false, download audio as a separate file */
   downloadSeparateAudio?: boolean
   /** subtitle language codes to download, e.g. ["vi", "en", "all"] */

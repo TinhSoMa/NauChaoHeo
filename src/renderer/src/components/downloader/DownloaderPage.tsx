@@ -18,6 +18,7 @@ import type {
   DownloadSpeedProfile,
   DownloadNoLogoPolicy,
 } from '@shared/types/downloader'
+import { resolveDownloadIntent } from '@shared/downloader/resolvedDownloadIntent'
 import styles from './DownloaderPage.module.css'
 import { PlaylistPickerModal } from './components/PlaylistPickerModal'
 
@@ -122,16 +123,6 @@ function resolveEmbedUrl(rawUrl: string): { provider?: 'youtube' | 'bilibili'; e
     return {}
   }
   return {}
-}
-
-function pickDefaultSubtitleLangs(langs: string[]): string[] {
-  if (langs.length === 0) return []
-  const preferred = ['vi', 'en', 'ja']
-  for (const pref of preferred) {
-    const found = langs.find((lang) => lang.toLowerCase() === pref)
-    if (found) return [found]
-  }
-  return [langs[0]]
 }
 
 function parseUrls(text: string): string[] {
@@ -371,6 +362,7 @@ export const DownloaderPage = () => {
   const [downloadSubtitle, setDownloadSubtitle] = useState(true)
   const [downloadThumbnail, setDownloadThumbnail] = useState(false)
   const [mergeAudio, setMergeAudio] = useState(true)
+  const [keepOriginalVideo, setKeepOriginalVideo] = useState(false)
   const [downloadSeparateAudio, setDownloadSeparateAudio] = useState(false)
   const [allowPlaylist, setAllowPlaylist] = useState(false)
   const [playlistFolderMode, setPlaylistFolderMode] = useState<'flat' | 'per_video'>('flat')
@@ -749,15 +741,8 @@ export const DownloaderPage = () => {
     selectedAudioFormatId,
   ])
 
-  const resolvedSubLangs = useMemo(() => {
-    if (!downloadSubtitle) return []
-    if (downloadAllSubs) return ['all']
-    if (allLangs.length === 0) return []
-    return selectedSubLangs.length > 0 ? selectedSubLangs : pickDefaultSubtitleLangs(allLangs)
-  }, [downloadSubtitle, downloadAllSubs, allLangs.length, selectedSubLangs])
-
   const toggleLang = (lang: string) => {
-    setDownloadAllSubs(true)
+    setDownloadAllSubs(false)
     setSelectedSubLangs(prev =>
       prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
     )
@@ -1028,92 +1013,60 @@ export const DownloaderPage = () => {
         return
       }
 
-      let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
-      let resolvedDownloadSeparateAudio = false
-      let resolvedAudioFormatId: string | undefined = undefined
-      if (downloadVideo) {
-        if (selectedFormatId && videoInfo) {
-          const selectedFormat = availableFormats.find((format) => format.id === selectedFormatId)
-          if (!selectedFormat) {
-            setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ → fallback best H264/AAC`])
-            resolvedFormatId = undefined
-            if (!mergeAudio && downloadSeparateAudio) {
-              resolvedDownloadSeparateAudio = true
-            }
-          } else if (mergeAudio) {
-            if (!selectedAudioFormatId && !isAacCodec(selectedFormat.acodec)) {
-              setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
-              resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
-            }
-          } else if (downloadSeparateAudio && !isAacCodec(selectedFormat.acodec)) {
-            resolvedDownloadSeparateAudio = true
-          }
-        } else if (!mergeAudio && downloadSeparateAudio) {
-          resolvedDownloadSeparateAudio = true
-        }
+      const playlistIndexSource = playlistPickerEntries.length > 0
+        ? playlistPickerEntries
+        : (playlistInfo?.entries ?? [])
+      const resolvedIntent = resolveDownloadIntent({
+        downloadVideo,
+        mergeAudio,
+        downloadSeparateAudio,
+        selectedFormatId,
+        selectedAudioFormatId,
+        knownVideoFormats: availableFormats,
+        knownAudioFormats: availableAudioFormats,
+        downloadSubtitle,
+        downloadAllSubs,
+        selectedSubLangs,
+        allSubtitleLangs: allLangs,
+        convertSubs,
+        skipDanmakuConvert,
+        downloadThumbnail,
+        allowPlaylist,
+        selectedPlaylistIndexes: allowPlaylist && mode === 'single' ? selectedPlaylistIndexes : null,
+        validPlaylistIndexes: allowPlaylist ? getPlaylistIndexes(playlistIndexSource) : undefined,
+      })
+      if (resolvedIntent.warnings.length > 0) {
+        setLogs((prev) => [...prev, ...resolvedIntent.warnings])
       }
-      if (downloadVideo && (mergeAudio || resolvedDownloadSeparateAudio)) {
-        if (selectedAudioFormatId) {
-          const audioFormat = availableAudioFormats.find((format) => format.id === selectedAudioFormatId)
-          if (audioFormat) {
-            const tag = getAudioCodecTag(audioFormat.acodec)
-            const bitrate = audioFormat.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
-            setLogs(prev => [
-              ...prev,
-              `[Downloader] Audio: ${selectedAudioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
-            ])
-            resolvedAudioFormatId = selectedAudioFormatId
-          } else {
-            setLogs(prev => [...prev, `[Downloader] Audio ${selectedAudioFormatId} không hợp lệ → fallback best`])
-          }
+      if (resolvedIntent.error) {
+        setLogs((prev) => [...prev, `ERROR: ${resolvedIntent.error}`])
+        alert(resolvedIntent.error)
+        setStatus('error')
+        return
+      }
+      if (resolvedIntent.options.downloadVideo && (resolvedIntent.options.mergeAudio || resolvedIntent.options.downloadSeparateAudio)) {
+        if (resolvedIntent.options.audioFormatId) {
+          const audioFormat = availableAudioFormats.find((format) => format.id === resolvedIntent.options.audioFormatId)
+          const tag = getAudioCodecTag(audioFormat?.acodec)
+          const bitrate = audioFormat?.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
+          setLogs(prev => [
+            ...prev,
+            `[Downloader] Audio: ${resolvedIntent.options.audioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
+          ])
         } else {
           setLogs(prev => [...prev, '[Downloader] Audio: best'])
-        }
-      }
-
-      let playlistItems: number[] | undefined = undefined
-      if (allowPlaylist && mode === 'single' && selectedPlaylistIndexes) {
-        const entrySource = playlistPickerEntries.length > 0
-          ? playlistPickerEntries
-          : (playlistInfo?.entries ?? [])
-        const validIndexSet = new Set(getPlaylistIndexes(entrySource))
-        const normalized = Array.from(new Set(
-          selectedPlaylistIndexes
-            .map((value) => Math.floor(Number(value)))
-            .filter((value) => Number.isFinite(value) && value > 0 && (validIndexSet.size === 0 || validIndexSet.has(value)))
-        )).sort((a, b) => a - b)
-        if (normalized.length === 0) {
-          setLogs(prev => [...prev, 'ERROR: Chưa chọn video nào trong playlist.'])
-          alert('Chưa chọn video nào trong playlist.')
-          setStatus('error')
-          return
-        }
-        const totalSelectable = validIndexSet.size > 0
-          ? validIndexSet.size
-          : (playlistInfo?.entryCount || playlistPickerEntries.length || selectedPlaylistIndexes.length)
-        if (totalSelectable > 0 && normalized.length < totalSelectable) {
-          playlistItems = normalized
         }
       }
 
       const options: DownloadOptions = {
         url: targetUrl,
         outputDir: resolvedDir,
-        downloadVideo,
-        formatId: resolvedFormatId,
-        audioFormatId: resolvedAudioFormatId,
-        mergeAudio,
-        downloadSeparateAudio: resolvedDownloadSeparateAudio,
-        subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
-        convertSubs: downloadSubtitle ? convertSubs : undefined,
-        skipDanmakuConvert,
-        writeThumbnail: downloadThumbnail,
+        ...resolvedIntent.options,
         useCookie,
         speedProfile,
         noLogoPolicy,
-        allowPlaylist,
-        playlistItems,
       }
+      ;(options as DownloadOptions & { keepOriginalVideo?: boolean }).keepOriginalVideo = keepOriginalVideo
       ;(options as DownloadOptions & { playlistFolderMode?: 'flat' | 'per_video' }).playlistFolderMode = playlistFolderMode
 
       const res = await api().startDownload(options)
@@ -1178,52 +1131,42 @@ export const DownloaderPage = () => {
         continue
       }
 
-      let resolvedFormatId = downloadVideo ? selectedFormatId || undefined : undefined
-      let resolvedDownloadSeparateAudio = false
-      let resolvedAudioFormatId: string | undefined = undefined
-      if (downloadVideo) {
-        if (selectedFormatId && info) {
-          const itemFormats = info.formats.filter((format) => (
-            format.vcodec && format.vcodec !== 'none'
-          ))
-          const selectedFormat = itemFormats.find((format) => format.id === selectedFormatId)
-          if (!selectedFormat) {
-            setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} không hợp lệ cho link ${item.url} → fallback best H264/AAC`])
-            resolvedFormatId = undefined
-            if (!mergeAudio && downloadSeparateAudio) {
-              resolvedDownloadSeparateAudio = true
-            }
-          } else if (mergeAudio) {
-            if (!selectedAudioFormatId && !isAacCodec(selectedFormat.acodec)) {
-              setLogs(prev => [...prev, `[Downloader] Format ${selectedFormatId} → ghép audio AAC`])
-              resolvedFormatId = `${selectedFormatId}+bestaudio[acodec^=mp4a]/${selectedFormatId}+bestaudio`
-            }
-          } else if (downloadSeparateAudio && !isAacCodec(selectedFormat.acodec)) {
-            resolvedDownloadSeparateAudio = true
-          }
-        } else if (!mergeAudio && downloadSeparateAudio) {
-          resolvedDownloadSeparateAudio = true
-        }
+      const itemVideoFormats = info
+        ? info.formats.filter((format) => format.vcodec && format.vcodec !== 'none')
+        : undefined
+      const itemAudioFormats = info
+        ? info.formats.filter((format) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
+        : undefined
+      const resolvedIntent = resolveDownloadIntent({
+        downloadVideo,
+        mergeAudio,
+        downloadSeparateAudio,
+        selectedFormatId,
+        selectedAudioFormatId,
+        knownVideoFormats: itemVideoFormats,
+        knownAudioFormats: itemAudioFormats,
+        downloadSubtitle,
+        downloadAllSubs,
+        selectedSubLangs,
+        allSubtitleLangs: allLangs,
+        convertSubs,
+        skipDanmakuConvert,
+        downloadThumbnail,
+        allowPlaylist,
+        selectedPlaylistIndexes: null,
+      })
+      if (resolvedIntent.warnings.length > 0) {
+        setLogs(prev => [...prev, ...resolvedIntent.warnings.map((line: string) => `${line} cho link ${item.url}`)])
       }
-      if (downloadVideo && (mergeAudio || resolvedDownloadSeparateAudio)) {
-        if (selectedAudioFormatId) {
-          if (info) {
-            const itemAudioFormats = info.formats.filter((format) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
-            const audioFormat = itemAudioFormats.find((format) => format.id === selectedAudioFormatId)
-            if (audioFormat) {
-              const tag = getAudioCodecTag(audioFormat.acodec)
-              const bitrate = audioFormat.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
-              setLogs(prev => [
-                ...prev,
-                `[Downloader] Audio: ${selectedAudioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
-              ])
-              resolvedAudioFormatId = selectedAudioFormatId
-            } else {
-              setLogs(prev => [...prev, `[Downloader] Audio ${selectedAudioFormatId} không hợp lệ cho link ${item.url} → fallback best`])
-            }
-          } else {
-            setLogs(prev => [...prev, `[Downloader] Audio ${selectedAudioFormatId} không kiểm tra được → fallback best`])
-          }
+      if (resolvedIntent.options.downloadVideo && (resolvedIntent.options.mergeAudio || resolvedIntent.options.downloadSeparateAudio)) {
+        if (resolvedIntent.options.audioFormatId) {
+          const audioFormat = itemAudioFormats?.find((format) => format.id === resolvedIntent.options.audioFormatId)
+          const tag = getAudioCodecTag(audioFormat?.acodec)
+          const bitrate = audioFormat?.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
+          setLogs(prev => [
+            ...prev,
+            `[Downloader] Audio: ${resolvedIntent.options.audioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
+          ])
         } else {
           setLogs(prev => [...prev, '[Downloader] Audio: best'])
         }
@@ -1232,20 +1175,12 @@ export const DownloaderPage = () => {
       const options: DownloadOptions = {
         url: item.url,
         outputDir: resolvedDir,
-        downloadVideo,
-        formatId: resolvedFormatId,
-        audioFormatId: resolvedAudioFormatId,
-        mergeAudio,
-        downloadSeparateAudio: resolvedDownloadSeparateAudio,
-        subtitleLangs: downloadSubtitle ? resolvedSubLangs : undefined,
-        convertSubs: downloadSubtitle ? convertSubs : undefined,
-        skipDanmakuConvert,
-        writeThumbnail: downloadThumbnail,
+        ...resolvedIntent.options,
         useCookie,
         speedProfile,
         noLogoPolicy,
-        allowPlaylist,
       }
+      ;(options as DownloadOptions & { keepOriginalVideo?: boolean }).keepOriginalVideo = keepOriginalVideo
       ;(options as DownloadOptions & { playlistFolderMode?: 'flat' | 'per_video' }).playlistFolderMode = playlistFolderMode
 
       try {
@@ -1293,11 +1228,14 @@ export const DownloaderPage = () => {
     downloadSubtitle,
     downloadThumbnail,
     mergeAudio,
+    keepOriginalVideo,
     downloadSeparateAudio,
     selectedFormatId,
     selectedAudioFormatId,
     availableFormats,
     availableAudioFormats,
+    allLangs,
+    downloadAllSubs,
     selectedSubLangs,
     convertSubs,
     useCookie,
@@ -1305,7 +1243,6 @@ export const DownloaderPage = () => {
     noLogoPolicy,
     allowPlaylist,
     playlistFolderMode,
-    resolvedSubLangs,
     skipDanmakuConvert,
     resolveJobOutputDir,
     updateQueueItem,
@@ -1326,6 +1263,7 @@ export const DownloaderPage = () => {
     setProgressInfo(null); setSelectedFormatId(''); setSelectedAudioFormatId(''); setSelectedSubLangs([])
     setDownloadVideo(true); setDownloadSubtitle(false); setDownloadThumbnail(false)
     setMergeAudio(true); setDownloadSeparateAudio(false)
+    setKeepOriginalVideo(false)
     setAllowPlaylist(false); setPlaylistInfo(null); setPlaylistError(null)
     setPlaylistFolderMode('flat')
     setSingleType('video')
@@ -1633,6 +1571,13 @@ export const DownloaderPage = () => {
                   <Checkbox label="Subtitles" checked={downloadSubtitle} onChange={setDownloadSubtitle} />
                   <Checkbox label="Thumbnail" checked={downloadThumbnail} onChange={setDownloadThumbnail} />
                   <Checkbox label="Ghép audio" checked={mergeAudio} onChange={setMergeAudio} />
+                  {downloadVideo && mergeAudio && (
+                    <Checkbox
+                      label="Giữ video gốc sau ghép"
+                      checked={keepOriginalVideo}
+                      onChange={setKeepOriginalVideo}
+                    />
+                  )}
                   {downloadSubtitle && (
                     <Checkbox label="Tải tất cả" checked={downloadAllSubs} onChange={setDownloadAllSubs} />
                   )}
