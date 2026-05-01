@@ -141,6 +141,31 @@ function createProject(basePath: string, projectName: string): ProjectMetadata |
   }
 }
 
+function deleteProject(basePath: string, projectId: string): void {
+  const trimmedId = (projectId || '').trim()
+  if (!trimmedId) {
+    throw new Error('Thiếu projectId')
+  }
+
+  const safeId = path.basename(trimmedId)
+  if (safeId !== trimmedId) {
+    throw new Error('projectId không hợp lệ')
+  }
+
+  const resolvedBasePath = path.resolve(basePath)
+  const projectPath = path.resolve(path.join(basePath, safeId))
+  const inBasePath = projectPath === resolvedBasePath || projectPath.startsWith(`${resolvedBasePath}${path.sep}`)
+  if (!inBasePath) {
+    throw new Error('Đường dẫn project không hợp lệ')
+  }
+
+  if (!fs.existsSync(projectPath)) {
+    throw new Error('Project không tồn tại')
+  }
+
+  fs.rmSync(projectPath, { recursive: true, force: false })
+}
+
 // Xử lý luồng mở project và tráo đổi cửa sổ Dashboard ↔ Editor
 export function registerProjectHandlers(): void {
   ipcMain.handle(PROJECT_IPC_CHANNELS.GET_METADATA, async (_event, projectId: string) => {
@@ -285,6 +310,26 @@ export function registerProjectHandlers(): void {
       return { success: true, data: metadata }
     } catch (error) {
       console.error('[Lỗi] Không thể tạo và mở project:', error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  ipcMain.handle(PROJECT_IPC_CHANNELS.DELETE, async (_event, projectId: string) => {
+    try {
+      if (!projectId || !projectId.trim()) {
+        return { success: false, error: 'Thiếu projectId' }
+      }
+
+      const basePath = AppSettingsService.getProjectsBasePath()
+      if (!basePath) {
+        return { success: false, error: 'Chưa cấu hình thư mục Projects trong Settings' }
+      }
+
+      deleteProject(basePath, projectId)
+      AppSettingsService.removeFromRecent(projectId)
+      return { success: true }
+    } catch (error) {
+      console.error('[ProjectHandlers] Lỗi xóa project:', error)
       return { success: false, error: String(error) }
     }
   })

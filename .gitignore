@@ -59,3 +59,5 @@ resources/yt-dlp/win64/yt-dlp.exe
 resources/gemma/google_gemma-4-E2B-it-Q2_K_L.gguf
 resources/gemma/google_gemma-4-E2B-it-Q3_K_M.gguf
 resources/gemma/google_gemma-4-E2B-it-Q4_K_M.gguf
+# Added by code-review-graph
+.code-review-graph/

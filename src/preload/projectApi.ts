@@ -15,6 +15,7 @@ interface IpcApiResponse<T = unknown> {
 export interface ProjectAPI {
   openProject: (projectId: string) => Promise<IpcApiResponse<void>>
   createAndOpen: (projectName: string) => Promise<IpcApiResponse<ProjectMetadata>>
+  deleteProject: (projectId: string) => Promise<IpcApiResponse<void>>
   scanProjects: () => Promise<IpcApiResponse<ProjectMetadata[]>>
   getMetadata: (projectId: string) => Promise<IpcApiResponse<ProjectMetadata>>
   getResolvedPaths: (projectId: string) => Promise<IpcApiResponse<ProjectResolvedPaths>>
@@ -27,6 +28,7 @@ export interface ProjectAPI {
 export const projectApi: ProjectAPI = {
   openProject: (projectId) => ipcRenderer.invoke(PROJECT_IPC_CHANNELS.OPEN, projectId),
   createAndOpen: (projectName) => ipcRenderer.invoke(PROJECT_IPC_CHANNELS.CREATE_AND_OPEN, projectName),
+  deleteProject: (projectId) => ipcRenderer.invoke(PROJECT_IPC_CHANNELS.DELETE, projectId),
   scanProjects: () => ipcRenderer.invoke(PROJECT_IPC_CHANNELS.SCAN_PROJECTS),
   getMetadata: (projectId) => ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_METADATA, projectId),
   getResolvedPaths: (projectId) => ipcRenderer.invoke(PROJECT_IPC_CHANNELS.GET_RESOLVED_PATHS, projectId),

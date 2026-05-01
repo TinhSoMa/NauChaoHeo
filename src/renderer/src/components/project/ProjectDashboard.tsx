@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, Plus, Settings as SettingsIcon, RefreshCw, FolderCog, Subtitles } from 'lucide-react'
+import { FolderOpen, Plus, Settings as SettingsIcon, RefreshCw, FolderCog, Subtitles, Trash2 } from 'lucide-react'
 import { useThemeEffect } from '../../hooks/useTheme'
 
 interface ProjectMetadata {
@@ -25,6 +25,7 @@ export function ProjectDashboard() {
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [projectsPath, setProjectsPath] = useState<string | null>(null)
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
 
   const loadProjects = async () => {
     setLoading(true)
@@ -92,6 +93,27 @@ export function ProjectDashboard() {
       setError('Không thể tạo project. Vui lòng thử lại.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleDeleteProject = async (project: ProjectMetadata) => {
+    const ok = window.confirm(`Xóa project "${project.name}"?\nToàn bộ dữ liệu trong project sẽ bị xóa vĩnh viễn.`)
+    if (!ok) return
+
+    try {
+      setDeletingProjectId(project.id)
+      setError(null)
+      const res = await window.electronAPI.project.deleteProject(project.id)
+      if (res?.success) {
+        setProjects((prev) => prev.filter((item) => item.id !== project.id))
+        return
+      }
+      setError(res?.error || 'Không thể xóa project')
+    } catch (err) {
+      console.error('[Lỗi] Không thể xóa project:', err)
+      setError('Không thể xóa project. Vui lòng thử lại.')
+    } finally {
+      setDeletingProjectId(null)
     }
   }
 
@@ -214,21 +236,39 @@ export function ProjectDashboard() {
             {!loading && projects.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {projects.map((p) => (
-                  <button
+                  <div
                     key={p.id}
-                    onClick={() => handleOpen(p.id)}
-                    className="text-left rounded-xl border border-border bg-card hover:bg-surface p-4 transition-all hover:border-border-hover"
+                    className="rounded-xl border border-border bg-card p-4 transition-all hover:border-border-hover"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <FolderOpen size={18} className="text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-text-primary truncate">{p.name}</div>
-                        <div className="text-xs text-text-muted truncate">{p.id}</div>
-                      </div>
+                      <button
+                        onClick={() => handleOpen(p.id)}
+                        className="flex-1 min-w-0 text-left hover:opacity-90"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <FolderOpen size={18} className="text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-text-primary truncate">{p.name}</div>
+                            <div className="text-xs text-text-muted truncate">{p.id}</div>
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProject(p)}
+                        disabled={deletingProjectId === p.id}
+                        className="p-2 rounded-lg border border-border text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Xóa project"
+                      >
+                        {deletingProjectId === p.id ? (
+                          <RefreshCw size={16} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={16} />
+                        )}
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

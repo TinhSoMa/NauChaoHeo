@@ -26,6 +26,7 @@ export interface ProjectMetadata {
 export const PROJECT_IPC_CHANNELS = {
   OPEN: 'project:open',
   CREATE_AND_OPEN: 'project:createAndOpen',
+  DELETE: 'project:delete',
   SCAN_PROJECTS: 'project:scanProjects',
   GET_METADATA: 'project:getMetadata',
   GET_RESOLVED_PATHS: 'project:getResolvedPaths',

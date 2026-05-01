@@ -796,6 +796,7 @@ interface ProjectResolvedPaths {
 interface ProjectAPI {
   openProject: (projectId: string) => Promise<IpcApiResponse<void>>;
   createAndOpen: (projectName: string) => Promise<IpcApiResponse<ProjectMetadata>>;
+  deleteProject: (projectId: string) => Promise<IpcApiResponse<void>>;
   scanProjects: () => Promise<IpcApiResponse<ProjectMetadata[]>>;
   getMetadata: (projectId: string) => Promise<IpcApiResponse<ProjectMetadata>>;
   getResolvedPaths: (projectId: string) => Promise<IpcApiResponse<ProjectResolvedPaths>>;
