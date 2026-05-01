@@ -3,7 +3,18 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
-import { GEMINI_IPC_CHANNELS, KeyInfo, ApiStats, GeminiResponse, EmbeddedAccount, EmbeddedProject } from '../../shared/types/gemini';
+import {
+  GEMINI_IPC_CHANNELS,
+  KeyInfo,
+  ApiStats,
+  GeminiResponse,
+  EmbeddedAccount,
+  EmbeddedProject,
+  GeminiCatalogModel,
+  GeminiCatalogModelInput,
+  GeminiCatalogModelUpdate,
+  GeminiSyncModelsResult,
+} from '../../shared/types/gemini';
 import * as Gemini from '../services/gemini';
 
 
@@ -164,7 +175,7 @@ export function registerGeminiHandlers(): void {
       model?: Gemini.GeminiModel
     ): Promise<IpcApiResponse<GeminiResponse>> => {
       try {
-        const result = await Gemini.callGeminiWithRotation(prompt, model || Gemini.GEMINI_MODELS.FLASH_2_5);
+        const result = await Gemini.callGeminiWithRotation(prompt, model || Gemini.GEMINI_MODELS.FLASH_3_0);
         return { success: true, data: result };
       } catch (error) {
         console.error('[IPC] Lỗi callGemini:', error);
@@ -186,11 +197,150 @@ export function registerGeminiHandlers(): void {
         const result = await Gemini.translateText(
           text,
           targetLanguage || 'Vietnamese',
-          model || Gemini.GEMINI_MODELS.FLASH_2_5
+          model || Gemini.GEMINI_MODELS.FLASH_3_0
         );
         return { success: true, data: result };
       } catch (error) {
         console.error('[IPC] Lỗi Gemini.translateText:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ==========================================
+  // MODEL CATALOG MANAGEMENT HANDLERS
+  // ==========================================
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_GET_ALL,
+    async (): Promise<IpcApiResponse<GeminiCatalogModel[]>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const models = service.getModels(true);
+        return { success: true, data: models };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:getAll:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_GET_DEFAULT,
+    async (): Promise<IpcApiResponse<string | null>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        return { success: true, data: service.getDefaultModelId() };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:getDefault:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_SET_DEFAULT,
+    async (_event: IpcMainInvokeEvent, modelId: string): Promise<IpcApiResponse<string>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const result = service.setDefaultModelId(modelId);
+        if (!result.success || !result.defaultModelId) {
+          return { success: false, error: result.error || 'SET_DEFAULT_FAILED' };
+        }
+        return { success: true, data: result.defaultModelId };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:setDefault:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_CREATE,
+    async (_event: IpcMainInvokeEvent, payload: GeminiCatalogModelInput): Promise<IpcApiResponse<GeminiCatalogModel>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const result = service.createManualModel(payload);
+        if (!result.success || !result.data) {
+          return { success: false, error: result.error || 'CREATE_MODEL_FAILED' };
+        }
+        return { success: true, data: result.data };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:create:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_UPDATE,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { modelId: string; patch: GeminiCatalogModelUpdate }
+    ): Promise<IpcApiResponse<GeminiCatalogModel>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const result = service.updateModel(payload?.modelId || '', payload?.patch || {});
+        if (!result.success || !result.data) {
+          return { success: false, error: result.error || 'UPDATE_MODEL_FAILED' };
+        }
+        return { success: true, data: result.data };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:update:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_DELETE,
+    async (_event: IpcMainInvokeEvent, modelId: string): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const result = service.deleteModel(modelId);
+        if (!result.success) {
+          return { success: false, error: result.error || 'DELETE_MODEL_FAILED' };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:delete:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_SET_ENABLED,
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { modelId: string; enabled: boolean }
+    ): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const result = service.setModelEnabled(payload?.modelId || '', payload?.enabled === true);
+        if (!result.success) {
+          return { success: false, error: result.error || 'SET_ENABLED_FAILED' };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:setEnabled:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.MODELS_SYNC_GOOGLE,
+    async (): Promise<IpcApiResponse<GeminiSyncModelsResult>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        const result = await service.syncFromGoogle();
+        if (!result.success || !result.data) {
+          return { success: false, error: result.error || 'SYNC_MODELS_FAILED' };
+        }
+        return { success: true, data: result.data };
+      } catch (error) {
+        console.error('[IPC] Lỗi models:syncGoogle:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -304,6 +454,88 @@ export function registerGeminiHandlers(): void {
     }
   );
 
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_DISABLE_ACCOUNT,
+    async (_event: IpcMainInvokeEvent, accountId: string): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.disableAccount(accountId);
+        if (!updated) {
+          return { success: false, error: `Không tìm thấy account: ${accountId}` };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi disable account:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_ENABLE_ACCOUNT,
+    async (_event: IpcMainInvokeEvent, accountId: string): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.enableAccount(accountId);
+        if (!updated) {
+          return { success: false, error: `Không tìm thấy account: ${accountId}` };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi enable account:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_DISABLE_PROJECT,
+    async (
+      _event: IpcMainInvokeEvent,
+      accountId: string,
+      projectIndex: number
+    ): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.disableProject(accountId, projectIndex);
+        if (!updated) {
+          return {
+            success: false,
+            error: `Không tìm thấy project index=${projectIndex} trong account ${accountId}`,
+          };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi disable project:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_ENABLE_PROJECT,
+    async (
+      _event: IpcMainInvokeEvent,
+      accountId: string,
+      projectIndex: number
+    ): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const updated = manager.enableProject(accountId, projectIndex);
+        if (!updated) {
+          return {
+            success: false,
+            error: `Không tìm thấy project index=${projectIndex} trong account ${accountId}`,
+          };
+        }
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi enable project:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Kiểm tra có keys không
   ipcMain.handle(
     GEMINI_IPC_CHANNELS.KEYS_HAS_KEYS,
@@ -360,7 +592,6 @@ export function registerGeminiHandlers(): void {
     async (): Promise<IpcApiResponse<any[]>> => {
       try {
         const manager = Gemini.getApiManager();
-        const stats = manager.getStats();
         const config = (manager as any).config;
         
         if (!config || !config.accounts) {
@@ -373,12 +604,15 @@ export function registerGeminiHandlers(): void {
           accountId: acc.accountId,
           accountStatus: acc.accountStatus || 'active',
           projects: acc.projects.map((p: any) => ({
+            projectIndex: p.projectIndex,
             projectName: p.projectName,
             status: p.status || 'available',
             apiKey: p.apiKey.substring(0, 8) + '...' + p.apiKey.substring(p.apiKey.length - 4),
             totalRequestsToday: p.stats?.totalRequestsToday || 0,
-            lastUsed: p.stats?.lastUsed || null,
-            errorMessage: p.stats?.lastError || null,
+            successCount: p.stats?.successCount || 0,
+            errorCount: p.stats?.errorCount || 0,
+            lastUsedTimestamp: p.limitTracking?.lastUsedTimestamp || null,
+            lastErrorMessage: p.stats?.lastErrorMessage || null,
           })),
         }));
         

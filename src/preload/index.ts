@@ -1,6 +1,19 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { createGeminiAPI, GeminiAPI } from './geminiApi'
-import { createCaptionAPI, createTTSAPI, CaptionAPI, TTSAPI } from './captionApi'
+import { createCaptionAPI, createTTSAPI, createCaptionVideoAPI, CaptionAPI, TTSAPI, CaptionVideoAPI } from './captionApi'
+import { projectApi, ProjectAPI } from './projectApi'
+import { appSettingsApi, AppSettingsAPI } from './appSettingsApi'
+import { geminiChatApi, GeminiChatAPI } from './geminiChatApi'
+import { geminiWebApiApi, GeminiWebApiAPI } from './geminiWebApiApi'
+import { proxyApi, ProxyAPI } from './proxyApi'
+import { promptApi, PromptAPI } from './promptApi'
+import { cutVideoApi, CutVideoAPI } from './cutVideoApi'
+import { createRotationQueueApi, RotationQueueAPI } from './rotationQueueApi'
+import { appLogsApi, AppLogsAPI } from './appLogsApi'
+import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
+import { grokUiApi, GrokUiAPI } from './grokUiApi'
+import { downloaderApi, DownloaderAPI } from './downloaderApi'
+import { shutdownApi, ShutdownAPI } from './shutdownApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -10,10 +23,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send(channel, data)
   },
   onMessage: (channel: string, callback: (...args: unknown[]) => void) => {
-    ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+    const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => callback(...args)
+    ipcRenderer.on(channel, subscription)
+    return () => {
+      ipcRenderer.removeListener(channel, subscription)
+    }
   },
   invoke: (channel: string, data?: unknown) => {
     return ipcRenderer.invoke(channel, data)
+  },
+
+  dialog: {
+    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options)
   },
 
   // Gemini API
@@ -21,9 +42,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Caption API (dịch phụ đề)
   caption: createCaptionAPI(),
+  captionDefaults: captionDefaultsApi,
 
   // TTS API (text-to-speech)
   tts: createTTSAPI(),
+
+  // Project API (quan ly du an dich)
+  project: projectApi,
+
+  // App Settings API (cai dat ung dung)
+  appSettings: appSettingsApi,
+
+  // Gemini Chat API (cau hinh Gemini web)
+  geminiChat: geminiChatApi,
+
+  // Gemini WebAPI Ops API
+  geminiWebApi: geminiWebApiApi,
+
+  // Grok UI API
+  grokUi: grokUiApi,
+
+  // App Logs API
+  appLogs: appLogsApi,
+
+  // Proxy API (quan ly proxy rotation)
+  proxy: proxyApi,
+
+  // Prompt API (quan ly prompts)
+  prompt: promptApi,
+
+  // Caption Video API (subtitle strip)
+  captionVideo: createCaptionVideoAPI(),
+
+  // Cut Video API
+  cutVideo: cutVideoApi,
+
+  // Rotation Queue Inspector API
+  rotationQueue: createRotationQueueApi(),
+
+  // Downloader API (yt-dlp)
+  downloader: downloaderApi,
+
+  // Shutdown API (auto shutdown)
+  shutdown: shutdownApi,
 })
 
 // Declare types for the exposed API
@@ -33,10 +94,26 @@ declare global {
       sendMessage: (channel: string, data: unknown) => void
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void
       invoke: (channel: string, data?: unknown) => Promise<unknown>
+      dialog: {
+        showOpenDialog: (options: any) => Promise<string[] | undefined>
+      }
       gemini: GeminiAPI
       caption: CaptionAPI
+      captionDefaults: CaptionDefaultsAPI
       tts: TTSAPI
+      project: ProjectAPI
+      appSettings: AppSettingsAPI
+      geminiChat: GeminiChatAPI
+      geminiWebApi: GeminiWebApiAPI
+      grokUi: GrokUiAPI
+      appLogs: AppLogsAPI
+      proxy: ProxyAPI
+      prompt: PromptAPI
+      captionVideo: CaptionVideoAPI
+      cutVideo: CutVideoAPI
+      rotationQueue: RotationQueueAPI
+      downloader: DownloaderAPI
+      shutdown: ShutdownAPI
     }
   }
 }
-

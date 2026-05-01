@@ -21,6 +21,7 @@ const STATUS_AVAILABLE: ProjectStatus = 'available';
 const STATUS_RATE_LIMITED: ProjectStatus = 'rate_limited';
 const STATUS_EXHAUSTED: ProjectStatus = 'exhausted';
 const STATUS_ERROR: ProjectStatus = 'error';
+const STATUS_DISABLED: ProjectStatus = 'disabled';
 
 /**
  * API Key Manager Class
@@ -561,6 +562,65 @@ export class ApiKeyManager {
     state.rotationRound = 1;
     this.saveConfig();
     console.log('[ApiManager] Đã reset rotation state');
+  }
+
+  disableAccount(accountId: string): boolean {
+    const account = this.config.accounts.find((item) => item.accountId === accountId);
+    if (!account) {
+      return false;
+    }
+    account.accountStatus = 'disabled';
+    for (const project of account.projects) {
+      project.status = STATUS_DISABLED;
+    }
+    this.saveConfig();
+    return true;
+  }
+
+  enableAccount(accountId: string): boolean {
+    const account = this.config.accounts.find((item) => item.accountId === accountId);
+    if (!account) {
+      return false;
+    }
+    account.accountStatus = 'active';
+    for (const project of account.projects) {
+      project.status = STATUS_AVAILABLE;
+      project.limitTracking.rateLimitResetAt = null;
+      project.limitTracking.dailyLimitResetAt = null;
+    }
+    this.saveConfig();
+    return true;
+  }
+
+  disableProject(accountId: string, projectIndex: number): boolean {
+    const account = this.config.accounts.find((item) => item.accountId === accountId);
+    if (!account) {
+      return false;
+    }
+    const project = account.projects.find((item) => item.projectIndex === projectIndex);
+    if (!project) {
+      return false;
+    }
+    project.status = STATUS_DISABLED;
+    this.saveConfig();
+    return true;
+  }
+
+  enableProject(accountId: string, projectIndex: number): boolean {
+    const account = this.config.accounts.find((item) => item.accountId === accountId);
+    if (!account) {
+      return false;
+    }
+    const project = account.projects.find((item) => item.projectIndex === projectIndex);
+    if (!project) {
+      return false;
+    }
+    // Theo yêu cầu UI: bật lại project luôn về available.
+    project.status = STATUS_AVAILABLE;
+    project.limitTracking.rateLimitResetAt = null;
+    project.limitTracking.dailyLimitResetAt = null;
+    this.saveConfig();
+    return true;
   }
 }
 

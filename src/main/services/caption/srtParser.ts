@@ -5,6 +5,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as iconv from 'iconv-lite';
 import { SubtitleEntry, ParseSrtResult } from '../../../shared/types/caption';
 
 /**
@@ -42,7 +43,8 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
     await fs.access(filePath);
     
     // Đọc nội dung file
-    const content = await fs.readFile(filePath, 'utf-8');
+    const buffer = await fs.readFile(filePath);
+    const content = decodeTextContent(buffer);
     const entries: SubtitleEntry[] = [];
     
     // Tách các block SRT (cách nhau bởi dòng trống)
@@ -69,8 +71,9 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
         const startMs = srtTimeToMs(startTime);
         const endMs = srtTimeToMs(endTime);
         
-        // Dòng 3+: Text (có thể nhiều dòng)
-        const text = lines.slice(2).join(' ').trim();
+        // Dòng 3+: Text (có thể nhiều dòng - giữ nguyên line breaks)
+        const rawText = lines.slice(2).join('\n').trim();
+        const text = maybeFixMojibake(rawText);
         
         if (text) {
           entries.push({
@@ -89,6 +92,9 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
       }
     }
     
+    // Sort entries theo startMs để đảm bảo thứ tự đúng
+    entries.sort((a, b) => a.startMs - b.startMs);
+    
     console.log(`[SrtParser] Parse thành công: ${entries.length} entries`);
     
     return {
@@ -100,7 +106,13 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
     
   } catch (error) {
     const errorMsg = `Lỗi đọc file SRT: ${error}`;
-    console.error(`[SrtParser] ${errorMsg}`);
+    // ENOENT = file chưa tồn tại (bình thường khi chưa chạy các bước trước) — dùng debug thay vì error
+    const isNotFound = String(error).includes('ENOENT');
+    if (isNotFound) {
+      console.debug(`[SrtParser] File chưa tồn tại (bỏ qua): ${filePath}`);
+    } else {
+      console.error(`[SrtParser] ${errorMsg}`);
+    }
     
     return {
       success: false,
@@ -146,6 +158,110 @@ export async function exportToSrt(
     const errorMsg = `Lỗi export SRT: ${error}`;
     console.error(`[SrtParser] ${errorMsg}`);
     
+    return { success: false, error: errorMsg };
+  }
+}
+
+function decodeTextContent(buffer: Buffer): string {
+  if (!buffer || buffer.length === 0) {
+    return '';
+  }
+
+  // BOM detection
+  if (buffer.length >= 2) {
+    const b0 = buffer[0];
+    const b1 = buffer[1];
+    // UTF-16LE BOM
+    if (b0 === 0xff && b1 === 0xfe) {
+      return buffer.slice(2).toString('utf16le');
+    }
+    // UTF-16BE BOM
+    if (b0 === 0xfe && b1 === 0xff) {
+      const swapped = Buffer.allocUnsafe(buffer.length - 2);
+      for (let i = 2; i < buffer.length; i += 2) {
+        swapped[i - 2] = buffer[i + 1] || 0;
+        swapped[i - 1] = buffer[i] || 0;
+      }
+      return swapped.toString('utf16le');
+    }
+  }
+
+  // UTF-8 BOM
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.slice(3).toString('utf8');
+  }
+
+  const utf8Text = maybeFixMojibake(buffer.toString('utf8'));
+  const utf8Score = scoreDecodedText(utf8Text);
+  if (utf8Score === 0) {
+    return utf8Text;
+  }
+
+  const candidates: Array<{ encoding: string; text: string }> = [
+    { encoding: 'cp1258', text: iconv.decode(buffer, 'cp1258') },
+    { encoding: 'windows-1252', text: iconv.decode(buffer, 'windows-1252') },
+    { encoding: 'latin1', text: buffer.toString('latin1') },
+  ];
+  let bestText = utf8Text;
+  let bestScore = utf8Score;
+  for (const candidate of candidates) {
+    const candidateScore = scoreDecodedText(candidate.text);
+    if (candidateScore < bestScore) {
+      bestScore = candidateScore;
+      bestText = candidate.text;
+    }
+  }
+
+  return bestText;
+}
+
+function maybeFixMojibake(text: string): string {
+  if (!text) return text;
+  const suspectCount = countMojibakeSuspects(text);
+  if (suspectCount === 0) {
+    return text;
+  }
+  const fixed = Buffer.from(text, 'latin1').toString('utf8');
+  if (countMojibakeSuspects(fixed) < suspectCount) {
+    return fixed;
+  }
+  return text;
+}
+
+function countMojibakeSuspects(text: string): number {
+  if (!text) return 0;
+  const matches = text.match(/Ã|Â|Ä|Æ|á»|áº/g);
+  return matches ? matches.length : 0;
+}
+
+function scoreDecodedText(text: string): number {
+  if (!text) return 0;
+  const replacementCount = (text.match(/\uFFFD/g) || []).length;
+  const controlCount = (text.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g) || []).length;
+  return replacementCount * 3 + controlCount;
+}
+
+/**
+ * Export text thuần (không timing) ra file
+ */
+export async function exportPlainText(
+  content: string,
+  outputPath: string
+): Promise<{ success: boolean; error?: string }> {
+  console.log(`[SrtParser] Đang export text thuần ra: ${path.basename(outputPath)}`);
+
+  try {
+    const dir = path.dirname(outputPath);
+    await fs.mkdir(dir, { recursive: true });
+
+    const safeContent = typeof content === 'string' ? content : '';
+    await fs.writeFile(outputPath, safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`, 'utf-8');
+
+    console.log(`[SrtParser] Export text thuần thành công: ${outputPath}`);
+    return { success: true };
+  } catch (error) {
+    const errorMsg = `Lỗi export text thuần: ${error}`;
+    console.error(`[SrtParser] ${errorMsg}`);
     return { success: false, error: errorMsg };
   }
 }

@@ -38,6 +38,13 @@
   --color-warning: #f59e0b;
   --color-error:   #ef4444;
   --color-info:    #3b82f6;
+
+  --app-background:
+    radial-gradient(720px 340px at 12% 0%, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 62%),
+    radial-gradient(620px 300px at 86% 12%, color-mix(in srgb, var(--color-success) 14%, transparent), transparent 62%),
+    radial-gradient(520px 260px at 50% 0%, color-mix(in srgb, var(--color-primary-light) 10%, transparent), transparent 70%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 1px, transparent 1px, transparent 10px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 94%, white) 0%, var(--color-background) 100%);
 }
 
 /* Dark Mode (Deep Ocean) */
@@ -63,6 +70,13 @@
 
   --color-border:       #334155; /* Slate 700 */
   --color-border-hover: #475569; /* Slate 600 */
+
+  --app-background:
+    radial-gradient(720px 340px at 12% 0%, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 62%),
+    radial-gradient(620px 300px at 86% 12%, color-mix(in srgb, var(--color-success) 14%, transparent), transparent 62%),
+    radial-gradient(520px 260px at 50% 0%, color-mix(in srgb, var(--color-primary-light) 10%, transparent), transparent 70%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0px, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 12px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-background) 94%, white) 0%, var(--color-background) 100%);
 }
 
 
@@ -74,6 +88,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
   /* @apply selection:bg-primary-light/30 selection:text-primary; - removed due to build error with opacity modifier on var */
   transition: background-color 0.3s, color 0.3s;
+}
+
+.appShell {
+  background-color: var(--color-background);
+  background-image: var(--app-background);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 ::selection {

@@ -1,0 +1,81 @@
+import { ipcRenderer } from 'electron';
+import { ProxyConfig, ProxyStats, ProxyTestResult, PROXY_IPC_CHANNELS, RotatingProxyConfig, RotatingProxyConfigInput } from '../shared/types/proxy';
+
+/**
+ * Proxy API cho renderer process
+ */
+export interface ProxyAPI {
+  getAll: () => Promise<{ success: boolean; data?: ProxyConfig[]; error?: string }>;
+  add: (config: Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>) => Promise<{ success: boolean; data?: ProxyConfig; error?: string }>;
+  remove: (id: string) => Promise<{ success: boolean; error?: string }>;
+  update: (id: string, updates: Partial<ProxyConfig>) => Promise<{ success: boolean; error?: string }>;
+  test: (id: string) => Promise<ProxyTestResult>;
+  checkAll: () => Promise<{ success: boolean; checked?: number; passed?: number; failed?: number; error?: string }>;
+  getStats: () => Promise<{ success: boolean; data?: ProxyStats[]; error?: string }>;
+  import: (data: string) => Promise<{ success: boolean; added?: number; skipped?: number; error?: string }>;
+  export: () => Promise<{ success: boolean; data?: string; error?: string }>;
+  reset: () => Promise<{ success: boolean; error?: string }>;
+  testRotatingEndpoint: (endpoint?: string) => Promise<{ success: boolean; latency?: number; error?: string }>;
+  webshareSync: (payload: { apiKey: string; typePreference: 'http' | 'socks5' | 'both' }) => Promise<{ success: boolean; removed?: number; added?: number; skipped?: number; totalFetched?: number; error?: string }>;
+  getRotatingConfigs: () => Promise<{ success: boolean; data?: RotatingProxyConfig[]; error?: string }>;
+  saveRotatingConfig: (payload: RotatingProxyConfigInput) => Promise<{ success: boolean; data?: RotatingProxyConfig; error?: string }>;
+  getWebshareApiKey: () => Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number } | null; error?: string }>;
+  saveWebshareApiKey: (payload: { apiKey: string }) => Promise<{ success: boolean; data?: { apiKey: string; updatedAt: number }; error?: string }>;
+}
+
+/**
+ * Tạo proxy API object
+ */
+export const proxyApi: ProxyAPI = {
+  getAll: () => ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_ALL),
+  
+  add: (config) => ipcRenderer.invoke(PROXY_IPC_CHANNELS.ADD, config),
+  
+  remove: (id) => ipcRenderer.invoke(PROXY_IPC_CHANNELS.REMOVE, id),
+  
+  update: (id, updates) => ipcRenderer.invoke(PROXY_IPC_CHANNELS.UPDATE, id, updates),
+  
+  test: (id) => ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST, id),
+
+  checkAll: () => ipcRenderer.invoke(PROXY_IPC_CHANNELS.CHECK_ALL),
+  
+  getStats: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_STATS);
+  },
+
+  import: async (data: string) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.IMPORT, data);
+  },
+
+  export: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.EXPORT);
+  },
+
+  reset: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.RESET);
+  },
+
+  testRotatingEndpoint: async (endpoint?: string) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.TEST_ROTATING_ENDPOINT, endpoint);
+  },
+
+  webshareSync: async (payload) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.WEBSHARE_SYNC, payload);
+  },
+
+  getRotatingConfigs: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_ROTATING_CONFIGS);
+  },
+
+  saveRotatingConfig: async (payload) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.SAVE_ROTATING_CONFIG, payload);
+  },
+
+  getWebshareApiKey: async () => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.GET_WEBSHARE_API_KEY);
+  },
+
+  saveWebshareApiKey: async (payload) => {
+    return ipcRenderer.invoke(PROXY_IPC_CHANNELS.SAVE_WEBSHARE_API_KEY, payload);
+  },
+};

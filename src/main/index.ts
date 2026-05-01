@@ -1,55 +1,27 @@
-import { app, BrowserWindow, shell } from 'electron'
-import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { registerAllHandlers } from './ipc'
 import { initDatabase } from './database/schema'
 import { tryImportDevKeys } from './services/gemini/apiKeys'
+import { AppSettingsService } from './services/appSettings'
+import { createDashboardWindow } from './windowManager'
+import { cleanTempFiles } from './services/caption/garbageCollector'
+import { installMainConsoleCapture } from './services/logging/consoleCapture'
+import { shutdownScheduler } from './services/shutdownScheduler'
 
-function createWindow(): void {
-  // Tạo cửa sổ ứng dụng
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false, // Ẩn cho đến khi sẵn sàng
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false
-    }
-  })
-
-  // Hiển thị và maximize khi đã load xong
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.maximize() // Toàn màn hình trừ taskbar
-    mainWindow.show()
-  })
-
-  // Mở link external trong browser thay vì trong app
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  // === ĐIỂM QUAN TRỌNG ===
-  // Development: Load từ Vite dev server (có HMR)
-  // Production: Load trực tiếp file HTML (KHÔNG CẦN LOCALHOST)
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    // Production: Load file HTML trực tiếp - KHÔNG CẦN SERVER
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-}
+installMainConsoleCapture()
+let isQuitInProgress = false
 
 // Khởi tạo app khi Electron sẵn sàng
 app.whenReady().then(() => {
   // Thiết lập app ID cho Windows
   electronApp.setAppUserModelId('com.veo3promptbuilder')
 
-  // Khởi tạo Database
+  // Khởi tạo Database (chỉ cho prompts table)
   initDatabase()
+
+  // Khởi tạo App Settings
+  AppSettingsService.initialize()
 
   // Đăng ký IPC handlers
   registerAllHandlers()
@@ -62,12 +34,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  createWindow()
+  createDashboardWindow()
 
   // macOS: Tạo lại cửa sổ khi click vào dock icon
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      createDashboardWindow()
     }
   })
 })
@@ -76,5 +48,44 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// Dọn dẹp rác và flush caption settings trước khi ứng dụng đóng
+app.on('before-quit', (event) => {
+  if (isQuitInProgress) {
+    shutdownScheduler.dispose()
+    cleanTempFiles()
+    return
+  }
+
+  event.preventDefault()
+  isQuitInProgress = true
+
+  const windows = BrowserWindow.getAllWindows()
+  const finishQuit = () => {
+    shutdownScheduler.dispose()
+    cleanTempFiles()
+    app.quit()
+  }
+
+  if (windows.length === 0) {
+    finishQuit()
+    return
+  }
+
+  const timeout = setTimeout(() => {
+    finishQuit()
+  }, 1500)
+
+  ipcMain.once('app:flushCaptionSettings:done', () => {
+    clearTimeout(timeout)
+    finishQuit()
+  })
+
+  for (const win of windows) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('app:flushCaptionSettings')
+    }
   }
 })

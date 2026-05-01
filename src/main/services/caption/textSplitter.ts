@@ -63,31 +63,300 @@ export function mergeTranslatedTexts(
   
   return entries.map((entry, index) => ({
     ...entry,
-    translatedText: translatedTexts[index] || entry.text,
+    // Giữ undefined nếu không có bản dịch, tránh mask lỗi bằng text gốc
+    translatedText: translatedTexts[index] || entry.translatedText || undefined,
   }));
 }
 
+export type TranslationResponseFormat = 'json' | 'numbered' | 'pipe';
+
+export interface TranslationPromptResult {
+  prompt: string;
+  responseFormat: TranslationResponseFormat;
+}
+
 /**
- * Tạo prompt template cho việc dịch batch
+ * Tạo prompt template cho việc dịch batch.
+ * Nếu customTemplate được cung cấp, thay thế các biến:
+ *   {{COUNT}}     → số dòng trong batch
+ *   {{TEXT}}      → nội dung các dòng (thuần văn bản, mỗi dòng một câu)
+ *   {{FILE_NAME}} → 'subtitle'
+ * Step 3 đã chuyển sang JSON-only: luôn yêu cầu model trả về JSON hợp lệ.
  */
 export function createTranslationPrompt(
   texts: string[],
-  targetLanguage: string = 'Vietnamese'
-): string {
-  // Format: mỗi dòng một số, để dễ parse kết quả
-  const numberedLines = texts.map((text, i) => `[${i + 1}] ${text}`).join('\n');
-  
-  return `Dịch các dòng subtitle sau sang tiếng ${targetLanguage}.
-Quy tắc:
-1. Dịch tự nhiên, phù hợp ngữ cảnh
-2. Giữ nguyên số thứ tự [1], [2], ...
-3. Không thêm giải thích
-4. Mỗi dòng dịch tương ứng với dòng gốc
+  targetLanguage: string = 'Vietnamese',
+  customTemplate?: string
+): TranslationPromptResult {
+  const count = texts.length;
 
-Nội dung cần dịch:
-${numberedLines}
+  if (customTemplate) {
+    // --- Custom prompt: thay thế biến, KHÔNG kết hợp với default ---
+    // Nếu template có "{{TEXT}}" (có dấu nháy bao quanh) → thay bằng JSON array
+    // Nếu template có {{TEXT}} (không dấu nháy) → thay bằng plain text
+    const arrayText = JSON.stringify(texts);
+    const rawText = texts.join('\n');
+    const prompt = customTemplate
+      .replace(/"\{\{TEXT\}\}"/g, arrayText)   // "{{TEXT}}" → ["line1","line2",...]
+      .replace(/\{\{TEXT\}\}/g, rawText)          // {{TEXT}} → plain fallback
+      .replace(/\{\{COUNT\}\}/g, String(count))
+      .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
 
-Kết quả (chỉ trả về các dòng đã dịch, giữ nguyên format [số]):`;
+    console.log('[TextSplitter] Sử dụng custom prompt, format: json');
+    return { prompt, responseFormat: 'json' };
+  }
+
+  // --- Default prompt: JSON-only, mỗi câu tương ứng 1 object ---
+  const sourcePayload = texts.map((text, i) => ({ index: i + 1, text }));
+  const prompt = `Dịch ${count} dòng subtitle sau sang tiếng ${targetLanguage}.
+YÊU CẦU BẮT BUỘC:
+1. CHỈ trả về JSON thuần túy, không markdown, không text thừa.
+2. JSON success schema:
+{
+  "status": "success",
+  "data": {
+    "translations": [
+      { "index": 1, "translated": "..." }
+    ],
+    "summary": {
+      "total_sentences": ${count},
+      "input_count": ${count},
+      "output_count": ${count},
+      "match": true,
+      "language_style": "casual"
+    }
+  }
+}
+3. translations phải có CHÍNH XÁC ${count} object, index từ 1..${count}, không thiếu, không trùng.
+4. Mỗi câu input tương ứng đúng 1 câu translated, không gộp/không tách câu.
+5. Nếu không thể xử lý, trả JSON error:
+{
+  "status": "error",
+  "error": {
+    "code": "ERROR_PROCESSING_FAILED",
+    "message": "..."
+  }
+}
+
+Nguồn:
+${JSON.stringify(sourcePayload)}`;
+
+  console.log('[TextSplitter] Sử dụng default prompt, format: json');
+  return { prompt, responseFormat: 'json' };
+}
+
+export interface JsonTranslationParseResult {
+  ok: boolean;
+  translatedTexts: string[];
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+function parseCount(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return null;
+  }
+  return value >= 0 ? value : null;
+}
+
+function failJsonParse(
+  translatedTexts: string[],
+  errorCode: string,
+  errorMessage: string
+): JsonTranslationParseResult {
+  return {
+    ok: false,
+    translatedTexts,
+    errorCode,
+    errorMessage,
+  };
+}
+
+/**
+ * Parse response JSON schema cho Step 3 (JSON-only).
+ */
+export function parseJsonTranslationResponse(
+  response: string,
+  expectedCount: number
+): JsonTranslationParseResult {
+  const safeExpectedCount = Math.max(0, Math.floor(expectedCount));
+  const translatedTexts = new Array<string>(safeExpectedCount).fill('');
+  const raw = typeof response === 'string' ? response.trim() : '';
+
+  console.log(`[TextSplitter] Parse JSON response, expected ${safeExpectedCount} lines`);
+
+  if (!raw) {
+    return failJsonParse(translatedTexts, 'JSON_PARSE_FAILED', 'Response rỗng');
+  }
+  if (!raw.startsWith('{') || !raw.endsWith('}')) {
+    return failJsonParse(
+      translatedTexts,
+      'JSON_PARSE_FAILED',
+      'Response không phải JSON thuần túy (có text thừa ngoài JSON)'
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return failJsonParse(
+      translatedTexts,
+      'JSON_PARSE_FAILED',
+      `JSON.parse thất bại: ${String(error)}`
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: root phải là object');
+  }
+
+  const root = parsed as Record<string, unknown>;
+  const status = typeof root.status === 'string' ? root.status.trim() : '';
+
+  if (status === 'error') {
+    const errorNode =
+      root.error && typeof root.error === 'object' && !Array.isArray(root.error)
+        ? (root.error as Record<string, unknown>)
+        : {};
+    const upstreamCode = typeof errorNode.code === 'string' ? errorNode.code.trim() : '';
+    const upstreamMessage = typeof errorNode.message === 'string' ? errorNode.message.trim() : '';
+    return failJsonParse(
+      translatedTexts,
+      upstreamCode || 'ERROR_PROCESSING_FAILED',
+      upstreamMessage || 'Model trả về status=error'
+    );
+  }
+
+  if (status !== 'success') {
+    return failJsonParse(
+      translatedTexts,
+      'ERROR_INVALID_INPUT',
+      'Schema không hợp lệ: status phải là "success" hoặc "error"'
+    );
+  }
+
+  const dataNode =
+    root.data && typeof root.data === 'object' && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : null;
+  if (!dataNode) {
+    return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data object');
+  }
+
+  const translations = Array.isArray(dataNode.translations) ? dataNode.translations : null;
+  if (!translations) {
+    return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data.translations[]');
+  }
+
+  const seenIndexes = new Set<number>();
+
+  for (const item of translations) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: item translations phải là object');
+    }
+    const typed = item as Record<string, unknown>;
+    const parsedIndex = parseCount(typed.index);
+    if (parsedIndex === null || parsedIndex <= 0) {
+      return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: index phải là số nguyên >= 1');
+    }
+    if (parsedIndex > safeExpectedCount) {
+      return failJsonParse(
+        translatedTexts,
+        'ERROR_COUNT_MISMATCH',
+        `Index ngoài phạm vi: ${parsedIndex} > ${safeExpectedCount}`
+      );
+    }
+    if (seenIndexes.has(parsedIndex)) {
+      return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', `Trùng index trong translations: ${parsedIndex}`);
+    }
+    if (typeof typed.translated !== 'string') {
+      return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', `Schema không hợp lệ tại index ${parsedIndex}: thiếu translated string`);
+    }
+
+    seenIndexes.add(parsedIndex);
+    translatedTexts[parsedIndex - 1] = typed.translated.trim();
+  }
+
+  if (seenIndexes.size !== safeExpectedCount) {
+    return failJsonParse(
+      translatedTexts,
+      'ERROR_COUNT_MISMATCH',
+      `Số dòng dịch không khớp: nhận ${seenIndexes.size}/${safeExpectedCount}`
+    );
+  }
+
+  const summaryNode =
+    dataNode.summary && typeof dataNode.summary === 'object' && !Array.isArray(dataNode.summary)
+      ? (dataNode.summary as Record<string, unknown>)
+      : null;
+  if (!summaryNode) {
+    return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: thiếu data.summary object');
+  }
+
+  const totalSentences = parseCount(summaryNode.total_sentences);
+  const inputCount = parseCount(summaryNode.input_count);
+  const outputCount = parseCount(summaryNode.output_count);
+  const match = summaryNode.match;
+  const languageStyle = summaryNode.language_style;
+
+  if (
+    totalSentences !== safeExpectedCount ||
+    inputCount !== safeExpectedCount ||
+    outputCount !== safeExpectedCount ||
+    match !== true
+  ) {
+    return failJsonParse(
+      translatedTexts,
+      'ERROR_COUNT_MISMATCH',
+      `Summary mismatch: total=${String(totalSentences)}, input=${String(inputCount)}, output=${String(outputCount)}, match=${String(match)}`
+    );
+  }
+
+  if (typeof languageStyle !== 'string' || !languageStyle.trim()) {
+    return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: summary.language_style phải là string');
+  }
+
+  console.log(`[TextSplitter] [JSON] Parse được ${translatedTexts.filter((r) => r).length}/${safeExpectedCount} dòng`);
+  return {
+    ok: true,
+    translatedTexts,
+  };
+}
+
+/**
+ * Parse kết quả dịch dạng pipe: |Câu1|Câu2|...|CâuN|
+ */
+export function parsePipeResponse(
+  response: string,
+  expectedCount: number
+): string[] {
+  console.log(`[TextSplitter] Parse pipe response, expected ${expectedCount} lines`);
+
+  // Tìm đoạn |...|...|...|  trong response (bỏ qua text thừa trước/sau)
+  const pipeMatch = response.match(/\|[^]*/);
+  const raw = pipeMatch ? pipeMatch[0] : response;
+
+  // Tách theo '|', bỏ phần tử rỗng (do dòng bắt đầu/kết thúc bằng |)
+  const parts = raw.split('|').map(s => s.trim());
+
+  // Lọc phần tử rỗng ở 2 đầu (do dòng bắt đầu/kết thúc bằng |)
+  const results: string[] = [];
+  for (const part of parts) {
+    if (results.length >= expectedCount) break;
+    if (part !== '') {
+      results.push(part);
+    }
+  }
+
+  // Điền các dòng thiếu bằng chuỗi rỗng
+  for (let i = results.length; i < expectedCount; i++) {
+    results.push('');
+    console.warn(`[TextSplitter] [Pipe] Thiếu dịch cho dòng ${i + 1}`);
+  }
+
+  console.log(`[TextSplitter] [Pipe] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`);
+  return results;
 }
 
 /**
