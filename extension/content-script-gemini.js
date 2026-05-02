@@ -1,5 +1,5 @@
 (() => {
-const GEMINI_SCRIPT_VERSION = "2026.03.30.1";
+const GEMINI_SCRIPT_VERSION = "2026.05.02.1";
 
 if (window.__geminiScriptVersion === GEMINI_SCRIPT_VERSION) {
     console.log(`----> Gemini Content Script đã ở bản mới nhất v${GEMINI_SCRIPT_VERSION}`);
@@ -378,6 +378,36 @@ function findVisibleStopButton(doc) {
     return null;
 }
 
+function looksLikeCopyButton(button) {
+    if (!button) return false;
+    const dataTestId = (button.getAttribute('data-test-id') || '').toLowerCase();
+    const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
+    const icon = (button.querySelector('mat-icon')?.getAttribute('fonticon') || '').toLowerCase();
+    return (
+        dataTestId === 'copy-button' ||
+        ariaLabel.includes('sao chép') ||
+        ariaLabel.includes('copy') ||
+        icon.includes('content_copy')
+    );
+}
+
+function findCopyButton(doc) {
+    if (!doc) return null;
+
+    const primary = doc.querySelector('button[data-test-id="copy-button"]');
+    if (primary && isElementVisible(primary) && isButtonEnabled(primary)) {
+        return primary;
+    }
+
+    const candidates = Array.from(doc.querySelectorAll('button'))
+        .filter((button) => looksLikeCopyButton(button) && isElementVisible(button));
+
+    const enabled = candidates.find((button) => isButtonEnabled(button));
+    if (enabled) return enabled;
+
+    return candidates[0] || null;
+}
+
 function getInputTextLength(inputBox) {
     if (!inputBox) return 0;
     const text = (inputBox.innerText || inputBox.textContent || '').trim();
@@ -530,15 +560,7 @@ async function waitForGenerationStart(doc, inputBox, label, expectedPromptLength
 
 function isGeminiGenerating(doc, inputBox = null) {
     const stopButton = findVisibleStopButton(doc);
-    if (stopButton) {
-        return true;
-    }
-
-    const sendButton = findSendButton(doc, inputBox || activeInputBox, false);
-    if (!sendButton) {
-        return false;
-    }
-    return !isButtonEnabled(sendButton);
+    return !!stopButton;
 }
 
 function robustClickButton(button) {
@@ -548,6 +570,109 @@ function robustClickButton(button) {
     button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+}
+
+async function readClipboardWithPolling(maxChecks = 6, intervalMs = 250) {
+    if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+        return { ok: false, reason: 'CLIPBOARD_API_NOT_AVAILABLE' };
+    }
+
+    for (let i = 0; i < maxChecks; i++) {
+        try {
+            const text = await navigator.clipboard.readText();
+            const normalized = (text || '').trim();
+            if (normalized.length > 50) {
+                return { ok: true, text: normalized };
+            }
+        } catch (e) {
+            if (i === maxChecks - 1) {
+                return { ok: false, reason: e?.message || 'CLIPBOARD_READ_FAILED' };
+            }
+        }
+        await sleep(intervalMs);
+    }
+
+    return { ok: false, reason: 'CLIPBOARD_EMPTY_OR_TOO_SHORT' };
+}
+
+function waitForCopyEventText(doc, timeoutMs = 2500) {
+    return new Promise((resolve) => {
+        let settled = false;
+        let timerId = null;
+
+        const cleanup = () => {
+            if (timerId) {
+                clearTimeout(timerId);
+                timerId = null;
+            }
+            try {
+                doc.removeEventListener('copy', onCopy, true);
+            } catch (e) {
+                // no-op
+            }
+        };
+
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(result);
+        };
+
+        const onCopy = (event) => {
+            try {
+                const text = event?.clipboardData?.getData('text/plain') || '';
+                const normalized = text.trim();
+                if (normalized.length > 50) {
+                    finish({ ok: true, text: normalized, source: 'copy_event' });
+                    return;
+                }
+            } catch (e) {
+                // fallback timeout/readText path
+            }
+        };
+
+        doc.addEventListener('copy', onCopy, true);
+        timerId = setTimeout(() => {
+            finish({ ok: false, reason: 'COPY_EVENT_TIMEOUT' });
+        }, timeoutMs);
+    });
+}
+
+async function tryCopyGeminiResponse(doc) {
+    const maxAttempts = 6;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const copyButton = findCopyButton(doc);
+        if (!copyButton) {
+            await sleep(300);
+            continue;
+        }
+        if (!isButtonEnabled(copyButton)) {
+            await sleep(250);
+            continue;
+        }
+
+        const copyEventPromise = waitForCopyEventText(doc, 2500);
+        robustClickButton(copyButton);
+        console.log(`----> Đã click copy-button (lần ${attempt}/${maxAttempts})`);
+
+        const copyEventResult = await copyEventPromise;
+        if (copyEventResult.ok) {
+            console.log("----> ✓ Lấy response từ copy event");
+            return { ok: true, text: copyEventResult.text, source: 'gemini_copy_button' };
+        }
+
+        const clipboard = await readClipboardWithPolling(6, 250);
+        if (clipboard.ok) {
+            console.log("----> ✓ Lấy response từ clipboard qua copy-button");
+            return { ok: true, text: clipboard.text, source: 'gemini_copy_button' };
+        }
+
+        console.warn(`----> ⚠️ Đọc clipboard chưa thành công: ${clipboard.reason}`);
+        await sleep(250);
+    }
+
+    return { ok: false, reason: 'COPY_BUTTON_FLOW_FAILED' };
 }
 
 async function triggerSend(doc, inputBox) {
@@ -703,7 +828,7 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
     }
 
     // Gán vào biến global để có thể hủy từ bên ngoài
-    pollingIntervalId = setInterval(() => {
+    pollingIntervalId = setInterval(async () => {
         checkCount++;
         const doc = contextDoc || activeDocument || getDocumentContext();
         const usingPiP = contextUsingPiP || doc !== document;
@@ -714,21 +839,23 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         const sendButton = findSendButton(doc, inputBox || activeInputBox, false);
         
         // Kiểm tra xem Gemini có đang generate không
-        // Ưu tiên Stop button, sau đó fallback theo trạng thái nút Send nếu tìm được.
+        // Chỉ tin vào Stop button. Nút Send có thể disabled ngay cả khi đã xong
+        // do input rỗng, nên không dùng làm tín hiệu "đang generate".
         const stopButton = findVisibleStopButton(doc);
-        const isGenerating = !!stopButton || (!!sendButton && !isButtonEnabled(sendButton));
+        const isGenerating = !!stopButton;
         
         if (isGenerating) {
             hasStartedGenerating = true;
             stableResponseChecks = 0;
             lastResponseSignature = '';
-            console.log(`----> [${checkCount}] Gemini đang xử lý... (${stopButton ? 'có nút Stop' : 'nút Send disabled'})`);
+            console.log(`----> [${checkCount}] Gemini đang xử lý... (có nút Stop)`);
             return; // Tiếp tục đợi
         }
 
         // Không thấy tín hiệu generate nữa, kiểm tra response có ổn định chưa.
         const responseText = extractGeminiResponse(doc, true);
         const responseLength = responseText ? responseText.length : 0;
+
         const hasMeaningfulResponse = responseLength > 50;
         const responseSignature = hasMeaningfulResponse
             ? `${responseLength}:${responseText.slice(-120)}`
@@ -742,9 +869,9 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         }
         
         // Điều kiện hoàn thành:
-        // 1) Có nút Send enabled (đường đi chuẩn), hoặc
+        // 1) Không còn nút Stop + có nút Send visible (đường đi chuẩn), hoặc
         // 2) Không có nút Send nhưng response đã ổn định >= 2 lần check liên tiếp.
-        const sendReady = !!sendButton && isButtonEnabled(sendButton);
+        const sendReady = !stopButton && !!sendButton;
         const doneByStableResponse = !sendButton && hasMeaningfulResponse && stableResponseChecks >= 2;
 
         if ((hasStartedGenerating || checkCount > 3) && (sendReady || doneByStableResponse)) {
@@ -757,9 +884,22 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
                 activeDocument = null;
                 console.log(`----> [${checkCount}] ✓ Gemini đã hoàn thành (${doneByStableResponse ? 'fallback theo độ ổn định response' : 'nút Send sẵn sàng'})`);
 
+                // TẠM TẮT copy-button flow do PiP thường không có focused document cho Clipboard API.
+                // const copied = await tryCopyGeminiResponse(doc);
+                // if (copied.ok) {
+                //     sendResponse({
+                //         status: "DONE",
+                //         text: copied.text,
+                //         source: copied.source
+                //     });
+                //     return;
+                // }
+                // console.warn(`----> ⚠️ Copy-button thất bại (${copied.reason}), fallback sang DOM extraction`);
+                const fallbackText = extractGeminiResponse(doc, false);
                 sendResponse({
                     status: "DONE",
-                    text: responseText
+                    text: fallbackText || responseText,
+                    source: "dom_fallback"
                 });
             }
         } else if (!sendButton) {
