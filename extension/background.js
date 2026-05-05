@@ -1210,3 +1210,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 });
+
+// Mở Full UI trong tab riêng khi click icon extension (không dùng popup mặc định)
+chrome.action.onClicked.addListener(() => {
+    chrome.tabs.create({
+        url: chrome.runtime.getURL("popup.html")
+    });
+});

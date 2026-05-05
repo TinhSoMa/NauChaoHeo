@@ -199,7 +199,9 @@
       <input type="radio" id="modeFile" name="inputMode" value="file" checked>
       <label for="modeFile" style="display: inline; margin-right: 15px;">Chọn File lẻ</label>
       <input type="radio" id="modeFolder" name="inputMode" value="folder">
-      <label for="modeFolder" style="display: inline;">Chọn Thư mục</label>
+      <label for="modeFolder" style="display: inline; margin-right: 15px;">Chọn Thư mục</label>
+      <input type="radio" id="modeEbook" name="inputMode" value="ebook">
+      <label for="modeEbook" style="display: inline;">Chọn Ebook (.epub)</label>
     </div>
 
     <div id="fileInputWrapper">
@@ -224,6 +226,19 @@
       />
       <div style="font-size: 11px; color: #d84315; margin-bottom: 10px; line-height: 1.3;">
         Tự động tìm file .txt trong:<br><b>[tên_dự_án]/caption_output/text/</b>
+      </div>
+    </div>
+
+    <div id="ebookInputWrapper" style="display: none;">
+      <label>Chọn file Ebook (.epub):</label>
+      <input
+        type="file"
+        id="ebookInput"
+        accept=".epub,application/epub+zip"
+        style="width: 100%; margin-bottom: 5px"
+      />
+      <div style="font-size: 11px; color: #1976d2; margin-bottom: 10px; line-height: 1.3;">
+        Mỗi chapter trong ebook sẽ thành 1 batch dịch.
       </div>
     </div>
 
@@ -312,6 +327,9 @@
       </div>
     </div>
 
+    <script src="libs/jszip.min.js"></script>
+    <script src="libs/txml.min.js"></script>
+    <script src="ebook-parser.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

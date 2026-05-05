@@ -7,9 +7,12 @@ const DOM = {
   // Inputs
   modeFile: null,
   modeFolder: null,
+  modeEbook: null,
   fileInputWrapper: null,
   folderInputWrapper: null,
+  ebookInputWrapper: null,
   folderInput: null,
+  ebookInput: null,
   batchLimitInput: null,
   promptDelayInput: null,
   fileInput: null,
@@ -39,9 +42,12 @@ const DOM = {
   init() {
     this.modeFile = document.getElementById("modeFile");
     this.modeFolder = document.getElementById("modeFolder");
+    this.modeEbook = document.getElementById("modeEbook");
     this.fileInputWrapper = document.getElementById("fileInputWrapper");
     this.folderInputWrapper = document.getElementById("folderInputWrapper");
+    this.ebookInputWrapper = document.getElementById("ebookInputWrapper");
     this.folderInput = document.getElementById("folderInput");
+    this.ebookInput = document.getElementById("ebookInput");
 
     this.batchLimitInput = document.getElementById("batchLimit");
     this.promptDelayInput = document.getElementById("promptDelay");
@@ -66,6 +72,11 @@ const DOM = {
     this.dataModalBody = document.getElementById("dataModalBody");
     this.dataModalClose = document.getElementById("dataModalClose");
   }
+};
+
+const INPUT_MODE = {
+  SUBTITLE: "subtitle",
+  EBOOK: "ebook"
 };
 
 // ============================================
@@ -103,7 +114,13 @@ const UIManager = {
     };
     DOM.fileList.innerHTML = batchFiles.map((bf, idx) => {
       const st = bf.status || (bf.completed ? 'done' : 'pending');
-      const projectTag = bf.projectName && bf.projectName !== "Mixed_Files" ? `[${bf.projectName}] ` : "";
+      const isEbookItem = bf?.sourceType === "epub" || !!bf?.chapterTitle;
+      const projectTag = (!isEbookItem && bf.projectName && bf.projectName !== "Mixed_Files")
+        ? `[${bf.projectName}] `
+        : "";
+      const displayName = isEbookItem
+        ? (bf.chapterTitle || bf.name || `Chapter ${idx + 1}`)
+        : (bf.name || `Batch ${idx + 1}`);
       const hasData = !!(bf.rawText || bf.result);
       const viewBtn = hasData
         ? `<button class="btn-view" data-view-index="${idx}" title="Xem dữ liệu đã lưu">view</button>`
@@ -112,7 +129,7 @@ const UIManager = {
         ? `<button class="btn-reset" data-reset-index="${idx}" title="Xóa bản dịch">x</button>`
         : "";
       return `<div class="file-item">
-        <span class="file-name" title="${bf.name}">#${idx + 1}: ${projectTag}${bf.name}</span>
+        <span class="file-name" title="${displayName}">#${idx + 1}: ${projectTag}${displayName}</span>
         <span class="file-actions">
           <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
           ${viewBtn}
@@ -139,7 +156,10 @@ const StorageManager = {
       'currentBatchIndex',
       'copyOnlyMode',
       'alwaysOnTop',
-      'provider'
+      'provider',
+      'subtitleBatchFiles',
+      'ebookBatchFiles',
+      'activeInputMode'
     ]);
   },
 
@@ -153,6 +173,30 @@ const StorageManager = {
       totalBatches: batchFiles.length,
       currentBatchIndex: 0
     });
+  },
+
+  async saveModeBatchFiles(mode, batchFiles) {
+    if (mode === INPUT_MODE.EBOOK) {
+      await chrome.storage.local.set({ ebookBatchFiles: batchFiles });
+    } else {
+      await chrome.storage.local.set({ subtitleBatchFiles: batchFiles });
+    }
+  },
+
+  async getModeBatchFiles(mode) {
+    const data = await chrome.storage.local.get(['subtitleBatchFiles', 'ebookBatchFiles']);
+    return mode === INPUT_MODE.EBOOK
+      ? (data.ebookBatchFiles || [])
+      : (data.subtitleBatchFiles || []);
+  },
+
+  async setActiveMode(mode) {
+    await chrome.storage.local.set({ activeInputMode: mode });
+  },
+
+  async getActiveMode() {
+    const data = await chrome.storage.local.get(['activeInputMode']);
+    return data.activeInputMode || INPUT_MODE.SUBTITLE;
   }
 };
 
@@ -302,8 +346,8 @@ const EventHandlers = {
   },
 
   async onViewSavedData(fileIndex) {
-    const data = await chrome.storage.local.get(['batchFiles']);
-    const batchFiles = data.batchFiles || [];
+    const mode = await StorageManager.getActiveMode();
+    const batchFiles = await StorageManager.getModeBatchFiles(mode);
     const file = batchFiles[fileIndex];
     if (!file) return;
 
@@ -325,8 +369,9 @@ const EventHandlers = {
       return;
     }
 
-    const data = await chrome.storage.local.get(['batchFiles', 'translatedBatches']);
-    const batchFiles = data.batchFiles || [];
+    const mode = await StorageManager.getActiveMode();
+    const data = await chrome.storage.local.get(['translatedBatches']);
+    const batchFiles = await StorageManager.getModeBatchFiles(mode);
     const translatedBatches = data.translatedBatches || [];
 
     if (!batchFiles[fileIndex]) return;
@@ -343,8 +388,8 @@ const EventHandlers = {
     const firstPendingIndex = batchFiles.findIndex(f => !f.completed);
     const nextIndex = firstPendingIndex >= 0 ? firstPendingIndex : batchFiles.length;
 
+    await StorageManager.saveModeBatchFiles(mode, batchFiles);
     await chrome.storage.local.set({
-      batchFiles: batchFiles,
       translatedBatches: updatedTranslated,
       batchCount: completedCount,
       currentBatchIndex: nextIndex
@@ -367,8 +412,8 @@ const EventHandlers = {
         return;
       }
 
-      const data = await chrome.storage.local.get(['batchFiles']);
-      const existingBatchFiles = data.batchFiles || [];
+      await StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+      const existingBatchFiles = await StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE);
       const newBatchFiles = [];
 
       for (const file of files) {
@@ -392,7 +437,7 @@ const EventHandlers = {
       }
 
       const combinedBatchFiles = sortBatchFiles([...existingBatchFiles, ...newBatchFiles]);
-      await StorageManager.saveBatchFiles(combinedBatchFiles);
+      await StorageManager.saveModeBatchFiles(INPUT_MODE.SUBTITLE, combinedBatchFiles);
 
       UIManager.setFileStatus(`✓ Đã thêm ${newBatchFiles.length} file (Tổng: ${combinedBatchFiles.length})`, '#4CAF50');
       UIManager.displayFileList(combinedBatchFiles);
@@ -407,13 +452,47 @@ const EventHandlers = {
     }
   },
 
+  async onEbookSelect(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    const file = fileList[0];
+    try {
+      UIManager.setFileStatus("Đang parse EPUB...", "#1976d2");
+      if (!window.EbookParser || typeof window.EbookParser.parseEpubFile !== "function") {
+        throw new Error("Thiếu module EbookParser");
+      }
+
+      const parsed = await window.EbookParser.parseEpubFile(file);
+      await StorageManager.setActiveMode(INPUT_MODE.EBOOK);
+      const existingBatchFiles = await StorageManager.getModeBatchFiles(INPUT_MODE.EBOOK);
+      const newBatchFiles = parsed.chapters || [];
+
+      const combinedBatchFiles = sortBatchFiles([...existingBatchFiles, ...newBatchFiles]);
+      await StorageManager.saveModeBatchFiles(INPUT_MODE.EBOOK, combinedBatchFiles);
+
+      const skipped = parsed.skipped || [];
+      if (skipped.length > 0) {
+        UIManager.setFileStatus(`✓ EPUB: ${newBatchFiles.length} chapter hợp lệ, bỏ qua ${skipped.length} chapter rỗng/lỗi`, '#4CAF50');
+      } else {
+        UIManager.setFileStatus(`✓ EPUB: ${newBatchFiles.length} chapter (${parsed.bookTitle})`, '#4CAF50');
+      }
+      UIManager.displayFileList(combinedBatchFiles);
+
+      if (!DOM.batchLimitInput.dataset.userSet) {
+        DOM.batchLimitInput.value = combinedBatchFiles.length;
+      }
+    } catch (error) {
+      UIManager.setFileStatus(`❌ Lỗi parse EPUB: ${error.message}`, '#f44336');
+      console.error("Lỗi parse EPUB:", error);
+    }
+  },
+
   async onFileSelect(fileList) {
     if (!fileList || fileList.length === 0) return;
 
     try {
       const files = Array.from(fileList);
-      const data = await chrome.storage.local.get(['batchFiles']);
-      const existingBatchFiles = data.batchFiles || [];
+      await StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+      const existingBatchFiles = await StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE);
       const newBatchFiles = [];
 
       for (const file of files) {
@@ -430,7 +509,7 @@ const EventHandlers = {
       }
 
       const combinedBatchFiles = sortBatchFiles([...existingBatchFiles, ...newBatchFiles]);
-      await StorageManager.saveBatchFiles(combinedBatchFiles);
+      await StorageManager.saveModeBatchFiles(INPUT_MODE.SUBTITLE, combinedBatchFiles);
 
       UIManager.setFileStatus(`✓ Đã thêm ${newBatchFiles.length} file (Tổng: ${combinedBatchFiles.length})`, '#4CAF50');
       UIManager.displayFileList(combinedBatchFiles);
@@ -453,11 +532,15 @@ const EventHandlers = {
     const copyOnly = DOM.copyOnlyMode.checked;
     const provider = DOM.providerSelect.value || 'gemini';
 
-    const data = await StorageManager.loadSettings();
-    if (!data.batchFiles || data.batchFiles.length === 0) {
-      UIManager.setStatus("⚠️ Chưa chọn batch file .txt", "#ff9800");
+    const activeMode = DOM.modeEbook.checked ? INPUT_MODE.EBOOK : INPUT_MODE.SUBTITLE;
+    await StorageManager.setActiveMode(activeMode);
+    const modeBatchFiles = await StorageManager.getModeBatchFiles(activeMode);
+    if (!modeBatchFiles || modeBatchFiles.length === 0) {
+      UIManager.setStatus(activeMode === INPUT_MODE.EBOOK ? "⚠️ Chưa chọn file EPUB" : "⚠️ Chưa chọn batch file .txt", "#ff9800");
       return;
     }
+
+    await StorageManager.saveBatchFiles(modeBatchFiles);
 
     const settings = {
       batchLimit: batchLimit,
@@ -494,6 +577,9 @@ const EventHandlers = {
     if (confirm("Bạn có chắc muốn làm sạch TẤT CẢ danh sách file đang chọn và lịch sử dịch không?")) {
       await chrome.storage.local.set({
         batchFiles: [],
+        subtitleBatchFiles: [],
+        ebookBatchFiles: [],
+        activeInputMode: INPUT_MODE.SUBTITLE,
         translatedBatches: [],
         batchCount: 0,
         currentBatchIndex: 0
@@ -502,6 +588,7 @@ const EventHandlers = {
       // Reset input value để OS cho phép chọn lại cùng 1 cục file/thư mục
       if (DOM.fileInput) DOM.fileInput.value = "";
       if (DOM.folderInput) DOM.folderInput.value = "";
+      if (DOM.ebookInput) DOM.ebookInput.value = "";
       if (DOM.batchLimitInput) {
         DOM.batchLimitInput.value = 1;
         delete DOM.batchLimitInput.dataset.userSet;
@@ -509,7 +596,7 @@ const EventHandlers = {
 
       UIManager.displayFileList([]);
       chrome.runtime.sendMessage({ action: "CLEAR_DATA" });
-      UIManager.setFileStatus("Chưa chọn file/folder", '#777');
+      UIManager.setFileStatus("Chưa chọn file/folder/ebook", '#777');
       UIManager.setStatus("Đã làm sạch danh sách. Hãy chọn file mới.");
     }
   }
@@ -620,9 +707,23 @@ async function initializePopup() {
     DOM.providerSelect.value = 'gemini';
   }
 
-  if (result.batchFiles && result.batchFiles.length > 0) {
-    UIManager.setFileStatus(`File đã chọn: ${result.batchFiles.length}`, '#4CAF50');
-    UIManager.displayFileList(result.batchFiles);
+  const activeMode = result.activeInputMode || INPUT_MODE.SUBTITLE;
+  if (activeMode === INPUT_MODE.EBOOK) {
+    DOM.modeEbook.checked = true;
+    DOM.fileInputWrapper.style.display = "none";
+    DOM.folderInputWrapper.style.display = "none";
+    DOM.ebookInputWrapper.style.display = "block";
+    const ebookFiles = result.ebookBatchFiles || [];
+    UIManager.setFileStatus(`Ebook chapters đã chọn: ${ebookFiles.length}`, ebookFiles.length > 0 ? '#4CAF50' : '#777');
+    UIManager.displayFileList(ebookFiles);
+  } else {
+    DOM.modeFile.checked = true;
+    DOM.fileInputWrapper.style.display = "block";
+    DOM.folderInputWrapper.style.display = "none";
+    DOM.ebookInputWrapper.style.display = "none";
+    const subtitleFiles = result.subtitleBatchFiles || [];
+    UIManager.setFileStatus(`Batch subtitle đã chọn: ${subtitleFiles.length}`, subtitleFiles.length > 0 ? '#4CAF50' : '#777');
+    UIManager.displayFileList(subtitleFiles);
   }
 
   setupEventListeners();
@@ -632,11 +733,34 @@ function setupEventListeners() {
   DOM.modeFile.addEventListener("change", () => {
     DOM.fileInputWrapper.style.display = "block";
     DOM.folderInputWrapper.style.display = "none";
+    DOM.ebookInputWrapper.style.display = "none";
+    StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+    StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE).then((list) => {
+      UIManager.displayFileList(list);
+      UIManager.setFileStatus(`Batch subtitle đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+    });
   });
 
   DOM.modeFolder.addEventListener("change", () => {
     DOM.fileInputWrapper.style.display = "none";
     DOM.folderInputWrapper.style.display = "block";
+    DOM.ebookInputWrapper.style.display = "none";
+    StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+    StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE).then((list) => {
+      UIManager.displayFileList(list);
+      UIManager.setFileStatus(`Batch subtitle đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+    });
+  });
+
+  DOM.modeEbook.addEventListener("change", () => {
+    DOM.fileInputWrapper.style.display = "none";
+    DOM.folderInputWrapper.style.display = "none";
+    DOM.ebookInputWrapper.style.display = "block";
+    StorageManager.setActiveMode(INPUT_MODE.EBOOK);
+    StorageManager.getModeBatchFiles(INPUT_MODE.EBOOK).then((list) => {
+      UIManager.displayFileList(list);
+      UIManager.setFileStatus(`Ebook chapters đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+    });
   });
 
   DOM.folderInput.addEventListener("change", async (e) => {
@@ -647,6 +771,11 @@ function setupEventListeners() {
   DOM.fileInput.addEventListener("change", async (e) => {
     const files = e.target.files;
     await EventHandlers.onFileSelect(files);
+  });
+
+  DOM.ebookInput.addEventListener("change", async (e) => {
+    const files = e.target.files;
+    await EventHandlers.onEbookSelect(files);
   });
 
   DOM.providerSelect.addEventListener("change", async () => {
@@ -686,7 +815,9 @@ function setupEventListeners() {
   // Live update: khi background thay đổi batchFiles -> tự động render lại danh sách
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.batchFiles) {
-      UIManager.displayFileList(changes.batchFiles.newValue);
+      StorageManager.getActiveMode().then((mode) => {
+        StorageManager.getModeBatchFiles(mode).then((list) => UIManager.displayFileList(list));
+      });
     }
   });
 }
