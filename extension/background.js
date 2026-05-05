@@ -36,7 +36,7 @@ const State = {
             'promptDelay'
         ]);
 
-        this.promptTemplate = data.promptTemplate || "Dịch sang tiếng Việt: {{TEXT}}";
+        this.promptTemplate = data.promptTemplate || "";
         this.batchCount = data.batchCount || 0;
         this.copyOnlyMode = data.copyOnlyMode || false;
         this.provider = data.provider || "gemini";
@@ -126,6 +126,17 @@ const Utils = {
         }
     }
 };
+
+async function saveBatchFilesForActiveMode(batchFiles) {
+    const state = await chrome.storage.local.get(['activeInputMode']);
+    const payload = { batchFiles };
+    if (state.activeInputMode === "ebook") {
+        payload.ebookBatchFiles = batchFiles;
+    } else {
+        payload.subtitleBatchFiles = batchFiles;
+    }
+    await chrome.storage.local.set(payload);
+}
 
 // ============================================
 // VALIDATION
@@ -292,6 +303,76 @@ function validateTranslationCount(expectedCount, responseObject, rawText) {
         outOfRange,
         reasonCode,
         indexes: unique
+    };
+}
+
+function normalizeLineForCompare(text) {
+    return String(text || "")
+        .replace(/\r?\n|\r/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function removeDiacritics(text) {
+    return String(text || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
+function validateEbookNovelCompletion(batchData, rawResponseText) {
+    const chapterIndex = Number(batchData?.chapterIndex);
+    const chapterTitle = normalizeLineForCompare(batchData?.chapterTitle || "");
+    const responseText = String(rawResponseText || "").trim();
+    const responseLines = responseText
+        .split(/\r?\n/)
+        .map((line) => normalizeLineForCompare(line))
+        .filter((line) => line.length > 0);
+
+    const translatedFirstLine = responseLines[0] || "";
+    const normalizedFirstLine = removeDiacritics(translatedFirstLine).toLowerCase();
+    const genericChapterHeader = /^chuong\s+\d+\s*[:.\-–—]/i;
+    let firstLineOk = false;
+    let expectedFirstLine = "";
+
+    if (Number.isInteger(chapterIndex) && chapterIndex > 0) {
+        expectedFirstLine = `Chương ${chapterIndex}:`;
+        const expectedPrefix = removeDiacritics(expectedFirstLine).toLowerCase();
+        // chapterIndex nội bộ EPUB có thể khác số chương hiển thị trong truyện.
+        // Ưu tiên format "Chương <số>:" để tránh false fail.
+        firstLineOk = normalizedFirstLine.startsWith(expectedPrefix) || genericChapterHeader.test(normalizedFirstLine);
+    } else if (chapterTitle) {
+        expectedFirstLine = chapterTitle;
+        const normalizedChapterTitle = removeDiacritics(chapterTitle).toLowerCase();
+        firstLineOk =
+            normalizeLineForCompare(translatedFirstLine) === chapterTitle ||
+            normalizedFirstLine === normalizedChapterTitle ||
+            genericChapterHeader.test(normalizedFirstLine);
+    } else {
+        firstLineOk = genericChapterHeader.test(normalizedFirstLine);
+    }
+
+    const normalizedWholeText = removeDiacritics(responseText).toLowerCase();
+    const endMarkerOk =
+        normalizedWholeText.includes("het chuong") ||
+        normalizedWholeText.includes("... het chuong");
+
+    let reasonCode = null;
+    if (!firstLineOk && !endMarkerOk) {
+        reasonCode = "EBOOK_FIRST_LINE_AND_END_MARKER_INVALID";
+    } else if (!firstLineOk) {
+        reasonCode = "EBOOK_FIRST_LINE_MISMATCH";
+    } else if (!endMarkerOk) {
+        reasonCode = "EBOOK_END_MARKER_MISSING";
+    }
+
+    return {
+        ok: firstLineOk && endMarkerOk,
+        reasonCode,
+        firstLineOk,
+        endMarkerOk,
+        expectedFirstLine,
+        translatedFirstLine,
+        chapterIndex
     };
 }
 
@@ -616,7 +697,7 @@ const BatchProcessor = {
             batchFiles[fileIdx].status = 'done';
             batchFiles[fileIdx].result = batchResult.response;
             if (batchResult.rawText) batchFiles[fileIdx].rawText = batchResult.rawText;
-            await chrome.storage.local.set({ batchFiles });
+            await saveBatchFilesForActiveMode(batchFiles);
             Utils.log(`Đã đánh dấu ${batchFiles[fileIdx].name} là done`, 'success');
         }
 
@@ -748,7 +829,7 @@ async function processLoop(runId) {
         const filesForStatus = await chrome.storage.local.get('batchFiles').then(d => d.batchFiles || []);
         if (filesForStatus[currentIndex]) {
             filesForStatus[currentIndex].status = 'translating';
-            await chrome.storage.local.set({ batchFiles: filesForStatus });
+            await saveBatchFilesForActiveMode(filesForStatus);
         }
 
         let responseObject;
@@ -767,7 +848,7 @@ async function processLoop(runId) {
                 latestBatchFiles[fileIdx].errorReason = 'EMPTY_BATCH_OR_NO_CAPTIONS';
                 latestBatchFiles[fileIdx].expectedCount = expectedCount;
             }
-            await chrome.storage.local.set({ batchFiles: latestBatchFiles });
+            await saveBatchFilesForActiveMode(latestBatchFiles);
 
             await BatchProcessor.moveToNextBatch(fileIdx);
             Utils.log("✓ Đã chuyển batch (batch rỗng/không hợp lệ)", 'warning');
@@ -862,21 +943,40 @@ async function processLoop(runId) {
             }
             previousAttemptSample = currentAttemptSample;
 
-            const validation = validateTranslationCount(expectedCount, responseObject, rawResponseText);
-            if (validation.ok) {
-                break;
-            }
+            const isEbookBatch = batchData?.sourceType === "epub" ||
+                Number.isInteger(batchData?.chapterIndex) ||
+                typeof batchData?.chapterTitle === "string";
+            let validation;
 
-            const receivedCount = validation.uniqueCount;
-            Utils.log(`INDEX_VALIDATION_FAILED: ${validation.reasonCode || 'INDEX_VALIDATION_FAILED'} (${receivedCount}/${expectedCount})`, 'error');
-            if (validation.missing.length > 0) {
-                Utils.log(`Thiếu index: ${validation.missing.join(', ')}`, 'error');
-            }
-            if (validation.duplicates.length > 0) {
-                Utils.log(`Index trùng: ${validation.duplicates.join(', ')}`, 'error');
-            }
-            if (validation.outOfRange.length > 0) {
-                Utils.log(`Index ngoài phạm vi 1..${expectedCount}: ${validation.outOfRange.join(', ')}`, 'error');
+            if (isEbookBatch) {
+                validation = validateEbookNovelCompletion(batchData, rawResponseText);
+                if (validation.ok) {
+                    break;
+                }
+                Utils.log(`EBOOK_COMPLETION_VALIDATION_FAILED: ${validation.reasonCode || 'EBOOK_COMPLETION_VALIDATION_FAILED'}`, 'error');
+                if (!validation.firstLineOk) {
+                    Utils.log(`Dòng đầu không khớp. Mong đợi prefix: "${validation.expectedFirstLine || 'Chương {n}:'}" | Nhận được: "${validation.translatedFirstLine}"`, 'error');
+                }
+                if (!validation.endMarkerOk) {
+                    Utils.log(`Thiếu marker kết thúc "Hết chương" ở cuối chapter.`, 'error');
+                }
+            } else {
+                validation = validateTranslationCount(expectedCount, responseObject, rawResponseText);
+                if (validation.ok) {
+                    break;
+                }
+
+                const receivedCount = validation.uniqueCount;
+                Utils.log(`INDEX_VALIDATION_FAILED: ${validation.reasonCode || 'INDEX_VALIDATION_FAILED'} (${receivedCount}/${expectedCount})`, 'error');
+                if (validation.missing.length > 0) {
+                    Utils.log(`Thiếu index: ${validation.missing.join(', ')}`, 'error');
+                }
+                if (validation.duplicates.length > 0) {
+                    Utils.log(`Index trùng: ${validation.duplicates.join(', ')}`, 'error');
+                }
+                if (validation.outOfRange.length > 0) {
+                    Utils.log(`Index ngoài phạm vi 1..${expectedCount}: ${validation.outOfRange.join(', ')}`, 'error');
+                }
             }
 
             if (retryCount >= MAX_RETRY) {
@@ -886,16 +986,23 @@ async function processLoop(runId) {
                 if (batchFiles[fileIdx]) {
                     batchFiles[fileIdx].completed = false;
                     batchFiles[fileIdx].status = 'error';
-                    batchFiles[fileIdx].errorReason = validation.reasonCode || 'INDEX_VALIDATION_FAILED';
-                    batchFiles[fileIdx].missingIndices = validation.missing;
-                    batchFiles[fileIdx].duplicateIndices = validation.duplicates;
-                    batchFiles[fileIdx].outOfRangeIndices = validation.outOfRange;
+                    batchFiles[fileIdx].errorReason = validation.reasonCode || (isEbookBatch ? 'EBOOK_COMPLETION_VALIDATION_FAILED' : 'INDEX_VALIDATION_FAILED');
+                    if (isEbookBatch) {
+                        batchFiles[fileIdx].ebookFirstLineOk = !!validation.firstLineOk;
+                        batchFiles[fileIdx].ebookEndMarkerOk = !!validation.endMarkerOk;
+                        batchFiles[fileIdx].ebookExpectedFirstLine = validation.expectedFirstLine || "";
+                        batchFiles[fileIdx].ebookReceivedFirstLine = validation.translatedFirstLine || "";
+                    } else {
+                        batchFiles[fileIdx].missingIndices = validation.missing;
+                        batchFiles[fileIdx].duplicateIndices = validation.duplicates;
+                        batchFiles[fileIdx].outOfRangeIndices = validation.outOfRange;
+                    }
                     batchFiles[fileIdx].retryCount = retryCount;
                     if (rawResponseText) batchFiles[fileIdx].rawText = rawResponseText;
-                    await chrome.storage.local.set({ batchFiles });
+                    await saveBatchFilesForActiveMode(batchFiles);
                 }
-                await BatchProcessor.moveToNextBatch(batchData.index);
-                Utils.log("✓ Đã chuyển batch (do lỗi thiếu index)", 'warning');
+                await BatchProcessor.moveToNextBatch(fileIdx);
+                Utils.log(`✓ Đã chuyển batch (do lỗi ${isEbookBatch ? 'kiểm tra hoàn thành ebook' : 'thiếu index'})`, 'warning');
                 if (!State.copyOnlyMode) {
                     Utils.log(`BƯỚC 5: Nghỉ ${State.promptDelay} giây tránh rate limit...`);
                     await Utils.sendProgressUpdate(`Đang nghỉ ${State.promptDelay} giây...`);
@@ -910,7 +1017,11 @@ async function processLoop(runId) {
 
             retryCount += 1;
             Utils.log(`Retry ${retryCount}/${MAX_RETRY} sau ${State.promptDelay}s...`, 'warning');
-            await Utils.sendProgressUpdate(`Thiếu index → chờ ${State.promptDelay}s rồi retry...`);
+            await Utils.sendProgressUpdate(
+                isEbookBatch
+                    ? `Sai dòng đầu hoặc thiếu "Hết chương" → chờ ${State.promptDelay}s rồi retry...`
+                    : `Thiếu index → chờ ${State.promptDelay}s rồi retry...`
+            );
             await Utils.sleep(State.promptDelay * 1000);
         }
 
@@ -959,7 +1070,7 @@ async function processLoop(runId) {
             // Reset file đang translating về pending
             const fd = await chrome.storage.local.get(['batchFiles']);
             const bf = (fd.batchFiles || []).map(f => f.status === 'translating' ? { ...f, status: 'pending' } : f);
-            await chrome.storage.local.set({ batchFiles: bf });
+            await saveBatchFilesForActiveMode(bf);
         } else if (error.message === "ĐÃ DỊCH HẾT FILE") {
             console.log("\n🎉 " + error.message);
             Utils.log("Đã hoàn thành toàn bộ batch files!", 'success');
@@ -976,7 +1087,7 @@ async function processLoop(runId) {
             const errIdx = fd2.currentBatchIndex || 0;
             if (bf2[errIdx]) {
                 bf2[errIdx].status = 'error';
-                await chrome.storage.local.set({ batchFiles: bf2 });
+                await saveBatchFilesForActiveMode(bf2);
             }
         }
     }
@@ -992,10 +1103,9 @@ async function loadSettingsAndStart(runId) {
         }
 
         const data = await State.loadFromStorage();
-        
-        // Load prompt template trực tiếp từ file promt.json
-        const promptUrl = chrome.runtime.getURL('promt.json');
-        State.promptTemplate = await (await fetch(promptUrl)).text();
+        if (!State.promptTemplate || !State.promptTemplate.trim()) {
+            throw new Error("Thiếu promptTemplate hợp lệ. Hãy chọn prompt preset trong popup trước khi chạy.");
+        }
 
         Utils.log(`Cài đặt: Dịch ${State.batchLimit} batch (Đã dịch: ${State.batchCount})`);
 
@@ -1019,6 +1129,10 @@ async function loadSettingsAndStart(runId) {
     } catch (error) {
         Utils.log(error.message, 'error');
         console.error("Lỗi khởi tạo:", error);
+        State.isRunning = false;
+        State.runId += 1;
+        await chrome.storage.local.set({ isRunning: false });
+        await Utils.sendProgressUpdate(`Lỗi khởi tạo: ${error.message}`);
     }
 }
 
@@ -1177,6 +1291,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "STOP_PROCESS") {
         State.isRunning = false;
         State.runId += 1;
+        chrome.storage.local.set({ isRunning: false });
         Utils.log("Đã nhận lệnh DỪNG. Đang hủy các tác vụ...");
 
         if (State.geminiTabId) {
@@ -1207,6 +1322,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             currentChapter: State.currentBatchName,
             status: State.currentStatus
         });
+        return true;
+    } else if (request.action === "GET_RUNNING_STATE") {
+        sendResponse({ isRunning: !!State.isRunning, runId: State.runId });
         return true;
     }
 });

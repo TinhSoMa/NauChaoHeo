@@ -47,7 +47,9 @@
       }
 
       const metadata = packageObj.metadata || {};
-      const title = extractText(metadata["dc:title"]) || extractText(metadata.title) || file.name.replace(/\.epub$/i, "");
+      const title = extractTextBySelectors(metadata, ["dc\\:title", "title"]) || file.name.replace(/\.epub$/i, "");
+      const author = extractTextBySelectors(metadata, ["dc\\:creator", "creator"]) || "Unknown Author";
+      const language = extractTextBySelectors(metadata, ["dc\\:language", "language"]) || "vi";
 
       const manifestMap = buildManifestMap(packageObj.manifest);
       const spineRefs = extractSpineRefs(packageObj.spine);
@@ -112,6 +114,13 @@
 
       return {
         bookTitle: title,
+        metadata: {
+          title,
+          author,
+          language,
+          sourceFileName: file.name,
+          createdAt: new Date().toISOString()
+        },
         chapters: chapterBatches,
         skipped
       };
@@ -215,6 +224,16 @@
 
   function looksLikeHtmlPath(path) {
     return /\.(xhtml|html|htm)$/i.test(String(path || ""));
+  }
+
+  function extractTextBySelectors(rootEl, selectors) {
+    if (!rootEl || !Array.isArray(selectors)) return "";
+    for (const sel of selectors) {
+      const el = rootEl.querySelector(sel);
+      const text = extractText(el);
+      if (text) return text;
+    }
+    return "";
   }
 
   function extractText(value) {

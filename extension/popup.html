@@ -204,6 +204,20 @@
       <label for="modeEbook" style="display: inline;">Chọn Ebook (.epub)</label>
     </div>
 
+    <label>Chọn prompt đã lưu:</label>
+    <select
+      id="promptPresetSelect"
+      style="
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 5px;
+        box-sizing: border-box;
+      "
+    ></select>
+    <div id="promptStatus" style="font-size: 11px; color: #666; margin-bottom: 10px;">
+      Đang tải danh sách prompt...
+    </div>
+
     <div id="fileInputWrapper">
       <label>Chọn batch file .txt (mỗi file 50 dòng):</label>
       <input
@@ -330,6 +344,7 @@
     <script src="libs/jszip.min.js"></script>
     <script src="libs/txml.min.js"></script>
     <script src="ebook-parser.js"></script>
+    <script src="ebook-export-service.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

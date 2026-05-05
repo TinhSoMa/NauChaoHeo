@@ -820,6 +820,7 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
     let hasStartedGenerating = false; // Flag để biết Gemini đã bắt đầu generate chưa
     let stableResponseChecks = 0;
     let lastResponseSignature = '';
+    let noStopChecks = 0;
 
     // Clear interval cũ nếu còn tồn tại (tránh memory leak)
     if (pollingIntervalId) {
@@ -846,11 +847,14 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         
         if (isGenerating) {
             hasStartedGenerating = true;
+            noStopChecks = 0;
             stableResponseChecks = 0;
             lastResponseSignature = '';
             console.log(`----> [${checkCount}] Gemini đang xử lý... (có nút Stop)`);
             return; // Tiếp tục đợi
         }
+
+        noStopChecks++;
 
         // Không thấy tín hiệu generate nữa, kiểm tra response có ổn định chưa.
         const responseText = extractGeminiResponse(doc, true);
@@ -872,9 +876,10 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         // 1) Không còn nút Stop + có nút Send visible (đường đi chuẩn), hoặc
         // 2) Không có nút Send nhưng response đã ổn định >= 2 lần check liên tiếp.
         const sendReady = !stopButton && !!sendButton;
-        const doneByStableResponse = !sendButton && hasMeaningfulResponse && stableResponseChecks >= 2;
+        const doneByStableResponse = !sendButton && hasMeaningfulResponse && stableResponseChecks >= 2 && noStopChecks >= 2;
+        const doneBySendReadyStable = sendReady && hasMeaningfulResponse && stableResponseChecks >= 2 && noStopChecks >= 2;
 
-        if ((hasStartedGenerating || checkCount > 3) && (sendReady || doneByStableResponse)) {
+        if ((hasStartedGenerating || checkCount > 3) && (doneBySendReadyStable || doneByStableResponse)) {
             if (!hasMeaningfulResponse) {
                 console.log(`----> [${checkCount}] ⚠️ Đã có tín hiệu hoàn thành nhưng response quá ngắn (${responseLength} ký tự), đợi thêm...`);
             } else {
@@ -882,7 +887,7 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
                 pollingIntervalId = null;
                 activeInputBox = null;
                 activeDocument = null;
-                console.log(`----> [${checkCount}] ✓ Gemini đã hoàn thành (${doneByStableResponse ? 'fallback theo độ ổn định response' : 'nút Send sẵn sàng'})`);
+                console.log(`----> [${checkCount}] ✓ Gemini đã hoàn thành (${doneByStableResponse ? 'fallback theo độ ổn định response' : 'nút Send + response ổn định'})`);
 
                 // TẠM TẮT copy-button flow do PiP thường không có focused document cho Clipboard API.
                 // const copied = await tryCopyGeminiResponse(doc);
@@ -903,7 +908,9 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
                 });
             }
         } else if (!sendButton) {
-            console.log(`----> [${checkCount}] Chưa tìm thấy nút Send, theo dõi độ ổn định response... (${responseLength} ký tự)`);
+            console.log(`----> [${checkCount}] Chưa tìm thấy nút Send, theo dõi độ ổn định response... (${responseLength} ký tự, noStop=${noStopChecks}, stable=${stableResponseChecks})`);
+        } else {
+            console.log(`----> [${checkCount}] Có nút Send nhưng chưa đủ ổn định (noStop=${noStopChecks}, stable=${stableResponseChecks}, len=${responseLength})`);
         }
 
         // Timeout sau maxChecks lần kiểm tra

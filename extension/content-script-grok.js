@@ -307,6 +307,9 @@ function waitForReplyCompletion(sendResponse) {
     const maxChecks = 120;
     const checkIntervalMs = 3000;
     let hasStartedGenerating = false;
+    let noStopChecks = 0;
+    let stableResponseChecks = 0;
+    let lastResponseSignature = "";
 
     if (pollingIntervalId) {
         clearInterval(pollingIntervalId);
@@ -344,26 +347,42 @@ function waitForReplyCompletion(sendResponse) {
 
         if (stopButton) {
             hasStartedGenerating = true;
+            noStopChecks = 0;
+            stableResponseChecks = 0;
+            lastResponseSignature = "";
             console.log(`----> [${checkCount}] Grok đang xử lý... (có nút Stop)`);
             return;
         }
 
+        noStopChecks++;
+
         if (hasStartedGenerating || checkCount > 3) {
-            console.log(`----> [${checkCount}] ✓ Không thấy nút Stop. Grok có thể đã dịch xong.`);
+            console.log(`----> [${checkCount}] Không thấy nút Stop. Kiểm tra độ ổn định response...`);
 
             isExtracting = true;
             const responseText = await extractGrokResponse();
-            if (responseText && responseText.length > 50) {
+            const responseLength = responseText ? responseText.length : 0;
+            const responseSignature = responseLength > 50
+                ? `${responseLength}:${String(responseText).slice(-120)}`
+                : "";
+            if (responseSignature && responseSignature === lastResponseSignature) {
+                stableResponseChecks++;
+            } else {
+                stableResponseChecks = responseSignature ? 1 : 0;
+                lastResponseSignature = responseSignature;
+            }
+
+            if (responseText && responseLength > 50 && noStopChecks >= 2 && stableResponseChecks >= 2) {
                 clearInterval(pollingIntervalId);
                 pollingIntervalId = null;
-                console.log("----> ✓ Đã hoàn thành! Độ dài response:", responseText.length);
+                console.log(`----> ✓ Đã hoàn thành! len=${responseLength}, noStop=${noStopChecks}, stable=${stableResponseChecks}`);
 
                 sendResponse({
                     status: "DONE",
                     text: responseText
                 });
             } else {
-                console.log(`----> [${checkCount}] ⚠️ Response quá ngắn (${responseText ? responseText.length : 0} ký tự) hoăc đang render, đợi thêm...`);
+                console.log(`----> [${checkCount}] ⚠️ Chưa ổn định (len=${responseLength}, noStop=${noStopChecks}, stable=${stableResponseChecks}), đợi thêm...`);
                 isExtracting = false;
             }
         } else {

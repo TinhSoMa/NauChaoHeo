@@ -16,6 +16,7 @@ const DOM = {
   batchLimitInput: null,
   promptDelayInput: null,
   fileInput: null,
+  promptPresetSelect: null,
   copyOnlyMode: null,
   providerSelect: null,
 
@@ -34,6 +35,7 @@ const DOM = {
   statusLog: null,
   fileList: null,
   fileSummary: null,
+  promptStatus: null,
   dataModal: null,
   dataModalTitle: null,
   dataModalBody: null,
@@ -52,6 +54,7 @@ const DOM = {
     this.batchLimitInput = document.getElementById("batchLimit");
     this.promptDelayInput = document.getElementById("promptDelay");
     this.fileInput = document.getElementById("fileInput");
+    this.promptPresetSelect = document.getElementById("promptPresetSelect");
     this.copyOnlyMode = document.getElementById("copyOnlyMode");
     this.providerSelect = document.getElementById("providerSelect");
 
@@ -67,6 +70,7 @@ const DOM = {
     this.statusLog = document.getElementById("statusLog");
     this.fileList = document.getElementById("fileList");
     this.fileSummary = document.getElementById("fileSummary");
+    this.promptStatus = document.getElementById("promptStatus");
     this.dataModal = document.getElementById("dataModal");
     this.dataModalTitle = document.getElementById("dataModalTitle");
     this.dataModalBody = document.getElementById("dataModalBody");
@@ -77,6 +81,11 @@ const DOM = {
 const INPUT_MODE = {
   SUBTITLE: "subtitle",
   EBOOK: "ebook"
+};
+
+const SUBTITLE_INPUT_METHOD = {
+  FILE: "file",
+  FOLDER: "folder"
 };
 
 // ============================================
@@ -159,7 +168,13 @@ const StorageManager = {
       'provider',
       'subtitleBatchFiles',
       'ebookBatchFiles',
-      'activeInputMode'
+      'activeInputMode',
+      'subtitleInputMethod',
+      'promptPresets',
+      'selectedPromptPresetId',
+      'selectedPromptName',
+      'selectedPromptContent',
+      'selectedPromptValid'
     ]);
   },
 
@@ -197,8 +212,126 @@ const StorageManager = {
   async getActiveMode() {
     const data = await chrome.storage.local.get(['activeInputMode']);
     return data.activeInputMode || INPUT_MODE.SUBTITLE;
+  },
+
+  async setSubtitleInputMethod(method) {
+    await chrome.storage.local.set({ subtitleInputMethod: method });
+  },
+
+  async getSubtitleInputMethod() {
+    const data = await chrome.storage.local.get(['subtitleInputMethod']);
+    return data.subtitleInputMethod || SUBTITLE_INPUT_METHOD.FILE;
   }
 };
+
+async function getBackgroundRunningState() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: "GET_RUNNING_STATE" });
+    return !!response?.isRunning;
+  } catch (_) {
+    return false;
+  }
+}
+
+function renderPromptStatus({ valid, name, message }) {
+  if (!DOM.promptStatus) return;
+  if (valid) {
+    DOM.promptStatus.textContent = `✓ Prompt hợp lệ: ${name || "prompt.json"}`;
+    DOM.promptStatus.style.color = "#2e7d32";
+    return;
+  }
+  DOM.promptStatus.textContent = message || "Chưa chọn prompt";
+  DOM.promptStatus.style.color = "#b71c1c";
+}
+
+function getBuiltInPromptDefinitions() {
+  return [
+    { id: "default-preset", name: "Prompt subtitle mặc định", file: "promt.json" },
+    { id: "novel-preset", name: "Prompt dịch truyện (Novel)", file: "promtnovel.json" }
+  ];
+}
+
+async function loadBuiltInPromptPresets() {
+  const defs = getBuiltInPromptDefinitions();
+  const presets = [];
+  for (const def of defs) {
+    try {
+      const url = chrome.runtime.getURL(def.file);
+      const content = (await (await fetch(url)).text()).trim();
+      if (!content) continue;
+      presets.push({
+        id: def.id,
+        name: def.name,
+        content,
+        builtIn: true
+      });
+    } catch (error) {
+      console.warn(`Không thể nạp prompt built-in ${def.file}:`, error?.message || error);
+    }
+  }
+  return presets;
+}
+
+async function ensurePromptPresetsInitialized(settings) {
+  let promptPresets = Array.isArray(settings.promptPresets) ? settings.promptPresets : [];
+  let selectedPromptPresetId = settings.selectedPromptPresetId || "";
+  const builtIns = await loadBuiltInPromptPresets();
+  const byId = new Map(promptPresets.map((p) => [p.id, p]));
+
+  for (const builtIn of builtIns) {
+    byId.set(builtIn.id, builtIn);
+  }
+
+  promptPresets = Array.from(byId.values());
+  const selectedExists = promptPresets.some((p) => p.id === selectedPromptPresetId);
+  if (!selectedExists) {
+    selectedPromptPresetId = promptPresets[0]?.id || "";
+  }
+
+  const selectedPreset = promptPresets.find((p) => p.id === selectedPromptPresetId) || null;
+  const selectedContent = (selectedPreset?.content || "").trim();
+
+  await StorageManager.saveSettings({
+    promptPresets,
+    selectedPromptPresetId,
+    selectedPromptName: selectedPreset?.name || "",
+    selectedPromptContent: selectedContent,
+    selectedPromptValid: !!selectedContent,
+    promptTemplate: selectedContent
+  });
+
+  return { promptPresets, selectedPromptPresetId };
+}
+
+function renderPromptPresetOptions(presets, selectedId) {
+  if (!DOM.promptPresetSelect) return;
+  DOM.promptPresetSelect.innerHTML = "";
+  for (const preset of presets) {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.name || preset.id;
+    if (preset.id === selectedId) option.selected = true;
+    DOM.promptPresetSelect.appendChild(option);
+  }
+}
+
+async function setActivePromptPreset(presets, selectedId) {
+  const selectedPreset = presets.find((p) => p.id === selectedId) || null;
+  const content = (selectedPreset?.content || "").trim();
+  const valid = !!content;
+  await StorageManager.saveSettings({
+    selectedPromptPresetId: selectedId || "",
+    selectedPromptName: selectedPreset?.name || "",
+    selectedPromptContent: content,
+    selectedPromptValid: valid,
+    promptTemplate: content
+  });
+  if (valid) {
+    renderPromptStatus({ valid: true, name: selectedPreset.name });
+  } else {
+    renderPromptStatus({ valid: false, message: "❌ Prompt preset không hợp lệ" });
+  }
+}
 
 // ============================================
 // HELPERS
@@ -264,6 +397,12 @@ function sortProjectNames(projectsMap) {
 }
 
 async function downloadFullStoryInPopup() {
+  const activeMode = await StorageManager.getActiveMode();
+  if (activeMode === INPUT_MODE.EBOOK) {
+    await downloadEbookInPopup();
+    return;
+  }
+
   UIManager.setStatus("Đang tải JSONL...");
   const data = await chrome.storage.local.get(['batchFiles', 'batchCount']);
   const batchFiles = data.batchFiles || [];
@@ -331,6 +470,113 @@ async function downloadFullStoryInPopup() {
   UIManager.setStatus("✓ Đã tạo file JSONL để tải xuống.");
 }
 
+function getSelectedModeFromUI() {
+  if (DOM.modeEbook && DOM.modeEbook.checked) {
+    return INPUT_MODE.EBOOK;
+  }
+  return INPUT_MODE.SUBTITLE;
+}
+
+function applySubtitleInputMethod(method) {
+  const useFolder = method === SUBTITLE_INPUT_METHOD.FOLDER;
+  DOM.modeFile.checked = !useFolder;
+  DOM.modeFolder.checked = useFolder;
+  DOM.modeEbook.checked = false;
+  DOM.fileInputWrapper.style.display = useFolder ? "none" : "block";
+  DOM.folderInputWrapper.style.display = useFolder ? "block" : "none";
+  DOM.ebookInputWrapper.style.display = "none";
+}
+
+function setModeControlsDisabled(disabled) {
+  if (DOM.modeFile) DOM.modeFile.disabled = disabled;
+  if (DOM.modeFolder) DOM.modeFolder.disabled = disabled;
+  if (DOM.modeEbook) DOM.modeEbook.disabled = disabled;
+}
+
+function extractTranslatedChapterText(batchFile) {
+  const responseObj = batchFile?.result;
+  if (!responseObj || !Array.isArray(responseObj.translations)) {
+    return "";
+  }
+
+  const sorted = [...responseObj.translations]
+    .map((item) => ({
+      index: Number(item?.index),
+      translated: item?.translated
+    }))
+    .filter((item) => Number.isInteger(item.index) && item.translated !== undefined && item.translated !== null)
+    .sort((a, b) => a.index - b.index);
+
+  const lines = sorted
+    .map((item) => String(item.translated).trim())
+    .filter((line) => line.length > 0);
+
+  return lines.join("\n");
+}
+
+function sanitizeFileName(name) {
+  return String(name || "ebook")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .trim();
+}
+
+async function downloadEbookInPopup() {
+  UIManager.setStatus("Đang đóng gói EPUB...");
+  const data = await chrome.storage.local.get(['ebookBatchFiles', 'ebookBookMeta']);
+  const ebookBatchFiles = data.ebookBatchFiles || [];
+  const ebookBookMeta = data.ebookBookMeta || {};
+
+  const completed = ebookBatchFiles.filter((f) => f.completed && (f.result || f.rawText));
+  if (completed.length === 0) {
+    UIManager.setStatus("⚠️ Ebook chưa có chapter đã dịch để xuất.", "#ff9800");
+    return;
+  }
+
+  UIManager.setStatus(`Đang đóng gói EPUB (${completed.length}/${ebookBatchFiles.length} chapter đã dịch)...`);
+
+  const chapters = completed
+    .map((f, idx) => ({
+      chapterTitle: f.chapterTitle || f.name || `Chapter ${idx + 1}`,
+      chapterIndex: Number.isInteger(f.chapterIndex) ? f.chapterIndex : idx + 1,
+      content: extractTranslatedChapterText(f)
+    }))
+    .filter((c) => c.content.length > 0)
+    .sort((a, b) => a.chapterIndex - b.chapterIndex);
+
+  if (chapters.length === 0) {
+    UIManager.setStatus("⚠️ Không tìm thấy nội dung dịch hợp lệ trong chapter completed.", "#ff9800");
+    return;
+  }
+
+  const title = ebookBookMeta.title || chapters[0]?.sourceBookTitle || "Translated_Ebook";
+  const author = ebookBookMeta.author || "Unknown Author";
+  const language = ebookBookMeta.language || "vi";
+  const sourceFileName = ebookBookMeta.sourceFileName || title;
+
+  const blob = await window.EbookExportService.buildEpubBlob({
+    bookMeta: {
+      title,
+      author,
+      language,
+      identifier: `ebook-${Date.now()}`
+    },
+    chapters
+  });
+
+  const fileBase = sanitizeFileName(sourceFileName.replace(/\.epub$/i, "") || title);
+  const fileName = `${fileBase}_translated.epub`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+
+  UIManager.setStatus(`✓ Đã xuất EPUB: ${fileName}`);
+}
+
 // ============================================
 // EVENT HANDLERS
 // ============================================
@@ -390,12 +636,21 @@ const EventHandlers = {
 
     await StorageManager.saveModeBatchFiles(mode, batchFiles);
     await chrome.storage.local.set({
+      // Đồng bộ nguồn chạy chính cho background
+      batchFiles: batchFiles,
+      totalBatches: batchFiles.length,
       translatedBatches: updatedTranslated,
       batchCount: completedCount,
       currentBatchIndex: nextIndex
     });
 
     UIManager.setStatus(`Đã xóa bản dịch: ${batchFiles[fileIndex].name}`, "#4CAF50");
+    UIManager.displayFileList(batchFiles);
+    if (mode === INPUT_MODE.EBOOK) {
+      UIManager.setFileStatus(`Ebook chapters đã chọn: ${batchFiles.length}`, batchFiles.length > 0 ? '#4CAF50' : '#777');
+    } else {
+      UIManager.setFileStatus(`Batch subtitle đã chọn: ${batchFiles.length}`, batchFiles.length > 0 ? '#4CAF50' : '#777');
+    }
   },
   async onFolderSelect(fileList) {
     if (!fileList || fileList.length === 0) return;
@@ -413,6 +668,7 @@ const EventHandlers = {
       }
 
       await StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+      await StorageManager.setSubtitleInputMethod(SUBTITLE_INPUT_METHOD.FOLDER);
       const existingBatchFiles = await StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE);
       const newBatchFiles = [];
 
@@ -463,22 +719,40 @@ const EventHandlers = {
 
       const parsed = await window.EbookParser.parseEpubFile(file);
       await StorageManager.setActiveMode(INPUT_MODE.EBOOK);
-      const existingBatchFiles = await StorageManager.getModeBatchFiles(INPUT_MODE.EBOOK);
       const newBatchFiles = parsed.chapters || [];
+      const normalizedBatchFiles = [...newBatchFiles].sort((a, b) => {
+        const ai = Number.isInteger(a?.chapterIndex) ? a.chapterIndex : Number.MAX_SAFE_INTEGER;
+        const bi = Number.isInteger(b?.chapterIndex) ? b.chapterIndex : Number.MAX_SAFE_INTEGER;
+        return ai - bi;
+      });
 
-      const combinedBatchFiles = sortBatchFiles([...existingBatchFiles, ...newBatchFiles]);
-      await StorageManager.saveModeBatchFiles(INPUT_MODE.EBOOK, combinedBatchFiles);
+      // EPUB là nguồn đơn lẻ: chọn file mới thì thay thế toàn bộ danh sách chapter cũ,
+      // tránh lệch chỉ mục/chạy nhầm chapter do dữ liệu còn sót từ lần chạy trước.
+      await StorageManager.saveModeBatchFiles(INPUT_MODE.EBOOK, normalizedBatchFiles);
+      await chrome.storage.local.set({
+        ebookBookMeta: parsed.metadata || {
+          title: parsed.bookTitle || file.name.replace(/\.epub$/i, ""),
+          author: "Unknown Author",
+          language: "vi",
+          createdAt: new Date().toISOString(),
+          sourceFileName: file.name
+        },
+        // reset tiến độ cho lần dịch EPUB mới
+        translatedBatches: [],
+        batchCount: 0,
+        currentBatchIndex: 0
+      });
 
       const skipped = parsed.skipped || [];
       if (skipped.length > 0) {
-        UIManager.setFileStatus(`✓ EPUB: ${newBatchFiles.length} chapter hợp lệ, bỏ qua ${skipped.length} chapter rỗng/lỗi`, '#4CAF50');
+        UIManager.setFileStatus(`✓ EPUB mới: ${normalizedBatchFiles.length} chapter hợp lệ, bỏ qua ${skipped.length} chapter rỗng/lỗi`, '#4CAF50');
       } else {
-        UIManager.setFileStatus(`✓ EPUB: ${newBatchFiles.length} chapter (${parsed.bookTitle})`, '#4CAF50');
+        UIManager.setFileStatus(`✓ EPUB mới: ${normalizedBatchFiles.length} chapter (${parsed.bookTitle})`, '#4CAF50');
       }
-      UIManager.displayFileList(combinedBatchFiles);
+      UIManager.displayFileList(normalizedBatchFiles);
 
       if (!DOM.batchLimitInput.dataset.userSet) {
-        DOM.batchLimitInput.value = combinedBatchFiles.length;
+        DOM.batchLimitInput.value = normalizedBatchFiles.length;
       }
     } catch (error) {
       UIManager.setFileStatus(`❌ Lỗi parse EPUB: ${error.message}`, '#f44336');
@@ -492,6 +766,7 @@ const EventHandlers = {
     try {
       const files = Array.from(fileList);
       await StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+      await StorageManager.setSubtitleInputMethod(SUBTITLE_INPUT_METHOD.FILE);
       const existingBatchFiles = await StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE);
       const newBatchFiles = [];
 
@@ -526,18 +801,65 @@ const EventHandlers = {
   },
 
   async onStart() {
+    const state = await StorageManager.loadSettings();
+    if (state.isRunning) {
+      UIManager.setStatus("⚠️ Quy trình đang chạy, không thể Start thêm.", "#ff9800");
+      return;
+    }
+    if (!state.selectedPromptValid || !state.selectedPromptContent || !state.selectedPromptContent.trim()) {
+      UIManager.setStatus("⚠️ Vui lòng chọn prompt preset hợp lệ trước khi chạy.", "#ff9800");
+      renderPromptStatus({ valid: false, message: "❌ Chưa có prompt preset hợp lệ" });
+      return;
+    }
+
     const batchLimit = parseInt(DOM.batchLimitInput.value) || 1;
     const promptDelay = parseInt(DOM.promptDelayInput.value) || 10;
     const alwaysOnTop = document.getElementById("alwaysOnTop").checked;
     const copyOnly = DOM.copyOnlyMode.checked;
     const provider = DOM.providerSelect.value || 'gemini';
 
-    const activeMode = DOM.modeEbook.checked ? INPUT_MODE.EBOOK : INPUT_MODE.SUBTITLE;
+    const activeMode = getSelectedModeFromUI();
     await StorageManager.setActiveMode(activeMode);
-    const modeBatchFiles = await StorageManager.getModeBatchFiles(activeMode);
+    let modeBatchFiles = await StorageManager.getModeBatchFiles(activeMode);
     if (!modeBatchFiles || modeBatchFiles.length === 0) {
       UIManager.setStatus(activeMode === INPUT_MODE.EBOOK ? "⚠️ Chưa chọn file EPUB" : "⚠️ Chưa chọn batch file .txt", "#ff9800");
       return;
+    }
+
+    if (activeMode === INPUT_MODE.EBOOK) {
+      // Chạy EPUB luôn bắt đầu sạch từ chapter đầu tiên để tránh lệch state
+      // khi lần chạy trước bị lỗi/dừng giữa chừng.
+      const sanitizedEbookBatches = [...modeBatchFiles]
+        .sort((a, b) => {
+          const ai = Number.isInteger(a?.chapterIndex) ? a.chapterIndex : Number.MAX_SAFE_INTEGER;
+          const bi = Number.isInteger(b?.chapterIndex) ? b.chapterIndex : Number.MAX_SAFE_INTEGER;
+          return ai - bi;
+        })
+        .map((bf) => ({
+          ...bf,
+          completed: false,
+          status: "pending",
+          retryCount: 0,
+          errorReason: null,
+          missingIndices: [],
+          duplicateIndices: [],
+          outOfRangeIndices: [],
+          ebookFirstLineOk: null,
+          ebookEndMarkerOk: null,
+          ebookExpectedFirstLine: "",
+          ebookReceivedFirstLine: "",
+          result: undefined,
+          rawText: undefined
+        }));
+
+      modeBatchFiles = sanitizedEbookBatches;
+      await StorageManager.saveModeBatchFiles(INPUT_MODE.EBOOK, sanitizedEbookBatches);
+      await chrome.storage.local.set({
+        translatedBatches: [],
+        batchCount: 0,
+        currentBatchIndex: 0
+      });
+      UIManager.displayFileList(sanitizedEbookBatches);
     }
 
     await StorageManager.saveBatchFiles(modeBatchFiles);
@@ -546,10 +868,16 @@ const EventHandlers = {
       batchLimit: batchLimit,
       promptDelay: promptDelay,
       isRunning: true,
+      runContext: {
+        mode: activeMode,
+        sourceCount: modeBatchFiles.length,
+        startedAt: new Date().toISOString()
+      },
       // KHÔNG reset batchCount/currentBatchIndex - sẽ được tính lại trong START_PROCESS
       alwaysOnTop: alwaysOnTop,
       copyOnlyMode: copyOnly,
-      provider: provider
+      provider: provider,
+      promptTemplate: state.selectedPromptContent
     };
 
     await StorageManager.saveSettings(settings);
@@ -559,13 +887,15 @@ const EventHandlers = {
       if (!pipSuccess) return;
     }
 
+    setModeControlsDisabled(true);
     chrome.runtime.sendMessage({ action: "START_PROCESS" });
-    UIManager.setStatus(`Trạng thái: Đang khởi động (dịch ${batchLimit} batch)...`);
+    UIManager.setStatus(`Trạng thái: Đang khởi động [${activeMode}] (${modeBatchFiles.length} batch nguồn, giới hạn ${batchLimit})...`);
   },
 
   onStop() {
     chrome.storage.local.set({ isRunning: false });
     chrome.runtime.sendMessage({ action: "STOP_PROCESS" });
+    setModeControlsDisabled(false);
     UIManager.setStatus("Trạng thái: Đã dừng.");
   },
 
@@ -579,7 +909,9 @@ const EventHandlers = {
         batchFiles: [],
         subtitleBatchFiles: [],
         ebookBatchFiles: [],
+        ebookBookMeta: null,
         activeInputMode: INPUT_MODE.SUBTITLE,
+        subtitleInputMethod: SUBTITLE_INPUT_METHOD.FILE,
         translatedBatches: [],
         batchCount: 0,
         currentBatchIndex: 0
@@ -681,6 +1013,12 @@ async function initializePopup() {
   DOM.init();
 
   const result = await StorageManager.loadSettings();
+  const presetState = await ensurePromptPresetsInitialized(result);
+  const realRunning = await getBackgroundRunningState();
+  if (result.isRunning && !realRunning) {
+    await StorageManager.saveSettings({ isRunning: false });
+    result.isRunning = false;
+  }
 
   if (result.batchLimit) {
     DOM.batchLimitInput.value = result.batchLimit;
@@ -693,6 +1031,7 @@ async function initializePopup() {
   if (result.isRunning) {
     UIManager.setStatus("Trạng thái: Đang chạy...");
   }
+  setModeControlsDisabled(!!result.isRunning);
 
   if (result.alwaysOnTop !== undefined) {
     document.getElementById("alwaysOnTop").checked = result.alwaysOnTop;
@@ -707,6 +1046,11 @@ async function initializePopup() {
     DOM.providerSelect.value = 'gemini';
   }
 
+  const resolvedSelectedId =
+    presetState.selectedPromptPresetId || (presetState.promptPresets[0] ? presetState.promptPresets[0].id : "");
+  renderPromptPresetOptions(presetState.promptPresets, resolvedSelectedId);
+  await setActivePromptPreset(presetState.promptPresets, resolvedSelectedId);
+
   const activeMode = result.activeInputMode || INPUT_MODE.SUBTITLE;
   if (activeMode === INPUT_MODE.EBOOK) {
     DOM.modeEbook.checked = true;
@@ -717,10 +1061,8 @@ async function initializePopup() {
     UIManager.setFileStatus(`Ebook chapters đã chọn: ${ebookFiles.length}`, ebookFiles.length > 0 ? '#4CAF50' : '#777');
     UIManager.displayFileList(ebookFiles);
   } else {
-    DOM.modeFile.checked = true;
-    DOM.fileInputWrapper.style.display = "block";
-    DOM.folderInputWrapper.style.display = "none";
-    DOM.ebookInputWrapper.style.display = "none";
+    const subtitleInputMethod = result.subtitleInputMethod || SUBTITLE_INPUT_METHOD.FILE;
+    applySubtitleInputMethod(subtitleInputMethod);
     const subtitleFiles = result.subtitleBatchFiles || [];
     UIManager.setFileStatus(`Batch subtitle đã chọn: ${subtitleFiles.length}`, subtitleFiles.length > 0 ? '#4CAF50' : '#777');
     UIManager.displayFileList(subtitleFiles);
@@ -730,36 +1072,89 @@ async function initializePopup() {
 }
 
 function setupEventListeners() {
+  const guardModeSwitchWhileRunning = async () => {
+    const running = await getBackgroundRunningState();
+    if (running) {
+      UIManager.setStatus("⚠️ Đang chạy, không thể đổi chức năng lúc này.", "#ff9800");
+      return false;
+    }
+    await StorageManager.saveSettings({ isRunning: false });
+    return true;
+  };
+
   DOM.modeFile.addEventListener("change", () => {
-    DOM.fileInputWrapper.style.display = "block";
-    DOM.folderInputWrapper.style.display = "none";
-    DOM.ebookInputWrapper.style.display = "none";
-    StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
-    StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE).then((list) => {
-      UIManager.displayFileList(list);
-      UIManager.setFileStatus(`Batch subtitle đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+    guardModeSwitchWhileRunning().then((ok) => {
+      if (!ok) {
+        Promise.all([StorageManager.getActiveMode(), StorageManager.getSubtitleInputMethod()]).then(([mode, subtitleMethod]) => {
+          if (mode === INPUT_MODE.EBOOK) {
+            DOM.modeEbook.checked = true;
+            DOM.modeFile.checked = false;
+            DOM.modeFolder.checked = false;
+          } else {
+            applySubtitleInputMethod(subtitleMethod);
+          }
+        });
+        return;
+      }
+
+      applySubtitleInputMethod(SUBTITLE_INPUT_METHOD.FILE);
+      StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+      StorageManager.setSubtitleInputMethod(SUBTITLE_INPUT_METHOD.FILE);
+      StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE).then((list) => {
+        UIManager.displayFileList(list);
+        UIManager.setFileStatus(`Batch subtitle đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+      });
     });
   });
 
   DOM.modeFolder.addEventListener("change", () => {
-    DOM.fileInputWrapper.style.display = "none";
-    DOM.folderInputWrapper.style.display = "block";
-    DOM.ebookInputWrapper.style.display = "none";
-    StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
-    StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE).then((list) => {
-      UIManager.displayFileList(list);
-      UIManager.setFileStatus(`Batch subtitle đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+    guardModeSwitchWhileRunning().then((ok) => {
+      if (!ok) {
+        Promise.all([StorageManager.getActiveMode(), StorageManager.getSubtitleInputMethod()]).then(([mode, subtitleMethod]) => {
+          if (mode === INPUT_MODE.EBOOK) {
+            DOM.modeEbook.checked = true;
+            DOM.modeFile.checked = false;
+            DOM.modeFolder.checked = false;
+          } else {
+            applySubtitleInputMethod(subtitleMethod);
+          }
+        });
+        return;
+      }
+
+      applySubtitleInputMethod(SUBTITLE_INPUT_METHOD.FOLDER);
+      StorageManager.setActiveMode(INPUT_MODE.SUBTITLE);
+      StorageManager.setSubtitleInputMethod(SUBTITLE_INPUT_METHOD.FOLDER);
+      StorageManager.getModeBatchFiles(INPUT_MODE.SUBTITLE).then((list) => {
+        UIManager.displayFileList(list);
+        UIManager.setFileStatus(`Batch subtitle đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+      });
     });
   });
 
   DOM.modeEbook.addEventListener("change", () => {
-    DOM.fileInputWrapper.style.display = "none";
-    DOM.folderInputWrapper.style.display = "none";
-    DOM.ebookInputWrapper.style.display = "block";
-    StorageManager.setActiveMode(INPUT_MODE.EBOOK);
-    StorageManager.getModeBatchFiles(INPUT_MODE.EBOOK).then((list) => {
-      UIManager.displayFileList(list);
-      UIManager.setFileStatus(`Ebook chapters đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+    guardModeSwitchWhileRunning().then((ok) => {
+      if (!ok) {
+        Promise.all([StorageManager.getActiveMode(), StorageManager.getSubtitleInputMethod()]).then(([mode, subtitleMethod]) => {
+          if (mode === INPUT_MODE.EBOOK) {
+            DOM.modeEbook.checked = true;
+            DOM.modeFile.checked = false;
+            DOM.modeFolder.checked = false;
+          } else {
+            applySubtitleInputMethod(subtitleMethod);
+          }
+        });
+        return;
+      }
+
+      DOM.fileInputWrapper.style.display = "none";
+      DOM.folderInputWrapper.style.display = "none";
+      DOM.ebookInputWrapper.style.display = "block";
+      StorageManager.setActiveMode(INPUT_MODE.EBOOK);
+      StorageManager.getModeBatchFiles(INPUT_MODE.EBOOK).then((list) => {
+        UIManager.displayFileList(list);
+        UIManager.setFileStatus(`Ebook chapters đã chọn: ${list.length}`, list.length > 0 ? '#4CAF50' : '#777');
+      });
     });
   });
 
@@ -776,6 +1171,12 @@ function setupEventListeners() {
   DOM.ebookInput.addEventListener("change", async (e) => {
     const files = e.target.files;
     await EventHandlers.onEbookSelect(files);
+  });
+
+  DOM.promptPresetSelect.addEventListener("change", async () => {
+    const settings = await StorageManager.loadSettings();
+    const presets = Array.isArray(settings.promptPresets) ? settings.promptPresets : [];
+    await setActivePromptPreset(presets, DOM.promptPresetSelect.value);
   });
 
   DOM.providerSelect.addEventListener("change", async () => {
@@ -814,10 +1215,13 @@ function setupEventListeners() {
 
   // Live update: khi background thay đổi batchFiles -> tự động render lại danh sách
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.batchFiles) {
+    if (area === 'local' && (changes.batchFiles || changes.ebookBatchFiles || changes.subtitleBatchFiles)) {
       StorageManager.getActiveMode().then((mode) => {
         StorageManager.getModeBatchFiles(mode).then((list) => UIManager.displayFileList(list));
       });
+    }
+    if (area === 'local' && changes.isRunning) {
+      setModeControlsDisabled(!!changes.isRunning.newValue);
     }
   });
 }

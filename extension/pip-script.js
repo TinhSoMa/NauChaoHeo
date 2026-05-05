@@ -49,22 +49,29 @@ async function openPiPWindow() {
     const isGeminiHost = urlObj.hostname.includes("gemini.google.com");
 
     if (isGeminiHost) {
-      // Gemini có nhiều định dạng URL:
-      // - /app/{id} - conversation (tài khoản mặc định)
-      // - /u/{number}/app/{id} - conversation (tài khoản khác, vd: /u/4/app/...)
-      // - /app/chat/{id} hoặc /u/{number}/app/chat/{id} - conversation mới
+      // Cho phép cả trang chủ /app để không bắt buộc phải có conversation id.
+      // Khi user gửi prompt đầu tiên, Gemini sẽ tự tạo conversation.
+      const isGeminiAppRoot =
+        urlPath === "/app" ||
+        urlPath === "/app/" ||
+        !!urlPath.match(/^\/u\/\d+\/app\/?$/);
+
+      // Gemini có nhiều định dạng URL conversation:
+      // - /app/{id}
+      // - /u/{number}/app/{id}
+      // - /app/chat/{id} hoặc /u/{number}/app/chat/{id}
       const isInConversation =
-        urlPath.match(/^\/app\/[a-f0-9]+/) || // /app/{id}
-        urlPath.match(/^\/u\/\d+\/app\/[a-f0-9]+/) || // /u/4/app/{id}
-        urlPath.includes("/chat/"); // bất kỳ URL nào có /chat/
+        !!urlPath.match(/^\/app\/[a-f0-9]+/) ||
+        !!urlPath.match(/^\/u\/\d+\/app\/[a-f0-9]+/) ||
+        urlPath.includes("/chat/");
 
-      if (!isInConversation) {
-        throw new Error(
-          "Vui lòng mở một conversation trước khi bật Always On Top. Hiện tại bạn đang ở trang chủ.",
-        );
+      if (isGeminiAppRoot) {
+        console.log("----> ✓ Đang ở trang Gemini app root, cho phép mở PiP:", urlPath);
+      } else if (isInConversation) {
+        console.log("----> ✓ Đang ở trong conversation (Gemini):", urlPath);
+      } else {
+        console.log("----> ⚠️ URL Gemini không đúng mẫu quen thuộc nhưng vẫn tiếp tục:", urlPath);
       }
-
-      console.log("----> ✓ Đang ở trong conversation (Gemini):", urlPath);
     } else if (urlObj.hostname.includes("grok.com")) {
       const isInConversation = urlPath.startsWith("/c/");
       if (!isInConversation) {
