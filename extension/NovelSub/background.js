@@ -15,6 +15,7 @@ const State = {
     keepAliveIntervalId: null,
     provider: "gemini",
     promptDelay: 10,
+    selectedPromptPresetId: "",
     currentBatchName: "Starting...",
     currentStatus: "Ready",
     activeInputMode: "subtitle",
@@ -32,7 +33,8 @@ const State = {
             'batchLimit',
             'copyOnlyMode',
             'provider',
-            'promptDelay'
+            'promptDelay',
+            'selectedPromptPresetId'
         ]);
 
         this.activeInputMode = activeMode;
@@ -40,6 +42,7 @@ const State = {
         this.batchCount = runState.batchCount || 0;
         this.copyOnlyMode = data.copyOnlyMode || false;
         this.provider = data.provider || "gemini";
+        this.selectedPromptPresetId = data.selectedPromptPresetId || "";
         if (data.promptDelay !== undefined) this.promptDelay = parseInt(data.promptDelay);
 
         const total = runState.totalBatches || runState.batchFiles.length;
@@ -618,7 +621,11 @@ const BatchProcessor = {
 
             const result = await Utils.sendMessageToTab(tabId, {
                 action: "PASTE_AND_SEND",
-                prompt: finalPrompt
+                prompt: finalPrompt,
+                options: {
+                    ebookNovelMode: State.activeInputMode === INPUT_MODE.EBOOK && State.selectedPromptPresetId === "novel-preset",
+                    maxInternalResend: 2
+                }
             });
             const sendError = Utils.consumeLastTabMessageError();
 

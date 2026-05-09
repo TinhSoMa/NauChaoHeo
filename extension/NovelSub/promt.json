@@ -20,7 +20,7 @@
       ],
       "summary": {
         "total_sentences": "number (phải bằng {{COUNT}})",
-        "input_count": {{COUNT}},
+        "input_count": "{{COUNT}}",
         "output_count": "number (phải bằng input_count)",
         "match": "boolean (true nếu counts khớp)",
         "language_style": "string (formal/casual/genz)"
@@ -463,7 +463,7 @@
   "source_text": {
     "language": "zh",
     "target_language": "vi",
-    "total_lines": {{COUNT}},
+    "total_lines": "{{COUNT}}",
     "content": "{{TEXT}}"
   }
 }

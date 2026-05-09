@@ -8,6 +8,9 @@ let originalParent = null;
 let geminiContainer = null;
 let statusOverlay = null;
 let spacerElement = null; // Element giữ chỗ để tránh layout gốc bị giật
+let geminiCompactObserver = null;
+let geminiCompactIntervalId = null;
+let geminiCompactTimerId = null;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "OPEN_PIP") {
@@ -90,8 +93,8 @@ async function openPiPWindow() {
 
     // Mở cửa sổ PiP
     pipWindow = await window.documentPictureInPicture.requestWindow({
-      width: isGrok ? 420 : 1000,
-      height: isGrok ? 300 : 800,
+      width: isGrok ? 420 : 780,
+      height: isGrok ? 300 : 720,
     });
     window.__pipWindow = pipWindow;
 
@@ -237,6 +240,9 @@ async function openPiPWindow() {
     // Chúng ta cần redirect chúng vào pipWindow.document.body
     setupDOMIntercept(pipWindow);
 
+    console.log("----> 5.5. Đang bật chế độ Gemini PiP gọn...");
+    startGeminiCompactMode(pipWindow);
+
     console.log("----> 6. Đang tạo Progress Display...");
 
     // 6. Tạo Progress Display (iframe progress.html)
@@ -291,6 +297,8 @@ async function openPiPWindow() {
     pipWindow.addEventListener("pagehide", () => {
       console.log("----> PiP đóng, hoàn trả DOM...");
 
+      stopGeminiCompactMode();
+
       // Cleanup navigation blocker
       window.removeEventListener("popstate", navigationBlocker, true);
       window.removeEventListener("hashchange", navigationBlocker, true);
@@ -302,6 +310,7 @@ async function openPiPWindow() {
           spacerElement.parentNode.removeChild(spacerElement);
         }
         // Trả container về
+        restoreGeminiCompactView(geminiContainer);
         originalParent.appendChild(geminiContainer);
         // Reset styles
         geminiContainer.style.height = "";
@@ -323,6 +332,207 @@ function closePiPWindow() {
   if (pipWindow && !pipWindow.closed) {
     pipWindow.close();
   }
+}
+
+function startGeminiCompactMode(win) {
+  stopGeminiCompactMode();
+
+  if (!win || win.closed || !win.document) {
+    return;
+  }
+
+  const doc = win.document;
+  injectGeminiCompactStyles(doc);
+  doc.body.classList.add("novelsub-gemini-compact");
+  applyGeminiCompactView(doc);
+
+  const scheduleCompact = () => {
+    if (geminiCompactTimerId) {
+      clearTimeout(geminiCompactTimerId);
+    }
+    geminiCompactTimerId = setTimeout(() => {
+      geminiCompactTimerId = null;
+      if (win && !win.closed) {
+        applyGeminiCompactView(win.document);
+      }
+    }, 500);
+  };
+
+  geminiCompactObserver = new MutationObserver(scheduleCompact);
+  geminiCompactObserver.observe(doc.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  geminiCompactIntervalId = setInterval(() => {
+    if (!win || win.closed) {
+      stopGeminiCompactMode();
+      return;
+    }
+    applyGeminiCompactView(win.document);
+  }, 5000);
+
+  console.log("----> ✓ Gemini PiP compact mode đã bật (ẩn lịch sử cũ, giữ composer/response mới)");
+}
+
+function stopGeminiCompactMode() {
+  if (geminiCompactObserver) {
+    geminiCompactObserver.disconnect();
+    geminiCompactObserver = null;
+  }
+  if (geminiCompactIntervalId) {
+    clearInterval(geminiCompactIntervalId);
+    geminiCompactIntervalId = null;
+  }
+  if (geminiCompactTimerId) {
+    clearTimeout(geminiCompactTimerId);
+    geminiCompactTimerId = null;
+  }
+}
+
+function injectGeminiCompactStyles(doc) {
+  if (!doc || doc.getElementById("novelsub-gemini-compact-style")) {
+    return;
+  }
+
+  const style = doc.createElement("style");
+  style.id = "novelsub-gemini-compact-style";
+  style.textContent = `
+    body.novelsub-gemini-compact {
+      overflow: hidden !important;
+      background: #0b0f14 !important;
+    }
+
+    body.novelsub-gemini-compact main,
+    body.novelsub-gemini-compact [role="main"] {
+      width: 100% !important;
+      max-width: none !important;
+      margin: 0 !important;
+      padding-left: clamp(290px, 31vw, 410px) !important;
+      min-height: 100vh !important;
+      overflow: auto !important;
+    }
+
+    body.novelsub-gemini-compact nav,
+    body.novelsub-gemini-compact aside,
+    body.novelsub-gemini-compact header,
+    body.novelsub-gemini-compact [data-test-id*="side"],
+    body.novelsub-gemini-compact [class*="side-nav"],
+    body.novelsub-gemini-compact [class*="sidebar"],
+    body.novelsub-gemini-compact [class*="drawer"] {
+      display: none !important;
+    }
+
+    body.novelsub-gemini-compact .novelsub-hidden-history {
+      display: none !important;
+    }
+
+    body.novelsub-gemini-compact message-content,
+    body.novelsub-gemini-compact [data-test-id="model-response"],
+    body.novelsub-gemini-compact .markdown-content {
+      content-visibility: auto;
+      contain-intrinsic-size: 1px 240px;
+    }
+
+    body.novelsub-gemini-compact div[contenteditable="true"] {
+      min-height: 44px !important;
+    }
+
+    @media (max-width: 600px) {
+      body.novelsub-gemini-compact main,
+      body.novelsub-gemini-compact [role="main"] {
+        padding-left: 0 !important;
+        padding-bottom: 310px !important;
+      }
+    }
+  `;
+  doc.head.appendChild(style);
+}
+
+function applyGeminiCompactView(doc) {
+  if (!doc || !doc.body) {
+    return;
+  }
+
+  doc.body.classList.add("novelsub-gemini-compact");
+
+  const responseNodes = Array.from(
+    doc.querySelectorAll('message-content, [data-test-id="model-response"], .markdown-content')
+  ).filter((node) => {
+    const text = (node.innerText || node.textContent || "").trim();
+    return text.length > 0 && !node.closest("#progress-display-container");
+  });
+
+  const wrappers = [];
+  const seen = new Set();
+  for (const node of responseNodes) {
+    const wrapper = findGeminiMessageWrapper(node);
+    if (!wrapper || seen.has(wrapper) || wrapper.closest("#progress-display-container")) {
+      continue;
+    }
+    seen.add(wrapper);
+    wrappers.push(wrapper);
+  }
+
+  // Giữ vài lượt gần nhất để Gemini vẫn có ngữ cảnh render cần thiết,
+  // nhưng không render toàn bộ lịch sử làm PiP lag sau nhiều chapter.
+  const keepRecentWrappers = 4;
+  const hideBeforeIndex = Math.max(0, wrappers.length - keepRecentWrappers);
+  wrappers.forEach((wrapper, index) => {
+    wrapper.classList.toggle("novelsub-hidden-history", index < hideBeforeIndex);
+  });
+
+  const inputBox = doc.querySelector('div[contenteditable="true"][role="textbox"]') ||
+    doc.querySelector('div[contenteditable="true"]');
+  const scrollTarget = inputBox || wrappers[wrappers.length - 1];
+  if (scrollTarget && typeof scrollTarget.scrollIntoView === "function") {
+    scrollTarget.scrollIntoView({ block: "end", inline: "nearest" });
+  }
+}
+
+function findGeminiMessageWrapper(node) {
+  let current = node;
+  for (let depth = 0; current && depth < 7; depth++) {
+    if (current.id === "progress-display-container") {
+      return null;
+    }
+
+    const tagName = String(current.tagName || "").toLowerCase();
+    const className = String(current.className || "").toLowerCase();
+    const dataTestId = String(current.getAttribute?.("data-test-id") || "").toLowerCase();
+    const role = String(current.getAttribute?.("role") || "").toLowerCase();
+
+    if (
+      depth > 0 &&
+      (
+        tagName.includes("conversation-turn") ||
+        dataTestId.includes("conversation-turn") ||
+        dataTestId.includes("model-response") ||
+        className.includes("conversation-turn") ||
+        className.includes("model-response") ||
+        className.includes("query-content") ||
+        role === "article"
+      )
+    ) {
+      return current;
+    }
+
+    current = current.parentElement;
+  }
+
+  return node.parentElement || node;
+}
+
+function restoreGeminiCompactView(root) {
+  if (!root) {
+    return;
+  }
+
+  root.classList?.remove("novelsub-hidden-history");
+  root.querySelectorAll?.(".novelsub-hidden-history").forEach((node) => {
+    node.classList.remove("novelsub-hidden-history");
+  });
+  root.ownerDocument?.body?.classList?.remove("novelsub-gemini-compact");
 }
 
 // Hàm setup intercept để redirect dropdowns/modals vào PiP

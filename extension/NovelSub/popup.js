@@ -161,8 +161,12 @@ const UIManager = {
         ? (bf.chapterTitle || bf.name || `Chapter ${idx + 1}`)
         : (bf.name || `Batch ${idx + 1}`);
       const hasData = !!(bf.rawText || bf.result);
+      const hasSourceText = Array.isArray(bf.lines) && bf.lines.length > 0;
       const viewBtn = hasData
         ? `<button class="btn-view" data-view-index="${idx}" title="Xem dữ liệu đã lưu">view</button>`
+        : "";
+      const sourceBtn = hasSourceText
+        ? `<button class="btn-source" data-source-index="${idx}" title="Xem text gốc">gốc</button>`
         : "";
       const resetBtn = st === 'done'
         ? `<button class="btn-reset" data-reset-index="${idx}" title="Xóa bản dịch">x</button>`
@@ -177,6 +181,7 @@ const UIManager = {
         </span>
         <span class="file-actions">
           <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
+          ${sourceBtn}
           ${viewBtn}
           ${resetBtn}
         </span>
@@ -879,6 +884,22 @@ const EventHandlers = {
     EventHandlers.openDataModal(title, content);
   },
 
+  async onViewSourceText(fileIndex) {
+    const mode = getSelectedModeFromUI();
+    const batchFiles = await StorageManager.getModeBatchFiles(mode);
+    const file = batchFiles[fileIndex];
+    if (!file) return;
+
+    const lines = Array.isArray(file.lines) ? file.lines : [];
+    const content = lines.length > 0
+      ? lines.join('\n')
+      : "Không có text gốc trong batch này.";
+
+    const displayName = file.chapterTitle || file.name || `Batch ${fileIndex + 1}`;
+    const title = `Text gốc: ${displayName}`;
+    EventHandlers.openDataModal(title, content);
+  },
+
   async onResetTranslation(fileIndex) {
     const state = await StorageManager.loadSettings();
     if (state.isRunning) {
@@ -1536,6 +1557,13 @@ function setupEventListeners() {
       const idx = parseInt(target.getAttribute("data-view-index"), 10);
       if (!Number.isNaN(idx)) {
         EventHandlers.onViewSavedData(idx);
+      }
+      return;
+    }
+    if (target && target.classList && target.classList.contains("btn-source")) {
+      const idx = parseInt(target.getAttribute("data-source-index"), 10);
+      if (!Number.isNaN(idx)) {
+        EventHandlers.onViewSourceText(idx);
       }
     }
   });

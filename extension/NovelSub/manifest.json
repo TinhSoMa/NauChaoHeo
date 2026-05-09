@@ -18,7 +18,10 @@
         "https://grok.com/*"
     ],
     "background": {
-        "service_worker": "background.js"
+        "service_worker": "background.js",
+        "scripts": [
+            "background.js"
+        ]
     },
     "content_scripts": [
         {
@@ -51,6 +54,16 @@
         "16": "icons/icon16.png",
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
+    },
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "novelsub@local",
+            "data_collection_permissions": {
+                "required": [
+                    "none"
+                ]
+            }
+        }
     },
     "web_accessible_resources": [
         {
