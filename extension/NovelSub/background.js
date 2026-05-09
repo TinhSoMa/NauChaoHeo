@@ -17,6 +17,7 @@ const State = {
     promptDelay: 10,
     currentBatchName: "Starting...",
     currentStatus: "Ready",
+    activeInputMode: "subtitle",
 
     reset() {
         this.isRunning = false;
@@ -24,29 +25,120 @@ const State = {
     },
 
     async loadFromStorage() {
+        const activeMode = await RuntimeStorage.getActiveMode();
+        const runState = await RuntimeStorage.loadRunStateForMode(activeMode);
         const data = await chrome.storage.local.get([
             'promptTemplate',
             'batchLimit',
-            'batchCount',
             'copyOnlyMode',
-            'batchFiles',
-            'totalBatches',
-            'currentBatchIndex',
             'provider',
             'promptDelay'
         ]);
 
+        this.activeInputMode = activeMode;
         this.promptTemplate = data.promptTemplate || "";
-        this.batchCount = data.batchCount || 0;
+        this.batchCount = runState.batchCount || 0;
         this.copyOnlyMode = data.copyOnlyMode || false;
         this.provider = data.provider || "gemini";
         if (data.promptDelay !== undefined) this.promptDelay = parseInt(data.promptDelay);
 
-        const total = data.totalBatches || (data.batchFiles ? data.batchFiles.length : 0);
+        const total = runState.totalBatches || runState.batchFiles.length;
         const limit = data.batchLimit || total || 1;
         this.batchLimit = Math.min(limit, total || limit);
 
-        return data;
+        return { ...data, ...runState, activeInputMode: activeMode };
+    }
+};
+
+const INPUT_MODE = {
+    SUBTITLE: "subtitle",
+    EBOOK: "ebook"
+};
+
+const LEGACY_STORAGE_KEYS = [
+    'batchFiles',
+    'translatedBatches',
+    'batchCount',
+    'currentBatchIndex',
+    'totalBatches'
+];
+
+const RuntimeStorage = {
+    getModeKeys(mode) {
+        if (mode === INPUT_MODE.EBOOK) {
+            return {
+                batchFiles: 'ebookBatchFiles',
+                translatedBatches: 'ebookTranslatedBatches',
+                batchCount: 'ebookBatchCount',
+                currentBatchIndex: 'ebookCurrentBatchIndex',
+                totalBatches: 'ebookTotalBatches'
+            };
+        }
+        return {
+            batchFiles: 'subtitleBatchFiles',
+            translatedBatches: 'subtitleTranslatedBatches',
+            batchCount: 'subtitleBatchCount',
+            currentBatchIndex: 'subtitleCurrentBatchIndex',
+            totalBatches: 'subtitleTotalBatches'
+        };
+    },
+
+    async getActiveMode() {
+        const data = await chrome.storage.local.get(['activeInputMode']);
+        return data.activeInputMode === INPUT_MODE.EBOOK ? INPUT_MODE.EBOOK : INPUT_MODE.SUBTITLE;
+    },
+
+    async loadRunStateForMode(mode) {
+        const keys = this.getModeKeys(mode);
+        const data = await chrome.storage.local.get(Object.values(keys));
+        const batchFiles = data[keys.batchFiles] || [];
+        return {
+            batchFiles,
+            translatedBatches: data[keys.translatedBatches] || [],
+            batchCount: data[keys.batchCount] || 0,
+            currentBatchIndex: data[keys.currentBatchIndex] || 0,
+            totalBatches: data[keys.totalBatches] || batchFiles.length
+        };
+    },
+
+    async saveRunStateForMode(mode, patch) {
+        const keys = this.getModeKeys(mode);
+        const payload = {};
+        if (Object.prototype.hasOwnProperty.call(patch, 'batchFiles')) payload[keys.batchFiles] = patch.batchFiles;
+        if (Object.prototype.hasOwnProperty.call(patch, 'translatedBatches')) payload[keys.translatedBatches] = patch.translatedBatches;
+        if (Object.prototype.hasOwnProperty.call(patch, 'batchCount')) payload[keys.batchCount] = patch.batchCount;
+        if (Object.prototype.hasOwnProperty.call(patch, 'currentBatchIndex')) payload[keys.currentBatchIndex] = patch.currentBatchIndex;
+        if (Object.prototype.hasOwnProperty.call(patch, 'totalBatches')) payload[keys.totalBatches] = patch.totalBatches;
+        await chrome.storage.local.set(payload);
+    },
+
+    async saveBatchFilesForMode(mode, batchFiles) {
+        await this.saveRunStateForMode(mode, {
+            batchFiles,
+            totalBatches: batchFiles.length
+        });
+    },
+
+    async clearModeData(mode) {
+        const payload = {
+            batchFiles: [],
+            translatedBatches: [],
+            batchCount: 0,
+            currentBatchIndex: 0,
+            totalBatches: 0
+        };
+        await this.saveRunStateForMode(mode, payload);
+        if (mode === INPUT_MODE.EBOOK) {
+            await chrome.storage.local.set({ ebookBookMeta: null });
+        }
+    },
+
+    async clearLegacyStorage() {
+        const payload = {};
+        for (const key of LEGACY_STORAGE_KEYS) {
+            payload[key] = key === 'batchFiles' || key === 'translatedBatches' ? [] : 0;
+        }
+        await chrome.storage.local.set(payload);
     }
 };
 
@@ -128,14 +220,8 @@ const Utils = {
 };
 
 async function saveBatchFilesForActiveMode(batchFiles) {
-    const state = await chrome.storage.local.get(['activeInputMode']);
-    const payload = { batchFiles };
-    if (state.activeInputMode === "ebook") {
-        payload.ebookBatchFiles = batchFiles;
-    } else {
-        payload.subtitleBatchFiles = batchFiles;
-    }
-    await chrome.storage.local.set(payload);
+    const mode = State.activeInputMode || await RuntimeStorage.getActiveMode();
+    await RuntimeStorage.saveBatchFilesForMode(mode, batchFiles);
 }
 
 // ============================================
@@ -389,6 +475,37 @@ function isChannelClosedError(message) {
 // TAB MANAGEMENT
 // ============================================
 const TabManager = {
+    isProviderTab(tab, provider) {
+        if (!tab || !tab.url) return false;
+        return provider === 'grok'
+            ? tab.url.includes("grok.com")
+            : tab.url.includes("gemini.google.com");
+    },
+
+    async getPinnedProviderTab(provider) {
+        const stored = await chrome.storage.local.get([
+            'providerTargetTabId',
+            'providerTargetProvider'
+        ]);
+        const tabId = Number(stored.providerTargetTabId);
+        if (!Number.isInteger(tabId) || stored.providerTargetProvider !== provider) {
+            return null;
+        }
+
+        let tab;
+        try {
+            tab = await chrome.tabs.get(tabId);
+        } catch (_) {
+            throw new Error(`Tab ${provider === 'grok' ? 'Grok' : 'Gemini'} đã chọn không còn tồn tại. Hãy chọn lại tab chạy trong dashboard.`);
+        }
+
+        if (!this.isProviderTab(tab, provider)) {
+            throw new Error(`Tab đã chọn không còn là ${provider === 'grok' ? 'Grok' : 'Gemini'}. Hãy chọn lại tab chạy trong dashboard.`);
+        }
+
+        return tab;
+    },
+
     async findTab(urlPattern) {
         const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
         const activeMatch = activeTabs.find(t => t.url && t.url.includes(urlPattern));
@@ -464,7 +581,7 @@ const BatchProcessor = {
             throw new Error("ĐÃ DỊCH HẾT FILE");
         }
         if (startIndex !== currentIndex) {
-            await chrome.storage.local.set({ currentBatchIndex: startIndex });
+            await RuntimeStorage.saveRunStateForMode(State.activeInputMode, { currentBatchIndex: startIndex });
         }
 
         const batch = data.batchFiles[startIndex];
@@ -677,20 +794,20 @@ const BatchProcessor = {
     },
 
     async saveTranslation(batchResult) {
-        const data = await chrome.storage.local.get(['translatedBatches']);
-        const translatedBatches = data.translatedBatches || [];
+        const runState = await RuntimeStorage.loadRunStateForMode(State.activeInputMode);
+        const translatedBatches = runState.translatedBatches || [];
 
         translatedBatches.push(batchResult);
         State.batchCount++;
 
-        await chrome.storage.local.set({
-            translatedBatches: translatedBatches,
+        await RuntimeStorage.saveRunStateForMode(State.activeInputMode, {
+            translatedBatches,
             batchCount: State.batchCount
         });
 
         // Gắn kết quả trực tiếp vào file và đánh dấu done
-        const filesData = await chrome.storage.local.get(['batchFiles']);
-        const batchFiles = filesData.batchFiles || [];
+        const latestRunState = await RuntimeStorage.loadRunStateForMode(State.activeInputMode);
+        const batchFiles = latestRunState.batchFiles || [];
         const fileIdx = batchResult.batchIndex - 1;
         if (batchFiles[fileIdx]) {
             batchFiles[fileIdx].completed = true;
@@ -707,7 +824,7 @@ const BatchProcessor = {
 
     async moveToNextBatch(currentIndex) {
         Utils.log("Chuyển sang batch tiếp theo...");
-        await chrome.storage.local.set({
+        await RuntimeStorage.saveRunStateForMode(State.activeInputMode, {
             currentBatchIndex: currentIndex + 1
         });
     }
@@ -720,8 +837,13 @@ const Initializer = {
     async setupGeminiTab() {
         let geminiTab = null;
 
+        geminiTab = await TabManager.getPinnedProviderTab('gemini');
+        if (geminiTab) {
+            Utils.log(`Ưu tiên tab Gemini đã chọn trong dashboard (Tab ${geminiTab.id})`, 'success');
+        }
+
         const pref = await chrome.storage.local.get(['pipTargetTabId']);
-        if (pref.pipTargetTabId) {
+        if (!geminiTab && pref.pipTargetTabId) {
             try {
                 const pinned = await chrome.tabs.get(pref.pipTargetTabId);
                 if (pinned && pinned.url && pinned.url.includes("gemini.google.com")) {
@@ -761,7 +883,14 @@ const Initializer = {
     },
 
     async setupGrokTab() {
-        const grokTab = await TabManager.findGrokTab();
+        let grokTab = await TabManager.getPinnedProviderTab('grok');
+        if (grokTab) {
+            Utils.log(`Ưu tiên tab Grok đã chọn trong dashboard (Tab ${grokTab.id})`, 'success');
+        }
+
+        if (!grokTab) {
+            grokTab = await TabManager.findGrokTab();
+        }
 
         if (!grokTab) {
             throw new Error("Không tìm thấy tab Grok! Hãy mở tab Grok trước khi chạy.");
@@ -802,7 +931,7 @@ async function processLoop(runId) {
     }
 
     try {
-        const data = await chrome.storage.local.get(['batchFiles', 'currentBatchIndex']);
+        const data = await RuntimeStorage.loadRunStateForMode(State.activeInputMode);
         const batchFiles = data.batchFiles || [];
         const currentIndex = data.currentBatchIndex || 0;
 
@@ -826,7 +955,7 @@ async function processLoop(runId) {
         await Utils.sendProgressUpdate(`Đang dịch batch ${currentIndex + 1}/${batchFiles.length}: ${batchData.name}`);
 
         Utils.log("BƯỚC 1: Đánh dấu file đang chạy...");
-        const filesForStatus = await chrome.storage.local.get('batchFiles').then(d => d.batchFiles || []);
+        const filesForStatus = (await RuntimeStorage.loadRunStateForMode(State.activeInputMode)).batchFiles || [];
         if (filesForStatus[currentIndex]) {
             filesForStatus[currentIndex].status = 'translating';
             await saveBatchFilesForActiveMode(filesForStatus);
@@ -840,8 +969,7 @@ async function processLoop(runId) {
         if (expectedCount <= 0) {
             Utils.log(`BATCH_EMPTY_OR_INVALID: ${batchData.name || `Batch ${currentIndex + 1}`} không có caption hợp lệ để xử lý.`, 'error');
 
-            const filesData = await chrome.storage.local.get(['batchFiles']);
-            const latestBatchFiles = filesData.batchFiles || [];
+            const latestBatchFiles = (await RuntimeStorage.loadRunStateForMode(State.activeInputMode)).batchFiles || [];
             if (latestBatchFiles[fileIdx]) {
                 latestBatchFiles[fileIdx].completed = false;
                 latestBatchFiles[fileIdx].status = 'error';
@@ -915,8 +1043,7 @@ async function processLoop(runId) {
                 Utils.log(`STALE_RESPONSE_IDENTICAL: Attempt ${retryCount + 1} trùng hệt attempt trước tại index mẫu (${sampleIndices.join(', ')})`, 'error');
                 Utils.log(`Dừng extension để tránh nhầm bản dịch của file trước.`, 'error');
 
-                const filesData = await chrome.storage.local.get(['batchFiles']);
-                const latestBatchFiles = filesData.batchFiles || [];
+                const latestBatchFiles = (await RuntimeStorage.loadRunStateForMode(State.activeInputMode)).batchFiles || [];
                 if (latestBatchFiles[fileIdx]) {
                     latestBatchFiles[fileIdx].completed = false;
                     latestBatchFiles[fileIdx].status = 'error';
@@ -934,8 +1061,8 @@ async function processLoop(runId) {
 
                 State.isRunning = false;
                 State.runId += 1;
+                await RuntimeStorage.saveBatchFilesForMode(State.activeInputMode, latestBatchFiles);
                 await chrome.storage.local.set({
-                    batchFiles: latestBatchFiles,
                     isRunning: false
                 });
                 await Utils.sendProgressUpdate("Lỗi: AI trả về nội dung trùng prompt trước. Đã dừng.");
@@ -981,8 +1108,7 @@ async function processLoop(runId) {
 
             if (retryCount >= MAX_RETRY) {
                 Utils.log(`Fail cuối sau ${retryCount} retry. Đánh dấu lỗi và chuyển batch kế.`, 'error');
-                const filesData = await chrome.storage.local.get(['batchFiles']);
-                const batchFiles = filesData.batchFiles || [];
+                const batchFiles = (await RuntimeStorage.loadRunStateForMode(State.activeInputMode)).batchFiles || [];
                 if (batchFiles[fileIdx]) {
                     batchFiles[fileIdx].completed = false;
                     batchFiles[fileIdx].status = 'error';
@@ -1068,8 +1194,8 @@ async function processLoop(runId) {
             await chrome.storage.local.set({ isRunning: false });
             await Utils.sendProgressUpdate("Đã dừng bởi người dùng");
             // Reset file đang translating về pending
-            const fd = await chrome.storage.local.get(['batchFiles']);
-            const bf = (fd.batchFiles || []).map(f => f.status === 'translating' ? { ...f, status: 'pending' } : f);
+            const bf = ((await RuntimeStorage.loadRunStateForMode(State.activeInputMode)).batchFiles || [])
+                .map(f => f.status === 'translating' ? { ...f, status: 'pending' } : f);
             await saveBatchFilesForActiveMode(bf);
         } else if (error.message === "ĐÃ DỊCH HẾT FILE") {
             console.log("\n🎉 " + error.message);
@@ -1082,7 +1208,7 @@ async function processLoop(runId) {
             State.isRunning = false;
             await chrome.storage.local.set({ isRunning: false });
             // Đánh dấu file bị lỗi
-            const fd2 = await chrome.storage.local.get(['batchFiles', 'currentBatchIndex']);
+            const fd2 = await RuntimeStorage.loadRunStateForMode(State.activeInputMode);
             const bf2 = fd2.batchFiles || [];
             const errIdx = fd2.currentBatchIndex || 0;
             if (bf2[errIdx]) {
@@ -1176,9 +1302,8 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
 
 async function downloadFullStory() {
     Utils.log("Bắt đầu tải JSONL...");
-    const data = await chrome.storage.local.get(['batchFiles', 'batchCount']);
+    const data = await RuntimeStorage.loadRunStateForMode(INPUT_MODE.SUBTITLE);
     const batchFiles = data.batchFiles || [];
-    const count = data.batchCount || 0;
 
     const completedFiles = batchFiles.filter(f => f.completed && (f.rawText || f.result));
     if (completedFiles.length === 0) {
@@ -1272,16 +1397,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         State.runId += 1;
         const runId = State.runId;
         (async () => {
+            const activeMode = await RuntimeStorage.getActiveMode();
+            State.activeInputMode = activeMode;
             // Resume: tìm file đầu tiên chưa completed thay vì reset về 0
-            const existing = await chrome.storage.local.get(['batchFiles', 'translatedBatches']);
+            const existing = await RuntimeStorage.loadRunStateForMode(activeMode);
             const batchFiles = existing.batchFiles || [];
             const completedCount = batchFiles.filter(f => f.completed).length;
             const firstPendingIndex = batchFiles.findIndex(f => !f.completed);
             const nextIndex = firstPendingIndex >= 0 ? firstPendingIndex : batchFiles.length;
-            await chrome.storage.local.set({
+            await RuntimeStorage.saveRunStateForMode(activeMode, {
                 currentBatchIndex: nextIndex,
                 batchCount: completedCount
-                // translatedBatches GIỮ LẠI - không reset
             });
             if (!State.isRunning || runId !== State.runId) {
                 return;
@@ -1309,12 +1435,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "DOWNLOAD_FULL") {
         downloadFullStory();
     } else if (request.action === "CLEAR_DATA") {
-        chrome.storage.local.set({
-            translatedBatches: [],
-            batchCount: 0,
-            currentBatchIndex: 0
-        });
-        Utils.log("Đã xóa dữ liệu cũ.");
+        (async () => {
+            const mode = request.mode === INPUT_MODE.EBOOK
+                ? INPUT_MODE.EBOOK
+                : request.mode === INPUT_MODE.SUBTITLE
+                    ? INPUT_MODE.SUBTITLE
+                    : await RuntimeStorage.getActiveMode();
+            await RuntimeStorage.clearModeData(mode);
+            await RuntimeStorage.clearLegacyStorage();
+            Utils.log(`Đã xóa dữ liệu ${mode}.`);
+        })();
     } else if (request.action === "GET_PROGRESS") {
         sendResponse({
             completed: State.batchCount,

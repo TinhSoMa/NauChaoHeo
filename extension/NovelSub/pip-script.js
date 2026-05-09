@@ -150,7 +150,7 @@ async function openPiPWindow() {
     spacerElement = document.createElement("div");
     spacerElement.style.cssText = `
             height: 100vh; width: 100vw;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: #101214;
             display: flex; justify-content: center; align-items: center;
             color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 18px; text-align: center; padding: 20px;
@@ -394,19 +394,18 @@ function createProgressDisplay(win) {
   container.style.cssText = `
         position: fixed;
         top: 0;
-        right: 0;
+        left: 0;
         width: clamp(280px, 30vw, 400px);
         height: 100vh;
-        background: rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(10px);
+        background: #101214;
         z-index: 2147483646;
         box-sizing: border-box;
         transition: transform 0.3s ease;
-        border-left: 1px solid rgba(255, 255, 255, 0.1);
+        border-right: 1px solid #2a3038;
         overflow-y: auto;
         overflow-x: hidden;
-        padding: 20px;
-        color: white;
+        padding: 16px;
+        color: #f3f4f6;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     `;
 
@@ -416,17 +415,17 @@ function createProgressDisplay(win) {
         * { box-sizing: border-box; }
         #progress-display-container .header {
             font-size: clamp(16px, 4vw, 22px);
-            font-weight: bold;
-            text-align: center;
-            padding: clamp(5px, 1vw, 10px) 0;
-            margin-bottom: clamp(8px, 2vw, 12px);
+            font-weight: 650;
+            text-align: left;
+            padding: 2px 0 4px;
+            margin-bottom: 10px;
         }
         #progress-display-container .progress-container {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: clamp(6px, 1.5vw, 10px);
-            padding: clamp(10px, 2vw, 15px);
-            backdrop-filter: blur(10px);
-            margin-bottom: clamp(8px, 2vw, 12px);
+            background: #1b1f24;
+            border: 1px solid #2a3038;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
         }
         #progress-display-container .progress-header {
             display: flex;
@@ -444,26 +443,20 @@ function createProgressDisplay(win) {
         }
         #progress-display-container .progress-bar {
             width: 100%;
-            height: clamp(16px, 3vw, 24px);
-            background: rgba(255, 255, 255, 0.25);
-            border-radius: clamp(8px, 1.5vw, 12px);
+            height: 14px;
+            background: #2a3038;
+            border-radius: 999px;
             overflow: hidden;
         }
         #progress-display-container .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            background: #22c55e;
             transition: width 0.4s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 600;
             font-size: clamp(9px, 2vw, 12px);
-            box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.3);
-            animation: pulse 2s ease-in-out infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.8; }
         }
         #progress-display-container .stats {
             display: flex;
@@ -472,9 +465,10 @@ function createProgressDisplay(win) {
         }
         #progress-display-container .stat-item {
             flex: 1;
-            background: rgba(255, 255, 255, 0.15);
-            padding: clamp(6px, 1.5vw, 10px);
-            border-radius: clamp(4px, 1vw, 8px);
+            background: #242a31;
+            border: 1px solid #303842;
+            padding: 10px;
+            border-radius: 6px;
             text-align: center;
         }
         #progress-display-container .stat-label {
@@ -487,13 +481,14 @@ function createProgressDisplay(win) {
         #progress-display-container .stat-value {
             font-size: clamp(16px, 4vw, 22px);
             font-weight: bold;
-            color: #8BC34A;
+            color: #22c55e;
         }
         #progress-display-container .current-chapter {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: clamp(6px, 1.5vw, 10px);
-            padding: clamp(8px, 2vw, 12px);
-            margin-bottom: clamp(8px, 2vw, 12px);
+            background: #1b1f24;
+            border: 1px solid #2a3038;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
         }
         #progress-display-container .chapter-label {
             font-size: clamp(9px, 2vw, 11px);
@@ -509,25 +504,26 @@ function createProgressDisplay(win) {
             line-height: 1.3;
         }
         #progress-display-container .status {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: clamp(6px, 1.5vw, 10px);
-            padding: clamp(8px, 2vw, 12px);
+            background: #1b1f24;
+            border: 1px solid #2a3038;
+            border-radius: 6px;
+            padding: 12px;
             text-align: center;
             font-size: clamp(11px, 2.5vw, 14px);
             font-weight: 500;
             transition: all 0.3s ease;
         }
         #progress-display-container .status.translating {
-            background: rgba(76, 175, 80, 0.3);
-            box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
+            background: #12351f;
+            border-color: #1f6b38;
         }
         #progress-display-container .status.waiting {
-            background: rgba(255, 152, 0, 0.3);
-            box-shadow: 0 0 15px rgba(255, 152, 0, 0.2);
+            background: #3b2a10;
+            border-color: #7c5417;
         }
         #progress-display-container .status.error {
-            background: rgba(244, 67, 54, 0.3);
-            box-shadow: 0 0 15px rgba(244, 67, 54, 0.2);
+            background: #3b1515;
+            border-color: #7f1d1d;
         }
         @media (max-width: 800px) {
             #progress-display-container { width: clamp(250px, 40vw, 350px); }
@@ -539,8 +535,8 @@ function createProgressDisplay(win) {
                 max-height: 300px;
                 top: auto !important;
                 bottom: 0;
-                border-left: none;
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                border-right: none;
+                border-top: 1px solid #2a3038;
                 padding: 10px;
             }
         }
@@ -552,7 +548,7 @@ function createProgressDisplay(win) {
 
   // Tạo HTML content (clone từ progress.html)
   container.innerHTML = `
-        <div class="header">🎬 Tiến độ dịch subtitle</div>
+        <div class="header">Tiến độ dịch subtitle</div>
         
         <div class="progress-container">
             <div class="progress-header">
@@ -589,10 +585,10 @@ function createProgressDisplay(win) {
   // Tạo nút toggle
   const toggleBtn = doc.createElement("button");
   toggleBtn.id = "progress-toggle";
-  toggleBtn.textContent = "◀";
+  toggleBtn.textContent = "▶";
   toggleBtn.style.cssText = `
         position: absolute;
-        left: -30px;
+        right: -30px;
         top: 50%;
         transform: translateY(-50%);
         width: 30px;
@@ -600,23 +596,22 @@ function createProgressDisplay(win) {
         background: rgba(0, 0, 0, 0.8);
         color: white;
         border: none;
-        border-radius: 5px 0 0 5px;
+        border-radius: 0 5px 5px 0;
         cursor: pointer;
         font-size: 18px;
         z-index: 1;
         transition: all 0.3s ease;
-        box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
     `;
 
   let isHidden = false;
   toggleBtn.onclick = () => {
     isHidden = !isHidden;
     if (isHidden) {
-      container.style.transform = "translateX(100%)";
-      toggleBtn.textContent = "▶";
+      container.style.transform = "translateX(-100%)";
+      toggleBtn.textContent = "◀";
     } else {
       container.style.transform = "translateX(0)";
-      toggleBtn.textContent = "◀";
+      toggleBtn.textContent = "▶";
     }
   };
 

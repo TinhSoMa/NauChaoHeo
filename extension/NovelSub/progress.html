@@ -14,27 +14,27 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: #101214;
+            color: #f3f4f6;
             min-height: 100vh;
-            padding: clamp(10px, 3vw, 20px);
+            padding: clamp(10px, 3vw, 16px);
             display: flex;
             flex-direction: column;
-            gap: clamp(8px, 2vw, 15px);
+            gap: 10px;
         }
 
         .header {
-            font-size: clamp(16px, 4vw, 24px);
-            font-weight: bold;
-            text-align: center;
-            padding: clamp(5px, 1vw, 10px) 0;
+            font-size: clamp(16px, 4vw, 22px);
+            font-weight: 650;
+            text-align: left;
+            padding: 2px 0 4px;
         }
 
         .progress-container {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: clamp(6px, 1.5vw, 10px);
-            padding: clamp(10px, 2vw, 15px);
-            backdrop-filter: blur(10px);
+            background: #1b1f24;
+            border: 1px solid #2a3038;
+            border-radius: 6px;
+            padding: 12px;
         }
 
         .progress-header {
@@ -56,23 +56,22 @@
 
         .progress-bar {
             width: 100%;
-            height: clamp(16px, 3vw, 24px);
-            background: rgba(255, 255, 255, 0.25);
-            border-radius: clamp(8px, 1.5vw, 12px);
+            height: 14px;
+            background: #2a3038;
+            border-radius: 999px;
             overflow: hidden;
             position: relative;
         }
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            background: #22c55e;
             transition: width 0.4s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 600;
             font-size: clamp(9px, 2vw, 12px);
-            box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.3);
         }
 
         .stats {
@@ -83,9 +82,10 @@
 
         .stat-item {
             flex: 1;
-            background: rgba(255, 255, 255, 0.15);
-            padding: clamp(6px, 1.5vw, 10px);
-            border-radius: clamp(4px, 1vw, 8px);
+            background: #242a31;
+            border: 1px solid #303842;
+            padding: 10px;
+            border-radius: 6px;
             text-align: center;
         }
 
@@ -100,13 +100,14 @@
         .stat-value {
             font-size: clamp(16px, 4vw, 22px);
             font-weight: bold;
-            color: #8BC34A;
+            color: #22c55e;
         }
 
         .current-chapter {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: clamp(6px, 1.5vw, 10px);
-            padding: clamp(8px, 2vw, 12px);
+            background: #1b1f24;
+            border: 1px solid #2a3038;
+            border-radius: 6px;
+            padding: 12px;
         }
 
         .chapter-label {
@@ -125,9 +126,10 @@
         }
 
         .status {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: clamp(6px, 1.5vw, 10px);
-            padding: clamp(8px, 2vw, 12px);
+            background: #1b1f24;
+            border: 1px solid #2a3038;
+            border-radius: 6px;
+            padding: 12px;
             text-align: center;
             font-size: clamp(11px, 2.5vw, 14px);
             font-weight: 500;
@@ -135,18 +137,18 @@
         }
 
         .status.translating {
-            background: rgba(76, 175, 80, 0.3);
-            box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
+            background: #12351f;
+            border-color: #1f6b38;
         }
 
         .status.waiting {
-            background: rgba(255, 152, 0, 0.3);
-            box-shadow: 0 0 15px rgba(255, 152, 0, 0.2);
+            background: #3b2a10;
+            border-color: #7c5417;
         }
 
         .status.error {
-            background: rgba(244, 67, 54, 0.3);
-            box-shadow: 0 0 15px rgba(244, 67, 54, 0.2);
+            background: #3b1515;
+            border-color: #7f1d1d;
         }
 
         /* Compact mode cho màn hình nhỏ */
@@ -188,20 +190,11 @@
             }
         }
 
-        /* Animation cho progress bar */
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.8; }
-        }
-
-        .progress-fill {
-            animation: pulse 2s ease-in-out infinite;
-        }
     </style>
 </head>
 
 <body>
-    <div class="header">🎬 Tiến độ dịch subtitle</div>
+    <div class="header">Tiến độ dịch subtitle</div>
 
     <div class="progress-container">
         <div class="progress-header">

@@ -172,5 +172,5 @@
   
   "example_output_with_censorship": "Chương 123: Đêm định tình\n\nTrương Tam nhìn Lý Tiểu Liên, trong mắt tràn ngập tình ý.\n\n\"Tiểu Liên...\"\n\nHắn ôm nàng vào lòng, đôi môi khẽ chạm vào má nàng.\n\nLý Tiểu Liên đỏ bừng mặt, tim đập thình thịch.\n\nHắn cởi áo nàng, lộ ra làn da ... trắng nõn. Ngón tay hắn vuốt ve ..., nàng run rẩy.\n\n\"A Tam...\"\n\n...\n\n(Một đêm trôi qua)\n\nSáng hôm sau, Lý Tiểu Liên thức dậy trong vòng tay Trương Tam, mặt còn đỏ ửng.\n\nHết chương",
   
-  "input_text": "{{TEXT_TRUYEN_TRUNG_QUOC}}"
+  "input_text": "{{TEXT}}"
 }
