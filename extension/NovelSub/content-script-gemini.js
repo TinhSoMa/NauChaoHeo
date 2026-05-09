@@ -709,6 +709,25 @@ async function triggerSend(doc, inputBox) {
         }
     }
 
+    // Retry thêm vài nhịp để chịu được UI lag nặng sau nhiều chapter.
+    for (let retry = 1; retry <= 3; retry++) {
+        await sleep(800 + retry * 300);
+        const retryButton = findSendButton(doc, inputBox, false);
+        if (retryButton && isElementVisible(retryButton) && isButtonEnabled(retryButton)) {
+            robustClickButton(retryButton);
+            console.log(`----> Retry click Send lần ${retry}/3`);
+            if (await waitForGenerationStart(doc, inputBox, `retry click Send ${retry}`, promptLength)) {
+                return true;
+            }
+        } else {
+            // Nếu nút gửi chưa enabled, thử Enter lại sau khi đợi.
+            simulateEnterOnInput(inputBox, false);
+            if (await waitForGenerationStart(doc, inputBox, `retry Enter ${retry}`, promptLength)) {
+                return true;
+            }
+        }
+    }
+
     console.warn("----> ❌ Không kích hoạt được gửi prompt (Enter x2 + fallback click Send đều thất bại)");
     return false;
 }
@@ -818,6 +837,7 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
     const checkIntervalMs = 3000; // Kiểm tra mỗi 3 giây
     
     let hasStartedGenerating = false; // Flag để biết Gemini đã bắt đầu generate chưa
+    let generatingStartedAt = 0;
     let stableResponseChecks = 0;
     let lastResponseSignature = '';
     let noStopChecks = 0;
@@ -847,6 +867,9 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         
         if (isGenerating) {
             hasStartedGenerating = true;
+            if (!generatingStartedAt) {
+                generatingStartedAt = Date.now();
+            }
             noStopChecks = 0;
             stableResponseChecks = 0;
             lastResponseSignature = '';
@@ -861,6 +884,7 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         const responseLength = responseText ? responseText.length : 0;
 
         const hasMeaningfulResponse = responseLength > 50;
+        const hasInputCleared = (getInputTextLength(inputBox || activeInputBox || null) <= 2);
         const responseSignature = hasMeaningfulResponse
             ? `${responseLength}:${responseText.slice(-120)}`
             : '';
@@ -872,14 +896,16 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
             lastResponseSignature = responseSignature;
         }
         
-        // Điều kiện hoàn thành:
-        // 1) Không còn nút Stop + có nút Send visible (đường đi chuẩn), hoặc
-        // 2) Không có nút Send nhưng response đã ổn định >= 2 lần check liên tiếp.
-        const sendReady = !stopButton && !!sendButton;
-        const doneByStableResponse = !sendButton && hasMeaningfulResponse && stableResponseChecks >= 2 && noStopChecks >= 2;
-        const doneBySendReadyStable = sendReady && hasMeaningfulResponse && stableResponseChecks >= 2 && noStopChecks >= 2;
+        // Điều kiện hoàn thành (siết chặt để tránh false-finish khi UI lag):
+        // 1) Có nút Send visible + enabled, response ổn định >= 3 lượt, không thấy Stop >= 3 lượt, input đã được clear.
+        // 2) Fallback cực chặt khi không tìm thấy nút Send: response ổn định >= 4 lượt và không thấy Stop >= 5 lượt.
+        const sendReady = !stopButton && !!sendButton && isElementVisible(sendButton);
+        const doneByStableResponse = !sendButton && hasMeaningfulResponse && stableResponseChecks >= 4 && noStopChecks >= 5 && hasInputCleared;
+        const doneBySendReadyStable = sendReady && hasMeaningfulResponse && stableResponseChecks >= 3 && noStopChecks >= 3 && hasInputCleared;
+        const generationElapsedMs = generatingStartedAt ? (Date.now() - generatingStartedAt) : 0;
+        const minElapsedReached = generationElapsedMs >= 4000 || !hasStartedGenerating;
 
-        if ((hasStartedGenerating || checkCount > 3) && (doneBySendReadyStable || doneByStableResponse)) {
+        if ((hasStartedGenerating || checkCount > 3) && minElapsedReached && (doneBySendReadyStable || doneByStableResponse)) {
             if (!hasMeaningfulResponse) {
                 console.log(`----> [${checkCount}] ⚠️ Đã có tín hiệu hoàn thành nhưng response quá ngắn (${responseLength} ký tự), đợi thêm...`);
             } else {
@@ -908,9 +934,9 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
                 });
             }
         } else if (!sendButton) {
-            console.log(`----> [${checkCount}] Chưa tìm thấy nút Send, theo dõi độ ổn định response... (${responseLength} ký tự, noStop=${noStopChecks}, stable=${stableResponseChecks})`);
+            console.log(`----> [${checkCount}] Chưa tìm thấy nút Send, theo dõi độ ổn định response... (${responseLength} ký tự, noStop=${noStopChecks}, stable=${stableResponseChecks}, cleared=${hasInputCleared})`);
         } else {
-            console.log(`----> [${checkCount}] Có nút Send nhưng chưa đủ ổn định (noStop=${noStopChecks}, stable=${stableResponseChecks}, len=${responseLength})`);
+            console.log(`----> [${checkCount}] Có nút Send nhưng chưa đủ ổn định (noStop=${noStopChecks}, stable=${stableResponseChecks}, len=${responseLength}, cleared=${hasInputCleared}, enabled=${isButtonEnabled(sendButton)})`);
         }
 
         // Timeout sau maxChecks lần kiểm tra

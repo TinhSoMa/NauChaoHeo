@@ -28,6 +28,7 @@ const DOM = {
   btnDownload: null,
   btnDownloadEbook: null,
   btnRefreshProviderTabs: null,
+  btnToggleSelectAll: null,
   btnClear: null,
 
   // Sections
@@ -69,6 +70,7 @@ const DOM = {
     this.btnDownload = document.getElementById("btnDownload");
     this.btnDownloadEbook = document.getElementById("btnDownloadEbook");
     this.btnRefreshProviderTabs = document.getElementById("btnRefreshProviderTabs");
+    this.btnToggleSelectAll = document.getElementById("btnToggleSelectAll");
     this.btnClear = document.getElementById("btnClear");
 
     this.fileListContainer = document.getElementById("fileListContainer");
@@ -95,6 +97,8 @@ const SUBTITLE_INPUT_METHOD = {
   FILE: "file",
   FOLDER: "folder"
 };
+
+let lastChapterSelectIndex = null;
 
 const LEGACY_STORAGE_KEYS = [
   'batchFiles',
@@ -137,9 +141,19 @@ const UIManager = {
       done: '✅ Xong',
       error: '❌ Lỗi'
     };
+    const hasEbookItems = batchFiles.some((bf) => bf?.sourceType === "epub" || !!bf?.chapterTitle);
+    if (DOM.btnToggleSelectAll) {
+      DOM.btnToggleSelectAll.style.display = hasEbookItems ? "inline-flex" : "none";
+      if (hasEbookItems) {
+        const selectedCount = batchFiles.filter((bf) => bf.selected !== false).length;
+        DOM.btnToggleSelectAll.textContent = selectedCount === batchFiles.length ? "Bỏ chọn tất cả" : "Chọn tất cả";
+      }
+    }
+
     DOM.fileList.innerHTML = batchFiles.map((bf, idx) => {
       const st = bf.status || (bf.completed ? 'done' : 'pending');
       const isEbookItem = bf?.sourceType === "epub" || !!bf?.chapterTitle;
+      const isSelected = bf.selected !== false;
       const projectTag = (!isEbookItem && bf.projectName && bf.projectName !== "Mixed_Files")
         ? `[${bf.projectName}] `
         : "";
@@ -153,8 +167,14 @@ const UIManager = {
       const resetBtn = st === 'done'
         ? `<button class="btn-reset" data-reset-index="${idx}" title="Xóa bản dịch">x</button>`
         : "";
+      const selectCheckbox = isEbookItem
+        ? `<input type="checkbox" class="chapter-check" data-select-index="${idx}" ${isSelected ? "checked" : ""} />`
+        : "";
       return `<div class="file-item">
-        <span class="file-name" title="${displayName}">#${idx + 1}: ${projectTag}${displayName}</span>
+        <span class="file-left">
+          ${selectCheckbox}
+          <span class="file-name" title="${displayName}">#${idx + 1}: ${projectTag}${displayName}</span>
+        </span>
         <span class="file-actions">
           <span class="file-badge badge-${st}">${badgeLabel[st] || '⏳ Chờ'}</span>
           ${viewBtn}
@@ -162,7 +182,10 @@ const UIManager = {
         </span>
       </div>`;
     }).join('');
-    DOM.fileSummary.textContent = `Tổng: ${batchFiles.length} | ✅ ${completedCount} | ❌ ${errorCount} | ⏳ ${batchFiles.length - completedCount - errorCount}`;
+    const selectedCount = hasEbookItems ? batchFiles.filter((bf) => bf.selected !== false).length : null;
+    DOM.fileSummary.textContent = hasEbookItems
+      ? `Tổng: ${batchFiles.length} | ☑ ${selectedCount} | ✅ ${completedCount} | ❌ ${errorCount}`
+      : `Tổng: ${batchFiles.length} | ✅ ${completedCount} | ❌ ${errorCount} | ⏳ ${batchFiles.length - completedCount - errorCount}`;
   }
 };
 
@@ -789,6 +812,46 @@ async function downloadEbookInPopup() {
 // EVENT HANDLERS
 // ============================================
 const EventHandlers = {
+  async onToggleChapterSelection(fileIndex, selected) {
+    const mode = await StorageManager.getActiveMode();
+    if (mode !== INPUT_MODE.EBOOK) return;
+    const batchFiles = await StorageManager.getModeBatchFiles(mode);
+    if (!batchFiles[fileIndex]) return;
+    batchFiles[fileIndex].selected = !!selected;
+    await StorageManager.saveModeBatchFiles(mode, batchFiles);
+    UIManager.displayFileList(batchFiles);
+  },
+
+  async onToggleChapterSelectionRange(startIndex, endIndex, selected) {
+    const mode = await StorageManager.getActiveMode();
+    if (mode !== INPUT_MODE.EBOOK) return;
+    const batchFiles = await StorageManager.getModeBatchFiles(mode);
+    if (!batchFiles || batchFiles.length === 0) return;
+
+    const from = Math.max(0, Math.min(startIndex, endIndex));
+    const to = Math.min(batchFiles.length - 1, Math.max(startIndex, endIndex));
+
+    for (let i = from; i <= to; i++) {
+      if (!batchFiles[i]) continue;
+      batchFiles[i].selected = !!selected;
+    }
+
+    await StorageManager.saveModeBatchFiles(mode, batchFiles);
+    UIManager.displayFileList(batchFiles);
+  },
+
+  async onToggleSelectAllChapters() {
+    const mode = await StorageManager.getActiveMode();
+    if (mode !== INPUT_MODE.EBOOK) return;
+    const batchFiles = await StorageManager.getModeBatchFiles(mode);
+    if (!batchFiles || batchFiles.length === 0) return;
+    const allSelected = batchFiles.every((bf) => bf.selected !== false);
+    const nextValue = !allSelected;
+    const updated = batchFiles.map((bf) => ({ ...bf, selected: nextValue }));
+    await StorageManager.saveModeBatchFiles(mode, updated);
+    UIManager.displayFileList(updated);
+  },
+
   openDataModal(title, content) {
     DOM.dataModalTitle.textContent = title;
     DOM.dataModalBody.textContent = content;
@@ -930,7 +993,7 @@ const EventHandlers = {
         const ai = Number.isInteger(a?.chapterIndex) ? a.chapterIndex : Number.MAX_SAFE_INTEGER;
         const bi = Number.isInteger(b?.chapterIndex) ? b.chapterIndex : Number.MAX_SAFE_INTEGER;
         return ai - bi;
-      });
+      }).map((chapter) => ({ ...chapter, selected: chapter.selected !== false }));
 
       // EPUB là nguồn đơn lẻ: chọn file mới thì thay thế toàn bộ danh sách chapter cũ,
       // tránh lệch chỉ mục/chạy nhầm chapter do dữ liệu còn sót từ lần chạy trước.
@@ -1021,7 +1084,7 @@ const EventHandlers = {
       return;
     }
 
-    const batchLimit = parseInt(DOM.batchLimitInput.value) || 1;
+    let batchLimit = parseInt(DOM.batchLimitInput.value) || 1;
     const promptDelay = parseInt(DOM.promptDelayInput.value) || 10;
     const alwaysOnTop = document.getElementById("alwaysOnTop").checked;
     const copyOnly = DOM.copyOnlyMode.checked;
@@ -1041,6 +1104,12 @@ const EventHandlers = {
         const bi = Number.isInteger(b?.chapterIndex) ? b.chapterIndex : Number.MAX_SAFE_INTEGER;
         return ai - bi;
       });
+      const selectedChapters = modeBatchFiles.filter((chapter) => chapter.selected !== false);
+      if (selectedChapters.length === 0) {
+        UIManager.setStatus("⚠️ Hãy chọn ít nhất 1 chapter để dịch.", "#ff9800");
+        return;
+      }
+      batchLimit = Math.min(batchLimit, selectedChapters.length);
       await StorageManager.saveModeBatchFiles(INPUT_MODE.EBOOK, modeBatchFiles);
       UIManager.displayFileList(modeBatchFiles);
     }
@@ -1276,7 +1345,14 @@ async function initializePopup() {
     DOM.fileInputWrapper.style.display = "none";
     DOM.folderInputWrapper.style.display = "none";
     DOM.ebookInputWrapper.style.display = "block";
-    const ebookFiles = result.ebookBatchFiles || [];
+    const ebookFilesRaw = result.ebookBatchFiles || [];
+    const ebookFiles = ebookFilesRaw.map((chapter) => ({
+      ...chapter,
+      selected: chapter.selected !== false
+    }));
+    if (ebookFiles.length !== ebookFilesRaw.length || ebookFiles.some((c, i) => c.selected !== (ebookFilesRaw[i]?.selected ?? true))) {
+      await StorageManager.saveModeBatchFiles(INPUT_MODE.EBOOK, ebookFiles);
+    }
     UIManager.setFileStatus(`Ebook chapters đã chọn: ${ebookFiles.length}`, ebookFiles.length > 0 ? '#4CAF50' : '#777');
     UIManager.displayFileList(ebookFiles);
     updateDownloadButtons(INPUT_MODE.EBOOK);
@@ -1437,6 +1513,19 @@ function setupEventListeners() {
 
   DOM.fileList.addEventListener("click", (e) => {
     const target = e.target;
+    if (target && target.classList && target.classList.contains("chapter-check")) {
+      const idx = parseInt(target.getAttribute("data-select-index"), 10);
+      if (!Number.isNaN(idx)) {
+        const checked = !!target.checked;
+        if (e.shiftKey && lastChapterSelectIndex !== null) {
+          EventHandlers.onToggleChapterSelectionRange(lastChapterSelectIndex, idx, checked);
+        } else {
+          EventHandlers.onToggleChapterSelection(idx, checked);
+        }
+        lastChapterSelectIndex = idx;
+      }
+      return;
+    }
     if (target && target.classList && target.classList.contains("btn-reset")) {
       const idx = parseInt(target.getAttribute("data-reset-index"), 10);
       if (!Number.isNaN(idx)) {
@@ -1450,6 +1539,9 @@ function setupEventListeners() {
       }
     }
   });
+  if (DOM.btnToggleSelectAll) {
+    DOM.btnToggleSelectAll.addEventListener("click", () => EventHandlers.onToggleSelectAllChapters());
+  }
 
   // Live update: khi background thay đổi dữ liệu theo mode -> tự động render lại danh sách
   chrome.storage.onChanged.addListener((changes, area) => {

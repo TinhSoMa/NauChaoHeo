@@ -1,0 +1,15 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "images/icon128.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "description": "Hỗ trợ lấy text từ Qidian",
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq3Hv0VDXg46KwxJGiqLavgrzZcPNDk1ke9K3KRWVz82a0oi82WaVYTMK9MR7vLP5SGxxdmDodLmWvrrRZ1u3U6XVb0p0f6pfIUl74SloSlTfJYLkpZMoqxIPe16IRTUnXmZ6kRa8eGviQmxUvuXhE3uDV2J54aUJL/DmgGjXsOeRu9bLCt24+96YtqGGqqrjFye6j1WLjqSTgArR/ve0dtijPaG994gBoBDLS6SNGqg8Em2TTwKmOEFP6GaQS+nUJRpFSQObPaJzaNMsAqHrs4hOz37lStJhFrPGy4+QFvkx/MwjL4bpTF1nX27D0Cv1Zl0GvAvAkadTWx0CYJ4m4wIDAQAB",
+   "manifest_version": 3,
+   "name": "Qidian Helper",
+   "permissions": [ "tabs", "storage", "scripting", "activeTab" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "2.2.5"
+}

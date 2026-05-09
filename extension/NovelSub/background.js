@@ -571,10 +571,14 @@ const BatchProcessor = {
             throw new Error("ĐÃ DỊCH HẾT FILE");
         }
 
-        // Bỏ qua các file đã completed
+        // Bỏ qua các file đã completed hoặc không được chọn dịch
         let startIndex = currentIndex;
-        while (startIndex < totalBatches && data.batchFiles[startIndex].completed) {
-            Utils.log(`Bỏ qua file đã dịch: ${data.batchFiles[startIndex].name}`);
+        while (
+            startIndex < totalBatches &&
+            (data.batchFiles[startIndex].completed || data.batchFiles[startIndex].selected === false)
+        ) {
+            const reason = data.batchFiles[startIndex].selected === false ? "không được chọn" : "đã dịch";
+            Utils.log(`Bỏ qua file ${reason}: ${data.batchFiles[startIndex].name}`);
             startIndex++;
         }
         if (startIndex >= totalBatches) {
@@ -944,8 +948,9 @@ async function processLoop(runId) {
 
         const batchData = batchFiles[currentIndex];
 
-        if (batchData.completed) {
-            Utils.log(`Batch ${batchData.name} đã completed, bỏ qua...`);
+        if (batchData.completed || batchData.selected === false) {
+            const reason = batchData.selected === false ? "không được chọn" : "đã completed";
+            Utils.log(`Batch ${batchData.name} ${reason}, bỏ qua...`);
             await BatchProcessor.moveToNextBatch(currentIndex);
             processLoop(runId);
             return;
@@ -1402,8 +1407,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             // Resume: tìm file đầu tiên chưa completed thay vì reset về 0
             const existing = await RuntimeStorage.loadRunStateForMode(activeMode);
             const batchFiles = existing.batchFiles || [];
-            const completedCount = batchFiles.filter(f => f.completed).length;
-            const firstPendingIndex = batchFiles.findIndex(f => !f.completed);
+            const completedCount = batchFiles.filter(f => f.completed && f.selected !== false).length;
+            const firstPendingIndex = batchFiles.findIndex(f => !f.completed && f.selected !== false);
             const nextIndex = firstPendingIndex >= 0 ? firstPendingIndex : batchFiles.length;
             await RuntimeStorage.saveRunStateForMode(activeMode, {
                 currentBatchIndex: nextIndex,
