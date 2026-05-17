@@ -7,9 +7,13 @@ import type {
   GeminiChatConfigLite,
   ProcessingChapterInfo,
   StoryChapterMethod,
+  StoryMemoryRuntimeState,
+  StoryPromptSaveSettings,
   StoryStatus,
   StoryTranslationMethod
 } from '../types';
+import { buildStoryMemoryPayload } from '../types';
+import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 
 interface UseStoryBatchTranslationParams {
   chapters: Chapter[];
@@ -30,6 +34,11 @@ interface UseStoryBatchTranslationParams {
   setChapterModels: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterMethods: Dispatch<SetStateAction<Map<string, StoryChapterMethod>>>;
   setTokenContexts: Dispatch<SetStateAction<Map<string, { conversationId: string; responseId: string; choiceId: string }>>>;
+  projectId: string | null;
+  filePath: string;
+  memorySettings: StoryMemoryRuntimeState;
+  forceSequential?: boolean;
+  promptSaveSettings: StoryPromptSaveSettings;
 }
 
 interface BatchState {
@@ -63,7 +72,12 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     setTranslatedTitles,
     setChapterModels,
     setChapterMethods,
-    setTokenContexts
+    setTokenContexts,
+    projectId,
+    filePath,
+    memorySettings,
+    forceSequential = false,
+    promptSaveSettings
   } = params;
 
   // Progress tracking
@@ -178,13 +192,22 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
     try {
       console.log(`[useStoryBatchTranslation] 📖 Dịch chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
+      const memoryPayload = buildStoryMemoryPayload({
+        projectId,
+        filePath,
+        chapter,
+        chapterIndex: index + 1,
+        totalChapters: batchStateRef.current.chapters.length,
+        settings: memorySettings
+      });
 
       // 1. Prepare Prompt
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
         chapterContent: chapter.content,
         sourceLang,
         targetLang,
-        model
+        model,
+        memory: memoryPayload
       }) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -193,6 +216,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       }
 
       const method = channel === 'token' ? 'IMPIT' : 'API';
+      const storyMethod: StoryChapterMethod = method === 'IMPIT' ? 'token' : 'api';
       let selectedTokenConfig = method === 'IMPIT'
         ? (tokenConfig || getPreferredTokenConfig()) // Use worker's config if available, fallback to preferred
         : null;
@@ -221,9 +245,12 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
               runId,
               chapterId: chapter.id,
               chapterTitle: chapter.title,
+              chapterIndex: index + 1,
+              sourceText: chapter.content,
               tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
-          }
+          },
+          memory: memoryPayload
         }
       ) as {
         success: boolean;
@@ -234,6 +261,19 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         metadata?: { chapterId?: string; runId?: string };
         retryable?: boolean;
       };
+
+      if (promptSaveSettings.autoSaveSentPrompt) {
+        await saveTranslationPromptArtifact({
+          projectId,
+          chapter,
+          chapterIndex: index + 1,
+          method: storyMethod,
+          model,
+          preparedPrompt: prepareResult.prompt,
+          prepareResult,
+          storyFilePath: filePath
+        });
+      }
 
       if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
         return null;
@@ -266,7 +306,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             return next;
         });
         setChapterModels(prev => new Map(prev).set(chapter.id, model));
-        setChapterMethods(prev => new Map(prev).set(chapter.id, channel === 'token' ? 'token' : 'api'));
+        setChapterMethods(prev => new Map(prev).set(chapter.id, storyMethod));
 
         if (translateResult.context && tokenKey) {
             setTokenContexts(prev => new Map(prev).set(tokenKey, translateResult.context!));
@@ -394,6 +434,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   useEffect(() => {
     if (!isBatchRunningRef.current || shouldStopRef.current) return;
     if (translationMethod !== 'token') return;
+    if (forceSequential) return;
     
     // Check if there are remaining chapters to translate
     if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) return;
@@ -416,7 +457,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       startWorkerRef.current?.('token', config, runId);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenConfigs, translationMethod, getDistinctActiveTokenConfigs]);
+  }, [forceSequential, tokenConfigs, translationMethod, getDistinctActiveTokenConfigs]);
 
   // Main batch translation function
   const handleTranslateAll = async (options?: { chapterIds?: string[] }) => {
@@ -498,8 +539,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       }
     }
 
-    const apiWorkerCount = shouldUseApiWorkers ? apiWorkerCountSetting : 0;
-    let tokenWorkerCount = tokenConfigsForRun.length;
+    const apiWorkerCount = shouldUseApiWorkers ? (forceSequential ? 1 : apiWorkerCountSetting) : 0;
+    let tokenWorkerCount = forceSequential ? Math.min(1, tokenConfigsForRun.length) : tokenConfigsForRun.length;
     
     if (tokenWorkerCount > maxImpitBrowsers) {
       console.warn(`[useStoryBatchTranslation] Impit: Giới hạn token workers xuống ${maxImpitBrowsers}`);

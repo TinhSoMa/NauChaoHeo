@@ -10,7 +10,9 @@ import {
   StoryTranslateGeminiWebQueueResult
 } from '@shared/types';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
-import type { ProcessingChapterInfo, StoryChapterMethod, StoryStatus } from '../types';
+import type { ProcessingChapterInfo, StoryChapterMethod, StoryMemoryRuntimeState, StoryPromptSaveSettings, StoryStatus } from '../types';
+import { buildStoryMemoryPayload } from '../types';
+import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 
 export type StoryWebQueueMode = 'sequential' | 'multi_auto';
 
@@ -29,6 +31,11 @@ interface UseStoryGeminiWebQueueTranslationParams {
   setTranslatedTitles: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterModels: Dispatch<SetStateAction<Map<string, string>>>;
   setChapterMethods: Dispatch<SetStateAction<Map<string, StoryChapterMethod>>>;
+  projectId: string | null;
+  filePath: string;
+  memorySettings: StoryMemoryRuntimeState;
+  forceSequential?: boolean;
+  promptSaveSettings: StoryPromptSaveSettings;
 }
 
 const AUTO_WORKERS_MAX = 8;
@@ -142,7 +149,12 @@ export function useStoryGeminiWebQueueTranslation(
     setTranslatedChapters,
     setTranslatedTitles,
     setChapterModels,
-    setChapterMethods
+    setChapterMethods,
+    projectId,
+    filePath,
+    memorySettings,
+    forceSequential = false,
+    promptSaveSettings
   } = params;
 
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
@@ -288,6 +300,15 @@ export function useStoryGeminiWebQueueTranslation(
     }
   ): Promise<void> => {
     const expectedChapterId = chapter.id;
+    const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id) + 1;
+    const memoryPayload = buildStoryMemoryPayload({
+      projectId,
+      filePath,
+      chapter,
+      chapterIndex,
+      totalChapters: chapters.length,
+      settings: memorySettings
+    });
     const runId = options?.runId;
     if (!runId || currentRunIdRef.current !== runId || shouldStopRef.current) {
       return;
@@ -316,7 +337,8 @@ export function useStoryGeminiWebQueueTranslation(
           chapterContent: chapter.content,
           sourceLang,
           targetLang,
-          model
+          model,
+          memory: memoryPayload
         }
       ) as PreparePromptResult;
 
@@ -341,12 +363,28 @@ export function useStoryGeminiWebQueueTranslation(
             runId,
             chapterId: expectedChapterId,
             chapterTitle: chapter.title,
+            chapterIndex,
+            sourceText: chapter.content,
             batchId: options?.batchId,
             workerId,
             mode: webQueueMode
-          }
+          },
+          memory: memoryPayload
         }
       ) as StoryTranslateGeminiWebQueueResult;
+
+      if (promptSaveSettings.autoSaveSentPrompt) {
+        await saveTranslationPromptArtifact({
+          projectId,
+          chapter,
+          chapterIndex,
+          method: 'gemini_webapi_queue',
+          model,
+          preparedPrompt: prepareResult.prompt,
+          prepareResult,
+          storyFilePath: filePath
+        });
+      }
       const pacingDebug = toQueuePacingDebug(translateResult.metadata);
       if (pacingDebug) {
         console.log('[StoryGeminiWebQueue][Pacing]', {
@@ -443,8 +481,9 @@ export function useStoryGeminiWebQueueTranslation(
     setIsStopping(false);
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
+    const effectiveQueueMode: StoryWebQueueMode = forceSequential ? 'sequential' : webQueueMode;
     const resolvedWorkers =
-      webQueueMode === 'multi_auto'
+      effectiveQueueMode === 'multi_auto'
         ? await resolveAutoWorkerCount()
         : 1;
     setResolvedWorkerCount(resolvedWorkers);
@@ -452,7 +491,7 @@ export function useStoryGeminiWebQueueTranslation(
     let processed = 0;
 
     try {
-      if (webQueueMode === 'multi_auto') {
+      if (effectiveQueueMode === 'multi_auto') {
         const batchId = `story-webqueue-${Date.now()}`;
         currentBatchIdRef.current = batchId;
         let currentIndex = 0;

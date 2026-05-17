@@ -52,6 +52,9 @@ interface StoryTranslatorStateSetters {
   setReadingTheme: (theme: StoryReadingTheme) => void;
   setChapterScrollPositions: (positions: Map<string, number>) => void;
   setChapters: (chapters: Chapter[]) => void;
+  setMemoryEnabled: (enabled: boolean) => void;
+  setMemoryTopK: (value: number) => void;
+  setAutoSaveSentPrompt: (enabled: boolean) => void;
 }
 
 interface StoryTranslatorStateValues {
@@ -74,6 +77,9 @@ interface StoryTranslatorStateValues {
   summaryTitles: Map<string, string>;
   readingTheme: StoryReadingTheme;
   chapterScrollPositions: Map<string, number>;
+  memoryEnabled: boolean;
+  memoryTopK: number;
+  autoSaveSentPrompt: boolean;
 }
 
 export function useStoryTranslatorPersistence(
@@ -104,6 +110,9 @@ export function useStoryTranslatorPersistence(
     summaryTitles?: Array<[string, string]>;
     readingTheme?: StoryReadingTheme;
     chapterScrollPositions?: Array<[string, number]>;
+    memoryEnabled?: boolean;
+    memoryTopK?: number;
+    autoSaveSentPrompt?: boolean;
   }>({
     feature: 'story',
     fileName: STORY_STATE_FILE,
@@ -152,7 +161,10 @@ export function useStoryTranslatorPersistence(
         excludedChapterIds: Array.from(values.excludedChapterIds.values()),
         selectedChapterId: values.selectedChapterId,
         readingTheme: values.readingTheme,
-        chapterScrollPositions: Array.from(values.chapterScrollPositions.entries())
+        chapterScrollPositions: Array.from(values.chapterScrollPositions.entries()),
+        memoryEnabled: values.memoryEnabled,
+        memoryTopK: values.memoryTopK,
+        autoSaveSentPrompt: values.autoSaveSentPrompt
       };
     },
     deserialize: async (saved: any) => {
@@ -202,6 +214,9 @@ export function useStoryTranslatorPersistence(
       if (typeof saved.selectedChapterId !== 'undefined') setters.setSelectedChapterId(saved.selectedChapterId);
       if (saved.readingTheme) setters.setReadingTheme(saved.readingTheme);
       if (saved.chapterScrollPositions) setters.setChapterScrollPositions(new Map(saved.chapterScrollPositions));
+      if (typeof saved.memoryEnabled === 'boolean') setters.setMemoryEnabled(saved.memoryEnabled);
+      if (typeof saved.memoryTopK === 'number') setters.setMemoryTopK(saved.memoryTopK);
+      if (typeof saved.autoSaveSentPrompt === 'boolean') setters.setAutoSaveSentPrompt(saved.autoSaveSentPrompt);
     },
     deps: [
       values.filePath,
@@ -220,7 +235,10 @@ export function useStoryTranslatorPersistence(
       values.excludedChapterIds,
       values.selectedChapterId,
       values.readingTheme,
-      values.chapterScrollPositions
+      values.chapterScrollPositions,
+      values.memoryEnabled,
+      values.memoryTopK,
+      values.autoSaveSentPrompt
     ],
   });
 

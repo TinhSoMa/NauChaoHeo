@@ -15,6 +15,51 @@ export interface PreparePromptResult {
   success: boolean;
   prompt?: any;
   error?: string;
+  memoryContext?: {
+    namespace?: string;
+    promptContext?: string;
+    memories?: string[];
+    debug?: import('./memoryContext').MemoryContextDebugItem[];
+    warning?: string;
+    status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
+  };
+}
+
+export interface StoryMemorySettings {
+  enabled: boolean;
+  topK: number;
+  namespace?: string;
+  status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
+}
+
+export interface StoryTranslationMemoryPayload {
+  projectId?: string | null;
+  storyFilePath?: string | null;
+  chapterId?: string | null;
+  chapterTitle?: string | null;
+  chapterIndex?: number | null;
+  totalChapters?: number | null;
+  settings?: StoryMemorySettings | null;
+}
+
+export interface StoryPreparePromptPayload {
+  chapterContent: string;
+  sourceLang: string;
+  targetLang: string;
+  model?: string;
+  memory?: StoryTranslationMemoryPayload | null;
+}
+
+export interface StoryTranslateChapterPayload {
+  prompt: any;
+  method?: 'API' | 'IMPIT';
+  model?: string;
+  webConfigId?: string;
+  context?: any;
+  useProxy?: boolean;
+  metadata?: Record<string, unknown>;
+  onRetry?: (attempt: number, maxRetries: number) => void;
+  memory?: StoryTranslationMemoryPayload | null;
 }
 
 export interface StoryTranslateGeminiWebQueuePayload {
@@ -24,6 +69,7 @@ export interface StoryTranslateGeminiWebQueuePayload {
   metadata?: Record<string, unknown>;
   conversationKey?: string;
   resetConversation?: boolean;
+  memory?: StoryTranslationMemoryPayload | null;
 }
 
 export interface StoryTranslateGeminiWebQueueMetadata extends Record<string, unknown> {

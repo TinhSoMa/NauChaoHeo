@@ -8,6 +8,8 @@ import type {
 } from '../services/shared/universalRotationQueue/rotationTypes';
 import {
   STORY_IPC_CHANNELS,
+  StoryPreparePromptPayload,
+  StoryTranslateChapterPayload,
   StoryCancelGeminiWebQueueBatchPayload,
   StoryCancelGeminiWebQueueBatchResult,
   StoryGeminiWebQueueCapacity,
@@ -243,9 +245,9 @@ export function registerStoryHandlers(): void {
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.PREPARE_PROMPT,
-    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang }) => {
+    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, memory }: StoryPreparePromptPayload) => {
        console.log(`[StoryHandlers] Prepare prompt logic: ${sourceLang} -> ${targetLang}`);
-       return await StoryService.StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang);
+       return await StoryService.StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang, memory);
     }
   );
 
@@ -283,17 +285,18 @@ export function registerStoryHandlers(): void {
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
-    async (_event: IpcMainInvokeEvent, payload: any) => {
+    async (_event: IpcMainInvokeEvent, payload: StoryTranslateChapterPayload) => {
       // console.log('[StoryHandlers] Translate chapter params:', payload);
       // Support legacy call (just prompt) or new call (options object)
       // If payload is the prompt directly (array or object check), treat as legacy API method.
       // But typically we should standardize.
       // Let's assume payload is the Options object if it has 'prompt' key.
       
-      let options = payload;
-      if (!payload.prompt && (Array.isArray(payload) || payload.role)) {
+      const rawPayload = payload as StoryTranslateChapterPayload & { role?: string };
+      let options = rawPayload;
+      if (!rawPayload.prompt && (Array.isArray(rawPayload) || rawPayload.role)) {
           // It's just the prompt structure
-          options = { prompt: payload, method: 'API' };
+          options = { prompt: rawPayload, method: 'API' };
       }
       
       if (options && options.metadata) {

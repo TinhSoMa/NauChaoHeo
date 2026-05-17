@@ -1,6 +1,8 @@
+import { createHash } from 'crypto';
 import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
 import { GeminiChatService } from '../chatGemini/geminiChatService';
+import { getMemoryContextService } from '../memoryContext';
 import {
   AppSettingsService,
   normalizeGeminiMinSendIntervalMs,
@@ -14,8 +16,16 @@ import {
   RotationJobExecutionError,
   type RotationJobErrorCode
 } from '../shared/universalRotationQueue';
-import type { StoryGeminiWebQueueCapacity } from '../../../shared/types/story';
-import type { StoryCancelGeminiWebQueueBatchResult } from '../../../shared/types/story';
+import type {
+  MemoryContextHealthResult,
+  MemoryContextAddRequest,
+  MemoryContextSearchRequest,
+  StoryCancelGeminiWebQueueBatchResult,
+  StoryGeminiWebQueueCapacity,
+  StoryMemorySettings,
+  StoryTranslateChapterPayload,
+  StoryTranslationMemoryPayload
+} from '../../../shared/types';
 
 const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
 const STORY_GEMINI_WEB_QUEUE_POOL_ID = 'story-geminiweb-accounts';
@@ -34,6 +44,7 @@ interface StoryTranslateChapterWithGeminiWebQueueOptions {
   priority?: 'high' | 'normal' | 'low';
   conversationKey?: string;
   resetConversation?: boolean;
+  memory?: StoryTranslationMemoryPayload | null;
 }
 
 interface StoryTranslateChapterWithGeminiWebQueueResult {
@@ -72,7 +83,7 @@ export class StoryService {
    * Translates a chapter using prepared prompt and Gemini API
    * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
    */
-  static async translateChapter(options: { prompt: any, method?: 'API' | 'IMPIT', model?: string, webConfigId?: string, context?: any, useProxy?: boolean, metadata?: any, onRetry?: (attempt: number, maxRetries: number) => void }): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
+  static async translateChapter(options: StoryTranslateChapterPayload): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
@@ -88,8 +99,8 @@ export class StoryService {
            console.log('[StoryService] Using IMPIT for translation...');
            const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata, options.onRetry);
            
-           if (result.success && result.data) {
-             console.log('[StoryService] Translation completed.');
+            if (result.success && result.data) {
+              console.log('[StoryService] Translation completed.');
              
              // Log context update for debugging re-translation issues
              const ctx = result.data.context;
@@ -99,9 +110,16 @@ export class StoryService {
                  console.warn('[StoryService] ⚠️ Response context is empty - context may not be updated properly');
              }
              
-             return { 
-                 success: true, 
-                 data: result.data.text,
+              await this.addStoryTranslationMemory(
+                options.memory,
+                String(result.data.text || ''),
+                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+                String(options.metadata?.sourceText || '')
+              );
+
+              return { 
+                  success: true, 
+                  data: result.data.text,
                  context: result.data.context, // Return new context
                  configId: result.configId,
                  metadata: result.metadata
@@ -116,14 +134,20 @@ export class StoryService {
             ? options.model.trim()
             : undefined;
           
-          const result = await GeminiService.callGeminiWithRotation(
-            options.prompt, 
-            modelToUse
-          );
-          
-          if (result.success) {
-            return { success: true, data: result.data, metadata: options.metadata };
-          } else {
+           const result = await GeminiService.callGeminiWithRotation(
+             options.prompt, 
+             modelToUse
+           );
+           
+           if (result.success) {
+             await this.addStoryTranslationMemory(
+               options.memory,
+               String(result.data || ''),
+               String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+               String(options.metadata?.sourceText || '')
+             );
+             return { success: true, data: result.data, metadata: options.metadata };
+           } else {
             return { success: false, error: result.error, metadata: options.metadata };
           }
       }
@@ -248,6 +272,12 @@ export class StoryService {
 
         if (queued.success) {
           this.touchStoryBatchStickyState(stickyState);
+          await this.addStoryTranslationMemory(
+            options.memory,
+            queued.result || '',
+            String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+            String(options.metadata?.sourceText || '')
+          );
           return {
             success: true,
             data: queued.result || '',
@@ -323,7 +353,12 @@ export class StoryService {
    * Prepares the translation prompt by fetching the appropriate prompt from the database
    * and injecting the chapter content.
    */
-  static async prepareTranslationPrompt(chapterContent: string, sourceLang: string, targetLang: string): Promise<{ success: boolean; prompt?: any; error?: string }> {
+  static async prepareTranslationPrompt(
+    chapterContent: string,
+    sourceLang: string,
+    targetLang: string,
+    memory?: StoryTranslationMemoryPayload | null
+  ): Promise<{ success: boolean; prompt?: any; error?: string; memoryContext?: { namespace?: string; promptContext?: string; memories?: string[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' } }> {
     try {
       let matchingPrompt;
       
@@ -368,8 +403,15 @@ export class StoryService {
         };
       }
 
+      const memoryContext = await this.resolveStoryMemoryContext(memory, chapterContent);
+      const chapterPayload = this.composeChapterPayload(chapterContent, memoryContext.promptContext || '');
+
       // 3. Parse and inject content
-      return this.injectContentIntoPrompt(matchingPrompt.content, chapterContent);
+      const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterPayload);
+      return {
+        ...prepared,
+        memoryContext
+      };
 
     } catch (error) {
       console.error('Error preparing translation prompt:', error);
@@ -517,6 +559,153 @@ export class StoryService {
     } catch (error) {
       console.error('Error injecting content into prompt:', error);
       return { success: false, error: String(error) };
+    }
+  }
+
+  private static normalizeStoryMemorySettings(memory?: StoryTranslationMemoryPayload | null): StoryMemorySettings | null {
+    if (!memory?.settings) {
+      return null;
+    }
+    return {
+      enabled: Boolean(memory.settings.enabled),
+      topK: Math.max(1, Math.min(20, Math.floor(memory.settings.topK || 5))),
+      namespace: typeof memory.settings.namespace === 'string' ? memory.settings.namespace.trim() : undefined,
+      status: memory.settings.status
+    };
+  }
+
+  private static getStoryMemoryNamespace(memory?: StoryTranslationMemoryPayload | null): string | null {
+    const projectId = (memory?.projectId || '').trim();
+    if (!projectId) {
+      return null;
+    }
+    const settings = this.normalizeStoryMemorySettings(memory);
+    if (settings?.namespace) {
+      return settings.namespace;
+    }
+    const fingerprintSource = (memory?.storyFilePath || '').trim() || '__default_story__';
+    const fingerprint = createHash('sha1').update(fingerprintSource).digest('hex').slice(0, 12);
+    return `story:${projectId}:${fingerprint}`;
+  }
+
+  private static composeChapterPayload(chapterContent: string, promptContext: string): string {
+    const base = (chapterContent || '').trim();
+    if (!promptContext.trim()) {
+      return base;
+    }
+    return `${promptContext.trim()}\n\nCurrent Chapter Source Text:\n${base}`;
+  }
+
+  private static getStoryMemoryStatusFromHealth(health: MemoryContextHealthResult): 'ready' | 'missing_runtime' | 'missing_provider' | 'error' {
+    if (!health.success || !health.pythonOk || !health.mem0Ok || !health.spacyOk || !health.spacyModelOk) {
+      return 'missing_runtime';
+    }
+    if (!health.providerConfigured) {
+      return 'missing_provider';
+    }
+    return 'ready';
+  }
+
+  private static async resolveStoryMemoryContext(
+    memory: StoryTranslationMemoryPayload | null | undefined,
+    chapterContent: string
+  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
+    const settings = this.normalizeStoryMemorySettings(memory);
+    const namespace = this.getStoryMemoryNamespace(memory);
+    if (!settings?.enabled || !namespace) {
+      return {
+        namespace: namespace || undefined,
+        promptContext: '',
+        memories: [],
+        debug: [],
+        status: memory?.settings?.status || 'error'
+      };
+    }
+
+    const projectId = (memory?.projectId || '').trim();
+    const chapterIndex =
+      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
+        ? memory.chapterIndex
+        : null;
+    if (!projectId || chapterIndex === null) {
+      return {
+        namespace,
+        promptContext: '',
+        memories: [],
+        debug: [],
+        status: 'error',
+        warning: 'Memory mode cần projectId và chapterIndex hợp lệ.'
+      };
+    }
+
+    const health = await getMemoryContextService().getHealth();
+    const status = this.getStoryMemoryStatusFromHealth(health);
+
+    const searchRequest: MemoryContextSearchRequest = {
+      projectId,
+      feature: 'story.translation',
+      namespace,
+      queryText: chapterContent,
+      topK: settings.topK,
+      metadata: {
+        chapterId: memory?.chapterId || undefined,
+        chapterIndex,
+        chapterTitle: memory?.chapterTitle || undefined,
+        totalChapters: memory?.totalChapters || undefined
+      }
+    };
+
+    const searchResult = await getMemoryContextService().searchContext(searchRequest);
+    return {
+      namespace,
+      promptContext: searchResult.promptContext || '',
+      memories: searchResult.memories || [],
+      debug: searchResult.debug || [],
+      warning: searchResult.warning || health.warning,
+      status
+    };
+  }
+
+  private static async addStoryTranslationMemory(
+    memory: StoryTranslationMemoryPayload | null | undefined,
+    translatedText: string,
+    chapterTitle: string,
+    sourceText: string
+  ): Promise<void> {
+    const settings = this.normalizeStoryMemorySettings(memory);
+    const namespace = this.getStoryMemoryNamespace(memory);
+    if (!settings?.enabled || !namespace) {
+      return;
+    }
+
+    const projectId = (memory?.projectId || '').trim();
+    const chapterIndex =
+      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
+        ? memory.chapterIndex
+        : null;
+
+    if (!projectId || !sourceText.trim() || !translatedText.trim() || chapterIndex === null) {
+      return;
+    }
+
+    const request: MemoryContextAddRequest = {
+      projectId,
+      feature: 'story.translation',
+      namespace,
+      sourceText,
+      translatedText,
+      metadata: {
+        chapterId: memory?.chapterId || undefined,
+        chapterIndex,
+        chapterTitle: chapterTitle || memory?.chapterTitle || undefined,
+        totalChapters: memory?.totalChapters || undefined,
+        storyFilePath: memory?.storyFilePath || undefined
+      }
+    };
+
+    const result = await getMemoryContextService().addMemory(request);
+    if (!result.success) {
+      console.warn('[StoryService] Failed to add story translation memory:', result.error);
     }
   }
 

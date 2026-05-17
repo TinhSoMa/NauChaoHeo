@@ -11,9 +11,13 @@ import type {
   GeminiChatConfigLite,
   ProcessingChapterInfo,
   StoryChapterMethod,
+  StoryMemoryRuntimeState,
+  StoryPromptSaveSettings,
   StoryStatus,
   StoryTranslationMethod
 } from '../types';
+import { buildStoryMemoryPayload } from '../types';
+import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 
 interface UseStoryTranslationParams {
   chapters: Chapter[];
@@ -35,6 +39,10 @@ interface UseStoryTranslationParams {
   setTokenContexts: Dispatch<SetStateAction<Map<string, { conversationId: string; responseId: string; choiceId: string }>>>;
   setViewMode: Dispatch<SetStateAction<'original' | 'translated' | 'summary'>>;
   translatedChapters: Map<string, string>;
+  projectId: string | null;
+  filePath: string;
+  memorySettings: StoryMemoryRuntimeState;
+  promptSaveSettings: StoryPromptSaveSettings;
 }
 
 /**
@@ -61,7 +69,11 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     setChapterMethods,
     setTokenContexts,
     setViewMode,
-    translatedChapters
+    translatedChapters,
+    projectId,
+    filePath,
+    memorySettings,
+    promptSaveSettings
   } = params;
   const activeRunIdRef = useRef<string | null>(null);
 
@@ -80,6 +92,17 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     
     const chapter = chapters.find(c => c.id === selectedChapterId);
     if (!chapter) return;
+    const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+    const memoryPayload = chapterIndex >= 0
+      ? buildStoryMemoryPayload({
+          projectId,
+          filePath,
+          chapter,
+          chapterIndex: chapterIndex + 1,
+          totalChapters: chapters.length,
+          settings: memorySettings
+        })
+      : null;
 
     if (activeRunIdRef.current) {
       alert('Đang có tiến trình dịch chương khác. Vui lòng đợi hoàn tất.');
@@ -113,7 +136,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
         chapterContent: chapter.content,
         sourceLang,
         targetLang,
-        model
+        model,
+        memory: memoryPayload
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -174,6 +198,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
 
         const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
+        const methodKey: StoryChapterMethod = method === 'IMPIT' ? 'token' : 'api';
+
         const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
           prompt: prepareResult.prompt,
           model,
@@ -183,8 +209,12 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
           metadata: {
             runId,
             chapterId: selectedChapterId,
+            chapterTitle: chapter.title,
+            chapterIndex: chapterIndex + 1,
+            sourceText: chapter.content,
             validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
-          }
+          },
+          memory: memoryPayload
         }) as {
           success: boolean;
           data?: string;
@@ -194,7 +224,18 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
           metadata?: { chapterId?: string; runId?: string };
         };
 
-        const methodKey: StoryChapterMethod = method === 'IMPIT' ? 'token' : 'api';
+        if (promptSaveSettings.autoSaveSentPrompt) {
+          await saveTranslationPromptArtifact({
+            projectId,
+            chapter,
+            chapterIndex: chapterIndex + 1,
+            method: methodKey,
+            model,
+            preparedPrompt: prepareResult.prompt,
+            prepareResult,
+            storyFilePath: filePath
+          });
+        }
 
         return {
           result: translateResult,
@@ -217,10 +258,26 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
               runId,
               chapterId: selectedChapterId,
               chapterTitle: chapter.title,
+              chapterIndex: chapterIndex + 1,
+              sourceText: chapter.content,
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
-            }
+            },
+            memory: memoryPayload
           }
         ) as StoryTranslateGeminiWebQueueResult;
+
+        if (promptSaveSettings.autoSaveSentPrompt) {
+          await saveTranslationPromptArtifact({
+            projectId,
+            chapter,
+            chapterIndex: chapterIndex + 1,
+            method: 'gemini_webapi_queue',
+            model,
+            preparedPrompt: prepareResult.prompt,
+            prepareResult,
+            storyFilePath: filePath
+          });
+        }
 
         if (activeRunIdRef.current !== runId) {
           console.warn('[useStoryTranslation] Drop stale queue response from old run:', runId);

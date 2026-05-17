@@ -1,3 +1,5 @@
+import type { Chapter } from '@shared/types';
+
 export interface GeminiChatConfigLite {
   id: string;
   cookie: string;
@@ -48,3 +50,39 @@ export interface ProcessingChapterInfo {
 }
 
 export type StoryStatus = 'idle' | 'running' | 'paused' | 'error' | 'stopped';
+
+export interface StoryMemoryRuntimeState {
+  enabled: boolean;
+  topK: number;
+  namespace?: string;
+  status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
+}
+
+export interface StoryPromptSaveSettings {
+  autoSaveSentPrompt: boolean;
+}
+
+export function buildStoryMemoryPayload(args: {
+  projectId: string | null;
+  filePath: string;
+  chapter: Chapter;
+  chapterIndex: number;
+  totalChapters: number;
+  settings: StoryMemoryRuntimeState;
+}) {
+  const { projectId, filePath, chapter, chapterIndex, totalChapters, settings } = args;
+  return {
+    projectId,
+    storyFilePath: filePath,
+    chapterId: chapter.id,
+    chapterTitle: chapter.title,
+    chapterIndex,
+    totalChapters,
+    settings: {
+      enabled: settings.enabled,
+      topK: settings.topK,
+      namespace: settings.namespace,
+      status: settings.status
+    }
+  };
+}

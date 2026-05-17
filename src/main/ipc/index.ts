@@ -19,6 +19,7 @@ import { registerAppLogHandlers } from './appLogHandlers';
 import { registerGrokUiHandlers } from './grokUiHandlers';
 import { registerDownloaderHandlers } from './downloaderHandlers';
 import { registerShutdownHandlers } from './shutdownHandlers';
+import { registerMemoryContextHandlers } from './memoryContextHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -38,6 +39,9 @@ export function registerAllHandlers(): void {
 
   // Đăng ký Story handlers
   registerStoryHandlers();
+
+  // Đăng ký Memory Context handlers
+  registerMemoryContextHandlers();
 
   // Đăng ký Prompt handlers
   registerPromptHandlers();
@@ -95,4 +99,5 @@ export { registerProxyHandlers } from './proxyHandlers';
 export { registerCutVideoHandlers } from './cutVideoHandlers';
 export { registerRotationQueueHandlers } from './rotationQueueHandlers';
 export { registerShutdownHandlers } from './shutdownHandlers';
+export { registerMemoryContextHandlers } from './memoryContextHandlers';
 

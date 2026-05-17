@@ -24,8 +24,6 @@ interface ReaderPaneProps {
   palette: StoryReadingThemePalette;
   contentScrollRef: RefObject<HTMLDivElement | null>;
   onContentScroll: () => void;
-  onSavePrompt: () => void;
-  onSaveSummaryPrompt: () => void;
 }
 
 export function ReaderPane(props: ReaderPaneProps) {
@@ -47,9 +45,7 @@ export function ReaderPane(props: ReaderPaneProps) {
     setReadingTheme,
     palette,
     contentScrollRef,
-    onContentScroll,
-    onSavePrompt,
-    onSaveSummaryPrompt
+    onContentScroll
   } = props;
 
   const selectedChapter = selectedChapterId
@@ -106,8 +102,6 @@ export function ReaderPane(props: ReaderPaneProps) {
           onReadingThemeChange={setReadingTheme}
           isChapterIncluded={!isExcluded}
           palette={palette}
-          onSavePrompt={onSavePrompt}
-          onSaveSummaryPrompt={onSaveSummaryPrompt}
         />
       </div>
 

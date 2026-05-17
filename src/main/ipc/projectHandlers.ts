@@ -238,9 +238,10 @@ export function registerProjectHandlers(): void {
         const projectRoot = path.join(basePath, projectId)
         const featureDir = path.join(projectRoot, metadata.paths[feature])
         const filePath = path.join(featureDir, fileName)
+        const fileDir = path.dirname(filePath)
 
-        if (!fs.existsSync(featureDir)) {
-          fs.mkdirSync(featureDir, { recursive: true })
+        if (!fs.existsSync(fileDir)) {
+          fs.mkdirSync(fileDir, { recursive: true })
         }
 
         const dataToWrite = typeof content === 'string' ? content : JSON.stringify(content, null, 2)

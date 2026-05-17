@@ -1,4 +1,3 @@
-import { Button } from '../../common/Button';
 import type { StoryReadingTheme, StoryReadingThemePalette } from '../types';
 import { STORY_READING_THEME_OPTIONS } from '../styles/readerThemes';
 
@@ -20,8 +19,6 @@ interface ReaderControlsProps {
   readingTheme: StoryReadingTheme;
   onReadingThemeChange: (theme: StoryReadingTheme) => void;
   isChapterIncluded: boolean;
-  onSavePrompt: () => void;
-  onSaveSummaryPrompt: () => void;
   palette: StoryReadingThemePalette;
 }
 
@@ -44,8 +41,6 @@ export function ReaderControls(props: ReaderControlsProps) {
     readingTheme,
     onReadingThemeChange,
     isChapterIncluded,
-    onSavePrompt,
-    onSaveSummaryPrompt,
     palette
   } = props;
 
@@ -163,16 +158,6 @@ export function ReaderControls(props: ReaderControlsProps) {
             <span className="text-xs px-2 py-1 rounded" style={{ color: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.12)' }}>
               Đã loại trừ
             </span>
-          )}
-          {!isReaderMode && (
-            <Button onClick={onSavePrompt} variant="secondary" className="text-xs h-8 px-2">
-              Lưu Prompt Dịch
-            </Button>
-          )}
-          {!isReaderMode && (
-            <Button onClick={onSaveSummaryPrompt} variant="secondary" className="text-xs h-8 px-2">
-              Lưu Prompt Tóm Tắt
-            </Button>
           )}
           <span
             className="text-xs px-2 py-1 rounded border max-w-[320px] truncate"

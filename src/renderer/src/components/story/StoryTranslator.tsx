@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Chapter, STORY_IPC_CHANNELS } from '@shared/types';
-import type { StoryReadingTheme, StoryChapterMethod, StoryStatus, StoryTranslationMethod } from './types';
+import {
+  Chapter,
+  STORY_IPC_CHANNELS,
+} from '@shared/types';
+import {
+  MEMORY_CONTEXT_IPC_CHANNELS,
+  type MemoryContextHealthResult,
+  type MemoryContextStatsResult
+} from '../../../../shared/types/memoryContext';
+import type { StoryReadingTheme, StoryChapterMethod, StoryMemoryRuntimeState, StoryPromptSaveSettings, StoryStatus, StoryTranslationMethod } from './types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -20,6 +28,8 @@ import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueu
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
 import { resolveStoryReadingThemePalette } from './styles/readerThemes';
 import { ReaderPane } from './components/ReaderPane';
+import { StoryTranslationMemoryPanel } from './components/StoryTranslationMemoryPanel';
+import { useProjectContext } from '../../context/ProjectContext';
 const READER_MODE_BREAKPOINT = 1024;
 const READER_PAGE_OVERLAP_PX = 72;
 const READER_MIN_PAGE_STEP = 220;
@@ -31,7 +41,21 @@ const getInitialViewportWidth = (): number => {
   return window.innerWidth;
 };
 
+const DEFAULT_MEMORY_TOP_K = 6;
+
+const computeStoryMemoryNamespace = async (projectId: string, filePath: string): Promise<string> => {
+  const source = filePath.trim() || '__default_story__';
+  const encoded = new TextEncoder().encode(source);
+  const digest = await window.crypto.subtle.digest('SHA-1', encoded);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 12);
+  return `story:${projectId}:${hash}`;
+};
+
 export function StoryTranslator() {
+  const { projectId } = useProjectContext();
   const [filePath, setFilePath] = useState('');
   const [sourceLang, setSourceLang] = useState('zh');
   const [targetLang, setTargetLang] = useState('vi');
@@ -53,6 +77,24 @@ export function StoryTranslator() {
   const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
   const [isGeminiWebQueueEnabled, setIsGeminiWebQueueEnabled] = useState(false);
   const [webQueueMode, setWebQueueMode] = useState<StoryWebQueueMode>('multi_auto');
+  const [memoryEnabled, setMemoryEnabled] = useState(false);
+  const [memoryTopK, setMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
+  const [memoryNamespace, setMemoryNamespace] = useState<string>('');
+  const [memoryStatus, setMemoryStatus] = useState<StoryMemoryRuntimeState['status']>('error');
+  const [memoryHealth, setMemoryHealth] = useState<MemoryContextHealthResult | null>(null);
+  const [memoryStats, setMemoryStats] = useState<MemoryContextStatsResult | null>(null);
+  const [isClearingMemory, setIsClearingMemory] = useState(false);
+  const [autoSaveSentPrompt, setAutoSaveSentPrompt] = useState(false);
+  const isMemoryFeatureEnabled = Boolean(projectId && memoryEnabled);
+  const memoryRuntimeSettings = useMemo<StoryMemoryRuntimeState>(() => ({
+    enabled: isMemoryFeatureEnabled,
+    topK: memoryTopK,
+    namespace: memoryNamespace || undefined,
+    status: memoryStatus
+  }), [isMemoryFeatureEnabled, memoryNamespace, memoryStatus, memoryTopK]);
+  const promptSaveSettings = useMemo<StoryPromptSaveSettings>(() => ({
+    autoSaveSentPrompt
+  }), [autoSaveSentPrompt]);
   
   // Token management (using custom hook)
   const {
@@ -95,9 +137,6 @@ export function StoryTranslator() {
 
   // File management hook
   const fileManagement = useStoryFileManagement({
-    sourceLang,
-    targetLang,
-    model,
     isTranslationActive: status === 'running',
     setFilePath,
     setChapters,
@@ -136,7 +175,12 @@ export function StoryTranslator() {
     setTranslatedTitles,
     setChapterModels,
     setChapterMethods,
-    setTokenContexts
+    setTokenContexts,
+    projectId,
+    filePath,
+    memorySettings: memoryRuntimeSettings,
+    forceSequential: isMemoryFeatureEnabled,
+    promptSaveSettings
   });
 
   const {
@@ -160,7 +204,12 @@ export function StoryTranslator() {
     setTranslatedChapters,
     setTranslatedTitles,
     setChapterModels,
-    setChapterMethods
+    setChapterMethods,
+    projectId,
+    filePath,
+    memorySettings: memoryRuntimeSettings,
+    forceSequential: isMemoryFeatureEnabled,
+    promptSaveSettings
   });
 
   // Single translation hook (using processingChapters from batch hook)
@@ -183,11 +232,15 @@ export function StoryTranslator() {
     setChapterMethods,
     setTokenContexts,
     setViewMode,
-    translatedChapters
+    translatedChapters,
+    projectId,
+    filePath,
+    memorySettings: memoryRuntimeSettings,
+    promptSaveSettings
   });
 
   // Project state persistence
-  const { projectId } = useStoryTranslatorPersistence(
+  useStoryTranslatorPersistence(
     {
       filePath,
       sourceLang,
@@ -207,7 +260,10 @@ export function StoryTranslator() {
       summaries,
       summaryTitles,
       readingTheme,
-      chapterScrollPositions
+      chapterScrollPositions,
+      memoryEnabled,
+      memoryTopK,
+      autoSaveSentPrompt
     },
     {
       setFilePath,
@@ -228,10 +284,114 @@ export function StoryTranslator() {
       setSummaryTitles,
       setReadingTheme,
       setChapterScrollPositions,
-      setChapters
+      setChapters,
+      setMemoryEnabled,
+      setMemoryTopK,
+      setAutoSaveSentPrompt
     },
     fileManagement.parseFile
   );
+
+  useEffect(() => {
+    let active = true;
+    if (!projectId || !filePath.trim()) {
+      setMemoryNamespace('');
+      return;
+    }
+
+    computeStoryMemoryNamespace(projectId, filePath)
+      .then((namespace) => {
+        if (active) {
+          setMemoryNamespace(namespace);
+        }
+      })
+      .catch((error) => {
+        console.warn('[StoryTranslator] Failed to compute memory namespace:', error);
+        if (active) {
+          setMemoryNamespace('');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [filePath, projectId]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const result = await window.electronAPI.invoke(
+          MEMORY_CONTEXT_IPC_CHANNELS.GET_HEALTH
+        ) as MemoryContextHealthResult;
+        if (!active) return;
+        setMemoryHealth(result);
+        if (!result.success || !result.pythonOk || !result.mem0Ok || !result.spacyOk || !result.spacyModelOk) {
+          setMemoryStatus('missing_runtime');
+          return;
+        }
+        setMemoryStatus(result.providerConfigured ? 'ready' : 'missing_provider');
+      } catch (error) {
+        if (!active) return;
+        setMemoryHealth(null);
+        setMemoryStatus('error');
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!projectId || !memoryNamespace) {
+      setMemoryStats(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        const result = await window.electronAPI.invoke(
+          MEMORY_CONTEXT_IPC_CHANNELS.GET_STATS,
+          {
+            projectId,
+            feature: 'story.translation',
+            namespace: memoryNamespace
+          }
+        ) as MemoryContextStatsResult;
+        if (active) {
+          setMemoryStats(result);
+        }
+      } catch (error) {
+        if (active) {
+          setMemoryStats(null);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [memoryNamespace, projectId, translatedChapters]);
+
+  useEffect(() => {
+    if (!projectId && memoryEnabled) {
+      setMemoryEnabled(false);
+    }
+  }, [memoryEnabled, projectId]);
+
+  useEffect(() => {
+    if (!isMemoryFeatureEnabled) {
+      return;
+    }
+    if (translationMethod === 'api_gemini_webapi_queue') {
+      setTranslationMethod(isGeminiWebQueueEnabled ? 'gemini_webapi_queue' : 'api');
+    }
+    if (webQueueMode !== 'sequential') {
+      setWebQueueMode('sequential');
+    }
+  }, [isGeminiWebQueueEnabled, isMemoryFeatureEnabled, translationMethod, webQueueMode]);
 
   useEffect(() => {
     chapterScrollPositionsRef.current = new Map(chapterScrollPositions);
@@ -631,6 +791,16 @@ export function StoryTranslator() {
       return;
     }
 
+    if (isMemoryFeatureEnabled && memoryStatus === 'missing_runtime') {
+      alert('Memory mode đang bật nhưng Python/Mem0/spaCy chưa sẵn sàng. Cài: pip install mem0ai[nlp] và python -m spacy download xx_ent_wiki_sm');
+      return;
+    }
+
+    if (isMemoryFeatureEnabled && isQueueMethodSelected) {
+      await handleTranslateAllWebQueue();
+      return;
+    }
+
     if (translationMethod === 'gemini_webapi_queue') {
       await handleTranslateAllWebQueue();
       return;
@@ -694,18 +864,42 @@ export function StoryTranslator() {
     };
   }, [batchTranslationProgress, webQueueBatchProgress]);
 
-  const handleSavePrompt = async () => {
-    await fileManagement.handleSavePrompt(selectedChapterId, chapters);
-  };
-
-  const handleSaveSummaryPrompt = async () => {
-    const translatedContent = selectedChapterId ? translatedChapters.get(selectedChapterId) : undefined;
-    await fileManagement.handleSaveSummaryPrompt(selectedChapterId, chapters, translatedContent);
-  };
-
   const handleBrowse = async () => {
     await fileManagement.handleBrowse();
   };
+
+  const handleClearMemoryNamespace = useCallback(async () => {
+    if (!projectId || !memoryNamespace || isClearingMemory) {
+      return;
+    }
+    setIsClearingMemory(true);
+    try {
+      const result = await window.electronAPI.invoke(
+        MEMORY_CONTEXT_IPC_CHANNELS.CLEAR_NAMESPACE,
+        {
+          projectId,
+          feature: 'story.translation',
+          namespace: memoryNamespace
+        }
+      ) as { success: boolean; clearedCount?: number; error?: string };
+      if (!result.success) {
+        alert(`Không thể xóa memory context: ${result.error || 'Lỗi không xác định'}`);
+      }
+      const stats = await window.electronAPI.invoke(
+        MEMORY_CONTEXT_IPC_CHANNELS.GET_STATS,
+        {
+          projectId,
+          feature: 'story.translation',
+          namespace: memoryNamespace
+        }
+      ) as MemoryContextStatsResult;
+      setMemoryStats(stats);
+    } catch (error) {
+      alert(`Không thể xóa memory context: ${String(error)}`);
+    } finally {
+      setIsClearingMemory(false);
+    }
+  }, [isClearingMemory, memoryNamespace, projectId]);
 
   const compactModelLabel = (label: string): string => {
     const raw = (label || '').trim();
@@ -793,7 +987,7 @@ export function StoryTranslator() {
               ...(isGeminiWebQueueEnabled
                 ? [
                     { value: 'gemini_webapi_queue', label: 'Gemini WebAPI Queue' },
-                    { value: 'api_gemini_webapi_queue', label: 'Kết hợp (API + Queue)' }
+                    ...(isMemoryFeatureEnabled ? [] : [{ value: 'api_gemini_webapi_queue', label: 'Kết hợp (API + Queue)' }])
                   ]
                 : [])
             ]}
@@ -806,13 +1000,17 @@ export function StoryTranslator() {
             <select
               value={webQueueMode}
               onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
-              disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running'}
+              disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running' || isMemoryFeatureEnabled}
               className="h-8 px-2 rounded-md border border-border bg-card text-text-primary text-xs w-full"
             >
               <option value="multi_auto">Auto</option>
               <option value="sequential">Tuần tự</option>
             </select>
-            {webQueueMode === 'multi_auto' && (
+            {isMemoryFeatureEnabled ? (
+              <span className="text-[10px] text-text-secondary block mt-1">
+                Memory mode bật: ép chạy tuần tự để chỉ dùng context từ chapter trước.
+              </span>
+            ) : webQueueMode === 'multi_auto' && (
               <span className="text-[10px] text-text-secondary block mt-1">
                 {isWebQueueTranslating
                   ? `Auto workers: ${webQueueResolvedWorkerCount ?? 3}`
@@ -821,6 +1019,21 @@ export function StoryTranslator() {
             )}
           </div>
         )}
+
+        <StoryTranslationMemoryPanel
+          projectId={projectId}
+          enabled={memoryEnabled}
+          topK={memoryTopK}
+          namespace={memoryNamespace}
+          status={memoryStatus}
+          health={memoryHealth}
+          stats={memoryStats}
+          disabled={status === 'running'}
+          isClearing={isClearingMemory}
+          onEnabledChange={setMemoryEnabled}
+          onTopKChange={(value) => setMemoryTopK(Math.max(1, Math.min(20, Math.floor(value || 1))))}
+          onClearNamespace={handleClearMemoryNamespace}
+        />
 
         {chapters.length > 0 && (
           <div className="md:col-span-4 flex items-end justify-end gap-2 min-w-0">
@@ -935,6 +1148,16 @@ export function StoryTranslator() {
               className="w-4 h-4 rounded border-border cursor-pointer"
             />
             <span>Dịch lại chương đã dịch</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+            <input
+              type="checkbox"
+              checked={autoSaveSentPrompt}
+              onChange={(e) => setAutoSaveSentPrompt(e.target.checked)}
+              className="w-4 h-4 rounded border-border cursor-pointer"
+              disabled={!projectId || status === 'running'}
+            />
+            <span>Tự động lưu prompt đã gửi vào thư mục project</span>
           </label>
         </div>
       </div>
@@ -1139,8 +1362,6 @@ export function StoryTranslator() {
             palette={readerPalette}
             contentScrollRef={contentScrollRef}
             onContentScroll={handleContentScroll}
-            onSavePrompt={handleSavePrompt}
-            onSaveSummaryPrompt={handleSaveSummaryPrompt}
           />
         </div>
       </div>

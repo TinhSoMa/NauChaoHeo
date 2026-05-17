@@ -1,11 +1,8 @@
 import { Dispatch, SetStateAction } from 'react';
-import { Chapter, ParseStoryResult, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
+import { Chapter, ParseStoryResult, STORY_IPC_CHANNELS } from '@shared/types';
 import { StoryStatus } from '../types';
 
 interface UseStoryFileManagementParams {
-  sourceLang: string;
-  targetLang: string;
-  model: string;
   isTranslationActive?: boolean;
   setFilePath: Dispatch<SetStateAction<string>>;
   setChapters: Dispatch<SetStateAction<Chapter[]>>;
@@ -23,13 +20,10 @@ export interface ParseFileOptions {
 
 /**
  * Custom hook to manage story file operations
- * Handles file browsing, parsing, and prompt saving
+ * Handles file browsing and parsing
  */
 export function useStoryFileManagement(params: UseStoryFileManagementParams) {
   const {
-    sourceLang,
-    targetLang,
-    model,
     isTranslationActive = false,
     setFilePath,
     setChapters,
@@ -99,54 +93,8 @@ export function useStoryFileManagement(params: UseStoryFileManagementParams) {
     }
   };
 
-  const handleSavePrompt = async (selectedChapterId: string | null, chapters: Chapter[]) => {
-    if (!selectedChapterId) return;
-    const chapter = chapters.find(c => c.id === selectedChapterId);
-    if (!chapter) return;
-
-    try {
-      const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
-        chapterContent: chapter.content,
-        sourceLang,
-        targetLang,
-        model
-      }) as PreparePromptResult;
-
-      if (result.success && result.prompt) {
-        const promptString = JSON.stringify(result.prompt);
-        await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
-      }
-    } catch (e) {
-      console.error('[useStoryFileManagement] Loi luu prompt:', e);
-    }
-  };
-
-  const handleSaveSummaryPrompt = async (selectedChapterId: string | null, chapters: Chapter[], translatedContent?: string) => {
-    if (!selectedChapterId) return;
-    const chapter = chapters.find(c => c.id === selectedChapterId);
-    if (!chapter) return;
-
-    try {
-      const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
-        chapterContent: translatedContent || chapter.content,
-        sourceLang,
-        targetLang,
-        model
-      }) as PreparePromptResult;
-
-      if (result.success && result.prompt) {
-        const promptString = JSON.stringify(result.prompt);
-        await window.electronAPI.invoke(STORY_IPC_CHANNELS.SAVE_PROMPT, promptString);
-      }
-    } catch (e) {
-      console.error('[useStoryFileManagement] Loi luu summary prompt:', e);
-    }
-  };
-
   return {
     handleBrowse,
-    parseFile,
-    handleSavePrompt,
-    handleSaveSummaryPrompt
+    parseFile
   };
 }
