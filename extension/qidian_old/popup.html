@@ -6,11 +6,11 @@
     <meta charset="UTF-8">
 </head>
 <body>
-    <div style="display: flex; align-items: center; justify-content: space-between;">
+    <div class="header-row">
         <h1>
             Qidian Helper 2.2
         </h1>
-        <div style="display: flex; align-items: center; margin-right: 10px;">
+        <div class="header-lang">
             <div class="lang">Lang:</div>
             <select class="lang-select" style="margin-left: 4px">
                 <option value="en">English</option>
@@ -35,6 +35,12 @@
             <label>OCR API Key</label>
             <input name="ocrKey" placeholder="ocr.space apikey" />
             <div class="ocr-status">OCR: idle</div>
+        </div>
+        <div class="capture-options">
+            <label class="checkbox-row">
+                <input type="checkbox" name="saveImages" />
+                <span>Save images to device</span>
+            </label>
         </div>
         <div class="ocr-output">
             <label>OCR Draft</label>
@@ -62,8 +68,8 @@
             <button class="need-token disable" id="getTextOnServer">Find Text On Server (1vnd)</button>
             <button class="need-token disable" id="getNewFullImage">Get New Full Image (5vnd)</button> -->
         </div>
-        <div class="changelogs" style="white-space: pre-line;">Changelogs:
-        </div>
+        <pre class="changelogs" style="white-space: pre-wrap;">Debug logs:
+</pre>
     </div>
     <div class="warning">
         This isn't Qidian
@@ -74,4 +80,3 @@
     <script src="popup.min.js"></script>
 </body>
 </html>
-</h1>

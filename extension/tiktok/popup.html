@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>TikTok Auto</title>
+		<style>
+			:root {
+				color-scheme: light;
+			}
+
+			body {
+				font-family: "Segoe UI", Tahoma, sans-serif;
+				margin: 12px;
+				width: 320px;
+			}
+
+			h1 {
+				font-size: 16px;
+				margin: 0 0 8px 0;
+			}
+
+			.status {
+				margin-bottom: 8px;
+				padding: 6px 8px;
+				background: #f1f1f1;
+				border-radius: 6px;
+				font-size: 12px;
+			}
+
+			.actions {
+				display: flex;
+				gap: 8px;
+				margin-bottom: 8px;
+			}
+
+			button {
+				flex: 1;
+				padding: 6px 8px;
+				border: 1px solid #ccc;
+				border-radius: 6px;
+				background: #ffffff;
+				cursor: pointer;
+			}
+
+			textarea {
+				width: 100%;
+				box-sizing: border-box;
+				font-family: "Consolas", "Courier New", monospace;
+				font-size: 11px;
+				min-height: 180px;
+			}
+
+			.config-actions {
+				margin-top: 6px;
+				display: flex;
+				gap: 8px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>TikTok Auto</h1>
+		<div class="status" id="status">idle</div>
+		<div class="actions">
+			<button id="start">Start</button>
+			<button id="stop">Stop</button>
+		</div>
+
+		<details>
+			<summary>Config</summary>
+			<textarea id="config"></textarea>
+			<div class="config-actions">
+				<button id="save">Save config</button>
+				<button id="reset">Reset default</button>
+			</div>
+		</details>
+
+		<script src="popup.js"></script>
+	</body>
+</html>

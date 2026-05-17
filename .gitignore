@@ -61,3 +61,9 @@ resources/gemma/google_gemma-4-E2B-it-Q3_K_M.gguf
 resources/gemma/google_gemma-4-E2B-it-Q4_K_M.gguf
 # Added by code-review-graph
 .code-review-graph/
+extension/qidian/web-ext-artifacts/qidian_helper-2.2.5.zip
+extension/qidian/qidian.crx
+extension/qidian.rar
+resources/tts/go/edge_tts_worker.exe
+resources/tts/go/edge_tts_worker.exe
+extension/qidian_old/web-ext-artifacts/qidian_helper-2.2.5.zip
