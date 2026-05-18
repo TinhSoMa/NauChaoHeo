@@ -1,9 +1,48 @@
 export interface MemoryContextDebugItem {
   memory: string;
   score: number;
+  factId?: string;
+  kind?: string;
   entities?: string[];
   chapterId?: string;
   chapterIndex?: number;
+  matchedSignals?: string[];
+  adapterMode?: string;
+}
+
+export interface MemoryFact {
+  factId: string;
+  kind: string;
+  canonicalValue: string;
+  text: string;
+  aliases?: string[];
+  entityId?: string;
+  entityType?: string;
+  sourceRefs?: string[];
+  chapterId?: string;
+  chapterIndex?: number;
+  score?: number;
+}
+
+export interface MemoryGlossaryEntry {
+  entryId: string;
+  category: string;
+  sourceTerm: string;
+  targetTerm: string;
+  aliases?: string[];
+  chapterId?: string;
+  chapterIndex?: number;
+  confidence?: number;
+}
+
+export interface MemoryEntity {
+  entityId: string;
+  entityType: string;
+  canonicalValue: string;
+  aliases: string[];
+  chapterId?: string;
+  chapterIndex?: number;
+  confidence?: number;
 }
 
 export interface MemoryContextSearchRequest {
@@ -19,8 +58,18 @@ export interface MemoryContextSearchResult {
   success: boolean;
   memories: string[];
   promptContext: string;
+  facts?: MemoryFact[];
+  glossary?: MemoryGlossaryEntry[];
+  entities?: MemoryEntity[];
   debug: MemoryContextDebugItem[];
   namespace?: string;
+  runtimeMode?: 'mem0_provider' | 'local_fallback' | 'unavailable';
+  providerStatus?: {
+    configured: boolean;
+    active: boolean;
+    providerName?: string;
+    reason?: string;
+  };
   warning?: string;
   error?: string;
 }
@@ -38,7 +87,18 @@ export interface MemoryContextAddResult {
   success: boolean;
   storedCount: number;
   entities: string[];
+  storedFacts?: number;
+  storedEntities?: number;
+  facts?: MemoryFact[];
+  glossary?: MemoryGlossaryEntry[];
   namespace?: string;
+  runtimeMode?: 'mem0_provider' | 'local_fallback' | 'unavailable';
+  providerStatus?: {
+    configured: boolean;
+    active: boolean;
+    providerName?: string;
+    reason?: string;
+  };
   warning?: string;
   error?: string;
 }
@@ -53,8 +113,11 @@ export interface MemoryContextStatsResult {
   success: boolean;
   namespace: string;
   totalMemories: number;
+  totalFacts?: number;
+  totalEntities?: number;
   totalNamespaces?: number;
   recentEntities: string[];
+  runtimeMode?: 'mem0_provider' | 'local_fallback' | 'unavailable';
   error?: string;
 }
 
@@ -78,9 +141,15 @@ export interface MemoryContextHealthResult {
   spacyOk: boolean;
   spacyModelOk: boolean;
   providerConfigured: boolean;
-  backend: 'mem0' | 'local_fallback' | 'unavailable';
+  backend: 'mem0' | 'mem0_provider' | 'local_fallback' | 'unavailable';
   warning?: string;
   error?: string;
+  providerStatus?: {
+    configured: boolean;
+    active: boolean;
+    providerName?: string;
+    reason?: string;
+  };
   details?: {
     pythonPath?: string;
     pythonVersion?: string;
@@ -90,7 +159,8 @@ export interface MemoryContextHealthResult {
     spacyLoadedModel?: string;
     modules?: Record<string, boolean>;
     providerConfigured?: boolean;
-    backend?: 'mem0' | 'local_fallback' | 'unavailable';
+    backend?: 'mem0' | 'mem0_provider' | 'local_fallback' | 'unavailable';
+    providerName?: string;
   };
 }
 

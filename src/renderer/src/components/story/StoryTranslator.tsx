@@ -28,7 +28,6 @@ import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueu
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
 import { resolveStoryReadingThemePalette } from './styles/readerThemes';
 import { ReaderPane } from './components/ReaderPane';
-import { StoryTranslationMemoryPanel } from './components/StoryTranslationMemoryPanel';
 import { useProjectContext } from '../../context/ProjectContext';
 const READER_MODE_BREAKPOINT = 1024;
 const READER_PAGE_OVERLAP_PX = 72;
@@ -167,6 +166,7 @@ export function StoryTranslator() {
     useProxy,
     isChapterIncluded,
     translatedChapters,
+    summaries,
     tokenConfigs,
     getDistinctActiveTokenConfigs,
     getPreferredTokenConfig,
@@ -199,6 +199,7 @@ export function StoryTranslator() {
     retranslateExisting,
     isChapterIncluded,
     translatedChapters,
+    summaries,
     setStatus,
     setProcessingChapters,
     setTranslatedChapters,
@@ -233,6 +234,7 @@ export function StoryTranslator() {
     setTokenContexts,
     setViewMode,
     translatedChapters,
+    summaries,
     projectId,
     filePath,
     memorySettings: memoryRuntimeSettings,
@@ -792,7 +794,9 @@ export function StoryTranslator() {
     }
 
     if (isMemoryFeatureEnabled && memoryStatus === 'missing_runtime') {
-      alert('Memory mode đang bật nhưng Python/Mem0/spaCy chưa sẵn sàng. Cài: pip install mem0ai[nlp] và python -m spacy download xx_ent_wiki_sm');
+      alert(
+        'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm'
+      );
       return;
     }
 
@@ -1020,145 +1024,173 @@ export function StoryTranslator() {
           </div>
         )}
 
-        <StoryTranslationMemoryPanel
-          projectId={projectId}
-          enabled={memoryEnabled}
-          topK={memoryTopK}
-          namespace={memoryNamespace}
-          status={memoryStatus}
-          health={memoryHealth}
-          stats={memoryStats}
-          disabled={status === 'running'}
-          isClearing={isClearingMemory}
-          onEnabledChange={setMemoryEnabled}
-          onTopKChange={(value) => setMemoryTopK(Math.max(1, Math.min(20, Math.floor(value || 1))))}
-          onClearNamespace={handleClearMemoryNamespace}
-        />
+        <div className="md:col-span-12 rounded-xl border border-border/70 bg-muted/20 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-text-primary">Memory Context</div>
+              <div className="text-xs text-text-secondary">
+                Query ký ức từ các chapter trước và bơm vào prompt dịch.
+              </div>
+            </div>
 
-        {chapters.length > 0 && (
-          <div className="md:col-span-4 flex items-end justify-end gap-2 min-w-0">
-            <span className="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full whitespace-nowrap">
-              Đã dịch: {translatedChapters.size}/{chapters.length} chương
-            </span>
-            {translatedChapters.size > 0 && (
-              <Button
-                onClick={handleExportEbook}
-                variant="primary"
-                disabled={exportStatus === 'exporting'}
-                className="h-8 px-3 text-xs shrink-0"
-              >
-                <Download size={14} />
-                {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
-              </Button>
-            )}
-          </div>
-        )}
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-text-primary">
+                <input
+                  type="checkbox"
+                  checked={memoryEnabled}
+                  disabled={status === 'running' || !projectId}
+                  onChange={(event) => setMemoryEnabled(event.target.checked)}
+                />
+                Bật memory mode
+              </label>
 
-        <div className="md:col-span-12 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button 
-              onClick={handleTranslate} 
-              variant="secondary" 
-              disabled={!filePath || status === 'running' || !selectedChapterId}
-              className="h-8 px-2.5 text-xs shrink-0"
-              title="Dịch chương đang chọn"
-            >
-              <BookOpen size={16} />
-              Dịch 1
-            </Button>
-            <Button 
-              onClick={() => handleGenerateSummary(selectedChapterId)} 
-              variant="secondary" 
-              disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
-              className="h-8 px-2.5 text-xs shrink-0"
-              title="Tóm tắt chương đang chọn"
-            >
-              <FileText size={16} />
-              {isGeneratingSummary ? 'Đang tóm...' : 'Tóm 1'}
-            </Button>
-          </div>
+              <label className="flex items-center gap-2 text-xs text-text-primary">
+                <span>Top K</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={memoryTopK}
+                  disabled={status === 'running' || !projectId}
+                  onChange={(event) => setMemoryTopK(Math.max(1, Math.min(20, Math.floor(Number(event.target.value) || 1))))}
+                  className="h-8 w-16 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+                />
+              </label>
 
-          <div className="flex flex-wrap items-center gap-1.5 justify-end">
-            {isGeneratingSummary && batchSummaryProgress ? (
-              <Button 
-                onClick={stopSummaryGeneration}
-                variant="secondary"
-                className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-                title="Dừng tóm tắt batch hiện tại"
+              <button
+                type="button"
+                onClick={handleClearMemoryNamespace}
+                disabled={status === 'running' || !projectId || !memoryNamespace || isClearingMemory}
+                className="h-8 rounded-md border border-border px-3 text-xs text-text-primary disabled:opacity-50"
               >
-                <StopCircle size={16} />
-                {isSummaryStopping
-                  ? `Đang dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
-                  : `Dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
-              </Button>
-            ) : (isBatchTranslating || isWebQueueTranslating) && combinedBatchProgress ? (
-              <Button 
-                onClick={handleStopBatchByMethod}
-                variant="secondary"
-                className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-                title="Dừng dịch batch hiện tại"
-              >
-                <StopCircle size={16} />
-                {isBatchStopping || isWebQueueStopping
-                  ? `Đang dừng Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`
-                  : `Dừng Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`}
-              </Button>
-            ) : (
-              <>
+                {isClearingMemory ? 'Đang xóa...' : 'Clear memory'}
+              </button>
+
+              {chapters.length > 0 && (
+                <span className="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full whitespace-nowrap">
+                  Đã dịch: {translatedChapters.size}/{chapters.length} chương
+                </span>
+              )}
+
+              {translatedChapters.size > 0 && (
                 <Button
+                  onClick={handleExportEbook}
                   variant="primary"
-                  onClick={handleTranslateAllByMethod}
-                  className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
-                  disabled={
-                    !filePath ||
-                    isGeneratingSummary ||
-                    isSummaryStopping ||
-                    isBatchStopping ||
-                    isWebQueueStopping ||
-                    status === 'running'
-                  }
-                  title="Dịch batch theo Mode đã chọn"
+                  disabled={exportStatus === 'exporting'}
+                  className="h-8 px-3 text-xs shrink-0"
                 >
-                  <FileText size={16} />
-                  Dịch
+                  <Download size={14} />
+                  {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
                 </Button>
+              )}
+            </div>
+          </div>
 
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                onClick={handleTranslate}
+                variant="secondary"
+                disabled={!filePath || status === 'running' || !selectedChapterId}
+                className="h-8 px-2.5 text-xs shrink-0"
+                title="Dịch chương đang chọn"
+              >
+                <BookOpen size={16} />
+                Dịch 1
+              </Button>
+              <Button
+                onClick={() => handleGenerateSummary(selectedChapterId)}
+                variant="secondary"
+                disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
+                className="h-8 px-2.5 text-xs shrink-0"
+                title="Tóm tắt chương đang chọn"
+              >
+                <FileText size={16} />
+                {isGeneratingSummary ? 'Đang tóm...' : 'Tóm 1'}
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 justify-end">
+              {isGeneratingSummary && batchSummaryProgress ? (
                 <Button
+                  onClick={stopSummaryGeneration}
+                  variant="secondary"
+                  className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                  title="Dừng tóm tắt batch hiện tại"
+                >
+                  <StopCircle size={16} />
+                  {isSummaryStopping
+                    ? `Đang dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
+                    : `Dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
+                </Button>
+              ) : (isBatchTranslating || isWebQueueTranslating) && combinedBatchProgress ? (
+                <Button
+                  onClick={handleStopBatchByMethod}
+                  variant="secondary"
+                  className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                  title="Dừng dịch batch hiện tại"
+                >
+                  <StopCircle size={16} />
+                  {isBatchStopping || isWebQueueStopping
+                    ? `Đang dừng Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`
+                    : `Dừng Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="primary"
+                    onClick={handleTranslateAllByMethod}
+                    className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
+                    disabled={
+                      !filePath ||
+                      isGeneratingSummary ||
+                      isSummaryStopping ||
+                      isBatchStopping ||
+                      isWebQueueStopping ||
+                      status === 'running'
+                    }
+                    title="Dịch batch theo Mode đã chọn"
+                  >
+                    <FileText size={16} />
+                    Dịch
+                  </Button>
+
+                  <Button
                     variant="secondary"
                     onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
                     className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
                     disabled={isBatchTranslating || isBatchStopping || isWebQueueTranslating || isWebQueueStopping || (status !== 'idle' && !isGeneratingSummary)}
                     title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
-                >
+                  >
                     {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
                     {isGeneratingSummary ? (isSummaryStopping ? 'Đang dừng tóm' : 'Dừng tóm') : 'Tóm tất cả'}
-                </Button>
-              </>
-            )}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
 
-
-        <div className="md:col-span-12 flex items-center gap-3 text-xs">
-          <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
-            <input
-              type="checkbox"
-              checked={retranslateExisting}
-              onChange={(e) => setRetranslateExisting(e.target.checked)}
-              className="w-4 h-4 rounded border-border cursor-pointer"
-            />
-            <span>Dịch lại chương đã dịch</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
-            <input
-              type="checkbox"
-              checked={autoSaveSentPrompt}
-              onChange={(e) => setAutoSaveSentPrompt(e.target.checked)}
-              className="w-4 h-4 rounded border-border cursor-pointer"
-              disabled={!projectId || status === 'running'}
-            />
-            <span>Tự động lưu prompt đã gửi vào thư mục project</span>
-          </label>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+            <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+              <input
+                type="checkbox"
+                checked={retranslateExisting}
+                onChange={(e) => setRetranslateExisting(e.target.checked)}
+                className="w-4 h-4 rounded border-border cursor-pointer"
+              />
+              <span>Dịch lại chương đã dịch</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+              <input
+                type="checkbox"
+                checked={autoSaveSentPrompt}
+                onChange={(e) => setAutoSaveSentPrompt(e.target.checked)}
+                className="w-4 h-4 rounded border-border cursor-pointer"
+                disabled={!projectId || status === 'running'}
+              />
+              <span>Tự động lưu prompt đã gửi vào thư mục project</span>
+            </label>
+          </div>
         </div>
       </div>
       )}

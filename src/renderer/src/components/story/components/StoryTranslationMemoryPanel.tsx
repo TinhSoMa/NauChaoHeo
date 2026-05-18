@@ -21,26 +21,12 @@ export function StoryTranslationMemoryPanel(props: StoryTranslationMemoryPanelPr
     enabled,
     topK,
     namespace,
-    status,
-    health,
-    stats,
     disabled = false,
     isClearing = false,
     onEnabledChange,
     onTopKChange,
     onClearNamespace
   } = props;
-
-  const statusLabel =
-    status === 'ready'
-      ? 'Sẵn sàng'
-      : status === 'missing_provider'
-        ? 'Fallback local'
-        : status === 'missing_runtime'
-          ? 'Thiếu runtime'
-          : 'Lỗi';
-  const expectedModel = health?.details?.spacyModelName || 'xx_ent_wiki_sm';
-  const loadedModel = health?.details?.spacyLoadedModel || '(chưa load)';
 
   return (
     <div className="md:col-span-12 border border-border/70 rounded-xl p-3 bg-muted/20">
@@ -81,36 +67,6 @@ export function StoryTranslationMemoryPanel(props: StoryTranslationMemoryPanelPr
           >
             {isClearing ? 'Đang xóa...' : 'Clear memory'}
           </button>
-        </div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-        <div className="rounded-lg border border-border/60 bg-card/60 p-2">
-          <div className="text-[11px] uppercase tracking-wide text-text-secondary">Status</div>
-          <div className="mt-1 text-sm text-text-primary">{statusLabel}</div>
-          <div className="mt-1 text-[11px] text-text-secondary">
-            spaCy: {expectedModel} | loaded: {loadedModel}
-          </div>
-          {health?.warning && (
-            <div className="mt-1 text-[11px] text-text-secondary">{health.warning}</div>
-          )}
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card/60 p-2">
-          <div className="text-[11px] uppercase tracking-wide text-text-secondary">Namespace</div>
-          <div className="mt-1 break-all font-mono text-[11px] text-text-primary">
-            {namespace || '(chưa có)'}
-          </div>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card/60 p-2">
-          <div className="text-[11px] uppercase tracking-wide text-text-secondary">Stats</div>
-          <div className="mt-1 text-sm text-text-primary">
-            {stats?.totalMemories ?? 0} memories
-          </div>
-          {stats?.recentEntities?.length ? (
-            <div className="mt-1 text-[11px] text-text-secondary">
-              {stats.recentEntities.slice(0, 6).join(', ')}
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

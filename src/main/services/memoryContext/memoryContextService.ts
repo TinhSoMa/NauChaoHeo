@@ -48,24 +48,36 @@ export class MemoryContextService {
           success: false,
           memories: [],
           promptContext: '',
+          facts: [],
+          glossary: [],
+          entities: [],
           debug: [],
           namespace: request.namespace,
           error: response.error || 'Memory context search failed'
         };
       }
+      const data = response.data as any;
       return {
         success: true,
-        memories: response.data.memories || [],
-        promptContext: response.data.promptContext || '',
-        debug: response.data.debug || [],
-        namespace: response.data.namespace || request.namespace,
-        warning: response.data.warning
+        memories: data.memories || [],
+        promptContext: data.promptContext || '',
+        facts: Array.isArray(data.facts) ? data.facts : [],
+        glossary: Array.isArray(data.glossary) ? data.glossary : [],
+        entities: Array.isArray(data.entities) ? data.entities : [],
+        debug: data.debug || [],
+        namespace: data.namespace || request.namespace,
+        runtimeMode: data.runtimeMode,
+        providerStatus: data.providerStatus,
+        warning: data.warning
       };
     } catch (error) {
       return {
         success: false,
         memories: [],
         promptContext: '',
+        facts: [],
+        glossary: [],
+        entities: [],
         debug: [],
         namespace: request.namespace,
         error: String(error)
@@ -84,23 +96,38 @@ export class MemoryContextService {
         return {
           success: false,
           storedCount: 0,
+          storedFacts: 0,
+          storedEntities: 0,
           entities: [],
+          facts: [],
+          glossary: [],
           namespace: request.namespace,
           error: response.error || 'Memory context add failed'
         };
       }
+      const data = response.data as any;
       return {
         success: true,
-        storedCount: response.data.storedCount || 0,
-        entities: response.data.entities || [],
-        namespace: response.data.namespace || request.namespace,
-        warning: response.data.warning
+        storedCount: data.storedCount || 0,
+        storedFacts: data.storedFacts || 0,
+        storedEntities: data.storedEntities || 0,
+        entities: data.entities || [],
+        facts: Array.isArray(data.facts) ? data.facts : [],
+        glossary: Array.isArray(data.glossary) ? data.glossary : [],
+        namespace: data.namespace || request.namespace,
+        runtimeMode: data.runtimeMode,
+        providerStatus: data.providerStatus,
+        warning: data.warning
       };
     } catch (error) {
       return {
         success: false,
         storedCount: 0,
+        storedFacts: 0,
+        storedEntities: 0,
         entities: [],
+        facts: [],
+        glossary: [],
         namespace: request.namespace,
         error: String(error)
       };
@@ -157,8 +184,11 @@ export class MemoryContextService {
         success: true,
         namespace: response.data.namespace || request.namespace,
         totalMemories: response.data.totalMemories || 0,
+        totalFacts: (response.data as any).totalFacts || 0,
+        totalEntities: (response.data as any).totalEntities || 0,
         totalNamespaces: response.data.totalNamespaces,
-        recentEntities: response.data.recentEntities || []
+        recentEntities: response.data.recentEntities || [],
+        runtimeMode: (response.data as any).runtimeMode
       };
     } catch (error) {
       return {
@@ -186,6 +216,11 @@ export class MemoryContextService {
       backend: 'unavailable',
       error,
       warning: 'Cài dependency: pip install mem0ai[nlp] && python -m spacy download xx_ent_wiki_sm',
+      providerStatus: {
+        configured: false,
+        active: false,
+        reason: 'runtime_unavailable'
+      },
       details: {
         spacyModelName: 'xx_ent_wiki_sm',
         storePath: this.bridge.getStorePath()

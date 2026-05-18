@@ -31,7 +31,7 @@ export function getActualPromptSentToModel(preparedPrompt: unknown, method: Stor
   if (method === 'api') {
     return typeof preparedPrompt === 'string'
       ? preparedPrompt
-      : JSON.stringify(preparedPrompt, null, 2);
+      : JSON.stringify(preparedPrompt);
   }
 
   if (typeof preparedPrompt === 'string') {
@@ -50,7 +50,7 @@ export function getActualPromptSentToModel(preparedPrompt: unknown, method: Stor
 
   return typeof preparedPrompt === 'string'
     ? preparedPrompt
-    : JSON.stringify(preparedPrompt, null, 2);
+    : JSON.stringify(preparedPrompt);
 }
 
 export async function saveTranslationPromptArtifact(params: {
@@ -82,8 +82,21 @@ export async function saveTranslationPromptArtifact(params: {
   const chapterLabel = String(chapterIndex).padStart(4, '0');
   const titleSegment = sanitizeFileSegment(chapter.title || chapter.id);
   const methodSegment = sanitizeFileSegment(method);
-  const fileName = `prompts/translation/${timestamp}__ch-${chapterLabel}__${methodSegment}__${titleSegment}.json`;
+  const baseName = `${timestamp}__ch-${chapterLabel}__${methodSegment}__${titleSegment}`;
+  const rawPromptFileName = `prompts/translation/${baseName}.prompt.txt`;
+  const metaFileName = `prompts/translation/${baseName}.meta.json`;
   const actualSentPrompt = getActualPromptSentToModel(preparedPrompt, method);
+
+  const rawWriteResult = await window.electronAPI.project.writeFeatureFile({
+    projectId,
+    feature: 'story',
+    fileName: rawPromptFileName,
+    content: actualSentPrompt
+  });
+
+  if (!rawWriteResult.success) {
+    throw new Error(rawWriteResult.error || 'Không thể lưu raw prompt');
+  }
 
   const artifact = {
     type: 'story-translation-sent-prompt',
@@ -95,15 +108,15 @@ export async function saveTranslationPromptArtifact(params: {
     chapterTitle: chapter.title,
     method,
     model,
-    actualSentPrompt,
-    preparedPrompt,
+    rawPromptFileName,
+    actualSentPayload: preparedPrompt,
     memoryContext: extractMemoryContext(prepareResult)
   };
 
   const result = await window.electronAPI.project.writeFeatureFile({
     projectId,
     feature: 'story',
-    fileName,
+    fileName: metaFileName,
     content: artifact
   });
 

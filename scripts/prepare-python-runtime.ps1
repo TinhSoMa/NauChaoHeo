@@ -117,13 +117,17 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Installing locked pycapcut dependencies..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "-r", $requirementsPath, "--disable-pip-version-check", "--no-warn-script-location")
 
+Write-Host "[Python Runtime] Installing memory context dependencies (mem0ai[nlp], spaCy model)..."
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "mem0ai[nlp]", "--disable-pip-version-check", "--no-warn-script-location")
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "spacy", "download", "xx_ent_wiki_sm")
+
 Write-Host "[Python Runtime] Removing unused speech/browser automation packages (funasr-onnx, selenium, undetected-chromedriver)..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "uninstall", "-y", "funasr-onnx", "selenium", "undetected-chromedriver", "--disable-pip-version-check")
 
 Write-Host "[Python Runtime] Running smoke test..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "-c",
-  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation; print('OK runtime=' + sys.version)"
+  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm'))"
 )
 
 if (Test-Path -LiteralPath $licensesDir) {
@@ -136,7 +140,7 @@ if (Test-Path -LiteralPath $pythonLicensePath) {
   Copy-Item -LiteralPath $pythonLicensePath -Destination (Join-Path $licensesDir "PYTHON_LICENSE.txt") -Force
 }
 
-$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow")
+$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "mem0ai", "spacy")
 foreach ($pkg in $packages) {
   $pkgDir = Join-Path $licensesDir $pkg
   Ensure-Directory -PathValue $pkgDir

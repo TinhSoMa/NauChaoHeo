@@ -13,6 +13,7 @@ import { extractTranslatedTitle } from '../utils/chapterUtils';
 import type { ProcessingChapterInfo, StoryChapterMethod, StoryMemoryRuntimeState, StoryPromptSaveSettings, StoryStatus } from '../types';
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
+import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
 
 export type StoryWebQueueMode = 'sequential' | 'multi_auto';
 
@@ -25,6 +26,7 @@ interface UseStoryGeminiWebQueueTranslationParams {
   retranslateExisting: boolean;
   isChapterIncluded: (id: string) => boolean;
   translatedChapters: Map<string, string>;
+  summaries: Map<string, string>;
   setStatus: Dispatch<SetStateAction<StoryStatus>>;
   setProcessingChapters: Dispatch<SetStateAction<Map<string, ProcessingChapterInfo>>>;
   setTranslatedChapters: Dispatch<SetStateAction<Map<string, string>>>;
@@ -144,6 +146,7 @@ export function useStoryGeminiWebQueueTranslation(
     retranslateExisting,
     isChapterIncluded,
     translatedChapters,
+    summaries,
     setStatus,
     setProcessingChapters,
     setTranslatedChapters,
@@ -164,6 +167,11 @@ export function useStoryGeminiWebQueueTranslation(
   const [resolvedWorkerCount, setResolvedWorkerCount] = useState<number | null>(null);
   const currentBatchIdRef = useRef<string | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
+  const runtimeTranslatedChaptersRef = useRef<Map<string, string>>(new Map(translatedChapters));
+
+  useEffect(() => {
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
+  }, [translatedChapters]);
 
   const isActiveBatch = (batchId?: string): boolean => {
     const activeBatchId = currentBatchIdRef.current;
@@ -301,12 +309,19 @@ export function useStoryGeminiWebQueueTranslation(
   ): Promise<void> => {
     const expectedChapterId = chapter.id;
     const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id) + 1;
+    const previousAssistantOutput = resolvePreviousAssistantOutput({
+      chapters,
+      chapterIndex: chapterIndex - 1,
+      summaries,
+      translatedChapters: runtimeTranslatedChaptersRef.current
+    });
     const memoryPayload = buildStoryMemoryPayload({
       projectId,
       filePath,
       chapter,
       chapterIndex,
       totalChapters: chapters.length,
+      previousAssistantOutput,
       settings: memorySettings
     });
     const runId = options?.runId;
@@ -424,6 +439,8 @@ export function useStoryGeminiWebQueueTranslation(
           return;
         }
 
+        runtimeTranslatedChaptersRef.current.set(expectedChapterId, translateResult.data!);
+
         setTranslatedChapters((prev) => {
           const next = new Map(prev);
           next.set(expectedChapterId, translateResult.data!);
@@ -477,6 +494,7 @@ export function useStoryGeminiWebQueueTranslation(
     shouldStopRef.current = false;
     const runId = `story-webqueue-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     currentRunIdRef.current = runId;
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
     setIsTranslating(true);
     setIsStopping(false);
     setStatus('running');

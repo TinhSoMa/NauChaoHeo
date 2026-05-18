@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
+import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
 
 interface UseStoryTranslationParams {
   chapters: Chapter[];
@@ -39,6 +40,7 @@ interface UseStoryTranslationParams {
   setTokenContexts: Dispatch<SetStateAction<Map<string, { conversationId: string; responseId: string; choiceId: string }>>>;
   setViewMode: Dispatch<SetStateAction<'original' | 'translated' | 'summary'>>;
   translatedChapters: Map<string, string>;
+  summaries: Map<string, string>;
   projectId: string | null;
   filePath: string;
   memorySettings: StoryMemoryRuntimeState;
@@ -70,6 +72,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     setTokenContexts,
     setViewMode,
     translatedChapters,
+    summaries,
     projectId,
     filePath,
     memorySettings,
@@ -93,6 +96,12 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     const chapter = chapters.find(c => c.id === selectedChapterId);
     if (!chapter) return;
     const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+    const previousAssistantOutput = resolvePreviousAssistantOutput({
+      chapters,
+      chapterIndex,
+      summaries,
+      translatedChapters
+    });
     const memoryPayload = chapterIndex >= 0
       ? buildStoryMemoryPayload({
           projectId,
@@ -100,6 +109,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
           chapter,
           chapterIndex: chapterIndex + 1,
           totalChapters: chapters.length,
+          previousAssistantOutput,
           settings: memorySettings
         })
       : null;

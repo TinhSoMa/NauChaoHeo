@@ -39,6 +39,7 @@ export interface StoryTranslationMemoryPayload {
   chapterTitle?: string | null;
   chapterIndex?: number | null;
   totalChapters?: number | null;
+  previousAssistantOutput?: string | null;
   settings?: StoryMemorySettings | null;
 }
 

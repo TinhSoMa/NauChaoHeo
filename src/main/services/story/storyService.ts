@@ -404,10 +404,13 @@ export class StoryService {
       }
 
       const memoryContext = await this.resolveStoryMemoryContext(memory, chapterContent);
-      const chapterPayload = this.composeChapterPayload(chapterContent, memoryContext.promptContext || '');
+      const memoryPayload = this.buildTranslationMemoryPayload(
+        memoryContext,
+        typeof memory?.previousAssistantOutput === 'string' ? memory.previousAssistantOutput : ''
+      );
 
       // 3. Parse and inject content
-      const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterPayload);
+      const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterContent, memoryPayload);
       return {
         ...prepared,
         memoryContext
@@ -477,7 +480,23 @@ export class StoryService {
   /**
    * Helper function to inject content into prompt template
    */
-  private static injectContentIntoPrompt(promptContent: string, chapterContent: string): { success: boolean; prompt?: any; error?: string } {
+  private static injectContentIntoPrompt(
+    promptContent: string,
+    chapterContent: string,
+    memoryPayload?: {
+      translation_memory: {
+        confirmed_terms: Record<string, string>;
+        style_rules: Record<string, string>;
+      };
+      continuity_context: {
+        last_translated_excerpt: string[];
+        active_entities: string[];
+        continuity_notes: string[];
+      };
+      previous_assistant_output: string;
+      current_input: string[];
+    }
+  ): { success: boolean; prompt?: any; error?: string } {
     try {
       // 3. Parse the prompt content (which is a JSON string)
       let promptData;
@@ -551,7 +570,21 @@ export class StoryService {
       // Handle Object format (structured prompt)
       else if (typeof promptData === 'object' && promptData !== null) {
           const preparedPrompt = injectContent(promptData);
-          return { success: true, prompt: preparedPrompt };
+          const normalizedCurrentInput = chapterContent.split(/\r?\n/).filter((line) => line.trim() !== '');
+          const promptWithoutLegacyInput = { ...(preparedPrompt as Record<string, any>) };
+          if ('input_text' in promptWithoutLegacyInput) {
+            delete promptWithoutLegacyInput.input_text;
+          }
+          const mergedPrompt = {
+            ...promptWithoutLegacyInput,
+            ...(memoryPayload ? {
+              translation_memory: memoryPayload.translation_memory,
+              continuity_context: memoryPayload.continuity_context,
+              previous_assistant_output: memoryPayload.previous_assistant_output,
+            } : {}),
+            current_input: normalizedCurrentInput,
+          };
+          return { success: true, prompt: mergedPrompt };
       }
 
       return { success: false, error: 'Prompt content must be a JSON array or object' };
@@ -588,12 +621,146 @@ export class StoryService {
     return `story:${projectId}:${fingerprint}`;
   }
 
-  private static composeChapterPayload(chapterContent: string, promptContext: string): string {
-    const base = (chapterContent || '').trim();
-    if (!promptContext.trim()) {
-      return base;
+  private static buildTranslationMemoryPayload(memoryContext: {
+    memories?: string[];
+    facts?: Array<{ text?: string; kind?: string; aliases?: string[] }>;
+    glossary?: Array<{ sourceTerm?: string; targetTerm?: string }>;
+    entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
+  }, previousAssistantOutput: string): {
+    translation_memory: {
+      confirmed_terms: Record<string, string>;
+      style_rules: Record<string, string>;
+    };
+    continuity_context: {
+      last_translated_excerpt: string[];
+      active_entities: string[];
+      continuity_notes: string[];
+    };
+    previous_assistant_output: string;
+    current_input: string[];
+  } {
+    const glossary = Array.isArray(memoryContext.glossary) ? memoryContext.glossary : [];
+    const facts = Array.isArray(memoryContext.facts) ? memoryContext.facts : [];
+    const entities = Array.isArray(memoryContext.entities) ? memoryContext.entities : [];
+
+    const confirmedTerms: Record<string, string> = {};
+    for (const entry of glossary) {
+      const source = String(entry.sourceTerm || '').trim();
+      const target = String(entry.targetTerm || '').trim();
+      if (source && target && !confirmedTerms[source]) {
+        confirmedTerms[source] = target;
+      }
+      if (Object.keys(confirmedTerms).length >= 24) {
+        break;
+      }
     }
-    return `${promptContext.trim()}\n\nCurrent Chapter Source Text:\n${base}`;
+
+    const styleRules: Record<string, string> = {
+      narration: 'van phong tu tien on dinh, uu tien tu nhien',
+      dialogue: 'giu xung ho tien hiep nhat quan',
+      translation_bias: 'uu tien muot va nhat quan thuat ngu',
+    };
+
+    const lastTranslatedExcerpt = facts
+      .filter((fact) => fact && typeof fact.text === 'string' && fact.text.trim().length > 0)
+      .filter((fact) => fact.kind === 'plot_fact' || fact.kind === 'style_rule')
+      .map((fact) => String(fact.text || '').trim())
+      .slice(0, 10);
+
+    const activeEntityValues = new Set<string>();
+    for (const entity of entities) {
+      const value = String(entity.canonicalValue || '').trim();
+      if (value) {
+        activeEntityValues.add(value);
+      }
+      for (const alias of entity.aliases || []) {
+        const normalized = String(alias || '').trim();
+        if (normalized) {
+          activeEntityValues.add(normalized);
+        }
+      }
+      if (activeEntityValues.size >= 24) {
+        break;
+      }
+    }
+
+    const continuityNotes = (memoryContext.memories || [])
+      .map((item) => String(item || '').trim())
+      .filter((item) => item.length > 0)
+      .slice(0, 8);
+
+    const previousAssistantWindow = this.extractPreviousAssistantWindow(previousAssistantOutput);
+
+    return {
+      translation_memory: {
+        confirmed_terms: confirmedTerms,
+        style_rules: styleRules,
+      },
+      continuity_context: {
+        last_translated_excerpt: lastTranslatedExcerpt,
+        active_entities: Array.from(activeEntityValues).slice(0, 24),
+        continuity_notes: continuityNotes,
+      },
+      previous_assistant_output: previousAssistantWindow,
+      current_input: [],
+    };
+  }
+
+  private static extractPreviousAssistantWindow(previousAssistantOutput: string): string {
+    const normalized = String(previousAssistantOutput || '').trim();
+    if (!normalized) {
+      return '';
+    }
+    const maxChars = 4000;
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+
+    const lines = normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length <= 1) {
+      return normalized.slice(0, maxChars);
+    }
+
+    const selected: string[] = [];
+    const maxIndex = lines.length - 1;
+
+    for (let count = 1; count <= lines.length; count += 1) {
+      const nextSelection: string[] = [];
+      const nextUsed = new Set<number>();
+
+      for (let i = 0; i < count; i += 1) {
+        const anchor = Math.round((i * maxIndex) / Math.max(1, count - 1));
+        let index = anchor;
+        while (nextUsed.has(index) && index < maxIndex) {
+          index += 1;
+        }
+        while (nextUsed.has(index) && index > 0) {
+          index -= 1;
+        }
+        if (!nextUsed.has(index)) {
+          nextUsed.add(index);
+          nextSelection.push(lines[index]);
+        }
+      }
+
+      const candidate = nextSelection.join('\n');
+      if (candidate.length > maxChars) {
+        break;
+      }
+
+      selected.length = 0;
+      selected.push(...nextSelection);
+    }
+
+    if (selected.length > 0) {
+      return selected.join('\n');
+    }
+
+    return normalized.slice(0, maxChars);
   }
 
   private static getStoryMemoryStatusFromHealth(health: MemoryContextHealthResult): 'ready' | 'missing_runtime' | 'missing_provider' | 'error' {
@@ -609,7 +776,7 @@ export class StoryService {
   private static async resolveStoryMemoryContext(
     memory: StoryTranslationMemoryPayload | null | undefined,
     chapterContent: string
-  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
+  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; facts?: any[]; glossary?: any[]; entities?: any[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
     const settings = this.normalizeStoryMemorySettings(memory);
     const namespace = this.getStoryMemoryNamespace(memory);
     if (!settings?.enabled || !namespace) {
@@ -617,6 +784,9 @@ export class StoryService {
         namespace: namespace || undefined,
         promptContext: '',
         memories: [],
+        facts: [],
+        glossary: [],
+        entities: [],
         debug: [],
         status: memory?.settings?.status || 'error'
       };
@@ -632,6 +802,9 @@ export class StoryService {
         namespace,
         promptContext: '',
         memories: [],
+        facts: [],
+        glossary: [],
+        entities: [],
         debug: [],
         status: 'error',
         warning: 'Memory mode cần projectId và chapterIndex hợp lệ.'
@@ -656,10 +829,14 @@ export class StoryService {
     };
 
     const searchResult = await getMemoryContextService().searchContext(searchRequest);
+    const extended = searchResult as any;
     return {
       namespace,
       promptContext: searchResult.promptContext || '',
       memories: searchResult.memories || [],
+      facts: Array.isArray(extended.facts) ? extended.facts : [],
+      glossary: Array.isArray(extended.glossary) ? extended.glossary : [],
+      entities: Array.isArray(extended.entities) ? extended.entities : [],
       debug: searchResult.debug || [],
       warning: searchResult.warning || health.warning,
       status

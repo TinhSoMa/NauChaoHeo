@@ -14,6 +14,7 @@ import type {
 } from '../types';
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
+import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
 
 interface UseStoryBatchTranslationParams {
   chapters: Chapter[];
@@ -25,6 +26,7 @@ interface UseStoryBatchTranslationParams {
   useProxy: boolean;
   isChapterIncluded: (id: string) => boolean;
   translatedChapters: Map<string, string>;
+  summaries: Map<string, string>;
   tokenConfigs: GeminiChatConfigLite[];
   getDistinctActiveTokenConfigs: (configs: GeminiChatConfigLite[]) => GeminiChatConfigLite[];
   getPreferredTokenConfig: () => GeminiChatConfigLite | null;
@@ -64,6 +66,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     useProxy,
     isChapterIncluded,
     translatedChapters,
+    summaries,
     tokenConfigs,
     getDistinctActiveTokenConfigs,
     getPreferredTokenConfig,
@@ -103,6 +106,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     isFirstChapterTaken: false
   });
   const workerIdRef = useRef(0);
+  const runtimeTranslatedChaptersRef = useRef<Map<string, string>>(new Map(translatedChapters));
   
   // Ref to track if batch is currently running (for hot-add workers)
   const isBatchRunningRef = useRef(false);
@@ -122,6 +126,10 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     
     return () => clearInterval(interval);
   }, [processingChapters.size]);
+
+  useEffect(() => {
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
+  }, [translatedChapters]);
 
   useEffect(() => {
     const loadAppSettings = async () => {
@@ -192,12 +200,22 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
     try {
       console.log(`[useStoryBatchTranslation] 📖 Dịch chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
+      const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+      const previousAssistantOutput = actualChapterIndex >= 0
+        ? resolvePreviousAssistantOutput({
+            chapters,
+            chapterIndex: actualChapterIndex,
+            summaries,
+            translatedChapters: runtimeTranslatedChaptersRef.current
+          })
+        : '';
       const memoryPayload = buildStoryMemoryPayload({
         projectId,
         filePath,
         chapter,
-        chapterIndex: index + 1,
-        totalChapters: batchStateRef.current.chapters.length,
+        chapterIndex: actualChapterIndex >= 0 ? actualChapterIndex + 1 : index + 1,
+        totalChapters: chapters.length,
+        previousAssistantOutput,
         settings: memorySettings
       });
 
@@ -245,7 +263,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
               runId,
               chapterId: chapter.id,
               chapterTitle: chapter.title,
-              chapterIndex: index + 1,
+              chapterIndex: actualChapterIndex >= 0 ? actualChapterIndex + 1 : index + 1,
               sourceText: chapter.content,
               tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
@@ -266,7 +284,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         await saveTranslationPromptArtifact({
           projectId,
           chapter,
-          chapterIndex: index + 1,
+          chapterIndex: actualChapterIndex >= 0 ? actualChapterIndex + 1 : index + 1,
           method: storyMethod,
           model,
           preparedPrompt: prepareResult.prompt,
@@ -293,6 +311,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
           return null;
         }
+
+        runtimeTranslatedChaptersRef.current.set(chapter.id, translateResult.data);
 
         // Update UI hooks
         setTranslatedChapters(prev => {
@@ -509,6 +529,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         isFirstChapterTaken: false
     };
     workerIdRef.current = 0;
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
     activeWorkerCountRef.current = 0;
     for (const timeout of spawnTimeoutsRef.current) {
       clearTimeout(timeout);

@@ -68,9 +68,10 @@ export function buildStoryMemoryPayload(args: {
   chapter: Chapter;
   chapterIndex: number;
   totalChapters: number;
+  previousAssistantOutput?: string | null;
   settings: StoryMemoryRuntimeState;
 }) {
-  const { projectId, filePath, chapter, chapterIndex, totalChapters, settings } = args;
+  const { projectId, filePath, chapter, chapterIndex, totalChapters, previousAssistantOutput, settings } = args;
   return {
     projectId,
     storyFilePath: filePath,
@@ -78,6 +79,7 @@ export function buildStoryMemoryPayload(args: {
     chapterTitle: chapter.title,
     chapterIndex,
     totalChapters,
+    previousAssistantOutput: previousAssistantOutput || null,
     settings: {
       enabled: settings.enabled,
       topK: settings.topK,

@@ -5,6 +5,8 @@ import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { FileText, CheckSquare, Square, Check, MessageSquare, Ban, Clock, Loader2, Monitor, Settings } from 'lucide-react';
 import { useProjectContext } from '../../context/ProjectContext';
+import { buildStoryMemoryPayload, type StoryMemoryRuntimeState } from './types';
+import { resolvePreviousAssistantOutput } from './utils/previousAssistantOutput';
 
 // Browser config interface
 interface BrowserConfig {
@@ -26,6 +28,7 @@ export function StoryTranslatorWeb() {
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
+  const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
   const [processingTimes, setProcessingTimes] = useState<Map<string, number>>(new Map()); // Luu thoi gian xl (ms)
   const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
@@ -50,6 +53,11 @@ export function StoryTranslatorWeb() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const STORY_WEB_STATE_FILE = 'story-translator-web.json';
+  const STORY_SUMMARY_STATE_FILE = 'story-summary.json';
+  const WEB_MEMORY_SETTINGS: StoryMemoryRuntimeState = {
+    enabled: false,
+    topK: 6
+  };
 
   const loadStoryWebState = async () => {
     if (!projectId) return;
@@ -137,6 +145,25 @@ export function StoryTranslatorWeb() {
     }
   };
 
+  const loadStorySummaries = async () => {
+    if (!projectId) return;
+    try {
+      const res = await window.electronAPI.project.readFeatureFile({
+        projectId,
+        feature: 'story',
+        fileName: STORY_SUMMARY_STATE_FILE
+      });
+      if (res?.success && res.data) {
+        const saved = JSON.parse(res.data) as { summaries?: Array<[string, string]> };
+        if (saved.summaries) {
+          setSummaries(new Map(saved.summaries));
+        }
+      }
+    } catch (error) {
+      console.error('[StoryTranslatorWeb] Loi khi tai summaries:', error);
+    }
+  };
+
   const handleToggleUseProxy = async (enabled: boolean) => {
     try {
       const current = await window.electronAPI.appSettings.getAll();
@@ -173,6 +200,7 @@ export function StoryTranslatorWeb() {
   useEffect(() => {
     if (!projectId || !paths) return;
     loadStoryWebState();
+    loadStorySummaries();
   }, [projectId, paths]);
 
   useEffect(() => {
@@ -319,6 +347,22 @@ export function StoryTranslatorWeb() {
     
     const chapter = chapters.find(c => c.id === selectedChapterId);
     if (!chapter) return;
+    const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+    const previousAssistantOutput = resolvePreviousAssistantOutput({
+      chapters,
+      chapterIndex,
+      summaries,
+      translatedChapters
+    });
+    const memoryPayload = buildStoryMemoryPayload({
+      projectId,
+      filePath,
+      chapter,
+      chapterIndex: chapterIndex + 1,
+      totalChapters: chapters.length,
+      previousAssistantOutput,
+      settings: WEB_MEMORY_SETTINGS
+    });
 
     setStatus('running');
     try {
@@ -326,7 +370,8 @@ export function StoryTranslatorWeb() {
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
         chapterContent: chapter.content,
         sourceLang,
-        targetLang
+        targetLang,
+        memory: memoryPayload
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) throw new Error(prepareResult.error);
@@ -444,6 +489,22 @@ export function StoryTranslatorWeb() {
       }
 
       const chapter = chaptersToTranslate[i];
+      const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+      const previousAssistantOutput = resolvePreviousAssistantOutput({
+        chapters,
+        chapterIndex,
+        summaries,
+        translatedChapters: sessionMap
+      });
+      const memoryPayload = buildStoryMemoryPayload({
+        projectId,
+        filePath,
+        chapter,
+        chapterIndex: chapterIndex + 1,
+        totalChapters: chapters.length,
+        previousAssistantOutput,
+        settings: WEB_MEMORY_SETTINGS
+      });
       setBatchProgress({ current: i + 1, total: chaptersToTranslate.length });
       setSelectedChapterId(chapter.id);
 
@@ -454,7 +515,8 @@ export function StoryTranslatorWeb() {
         const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
           chapterContent: chapter.content,
           sourceLang, 
-          targetLang
+          targetLang,
+          memory: memoryPayload
         }) as PreparePromptResult;
         console.log('[StoryTranslator] Step 2: Prompt prepared, success:', prepareResult.success);
         
