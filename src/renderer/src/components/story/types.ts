@@ -1,5 +1,7 @@
 import type { Chapter } from '@shared/types';
 
+export type StoryPreviousAssistantOutputMode = 'full' | 'sampled';
+
 export interface GeminiChatConfigLite {
   id: string;
   cookie: string;
@@ -58,8 +60,18 @@ export interface StoryMemoryRuntimeState {
   status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
 }
 
+export interface StorySummaryMemoryRuntimeState {
+  enabled: boolean;
+  topK: number;
+  namespace?: string;
+  status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
+  readFromTranslationMemory: boolean;
+  translationNamespace?: string;
+}
+
 export interface StoryPromptSaveSettings {
   autoSaveSentPrompt: boolean;
+  previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
 }
 
 export function buildStoryMemoryPayload(args: {
@@ -69,9 +81,19 @@ export function buildStoryMemoryPayload(args: {
   chapterIndex: number;
   totalChapters: number;
   previousAssistantOutput?: string | null;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
   settings: StoryMemoryRuntimeState;
 }) {
-  const { projectId, filePath, chapter, chapterIndex, totalChapters, previousAssistantOutput, settings } = args;
+  const {
+    projectId,
+    filePath,
+    chapter,
+    chapterIndex,
+    totalChapters,
+    previousAssistantOutput,
+    previousAssistantOutputMode,
+    settings
+  } = args;
   return {
     projectId,
     storyFilePath: filePath,
@@ -80,11 +102,55 @@ export function buildStoryMemoryPayload(args: {
     chapterIndex,
     totalChapters,
     previousAssistantOutput: previousAssistantOutput || null,
+    previousAssistantOutputMode: previousAssistantOutputMode || 'sampled',
     settings: {
       enabled: settings.enabled,
       topK: settings.topK,
       namespace: settings.namespace,
       status: settings.status
+    }
+  };
+}
+
+export function buildStorySummaryMemoryPayload(args: {
+  projectId: string | null;
+  filePath: string;
+  chapter: Chapter;
+  chapterIndex: number;
+  totalChapters: number;
+  previousSummaryOutput?: string | null;
+  previousTranslatedOutput?: string | null;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  settings: StorySummaryMemoryRuntimeState;
+}) {
+  const {
+    projectId,
+    filePath,
+    chapter,
+    chapterIndex,
+    totalChapters,
+    previousSummaryOutput,
+    previousTranslatedOutput,
+    previousAssistantOutputMode,
+    settings
+  } = args;
+  return {
+    projectId,
+    storyFilePath: filePath,
+    chapterId: chapter.id,
+    chapterTitle: chapter.title,
+    chapterIndex,
+    totalChapters,
+    previousSummaryOutput: previousSummaryOutput || null,
+    previousTranslatedOutput: previousTranslatedOutput || null,
+    previousAssistantOutputMode: previousAssistantOutputMode || 'sampled',
+    settings: {
+      enabled: settings.enabled,
+      topK: settings.topK,
+      namespace: settings.namespace,
+      status: settings.status,
+      readFromTranslationMemory: settings.readFromTranslationMemory,
+      translationNamespace: settings.translationNamespace
     }
   };
 }

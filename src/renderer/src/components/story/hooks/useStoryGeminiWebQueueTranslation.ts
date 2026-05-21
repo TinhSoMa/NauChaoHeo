@@ -313,7 +313,8 @@ export function useStoryGeminiWebQueueTranslation(
       chapters,
       chapterIndex: chapterIndex - 1,
       summaries,
-      translatedChapters: runtimeTranslatedChaptersRef.current
+      translatedChapters: runtimeTranslatedChaptersRef.current,
+      mode: promptSaveSettings.previousAssistantOutputMode
     });
     const memoryPayload = buildStoryMemoryPayload({
       projectId,
@@ -322,6 +323,7 @@ export function useStoryGeminiWebQueueTranslation(
       chapterIndex,
       totalChapters: chapters.length,
       previousAssistantOutput,
+      previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
       settings: memorySettings
     });
     const runId = options?.runId;

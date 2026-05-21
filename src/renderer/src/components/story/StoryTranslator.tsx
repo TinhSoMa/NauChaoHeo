@@ -8,7 +8,16 @@ import {
   type MemoryContextHealthResult,
   type MemoryContextStatsResult
 } from '../../../../shared/types/memoryContext';
-import type { StoryReadingTheme, StoryChapterMethod, StoryMemoryRuntimeState, StoryPromptSaveSettings, StoryStatus, StoryTranslationMethod } from './types';
+import type {
+  StoryReadingTheme,
+  StoryChapterMethod,
+  StoryMemoryRuntimeState,
+  StoryPromptSaveSettings,
+  StoryPreviousAssistantOutputMode,
+  StoryStatus,
+  StorySummaryMemoryRuntimeState,
+  StoryTranslationMethod
+} from './types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -42,7 +51,11 @@ const getInitialViewportWidth = (): number => {
 
 const DEFAULT_MEMORY_TOP_K = 6;
 
-const computeStoryMemoryNamespace = async (projectId: string, filePath: string): Promise<string> => {
+const computeStoryMemoryNamespace = async (
+  projectId: string,
+  filePath: string,
+  prefix: 'story' | 'story-summary' = 'story'
+): Promise<string> => {
   const source = filePath.trim() || '__default_story__';
   const encoded = new TextEncoder().encode(source);
   const digest = await window.crypto.subtle.digest('SHA-1', encoded);
@@ -50,7 +63,7 @@ const computeStoryMemoryNamespace = async (projectId: string, filePath: string):
     .map((value) => value.toString(16).padStart(2, '0'))
     .join('')
     .slice(0, 12);
-  return `story:${projectId}:${hash}`;
+  return `${prefix}:${projectId}:${hash}`;
 };
 
 export function StoryTranslator() {
@@ -79,21 +92,42 @@ export function StoryTranslator() {
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [memoryTopK, setMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
   const [memoryNamespace, setMemoryNamespace] = useState<string>('');
+  const [summaryMemoryNamespace, setSummaryMemoryNamespace] = useState<string>('');
   const [memoryStatus, setMemoryStatus] = useState<StoryMemoryRuntimeState['status']>('error');
   const [memoryHealth, setMemoryHealth] = useState<MemoryContextHealthResult | null>(null);
   const [memoryStats, setMemoryStats] = useState<MemoryContextStatsResult | null>(null);
   const [isClearingMemory, setIsClearingMemory] = useState(false);
   const [autoSaveSentPrompt, setAutoSaveSentPrompt] = useState(false);
+  const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
+    useState<StoryPreviousAssistantOutputMode>('sampled');
+  void memoryHealth;
+  void memoryStats;
   const isMemoryFeatureEnabled = Boolean(projectId && memoryEnabled);
+  const isSummaryMemoryFeatureEnabled = isMemoryFeatureEnabled;
   const memoryRuntimeSettings = useMemo<StoryMemoryRuntimeState>(() => ({
     enabled: isMemoryFeatureEnabled,
     topK: memoryTopK,
     namespace: memoryNamespace || undefined,
     status: memoryStatus
   }), [isMemoryFeatureEnabled, memoryNamespace, memoryStatus, memoryTopK]);
+  const summaryMemoryRuntimeSettings = useMemo<StorySummaryMemoryRuntimeState>(() => ({
+    enabled: isSummaryMemoryFeatureEnabled,
+    topK: memoryTopK,
+    namespace: summaryMemoryNamespace || undefined,
+    status: memoryStatus,
+    readFromTranslationMemory: true,
+    translationNamespace: memoryNamespace || undefined
+  }), [
+    isSummaryMemoryFeatureEnabled,
+    memoryTopK,
+    memoryNamespace,
+    memoryStatus,
+    summaryMemoryNamespace
+  ]);
   const promptSaveSettings = useMemo<StoryPromptSaveSettings>(() => ({
-    autoSaveSentPrompt
-  }), [autoSaveSentPrompt]);
+    autoSaveSentPrompt,
+    previousAssistantOutputMode
+  }), [autoSaveSentPrompt, previousAssistantOutputMode]);
   
   // Token management (using custom hook)
   const {
@@ -265,6 +299,7 @@ export function StoryTranslator() {
       chapterScrollPositions,
       memoryEnabled,
       memoryTopK,
+      previousAssistantOutputMode,
       autoSaveSentPrompt
     },
     {
@@ -289,6 +324,7 @@ export function StoryTranslator() {
       setChapters,
       setMemoryEnabled,
       setMemoryTopK,
+      setPreviousAssistantOutputMode,
       setAutoSaveSentPrompt
     },
     fileManagement.parseFile
@@ -298,6 +334,7 @@ export function StoryTranslator() {
     let active = true;
     if (!projectId || !filePath.trim()) {
       setMemoryNamespace('');
+      setSummaryMemoryNamespace('');
       return;
     }
 
@@ -311,6 +348,19 @@ export function StoryTranslator() {
         console.warn('[StoryTranslator] Failed to compute memory namespace:', error);
         if (active) {
           setMemoryNamespace('');
+        }
+      });
+
+    computeStoryMemoryNamespace(projectId, filePath, 'story-summary')
+      .then((namespace) => {
+        if (active) {
+          setSummaryMemoryNamespace(namespace);
+        }
+      })
+      .catch((error) => {
+        console.warn('[StoryTranslator] Failed to compute summary memory namespace:', error);
+        if (active) {
+          setSummaryMemoryNamespace('');
         }
       });
 
@@ -671,13 +721,18 @@ export function StoryTranslator() {
     setStatus,
     setViewMode,
     useProxy,
+    projectId,
+    filePath,
+    memorySettings: summaryMemoryRuntimeSettings,
     loadConfigurations,
     getPreferredTokenConfig,
     setProcessingChapters,
-    isChapterIncluded,
-    tokenConfigs,
-    getDistinctActiveTokenConfigs
-  });
+      isChapterIncluded,
+      tokenConfigs,
+      getDistinctActiveTokenConfigs,
+      previousAssistantOutputMode,
+      promptSaveSettings
+    });
   
   // Debug logging
   console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
@@ -905,6 +960,43 @@ export function StoryTranslator() {
     }
   }, [isClearingMemory, memoryNamespace, projectId]);
 
+  const handleClearSummaryMemoryNamespace = useCallback(async () => {
+    if (!projectId || !summaryMemoryNamespace || isClearingMemory) {
+      return;
+    }
+    setIsClearingMemory(true);
+    try {
+      const result = await window.electronAPI.invoke(
+        MEMORY_CONTEXT_IPC_CHANNELS.CLEAR_NAMESPACE,
+        {
+          projectId,
+          feature: 'story.summary',
+          namespace: summaryMemoryNamespace
+        }
+      ) as { success: boolean; error?: string };
+      if (!result.success) {
+        alert(`Không thể xóa summary memory: ${result.error || 'Lỗi không xác định'}`);
+      }
+    } catch (error) {
+      alert(`Không thể xóa summary memory: ${String(error)}`);
+    } finally {
+      setIsClearingMemory(false);
+    }
+  }, [isClearingMemory, projectId, summaryMemoryNamespace]);
+
+  const ensureSummaryMemoryRuntimeReady = useCallback(() => {
+    if (!isSummaryMemoryFeatureEnabled) {
+      return true;
+    }
+    if (memoryStatus === 'missing_runtime') {
+      alert(
+        'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm'
+      );
+      return false;
+    }
+    return true;
+  }, [isSummaryMemoryFeatureEnabled, memoryStatus]);
+
   const compactModelLabel = (label: string): string => {
     const raw = (label || '').trim();
     if (!raw) return raw;
@@ -1029,7 +1121,7 @@ export function StoryTranslator() {
             <div className="min-w-0">
               <div className="text-sm font-medium text-text-primary">Memory Context</div>
               <div className="text-xs text-text-secondary">
-                Query ký ức từ các chapter trước và bơm vào prompt dịch.
+                Query ký ức từ các chapter trước và bơm vào prompt dịch, tóm tắt.
               </div>
             </div>
 
@@ -1066,6 +1158,15 @@ export function StoryTranslator() {
                 {isClearingMemory ? 'Đang xóa...' : 'Clear memory'}
               </button>
 
+              <button
+                type="button"
+                onClick={handleClearSummaryMemoryNamespace}
+                disabled={status === 'running' || !projectId || !summaryMemoryNamespace || isClearingMemory}
+                className="h-8 rounded-md border border-border px-3 text-xs text-text-primary disabled:opacity-50"
+              >
+                {isClearingMemory ? 'Đang xóa...' : 'Clear summary'}
+              </button>
+
               {chapters.length > 0 && (
                 <span className="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full whitespace-nowrap">
                   Đã dịch: {translatedChapters.size}/{chapters.length} chương
@@ -1099,7 +1200,12 @@ export function StoryTranslator() {
                 Dịch 1
               </Button>
               <Button
-                onClick={() => handleGenerateSummary(selectedChapterId)}
+                onClick={() => {
+                  if (!ensureSummaryMemoryRuntimeReady()) {
+                    return;
+                  }
+                  handleGenerateSummary(selectedChapterId);
+                }}
                 variant="secondary"
                 disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
                 className="h-8 px-2.5 text-xs shrink-0"
@@ -1157,7 +1263,16 @@ export function StoryTranslator() {
 
                   <Button
                     variant="secondary"
-                    onClick={isGeneratingSummary ? stopSummaryGeneration : handleGenerateAllSummaries}
+                    onClick={
+                      isGeneratingSummary
+                        ? stopSummaryGeneration
+                        : async () => {
+                            if (!ensureSummaryMemoryRuntimeReady()) {
+                              return;
+                            }
+                            await handleGenerateAllSummaries();
+                          }
+                    }
                     className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
                     disabled={isBatchTranslating || isBatchStopping || isWebQueueTranslating || isWebQueueStopping || (status !== 'idle' && !isGeneratingSummary)}
                     title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
@@ -1171,6 +1286,18 @@ export function StoryTranslator() {
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+            <label className="flex items-center gap-2">
+              <span>Previous output</span>
+              <select
+                value={previousAssistantOutputMode}
+                onChange={(e) => setPreviousAssistantOutputMode(e.target.value as StoryPreviousAssistantOutputMode)}
+                className="h-8 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+                disabled={status === 'running'}
+              >
+                <option value="sampled">Sampled</option>
+                <option value="full">Full</option>
+              </select>
+            </label>
             <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
               <input
                 type="checkbox"

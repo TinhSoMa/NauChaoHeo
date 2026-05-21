@@ -1,6 +1,12 @@
 import { useProjectFeatureState } from '../../../hooks/useProjectFeatureState';
 import type { Chapter } from '@shared/types';
-import type { StoryChapterMethod, StoryReadingTheme, StoryTranslationMethod, TokenContext } from '../types';
+import type {
+  StoryChapterMethod,
+  StoryPreviousAssistantOutputMode,
+  StoryReadingTheme,
+  StoryTranslationMethod,
+  TokenContext
+} from '../types';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
 
 type LegacyTranslateMode = 'api' | 'token' | 'both';
@@ -54,6 +60,7 @@ interface StoryTranslatorStateSetters {
   setChapters: (chapters: Chapter[]) => void;
   setMemoryEnabled: (enabled: boolean) => void;
   setMemoryTopK: (value: number) => void;
+  setPreviousAssistantOutputMode: (mode: StoryPreviousAssistantOutputMode) => void;
   setAutoSaveSentPrompt: (enabled: boolean) => void;
 }
 
@@ -79,6 +86,7 @@ interface StoryTranslatorStateValues {
   chapterScrollPositions: Map<string, number>;
   memoryEnabled: boolean;
   memoryTopK: number;
+  previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
   autoSaveSentPrompt: boolean;
 }
 
@@ -112,6 +120,8 @@ export function useStoryTranslatorPersistence(
     chapterScrollPositions?: Array<[string, number]>;
     memoryEnabled?: boolean;
     memoryTopK?: number;
+    summaryMemoryTopK?: number;
+    previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
     autoSaveSentPrompt?: boolean;
   }>({
     feature: 'story',
@@ -164,6 +174,7 @@ export function useStoryTranslatorPersistence(
         chapterScrollPositions: Array.from(values.chapterScrollPositions.entries()),
         memoryEnabled: values.memoryEnabled,
         memoryTopK: values.memoryTopK,
+        previousAssistantOutputMode: values.previousAssistantOutputMode,
         autoSaveSentPrompt: values.autoSaveSentPrompt
       };
     },
@@ -215,7 +226,14 @@ export function useStoryTranslatorPersistence(
       if (saved.readingTheme) setters.setReadingTheme(saved.readingTheme);
       if (saved.chapterScrollPositions) setters.setChapterScrollPositions(new Map(saved.chapterScrollPositions));
       if (typeof saved.memoryEnabled === 'boolean') setters.setMemoryEnabled(saved.memoryEnabled);
-      if (typeof saved.memoryTopK === 'number') setters.setMemoryTopK(saved.memoryTopK);
+      if (typeof saved.memoryTopK === 'number') {
+        setters.setMemoryTopK(saved.memoryTopK);
+      } else if (typeof saved.summaryMemoryTopK === 'number') {
+        setters.setMemoryTopK(saved.summaryMemoryTopK);
+      }
+      if (saved.previousAssistantOutputMode === 'full' || saved.previousAssistantOutputMode === 'sampled') {
+        setters.setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
+      }
       if (typeof saved.autoSaveSentPrompt === 'boolean') setters.setAutoSaveSentPrompt(saved.autoSaveSentPrompt);
     },
     deps: [
@@ -238,6 +256,7 @@ export function useStoryTranslatorPersistence(
       values.chapterScrollPositions,
       values.memoryEnabled,
       values.memoryTopK,
+      values.previousAssistantOutputMode,
       values.autoSaveSentPrompt
     ],
   });

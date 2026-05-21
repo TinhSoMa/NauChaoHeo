@@ -32,6 +32,17 @@ export interface StoryMemorySettings {
   status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
 }
 
+export type StoryPreviousAssistantOutputMode = 'full' | 'sampled';
+
+export interface StorySummaryMemorySettings {
+  enabled: boolean;
+  topK: number;
+  namespace?: string;
+  status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
+  readFromTranslationMemory: boolean;
+  translationNamespace?: string;
+}
+
 export interface StoryTranslationMemoryPayload {
   projectId?: string | null;
   storyFilePath?: string | null;
@@ -40,6 +51,7 @@ export interface StoryTranslationMemoryPayload {
   chapterIndex?: number | null;
   totalChapters?: number | null;
   previousAssistantOutput?: string | null;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
   settings?: StoryMemorySettings | null;
 }
 
@@ -49,6 +61,27 @@ export interface StoryPreparePromptPayload {
   targetLang: string;
   model?: string;
   memory?: StoryTranslationMemoryPayload | null;
+}
+
+export interface StorySummaryMemoryPayload {
+  projectId?: string | null;
+  storyFilePath?: string | null;
+  chapterId?: string | null;
+  chapterTitle?: string | null;
+  chapterIndex?: number | null;
+  totalChapters?: number | null;
+  previousSummaryOutput?: string | null;
+  previousTranslatedOutput?: string | null;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  settings?: StorySummaryMemorySettings | null;
+}
+
+export interface StoryPrepareSummaryPromptPayload {
+  chapterContent: string;
+  sourceLang: string;
+  targetLang: string;
+  model?: string;
+  memory?: StorySummaryMemoryPayload | null;
 }
 
 export interface StoryTranslateChapterPayload {
@@ -61,6 +94,7 @@ export interface StoryTranslateChapterPayload {
   metadata?: Record<string, unknown>;
   onRetry?: (attempt: number, maxRetries: number) => void;
   memory?: StoryTranslationMemoryPayload | null;
+  summaryMemory?: StorySummaryMemoryPayload | null;
 }
 
 export interface StoryTranslateGeminiWebQueuePayload {

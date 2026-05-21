@@ -23,6 +23,8 @@ import type {
   StoryCancelGeminiWebQueueBatchResult,
   StoryGeminiWebQueueCapacity,
   StoryMemorySettings,
+  StorySummaryMemoryPayload,
+  StorySummaryMemorySettings,
   StoryTranslateChapterPayload,
   StoryTranslationMemoryPayload
 } from '../../../shared/types';
@@ -116,6 +118,12 @@ export class StoryService {
                 String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
                 String(options.metadata?.sourceText || '')
               );
+              await this.addStorySummaryMemory(
+                options.summaryMemory,
+                String(result.data.text || ''),
+                String(options.metadata?.chapterTitle || options.summaryMemory?.chapterTitle || ''),
+                String(options.metadata?.sourceText || '')
+              );
 
               return { 
                   success: true, 
@@ -144,6 +152,12 @@ export class StoryService {
                options.memory,
                String(result.data || ''),
                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+               String(options.metadata?.sourceText || '')
+             );
+             await this.addStorySummaryMemory(
+               options.summaryMemory,
+               String(result.data || ''),
+               String(options.metadata?.chapterTitle || options.summaryMemory?.chapterTitle || ''),
                String(options.metadata?.sourceText || '')
              );
              return { success: true, data: result.data, metadata: options.metadata };
@@ -426,7 +440,12 @@ export class StoryService {
    * Prepares the summary prompt by fetching the appropriate summary prompt from the database
    * and injecting the chapter content.
    */
-  static async prepareSummaryPrompt(chapterContent: string, sourceLang: string, targetLang: string): Promise<{ success: boolean; prompt?: any; error?: string }> {
+  static async prepareSummaryPrompt(
+    chapterContent: string,
+    sourceLang: string,
+    targetLang: string,
+    memory?: StorySummaryMemoryPayload | null
+  ): Promise<{ success: boolean; prompt?: any; error?: string; memoryContext?: { namespace?: string; promptContext?: string; memories?: string[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' } }> {
     try {
       let matchingPrompt;
       
@@ -468,8 +487,18 @@ export class StoryService {
         };
       }
 
-      // 3. Parse and inject content
-      return this.injectContentIntoPrompt(matchingPrompt.content, chapterContent);
+      const memoryContext = await this.resolveStorySummaryMemoryContext(memory, chapterContent);
+      const memoryPayload = this.buildSummaryMemoryPayload(
+        memoryContext,
+        typeof memory?.previousSummaryOutput === 'string' ? memory.previousSummaryOutput : '',
+        typeof memory?.previousTranslatedOutput === 'string' ? memory.previousTranslatedOutput : ''
+      );
+
+      const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterContent, memoryPayload);
+      return {
+        ...prepared,
+        memoryContext
+      };
 
     } catch (error) {
       console.error('Error preparing summary prompt:', error);
@@ -483,19 +512,7 @@ export class StoryService {
   private static injectContentIntoPrompt(
     promptContent: string,
     chapterContent: string,
-    memoryPayload?: {
-      translation_memory: {
-        confirmed_terms: Record<string, string>;
-        style_rules: Record<string, string>;
-      };
-      continuity_context: {
-        last_translated_excerpt: string[];
-        active_entities: string[];
-        continuity_notes: string[];
-      };
-      previous_assistant_output: string;
-      current_input: string[];
-    }
+    memoryPayload?: Record<string, unknown>
   ): { success: boolean; prompt?: any; error?: string } {
     try {
       // 3. Parse the prompt content (which is a JSON string)
@@ -575,13 +592,13 @@ export class StoryService {
           if ('input_text' in promptWithoutLegacyInput) {
             delete promptWithoutLegacyInput.input_text;
           }
+          const normalizedMemoryPayload =
+            memoryPayload && typeof memoryPayload === 'object'
+              ? Object.fromEntries(Object.entries(memoryPayload).filter(([key]) => key !== 'current_input'))
+              : null;
           const mergedPrompt = {
             ...promptWithoutLegacyInput,
-            ...(memoryPayload ? {
-              translation_memory: memoryPayload.translation_memory,
-              continuity_context: memoryPayload.continuity_context,
-              previous_assistant_output: memoryPayload.previous_assistant_output,
-            } : {}),
+            ...(normalizedMemoryPayload || {}),
             current_input: normalizedCurrentInput,
           };
           return { success: true, prompt: mergedPrompt };
@@ -607,6 +624,29 @@ export class StoryService {
     };
   }
 
+  private static normalizeStorySummaryMemorySettings(memory?: StorySummaryMemoryPayload | null): StorySummaryMemorySettings | null {
+    if (!memory?.settings) {
+      return null;
+    }
+    return {
+      enabled: Boolean(memory.settings.enabled),
+      topK: Math.max(1, Math.min(20, Math.floor(memory.settings.topK || 5))),
+      namespace: typeof memory.settings.namespace === 'string' ? memory.settings.namespace.trim() : undefined,
+      status: memory.settings.status,
+      readFromTranslationMemory: memory.settings.readFromTranslationMemory !== false,
+      translationNamespace:
+        typeof memory.settings.translationNamespace === 'string'
+          ? memory.settings.translationNamespace.trim()
+          : undefined
+    };
+  }
+
+  private static buildStoryScopedNamespace(prefix: 'story' | 'story-summary', projectId: string, storyFilePath?: string | null): string {
+    const fingerprintSource = (storyFilePath || '').trim() || '__default_story__';
+    const fingerprint = createHash('sha1').update(fingerprintSource).digest('hex').slice(0, 12);
+    return `${prefix}:${projectId}:${fingerprint}`;
+  }
+
   private static getStoryMemoryNamespace(memory?: StoryTranslationMemoryPayload | null): string | null {
     const projectId = (memory?.projectId || '').trim();
     if (!projectId) {
@@ -616,9 +656,31 @@ export class StoryService {
     if (settings?.namespace) {
       return settings.namespace;
     }
-    const fingerprintSource = (memory?.storyFilePath || '').trim() || '__default_story__';
-    const fingerprint = createHash('sha1').update(fingerprintSource).digest('hex').slice(0, 12);
-    return `story:${projectId}:${fingerprint}`;
+    return this.buildStoryScopedNamespace('story', projectId, memory?.storyFilePath || null);
+  }
+
+  private static getStorySummaryMemoryNamespace(memory?: StorySummaryMemoryPayload | null): string | null {
+    const projectId = (memory?.projectId || '').trim();
+    if (!projectId) {
+      return null;
+    }
+    const settings = this.normalizeStorySummaryMemorySettings(memory);
+    if (settings?.namespace) {
+      return settings.namespace;
+    }
+    return this.buildStoryScopedNamespace('story-summary', projectId, memory?.storyFilePath || null);
+  }
+
+  private static getStoryTranslationNamespaceForSummary(memory?: StorySummaryMemoryPayload | null): string | null {
+    const projectId = (memory?.projectId || '').trim();
+    if (!projectId) {
+      return null;
+    }
+    const settings = this.normalizeStorySummaryMemorySettings(memory);
+    if (settings?.translationNamespace) {
+      return settings.translationNamespace;
+    }
+    return this.buildStoryScopedNamespace('story', projectId, memory?.storyFilePath || null);
   }
 
   private static buildTranslationMemoryPayload(memoryContext: {
@@ -703,6 +765,91 @@ export class StoryService {
       },
       previous_assistant_output: previousAssistantWindow,
       current_input: [],
+    };
+  }
+
+  private static buildSummaryMemoryPayload(
+    memoryContext: {
+      memories?: string[];
+      facts?: Array<{ text?: string; kind?: string }>;
+      glossary?: Array<{ sourceTerm?: string; targetTerm?: string }>;
+      entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
+    },
+    previousSummaryOutput: string,
+    previousTranslatedOutput: string
+  ): {
+    summary_memory: {
+      confirmed_terms: Record<string, string>;
+      known_facts: string[];
+      active_entities: string[];
+    };
+    continuity_context: {
+      continuity_notes: string[];
+    };
+    previous_summary_output: string;
+    previous_translation_context: string;
+    current_input: string[];
+  } {
+    const glossary = Array.isArray(memoryContext.glossary) ? memoryContext.glossary : [];
+    const facts = Array.isArray(memoryContext.facts) ? memoryContext.facts : [];
+    const entities = Array.isArray(memoryContext.entities) ? memoryContext.entities : [];
+
+    const confirmedTerms: Record<string, string> = {};
+    for (const entry of glossary) {
+      const source = String(entry.sourceTerm || '').trim();
+      const target = String(entry.targetTerm || '').trim();
+      if (source && target && !confirmedTerms[source]) {
+        confirmedTerms[source] = target;
+      }
+      if (Object.keys(confirmedTerms).length >= 20) {
+        break;
+      }
+    }
+
+    const knownFacts = facts
+      .map((fact) => String(fact?.text || '').trim())
+      .filter((fact) => fact.length > 0)
+      .slice(0, 10);
+
+    const activeEntities: string[] = [];
+    const entitySeen = new Set<string>();
+    for (const entity of entities) {
+      const values = [
+        String(entity?.canonicalValue || '').trim(),
+        ...((entity?.aliases || []).map((alias) => String(alias || '').trim()))
+      ].filter((value) => value.length > 0);
+      for (const value of values) {
+        if (entitySeen.has(value)) {
+          continue;
+        }
+        entitySeen.add(value);
+        activeEntities.push(value);
+        if (activeEntities.length >= 20) {
+          break;
+        }
+      }
+      if (activeEntities.length >= 20) {
+        break;
+      }
+    }
+
+    const continuityNotes = (memoryContext.memories || [])
+      .map((item) => String(item || '').trim())
+      .filter((item) => item.length > 0)
+      .slice(0, 8);
+
+    return {
+      summary_memory: {
+        confirmed_terms: confirmedTerms,
+        known_facts: knownFacts,
+        active_entities: activeEntities
+      },
+      continuity_context: {
+        continuity_notes: continuityNotes
+      },
+      previous_summary_output: this.extractPreviousAssistantWindow(previousSummaryOutput),
+      previous_translation_context: this.extractPreviousAssistantWindow(previousTranslatedOutput),
+      current_input: []
     };
   }
 
@@ -843,6 +990,175 @@ export class StoryService {
     };
   }
 
+  private static mergeSummaryMemoryResults(results: Array<{
+    namespace?: string;
+    promptContext?: string;
+    memories?: string[];
+    facts?: any[];
+    glossary?: any[];
+    entities?: any[];
+    debug?: any[];
+    warning?: string;
+  }>): { promptContext: string; memories: string[]; facts: any[]; glossary: any[]; entities: any[]; debug: any[]; warning?: string } {
+    const promptParts: string[] = [];
+    const memories: string[] = [];
+    const facts: any[] = [];
+    const glossary: any[] = [];
+    const entities: any[] = [];
+    const debug: any[] = [];
+    const warnings: string[] = [];
+
+    for (const result of results) {
+      if (result.promptContext) {
+        promptParts.push(result.promptContext);
+      }
+      if (Array.isArray(result.memories)) {
+        memories.push(...result.memories);
+      }
+      if (Array.isArray(result.facts)) {
+        facts.push(...result.facts);
+      }
+      if (Array.isArray(result.glossary)) {
+        glossary.push(...result.glossary);
+      }
+      if (Array.isArray(result.entities)) {
+        entities.push(...result.entities);
+      }
+      if (Array.isArray(result.debug)) {
+        debug.push(...result.debug);
+      }
+      if (result.warning) {
+        warnings.push(result.warning);
+      }
+    }
+
+    return {
+      promptContext: promptParts.filter(Boolean).join('\n\n'),
+      memories: memories.slice(0, 20),
+      facts: facts.slice(0, 20),
+      glossary: glossary.slice(0, 24),
+      entities: entities.slice(0, 24),
+      debug: debug.slice(0, 40),
+      warning: warnings.length > 0 ? warnings[0] : undefined
+    };
+  }
+
+  private static async resolveStorySummaryMemoryContext(
+    memory: StorySummaryMemoryPayload | null | undefined,
+    chapterContent: string
+  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; facts?: any[]; glossary?: any[]; entities?: any[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
+    const settings = this.normalizeStorySummaryMemorySettings(memory);
+    const namespace = this.getStorySummaryMemoryNamespace(memory);
+    if (!settings?.enabled || !namespace) {
+      return {
+        namespace: namespace || undefined,
+        promptContext: '',
+        memories: [],
+        facts: [],
+        glossary: [],
+        entities: [],
+        debug: [],
+        status: memory?.settings?.status || 'error'
+      };
+    }
+
+    const projectId = (memory?.projectId || '').trim();
+    const chapterIndex =
+      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
+        ? memory.chapterIndex
+        : null;
+    if (!projectId || chapterIndex === null) {
+      return {
+        namespace,
+        promptContext: '',
+        memories: [],
+        facts: [],
+        glossary: [],
+        entities: [],
+        debug: [],
+        status: 'error',
+        warning: 'Summary memory cần projectId và chapterIndex hợp lệ.'
+      };
+    }
+
+    const health = await getMemoryContextService().getHealth();
+    const status = this.getStoryMemoryStatusFromHealth(health);
+
+    const summaryRequest: MemoryContextSearchRequest = {
+      projectId,
+      feature: 'story.summary',
+      namespace,
+      queryText: chapterContent,
+      topK: settings.topK,
+      metadata: {
+        chapterId: memory?.chapterId || undefined,
+        chapterIndex,
+        chapterTitle: memory?.chapterTitle || undefined,
+        totalChapters: memory?.totalChapters || undefined
+      }
+    };
+
+    const summaryResult = await getMemoryContextService().searchContext(summaryRequest);
+    const summaryExtended = summaryResult as any;
+    const mergeTargets: Array<{
+      namespace?: string;
+      promptContext?: string;
+      memories?: string[];
+      facts?: any[];
+      glossary?: any[];
+      entities?: any[];
+      debug?: any[];
+      warning?: string;
+    }> = [];
+
+    if (settings.readFromTranslationMemory) {
+      const translationNamespace = this.getStoryTranslationNamespaceForSummary(memory);
+      if (translationNamespace) {
+        const translationResult = await getMemoryContextService().searchContext({
+          ...summaryRequest,
+          feature: 'story.translation',
+          namespace: translationNamespace
+        });
+        const translationExtended = translationResult as any;
+        mergeTargets.push({
+          namespace: translationNamespace,
+          promptContext: translationResult.promptContext || '',
+          memories: translationResult.memories || [],
+          facts: Array.isArray(translationExtended.facts) ? translationExtended.facts : [],
+          glossary: Array.isArray(translationExtended.glossary) ? translationExtended.glossary : [],
+          entities: Array.isArray(translationExtended.entities) ? translationExtended.entities : [],
+          debug: translationResult.debug || [],
+          warning: translationResult.warning
+        });
+      }
+    }
+
+    mergeTargets.push({
+      namespace,
+      promptContext: summaryResult.promptContext || '',
+      memories: summaryResult.memories || [],
+      facts: Array.isArray(summaryExtended.facts) ? summaryExtended.facts : [],
+      glossary: Array.isArray(summaryExtended.glossary) ? summaryExtended.glossary : [],
+      entities: Array.isArray(summaryExtended.entities) ? summaryExtended.entities : [],
+      debug: summaryResult.debug || [],
+      warning: summaryResult.warning
+    });
+
+    const merged = this.mergeSummaryMemoryResults(mergeTargets);
+
+    return {
+      namespace,
+      promptContext: merged.promptContext,
+      memories: merged.memories,
+      facts: merged.facts,
+      glossary: merged.glossary,
+      entities: merged.entities,
+      debug: merged.debug,
+      warning: merged.warning || health.warning,
+      status
+    };
+  }
+
   private static async addStoryTranslationMemory(
     memory: StoryTranslationMemoryPayload | null | undefined,
     translatedText: string,
@@ -883,6 +1199,53 @@ export class StoryService {
     const result = await getMemoryContextService().addMemory(request);
     if (!result.success) {
       console.warn('[StoryService] Failed to add story translation memory:', result.error);
+    }
+  }
+
+  private static async addStorySummaryMemory(
+    memory: StorySummaryMemoryPayload | null | undefined,
+    summaryText: string,
+    chapterTitle: string,
+    sourceText: string
+  ): Promise<void> {
+    const settings = this.normalizeStorySummaryMemorySettings(memory);
+    const namespace = this.getStorySummaryMemoryNamespace(memory);
+    if (!settings?.enabled || !namespace) {
+      return;
+    }
+
+    const projectId = (memory?.projectId || '').trim();
+    const chapterIndex =
+      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
+        ? memory.chapterIndex
+        : null;
+
+    if (!projectId || !sourceText.trim() || !summaryText.trim() || chapterIndex === null) {
+      return;
+    }
+
+    const request: MemoryContextAddRequest = {
+      projectId,
+      feature: 'story.summary',
+      namespace,
+      sourceText,
+      translatedText: summaryText,
+      metadata: {
+        chapterId: memory?.chapterId || undefined,
+        chapterIndex,
+        chapterTitle: chapterTitle || memory?.chapterTitle || undefined,
+        totalChapters: memory?.totalChapters || undefined,
+        storyFilePath: memory?.storyFilePath || undefined,
+        previousSummaryOutput: memory?.previousSummaryOutput || undefined,
+        previousTranslatedOutput: memory?.previousTranslatedOutput || undefined,
+        memoryKind: 'chapter_summary',
+        summaryText
+      }
+    };
+
+    const result = await getMemoryContextService().addMemory(request);
+    if (!result.success) {
+      console.warn('[StoryService] Failed to add story summary memory:', result.error);
     }
   }
 

@@ -1,4 +1,5 @@
 import type { Chapter } from '@shared/types';
+import type { StoryPreviousAssistantOutputMode } from '../types';
 
 const TRANSLATION_LINE_RATIO = 0.6;
 
@@ -9,7 +10,7 @@ function normalizeLines(content: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function pickEvenlyDistributedLines(lines: string[], ratio = TRANSLATION_LINE_RATIO): string[] {
+export function pickEvenlyDistributedLines(lines: string[], ratio = TRANSLATION_LINE_RATIO): string[] {
   if (lines.length === 0) {
     return [];
   }
@@ -37,51 +38,85 @@ function pickEvenlyDistributedLines(lines: string[], ratio = TRANSLATION_LINE_RA
   return result;
 }
 
-export function resolvePreviousAssistantOutput(params: {
+function normalizeChapterOutput(content: string, mode: StoryPreviousAssistantOutputMode): string {
+  const lines = normalizeLines(content);
+  if (lines.length === 0) {
+    return '';
+  }
+  if (mode === 'full') {
+    return lines.join('\n');
+  }
+  return pickEvenlyDistributedLines(lines, TRANSLATION_LINE_RATIO).join('\n');
+}
+
+export function resolvePreviousSummaryOutput(params: {
   chapters: Chapter[];
   chapterIndex: number;
   summaries: Map<string, string>;
-  translatedChapters: Map<string, string>;
+  mode?: StoryPreviousAssistantOutputMode;
 }): string {
-  const { chapters, chapterIndex, summaries, translatedChapters } = params;
+  const { chapters, chapterIndex, summaries, mode = 'sampled' } = params;
   if (chapterIndex <= 0 || chapterIndex >= chapters.length) {
     return '';
   }
 
   const buildChapterOutput = (chapterId: string): string => {
-    const summary = String(summaries.get(chapterId) || '').trim();
-    if (summary) {
-      return summary;
-    }
-
-    const translated = String(translatedChapters.get(chapterId) || '').trim();
-    if (!translated) {
-      return '';
-    }
-
-    const lines = normalizeLines(translated);
-    const picked = pickEvenlyDistributedLines(lines, TRANSLATION_LINE_RATIO);
-    return picked.join('\n');
+    return normalizeChapterOutput(String(summaries.get(chapterId) || ''), mode);
   };
 
   const directPreviousChapter = chapters[chapterIndex - 1];
   if (directPreviousChapter) {
-    const directOutput = buildChapterOutput(directPreviousChapter.id);
-    if (directOutput) {
-      return directOutput;
-    }
-  }
-
-  for (let index = chapterIndex - 2; index >= 0; index -= 1) {
-    const candidate = chapters[index];
-    if (!candidate) {
-      continue;
-    }
-    const candidateOutput = buildChapterOutput(candidate.id);
-    if (candidateOutput) {
-      return candidateOutput;
-    }
+    return buildChapterOutput(directPreviousChapter.id);
   }
 
   return '';
+}
+
+export function resolvePreviousTranslatedOutput(params: {
+  chapters: Chapter[];
+  chapterIndex: number;
+  translatedChapters: Map<string, string>;
+  mode?: StoryPreviousAssistantOutputMode;
+}): string {
+  const { chapters, chapterIndex, translatedChapters, mode = 'sampled' } = params;
+  if (chapterIndex <= 0 || chapterIndex >= chapters.length) {
+    return '';
+  }
+
+  const buildChapterOutput = (chapterId: string): string => {
+    return normalizeChapterOutput(String(translatedChapters.get(chapterId) || ''), mode);
+  };
+
+  const directPreviousChapter = chapters[chapterIndex - 1];
+  if (directPreviousChapter) {
+    return buildChapterOutput(directPreviousChapter.id);
+  }
+
+  return '';
+}
+
+export function resolvePreviousAssistantOutput(params: {
+  chapters: Chapter[];
+  chapterIndex: number;
+  summaries: Map<string, string>;
+  translatedChapters: Map<string, string>;
+  mode?: StoryPreviousAssistantOutputMode;
+}): string {
+  const mode = params.mode || 'sampled';
+  const summaryOutput = resolvePreviousSummaryOutput({
+    chapters: params.chapters,
+    chapterIndex: params.chapterIndex,
+    summaries: params.summaries,
+    mode
+  });
+  if (summaryOutput) {
+    return summaryOutput;
+  }
+
+  return resolvePreviousTranslatedOutput({
+    chapters: params.chapters,
+    chapterIndex: params.chapterIndex,
+    translatedChapters: params.translatedChapters,
+    mode
+  });
 }

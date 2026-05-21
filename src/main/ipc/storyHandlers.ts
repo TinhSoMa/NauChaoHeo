@@ -9,6 +9,7 @@ import type {
 import {
   STORY_IPC_CHANNELS,
   StoryPreparePromptPayload,
+  StoryPrepareSummaryPromptPayload,
   StoryTranslateChapterPayload,
   StoryCancelGeminiWebQueueBatchPayload,
   StoryCancelGeminiWebQueueBatchResult,
@@ -253,9 +254,9 @@ export function registerStoryHandlers(): void {
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT,
-    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang }) => {
+    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, memory }: StoryPrepareSummaryPromptPayload) => {
        console.log(`[StoryHandlers] Prepare summary prompt: ${sourceLang} -> ${targetLang}`);
-       return await StoryService.StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang);
+       return await StoryService.StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang, memory);
     }
   );
 

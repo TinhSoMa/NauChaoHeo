@@ -124,3 +124,75 @@ export async function saveTranslationPromptArtifact(params: {
     throw new Error(result.error || 'Không thể lưu prompt artifact');
   }
 }
+
+export async function saveSummaryPromptArtifact(params: {
+  projectId: string | null;
+  chapter: Chapter;
+  chapterIndex: number;
+  method: StoryChapterMethod;
+  model: string;
+  preparedPrompt: unknown;
+  prepareResult?: unknown;
+  storyFilePath: string;
+}): Promise<void> {
+  const {
+    projectId,
+    chapter,
+    chapterIndex,
+    method,
+    model,
+    preparedPrompt,
+    prepareResult,
+    storyFilePath
+  } = params;
+
+  if (!projectId) {
+    return;
+  }
+
+  const timestamp = formatTimestamp();
+  const chapterLabel = String(chapterIndex).padStart(4, '0');
+  const titleSegment = sanitizeFileSegment(chapter.title || chapter.id);
+  const methodSegment = sanitizeFileSegment(method);
+  const baseName = `${timestamp}__ch-${chapterLabel}__${methodSegment}__${titleSegment}`;
+  const rawPromptFileName = `prompts/summary/${baseName}.prompt.txt`;
+  const metaFileName = `prompts/summary/${baseName}.meta.json`;
+  const actualSentPrompt = getActualPromptSentToModel(preparedPrompt, method);
+
+  const rawWriteResult = await window.electronAPI.project.writeFeatureFile({
+    projectId,
+    feature: 'story',
+    fileName: rawPromptFileName,
+    content: actualSentPrompt
+  });
+
+  if (!rawWriteResult.success) {
+    throw new Error(rawWriteResult.error || 'Không thể lưu raw summary prompt');
+  }
+
+  const artifact = {
+    type: 'story-summary-sent-prompt',
+    createdAt: new Date().toISOString(),
+    projectId,
+    storyFilePath,
+    chapterId: chapter.id,
+    chapterIndex,
+    chapterTitle: chapter.title,
+    method,
+    model,
+    rawPromptFileName,
+    actualSentPayload: preparedPrompt,
+    memoryContext: extractMemoryContext(prepareResult)
+  };
+
+  const result = await window.electronAPI.project.writeFeatureFile({
+    projectId,
+    feature: 'story',
+    fileName: metaFileName,
+    content: artifact
+  });
+
+  if (!result.success) {
+    throw new Error(result.error || 'Không thể lưu summary prompt artifact');
+  }
+}

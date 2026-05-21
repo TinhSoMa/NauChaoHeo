@@ -100,7 +100,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       chapters,
       chapterIndex,
       summaries,
-      translatedChapters
+      translatedChapters,
+      mode: promptSaveSettings.previousAssistantOutputMode
     });
     const memoryPayload = chapterIndex >= 0
       ? buildStoryMemoryPayload({
@@ -110,6 +111,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
           chapterIndex: chapterIndex + 1,
           totalChapters: chapters.length,
           previousAssistantOutput,
+          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
           settings: memorySettings
         })
       : null;

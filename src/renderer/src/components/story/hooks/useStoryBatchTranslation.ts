@@ -206,7 +206,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             chapters,
             chapterIndex: actualChapterIndex,
             summaries,
-            translatedChapters: runtimeTranslatedChaptersRef.current
+            translatedChapters: runtimeTranslatedChaptersRef.current,
+            mode: promptSaveSettings.previousAssistantOutputMode
           })
         : '';
       const memoryPayload = buildStoryMemoryPayload({
@@ -216,6 +217,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         chapterIndex: actualChapterIndex >= 0 ? actualChapterIndex + 1 : index + 1,
         totalChapters: chapters.length,
         previousAssistantOutput,
+        previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
         settings: memorySettings
       });
 

@@ -1,7 +1,19 @@
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
-import { GeminiChatConfigLite, TokenContext, ProcessingChapterInfo, StoryChapterMethod, StoryStatus } from '../types';
+import {
+  buildStorySummaryMemoryPayload,
+  GeminiChatConfigLite,
+  TokenContext,
+  ProcessingChapterInfo,
+  StoryChapterMethod,
+  StoryPromptSaveSettings,
+  StoryPreviousAssistantOutputMode,
+  StoryStatus,
+  StorySummaryMemoryRuntimeState
+} from '../types';
 import { getRandomInt } from '@shared/utils/delayUtils';
+import { resolvePreviousSummaryOutput, resolvePreviousTranslatedOutput } from '../utils/previousAssistantOutput';
+import { saveSummaryPromptArtifact } from '../utils/promptArtifact';
 
 interface UseStorySummaryGenerationProps {
   chapters: Chapter[];
@@ -25,11 +37,16 @@ interface UseStorySummaryGenerationProps {
   setStatus: (status: StoryStatus) => void;
   setViewMode: (mode: 'original' | 'translated' | 'summary') => void;
   useProxy: boolean;
+  projectId: string | null;
+  filePath: string;
+  memorySettings: StorySummaryMemoryRuntimeState;
   loadConfigurations: () => Promise<void>;
   getPreferredTokenConfig: () => GeminiChatConfigLite | null;
   isChapterIncluded: (id: string) => boolean;
   tokenConfigs: GeminiChatConfigLite[];
   getDistinctActiveTokenConfigs: (configs: GeminiChatConfigLite[]) => GeminiChatConfigLite[];
+  previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
+  promptSaveSettings: StoryPromptSaveSettings;
 }
 
 // Helper functions
@@ -74,12 +91,17 @@ export function useStorySummaryGeneration({
   setStatus,
   setViewMode,
   useProxy,
+  projectId,
+  filePath,
+  memorySettings,
   loadConfigurations,
   getPreferredTokenConfig,
   setProcessingChapters,
   isChapterIncluded,
   tokenConfigs,
-  getDistinctActiveTokenConfigs
+  getDistinctActiveTokenConfigs,
+  previousAssistantOutputMode,
+  promptSaveSettings
 }: UseStorySummaryGenerationProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -101,6 +123,8 @@ export function useStorySummaryGeneration({
     isFirstChapterTaken: false
   });
   const workerIdRef = useRef(0);
+  const runtimeSummariesRef = useRef<Map<string, string>>(new Map(summaries));
+  const runtimeTranslatedChaptersRef = useRef<Map<string, string>>(new Map(translatedChapters));
   
   // Ref to track if batch is currently running (for hot-add workers)
   const isBatchRunningRef = useRef(false);
@@ -122,6 +146,14 @@ export function useStorySummaryGeneration({
     
     return () => clearInterval(interval);
   }, [isGenerating]);
+
+  useEffect(() => {
+    runtimeSummariesRef.current = new Map(summaries);
+  }, [summaries]);
+
+  useEffect(() => {
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
+  }, [translatedChapters]);
 
   useEffect(() => {
     const loadAppSettings = async () => {
@@ -169,6 +201,41 @@ export function useStorySummaryGeneration({
       alert('Không tìm thấy bản dịch cho chương này. Vui lòng dịch truyện trước.');
       return;
     }
+    const chapter = chapters.find((entry) => entry.id === selectedChapterId);
+    if (!chapter) {
+      alert('Không tìm thấy thông tin chương để tóm tắt.');
+      return;
+    }
+    const chapterIndex = chapter ? chapters.findIndex((entry) => entry.id === chapter.id) : -1;
+    const previousSummaryOutput = chapterIndex >= 0
+      ? resolvePreviousSummaryOutput({
+          chapters,
+          chapterIndex,
+          summaries: runtimeSummariesRef.current,
+          mode: previousAssistantOutputMode
+        })
+      : '';
+    const previousTranslatedOutput = chapterIndex >= 0
+      ? resolvePreviousTranslatedOutput({
+          chapters,
+          chapterIndex,
+          translatedChapters: runtimeTranslatedChaptersRef.current,
+          mode: previousAssistantOutputMode
+        })
+      : '';
+    const summaryMemoryPayload = chapter && chapterIndex >= 0
+      ? buildStorySummaryMemoryPayload({
+          projectId,
+          filePath,
+          chapter,
+          chapterIndex: chapterIndex + 1,
+          totalChapters: chapters.length,
+          previousSummaryOutput,
+          previousTranslatedOutput,
+          previousAssistantOutputMode,
+          settings: memorySettings
+        })
+      : null;
 
     setIsGenerating(true);
     setStatus('running');
@@ -179,7 +246,8 @@ export function useStorySummaryGeneration({
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
-        targetLang
+        targetLang,
+        memory: summaryMemoryPayload
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -226,8 +294,22 @@ export function useStorySummaryGeneration({
           chapterId: selectedChapterId,
           // Include regex for server-side validation and retry
           validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
-        }
+        },
+        summaryMemory: summaryMemoryPayload
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
+
+      if (promptSaveSettings.autoSaveSentPrompt) {
+        await saveSummaryPromptArtifact({
+          projectId,
+          chapter,
+          chapterIndex: chapterIndex + 1,
+          method: methodKey,
+          model,
+          preparedPrompt: prepareResult.prompt,
+          prepareResult,
+          storyFilePath: filePath
+        });
+      }
 
       if (translateResult.success && translateResult.data) {
         // Validate metadata
@@ -237,6 +319,7 @@ export function useStorySummaryGeneration({
         }
         
         // Save summary to Map cache
+        runtimeSummariesRef.current.set(selectedChapterId, translateResult.data!);
         setSummaries(prev => new Map(prev).set(selectedChapterId, translateResult.data!));
 
         setChapterModels(prev => new Map(prev).set(selectedChapterId, model));
@@ -298,17 +381,48 @@ export function useStorySummaryGeneration({
       console.log(`[useStorySummaryGeneration] 📝 Tóm tắt chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
 
       // Get translated content as source
-      const sourceContent = translatedChapters.get(chapter.id);
+      const sourceContent = runtimeTranslatedChaptersRef.current.get(chapter.id);
       if (!sourceContent) {
         console.error(`[useStorySummaryGeneration] Không tìm thấy bản dịch cho chương ${chapter.title}`);
         return null;
       }
+      const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
+      const previousSummaryOutput = actualChapterIndex >= 0
+        ? resolvePreviousSummaryOutput({
+            chapters,
+            chapterIndex: actualChapterIndex,
+            summaries: runtimeSummariesRef.current,
+            mode: previousAssistantOutputMode
+          })
+        : '';
+      const previousTranslatedOutput = actualChapterIndex >= 0
+        ? resolvePreviousTranslatedOutput({
+            chapters,
+            chapterIndex: actualChapterIndex,
+            translatedChapters: runtimeTranslatedChaptersRef.current,
+            mode: previousAssistantOutputMode
+          })
+        : '';
+      const summaryMemoryPayload = actualChapterIndex >= 0
+        ? buildStorySummaryMemoryPayload({
+            projectId,
+            filePath,
+            chapter,
+            chapterIndex: actualChapterIndex + 1,
+            totalChapters: chapters.length,
+            previousSummaryOutput,
+            previousTranslatedOutput,
+            previousAssistantOutputMode,
+            settings: memorySettings
+          })
+        : null;
 
       // 1. Prepare Summary Prompt
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
-        targetLang
+        targetLang,
+        memory: summaryMemoryPayload
       }) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -345,9 +459,23 @@ export function useStorySummaryGeneration({
               chapterTitle: chapter.title,
               tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
               validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
-          }
+          },
+          summaryMemory: summaryMemoryPayload
         }
       ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
+
+      if (promptSaveSettings.autoSaveSentPrompt) {
+        await saveSummaryPromptArtifact({
+          projectId,
+          chapter,
+          chapterIndex: actualChapterIndex >= 0 ? actualChapterIndex + 1 : index + 1,
+          method: channel,
+          model,
+          preparedPrompt: prepareResult.prompt,
+          prepareResult,
+          storyFilePath: filePath
+        });
+      }
 
       if (translateResult.success && translateResult.data) {
         if (translateResult.metadata?.chapterId !== chapter.id) {
@@ -356,6 +484,7 @@ export function useStorySummaryGeneration({
         }
 
         // Update UI hooks
+        runtimeSummariesRef.current.set(chapter.id, translateResult.data!);
         setSummaries(prev => {
             const next = new Map(prev);
             next.set(chapter.id, translateResult.data!);
@@ -556,6 +685,8 @@ export function useStorySummaryGeneration({
     setIsGenerating(true);
     setStatus('running');
     setBatchSummaryProgress({ current: 0, total: chaptersToSummarize.length });
+    runtimeSummariesRef.current = new Map(summaries);
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
     shouldStopRef.current = false;
     setShouldStop(false);
     setIsStopping(false);

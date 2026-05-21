@@ -1,12 +1,25 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 // import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
+import {
+  MEMORY_CONTEXT_IPC_CHANNELS,
+  type MemoryContextHealthResult
+} from '@shared/types/memoryContext';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { FileText, CheckSquare, Square, StopCircle, Loader, Clock, Sparkles, Download } from 'lucide-react';
 import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
+import {
+  buildStorySummaryMemoryPayload,
+  type StoryPreviousAssistantOutputMode,
+  type StorySummaryMemoryRuntimeState
+} from './types';
+import {
+  resolvePreviousSummaryOutput,
+  resolvePreviousTranslatedOutput
+} from './utils/previousAssistantOutput';
 
 interface GeminiChatConfigLite {
   id: string;
@@ -30,6 +43,23 @@ const buildTokenKey = (config: GeminiChatConfigLite): string => {
   return `${extractCookieKey(config.cookie || '')}|${(config.atToken || '').trim()}`;
 };
 
+const DEFAULT_MEMORY_TOP_K = 6;
+
+const computeStoryMemoryNamespace = async (
+  projectId: string,
+  filePath: string,
+  prefix: 'story' | 'story-summary' = 'story-summary'
+): Promise<string> => {
+  const source = filePath.trim() || '__default_story__';
+  const encoded = new TextEncoder().encode(source);
+  const digest = await window.crypto.subtle.digest('SHA-1', encoded);
+  const hash = Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 12);
+  return `${prefix}:${projectId}:${hash}`;
+};
+
 export function StorySummary() {
   // Source data từ file
   const [sourceLang, setSourceLang] = useState('vi'); // Ngôn ngữ nội dung nguồn
@@ -44,6 +74,7 @@ export function StorySummary() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   // Map lưu trữ chapters nguồn (để tóm tắt)
   const [sourceChapters, setSourceChapters] = useState<Map<string, string>>(new Map());
+  const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
   // Map lưu trữ summaries đã tạo
   const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
   const [chapterModels, setChapterModels] = useState<Map<string, string>>(new Map());
@@ -76,6 +107,18 @@ export function StorySummary() {
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [retranslateSummary, setRetranslateSummary] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
+  const [summaryMemoryEnabled, setSummaryMemoryEnabled] = useState(false);
+  const [summaryMemoryTopK, setSummaryMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
+  const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
+    useState<StoryPreviousAssistantOutputMode>('sampled');
+  const [summaryMemoryNamespace, setSummaryMemoryNamespace] = useState('');
+  const [translationMemoryNamespace, setTranslationMemoryNamespace] = useState('');
+  const [summaryMemoryStatus, setSummaryMemoryStatus] = useState<StorySummaryMemoryRuntimeState['status']>('error');
+  const [summaryMemoryHealth, setSummaryMemoryHealth] = useState<MemoryContextHealthResult | null>(null);
+  const [isClearingSummaryMemory, setIsClearingSummaryMemory] = useState(false);
+  const runtimeSummariesRef = useRef<Map<string, string>>(new Map());
+  const runtimeTranslatedChaptersRef = useRef<Map<string, string>>(new Map());
+  void summaryMemoryHealth;
 
   const loadProxySetting = async () => {
     try {
@@ -383,6 +426,9 @@ export function StorySummary() {
         sourceFilePath,
         model,
         translateMode,
+        summaryMemoryEnabled,
+        summaryMemoryTopK,
+        previousAssistantOutputMode,
         summaries: orderedSummaries,
         chapterModels: orderedChapterModels,
         chapterMethods: orderedChapterMethods,
@@ -420,6 +466,9 @@ export function StorySummary() {
           sourceChapterTitles?: Array<{ id: string; title: string }>;
           model?: string;
           translateMode?: 'api' | 'token' | 'both';
+          summaryMemoryEnabled?: boolean;
+          summaryMemoryTopK?: number;
+          previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
           summaries?: Array<[string, string]>;
           chapterModels?: Array<[string, string]>;
           chapterMethods?: Array<[string, 'api' | 'token']>;
@@ -437,6 +486,11 @@ export function StorySummary() {
         if (saved.sourceFilePath) setSourceFilePath(saved.sourceFilePath);
         if (saved.model) setModel(saved.model);
         if (saved.translateMode) setTranslateMode(saved.translateMode);
+        if (typeof saved.summaryMemoryEnabled === 'boolean') setSummaryMemoryEnabled(saved.summaryMemoryEnabled);
+        if (typeof saved.summaryMemoryTopK === 'number') setSummaryMemoryTopK(saved.summaryMemoryTopK);
+        if (saved.previousAssistantOutputMode === 'full' || saved.previousAssistantOutputMode === 'sampled') {
+          setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
+        }
         if (saved.summaries) setSummaries(new Map(saved.summaries));
         if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
         if (saved.chapterMethods) setChapterMethods(new Map(saved.chapterMethods));
@@ -482,12 +536,29 @@ export function StorySummary() {
           setSourceChapters(new Map());
         }
       }
+
+      const translatorRes = await window.electronAPI.project.readFeatureFile({
+        projectId: pid,
+        feature: 'story',
+        fileName: 'story-translator.json'
+      });
+      if (translatorRes?.success && translatorRes.data) {
+        const translatorSaved = JSON.parse(translatorRes.data) as {
+          translatedEntries?: Array<[string, string]>;
+        };
+        if (translatorSaved.translatedEntries) {
+          setTranslatedChapters(new Map(translatorSaved.translatedEntries));
+        }
+      }
     },
     deps: [
       sourceLang,
       targetLang,
       model,
       translateMode,
+      summaryMemoryEnabled,
+      summaryMemoryTopK,
+      previousAssistantOutputMode,
       sourceFilePath,
       chapters,
       summaries,
@@ -501,6 +572,22 @@ export function StorySummary() {
       selectedChapterId
     ],
   });
+
+  const summaryMemorySettings = useMemo<StorySummaryMemoryRuntimeState>(() => ({
+    enabled: Boolean(projectId && summaryMemoryEnabled),
+    topK: summaryMemoryTopK,
+    namespace: summaryMemoryNamespace || undefined,
+    status: summaryMemoryStatus,
+    readFromTranslationMemory: true,
+    translationNamespace: translationMemoryNamespace || undefined
+  }), [
+    projectId,
+    summaryMemoryEnabled,
+    summaryMemoryNamespace,
+    summaryMemoryStatus,
+    summaryMemoryTopK,
+    translationMemoryNamespace
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -559,8 +646,144 @@ export function StorySummary() {
     }
   }, [tokenConfigs, tokenContexts]);
 
+  useEffect(() => {
+    runtimeSummariesRef.current = new Map(summaries);
+  }, [summaries]);
+
+  useEffect(() => {
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
+  }, [translatedChapters]);
+
+  useEffect(() => {
+    let active = true;
+    if (!projectId || !sourceFilePath.trim()) {
+      setSummaryMemoryNamespace('');
+      setTranslationMemoryNamespace('');
+      return;
+    }
+
+    computeStoryMemoryNamespace(projectId, sourceFilePath, 'story-summary')
+      .then((namespace) => {
+        if (active) {
+          setSummaryMemoryNamespace(namespace);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSummaryMemoryNamespace('');
+        }
+      });
+
+    computeStoryMemoryNamespace(projectId, sourceFilePath, 'story')
+      .then((namespace) => {
+        if (active) {
+          setTranslationMemoryNamespace(namespace);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setTranslationMemoryNamespace('');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [projectId, sourceFilePath]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const result = await window.electronAPI.invoke(
+          MEMORY_CONTEXT_IPC_CHANNELS.GET_HEALTH
+        ) as MemoryContextHealthResult;
+        if (!active) return;
+        setSummaryMemoryHealth(result);
+        if (!result.success || !result.pythonOk || !result.mem0Ok || !result.spacyOk || !result.spacyModelOk) {
+          setSummaryMemoryStatus('missing_runtime');
+          return;
+        }
+        setSummaryMemoryStatus(result.providerConfigured ? 'ready' : 'missing_provider');
+      } catch {
+        if (!active) return;
+        setSummaryMemoryHealth(null);
+        setSummaryMemoryStatus('error');
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const ensureSummaryMemoryRuntimeReady = () => {
+    if (!summaryMemorySettings.enabled) {
+      return true;
+    }
+    if (summaryMemoryStatus === 'missing_runtime') {
+      alert(
+        'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm'
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const buildSummaryMemoryForChapter = (chapter: Chapter, chapterIndex: number) => {
+    const previousSummaryOutput = resolvePreviousSummaryOutput({
+      chapters,
+      chapterIndex,
+      summaries: runtimeSummariesRef.current,
+      mode: previousAssistantOutputMode
+    });
+    const previousTranslatedOutput = resolvePreviousTranslatedOutput({
+      chapters,
+      chapterIndex,
+      translatedChapters: runtimeTranslatedChaptersRef.current,
+      mode: previousAssistantOutputMode
+    });
+
+    return buildStorySummaryMemoryPayload({
+      projectId,
+      filePath: sourceFilePath,
+      chapter,
+      chapterIndex: chapterIndex + 1,
+      totalChapters: chapters.length,
+      previousSummaryOutput,
+      previousTranslatedOutput,
+      previousAssistantOutputMode,
+      settings: summaryMemorySettings
+    });
+  };
+
+  const clearSummaryMemoryNamespace = async () => {
+    if (!projectId || !summaryMemoryNamespace || isClearingSummaryMemory) {
+      return;
+    }
+    setIsClearingSummaryMemory(true);
+    try {
+      const result = await window.electronAPI.invoke(
+        MEMORY_CONTEXT_IPC_CHANNELS.CLEAR_NAMESPACE,
+        {
+          projectId,
+          feature: 'story.summary',
+          namespace: summaryMemoryNamespace
+        }
+      ) as { success: boolean; error?: string };
+      if (!result.success) {
+        alert(`Không thể xóa summary memory: ${result.error || 'Lỗi không xác định'}`);
+      }
+    } catch (error) {
+      alert(`Không thể xóa summary memory: ${String(error)}`);
+    } finally {
+      setIsClearingSummaryMemory(false);
+    }
+  };
+
   const handleTranslate = async () => {
     if (!selectedChapterId) return;
+    if (!ensureSummaryMemoryRuntimeReady()) return;
     
     // Kiem tra chuong hien tai co bi loai tru khong
     if (!isChapterIncluded(selectedChapterId)) {
@@ -575,11 +798,16 @@ export function StorySummary() {
     }
 
     // Kiem tra nguon du lieu
-    const sourceContent = sourceChapters.get(selectedChapterId);
+    const sourceContent = translatedChapters.get(selectedChapterId) || sourceChapters.get(selectedChapterId);
     if (!sourceContent) {
       alert('Không tìm thấy nội dung chương. Vui lòng chọn file truyện trước.');
       return;
     }
+    const chapter = chapters.find((entry) => entry.id === selectedChapterId);
+    const chapterIndex = chapter ? chapters.findIndex((entry) => entry.id === chapter.id) : -1;
+    const summaryMemoryPayload = chapter && chapterIndex >= 0
+      ? buildSummaryMemoryForChapter(chapter, chapterIndex)
+      : null;
 
     setStatus('running');
     
@@ -589,7 +817,8 @@ export function StorySummary() {
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
-        targetLang
+        targetLang,
+        memory: summaryMemoryPayload
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -598,11 +827,11 @@ export function StorySummary() {
 
       console.log('[StorySummary] Đã chuẩn bị prompt, đang gửi đến Gemini...');
       
-      const method = translateMode === 'token' ? 'WEB' : 'API';
-      const methodKey: 'api' | 'token' = method === 'WEB' ? 'token' : 'api';
+      const method = translateMode === 'token' ? 'IMPIT' : 'API';
+      const methodKey: 'api' | 'token' = method === 'IMPIT' ? 'token' : 'api';
 
-      let selectedTokenConfig = method === 'WEB' ? getPreferredTokenConfig() : null;
-      if (method === 'WEB' && !selectedTokenConfig) {
+      let selectedTokenConfig = method === 'IMPIT' ? getPreferredTokenConfig() : null;
+      if (method === 'IMPIT' && !selectedTokenConfig) {
         await loadConfigurations();
         selectedTokenConfig = getPreferredTokenConfig();
         if (!selectedTokenConfig) {
@@ -611,17 +840,18 @@ export function StorySummary() {
         }
       }
 
-      const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+      const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
       // 2. Send to Gemini for Summarization
       const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
         prompt: prepareResult.prompt,
         model: model,
         method,
-        webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-        useProxy: method === 'WEB' && useProxy,
-        useImpit: method === 'WEB' && useImpit,
-        metadata: { chapterId: selectedChapterId }
+        webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+        useProxy: method === 'IMPIT' && useProxy,
+        useImpit: method === 'IMPIT' && useImpit,
+        metadata: { chapterId: selectedChapterId, chapterTitle: chapter?.title || '' },
+        summaryMemory: summaryMemoryPayload
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (translateResult.success && translateResult.data) {
@@ -640,10 +870,11 @@ export function StorySummary() {
             prompt: prepareResult.prompt,
             model: model,
             method,
-            webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit,
-            metadata: { chapterId: selectedChapterId }
+            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+            useProxy: method === 'IMPIT' && useProxy,
+            useImpit: method === 'IMPIT' && useImpit,
+            metadata: { chapterId: selectedChapterId, chapterTitle: chapter?.title || '' },
+            summaryMemory: summaryMemoryPayload
           }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
           
           if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
@@ -661,6 +892,7 @@ export function StorySummary() {
           next.set(selectedChapterId, translateResult.data!);
           return next;
         });
+        runtimeSummariesRef.current.set(selectedChapterId, translateResult.data!);
 
         setChapterModels(prev => {
           const next = new Map(prev);
@@ -711,6 +943,9 @@ export function StorySummary() {
 
   // Tóm tắt tất cả các chương được chọn (continuous queue - gửi liên tục sau khi hoàn thành)
   const handleTranslateAll = async () => {
+    if (!ensureSummaryMemoryRuntimeReady()) {
+      return;
+    }
     if (sourceChapters.size === 0) {
       alert('Chưa có nội dung nguồn. Vui lòng chọn file truyện trước.');
       return;
@@ -729,6 +964,8 @@ export function StorySummary() {
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     shouldStopRef.current = false;
     setShouldStop(false); // Reset stop flag
+    runtimeSummariesRef.current = new Map(summaries);
+    runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
 
     const MIN_DELAY = 5000; // 5 giây
     const MAX_DELAY = 30000; // 30 giây
@@ -753,9 +990,10 @@ export function StorySummary() {
       // setSelectedChapterId(chapter.id); // Removed to prevent UI jumping
       
       const channel = channelOverride || getWorkerChannel(workerId);
+      const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
 
       // Lấy nội dung đã dịch để tóm tắt
-      const sourceContent = sourceChapters.get(chapter.id);
+      const sourceContent = runtimeTranslatedChaptersRef.current.get(chapter.id) || sourceChapters.get(chapter.id);
       if (!sourceContent) {
         console.error(`[StorySummary] ⚠️ Không tìm thấy nội dung chương ${chapter.title}`);
         return null;
@@ -770,12 +1008,16 @@ export function StorySummary() {
       
       try {
         console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
+        const summaryMemoryPayload = actualChapterIndex >= 0
+          ? buildSummaryMemoryForChapter(chapter, actualChapterIndex)
+          : null;
         
         // 1. Prepare Summary Prompt
         const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
           chapterContent: sourceContent,
           sourceLang,
-          targetLang
+          targetLang,
+          memory: summaryMemoryPayload
         }) as PreparePromptResult;
         
         if (!prepareResult.success || !prepareResult.prompt) {
@@ -783,13 +1025,13 @@ export function StorySummary() {
           return null;
         }
 
-        const method = channel === 'token' ? 'WEB' : 'API';
+        const method = channel === 'token' ? 'IMPIT' : 'API';
 
-        let selectedTokenConfig = method === 'WEB'
+        let selectedTokenConfig = method === 'IMPIT'
           ? (tokenConfigOverride || getPreferredTokenConfig())
           : null;
 
-        if (method === 'WEB' && !selectedTokenConfig) {
+        if (method === 'IMPIT' && !selectedTokenConfig) {
           await loadConfigurations();
           selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
           if (!selectedTokenConfig) {
@@ -798,7 +1040,7 @@ export function StorySummary() {
           }
         }
 
-        const tokenKey = method === 'WEB' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
+        const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
         // 2. Send to Gemini for Summarization
         const translateResult = await window.electronAPI.invoke(
@@ -807,10 +1049,11 @@ export function StorySummary() {
             prompt: prepareResult.prompt,
             model: model,
             method,
-            webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-            useProxy: method === 'WEB' && useProxy,
-            useImpit: method === 'WEB' && useImpit,
-            metadata: { chapterId: chapter.id }
+            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+            useProxy: method === 'IMPIT' && useProxy,
+            useImpit: method === 'IMPIT' && useImpit,
+            metadata: { chapterId: chapter.id, chapterTitle: chapter.title },
+            summaryMemory: summaryMemoryPayload
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
@@ -832,10 +1075,11 @@ export function StorySummary() {
                 prompt: prepareResult.prompt,
                 model: model,
                 method,
-                webConfigId: method === 'WEB' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-                useProxy: method === 'WEB' && useProxy,
-                useImpit: method === 'WEB' && useImpit,
-                metadata: { chapterId: chapter.id }
+                webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+                useProxy: method === 'IMPIT' && useProxy,
+                useImpit: method === 'IMPIT' && useImpit,
+                metadata: { chapterId: chapter.id, chapterTitle: chapter.title },
+                summaryMemory: summaryMemoryPayload
               }
             ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
             
@@ -854,6 +1098,7 @@ export function StorySummary() {
             next.set(chapter.id, translateResult.data!);
             return next;
           });
+          runtimeSummariesRef.current.set(chapter.id, translateResult.data!);
 
           setChapterModels(prev => {
             const next = new Map(prev);
@@ -1020,11 +1265,16 @@ export function StorySummary() {
 
   const handleSavePrompt = async () => {
     if (!selectedChapterId) return;
-    const sourceContent = sourceChapters.get(selectedChapterId);
+    const sourceContent = translatedChapters.get(selectedChapterId) || sourceChapters.get(selectedChapterId);
     if (!sourceContent) {
       alert('⚠️ Không tìm thấy nội dung chương này.');
       return;
     }
+    const chapter = chapters.find((entry) => entry.id === selectedChapterId);
+    const chapterIndex = chapter ? chapters.findIndex((entry) => entry.id === chapter.id) : -1;
+    const summaryMemoryPayload = chapter && chapterIndex >= 0
+      ? buildSummaryMemoryForChapter(chapter, chapterIndex)
+      : null;
 
     setSavingPrompt(true);
     try {
@@ -1032,7 +1282,8 @@ export function StorySummary() {
       const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
-        targetLang
+        targetLang,
+        memory: summaryMemoryPayload
       }) as PreparePromptResult;
 
       if (result.success && result.prompt) {
@@ -1348,6 +1599,48 @@ export function StorySummary() {
         </div>
 
         <div className="md:col-span-12 flex items-center gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            <span className="text-sm text-text-secondary">Previous output</span>
+            <select
+              value={previousAssistantOutputMode}
+              onChange={(e) => setPreviousAssistantOutputMode(e.target.value as StoryPreviousAssistantOutputMode)}
+              disabled={status === 'running'}
+              className="h-8 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+            >
+              <option value="sampled">Sampled</option>
+              <option value="full">Full</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+            <input
+              type="checkbox"
+              checked={summaryMemoryEnabled}
+              onChange={(e) => setSummaryMemoryEnabled(e.target.checked)}
+              className="w-4 h-4 rounded border-border cursor-pointer"
+              disabled={!projectId || status === 'running'}
+            />
+            <span>Bật summary memory</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-sm text-text-secondary">Top K</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={summaryMemoryTopK}
+              disabled={!projectId || status === 'running'}
+              onChange={(e) => setSummaryMemoryTopK(Math.max(1, Math.min(20, Math.floor(Number(e.target.value) || 1))))}
+              className="h-8 w-16 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+            />
+          </label>
+          <Button
+            onClick={clearSummaryMemoryNamespace}
+            variant="secondary"
+            disabled={!projectId || !summaryMemoryNamespace || status === 'running' || isClearingSummaryMemory}
+            className="h-8 px-3 text-xs"
+          >
+            {isClearingSummaryMemory ? 'Đang xóa...' : 'Clear summary memory'}
+          </Button>
           <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
             <input
               type="checkbox"
