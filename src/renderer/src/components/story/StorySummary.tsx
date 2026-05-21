@@ -13,6 +13,7 @@ import { FileText, CheckSquare, Square, StopCircle, Loader, Clock, Sparkles, Dow
 import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
 import {
   buildStorySummaryMemoryPayload,
+  type ProcessingChapterInfo,
   type StoryPreviousAssistantOutputMode,
   type StorySummaryMemoryRuntimeState
 } from './types';
@@ -20,6 +21,7 @@ import {
   resolvePreviousSummaryOutput,
   resolvePreviousTranslatedOutput
 } from './utils/previousAssistantOutput';
+import { getInfiniteRetryDelayMs, normalizeRetryError } from './utils/retryUtils';
 
 interface GeminiChatConfigLite {
   id: string;
@@ -104,13 +106,12 @@ export function StorySummary() {
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [, setShouldStop] = useState(false);
   const shouldStopRef = useRef(false);
+  const currentBatchRunIdRef = useRef<string | null>(null);
   // Reading settings
   const [fontSize, setFontSize] = useState<number>(18);
   const [lineHeight, setLineHeight] = useState<number>(1.8);
   // Chapter processing tracking
-  const [processingChapters, setProcessingChapters] = useState<
-    Map<string, { startTime: number; workerId: number; channel: 'api' | 'token' }>
-  >(new Map());
+  const [processingChapters, setProcessingChapters] = useState<Map<string, ProcessingChapterInfo>>(new Map());
   const [, setTick] = useState(0); // Force re-render for elapsed time
   const [useProxy, setUseProxy] = useState(true);
   const [useImpit, setUseImpit] = useState(false);
@@ -327,12 +328,6 @@ export function StorySummary() {
 
   // Dem so chuong duoc chon
   const selectedChapterCount = chapters.length - excludedChapterIds.size;
-
-  const getWorkerChannel = (workerId: number): 'api' | 'token' => {
-    if (translateMode === 'api') return 'api';
-    if (translateMode === 'token') return 'token';
-    return workerId === 1 ? 'token' : 'api';
-  };
 
   const getDistinctActiveTokenConfigs = (configs: GeminiChatConfigLite[]) => {
     const activeConfigs = configs.filter(c => c.isActive && !c.isError);
@@ -945,12 +940,18 @@ export function StorySummary() {
   const handleStopTranslation = () => {
     console.log('[StorySummary] Dừng tóm tắt thủ công...');
     shouldStopRef.current = true;
+    currentBatchRunIdRef.current = null;
     setShouldStop(true);
+    setProcessingChapters(new Map());
   };
 
   // Tóm tắt tất cả các chương được chọn (continuous queue - gửi liên tục sau khi hoàn thành)
   const handleTranslateAll = async () => {
     if (!ensureSummaryMemoryRuntimeReady()) {
+      return;
+    }
+    if (currentBatchRunIdRef.current) {
+      alert('Batch tóm tắt đang chạy. Vui lòng dừng batch hiện tại trước khi chạy lại.');
       return;
     }
     if (sourceChapters.size === 0) {
@@ -970,303 +971,271 @@ export function StorySummary() {
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     shouldStopRef.current = false;
-    setShouldStop(false); // Reset stop flag
+    currentBatchRunIdRef.current = `story-summary-standalone-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = currentBatchRunIdRef.current;
+    setShouldStop(false);
     runtimeSummariesRef.current = new Map(summaries);
     runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
+    type SummaryBatchResult =
+      | { status: 'success'; id: string; text: string }
+      | { status: 'retry'; error: string }
+      | { status: 'stopped' };
 
-    const MIN_DELAY = 5000; // 5 giây
-    const MAX_DELAY = 30000; // 30 giây
-    let completed = 0;
-    let currentIndex = 0;
-    const results: Array<{ id: string; text: string } | null> = [];
+    const channel: 'api' | 'token' = translateMode === 'token' ? 'token' : 'api';
+    let selectedTokenConfig: GeminiChatConfigLite | null = null;
 
-    // Helper function để dịch 1 chapter
-    const translateChapter = async (
+    if (channel === 'token') {
+      const tokenConfigsResult = await window.electronAPI.geminiChat.getAll();
+      const tokenConfigsForRun = tokenConfigsResult?.success && tokenConfigsResult.data
+        ? getDistinctActiveTokenConfigs(tokenConfigsResult.data as GeminiChatConfigLite[])
+        : [];
+      if (tokenConfigsForRun.length === 0) {
+        console.error('[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+        setStatus('idle');
+        setBatchProgress(null);
+        currentBatchRunIdRef.current = null;
+        return;
+      }
+      selectedTokenConfig = tokenConfigsForRun[0];
+    }
+
+    let apiRequestDelayMs = 500;
+    try {
+      const settingsResult = await window.electronAPI.appSettings.getAll();
+      if (settingsResult.success && settingsResult.data) {
+        const rawDelay = Number(settingsResult.data.apiRequestDelayMs);
+        apiRequestDelayMs = Number.isFinite(rawDelay) ? Math.min(30000, Math.max(0, Math.floor(rawDelay))) : 500;
+      }
+    } catch (error) {
+      console.warn('[StorySummary] Không lấy được apiRequestDelayMs, dùng mặc định 500ms', error);
+    }
+
+    const processChapter = async (
       chapter: Chapter,
       index: number,
-      workerId: number,
-      channelOverride?: 'api' | 'token',
-      tokenConfigOverride?: GeminiChatConfigLite | null
-    ): Promise<{ id: string; text: string } | null> => {
-      // Kiểm tra nếu người dùng đã nhấn Dừng
-      if (shouldStopRef.current) {
-        console.log(`[StorySummary] ⚠️ Bỏ qua chương ${chapter.title} - Đã dừng`);
-        return null;
+      workerId: number
+    ): Promise<SummaryBatchResult> => {
+      if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+        return { status: 'stopped' };
       }
-      
-      // setSelectedChapterId(chapter.id); // Removed to prevent UI jumping
-      
-      const channel = channelOverride || getWorkerChannel(workerId);
-      const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
 
-      // Lấy nội dung đã dịch để tóm tắt
+      const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
       const sourceContent = runtimeTranslatedChaptersRef.current.get(chapter.id) || sourceChapters.get(chapter.id);
       if (!sourceContent) {
-        console.error(`[StorySummary] ⚠️ Không tìm thấy nội dung chương ${chapter.title}`);
-        return null;
+        const errorMessage = `Không tìm thấy nội dung chương ${chapter.title}`;
+        console.error(`[StorySummary] ⚠️ ${errorMessage}`);
+        return { status: 'retry', error: errorMessage };
       }
 
-      // Mark as processing
       setProcessingChapters(prev => {
         const next = new Map(prev);
-        next.set(chapter.id, { startTime: Date.now(), workerId, channel });
+        const current = next.get(chapter.id);
+        next.set(chapter.id, {
+          startTime: current?.startTime || Date.now(),
+          workerId,
+          channel,
+          phase: 'running',
+          retryCount: current?.retryCount ?? 0,
+          lastError: current?.lastError
+        });
         return next;
       });
-      
+
       try {
         console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
         const summaryMemoryPayload = actualChapterIndex >= 0
           ? buildSummaryMemoryForChapter(chapter, actualChapterIndex)
           : null;
-        
-        // 1. Prepare Summary Prompt
+
         const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
           chapterContent: sourceContent,
           sourceLang,
           targetLang,
           memory: summaryMemoryPayload
         }) as PreparePromptResult;
-        
+
         if (!prepareResult.success || !prepareResult.prompt) {
-          console.error(`Lỗi chuẩn bị prompt tóm tắt cho chương ${chapter.title}:`, prepareResult.error);
-          return null;
+          const errorMessage = prepareResult.error || `Lỗi chuẩn bị prompt tóm tắt cho chương ${chapter.title}`;
+          console.error(errorMessage);
+          return { status: 'retry', error: errorMessage };
         }
 
         const method = channel === 'token' ? 'IMPIT' : 'API';
-
-        let selectedTokenConfig = method === 'IMPIT'
-          ? (tokenConfigOverride || getPreferredTokenConfig())
-          : null;
-
-        if (method === 'IMPIT' && !selectedTokenConfig) {
+        let tokenConfig = selectedTokenConfig;
+        if (method === 'IMPIT' && !tokenConfig) {
           await loadConfigurations();
-          selectedTokenConfig = tokenConfigOverride || getPreferredTokenConfig();
-          if (!selectedTokenConfig) {
-            console.error('[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
-            return null;
+          tokenConfig = getPreferredTokenConfig();
+          if (!tokenConfig) {
+            const errorMessage = '[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.';
+            console.error(errorMessage);
+            return { status: 'retry', error: errorMessage };
           }
         }
 
-        const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
-
-        // 2. Send to Gemini for Summarization
+        const tokenKey = method === 'IMPIT' && tokenConfig ? buildTokenKey(tokenConfig) : null;
         const translateResult = await window.electronAPI.invoke(
-          STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, 
+          STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
           {
             prompt: prepareResult.prompt,
             model: model,
             method,
-            webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
+            webConfigId: method === 'IMPIT' && tokenConfig ? tokenConfig.id : undefined,
             useProxy: method === 'IMPIT' && useProxy,
             useImpit: method === 'IMPIT' && useImpit,
-            metadata: { chapterId: chapter.id, chapterTitle: chapter.title },
+            metadata: {
+              chapterId: chapter.id,
+              chapterTitle: chapter.title,
+              validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
+            },
             summaryMemory: summaryMemoryPayload
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
-        if (translateResult.success && translateResult.data) {
-          // Validate metadata to prevent race condition
-          if (translateResult.metadata?.chapterId !== chapter.id) {
-            console.error(`[StorySummary] ⚠️ RACE CONDITION DETECTED! Response chapterId (${translateResult.metadata?.chapterId}) !== chapter.id (${chapter.id})`);
-            return null;
-          }
-          
-          // Kiểm tra marker kết thúc
-          if (!hasSummaryEndMarker(translateResult.data)) {
-            console.warn(`[StorySummary] ⚠️ Chương ${chapter.title} không có "Hết tóm tắt", đang retry...`);
-            
-            // Retry 1 lần
-            const retryResult = await window.electronAPI.invoke(
-              STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
-              {
-                prompt: prepareResult.prompt,
-                model: model,
-                method,
-                webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
-                useProxy: method === 'IMPIT' && useProxy,
-                useImpit: method === 'IMPIT' && useImpit,
-                metadata: { chapterId: chapter.id, chapterTitle: chapter.title },
-                summaryMemory: summaryMemoryPayload
-              }
-            ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
-            
-            if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
-              console.log(`[StorySummary] ✅ Retry chương ${chapter.title} thành công, đã có "Hết tóm tắt"`);
-              translateResult.data = retryResult.data;
-              if (retryResult.context) translateResult.context = retryResult.context;
-            } else {
-              console.warn(`[StorySummary] ⚠️ Retry chương ${chapter.title} vẫn không có "Hết tóm tắt", sử dụng bản gốc`);
-            }
-          }
-          
-          // Cập nhật UI NGAY khi tóm tắt xong
-          setSummaries(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, translateResult.data!);
-            return next;
-          });
-          runtimeSummariesRef.current.set(chapter.id, translateResult.data!);
-
-          setChapterModels(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, model);
-            return next;
-          });
-
-          setChapterMethods(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, channel);
-            return next;
-          });
-
-          setSummaryTitles(prev => {
-            const next = new Map(prev);
-            const chapterTitle = translatedTitles.get(chapter.id) || chapter.title;
-            next.set(chapter.id, chapterTitle);
-            return next;
-          });
-
-          if (translateResult.context && translateResult.context.conversationId && tokenKey) {
-            setTokenContexts(prev => {
-              const next = new Map(prev);
-              next.set(tokenKey, translateResult.context!);
-              return next;
-            });
-          }
-
-          console.log(`[StorySummary] ✅ Tóm tắt xong: ${chapter.title}`);
-          return { id: chapter.id, text: translateResult.data! };
-        } else {
-          console.error(`[StorySummary] ❌ Lỗi tóm tắt chương ${chapter.title}:`, translateResult.error);
-          return null;
+        if (!translateResult.success || !translateResult.data) {
+          const errorMessage = translateResult.error || `Lỗi tóm tắt chương ${chapter.title}`;
+          console.error(`[StorySummary] ❌ ${errorMessage}`);
+          return { status: 'retry', error: errorMessage };
         }
-      } catch (error) {
-        console.error(`[StorySummary] ❌ Exception khi tóm tắt chương ${chapter.title}:`, error);
-        return null;
-      } finally {
-        // Remove from processing
+
+        if (translateResult.metadata?.chapterId !== chapter.id) {
+          const errorMessage = `Metadata validation failed for chapter ${chapter.id}`;
+          console.error(`[StorySummary] ⚠️ ${errorMessage}: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
+          return { status: 'retry', error: errorMessage };
+        }
+
+        if (!hasSummaryEndMarker(translateResult.data)) {
+          const errorMessage = `Summary chapter ${chapter.title} thiếu marker "Hết tóm tắt"`;
+          console.warn(`[StorySummary] ⚠️ ${errorMessage}`);
+          return { status: 'retry', error: errorMessage };
+        }
+
+        setSummaries(prev => {
+          const next = new Map(prev);
+          next.set(chapter.id, translateResult.data!);
+          return next;
+        });
+        runtimeSummariesRef.current.set(chapter.id, translateResult.data);
+
+        setChapterModels(prev => {
+          const next = new Map(prev);
+          next.set(chapter.id, model);
+          return next;
+        });
+
+        setChapterMethods(prev => {
+          const next = new Map(prev);
+          next.set(chapter.id, channel);
+          return next;
+        });
+
+        setSummaryTitles(prev => {
+          const next = new Map(prev);
+          const chapterTitle = translatedTitles.get(chapter.id) || chapter.title;
+          next.set(chapter.id, chapterTitle);
+          return next;
+        });
+
+        if (translateResult.context && translateResult.context.conversationId && tokenKey) {
+          setTokenContexts(prev => {
+            const next = new Map(prev);
+            next.set(tokenKey, translateResult.context!);
+            return next;
+          });
+        }
+
         setProcessingChapters(prev => {
           const next = new Map(prev);
           next.delete(chapter.id);
           return next;
         });
+
+        console.log(`[StorySummary] ✅ Tóm tắt xong: ${chapter.title}`);
+        return { status: 'success', id: chapter.id, text: translateResult.data };
+      } catch (error) {
+        const errorMessage = normalizeRetryError(error);
+        console.error(`[StorySummary] ❌ Exception khi tóm tắt chương ${chapter.title}:`, error);
+        return { status: 'retry', error: errorMessage };
       }
     };
 
-    // Worker function - xử lý từng chapter liên tục
-    // Logic: API dùng delay cố định, token giữ random delay
-    let isFirstChapterTaken = false;
-    const worker = async (workerId: number, channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
-      console.log(`[StorySummary] 🚀 Worker ${workerId} started`);
-      let hasDispatched = false;
-      
-      while (!shouldStopRef.current) {
-        // 1. Chờ random TRƯỚC khi lấy chương (trừ chương đầu tiên)
-        if (channel === 'api') {
-          if (hasDispatched && apiRequestDelayMs > 0) {
-            console.log(`[StorySummary] ⏳ Worker ${workerId} chờ ${Math.round(apiRequestDelayMs / 1000)}s trước khi lấy chương tiếp...`);
-            await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
-          }
-        } else if (isFirstChapterTaken) {
-          const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-          console.log(`[StorySummary] ⏳ Worker ${workerId} chờ ${Math.round(delay/1000)}s trước khi lấy chương tiếp...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-        
-        // Kiểm tra lại shouldStop sau khi chờ
-        if (shouldStopRef.current) {
-          console.log(`[StorySummary] ⚠️ Worker ${workerId} stopped`);
+    let completed = 0;
+    const workerId = 1;
+    console.log(`[StorySummary] 🎯 Bắt đầu tóm tắt ${chaptersToTranslate.length} chapters với 1 worker tuần tự`);
+
+    try {
+      for (let index = 0; index < chaptersToTranslate.length; index += 1) {
+        if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
           break;
         }
-        
-        // 2. SAU KHI chờ xong, mới lấy chương tiếp theo
-        if (currentIndex >= chaptersToTranslate.length) break;
-        const index = currentIndex++;
+
         const chapter = chaptersToTranslate[index];
-        
-        if (!isFirstChapterTaken) {
-          isFirstChapterTaken = true;
-          console.log(`[StorySummary] 🚀 Worker ${workerId} lấy chương đầu tiên - gửi ngay`);
-        } else {
-          console.log(`[StorySummary] 📖 Worker ${workerId} lấy chương ${index + 1} sau khi chờ delay`);
+        let retryCount = 0;
+
+        while (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
+          if (retryCount > 0) {
+            const delayMs = getInfiniteRetryDelayMs(retryCount);
+            setProcessingChapters(prev => {
+              const next = new Map(prev);
+              const current = next.get(chapter.id);
+              next.set(chapter.id, {
+                startTime: current?.startTime || Date.now(),
+                workerId,
+                channel,
+                phase: 'retry_wait',
+                retryCount,
+                lastError: current?.lastError
+              });
+              return next;
+            });
+            console.log(`[StorySummary] ⚠️ Retry chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } else if (channel === 'api' && completed > 0 && apiRequestDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
+          }
+
+          const result = await processChapter(chapter, index, workerId);
+          if (result.status === 'success') {
+            completed++;
+            setBatchProgress({ current: completed, total: chaptersToTranslate.length });
+            console.log(`[StorySummary] 📊 Progress: ${completed}/${chaptersToTranslate.length}`);
+            break;
+          }
+
+          if (result.status === 'stopped') {
+            break;
+          }
+
+          retryCount++;
+          setProcessingChapters(prev => {
+            const next = new Map(prev);
+            const current = next.get(chapter.id);
+            next.set(chapter.id, {
+              startTime: current?.startTime || Date.now(),
+              workerId,
+              channel,
+              phase: 'retry_wait',
+              retryCount,
+              lastError: result.error
+            });
+            return next;
+          });
+          console.error(`[StorySummary] ❌ Chapter ${index + 1} failed. Retry #${retryCount}. Error: ${result.error}`);
         }
-        hasDispatched = true;
-        
-        const result = await translateChapter(chapter, index, workerId, channel, tokenConfig);
-        results.push(result);
-        
-        completed++;
-        setBatchProgress({ current: completed, total: chaptersToTranslate.length });
-        
-        console.log(`[StorySummary] 📊 Progress: ${completed}/${chaptersToTranslate.length} (Worker ${workerId})`);
       }
-      
-      console.log(`[StorySummary] ✓ Worker ${workerId} finished`);
-    };
-
-    const tokenConfigsResult = translateMode === 'token' || translateMode === 'both'
-      ? await window.electronAPI.geminiChat.getAll()
-      : null;
-
-    const tokenConfigsForRun = tokenConfigsResult?.success && tokenConfigsResult.data
-      ? getDistinctActiveTokenConfigs(tokenConfigsResult.data as GeminiChatConfigLite[])
-      : [];
-
-    if ((translateMode === 'token' || translateMode === 'both') && tokenConfigsForRun.length === 0) {
-      console.error('[StorySummary] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+    } finally {
+      currentBatchRunIdRef.current = null;
       setStatus('idle');
       setBatchProgress(null);
-      return;
-    }
-
-    let apiWorkerCountSetting = 1;
-    let apiRequestDelayMs = 500;
-    try {
-      const settingsResult = await window.electronAPI.appSettings.getAll();
-      if (settingsResult.success && settingsResult.data) {
-        const raw = Number(settingsResult.data.apiWorkerCount);
-        apiWorkerCountSetting = Number.isFinite(raw) ? Math.min(10, Math.max(1, Math.floor(raw))) : 1;
-        const rawDelay = Number(settingsResult.data.apiRequestDelayMs);
-        apiRequestDelayMs = Number.isFinite(rawDelay) ? Math.min(30000, Math.max(0, Math.floor(rawDelay))) : 500;
+      if (shouldStopRef.current) {
+        setProcessingChapters(new Map());
       }
-    } catch (error) {
-      console.warn('[StorySummary] Không lấy được apiWorkerCount, dùng mặc định 1', error);
-    }
-    const apiWorkerCount = translateMode === 'api'
-      ? apiWorkerCountSetting
-      : translateMode === 'both'
-        ? apiWorkerCountSetting
-        : 0;
-    const tokenWorkerCount = translateMode === 'token'
-      ? tokenConfigsForRun.length
-      : translateMode === 'both'
-        ? tokenConfigsForRun.length
-        : 0;
-    const totalWorkers = apiWorkerCount + tokenWorkerCount;
-
-    console.log(`[StorySummary] 🎯 Bắt đầu tóm tắt ${chaptersToTranslate.length} chapters với ${totalWorkers} workers song song`);
-
-    const workers: Promise<void>[] = [];
-    let workerId = 1;
-
-    for (let i = 0; i < apiWorkerCount; i += 1) {
-      workers.push(worker(workerId++, 'api'));
+      setViewMode('summary');
     }
 
-    for (const config of tokenConfigsForRun) {
-      workers.push(worker(workerId++, 'token', config));
-    }
-    
-    await Promise.all(workers);
-
-    setStatus('idle');
-    setBatchProgress(null);
-    setViewMode('summary');
-    
     if (shouldStopRef.current) {
-      console.log(`[StorySummary] 🛑 Đã dừng: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters đã tóm tắt`);
+      console.log(`[StorySummary] 🛑 Đã dừng: ${completed}/${chaptersToTranslate.length} chapters đã tóm tắt`);
     } else {
-      console.log(`[StorySummary] 🎉 Hoàn thành: ${results.filter(r => r).length}/${chaptersToTranslate.length} chapters`);
+      console.log(`[StorySummary] 🎉 Hoàn thành: ${completed}/${chaptersToTranslate.length} chapters`);
     }
   };
 
@@ -1803,12 +1772,23 @@ export function StorySummary() {
                         ? 'border-yellow-300/60 bg-yellow-300/10'
                         : 'border-yellow-500/60 bg-yellow-500/10'
                     }`}>
-                      {processingInfo.channel === 'api' ? 'API' : 'TOKEN'}
+                      {processingInfo.phase === 'queued'
+                        ? 'QUEUE'
+                        : processingInfo.channel === 'api'
+                          ? 'API'
+                          : 'TOKEN'}
                     </span>
-                    <Loader size={12} className="animate-spin" />
+                    <Loader size={12} className={processingInfo.phase === 'queued' ? '' : 'animate-spin'} />
                     <span className="font-mono">W{processingInfo.workerId}</span>
                     <Clock size={10} />
                     <span className="font-mono">{elapsedTime}s</span>
+                    {processingInfo.retryCount && processingInfo.retryCount > 0 && (
+                      <span className="text-[10px] ml-1 opacity-80 whitespace-nowrap">
+                        {processingInfo.phase === 'retry_wait'
+                          ? `retry #${processingInfo.retryCount}`
+                          : `retry #${processingInfo.retryCount}`}
+                      </span>
+                    )}
                   </span>
                 )}
               </div>

@@ -45,7 +45,8 @@ export interface ProcessingChapterInfo {
   source?: 'story_web_queue';
   retryCount?: number;
   maxRetries?: number;
-  phase?: 'queued' | 'running';
+  lastError?: string;
+  phase?: 'queued' | 'running' | 'retry_wait';
   queuedAt?: number;
   resourceId?: string | null;
   resourceLabel?: string | null;

@@ -15,6 +15,7 @@ import type {
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
+import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
 interface UseStoryBatchTranslationParams {
   chapters: Chapter[];
@@ -50,6 +51,13 @@ interface BatchState {
   activeWorkerConfigIds: Set<string>;
   isFirstChapterTaken: boolean;
 }
+
+type ChapterProcessResult =
+  | { status: 'success'; id: string; text: string }
+  | { status: 'retry'; error: string }
+  | { status: 'stopped' };
+
+const ENFORCE_SEQUENTIAL_CHAPTER_LOCK = true;
 
 /**
  * Custom hook to manage batch translation of multiple chapters
@@ -88,7 +96,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   const [processingChapters, setProcessingChapters] = useState<
     Map<string, ProcessingChapterInfo>
   >(new Map());
-  const [apiWorkerCountSetting, setApiWorkerCountSetting] = useState(1);
+  const [, setApiWorkerCountSetting] = useState(1);
   const [apiRequestDelayMs, setApiRequestDelayMs] = useState(500);
   const [, setTick] = useState(0); // Force re-render for elapsed time
   const [isStopping, setIsStopping] = useState(false);
@@ -188,13 +196,23 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     channel: 'api' | 'token',
     tokenConfig: GeminiChatConfigLite | null,
     runId: string
-  ): Promise<{ id: string; text: string } | { retryable: boolean } | null> => {
-    if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) return null;
+  ): Promise<ChapterProcessResult> => {
+    if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+      return { status: 'stopped' };
+    }
 
     // Mark as processing
     setProcessingChapters(prev => {
       const next = new Map(prev);
-      next.set(chapter.id, { startTime: Date.now(), workerId, channel });
+      const current = next.get(chapter.id);
+      next.set(chapter.id, {
+        startTime: Date.now(),
+        workerId,
+        channel,
+        phase: 'running',
+        retryCount: current?.retryCount ?? 0,
+        lastError: current?.lastError
+      });
       return next;
     });
 
@@ -231,8 +249,9 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       }) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
-        console.error(`Lỗi chuẩn bị prompt cho chương ${chapter.title}:`, prepareResult.error);
-        return null;
+        const errorMessage = prepareResult.error || `Lỗi chuẩn bị prompt cho chương ${chapter.title}`;
+        console.error(errorMessage);
+        return { status: 'retry', error: errorMessage };
       }
 
       const method = channel === 'token' ? 'IMPIT' : 'API';
@@ -245,8 +264,9 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         // Double check fallback if somehow tokenConfig was null
         selectedTokenConfig = getPreferredTokenConfig();
         if (!selectedTokenConfig) {
-          console.error('[useStoryBatchTranslation] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
-          return null;
+          const errorMessage = '[useStoryBatchTranslation] Không tìm thấy Cấu hình Web để chạy chế độ Token.';
+          console.error(errorMessage);
+          return { status: 'retry', error: errorMessage };
         }
       }
 
@@ -296,22 +316,23 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       }
 
       if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
-        return null;
+        return { status: 'stopped' };
       }
 
       if (translateResult.success && translateResult.data) {
         if (translateResult.metadata?.runId && translateResult.metadata.runId !== runId) {
             console.warn(`[useStoryBatchTranslation] ⚠️ STALE RUN: ${translateResult.metadata.runId} !== ${runId}`);
-            return null;
+            return { status: 'stopped' };
         }
 
         if (translateResult.metadata?.chapterId !== chapter.id) {
-            console.error(`[useStoryBatchTranslation] ⚠️ RACE CONDITION: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
-            return { retryable: true };
+            const errorMessage = `[useStoryBatchTranslation] ⚠️ RACE CONDITION: ${translateResult.metadata?.chapterId} !== ${chapter.id}`;
+            console.error(errorMessage);
+            return { status: 'retry', error: errorMessage };
         }
 
         if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
-          return null;
+          return { status: 'stopped' };
         }
 
         runtimeTranslatedChaptersRef.current.set(chapter.id, translateResult.data);
@@ -334,20 +355,22 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             setTokenContexts(prev => new Map(prev).set(tokenKey, translateResult.context!));
         }
 
-        return { id: chapter.id, text: translateResult.data! };
+        setProcessingChapters(prev => {
+          const next = new Map(prev);
+          next.delete(chapter.id);
+          return next;
+        });
+
+        return { status: 'success', id: chapter.id, text: translateResult.data! };
       } else {
-        console.error(`[useStoryBatchTranslation] ❌ Lỗi dịch chương ${chapter.title}:`, translateResult.error);
-        return { retryable: translateResult.retryable ?? false };
+        const errorMessage = translateResult.error || `Lỗi dịch chương ${chapter.title}`;
+        console.error(`[useStoryBatchTranslation] ❌ ${errorMessage}`);
+        return { status: 'retry', error: errorMessage };
       }
     } catch (error) {
+       const errorMessage = normalizeRetryError(error);
        console.error(`[useStoryBatchTranslation] ❌ Exception chương ${chapter.title}:`, error);
-       return null;
-    } finally {
-       setProcessingChapters(prev => {
-           const next = new Map(prev);
-           next.delete(chapter.id);
-           return next;
-       });
+       return { status: 'retry', error: errorMessage };
     }
   };
 
@@ -389,33 +412,61 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
                 console.log(`[useStoryBatchTranslation] 📖 Worker ${workerId} lấy chương ${index + 1}`);
             }
 
-            let result: { id: string; text: string } | { retryable: boolean } | null = null;
+            let result: ChapterProcessResult = { status: 'stopped' };
             let retryCount = 0;
-            const MAX_RETRIES = 3;
 
-            while (retryCount <= MAX_RETRIES) {
+            while (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
                 if (retryCount > 0) {
-                     console.log(`[useStoryBatchTranslation] ⚠️ Worker ${workerId} Retrying chapter ${index + 1} (${retryCount}/${MAX_RETRIES})...`);
-                     await new Promise(r => setTimeout(r, 2000 * retryCount));
+                    const delayMs = getInfiniteRetryDelayMs(retryCount);
+                    setProcessingChapters(prev => {
+                      const next = new Map(prev);
+                      const current = next.get(chapter.id);
+                      next.set(chapter.id, {
+                        startTime: current?.startTime || Date.now(),
+                        workerId,
+                        channel,
+                        phase: 'retry_wait',
+                        retryCount,
+                        lastError: current?.lastError
+                      });
+                      return next;
+                    });
+                    console.log(
+                      `[useStoryBatchTranslation] ⚠️ Worker ${workerId} retrying chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`
+                    );
+                    await new Promise(r => setTimeout(r, delayMs));
                 }
-                
+
                 result = await processChapter(chapter, index, workerId, channel, tokenConfig, runId);
 
-                if (result && 'retryable' in result && result.retryable) {
-                  if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
-                        break;
+                if (result.status === 'retry') {
+                    const retryError = result.error;
+                    if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+                      break;
                     }
                     retryCount++;
-                    if (retryCount > MAX_RETRIES) {
-                        console.error(`[useStoryBatchTranslation] ❌ Worker ${workerId} Failed chapter ${index + 1} after ${MAX_RETRIES} retries.`);
-                        break;
-                    }
-                    continue; 
+                    setProcessingChapters(prev => {
+                      const next = new Map(prev);
+                      const current = next.get(chapter.id);
+                      next.set(chapter.id, {
+                        startTime: current?.startTime || Date.now(),
+                        workerId,
+                        channel,
+                        phase: 'retry_wait',
+                        retryCount,
+                        lastError: retryError
+                      });
+                      return next;
+                    });
+                    console.error(
+                      `[useStoryBatchTranslation] ❌ Worker ${workerId} chapter ${index + 1} failed. Retry #${retryCount}. Error: ${retryError}`
+                    );
+                    continue;
                 }
                 break;
             }
 
-            if (result && !('retryable' in result) && result !== null) {
+            if (result.status === 'success') {
                 if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
                     break;
                  }
@@ -455,6 +506,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   // Hot-add token workers when new configs become active during batch translation
   useEffect(() => {
     if (!isBatchRunningRef.current || shouldStopRef.current) return;
+    if (ENFORCE_SEQUENTIAL_CHAPTER_LOCK) return;
     if (translationMethod !== 'token') return;
     if (forceSequential) return;
     
@@ -562,8 +614,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       }
     }
 
-    const apiWorkerCount = shouldUseApiWorkers ? (forceSequential ? 1 : apiWorkerCountSetting) : 0;
-    let tokenWorkerCount = forceSequential ? Math.min(1, tokenConfigsForRun.length) : tokenConfigsForRun.length;
+    const apiWorkerCount = shouldUseApiWorkers ? 1 : 0;
+    let tokenWorkerCount = shouldUseTokenWorkers ? Math.min(1, tokenConfigsForRun.length) : 0;
     
     if (tokenWorkerCount > maxImpitBrowsers) {
       console.warn(`[useStoryBatchTranslation] Impit: Giới hạn token workers xuống ${maxImpitBrowsers}`);

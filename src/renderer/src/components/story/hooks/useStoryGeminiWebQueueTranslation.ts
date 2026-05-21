@@ -14,6 +14,7 @@ import type { ProcessingChapterInfo, StoryChapterMethod, StoryMemoryRuntimeState
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
+import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
 export type StoryWebQueueMode = 'sequential' | 'multi_auto';
 
@@ -41,6 +42,12 @@ interface UseStoryGeminiWebQueueTranslationParams {
 }
 
 const AUTO_WORKERS_MAX = 8;
+const ENFORCE_SEQUENTIAL_CHAPTER_LOCK = true;
+
+type QueueChapterProcessResult =
+  | { status: 'success' }
+  | { status: 'retry'; error: string }
+  | { status: 'stopped' };
 
 function clampWorkers(value: number): number {
   return Math.max(1, Math.min(AUTO_WORKERS_MAX, Math.round(value)));
@@ -57,9 +64,19 @@ function applyStoryQueueEventToProcessingMap(
   const next = new Map(prev);
   const current = next.get(event.chapterId);
 
-  if (event.state === 'succeeded' || event.state === 'failed' || event.state === 'cancelled') {
+  if (event.state === 'succeeded' || event.state === 'cancelled') {
     if (current?.source === 'story_web_queue') {
       next.delete(event.chapterId);
+    }
+    return next;
+  }
+
+  if (event.state === 'failed') {
+    if (current?.source === 'story_web_queue') {
+      next.set(event.chapterId, {
+        ...current,
+        phase: 'retry_wait'
+      });
     }
     return next;
   }
@@ -89,7 +106,7 @@ function applyStoryQueueSnapshotToProcessingMap(
   const next = new Map(prev);
 
   for (const [chapterId, info] of next.entries()) {
-    if (info.source === 'story_web_queue') {
+    if (info.source === 'story_web_queue' && info.phase !== 'retry_wait') {
       next.delete(chapterId);
     }
   }
@@ -305,8 +322,9 @@ export function useStoryGeminiWebQueueTranslation(
       resetConversation?: boolean;
       batchId?: string;
       runId?: string;
+      retryCount?: number;
     }
-  ): Promise<void> => {
+  ): Promise<QueueChapterProcessResult> => {
     const expectedChapterId = chapter.id;
     const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id) + 1;
     const previousAssistantOutput = resolvePreviousAssistantOutput({
@@ -328,7 +346,7 @@ export function useStoryGeminiWebQueueTranslation(
     });
     const runId = options?.runId;
     if (!runId || currentRunIdRef.current !== runId || shouldStopRef.current) {
-      return;
+      return { status: 'stopped' };
     }
 
     const queuedAt = Date.now();
@@ -339,8 +357,9 @@ export function useStoryGeminiWebQueueTranslation(
         workerId,
         channel: 'token',
         source: 'story_web_queue',
-        phase: 'queued',
+        phase: 'running',
         queuedAt,
+        retryCount: options?.retryCount ?? 0,
         resourceId: null,
         resourceLabel: null
       });
@@ -360,12 +379,13 @@ export function useStoryGeminiWebQueueTranslation(
       ) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
-        console.error(`[StoryGeminiWebQueue] Prepare prompt failed for chapter ${expectedChapterId}:`, prepareResult.error);
-        return;
+        const errorMessage = prepareResult.error || `Prepare prompt failed for chapter ${expectedChapterId}`;
+        console.error(`[StoryGeminiWebQueue] ${errorMessage}`);
+        return { status: 'retry', error: errorMessage };
       }
 
       if (shouldStopRef.current || currentRunIdRef.current !== runId) {
-        return;
+        return { status: 'stopped' };
       }
 
       const translateResult = await window.electronAPI.invoke(
@@ -418,7 +438,7 @@ export function useStoryGeminiWebQueueTranslation(
             runId,
             activeRunId: currentRunIdRef.current
           });
-          return;
+          return { status: 'stopped' };
         }
 
         const responseRunId = translateResult.metadata?.runId;
@@ -428,17 +448,18 @@ export function useStoryGeminiWebQueueTranslation(
             runId,
             responseRunId
           });
-          return;
+          return { status: 'stopped' };
         }
 
         const responseChapterId = translateResult.metadata?.chapterId;
         if (responseChapterId && responseChapterId !== expectedChapterId) {
-          console.error('[StoryGeminiWebQueue] Drop mismatched response chapter', {
+          const errorMessage = `[StoryGeminiWebQueue] Drop mismatched response chapter ${responseChapterId} !== ${expectedChapterId}`;
+          console.error(errorMessage, {
             expectedChapterId,
             responseChapterId,
             runId
           });
-          return;
+          return { status: 'retry', error: errorMessage };
         }
 
         runtimeTranslatedChaptersRef.current.set(expectedChapterId, translateResult.data!);
@@ -455,32 +476,29 @@ export function useStoryGeminiWebQueueTranslation(
         });
         setChapterModels((prev) => new Map(prev).set(expectedChapterId, model));
         setChapterMethods((prev) => new Map(prev).set(expectedChapterId, 'gemini_webapi_queue'));
+        setProcessingChapters((prev) => {
+          const next = new Map(prev);
+          next.delete(expectedChapterId);
+          return next;
+        });
+        return { status: 'success' };
       } else {
+        const errorMessage = translateResult.error || translateResult.errorCode || `Translate failed for chapter ${expectedChapterId}`;
         console.error(
           `[StoryGeminiWebQueue] Translate failed for chapter ${expectedChapterId}:`,
           translateResult.errorCode,
           translateResult.error
         );
         if (shouldStopRef.current && translateResult.errorCode === 'CANCELLED_BY_USER') {
-          return;
+          return { status: 'stopped' };
         }
+        return { status: 'retry', error: errorMessage };
       }
     } catch (error) {
       console.error(`[StoryGeminiWebQueue] Unexpected error at chapter ${expectedChapterId}:`, error);
-    } finally {
-      setProcessingChapters((prev) => {
-        const next = new Map(prev);
-        const current = next.get(expectedChapterId);
-        if (
-          current?.source === 'story_web_queue'
-          && current.workerId === workerId
-          && current.queuedAt === queuedAt
-        ) {
-          next.delete(expectedChapterId);
-        }
-        return next;
-      });
+      return { status: 'retry', error: normalizeRetryError(error) };
     }
+    return { status: 'retry', error: `Unknown translate failure for chapter ${expectedChapterId}` };
   };
 
   const handleTranslateAll = async (options?: { chapterIds?: string[] }) => {
@@ -501,7 +519,8 @@ export function useStoryGeminiWebQueueTranslation(
     setIsStopping(false);
     setStatus('running');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
-    const effectiveQueueMode: StoryWebQueueMode = forceSequential ? 'sequential' : webQueueMode;
+    const effectiveQueueMode: StoryWebQueueMode =
+      ENFORCE_SEQUENTIAL_CHAPTER_LOCK || forceSequential ? 'sequential' : webQueueMode;
     const resolvedWorkers =
       effectiveQueueMode === 'multi_auto'
         ? await resolveAutoWorkerCount()
@@ -523,12 +542,66 @@ export function useStoryGeminiWebQueueTranslation(
               break;
             }
             const chapter = chaptersToTranslate[chapterIndex];
-            await processChapter(chapter, workerId, {
-              runId,
-              batchId,
-              conversationKey: `${batchId}-${chapter.id}`,
-              resetConversation: true
-            });
+            let retryCount = 0;
+            let result: QueueChapterProcessResult = { status: 'stopped' };
+            while (!shouldStopRef.current) {
+              if (retryCount > 0) {
+                const delayMs = getInfiniteRetryDelayMs(retryCount);
+                setProcessingChapters((prev) => {
+                  const next = new Map(prev);
+                  const current = next.get(chapter.id);
+                  next.set(chapter.id, {
+                    startTime: current?.startTime || Date.now(),
+                    workerId,
+                    channel: 'token',
+                    source: 'story_web_queue',
+                    phase: 'retry_wait',
+                    queuedAt: current?.queuedAt || Date.now(),
+                    retryCount,
+                    lastError: current?.lastError,
+                    resourceId: current?.resourceId ?? null,
+                    resourceLabel: current?.resourceLabel ?? null
+                  });
+                  return next;
+                });
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+              }
+              result = await processChapter(chapter, workerId, {
+                runId,
+                batchId,
+                conversationKey: `${batchId}-${chapter.id}`,
+                resetConversation: true,
+                retryCount
+              });
+              if (result.status === 'success' || result.status === 'stopped') {
+                break;
+              }
+              const retryError = result.error;
+              retryCount++;
+              console.error(
+                `[StoryGeminiWebQueue] Retry chapter ${chapter.id} (#${retryCount}) after error: ${retryError}`
+              );
+              setProcessingChapters((prev) => {
+                const next = new Map(prev);
+                const current = next.get(chapter.id);
+                next.set(chapter.id, {
+                  startTime: current?.startTime || Date.now(),
+                  workerId,
+                  channel: 'token',
+                  source: 'story_web_queue',
+                    phase: 'retry_wait',
+                    queuedAt: current?.queuedAt || Date.now(),
+                    retryCount,
+                    lastError: retryError,
+                    resourceId: current?.resourceId ?? null,
+                    resourceLabel: current?.resourceLabel ?? null
+                  });
+                return next;
+              });
+            }
+            if (result.status !== 'success') {
+              break;
+            }
             if (shouldStopRef.current) {
               break;
             }
@@ -550,12 +623,66 @@ export function useStoryGeminiWebQueueTranslation(
           if (shouldStopRef.current) {
             break;
           }
-          await processChapter(chapter, 1, {
-            runId,
-            conversationKey: batchConversationKey,
-            resetConversation: isFirstTurn,
-            batchId: batchConversationKey
-          });
+          let retryCount = 0;
+          let result: QueueChapterProcessResult = { status: 'stopped' };
+          while (!shouldStopRef.current) {
+            if (retryCount > 0) {
+              const delayMs = getInfiniteRetryDelayMs(retryCount);
+              setProcessingChapters((prev) => {
+                const next = new Map(prev);
+                const current = next.get(chapter.id);
+                next.set(chapter.id, {
+                  startTime: current?.startTime || Date.now(),
+                  workerId: 1,
+                  channel: 'token',
+                  source: 'story_web_queue',
+                  phase: 'retry_wait',
+                  queuedAt: current?.queuedAt || Date.now(),
+                  retryCount,
+                  lastError: current?.lastError,
+                  resourceId: current?.resourceId ?? null,
+                  resourceLabel: current?.resourceLabel ?? null
+                });
+                return next;
+              });
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+            result = await processChapter(chapter, 1, {
+              runId,
+              conversationKey: batchConversationKey,
+              resetConversation: isFirstTurn,
+              batchId: batchConversationKey,
+              retryCount
+            });
+            if (result.status === 'success' || result.status === 'stopped') {
+              break;
+            }
+            const retryError = result.error;
+            retryCount++;
+            console.error(
+              `[StoryGeminiWebQueue] Retry chapter ${chapter.id} (#${retryCount}) after error: ${retryError}`
+            );
+            setProcessingChapters((prev) => {
+              const next = new Map(prev);
+              const current = next.get(chapter.id);
+              next.set(chapter.id, {
+                startTime: current?.startTime || Date.now(),
+                workerId: 1,
+                channel: 'token',
+                source: 'story_web_queue',
+                phase: 'retry_wait',
+                queuedAt: current?.queuedAt || Date.now(),
+                retryCount,
+                lastError: retryError,
+                resourceId: current?.resourceId ?? null,
+                resourceLabel: current?.resourceLabel ?? null
+              });
+              return next;
+            });
+          }
+          if (result.status !== 'success') {
+            break;
+          }
           if (shouldStopRef.current) {
             break;
           }

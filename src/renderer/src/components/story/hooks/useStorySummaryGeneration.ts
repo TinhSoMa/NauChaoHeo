@@ -11,9 +11,9 @@ import {
   StoryStatus,
   StorySummaryMemoryRuntimeState
 } from '../types';
-import { getRandomInt } from '@shared/utils/delayUtils';
 import { resolvePreviousSummaryOutput, resolvePreviousTranslatedOutput } from '../utils/previousAssistantOutput';
 import { saveSummaryPromptArtifact } from '../utils/promptArtifact';
+import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
 interface UseStorySummaryGenerationProps {
   chapters: Chapter[];
@@ -70,6 +70,11 @@ interface BatchState {
   isFirstChapterTaken: boolean;
 }
 
+type SummaryProcessResult =
+  | { status: 'success'; id: string; text: string }
+  | { status: 'retry'; error: string }
+  | { status: 'stopped' };
+
 export function useStorySummaryGeneration({
   chapters,
   translatedChapters,
@@ -106,7 +111,7 @@ export function useStorySummaryGeneration({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [batchSummaryProgress, setBatchSummaryProgress] = useState<{ current: number; total: number } | null>(null);
-  const [apiWorkerCountSetting, setApiWorkerCountSetting] = useState(1);
+  const [, setApiWorkerCountSetting] = useState(1);
   const [apiRequestDelayMs, setApiRequestDelayMs] = useState(500);
   const [, setTick] = useState(0); // Force re-render for elapsed time
   
@@ -128,10 +133,9 @@ export function useStorySummaryGeneration({
   
   // Ref to track if batch is currently running (for hot-add workers)
   const isBatchRunningRef = useRef(false);
+  const currentBatchRunIdRef = useRef<string | null>(null);
   const activeWorkerCountRef = useRef(0);
   const spawnTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  // Ref to latest startWorker function for use in effects
-  const startWorkerRef = useRef<((channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => Promise<void>) | null>(null);
 
   // Update elapsed time every second
   useEffect(() => {
@@ -177,9 +181,11 @@ export function useStorySummaryGeneration({
   const stopGeneration = () => {
     console.log('[useStorySummaryGeneration] Dừng tóm tắt thủ công...');
     shouldStopRef.current = true;
+    currentBatchRunIdRef.current = null;
     setShouldStop(true);
     isBatchRunningRef.current = false;
     setIsStopping(true);
+    setProcessingChapters(() => new Map());
     for (const timeout of spawnTimeoutsRef.current) {
       clearTimeout(timeout);
     }
@@ -366,26 +372,37 @@ export function useStorySummaryGeneration({
     index: number,
     workerId: number,
     channel: 'api' | 'token',
-    tokenConfig: GeminiChatConfigLite | null
-  ): Promise<{ id: string; text: string } | { retryable: boolean } | null> => {
-    if (shouldStopRef.current) return null;
+    tokenConfig: GeminiChatConfigLite | null,
+    runId: string
+  ): Promise<SummaryProcessResult> => {
+    if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+      return { status: 'stopped' };
+    }
 
-    // Mark as processing
     setProcessingChapters(prev => {
       const next = new Map(prev);
-      next.set(chapter.id, { startTime: Date.now(), workerId, channel });
+      const current = next.get(chapter.id);
+      next.set(chapter.id, {
+        startTime: current?.startTime || Date.now(),
+        workerId,
+        channel,
+        phase: 'running',
+        retryCount: current?.retryCount ?? 0,
+        lastError: current?.lastError
+      });
       return next;
     });
 
     try {
       console.log(`[useStorySummaryGeneration] 📝 Tóm tắt chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
 
-      // Get translated content as source
       const sourceContent = runtimeTranslatedChaptersRef.current.get(chapter.id);
       if (!sourceContent) {
-        console.error(`[useStorySummaryGeneration] Không tìm thấy bản dịch cho chương ${chapter.title}`);
-        return null;
+        const errorMessage = `Không tìm thấy bản dịch cho chương ${chapter.title}`;
+        console.error(`[useStorySummaryGeneration] ${errorMessage}`);
+        return { status: 'retry', error: errorMessage };
       }
+
       const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
       const previousSummaryOutput = actualChapterIndex >= 0
         ? resolvePreviousSummaryOutput({
@@ -417,7 +434,6 @@ export function useStorySummaryGeneration({
           })
         : null;
 
-      // 1. Prepare Summary Prompt
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
@@ -426,26 +442,28 @@ export function useStorySummaryGeneration({
       }) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
-        console.error(`Lỗi chuẩn bị prompt tóm tắt cho chương ${chapter.title}:`, prepareResult.error);
-        return null;
+        const errorMessage = prepareResult.error || `Lỗi chuẩn bị prompt tóm tắt cho chương ${chapter.title}`;
+        console.error(errorMessage);
+        return { status: 'retry', error: errorMessage };
       }
 
       const method = channel === 'token' ? 'IMPIT' : 'API';
       let selectedTokenConfig = method === 'IMPIT'
-        ? (tokenConfig || getPreferredTokenConfig()) // Use worker's config if available, fallback to preferred
+        ? (tokenConfig || getPreferredTokenConfig())
         : null;
 
       if (method === 'IMPIT' && !selectedTokenConfig) {
-        selectedTokenConfig = getPreferredTokenConfig();
+        await loadConfigurations();
+        selectedTokenConfig = tokenConfig || getPreferredTokenConfig();
         if (!selectedTokenConfig) {
-          console.error('[useStorySummaryGeneration] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
-          return null;
+          const errorMessage = '[useStorySummaryGeneration] Không tìm thấy Cấu hình Web để chạy chế độ Token.';
+          console.error(errorMessage);
+          return { status: 'retry', error: errorMessage };
         }
       }
 
       const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
-      // 2. Send to Gemini for Summarization
       const translateResult = await window.electronAPI.invoke(
         STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
         {
@@ -454,15 +472,15 @@ export function useStorySummaryGeneration({
           method,
           webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
           useProxy: method === 'IMPIT' && useProxy,
-          metadata: { 
-              chapterId: chapter.id,
-              chapterTitle: chapter.title,
-              tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
-              validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
+          metadata: {
+            chapterId: chapter.id,
+            chapterTitle: chapter.title,
+            tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
+            validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
           },
           summaryMemory: summaryMemoryPayload
         }
-      ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string }; retryable?: boolean };
+      ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (promptSaveSettings.autoSaveSentPrompt) {
         await saveSummaryPromptArtifact({
@@ -477,54 +495,64 @@ export function useStorySummaryGeneration({
         });
       }
 
-      if (translateResult.success && translateResult.data) {
-        if (translateResult.metadata?.chapterId !== chapter.id) {
-            console.error(`[useStorySummaryGeneration] ⚠️ RACE CONDITION: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
-            return null;
-        }
-
-        // Update UI hooks
-        runtimeSummariesRef.current.set(chapter.id, translateResult.data!);
-        setSummaries(prev => {
-            const next = new Map(prev);
-            next.set(chapter.id, translateResult.data!);
-            return next;
-        });
-        
-        // Set Summary Title same as Translated Title or Chapter Title
-        setSummaryTitles(prev => {
-            const next = new Map(prev);
-            const translatedTitle = translatedTitles.get(chapter.id);
-            next.set(chapter.id, translatedTitle || chapter.title);
-            return next;
-        });
-        
-        setChapterModels(prev => new Map(prev).set(chapter.id, model));
-        setChapterMethods(prev => new Map(prev).set(chapter.id, channel));
-
-        if (translateResult.context && tokenKey) {
-            setTokenContexts(prev => new Map(prev).set(tokenKey, translateResult.context!));
-        }
-
-        return { id: chapter.id, text: translateResult.data! };
-      } else {
-        console.error(`[useStorySummaryGeneration] ❌ Lỗi tóm tắt chương ${chapter.title}:`, translateResult.error);
-        return { retryable: translateResult.retryable ?? false };
+      if (!translateResult.success || !translateResult.data) {
+        const errorMessage = translateResult.error || `Lỗi tóm tắt chương ${chapter.title}`;
+        console.error(`[useStorySummaryGeneration] ❌ ${errorMessage}`);
+        return { status: 'retry', error: errorMessage };
       }
+
+      if (translateResult.metadata?.chapterId !== chapter.id) {
+        const errorMessage = `Metadata validation failed for chapter ${chapter.id}`;
+        console.error(`[useStorySummaryGeneration] ⚠️ ${errorMessage}: ${translateResult.metadata?.chapterId} !== ${chapter.id}`);
+        return { status: 'retry', error: errorMessage };
+      }
+
+      if (!/hết\s+tóm\s+tắt|end\s+of\s+summary|---\s*hết\s*---|hết\s+chương/i.test(translateResult.data)) {
+        const errorMessage = `Summary chapter ${chapter.title} thiếu marker "Hết tóm tắt"`;
+        console.warn(`[useStorySummaryGeneration] ⚠️ ${errorMessage}`);
+        return { status: 'retry', error: errorMessage };
+      }
+
+      runtimeSummariesRef.current.set(chapter.id, translateResult.data);
+      setSummaries(prev => {
+        const next = new Map(prev);
+        next.set(chapter.id, translateResult.data!);
+        return next;
+      });
+
+      setSummaryTitles(prev => {
+        const next = new Map(prev);
+        const translatedTitle = translatedTitles.get(chapter.id);
+        next.set(chapter.id, translatedTitle || chapter.title);
+        return next;
+      });
+
+      setChapterModels(prev => new Map(prev).set(chapter.id, model));
+      setChapterMethods(prev => new Map(prev).set(chapter.id, channel));
+
+      if (translateResult.context && tokenKey) {
+        setTokenContexts(prev => new Map(prev).set(tokenKey, translateResult.context!));
+      }
+
+      setProcessingChapters(prev => {
+        const next = new Map(prev);
+        next.delete(chapter.id);
+        return next;
+      });
+
+      return { status: 'success', id: chapter.id, text: translateResult.data };
     } catch (error) {
-       console.error(`[useStorySummaryGeneration] ❌ Exception chương ${chapter.title}:`, error);
-       return null;
-    } finally {
-       setProcessingChapters(prev => {
-           const next = new Map(prev);
-           next.delete(chapter.id);
-           return next;
-       });
+      const errorMessage = normalizeRetryError(error);
+      console.error(`[useStorySummaryGeneration] ❌ Exception chương ${chapter.title}:`, error);
+      return { status: 'retry', error: errorMessage };
     }
   };
 
-  // Worker function - processes chapter summaries from the queue
-  const startWorker = async (channel: 'api' | 'token', tokenConfig?: GeminiChatConfigLite | null) => {
+  const startWorker = async (channel: 'api' | 'token', tokenConfig: GeminiChatConfigLite | null, runId: string) => {
+    if (currentBatchRunIdRef.current !== runId) {
+      return;
+    }
+
     const workerId = ++workerIdRef.current;
     activeWorkerCountRef.current += 1;
     console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} started (${channel})`);
@@ -532,120 +560,123 @@ export function useStorySummaryGeneration({
     let hasDispatched = false;
 
     if (channel === 'token' && tokenConfig) {
-        batchStateRef.current.activeWorkerConfigIds.add(tokenConfig.id);
+      batchStateRef.current.activeWorkerConfigIds.add(tokenConfig.id);
     }
 
     try {
-        while (!shouldStopRef.current) {
-            if (shouldStopRef.current) break;
-            
-            // Check availability
-            if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) break;
+      while (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
+        if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) break;
 
-            const index = batchStateRef.current.currentIndex++;
-            const chapter = batchStateRef.current.chapters[index];
+        const index = batchStateRef.current.currentIndex++;
+        const chapter = batchStateRef.current.chapters[index];
 
-            if (channel === 'api' && apiRequestDelayMs > 0 && hasDispatched) {
-              await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
-            }
-            hasDispatched = true;
-
-            if (!batchStateRef.current.isFirstChapterTaken) {
-                batchStateRef.current.isFirstChapterTaken = true;
-                console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} lấy chương đầu tiên`);
-            } else {
-                console.log(`[useStorySummaryGeneration] 📝 Worker ${workerId} lấy chương ${index + 1}`);
-            }
-
-            let result: { id: string; text: string } | { retryable: boolean } | null = null;
-            let retryCount = 0;
-            const MAX_RETRIES = 3;
-
-            while (retryCount <= MAX_RETRIES) {
-                if (retryCount > 0) {
-                     console.log(`[useStorySummaryGeneration] ⚠️ Worker ${workerId} Retrying chapter ${index + 1} (${retryCount}/${MAX_RETRIES})...`);
-                     await new Promise(r => setTimeout(r, 2000 * retryCount));
-                }
-                
-                result = await processChapterSummary(chapter, index, workerId, channel, tokenConfig || null);
-
-                if (result && 'retryable' in result && result.retryable) {
-                    if (shouldStopRef.current) {
-                        break;
-                    }
-                    retryCount++;
-                    if (retryCount > MAX_RETRIES) {
-                        console.error(`[useStorySummaryGeneration] ❌ Worker ${workerId} Failed chapter ${index + 1} after ${MAX_RETRIES} retries.`);
-                        break;
-                    }
-                    continue; 
-                }
-                break;
-            }
-
-            if (result && !('retryable' in result) && result !== null) {
-                 if (shouldStopRef.current) {
-                    break;
-                 }
-                 batchStateRef.current.completed++;
-                 setBatchSummaryProgress({ current: batchStateRef.current.completed, total: batchStateRef.current.chapters.length });
-            }
+        if (channel === 'api' && apiRequestDelayMs > 0 && hasDispatched) {
+          await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
         }
+        hasDispatched = true;
+
+        if (!batchStateRef.current.isFirstChapterTaken) {
+          batchStateRef.current.isFirstChapterTaken = true;
+          console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} lấy chương đầu tiên`);
+        } else {
+          console.log(`[useStorySummaryGeneration] 📝 Worker ${workerId} lấy chương ${index + 1}`);
+        }
+
+        let result: SummaryProcessResult = { status: 'stopped' };
+        let retryCount = 0;
+
+        while (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
+          if (retryCount > 0) {
+            const delayMs = getInfiniteRetryDelayMs(retryCount);
+            setProcessingChapters(prev => {
+              const next = new Map(prev);
+              const current = next.get(chapter.id);
+              next.set(chapter.id, {
+                startTime: current?.startTime || Date.now(),
+                workerId,
+                channel,
+                phase: 'retry_wait',
+                retryCount,
+                lastError: current?.lastError
+              });
+              return next;
+            });
+            console.log(
+              `[useStorySummaryGeneration] ⚠️ Worker ${workerId} retrying chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`
+            );
+            await new Promise(r => setTimeout(r, delayMs));
+          }
+
+          result = await processChapterSummary(chapter, index, workerId, channel, tokenConfig, runId);
+
+          if (result.status === 'retry') {
+            const retryError = result.error;
+            if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {
+              break;
+            }
+            retryCount++;
+            setProcessingChapters(prev => {
+              const next = new Map(prev);
+              const current = next.get(chapter.id);
+              next.set(chapter.id, {
+                startTime: current?.startTime || Date.now(),
+                workerId,
+                channel,
+                phase: 'retry_wait',
+                retryCount,
+                lastError: retryError
+              });
+              return next;
+            });
+            console.error(
+              `[useStorySummaryGeneration] ❌ Worker ${workerId} chapter ${index + 1} failed. Retry #${retryCount}. Error: ${retryError}`
+            );
+            continue;
+          }
+          break;
+        }
+
+        if (result.status === 'success') {
+          batchStateRef.current.completed++;
+          setBatchSummaryProgress({ current: batchStateRef.current.completed, total: batchStateRef.current.chapters.length });
+        }
+      }
     } finally {
-        activeWorkerCountRef.current = Math.max(0, activeWorkerCountRef.current - 1);
-        if (channel === 'token' && tokenConfig) {
-            batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
+      activeWorkerCountRef.current = Math.max(0, activeWorkerCountRef.current - 1);
+      if (channel === 'token' && tokenConfig) {
+        batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
+      }
+      console.log(`[useStorySummaryGeneration] ✓ Worker ${workerId} finished`);
+
+      if (
+        activeWorkerCountRef.current === 0 &&
+        (currentBatchRunIdRef.current === runId || currentBatchRunIdRef.current === null) &&
+        (
+          shouldStopRef.current ||
+          batchStateRef.current.completed >= batchStateRef.current.chapters.length ||
+          batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length
+        )
+      ) {
+        isBatchRunningRef.current = false;
+        currentBatchRunIdRef.current = null;
+        setIsGenerating(false);
+        setIsStopping(false);
+        setStatus('idle');
+        setBatchSummaryProgress(null);
+        if (shouldStopRef.current) {
+          setProcessingChapters(() => new Map());
         }
-        console.log(`[useStorySummaryGeneration] ✓ Worker ${workerId} finished`);
-        
-        // Check if all workers are done
-        if (
-          activeWorkerCountRef.current === 0 &&
-          (
-            shouldStopRef.current ||
-            batchStateRef.current.completed >= batchStateRef.current.chapters.length ||
-            batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length
-          )
-        ) {
-          isBatchRunningRef.current = false;
-          setIsGenerating(false);
-          setIsStopping(false);
-          setStatus('idle');
-          setBatchSummaryProgress(null);
-        }
+      }
     }
   };
 
-  // Keep ref updated with latest startWorker function
-  startWorkerRef.current = startWorker;
-
-  // Hot-add token workers when new configs become active during batch summarization
-  useEffect(() => {
-    if (!isBatchRunningRef.current || shouldStopRef.current) return;
-    if (translateMode !== 'token' && translateMode !== 'both') return;
-    
-    // Check if there are remaining chapters to summarize
-    if (batchStateRef.current.currentIndex >= batchStateRef.current.chapters.length) return;
-    
-    const distinctActive = getDistinctActiveTokenConfigs(tokenConfigs);
-    const newConfigs = distinctActive.filter(
-      c => !batchStateRef.current.activeWorkerConfigIds.has(c.id)
-    );
-    
-    if (newConfigs.length === 0) return;
-    
-    console.log(`[useStorySummaryGeneration] 🔥 Hot-adding ${newConfigs.length} new token worker(s) during batch...`);
-    
-    for (const config of newConfigs) {
-      console.log(`[useStorySummaryGeneration] 🚀 Hot-starting worker for ${config.email || config.id}`);
-      startWorkerRef.current?.('token', config);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenConfigs, translateMode, getDistinctActiveTokenConfigs]);
-
   const handleGenerateAllSummaries = async () => {
-    // 1. Get chapters to summarize - chapters that have translation but no summary
-    const chaptersToSummarize = chapters.filter(c => 
+    if (isBatchRunningRef.current && currentBatchRunIdRef.current) {
+      alert('Batch tóm tắt đang chạy. Vui lòng dừng batch hiện tại trước khi chạy lại.');
+      return;
+    }
+
+    const chaptersToSummarize = chapters.filter(c =>
       translatedChapters.has(c.id) && !summaries.has(c.id) && isChapterIncluded(c.id)
     );
 
@@ -654,25 +685,25 @@ export function useStorySummaryGeneration({
       return;
     }
 
-    // 2. Prepare Configs
+    const shouldUseTokenWorker = translateMode === 'token';
+    const shouldUseApiWorker = !shouldUseTokenWorker;
+
     let tokenConfigsForRun: GeminiChatConfigLite[] = [];
-    if (translateMode === 'token' || translateMode === 'both') {
-       tokenConfigsForRun = getDistinctActiveTokenConfigs(tokenConfigs);
-       if (tokenConfigsForRun.length === 0) {
-          console.error('[useStorySummaryGeneration] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
-          return;
-       }
+    if (shouldUseTokenWorker) {
+      tokenConfigsForRun = getDistinctActiveTokenConfigs(tokenConfigs);
+      if (tokenConfigsForRun.length === 0) {
+        console.error('[useStorySummaryGeneration] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+        return;
+      }
     }
 
-    // 3. Initialize Batch State
-    const initialWorkerIds = new Set(tokenConfigsForRun.map(c => c.id));
-    
+    const initialWorkerIds = new Set(tokenConfigsForRun.slice(0, 1).map(c => c.id));
     batchStateRef.current = {
-        chapters: chaptersToSummarize,
-        currentIndex: 0,
-        completed: 0,
-        activeWorkerConfigIds: initialWorkerIds,
-        isFirstChapterTaken: false
+      chapters: chaptersToSummarize,
+      currentIndex: 0,
+      completed: 0,
+      activeWorkerConfigIds: initialWorkerIds,
+      isFirstChapterTaken: false
     };
     workerIdRef.current = 0;
     activeWorkerCountRef.current = 0;
@@ -681,7 +712,8 @@ export function useStorySummaryGeneration({
     }
     spawnTimeoutsRef.current = [];
 
-    // 4. Set Status
+    const runId = `story-summary-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    currentBatchRunIdRef.current = runId;
     setIsGenerating(true);
     setStatus('running');
     setBatchSummaryProgress({ current: 0, total: chaptersToSummarize.length });
@@ -692,9 +724,8 @@ export function useStorySummaryGeneration({
     setIsStopping(false);
     isBatchRunningRef.current = true;
 
-    // 5. Async Checks (Max Browsers)
     let maxImpitBrowsers = Infinity;
-    if (translateMode === 'token' || translateMode === 'both') {
+    if (shouldUseTokenWorker) {
       try {
         await window.electronAPI.geminiChat.releaseAllImpitBrowsers();
         const browserResult = await window.electronAPI.geminiChat.getMaxImpitBrowsers();
@@ -706,53 +737,28 @@ export function useStorySummaryGeneration({
       }
     }
 
-    const apiWorkerCount = translateMode === 'api'
-      ? apiWorkerCountSetting
-      : translateMode === 'both'
-        ? apiWorkerCountSetting
-        : 0;
-    let tokenWorkerCount = tokenConfigsForRun.length;
-    
+    const apiWorkerCount = shouldUseApiWorker ? 1 : 0;
+    let tokenWorkerCount = shouldUseTokenWorker ? Math.min(1, tokenConfigsForRun.length) : 0;
+
     if (tokenWorkerCount > maxImpitBrowsers) {
       console.warn(`[useStorySummaryGeneration] Impit: Giới hạn token workers xuống ${maxImpitBrowsers}`);
       tokenWorkerCount = maxImpitBrowsers;
     }
-    
-    // Sync batchStateRef with actual count after pruning
+
     const finalConfigsToUse = tokenConfigsForRun.slice(0, tokenWorkerCount);
-    const finalIds = new Set(finalConfigsToUse.map(c => c.id));
-    batchStateRef.current.activeWorkerConfigIds = finalIds;
+    batchStateRef.current.activeWorkerConfigIds = new Set(finalConfigsToUse.map(c => c.id));
 
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
-    console.log(`[useStorySummaryGeneration] 🎯 Bắt đầu tóm tắt ${chaptersToSummarize.length} chapters với ${totalWorkers} workers`);
+    console.log(`[useStorySummaryGeneration] 🎯 Bắt đầu tóm tắt ${chaptersToSummarize.length} chapters với ${totalWorkers} worker tuần tự`);
 
-    // Start API workers
-    for (let i = 0; i < apiWorkerCount; i += 1) {
-      startWorker('api');
+    if (apiWorkerCount > 0) {
+      startWorker('api', null, runId);
+      return;
     }
 
-    // Start Token workers with staggered delays
-    const MIN_SPAWN_DELAY = 5000;  // 5s
-    const MAX_SPAWN_DELAY = 20000; // 20s
-    let cumulativeDelay = 0;
-    
-    for (let i = 0; i < finalConfigsToUse.length; i++) {
-      const config = finalConfigsToUse[i];
-      
-      if (i === 0) {
-        console.log(`[useStorySummaryGeneration] 🚀 Starting worker 1/${finalConfigsToUse.length} immediately`);
-        startWorker('token', config);
-      } else {
-        const spawnDelay = getRandomInt(MIN_SPAWN_DELAY, MAX_SPAWN_DELAY);
-        cumulativeDelay += spawnDelay;
-        console.log(`[useStorySummaryGeneration] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
-        spawnTimeoutsRef.current.push(setTimeout(() => {
-          if (!shouldStopRef.current) {
-            console.log(`[useStorySummaryGeneration] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`);
-            startWorker('token', config);
-          }
-        }, cumulativeDelay));
-      }
+    if (finalConfigsToUse.length > 0) {
+      console.log('[useStorySummaryGeneration] 🚀 Starting token worker 1/1');
+      startWorker('token', finalConfigsToUse[0], runId);
     }
   };
 

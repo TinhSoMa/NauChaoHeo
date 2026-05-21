@@ -828,12 +828,12 @@ export function StoryTranslator() {
     // Note: onMessage returns a cleanup function in implementation, but type def says void.
     // We cast to any to avoid TS error if types are not updated.
     const removeListener = (window.electronAPI as any).onMessage(STORY_IPC_CHANNELS.TRANSLATION_PROGRESS, (data: any) => {
-      const { chapterId, attempt, maxRetries } = data;
+      const { chapterId, attempt } = data;
       setProcessingChapters(prev => {
         const info = prev.get(chapterId);
         if (info) {
           const next = new Map(prev);
-          next.set(chapterId, { ...info, retryCount: attempt, maxRetries });
+          next.set(chapterId, { ...info, retryCount: attempt });
           return next;
         }
         return prev;
@@ -873,34 +873,7 @@ export function StoryTranslator() {
     }
 
     if (translationMethod === 'api_gemini_webapi_queue') {
-      const eligibleChapterIds = chapters
-        .filter((chapter) => isChapterIncluded(chapter.id) && (retranslateExisting || !translatedChapters.has(chapter.id)))
-        .map((chapter) => chapter.id);
-
-      if (eligibleChapterIds.length === 0) {
-        alert('Đã dịch xong tất cả các chương được chọn!');
-        return;
-      }
-
-      const queueChapterIds: string[] = [];
-      const apiChapterIds: string[] = [];
-      eligibleChapterIds.forEach((chapterId, index) => {
-        if (index % 2 === 0) {
-          queueChapterIds.push(chapterId);
-        } else {
-          apiChapterIds.push(chapterId);
-        }
-      });
-
-      const tasks: Array<Promise<void>> = [];
-      if (queueChapterIds.length > 0) {
-        tasks.push(handleTranslateAllWebQueue({ chapterIds: queueChapterIds }));
-      }
-      if (apiChapterIds.length > 0) {
-        tasks.push(handleBatchTranslate({ chapterIds: apiChapterIds }));
-      }
-
-      await Promise.all(tasks);
+      await handleBatchTranslate();
       return;
     }
 
@@ -1483,7 +1456,9 @@ export function StoryTranslator() {
                     <span className="font-mono">{elapsedTime}s</span>
                     {processingInfo.retryCount && processingInfo.retryCount > 0 && (
                         <span className="text-[10px] ml-1 opacity-80 whitespace-nowrap">
-                            ({processingInfo.retryCount}/{processingInfo.maxRetries || 3})
+                          {processingInfo.phase === 'retry_wait'
+                            ? `retry #${processingInfo.retryCount}`
+                            : `retry #${processingInfo.retryCount}`}
                         </span>
                     )}
                   </span>
