@@ -66,6 +66,16 @@ const computeStoryMemoryNamespace = async (
   return `${prefix}:${projectId}:${hash}`;
 };
 
+const formatMemoryUnavailableMessage = (health: MemoryContextHealthResult | null): string => {
+  const errorCode = health?.details?.errorCode;
+  if (errorCode && errorCode.startsWith('EMBEDDED_')) {
+    return `Memory mode chưa sẵn sàng.\n\nRuntime memory đóng gói bị thiếu hoặc hỏng (${errorCode}).\nVui lòng cài lại app hoặc build lại installer.`;
+  }
+  return health?.warning
+    ? `Memory mode chưa sẵn sàng.\n\n${health.warning}`
+    : 'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm';
+};
+
 export function StoryTranslator() {
   const { projectId } = useProjectContext();
   const [filePath, setFilePath] = useState('');
@@ -100,7 +110,6 @@ export function StoryTranslator() {
   const [autoSaveSentPrompt, setAutoSaveSentPrompt] = useState(false);
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
-  void memoryHealth;
   void memoryStats;
   const isMemoryFeatureEnabled = Boolean(projectId && memoryEnabled);
   const isSummaryMemoryFeatureEnabled = isMemoryFeatureEnabled;
@@ -849,9 +858,7 @@ export function StoryTranslator() {
     }
 
     if (isMemoryFeatureEnabled && memoryStatus === 'missing_runtime') {
-      alert(
-        'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm'
-      );
+      alert(formatMemoryUnavailableMessage(memoryHealth));
       return;
     }
 
@@ -989,13 +996,11 @@ export function StoryTranslator() {
       return true;
     }
     if (memoryStatus === 'missing_runtime') {
-      alert(
-        'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm'
-      );
+      alert(formatMemoryUnavailableMessage(memoryHealth));
       return false;
     }
     return true;
-  }, [isSummaryMemoryFeatureEnabled, memoryStatus]);
+  }, [isSummaryMemoryFeatureEnabled, memoryHealth, memoryStatus]);
 
   const compactModelLabel = (label: string): string => {
     const raw = (label || '').trim();

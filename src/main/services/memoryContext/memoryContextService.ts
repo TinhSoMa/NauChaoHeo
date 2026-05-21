@@ -21,6 +21,7 @@ export class MemoryContextService {
         return this.buildUnavailableHealth(response.error || 'Memory context health failed');
       }
       const runtimeInfo = this.bridge.getRuntimeInfo();
+      const diagnostics = this.bridge.getDiagnostics();
       return {
         ...response.data,
         success: true,
@@ -28,7 +29,11 @@ export class MemoryContextService {
           ...response.data.details,
           pythonPath: runtimeInfo?.runtime?.pythonPath,
           runtimeMode: runtimeInfo?.runtime?.mode,
-          storePath: this.bridge.getStorePath()
+          storePath: this.bridge.getStorePath(),
+          workerPath: diagnostics.workerPath,
+          dependencyCheck: diagnostics.dependencyCheck,
+          buildStamp: diagnostics.buildStamp ?? undefined,
+          errorCode: diagnostics.errorCode
         }
       };
     } catch (error) {
@@ -206,6 +211,11 @@ export class MemoryContextService {
   }
 
   private buildUnavailableHealth(error: string): MemoryContextHealthResult {
+    const diagnostics = this.bridge.getDiagnostics();
+    const errorCode = this.parseErrorCode(error) || diagnostics.errorCode;
+    const packagedRuntimeFailure = Boolean(
+      errorCode && errorCode.startsWith('EMBEDDED_')
+    );
     return {
       success: false,
       pythonOk: false,
@@ -215,17 +225,30 @@ export class MemoryContextService {
       providerConfigured: false,
       backend: 'unavailable',
       error,
-      warning: 'Cài dependency: pip install mem0ai[nlp] && python -m spacy download xx_ent_wiki_sm',
+      warning: packagedRuntimeFailure
+        ? 'Runtime memory đóng gói bị thiếu hoặc hỏng. Vui lòng cài lại app hoặc build lại installer.'
+        : 'Cài dependency: pip install mem0ai[nlp] && python -m spacy download xx_ent_wiki_sm',
       providerStatus: {
         configured: false,
         active: false,
         reason: 'runtime_unavailable'
       },
       details: {
+        pythonPath: diagnostics.runtime?.pythonPath,
+        workerPath: diagnostics.workerPath,
+        runtimeMode: diagnostics.runtime?.mode,
         spacyModelName: 'xx_ent_wiki_sm',
-        storePath: this.bridge.getStorePath()
+        storePath: this.bridge.getStorePath(),
+        dependencyCheck: diagnostics.dependencyCheck,
+        buildStamp: diagnostics.buildStamp ?? undefined,
+        errorCode
       }
     };
+  }
+
+  private parseErrorCode(errorText: string): string | undefined {
+    const match = String(errorText || '').match(/^([A-Z_]+):/);
+    return match?.[1];
   }
 }
 

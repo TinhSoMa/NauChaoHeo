@@ -60,6 +60,16 @@ const computeStoryMemoryNamespace = async (
   return `${prefix}:${projectId}:${hash}`;
 };
 
+const formatMemoryUnavailableMessage = (health: MemoryContextHealthResult | null): string => {
+  const errorCode = health?.details?.errorCode;
+  if (errorCode && errorCode.startsWith('EMBEDDED_')) {
+    return `Memory mode chưa sẵn sàng.\n\nRuntime memory đóng gói bị thiếu hoặc hỏng (${errorCode}).\nVui lòng cài lại app hoặc build lại installer.`;
+  }
+  return health?.warning
+    ? `Memory mode chưa sẵn sàng.\n\n${health.warning}`
+    : 'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm';
+};
+
 export function StorySummary() {
   // Source data từ file
   const [sourceLang, setSourceLang] = useState('vi'); // Ngôn ngữ nội dung nguồn
@@ -118,7 +128,6 @@ export function StorySummary() {
   const [isClearingSummaryMemory, setIsClearingSummaryMemory] = useState(false);
   const runtimeSummariesRef = useRef<Map<string, string>>(new Map());
   const runtimeTranslatedChaptersRef = useRef<Map<string, string>>(new Map());
-  void summaryMemoryHealth;
 
   const loadProxySetting = async () => {
     try {
@@ -722,9 +731,7 @@ export function StorySummary() {
       return true;
     }
     if (summaryMemoryStatus === 'missing_runtime') {
-      alert(
-        'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm'
-      );
+      alert(formatMemoryUnavailableMessage(summaryMemoryHealth));
       return false;
     }
     return true;

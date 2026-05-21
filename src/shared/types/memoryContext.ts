@@ -153,11 +153,27 @@ export interface MemoryContextHealthResult {
   details?: {
     pythonPath?: string;
     pythonVersion?: string;
+    workerPath?: string;
     storePath?: string;
     runtimeMode?: 'embedded' | 'system';
     spacyModelName?: string;
     spacyLoadedModel?: string;
     modules?: Record<string, boolean>;
+    dependencyCheck?: {
+      sqlite3: boolean;
+      mem0: boolean;
+      spacy: boolean;
+      spacyModel: boolean;
+    };
+    buildStamp?: {
+      generatedAt?: string;
+      pythonVersion?: string;
+      mem0Version?: string;
+      spacyVersion?: string;
+      spacyModelName?: string;
+      runtimeDir?: string;
+    };
+    errorCode?: string;
     providerConfigured?: boolean;
     backend?: 'mem0' | 'mem0_provider' | 'local_fallback' | 'unavailable';
     providerName?: string;

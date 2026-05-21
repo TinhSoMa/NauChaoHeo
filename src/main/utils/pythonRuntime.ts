@@ -20,6 +20,9 @@ export interface PythonRuntimeCheckResult {
 
 export interface PythonModuleAvailabilityOptions {
   preferredVersion?: string;
+  postCheckScript?: string;
+  postCheckDescription?: string;
+  postCheckErrorCode?: PythonModuleAvailabilityResult['errorCode'];
 }
 
 export interface PythonModuleAvailabilityResult {
@@ -28,7 +31,15 @@ export interface PythonModuleAvailabilityResult {
   error?: string;
   mode?: 'embedded' | 'system';
   modules?: Record<string, boolean>;
-  errorCode?: 'PYTHON_RUNTIME_MISSING' | 'PYTHON_MODULE_MISSING';
+  errorCode?:
+    | 'PYTHON_RUNTIME_MISSING'
+    | 'PYTHON_MODULE_MISSING'
+    | 'EMBEDDED_PYTHON_MISSING'
+    | 'EMBEDDED_WORKER_MISSING'
+    | 'EMBEDDED_MEM0_MISSING'
+    | 'EMBEDDED_SPACY_MISSING'
+    | 'EMBEDDED_SPACY_MODEL_MISSING'
+    | 'EMBEDDED_RUNTIME_BROKEN';
 }
 
 interface CommandResult {
@@ -178,8 +189,47 @@ export async function checkPythonModuleAvailability(
   let lastModuleFailure: { runtime: PythonRuntimeResolution; modules: Record<string, boolean>; detail: string } | null = null;
 
   for (const runtime of runtimes) {
+    const versionCheck = await runCommand(runtime.command, [...runtime.baseArgs, '--version'], runtime.mode);
+    if (versionCheck.code !== 0) {
+      if (app.isPackaged && runtime.mode === 'embedded') {
+        return {
+          success: false,
+          runtime,
+          mode: runtime.mode,
+          errorCode: 'EMBEDDED_RUNTIME_BROKEN',
+          error:
+            (versionCheck.stderr || versionCheck.error || versionCheck.stdout || '').trim() ||
+            'Không thể chạy embedded Python runtime.',
+        };
+      }
+      continue;
+    }
+
     const result = await runCommand(runtime.command, [...runtime.baseArgs, '-c', importScript], runtime.mode);
     if (result.code === 0) {
+      if (options.postCheckScript) {
+        const postCheck = await runCommand(
+          runtime.command,
+          [...runtime.baseArgs, '-c', options.postCheckScript],
+          runtime.mode
+        );
+        if (postCheck.code !== 0) {
+          return {
+            success: false,
+            runtime,
+            mode: runtime.mode,
+            modules: normalizedModules.reduce<Record<string, boolean>>((acc, name) => {
+              acc[name] = true;
+              return acc;
+            }, {}),
+            errorCode: options.postCheckErrorCode || 'PYTHON_MODULE_MISSING',
+            error:
+              (postCheck.stderr || postCheck.error || postCheck.stdout || '').trim() ||
+              options.postCheckDescription ||
+              'Python post-check failed.',
+          };
+        }
+      }
       const okModules: Record<string, boolean> = {};
       for (const name of normalizedModules) {
         okModules[name] = true;
@@ -209,7 +259,7 @@ export async function checkPythonModuleAvailability(
     runtime: lastModuleFailure?.runtime,
     mode: lastModuleFailure?.runtime.mode ?? 'system',
     modules: lastModuleFailure?.modules,
-    errorCode: 'PYTHON_MODULE_MISSING',
+    errorCode: classifyModuleAvailabilityError(lastModuleFailure?.runtime, lastModuleFailure?.modules),
     error:
       lastModuleFailure?.detail ||
       `Thiếu module Python: ${normalizedModules.join(', ')}. Hãy cài lại bằng pip theo runtime đang dùng.`,
@@ -228,6 +278,9 @@ async function resolvePythonRuntimeCandidates(preferredVersion: string): Promise
       pythonPath: embeddedPath,
       installHint: `${embeddedPath} -m pip install`,
     });
+    if (app.isPackaged) {
+      return candidates;
+    }
   } else if (app.isPackaged) {
     return [];
   }
@@ -265,6 +318,22 @@ async function resolvePythonRuntimeCandidates(preferredVersion: string): Promise
   }
 
   return candidates;
+}
+
+function classifyModuleAvailabilityError(
+  runtime: PythonRuntimeResolution | undefined,
+  modules: Record<string, boolean> | undefined
+): PythonModuleAvailabilityResult['errorCode'] {
+  if (app.isPackaged && runtime?.mode === 'embedded') {
+    if (modules?.mem0 === false) {
+      return 'EMBEDDED_MEM0_MISSING';
+    }
+    if (modules?.spacy === false) {
+      return 'EMBEDDED_SPACY_MISSING';
+    }
+    return 'EMBEDDED_RUNTIME_BROKEN';
+  }
+  return 'PYTHON_MODULE_MISSING';
 }
 
 function runCommand(command: string, args: string[], mode: 'embedded' | 'system'): Promise<CommandResult> {

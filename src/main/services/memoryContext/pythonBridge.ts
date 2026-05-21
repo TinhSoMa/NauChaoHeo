@@ -9,6 +9,16 @@ import {
   type PythonRuntimeResolution
 } from '../../utils/pythonRuntime';
 
+type MemoryPreflightErrorCode =
+  | 'EMBEDDED_PYTHON_MISSING'
+  | 'EMBEDDED_WORKER_MISSING'
+  | 'EMBEDDED_MEM0_MISSING'
+  | 'EMBEDDED_SPACY_MISSING'
+  | 'EMBEDDED_SPACY_MODEL_MISSING'
+  | 'EMBEDDED_RUNTIME_BROKEN'
+  | 'PYTHON_RUNTIME_MISSING'
+  | 'PYTHON_MODULE_MISSING';
+
 interface WorkerRequestEnvelope {
   requestId: string;
   command: string;
@@ -28,6 +38,32 @@ interface PendingRequest {
   timer: NodeJS.Timeout;
 }
 
+interface MemoryContextBuildStamp {
+  generatedAt?: string;
+  pythonVersion?: string;
+  mem0Version?: string;
+  spacyVersion?: string;
+  spacyModelName?: string;
+  runtimeDir?: string;
+}
+
+interface MemoryContextDependencyCheck {
+  sqlite3: boolean;
+  mem0: boolean;
+  spacy: boolean;
+  spacyModel: boolean;
+}
+
+interface MemoryContextRuntimeDiagnostics {
+  runtime: PythonRuntimeResolution | null;
+  workerPath?: string;
+  storePath: string;
+  buildStamp?: MemoryContextBuildStamp | null;
+  dependencyCheck?: MemoryContextDependencyCheck;
+  errorCode?: MemoryPreflightErrorCode;
+  error?: string;
+}
+
 export class MemoryContextPythonBridge {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private lineReader: readline.Interface | null = null;
@@ -36,6 +72,11 @@ export class MemoryContextPythonBridge {
   private startPromise: Promise<void> | null = null;
   private runtime: PythonRuntimeResolution | null = null;
   private readonly storePath = path.join(app.getPath('userData'), 'memoryContext', 'memory_context.sqlite3');
+  private diagnostics: MemoryContextRuntimeDiagnostics = {
+    runtime: null,
+    storePath: this.storePath,
+    buildStamp: null
+  };
 
   async ensureStarted(): Promise<void> {
     if (this.proc) {
@@ -55,21 +96,59 @@ export class MemoryContextPythonBridge {
   }
 
   private async startInternal(): Promise<void> {
-    const availability = await checkPythonModuleAvailability(['sqlite3'], {
-      preferredVersion: '3.12'
+    if (app.isPackaged) {
+      const embeddedPythonPath = path.join(process.resourcesPath || '', 'python', 'python.exe');
+      if (!fs.existsSync(embeddedPythonPath)) {
+        this.diagnostics = {
+          runtime: null,
+          workerPath: path.join(process.resourcesPath || '', 'memoryContext', 'python', 'mem0_context_worker.py'),
+          storePath: this.storePath,
+          buildStamp: this.readBuildStamp(),
+          errorCode: 'EMBEDDED_PYTHON_MISSING',
+          error: `Embedded Python not found: ${embeddedPythonPath}`
+        };
+        this.logDiagnostics('preflight', this.diagnostics);
+        throw new Error(`EMBEDDED_PYTHON_MISSING: Embedded Python not found: ${embeddedPythonPath}`);
+      }
+    }
+
+    const workerPath = this.resolveWorkerPath();
+    const availability = await checkPythonModuleAvailability(['sqlite3', 'mem0', 'spacy'], {
+      preferredVersion: '3.12',
+      postCheckScript: 'import spacy; spacy.load("xx_ent_wiki_sm")',
+      postCheckDescription: 'Không thể load spaCy model xx_ent_wiki_sm.',
+      postCheckErrorCode: 'EMBEDDED_SPACY_MODEL_MISSING'
     });
+
+    this.runtime = availability.runtime || null;
+    this.diagnostics = {
+      runtime: availability.runtime || this.runtime,
+      workerPath,
+      storePath: this.storePath,
+      buildStamp: this.readBuildStamp(),
+      dependencyCheck: {
+        sqlite3: availability.modules?.sqlite3 !== false,
+        mem0: availability.modules?.mem0 !== false,
+        spacy: availability.modules?.spacy !== false,
+        spacyModel: availability.success
+      },
+      errorCode: availability.success ? undefined : (availability.errorCode as MemoryPreflightErrorCode | undefined),
+      error: availability.success ? undefined : availability.error
+    };
+
+    this.logDiagnostics('preflight', this.diagnostics);
 
     if (!availability.success || !availability.runtime) {
       throw new Error(`${availability.errorCode || 'PYTHON_RUNTIME_MISSING'}: ${availability.error || 'Python runtime unavailable'}`);
     }
 
     this.runtime = availability.runtime;
-    const workerPath = this.resolveWorkerPath();
     const args = [...availability.runtime.baseArgs, '-u', workerPath];
     const env = {
       ...process.env,
       PYTHONDONTWRITEBYTECODE: '1',
       PYTHONUTF8: '1',
+      PYTHONNOUSERSITE: '1',
       MEMORY_CONTEXT_STORE_PATH: this.storePath
     };
 
@@ -129,21 +208,29 @@ export class MemoryContextPythonBridge {
   }
 
   getRuntimeInfo(): PythonModuleAvailabilityResult | null {
-    if (!this.runtime) {
+    if (!this.diagnostics.runtime && !this.runtime) {
       return null;
     }
     return {
-      success: true,
-      runtime: this.runtime,
-      mode: this.runtime.mode,
+      success: !this.diagnostics.errorCode,
+      runtime: this.runtime || this.diagnostics.runtime || undefined,
+      mode: (this.runtime || this.diagnostics.runtime)?.mode,
       modules: {
-        sqlite3: true
-      }
+        sqlite3: this.diagnostics.dependencyCheck?.sqlite3 ?? true,
+        mem0: this.diagnostics.dependencyCheck?.mem0 ?? false,
+        spacy: this.diagnostics.dependencyCheck?.spacy ?? false
+      },
+      errorCode: this.diagnostics.errorCode,
+      error: this.diagnostics.error
     };
   }
 
   getStorePath(): string {
     return this.storePath;
+  }
+
+  getDiagnostics(): MemoryContextRuntimeDiagnostics {
+    return this.diagnostics;
   }
 
   async shutdown(): Promise<void> {
@@ -197,9 +284,25 @@ export class MemoryContextPythonBridge {
   }
 
   private resolveWorkerPath(): string {
+    const packagedPath = path.join(process.resourcesPath || '', 'memoryContext', 'python', 'mem0_context_worker.py');
+    if (app.isPackaged) {
+      if (fs.existsSync(packagedPath)) {
+        return packagedPath;
+      }
+      this.diagnostics = {
+        runtime: this.runtime,
+        workerPath: packagedPath,
+        storePath: this.storePath,
+        buildStamp: this.readBuildStamp(),
+        errorCode: 'EMBEDDED_WORKER_MISSING',
+        error: `Memory context worker script not found at packaged path: ${packagedPath}`
+      };
+      throw new Error(`EMBEDDED_WORKER_MISSING: Memory context worker script not found at packaged path: ${packagedPath}`);
+    }
+
     const appPath = app.getAppPath();
     const candidates = [
-      path.join(process.resourcesPath || '', 'memoryContext', 'python', 'mem0_context_worker.py'),
+      packagedPath,
       path.join(process.resourcesPath || '', 'python', 'mem0_context_worker.py'),
       path.join(appPath, 'src', 'main', 'services', 'memoryContext', 'python', 'mem0_context_worker.py'),
       path.join(process.cwd(), 'src', 'main', 'services', 'memoryContext', 'python', 'mem0_context_worker.py'),
@@ -214,6 +317,42 @@ export class MemoryContextPythonBridge {
     }
 
     throw new Error(`Memory context worker script not found. Checked: ${candidates.join(' | ')}`);
+  }
+
+  private readBuildStamp(): MemoryContextBuildStamp | null {
+    const runtimeDir = this.runtime?.pythonPath
+      ? path.dirname(this.runtime.pythonPath)
+      : path.join(process.resourcesPath || '', 'python');
+    const candidates = [
+      path.join(runtimeDir, 'memory-context-build.json'),
+      path.join(path.dirname(runtimeDir), 'memory-context-build.json')
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (!fs.existsSync(candidate)) {
+          continue;
+        }
+        return JSON.parse(fs.readFileSync(candidate, 'utf8')) as MemoryContextBuildStamp;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private logDiagnostics(stage: string, diagnostics: MemoryContextRuntimeDiagnostics): void {
+    console.info('[MemoryContextPythonBridge][diagnostic]', {
+      stage,
+      packaged: app.isPackaged,
+      runtimePath: diagnostics.runtime?.pythonPath,
+      workerPath: diagnostics.workerPath,
+      storePath: diagnostics.storePath,
+      runtimeMode: diagnostics.runtime?.mode,
+      dependencyCheck: diagnostics.dependencyCheck,
+      buildStamp: diagnostics.buildStamp,
+      errorCode: diagnostics.errorCode,
+      error: diagnostics.error
+    });
   }
 
   private failAllPending(message: string): void {

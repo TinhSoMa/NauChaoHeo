@@ -30,6 +30,7 @@ $cacheDir = Join-Path $pythonBaseDir "cache"
 $runtimeDir = Join-Path $pythonBaseDir "win32-x64\runtime"
 $licensesDir = Join-Path $resourcesDir "licenses\python"
 $requirementsPath = Join-Path $projectRoot "requirements-pycapcut-lock.txt"
+$memoryWorkerSourcePath = Join-Path $projectRoot "src\main\services\memoryContext\python\mem0_context_worker.py"
 
 Ensure-Directory -PathValue $resourcesDir
 Ensure-Directory -PathValue $pythonBaseDir
@@ -37,6 +38,9 @@ Ensure-Directory -PathValue $cacheDir
 
 if (-not (Test-Path -LiteralPath $requirementsPath)) {
   throw "Missing requirements file: $requirementsPath"
+}
+if (-not (Test-Path -LiteralPath $memoryWorkerSourcePath)) {
+  throw "Missing memory context worker source: $memoryWorkerSourcePath"
 }
 
 $embedZipName = "python-$PythonVersion-embed-amd64.zip"
@@ -129,6 +133,30 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "-c",
   "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm'))"
 )
+
+Write-Host "[Python Runtime] Writing memory runtime build stamp..."
+$memoryBuildStampJson = & $pythonExe -c @"
+import json, platform
+import mem0, spacy
+nlp = spacy.load('xx_ent_wiki_sm')
+print(json.dumps({
+  'generatedAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+  'pythonVersion': platform.python_version(),
+  'mem0Version': getattr(mem0, '__version__', 'unknown'),
+  'spacyVersion': getattr(spacy, '__version__', 'unknown'),
+  'spacyModelName': nlp.meta.get('name', 'xx_ent_wiki_sm'),
+  'runtimeDir': r'$runtimeDir'
+}, ensure_ascii=False))
+"@
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to generate memory runtime build stamp."
+}
+$memoryBuildStampPath = Join-Path $runtimeDir "memory-context-build.json"
+Set-Content -LiteralPath $memoryBuildStampPath -Value $memoryBuildStampJson -Encoding UTF8
+
+if (-not (Test-Path -LiteralPath $memoryBuildStampPath)) {
+  throw "Memory runtime build stamp was not created: $memoryBuildStampPath"
+}
 
 if (Test-Path -LiteralPath $licensesDir) {
   Remove-Item -LiteralPath $licensesDir -Recurse -Force
