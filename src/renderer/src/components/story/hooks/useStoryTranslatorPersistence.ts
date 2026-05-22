@@ -61,6 +61,7 @@ interface StoryTranslatorStateSetters {
   setMemoryEnabled: (enabled: boolean) => void;
   setMemoryTopK: (value: number) => void;
   setPreviousAssistantOutputMode: (mode: StoryPreviousAssistantOutputMode) => void;
+  setPreviousAssistantOutputChapterCount: (count: number) => void;
   setAutoSaveSentPrompt: (enabled: boolean) => void;
 }
 
@@ -87,6 +88,7 @@ interface StoryTranslatorStateValues {
   memoryEnabled: boolean;
   memoryTopK: number;
   previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
+  previousAssistantOutputChapterCount: number;
   autoSaveSentPrompt: boolean;
 }
 
@@ -120,9 +122,10 @@ export function useStoryTranslatorPersistence(
     chapterScrollPositions?: Array<[string, number]>;
     memoryEnabled?: boolean;
     memoryTopK?: number;
-    summaryMemoryTopK?: number;
-    previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
-    autoSaveSentPrompt?: boolean;
+      summaryMemoryTopK?: number;
+      previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
+      previousAssistantOutputChapterCount?: number;
+      autoSaveSentPrompt?: boolean;
   }>({
     feature: 'story',
     fileName: STORY_STATE_FILE,
@@ -175,6 +178,7 @@ export function useStoryTranslatorPersistence(
         memoryEnabled: values.memoryEnabled,
         memoryTopK: values.memoryTopK,
         previousAssistantOutputMode: values.previousAssistantOutputMode,
+        previousAssistantOutputChapterCount: values.previousAssistantOutputChapterCount,
         autoSaveSentPrompt: values.autoSaveSentPrompt
       };
     },
@@ -234,6 +238,9 @@ export function useStoryTranslatorPersistence(
       if (saved.previousAssistantOutputMode === 'full' || saved.previousAssistantOutputMode === 'sampled') {
         setters.setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
       }
+      if (typeof saved.previousAssistantOutputChapterCount === 'number') {
+        setters.setPreviousAssistantOutputChapterCount(Math.max(1, Math.min(10, Math.floor(saved.previousAssistantOutputChapterCount))));
+      }
       if (typeof saved.autoSaveSentPrompt === 'boolean') setters.setAutoSaveSentPrompt(saved.autoSaveSentPrompt);
     },
     deps: [
@@ -257,6 +264,7 @@ export function useStoryTranslatorPersistence(
       values.memoryEnabled,
       values.memoryTopK,
       values.previousAssistantOutputMode,
+      values.previousAssistantOutputChapterCount,
       values.autoSaveSentPrompt
     ],
   });

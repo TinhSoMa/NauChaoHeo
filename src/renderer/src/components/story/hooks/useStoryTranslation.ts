@@ -18,7 +18,7 @@ import type {
 } from '../types';
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
-import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
+import { resolvePreviousAssistantOutputDebug } from '../utils/previousAssistantOutput';
 
 interface UseStoryTranslationParams {
   chapters: Chapter[];
@@ -96,13 +96,15 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     const chapter = chapters.find(c => c.id === selectedChapterId);
     if (!chapter) return;
     const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
-    const previousAssistantOutput = resolvePreviousAssistantOutput({
+    const previousAssistantOutputResult = resolvePreviousAssistantOutputDebug({
       chapters,
       chapterIndex,
       summaries,
       translatedChapters,
-      mode: promptSaveSettings.previousAssistantOutputMode
+      mode: promptSaveSettings.previousAssistantOutputMode,
+      chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
     });
+    const previousAssistantOutput = previousAssistantOutputResult.content;
     const memoryPayload = chapterIndex >= 0
       ? buildStoryMemoryPayload({
           projectId,
@@ -112,6 +114,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
           totalChapters: chapters.length,
           previousAssistantOutput,
           previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
           settings: memorySettings
         })
       : null;
@@ -245,7 +248,11 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
             model,
             preparedPrompt: prepareResult.prompt,
             prepareResult,
-            storyFilePath: filePath
+            storyFilePath: filePath,
+            previousAssistantOutputDebug: previousAssistantOutputResult.debug,
+            previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+            previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+            previousAssistantOutputSourceContent: previousAssistantOutputResult.content
           });
         }
 
@@ -287,7 +294,11 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
             model,
             preparedPrompt: prepareResult.prompt,
             prepareResult,
-            storyFilePath: filePath
+            storyFilePath: filePath,
+            previousAssistantOutputDebug: previousAssistantOutputResult.debug,
+            previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+            previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+            previousAssistantOutputSourceContent: previousAssistantOutputResult.content
           });
         }
 

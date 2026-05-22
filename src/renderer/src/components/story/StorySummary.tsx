@@ -122,6 +122,7 @@ export function StorySummary() {
   const [summaryMemoryTopK, setSummaryMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
+  const [previousAssistantOutputChapterCount, setPreviousAssistantOutputChapterCount] = useState(1);
   const [summaryMemoryNamespace, setSummaryMemoryNamespace] = useState('');
   const [translationMemoryNamespace, setTranslationMemoryNamespace] = useState('');
   const [summaryMemoryStatus, setSummaryMemoryStatus] = useState<StorySummaryMemoryRuntimeState['status']>('error');
@@ -433,6 +434,7 @@ export function StorySummary() {
         summaryMemoryEnabled,
         summaryMemoryTopK,
         previousAssistantOutputMode,
+        previousAssistantOutputChapterCount,
         summaries: orderedSummaries,
         chapterModels: orderedChapterModels,
         chapterMethods: orderedChapterMethods,
@@ -473,6 +475,7 @@ export function StorySummary() {
           summaryMemoryEnabled?: boolean;
           summaryMemoryTopK?: number;
           previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
+          previousAssistantOutputChapterCount?: number;
           summaries?: Array<[string, string]>;
           chapterModels?: Array<[string, string]>;
           chapterMethods?: Array<[string, 'api' | 'token']>;
@@ -494,6 +497,9 @@ export function StorySummary() {
         if (typeof saved.summaryMemoryTopK === 'number') setSummaryMemoryTopK(saved.summaryMemoryTopK);
         if (saved.previousAssistantOutputMode === 'full' || saved.previousAssistantOutputMode === 'sampled') {
           setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
+        }
+        if (typeof saved.previousAssistantOutputChapterCount === 'number') {
+          setPreviousAssistantOutputChapterCount(Math.max(1, Math.min(10, Math.floor(saved.previousAssistantOutputChapterCount))));
         }
         if (saved.summaries) setSummaries(new Map(saved.summaries));
         if (saved.chapterModels) setChapterModels(new Map(saved.chapterModels));
@@ -563,6 +569,7 @@ export function StorySummary() {
       summaryMemoryEnabled,
       summaryMemoryTopK,
       previousAssistantOutputMode,
+      previousAssistantOutputChapterCount,
       sourceFilePath,
       chapters,
       summaries,
@@ -743,7 +750,8 @@ export function StorySummary() {
       chapters,
       chapterIndex,
       translatedChapters: runtimeTranslatedChaptersRef.current,
-      mode: previousAssistantOutputMode
+      mode: previousAssistantOutputMode,
+      chapterCount: previousAssistantOutputChapterCount
     });
 
     return buildStorySummaryMemoryPayload({
@@ -755,6 +763,7 @@ export function StorySummary() {
       previousSummaryOutput,
       previousTranslatedOutput,
       previousAssistantOutputMode,
+      previousAssistantOutputChapterCount,
       settings: summaryMemorySettings
     });
   };
@@ -1585,6 +1594,21 @@ export function StorySummary() {
             >
               <option value="sampled">Sampled</option>
               <option value="full">Full</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-sm text-text-secondary">Previous chapters</span>
+            <select
+              value={previousAssistantOutputChapterCount}
+              onChange={(e) => setPreviousAssistantOutputChapterCount(Number(e.target.value) || 1)}
+              disabled={status === 'running'}
+              className="h-8 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+            >
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={5}>5</option>
+              <option value={10}>10</option>
             </select>
           </label>
           <label className="flex items-center gap-2 cursor-pointer hover:text-primary">

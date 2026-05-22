@@ -52,6 +52,7 @@ export interface StoryTranslationMemoryPayload {
   totalChapters?: number | null;
   previousAssistantOutput?: string | null;
   previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  previousAssistantOutputChapterCount?: number | null;
   settings?: StoryMemorySettings | null;
 }
 
@@ -73,6 +74,7 @@ export interface StorySummaryMemoryPayload {
   previousSummaryOutput?: string | null;
   previousTranslatedOutput?: string | null;
   previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  previousAssistantOutputChapterCount?: number | null;
   settings?: StorySummaryMemorySettings | null;
 }
 

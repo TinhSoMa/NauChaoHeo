@@ -73,6 +73,7 @@ export interface StorySummaryMemoryRuntimeState {
 export interface StoryPromptSaveSettings {
   autoSaveSentPrompt: boolean;
   previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
+  previousAssistantOutputChapterCount: number;
 }
 
 export function buildStoryMemoryPayload(args: {
@@ -83,6 +84,7 @@ export function buildStoryMemoryPayload(args: {
   totalChapters: number;
   previousAssistantOutput?: string | null;
   previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  previousAssistantOutputChapterCount?: number | null;
   settings: StoryMemoryRuntimeState;
 }) {
   const {
@@ -93,6 +95,7 @@ export function buildStoryMemoryPayload(args: {
     totalChapters,
     previousAssistantOutput,
     previousAssistantOutputMode,
+    previousAssistantOutputChapterCount,
     settings
   } = args;
   return {
@@ -104,6 +107,7 @@ export function buildStoryMemoryPayload(args: {
     totalChapters,
     previousAssistantOutput: previousAssistantOutput || null,
     previousAssistantOutputMode: previousAssistantOutputMode || 'sampled',
+    previousAssistantOutputChapterCount: previousAssistantOutputChapterCount || 1,
     settings: {
       enabled: settings.enabled,
       topK: settings.topK,
@@ -122,6 +126,7 @@ export function buildStorySummaryMemoryPayload(args: {
   previousSummaryOutput?: string | null;
   previousTranslatedOutput?: string | null;
   previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  previousAssistantOutputChapterCount?: number | null;
   settings: StorySummaryMemoryRuntimeState;
 }) {
   const {
@@ -133,6 +138,7 @@ export function buildStorySummaryMemoryPayload(args: {
     previousSummaryOutput,
     previousTranslatedOutput,
     previousAssistantOutputMode,
+    previousAssistantOutputChapterCount,
     settings
   } = args;
   return {
@@ -145,6 +151,7 @@ export function buildStorySummaryMemoryPayload(args: {
     previousSummaryOutput: previousSummaryOutput || null,
     previousTranslatedOutput: previousTranslatedOutput || null,
     previousAssistantOutputMode: previousAssistantOutputMode || 'sampled',
+    previousAssistantOutputChapterCount: previousAssistantOutputChapterCount || 1,
     settings: {
       enabled: settings.enabled,
       topK: settings.topK,

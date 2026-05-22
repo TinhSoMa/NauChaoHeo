@@ -13,7 +13,7 @@ import { extractTranslatedTitle } from '../utils/chapterUtils';
 import type { ProcessingChapterInfo, StoryChapterMethod, StoryMemoryRuntimeState, StoryPromptSaveSettings, StoryStatus } from '../types';
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
-import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
+import { resolvePreviousAssistantOutputDebug } from '../utils/previousAssistantOutput';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
 export type StoryWebQueueMode = 'sequential' | 'multi_auto';
@@ -327,13 +327,15 @@ export function useStoryGeminiWebQueueTranslation(
   ): Promise<QueueChapterProcessResult> => {
     const expectedChapterId = chapter.id;
     const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id) + 1;
-    const previousAssistantOutput = resolvePreviousAssistantOutput({
+    const previousAssistantOutputResult = resolvePreviousAssistantOutputDebug({
       chapters,
       chapterIndex: chapterIndex - 1,
       summaries,
       translatedChapters: runtimeTranslatedChaptersRef.current,
-      mode: promptSaveSettings.previousAssistantOutputMode
+      mode: promptSaveSettings.previousAssistantOutputMode,
+      chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
     });
+    const previousAssistantOutput = previousAssistantOutputResult.content;
     const memoryPayload = buildStoryMemoryPayload({
       projectId,
       filePath,
@@ -342,6 +344,7 @@ export function useStoryGeminiWebQueueTranslation(
       totalChapters: chapters.length,
       previousAssistantOutput,
       previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+      previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
       settings: memorySettings
     });
     const runId = options?.runId;
@@ -419,7 +422,11 @@ export function useStoryGeminiWebQueueTranslation(
           model,
           preparedPrompt: prepareResult.prompt,
           prepareResult,
-          storyFilePath: filePath
+          storyFilePath: filePath,
+          previousAssistantOutputDebug: previousAssistantOutputResult.debug,
+          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+          previousAssistantOutputSourceContent: previousAssistantOutputResult.content
         });
       }
       const pacingDebug = toQueuePacingDebug(translateResult.metadata);

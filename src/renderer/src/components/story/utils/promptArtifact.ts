@@ -1,5 +1,8 @@
 import type { Chapter } from '@shared/types';
 import type { StoryChapterMethod } from '../types';
+import type { StoryPreviousAssistantOutputMode } from '../types';
+import type { PreviousAssistantOutputDebug } from './previousAssistantOutput';
+import { splitPreviousChapterBlocks } from './previousAssistantOutput';
 
 function extractMemoryContext(prepareResult: unknown): unknown {
   if (!prepareResult || typeof prepareResult !== 'object' || !('memoryContext' in prepareResult)) {
@@ -25,6 +28,30 @@ function formatTimestamp(date = new Date()): string {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
   return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+function extractChapterNumbersFromBlocks(content: string): number[] {
+  const blocks = splitPreviousChapterBlocks(content);
+  return blocks
+    .map((block) => {
+      const match = block.match(/^=== Previous Chapter\s+(\d+)(?::.*?)?===/m);
+      return match ? Number(match[1]) : null;
+    })
+    .filter((value): value is number => Number.isFinite(value));
+}
+
+function extractContinuityStringFromPreparedPrompt(preparedPrompt: unknown): string {
+  if (!preparedPrompt || typeof preparedPrompt !== 'object' || Array.isArray(preparedPrompt)) {
+    return '';
+  }
+  const promptObject = preparedPrompt as Record<string, unknown>;
+  if (typeof promptObject.previous_assistant_output === 'string') {
+    return promptObject.previous_assistant_output;
+  }
+  if (typeof promptObject.previous_translation_context === 'string') {
+    return promptObject.previous_translation_context;
+  }
+  return '';
 }
 
 export function getActualPromptSentToModel(preparedPrompt: unknown, method: StoryChapterMethod | 'api_gemini_webapi_queue'): string {
@@ -62,6 +89,10 @@ export async function saveTranslationPromptArtifact(params: {
   preparedPrompt: unknown;
   prepareResult?: unknown;
   storyFilePath: string;
+  previousAssistantOutputDebug?: PreviousAssistantOutputDebug;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
+  previousAssistantOutputChapterCount?: number;
+  previousAssistantOutputSourceContent?: string;
 }): Promise<void> {
   const {
     projectId,
@@ -71,7 +102,11 @@ export async function saveTranslationPromptArtifact(params: {
     model,
     preparedPrompt,
     prepareResult,
-    storyFilePath
+    storyFilePath,
+    previousAssistantOutputDebug,
+    previousAssistantOutputMode,
+    previousAssistantOutputChapterCount,
+    previousAssistantOutputSourceContent
   } = params;
 
   if (!projectId) {
@@ -86,6 +121,12 @@ export async function saveTranslationPromptArtifact(params: {
   const rawPromptFileName = `prompts/translation/${baseName}.prompt.txt`;
   const metaFileName = `prompts/translation/${baseName}.meta.json`;
   const actualSentPrompt = getActualPromptSentToModel(preparedPrompt, method);
+  const finalContinuity = extractContinuityStringFromPreparedPrompt(preparedPrompt);
+  const finalIncludedChapterIds = extractChapterNumbersFromBlocks(finalContinuity).map((value) => String(value));
+  const wasTruncated =
+    typeof previousAssistantOutputSourceContent === 'string' &&
+    previousAssistantOutputSourceContent.trim().length > 0 &&
+    previousAssistantOutputSourceContent.trim() !== finalContinuity.trim();
 
   const rawWriteResult = await window.electronAPI.project.writeFeatureFile({
     projectId,
@@ -110,7 +151,15 @@ export async function saveTranslationPromptArtifact(params: {
     model,
     rawPromptFileName,
     actualSentPayload: preparedPrompt,
-    memoryContext: extractMemoryContext(prepareResult)
+    memoryContext: extractMemoryContext(prepareResult),
+    previousAssistantOutputDebug: previousAssistantOutputDebug || null,
+    previousAssistantOutputMode: previousAssistantOutputMode || null,
+    previousAssistantOutputChapterCount: previousAssistantOutputChapterCount ?? null,
+    finalPreviousChapterIds: finalIncludedChapterIds,
+    previousAssistantOutputTruncated: wasTruncated,
+    previousAssistantOutputTruncationStrategy: wasTruncated
+      ? (previousAssistantOutputMode === 'full' ? 'budget_trim_preserve_blocks' : 'sampled_or_budget_trim')
+      : 'none'
   };
 
   const result = await window.electronAPI.project.writeFeatureFile({
@@ -134,6 +183,10 @@ export async function saveSummaryPromptArtifact(params: {
   preparedPrompt: unknown;
   prepareResult?: unknown;
   storyFilePath: string;
+  previousAssistantOutputDebug?: PreviousAssistantOutputDebug;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
+  previousAssistantOutputChapterCount?: number;
+  previousAssistantOutputSourceContent?: string;
 }): Promise<void> {
   const {
     projectId,
@@ -143,7 +196,11 @@ export async function saveSummaryPromptArtifact(params: {
     model,
     preparedPrompt,
     prepareResult,
-    storyFilePath
+    storyFilePath,
+    previousAssistantOutputDebug,
+    previousAssistantOutputMode,
+    previousAssistantOutputChapterCount,
+    previousAssistantOutputSourceContent
   } = params;
 
   if (!projectId) {
@@ -158,6 +215,12 @@ export async function saveSummaryPromptArtifact(params: {
   const rawPromptFileName = `prompts/summary/${baseName}.prompt.txt`;
   const metaFileName = `prompts/summary/${baseName}.meta.json`;
   const actualSentPrompt = getActualPromptSentToModel(preparedPrompt, method);
+  const finalContinuity = extractContinuityStringFromPreparedPrompt(preparedPrompt);
+  const finalIncludedChapterIds = extractChapterNumbersFromBlocks(finalContinuity).map((value) => String(value));
+  const wasTruncated =
+    typeof previousAssistantOutputSourceContent === 'string' &&
+    previousAssistantOutputSourceContent.trim().length > 0 &&
+    previousAssistantOutputSourceContent.trim() !== finalContinuity.trim();
 
   const rawWriteResult = await window.electronAPI.project.writeFeatureFile({
     projectId,
@@ -182,7 +245,15 @@ export async function saveSummaryPromptArtifact(params: {
     model,
     rawPromptFileName,
     actualSentPayload: preparedPrompt,
-    memoryContext: extractMemoryContext(prepareResult)
+    memoryContext: extractMemoryContext(prepareResult),
+    previousAssistantOutputDebug: previousAssistantOutputDebug || null,
+    previousAssistantOutputMode: previousAssistantOutputMode || null,
+    previousAssistantOutputChapterCount: previousAssistantOutputChapterCount ?? null,
+    finalPreviousChapterIds: finalIncludedChapterIds,
+    previousAssistantOutputTruncated: wasTruncated,
+    previousAssistantOutputTruncationStrategy: wasTruncated
+      ? (previousAssistantOutputMode === 'full' ? 'budget_trim_preserve_blocks' : 'sampled_or_budget_trim')
+      : 'none'
   };
 
   const result = await window.electronAPI.project.writeFeatureFile({

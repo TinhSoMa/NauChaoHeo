@@ -11,7 +11,7 @@ import {
   StoryStatus,
   StorySummaryMemoryRuntimeState
 } from '../types';
-import { resolvePreviousSummaryOutput, resolvePreviousTranslatedOutput } from '../utils/previousAssistantOutput';
+import { resolvePreviousSummaryOutput, resolvePreviousTranslatedOutputDebug } from '../utils/previousAssistantOutput';
 import { saveSummaryPromptArtifact } from '../utils/promptArtifact';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
@@ -221,14 +221,24 @@ export function useStorySummaryGeneration({
           mode: previousAssistantOutputMode
         })
       : '';
-    const previousTranslatedOutput = chapterIndex >= 0
-      ? resolvePreviousTranslatedOutput({
+    const previousTranslatedOutputResult = chapterIndex >= 0
+      ? resolvePreviousTranslatedOutputDebug({
           chapters,
           chapterIndex,
           translatedChapters: runtimeTranslatedChaptersRef.current,
-          mode: previousAssistantOutputMode
+          mode: previousAssistantOutputMode,
+          chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
         })
-      : '';
+      : {
+          content: '',
+          debug: {
+            requestedChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+            resolvedChapterIds: [],
+            missingChapterIds: [],
+            finalIncludedChapterIds: []
+          }
+        };
+    const previousTranslatedOutput = previousTranslatedOutputResult.content;
     const summaryMemoryPayload = chapter && chapterIndex >= 0
       ? buildStorySummaryMemoryPayload({
           projectId,
@@ -239,6 +249,7 @@ export function useStorySummaryGeneration({
           previousSummaryOutput,
           previousTranslatedOutput,
           previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
           settings: memorySettings
         })
       : null;
@@ -313,7 +324,11 @@ export function useStorySummaryGeneration({
           model,
           preparedPrompt: prepareResult.prompt,
           prepareResult,
-          storyFilePath: filePath
+          storyFilePath: filePath,
+          previousAssistantOutputDebug: previousTranslatedOutputResult.debug,
+          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+          previousAssistantOutputSourceContent: previousTranslatedOutputResult.content
         });
       }
 
@@ -412,14 +427,24 @@ export function useStorySummaryGeneration({
             mode: previousAssistantOutputMode
           })
         : '';
-      const previousTranslatedOutput = actualChapterIndex >= 0
-        ? resolvePreviousTranslatedOutput({
+      const previousTranslatedOutputResult = actualChapterIndex >= 0
+        ? resolvePreviousTranslatedOutputDebug({
             chapters,
             chapterIndex: actualChapterIndex,
             translatedChapters: runtimeTranslatedChaptersRef.current,
-            mode: previousAssistantOutputMode
+            mode: previousAssistantOutputMode,
+            chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
           })
-        : '';
+        : {
+            content: '',
+            debug: {
+              requestedChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+              resolvedChapterIds: [],
+              missingChapterIds: [],
+              finalIncludedChapterIds: []
+            }
+          };
+      const previousTranslatedOutput = previousTranslatedOutputResult.content;
       const summaryMemoryPayload = actualChapterIndex >= 0
         ? buildStorySummaryMemoryPayload({
             projectId,
@@ -430,6 +455,7 @@ export function useStorySummaryGeneration({
             previousSummaryOutput,
             previousTranslatedOutput,
             previousAssistantOutputMode,
+            previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
             settings: memorySettings
           })
         : null;
@@ -491,7 +517,11 @@ export function useStorySummaryGeneration({
           model,
           preparedPrompt: prepareResult.prompt,
           prepareResult,
-          storyFilePath: filePath
+          storyFilePath: filePath,
+          previousAssistantOutputDebug: previousTranslatedOutputResult.debug,
+          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+          previousAssistantOutputSourceContent: previousTranslatedOutputResult.content
         });
       }
 

@@ -14,7 +14,7 @@ import type {
 } from '../types';
 import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
-import { resolvePreviousAssistantOutput } from '../utils/previousAssistantOutput';
+import { resolvePreviousAssistantOutputDebug } from '../utils/previousAssistantOutput';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
 interface UseStoryBatchTranslationParams {
@@ -219,15 +219,25 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     try {
       console.log(`[useStoryBatchTranslation] 📖 Dịch chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
       const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
-      const previousAssistantOutput = actualChapterIndex >= 0
-        ? resolvePreviousAssistantOutput({
+      const previousAssistantOutputResult = actualChapterIndex >= 0
+        ? resolvePreviousAssistantOutputDebug({
             chapters,
             chapterIndex: actualChapterIndex,
             summaries,
             translatedChapters: runtimeTranslatedChaptersRef.current,
-            mode: promptSaveSettings.previousAssistantOutputMode
+            mode: promptSaveSettings.previousAssistantOutputMode,
+            chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
           })
-        : '';
+        : {
+            content: '',
+            debug: {
+              requestedChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+              resolvedChapterIds: [],
+              missingChapterIds: [],
+              finalIncludedChapterIds: []
+            }
+          };
+      const previousAssistantOutput = previousAssistantOutputResult.content;
       const memoryPayload = buildStoryMemoryPayload({
         projectId,
         filePath,
@@ -236,6 +246,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         totalChapters: chapters.length,
         previousAssistantOutput,
         previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+        previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
         settings: memorySettings
       });
 
@@ -311,7 +322,11 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
           model,
           preparedPrompt: prepareResult.prompt,
           prepareResult,
-          storyFilePath: filePath
+          storyFilePath: filePath,
+          previousAssistantOutputDebug: previousAssistantOutputResult.debug,
+          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+          previousAssistantOutputSourceContent: previousAssistantOutputResult.content
         });
       }
 

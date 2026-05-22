@@ -23,6 +23,7 @@ import type {
   StoryCancelGeminiWebQueueBatchResult,
   StoryGeminiWebQueueCapacity,
   StoryMemorySettings,
+  StoryPreviousAssistantOutputMode,
   StorySummaryMemoryPayload,
   StorySummaryMemorySettings,
   StoryTranslateChapterPayload,
@@ -420,7 +421,11 @@ export class StoryService {
       const memoryContext = await this.resolveStoryMemoryContext(memory, chapterContent);
       const memoryPayload = this.buildTranslationMemoryPayload(
         memoryContext,
-        typeof memory?.previousAssistantOutput === 'string' ? memory.previousAssistantOutput : ''
+        typeof memory?.previousAssistantOutput === 'string' ? memory.previousAssistantOutput : '',
+        {
+          mode: memory?.previousAssistantOutputMode || undefined,
+          requestedChapterCount: memory?.previousAssistantOutputChapterCount ?? undefined,
+        }
       );
 
       // 3. Parse and inject content
@@ -491,7 +496,11 @@ export class StoryService {
       const memoryPayload = this.buildSummaryMemoryPayload(
         memoryContext,
         typeof memory?.previousSummaryOutput === 'string' ? memory.previousSummaryOutput : '',
-        typeof memory?.previousTranslatedOutput === 'string' ? memory.previousTranslatedOutput : ''
+        typeof memory?.previousTranslatedOutput === 'string' ? memory.previousTranslatedOutput : '',
+        {
+          mode: memory?.previousAssistantOutputMode || undefined,
+          requestedChapterCount: memory?.previousAssistantOutputChapterCount ?? undefined,
+        }
       );
 
       const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterContent, memoryPayload);
@@ -688,7 +697,10 @@ export class StoryService {
     facts?: Array<{ text?: string; kind?: string; aliases?: string[] }>;
     glossary?: Array<{ sourceTerm?: string; targetTerm?: string }>;
     entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
-  }, previousAssistantOutput: string): {
+  }, previousAssistantOutput: string, options?: {
+    mode?: StoryPreviousAssistantOutputMode | null;
+    requestedChapterCount?: number | null;
+  }): {
     translation_memory: {
       confirmed_terms: Record<string, string>;
       style_rules: Record<string, string>;
@@ -751,7 +763,10 @@ export class StoryService {
       .filter((item) => item.length > 0)
       .slice(0, 8);
 
-    const previousAssistantWindow = this.extractPreviousAssistantWindow(previousAssistantOutput);
+    const previousAssistantWindow = this.extractPreviousAssistantWindow(previousAssistantOutput, {
+      mode: options?.mode || undefined,
+      requestedChapterCount: options?.requestedChapterCount ?? undefined,
+    });
 
     return {
       translation_memory: {
@@ -776,7 +791,11 @@ export class StoryService {
       entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
     },
     previousSummaryOutput: string,
-    previousTranslatedOutput: string
+    previousTranslatedOutput: string,
+    options?: {
+      mode?: StoryPreviousAssistantOutputMode | null;
+      requestedChapterCount?: number | null;
+    }
   ): {
     summary_memory: {
       confirmed_terms: Record<string, string>;
@@ -848,19 +867,73 @@ export class StoryService {
         continuity_notes: continuityNotes
       },
       previous_summary_output: this.extractPreviousAssistantWindow(previousSummaryOutput),
-      previous_translation_context: this.extractPreviousAssistantWindow(previousTranslatedOutput),
+      previous_translation_context: this.extractPreviousAssistantWindow(previousTranslatedOutput, {
+        mode: options?.mode || undefined,
+        requestedChapterCount: options?.requestedChapterCount ?? undefined,
+      }),
       current_input: []
     };
   }
 
-  private static extractPreviousAssistantWindow(previousAssistantOutput: string): string {
+  private static extractPreviousAssistantWindow(
+    previousAssistantOutput: string,
+    options?: {
+      mode?: StoryPreviousAssistantOutputMode | null;
+      requestedChapterCount?: number | null;
+    }
+  ): string {
     const normalized = String(previousAssistantOutput || '').trim();
     if (!normalized) {
       return '';
     }
-    const maxChars = 4000;
+    const mode: StoryPreviousAssistantOutputMode = options?.mode === 'full' ? 'full' : 'sampled';
+    const requestedChapterCount = Math.max(1, Math.min(10, Math.floor(options?.requestedChapterCount || 1)));
+    const maxChars =
+      mode === 'full'
+        ? (requestedChapterCount > 1 ? 24_000 : 12_000)
+        : 4_000;
     if (normalized.length <= maxChars) {
       return normalized;
+    }
+
+    const chapterBlocks = this.parsePreviousChapterBlocks(normalized);
+    if (chapterBlocks.length > 1) {
+      const joinBlocks = (blocks: Array<{ header: string; body: string }>) =>
+        blocks
+          .map((block) => `${block.header}\n${block.body}`.trim())
+          .filter((block) => block.length > 0)
+          .join('\n\n');
+
+      const fullCandidate = joinBlocks(chapterBlocks);
+      if (fullCandidate.length <= maxChars) {
+        return fullCandidate;
+      }
+
+      if (mode !== 'full') {
+        const sampledBlocks = chapterBlocks.map((block) => ({
+          header: block.header,
+          body: this.compressBlockBody(block.body)
+        }));
+        const sampledCandidate = joinBlocks(sampledBlocks);
+        if (sampledCandidate.length <= maxChars) {
+          return sampledCandidate;
+        }
+      }
+
+      const separatorBudget = Math.max(0, (chapterBlocks.length - 1) * 2);
+      const headerBudget = chapterBlocks.reduce((sum, block) => sum + block.header.length + 1, 0);
+      const availableBodyBudget = Math.max(0, maxChars - separatorBudget - headerBudget);
+      if (availableBodyBudget > 0) {
+        const bodyBudgets = this.allocatePreviousBlockBudgets(chapterBlocks.length, availableBodyBudget);
+        const quotaBlocks = chapterBlocks.map((block, index) => ({
+          header: block.header,
+          body: this.truncateBlockBodyToBudget(block.body, bodyBudgets[index] || 0, mode)
+        }));
+        const quotaCandidate = joinBlocks(quotaBlocks);
+        if (quotaCandidate.length > 0) {
+          return quotaCandidate.slice(0, maxChars);
+        }
+      }
     }
 
     const lines = normalized
@@ -894,13 +967,15 @@ export class StoryService {
         }
       }
 
-      const candidate = nextSelection.join('\n');
+      const candidate = mode === 'full'
+        ? lines.slice(0, count).join('\n')
+        : nextSelection.join('\n');
       if (candidate.length > maxChars) {
         break;
       }
 
       selected.length = 0;
-      selected.push(...nextSelection);
+      selected.push(...(mode === 'full' ? lines.slice(0, count) : nextSelection));
     }
 
     if (selected.length > 0) {
@@ -908,6 +983,111 @@ export class StoryService {
     }
 
     return normalized.slice(0, maxChars);
+  }
+
+  private static parsePreviousChapterBlocks(content: string): Array<{ header: string; body: string }> {
+    const blockRegex = /(^=== Previous Chapter\s+\d+(?::.*?)?===\s*$)([\s\S]*?)(?=^=== Previous Chapter\s+\d+(?::.*?)?===\s*$|$)/gm;
+    const blocks: Array<{ header: string; body: string }> = [];
+    let match: RegExpExecArray | null = null;
+    while ((match = blockRegex.exec(content)) !== null) {
+      const header = String(match[1] || '').trim();
+      const body = String(match[2] || '').trim();
+      if (header && body) {
+        blocks.push({ header, body });
+      }
+    }
+    return blocks;
+  }
+
+  private static compressBlockBody(body: string): string {
+    const lines = String(body || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length <= 1) {
+      return String(body || '').trim();
+    }
+    const targetCount = Math.max(1, Math.min(lines.length, Math.round(lines.length * 0.6)));
+    const selected: string[] = [];
+    const used = new Set<number>();
+    const maxIndex = lines.length - 1;
+    for (let i = 0; i < targetCount; i += 1) {
+      const anchor = Math.round((i * maxIndex) / Math.max(1, targetCount - 1));
+      let index = anchor;
+      while (used.has(index) && index < maxIndex) {
+        index += 1;
+      }
+      while (used.has(index) && index > 0) {
+        index -= 1;
+      }
+      if (!used.has(index)) {
+        used.add(index);
+        selected.push(lines[index]);
+      }
+    }
+    return selected.join('\n');
+  }
+
+  private static allocatePreviousBlockBudgets(blockCount: number, totalBudget: number): number[] {
+    if (blockCount <= 0 || totalBudget <= 0) {
+      return [];
+    }
+    const weights = Array.from({ length: blockCount }, (_, index) => index + 1);
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    const budgets = weights.map((weight) => Math.max(80, Math.floor((totalBudget * weight) / totalWeight)));
+    let allocated = budgets.reduce((sum, budget) => sum + budget, 0);
+    while (allocated > totalBudget) {
+      for (let index = 0; index < budgets.length && allocated > totalBudget; index += 1) {
+        if (budgets[index] > 80) {
+          budgets[index] -= 1;
+          allocated -= 1;
+        }
+      }
+      if (budgets.every((budget) => budget <= 80)) {
+        break;
+      }
+    }
+    while (allocated < totalBudget) {
+      for (let index = budgets.length - 1; index >= 0 && allocated < totalBudget; index -= 1) {
+        budgets[index] += 1;
+        allocated += 1;
+      }
+    }
+    return budgets;
+  }
+
+  private static truncateBlockBodyToBudget(
+    body: string,
+    maxChars: number,
+    mode: StoryPreviousAssistantOutputMode = 'sampled'
+  ): string {
+    const normalized = String(body || '').trim();
+    if (!normalized || maxChars <= 0) {
+      return '';
+    }
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    const workingBody = mode === 'full' ? normalized : this.compressBlockBody(normalized);
+    if (workingBody.length <= maxChars) {
+      return workingBody;
+    }
+    const lines = workingBody
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const selected: string[] = [];
+    for (const line of lines) {
+      const candidate = selected.length > 0 ? `${selected.join('\n')}\n${line}` : line;
+      if (candidate.length > maxChars) {
+        break;
+      }
+      selected.push(line);
+    }
+    if (selected.length > 0) {
+      return selected.join('\n');
+    }
+    return workingBody.slice(0, maxChars).trim();
   }
 
   private static getStoryMemoryStatusFromHealth(health: MemoryContextHealthResult): 'ready' | 'missing_runtime' | 'missing_provider' | 'error' {

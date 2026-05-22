@@ -110,6 +110,7 @@ export function StoryTranslator() {
   const [autoSaveSentPrompt, setAutoSaveSentPrompt] = useState(false);
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
+  const [previousAssistantOutputChapterCount, setPreviousAssistantOutputChapterCount] = useState(1);
   void memoryStats;
   const isMemoryFeatureEnabled = Boolean(projectId && memoryEnabled);
   const isSummaryMemoryFeatureEnabled = isMemoryFeatureEnabled;
@@ -135,8 +136,9 @@ export function StoryTranslator() {
   ]);
   const promptSaveSettings = useMemo<StoryPromptSaveSettings>(() => ({
     autoSaveSentPrompt,
-    previousAssistantOutputMode
-  }), [autoSaveSentPrompt, previousAssistantOutputMode]);
+    previousAssistantOutputMode,
+    previousAssistantOutputChapterCount
+  }), [autoSaveSentPrompt, previousAssistantOutputChapterCount, previousAssistantOutputMode]);
   
   // Token management (using custom hook)
   const {
@@ -309,6 +311,7 @@ export function StoryTranslator() {
       memoryEnabled,
       memoryTopK,
       previousAssistantOutputMode,
+      previousAssistantOutputChapterCount,
       autoSaveSentPrompt
     },
     {
@@ -334,6 +337,7 @@ export function StoryTranslator() {
       setMemoryEnabled,
       setMemoryTopK,
       setPreviousAssistantOutputMode,
+      setPreviousAssistantOutputChapterCount,
       setAutoSaveSentPrompt
     },
     fileManagement.parseFile
@@ -1274,6 +1278,21 @@ export function StoryTranslator() {
               >
                 <option value="sampled">Sampled</option>
                 <option value="full">Full</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
+              <span>Previous chapters</span>
+              <select
+                value={previousAssistantOutputChapterCount}
+                onChange={(e) => setPreviousAssistantOutputChapterCount(Number(e.target.value) || 1)}
+                className="h-8 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+                disabled={status === 'running'}
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={5}>5</option>
+                <option value={10}>10</option>
               </select>
             </label>
             <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
