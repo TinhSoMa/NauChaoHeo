@@ -11,6 +11,33 @@ function extractMemoryContext(prepareResult: unknown): unknown {
   return (prepareResult as { memoryContext?: unknown }).memoryContext ?? null;
 }
 
+function extractNounDiagnostics(prepareResult: unknown): {
+  nounScope: 'project' | null;
+  nounReturnedCount: number;
+  topNounsInjected: string[];
+} {
+  const memoryContext = extractMemoryContext(prepareResult) as Record<string, unknown> | null;
+  const nouns = Array.isArray(memoryContext?.nouns) ? memoryContext?.nouns : [];
+  const topNounsInjected = nouns
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item.trim();
+      }
+      if (item && typeof item === 'object' && 'value' in item) {
+        return String((item as { value?: unknown }).value || '').trim();
+      }
+      return '';
+    })
+    .filter((value) => value.length > 0)
+    .slice(0, 20);
+
+  return {
+    nounScope: topNounsInjected.length > 0 ? 'project' : null,
+    nounReturnedCount: topNounsInjected.length,
+    topNounsInjected
+  };
+}
+
 function sanitizeFileSegment(value: string): string {
   return (value || '')
     .trim()
@@ -127,6 +154,7 @@ export async function saveTranslationPromptArtifact(params: {
     typeof previousAssistantOutputSourceContent === 'string' &&
     previousAssistantOutputSourceContent.trim().length > 0 &&
     previousAssistantOutputSourceContent.trim() !== finalContinuity.trim();
+  const nounDiagnostics = extractNounDiagnostics(prepareResult);
 
   const rawWriteResult = await window.electronAPI.project.writeFeatureFile({
     projectId,
@@ -156,6 +184,9 @@ export async function saveTranslationPromptArtifact(params: {
     previousAssistantOutputMode: previousAssistantOutputMode || null,
     previousAssistantOutputChapterCount: previousAssistantOutputChapterCount ?? null,
     finalPreviousChapterIds: finalIncludedChapterIds,
+    nounScope: nounDiagnostics.nounScope,
+    nounReturnedCount: nounDiagnostics.nounReturnedCount,
+    topNounsInjected: nounDiagnostics.topNounsInjected,
     previousAssistantOutputTruncated: wasTruncated,
     previousAssistantOutputTruncationStrategy: wasTruncated
       ? (previousAssistantOutputMode === 'full' ? 'budget_trim_preserve_blocks' : 'sampled_or_budget_trim')
@@ -221,6 +252,7 @@ export async function saveSummaryPromptArtifact(params: {
     typeof previousAssistantOutputSourceContent === 'string' &&
     previousAssistantOutputSourceContent.trim().length > 0 &&
     previousAssistantOutputSourceContent.trim() !== finalContinuity.trim();
+  const nounDiagnostics = extractNounDiagnostics(prepareResult);
 
   const rawWriteResult = await window.electronAPI.project.writeFeatureFile({
     projectId,
@@ -250,6 +282,9 @@ export async function saveSummaryPromptArtifact(params: {
     previousAssistantOutputMode: previousAssistantOutputMode || null,
     previousAssistantOutputChapterCount: previousAssistantOutputChapterCount ?? null,
     finalPreviousChapterIds: finalIncludedChapterIds,
+    nounScope: nounDiagnostics.nounScope,
+    nounReturnedCount: nounDiagnostics.nounReturnedCount,
+    topNounsInjected: nounDiagnostics.topNounsInjected,
     previousAssistantOutputTruncated: wasTruncated,
     previousAssistantOutputTruncationStrategy: wasTruncated
       ? (previousAssistantOutputMode === 'full' ? 'budget_trim_preserve_blocks' : 'sampled_or_budget_trim')

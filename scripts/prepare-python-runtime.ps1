@@ -121,8 +121,9 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Installing locked pycapcut dependencies..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "-r", $requirementsPath, "--disable-pip-version-check", "--no-warn-script-location")
 
-Write-Host "[Python Runtime] Installing memory context dependencies (mem0ai[nlp], spaCy model)..."
+Write-Host "[Python Runtime] Installing memory context dependencies (mem0ai[nlp], underthesea, spaCy model)..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "mem0ai[nlp]", "--disable-pip-version-check", "--no-warn-script-location")
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "underthesea", "--disable-pip-version-check", "--no-warn-script-location")
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "spacy", "download", "xx_ent_wiki_sm")
 
 Write-Host "[Python Runtime] Removing unused speech/browser automation packages (funasr-onnx, selenium, undetected-chromedriver)..."
@@ -131,13 +132,13 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Running smoke test..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "-c",
-  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm'))"
+  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy,underthesea; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm') + ' underthesea=' + getattr(underthesea, '__version__', 'unknown'))"
 )
 
 Write-Host "[Python Runtime] Writing memory runtime build stamp..."
 $memoryBuildStampJson = & $pythonExe -c @"
 import json, platform
-import mem0, spacy
+import mem0, spacy, underthesea
 nlp = spacy.load('xx_ent_wiki_sm')
 print(json.dumps({
   'generatedAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
@@ -145,6 +146,7 @@ print(json.dumps({
   'mem0Version': getattr(mem0, '__version__', 'unknown'),
   'spacyVersion': getattr(spacy, '__version__', 'unknown'),
   'spacyModelName': nlp.meta.get('name', 'xx_ent_wiki_sm'),
+  'undertheseaVersion': getattr(underthesea, '__version__', 'unknown'),
   'runtimeDir': r'$runtimeDir'
 }, ensure_ascii=False))
 "@
@@ -168,7 +170,7 @@ if (Test-Path -LiteralPath $pythonLicensePath) {
   Copy-Item -LiteralPath $pythonLicensePath -Destination (Join-Path $licensesDir "PYTHON_LICENSE.txt") -Force
 }
 
-$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "mem0ai", "spacy")
+$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "mem0ai", "spacy", "underthesea")
 foreach ($pkg in $packages) {
   $pkgDir = Join-Path $licensesDir $pkg
   Ensure-Directory -PathValue $pkgDir

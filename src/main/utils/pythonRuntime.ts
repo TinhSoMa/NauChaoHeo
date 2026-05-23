@@ -39,6 +39,7 @@ export interface PythonModuleAvailabilityResult {
     | 'EMBEDDED_MEM0_MISSING'
     | 'EMBEDDED_SPACY_MISSING'
     | 'EMBEDDED_SPACY_MODEL_MISSING'
+    | 'EMBEDDED_UNDERTHESEA_MISSING'
     | 'EMBEDDED_RUNTIME_BROKEN';
 }
 
@@ -330,6 +331,9 @@ function classifyModuleAvailabilityError(
     }
     if (modules?.spacy === false) {
       return 'EMBEDDED_SPACY_MISSING';
+    }
+    if (modules?.underthesea === false) {
+      return 'EMBEDDED_UNDERTHESEA_MISSING';
     }
     return 'EMBEDDED_RUNTIME_BROKEN';
   }

@@ -45,6 +45,31 @@ export interface MemoryEntity {
   confidence?: number;
 }
 
+export interface MemoryNounEntry {
+  value: string;
+  normalizedValue?: string;
+  count?: number;
+  aliases?: string[];
+  source?: 'project_dictionary' | 'chapter_artifact';
+  provenance?: string;
+  mappedFrom?: string;
+  chapterId?: string;
+  chapterIndex?: number;
+  confidence?: number;
+}
+
+export interface MemoryNounSyncDebug {
+  rawCandidates: string[];
+  normalizedCandidates: string[];
+  mappedCanonical: Array<{
+    input: string;
+    normalized: string;
+    canonical: string;
+    reason: 'exact' | 'fuzzy' | 'new';
+  }>;
+  rejectedCandidates: string[];
+}
+
 export interface MemoryContextSearchRequest {
   projectId: string;
   feature: string;
@@ -61,6 +86,8 @@ export interface MemoryContextSearchResult {
   facts?: MemoryFact[];
   glossary?: MemoryGlossaryEntry[];
   entities?: MemoryEntity[];
+  nouns?: MemoryNounEntry[];
+  nounSyncDebug?: MemoryNounSyncDebug;
   debug: MemoryContextDebugItem[];
   namespace?: string;
   runtimeMode?: 'mem0_provider' | 'local_fallback' | 'unavailable';
@@ -91,6 +118,8 @@ export interface MemoryContextAddResult {
   storedEntities?: number;
   facts?: MemoryFact[];
   glossary?: MemoryGlossaryEntry[];
+  nouns?: MemoryNounEntry[];
+  nounSyncDebug?: MemoryNounSyncDebug;
   namespace?: string;
   runtimeMode?: 'mem0_provider' | 'local_fallback' | 'unavailable';
   providerStatus?: {
@@ -115,8 +144,11 @@ export interface MemoryContextStatsResult {
   totalMemories: number;
   totalFacts?: number;
   totalEntities?: number;
+  totalNouns?: number;
+  newNounsLastIngest?: number;
   totalNamespaces?: number;
   recentEntities: string[];
+  recentNouns?: string[];
   runtimeMode?: 'mem0_provider' | 'local_fallback' | 'unavailable';
   error?: string;
 }
@@ -140,6 +172,7 @@ export interface MemoryContextHealthResult {
   mem0Ok: boolean;
   spacyOk: boolean;
   spacyModelOk: boolean;
+  undertheseaOk?: boolean;
   providerConfigured: boolean;
   backend: 'mem0' | 'mem0_provider' | 'local_fallback' | 'unavailable';
   warning?: string;
@@ -164,6 +197,7 @@ export interface MemoryContextHealthResult {
       mem0: boolean;
       spacy: boolean;
       spacyModel: boolean;
+      underthesea?: boolean;
     };
     buildStamp?: {
       generatedAt?: string;
@@ -171,6 +205,7 @@ export interface MemoryContextHealthResult {
       mem0Version?: string;
       spacyVersion?: string;
       spacyModelName?: string;
+      undertheseaVersion?: string;
       runtimeDir?: string;
     };
     errorCode?: string;

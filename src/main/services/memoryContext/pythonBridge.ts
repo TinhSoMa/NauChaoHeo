@@ -15,6 +15,7 @@ type MemoryPreflightErrorCode =
   | 'EMBEDDED_MEM0_MISSING'
   | 'EMBEDDED_SPACY_MISSING'
   | 'EMBEDDED_SPACY_MODEL_MISSING'
+  | 'EMBEDDED_UNDERTHESEA_MISSING'
   | 'EMBEDDED_RUNTIME_BROKEN'
   | 'PYTHON_RUNTIME_MISSING'
   | 'PYTHON_MODULE_MISSING';
@@ -44,6 +45,7 @@ interface MemoryContextBuildStamp {
   mem0Version?: string;
   spacyVersion?: string;
   spacyModelName?: string;
+  undertheseaVersion?: string;
   runtimeDir?: string;
 }
 
@@ -52,6 +54,7 @@ interface MemoryContextDependencyCheck {
   mem0: boolean;
   spacy: boolean;
   spacyModel: boolean;
+  underthesea: boolean;
 }
 
 interface MemoryContextRuntimeDiagnostics {
@@ -113,7 +116,7 @@ export class MemoryContextPythonBridge {
     }
 
     const workerPath = this.resolveWorkerPath();
-    const availability = await checkPythonModuleAvailability(['sqlite3', 'mem0', 'spacy'], {
+    const availability = await checkPythonModuleAvailability(['sqlite3', 'mem0', 'spacy', 'underthesea'], {
       preferredVersion: '3.12',
       postCheckScript: 'import spacy; spacy.load("xx_ent_wiki_sm")',
       postCheckDescription: 'Không thể load spaCy model xx_ent_wiki_sm.',
@@ -130,7 +133,8 @@ export class MemoryContextPythonBridge {
         sqlite3: availability.modules?.sqlite3 !== false,
         mem0: availability.modules?.mem0 !== false,
         spacy: availability.modules?.spacy !== false,
-        spacyModel: availability.success
+        spacyModel: availability.success,
+        underthesea: availability.modules?.underthesea !== false
       },
       errorCode: availability.success ? undefined : (availability.errorCode as MemoryPreflightErrorCode | undefined),
       error: availability.success ? undefined : availability.error
@@ -218,7 +222,8 @@ export class MemoryContextPythonBridge {
       modules: {
         sqlite3: this.diagnostics.dependencyCheck?.sqlite3 ?? true,
         mem0: this.diagnostics.dependencyCheck?.mem0 ?? false,
-        spacy: this.diagnostics.dependencyCheck?.spacy ?? false
+        spacy: this.diagnostics.dependencyCheck?.spacy ?? false,
+        underthesea: this.diagnostics.dependencyCheck?.underthesea ?? false
       },
       errorCode: this.diagnostics.errorCode,
       error: this.diagnostics.error

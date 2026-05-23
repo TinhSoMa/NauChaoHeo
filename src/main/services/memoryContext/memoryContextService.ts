@@ -56,6 +56,7 @@ export class MemoryContextService {
           facts: [],
           glossary: [],
           entities: [],
+          nouns: [],
           debug: [],
           namespace: request.namespace,
           error: response.error || 'Memory context search failed'
@@ -69,6 +70,8 @@ export class MemoryContextService {
         facts: Array.isArray(data.facts) ? data.facts : [],
         glossary: Array.isArray(data.glossary) ? data.glossary : [],
         entities: Array.isArray(data.entities) ? data.entities : [],
+        nouns: Array.isArray(data.nouns) ? data.nouns : [],
+        nounSyncDebug: data.nounSyncDebug,
         debug: data.debug || [],
         namespace: data.namespace || request.namespace,
         runtimeMode: data.runtimeMode,
@@ -83,6 +86,7 @@ export class MemoryContextService {
         facts: [],
         glossary: [],
         entities: [],
+        nouns: [],
         debug: [],
         namespace: request.namespace,
         error: String(error)
@@ -106,6 +110,7 @@ export class MemoryContextService {
           entities: [],
           facts: [],
           glossary: [],
+          nouns: [],
           namespace: request.namespace,
           error: response.error || 'Memory context add failed'
         };
@@ -119,6 +124,8 @@ export class MemoryContextService {
         entities: data.entities || [],
         facts: Array.isArray(data.facts) ? data.facts : [],
         glossary: Array.isArray(data.glossary) ? data.glossary : [],
+        nouns: Array.isArray(data.nouns) ? data.nouns : [],
+        nounSyncDebug: data.nounSyncDebug,
         namespace: data.namespace || request.namespace,
         runtimeMode: data.runtimeMode,
         providerStatus: data.providerStatus,
@@ -133,6 +140,7 @@ export class MemoryContextService {
         entities: [],
         facts: [],
         glossary: [],
+        nouns: [],
         namespace: request.namespace,
         error: String(error)
       };
@@ -182,6 +190,8 @@ export class MemoryContextService {
           namespace: request.namespace,
           totalMemories: 0,
           recentEntities: [],
+          recentNouns: [],
+          newNounsLastIngest: 0,
           error: response.error || 'Memory context stats failed'
         };
       }
@@ -191,8 +201,11 @@ export class MemoryContextService {
         totalMemories: response.data.totalMemories || 0,
         totalFacts: (response.data as any).totalFacts || 0,
         totalEntities: (response.data as any).totalEntities || 0,
+        totalNouns: (response.data as any).totalNouns || 0,
+        newNounsLastIngest: (response.data as any).newNounsLastIngest || 0,
         totalNamespaces: response.data.totalNamespaces,
         recentEntities: response.data.recentEntities || [],
+        recentNouns: (response.data as any).recentNouns || [],
         runtimeMode: (response.data as any).runtimeMode
       };
     } catch (error) {
@@ -201,6 +214,8 @@ export class MemoryContextService {
         namespace: request.namespace,
         totalMemories: 0,
         recentEntities: [],
+        recentNouns: [],
+        newNounsLastIngest: 0,
         error: String(error)
       };
     }
@@ -222,12 +237,13 @@ export class MemoryContextService {
       mem0Ok: false,
       spacyOk: false,
       spacyModelOk: false,
+      undertheseaOk: false,
       providerConfigured: false,
       backend: 'unavailable',
       error,
       warning: packagedRuntimeFailure
         ? 'Runtime memory đóng gói bị thiếu hoặc hỏng. Vui lòng cài lại app hoặc build lại installer.'
-        : 'Cài dependency: pip install mem0ai[nlp] && python -m spacy download xx_ent_wiki_sm',
+        : 'Cài dependency: pip install mem0ai[nlp] underthesea && python -m spacy download xx_ent_wiki_sm',
       providerStatus: {
         configured: false,
         active: false,

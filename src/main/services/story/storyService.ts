@@ -119,6 +119,12 @@ export class StoryService {
                 String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
                 String(options.metadata?.sourceText || '')
               );
+              await this.addStoryTranslationNounMemory(
+                options.memory,
+                String(result.data.text || ''),
+                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+                String(options.metadata?.sourceText || '')
+              );
               await this.addStorySummaryMemory(
                 options.summaryMemory,
                 String(result.data.text || ''),
@@ -150,6 +156,12 @@ export class StoryService {
            
            if (result.success) {
              await this.addStoryTranslationMemory(
+               options.memory,
+               String(result.data || ''),
+               String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+               String(options.metadata?.sourceText || '')
+             );
+             await this.addStoryTranslationNounMemory(
                options.memory,
                String(result.data || ''),
                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
@@ -288,6 +300,12 @@ export class StoryService {
         if (queued.success) {
           this.touchStoryBatchStickyState(stickyState);
           await this.addStoryTranslationMemory(
+            options.memory,
+            queued.result || '',
+            String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
+            String(options.metadata?.sourceText || '')
+          );
+          await this.addStoryTranslationNounMemory(
             options.memory,
             queued.result || '',
             String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
@@ -650,7 +668,7 @@ export class StoryService {
     };
   }
 
-  private static buildStoryScopedNamespace(prefix: 'story' | 'story-summary', projectId: string, storyFilePath?: string | null): string {
+  private static buildStoryScopedNamespace(prefix: 'story' | 'story-summary' | 'story-nouns', projectId: string, storyFilePath?: string | null): string {
     const fingerprintSource = (storyFilePath || '').trim() || '__default_story__';
     const fingerprint = createHash('sha1').update(fingerprintSource).digest('hex').slice(0, 12);
     return `${prefix}:${projectId}:${fingerprint}`;
@@ -692,11 +710,20 @@ export class StoryService {
     return this.buildStoryScopedNamespace('story', projectId, memory?.storyFilePath || null);
   }
 
+  private static getStoryNounMemoryNamespace(memory?: StoryTranslationMemoryPayload | null): string | null {
+    const projectId = (memory?.projectId || '').trim();
+    if (!projectId) {
+      return null;
+    }
+    return `story-nouns:${projectId}`;
+  }
+
   private static buildTranslationMemoryPayload(memoryContext: {
     memories?: string[];
     facts?: Array<{ text?: string; kind?: string; aliases?: string[] }>;
     glossary?: Array<{ sourceTerm?: string; targetTerm?: string }>;
     entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
+    nouns?: Array<{ value?: string; count?: number }>;
   }, previousAssistantOutput: string, options?: {
     mode?: StoryPreviousAssistantOutputMode | null;
     requestedChapterCount?: number | null;
@@ -704,6 +731,7 @@ export class StoryService {
     translation_memory: {
       confirmed_terms: Record<string, string>;
       style_rules: Record<string, string>;
+      known_nouns: string[];
     };
     continuity_context: {
       last_translated_excerpt: string[];
@@ -762,6 +790,12 @@ export class StoryService {
       .map((item) => String(item || '').trim())
       .filter((item) => item.length > 0)
       .slice(0, 8);
+    const knownNouns = Array.isArray(memoryContext.nouns)
+      ? memoryContext.nouns
+          .map((noun: { value?: string; count?: number }) => String(noun?.value || '').trim())
+          .filter((value: string) => value.length > 0)
+          .slice(0, 20)
+      : [];
 
     const previousAssistantWindow = this.extractPreviousAssistantWindow(previousAssistantOutput, {
       mode: options?.mode || undefined,
@@ -772,6 +806,7 @@ export class StoryService {
       translation_memory: {
         confirmed_terms: confirmedTerms,
         style_rules: styleRules,
+        known_nouns: knownNouns,
       },
       continuity_context: {
         last_translated_excerpt: lastTranslatedExcerpt,
@@ -1091,7 +1126,7 @@ export class StoryService {
   }
 
   private static getStoryMemoryStatusFromHealth(health: MemoryContextHealthResult): 'ready' | 'missing_runtime' | 'missing_provider' | 'error' {
-    if (!health.success || !health.pythonOk || !health.mem0Ok || !health.spacyOk || !health.spacyModelOk) {
+    if (!health.success || !health.pythonOk || !health.mem0Ok || !health.spacyOk || !health.spacyModelOk || health.undertheseaOk === false) {
       return 'missing_runtime';
     }
     if (!health.providerConfigured) {
@@ -1103,9 +1138,10 @@ export class StoryService {
   private static async resolveStoryMemoryContext(
     memory: StoryTranslationMemoryPayload | null | undefined,
     chapterContent: string
-  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; facts?: any[]; glossary?: any[]; entities?: any[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
+  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; facts?: any[]; glossary?: any[]; entities?: any[]; nouns?: any[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
     const settings = this.normalizeStoryMemorySettings(memory);
     const namespace = this.getStoryMemoryNamespace(memory);
+    const nounNamespace = this.getStoryNounMemoryNamespace(memory);
     if (!settings?.enabled || !namespace) {
       return {
         namespace: namespace || undefined,
@@ -1114,6 +1150,7 @@ export class StoryService {
         facts: [],
         glossary: [],
         entities: [],
+        nouns: [],
         debug: [],
         status: memory?.settings?.status || 'error'
       };
@@ -1132,6 +1169,7 @@ export class StoryService {
         facts: [],
         glossary: [],
         entities: [],
+        nouns: [],
         debug: [],
         status: 'error',
         warning: 'Memory mode cần projectId và chapterIndex hợp lệ.'
@@ -1156,16 +1194,37 @@ export class StoryService {
     };
 
     const searchResult = await getMemoryContextService().searchContext(searchRequest);
+    const nounSearchResult = nounNamespace
+      ? await getMemoryContextService().searchContext({
+          projectId,
+          feature: 'story.translation.nouns',
+          namespace: nounNamespace,
+          queryText: chapterContent,
+          topK: 20,
+          metadata: {
+            chapterId: memory?.chapterId || undefined,
+            chapterIndex,
+            chapterTitle: memory?.chapterTitle || undefined,
+            totalChapters: memory?.totalChapters || undefined,
+            memoryKind: 'translation_nouns'
+          }
+        })
+      : null;
     const extended = searchResult as any;
+    const nounExtended = nounSearchResult as any;
+    const promptParts = [searchResult.promptContext || '', nounSearchResult?.promptContext || ''].filter(Boolean);
+    const mergedMemories = [...(searchResult.memories || []), ...(nounSearchResult?.memories || [])].slice(0, 24);
+    const mergedDebug = [...(searchResult.debug || []), ...(nounSearchResult?.debug || [])].slice(0, 48);
     return {
       namespace,
-      promptContext: searchResult.promptContext || '',
-      memories: searchResult.memories || [],
+      promptContext: promptParts.join('\n\n'),
+      memories: mergedMemories,
       facts: Array.isArray(extended.facts) ? extended.facts : [],
       glossary: Array.isArray(extended.glossary) ? extended.glossary : [],
       entities: Array.isArray(extended.entities) ? extended.entities : [],
-      debug: searchResult.debug || [],
-      warning: searchResult.warning || health.warning,
+      nouns: Array.isArray(nounExtended?.nouns) ? nounExtended.nouns : [],
+      debug: mergedDebug,
+      warning: nounSearchResult?.warning || searchResult.warning || health.warning,
       status
     };
   }
@@ -1379,6 +1438,50 @@ export class StoryService {
     const result = await getMemoryContextService().addMemory(request);
     if (!result.success) {
       console.warn('[StoryService] Failed to add story translation memory:', result.error);
+    }
+  }
+
+  private static async addStoryTranslationNounMemory(
+    memory: StoryTranslationMemoryPayload | null | undefined,
+    translatedText: string,
+    chapterTitle: string,
+    sourceText: string
+  ): Promise<void> {
+    const settings = this.normalizeStoryMemorySettings(memory);
+    const namespace = this.getStoryNounMemoryNamespace(memory);
+    if (!settings?.enabled || !namespace) {
+      return;
+    }
+
+    const projectId = (memory?.projectId || '').trim();
+    const chapterIndex =
+      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
+        ? memory.chapterIndex
+        : null;
+
+    if (!projectId || !translatedText.trim() || chapterIndex === null) {
+      return;
+    }
+
+    const request: MemoryContextAddRequest = {
+      projectId,
+      feature: 'story.translation.nouns',
+      namespace,
+      sourceText,
+      translatedText,
+      metadata: {
+        chapterId: memory?.chapterId || undefined,
+        chapterIndex,
+        chapterTitle: chapterTitle || memory?.chapterTitle || undefined,
+        totalChapters: memory?.totalChapters || undefined,
+        storyFilePath: memory?.storyFilePath || undefined,
+        memoryKind: 'translation_nouns'
+      }
+    };
+
+    const result = await getMemoryContextService().addMemory(request);
+    if (!result.success) {
+      console.warn('[StoryService] Failed to add story noun memory:', result.error);
     }
   }
 
