@@ -1,5 +1,5 @@
 (() => {
-const GEMINI_SCRIPT_VERSION = "2026.05.02.1";
+const GEMINI_SCRIPT_VERSION = "2026.05.23.1";
 
 if (window.__geminiScriptVersion === GEMINI_SCRIPT_VERSION) {
     console.log(`----> Gemini Content Script đã ở bản mới nhất v${GEMINI_SCRIPT_VERSION}`);
@@ -142,7 +142,7 @@ const runtimeMessageListener = (request, sender, sendResponse) => {
             pollingIntervalId = null;
             activeInputBox = null;
             activeDocument = null;
-            console.log("----> 🛑 ĐÃ HỦY POLLING - Dừng ngay lập tức!");
+            console.log("----> [CANCEL_POLLING_ACK] 🛑 ĐÃ HỦY POLLING - Dừng ngay lập tức!");
         }
 
         if (typeof pendingRequestResponder === 'function') {
@@ -153,6 +153,7 @@ const runtimeMessageListener = (request, sender, sendResponse) => {
         }
 
         sendResponse({ status: "CANCELLED" });
+        console.log("----> [CANCEL_POLLING_ACK] Đã phản hồi CANCELLED cho background");
         // Synchronous response - NOT returning true
     } else if (request.action === "UPDATE_PIP_STATUS") {
         // Chuyển tiếp message này đến pip-script.js
@@ -224,8 +225,7 @@ async function handlePasteAndSend(fullPrompt, sendResponse, requestOptions = {})
 
         // BƯỚC 3: Tìm và gửi prompt với nhiều chiến lược fallback
         // Chụp mốc response trước khi gửi để tránh nhầm response cũ là response mới.
-        const baselineResponseText = extractGeminiResponse(doc, true) || "";
-        const baselineResponseSignature = buildResponseSignature(baselineResponseText);
+        const baselineResponseSignature = getResponseSignature(doc, true);
         const sendTriggered = await triggerSend(doc, inputBox);
         if (!sendTriggered) {
             activeInputBox = null;
@@ -267,6 +267,17 @@ function buildResponseSignature(text) {
     return `${normalized.length}:${head}:${tail}`;
 }
 
+function buildTurnAwareSignature(turnId, text) {
+    const textSig = buildResponseSignature(text);
+    if (!textSig) return "";
+    return `${String(turnId || "no-turn")}::${textSig}`;
+}
+
+function getResponseSignature(docOverride = null, silent = true) {
+    const data = extractGeminiResponseData(docOverride, silent);
+    return data?.signature || "";
+}
+
 async function waitForComposerReady(maxWaitMs = 120000, intervalMs = 500) {
     const startAt = Date.now();
     let attempt = 0;
@@ -278,7 +289,7 @@ async function waitForComposerReady(maxWaitMs = 120000, intervalMs = 500) {
         const inputBox = context.inputBox;
         const stopButton = findVisibleStopButton(doc);
 
-        if (!stopButton && inputBox && isElementVisible(inputBox)) {
+        if (!stopButton && isInputBoxReady(inputBox)) {
             if (attempt > 1) {
                 console.log(`----> ✓ Gemini đã sẵn sàng nhận prompt (đợi ${attempt} lượt)`);    
             }
@@ -303,23 +314,59 @@ async function waitForComposerReady(maxWaitMs = 120000, intervalMs = 500) {
  * Gemini sử dụng contenteditable div thay vì textarea
  */
 function findInputBox(doc, logWhenMissing = true) {
-    const preferred = Array.from(doc.querySelectorAll('div[contenteditable="true"][role="textbox"]'))
-        .find((el) => isElementVisible(el));
+    const preferredSelectors = [
+        'rich-textarea .ql-editor[contenteditable="true"][role="textbox"]',
+        'input-area-v2 .ql-editor[contenteditable="true"][role="textbox"]',
+        'div.text-input-field_textarea-inner .ql-editor[contenteditable="true"][role="textbox"]',
+        'rich-textarea .ql-editor[contenteditable="true"]',
+        'input-area-v2 .ql-editor[contenteditable="true"]',
+        '[data-test-id="textarea-inner"] .ql-editor[contenteditable="true"]'
+    ];
+    const preferredCandidates = [];
+    for (const selector of preferredSelectors) {
+        const matches = doc.querySelectorAll(selector);
+        for (const el of matches) {
+            if (!preferredCandidates.includes(el)) {
+                preferredCandidates.push(el);
+            }
+        }
+    }
+
+    const preferred = preferredCandidates.find((el) => isElementVisible(el));
     if (preferred) {
         return preferred;
     }
 
-    const fallback = Array.from(doc.querySelectorAll('div[contenteditable="true"]'))
+    const fallback = Array.from(doc.querySelectorAll(
+        'div[contenteditable="true"][role="textbox"], div[contenteditable="true"].ql-editor, rich-textarea div[contenteditable="true"]'
+    ))
         .find((el) => isElementVisible(el));
     if (fallback) {
         console.log("----> Tìm thấy ô nhập liệu qua fallback selector");
         return fallback;
     }
 
+    const unstableButUsable = preferredCandidates.find((el) => {
+        if (!el || !el.isConnected) return false;
+        return !!el.closest('rich-textarea, input-area-v2, [data-test-id="textarea-inner"]');
+    });
+    if (unstableButUsable) {
+        if (logWhenMissing) {
+            console.warn("----> Tìm thấy ô nhập liệu nhưng chưa visible ổn định (PiP/layout đang đồng bộ)");
+        }
+        return unstableButUsable;
+    }
+
     if (logWhenMissing) {
         console.error("----> Không tìm thấy ô nhập liệu!");
     }
     return null;
+}
+
+function isInputBoxReady(inputBox) {
+    if (!inputBox || !inputBox.isConnected) return false;
+    if (isElementVisible(inputBox)) return true;
+    return !!inputBox.closest('rich-textarea, input-area-v2, [data-test-id="textarea-inner"]');
 }
 
 function isElementVisible(el) {
@@ -367,7 +414,7 @@ function isActionMenuButton(button) {
     const dataTestId = (button.getAttribute('data-test-id') || '').toLowerCase();
     const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
     const hasPopupMenu = (button.getAttribute('aria-haspopup') || '').toLowerCase() === 'menu';
-    const hasMoreIcon = !!button.querySelector('mat-icon[fonticon="more_vert"]');
+    const hasMoreIcon = !!button.querySelector('mat-icon[fonticon="more_horiz"]');
 
     return (
         className.includes('conversation-actions-menu-button') ||
@@ -401,10 +448,9 @@ function looksLikeSendButton(button) {
 
 function findVisibleStopButton(doc) {
     const candidates = [
-        'button[aria-label*="Stop"]',
-        'button[aria-label*="Dừng"]',
         'button[data-test-id*="stop"]',
-        'button[data-test-id*="Stop"]'
+        'button[aria-label*="Stop"]',
+        'button[aria-label*="Dừng"]'
     ];
 
     for (const selector of candidates) {
@@ -414,7 +460,11 @@ function findVisibleStopButton(doc) {
         }
     }
 
-    const iconFallback = doc.querySelector('div.stop-icon mat-icon[fonticon="stop"], mat-icon[fonticon="stop"]');
+    const iconFallback = doc.querySelector(
+        'button mat-icon[fonticon="stop"], ' +
+        'button mat-icon[fonticon="square"], ' +
+        'div.stop-icon mat-icon[fonticon="stop"]'
+    );
     if (iconFallback && isElementVisible(iconFallback)) {
         const clickable = iconFallback.closest('button, div.stop-icon, div.blue-circle') || iconFallback;
         if (isElementVisible(clickable)) {
@@ -466,12 +516,12 @@ function getInputTextLength(inputBox) {
  * Gemini có thể dùng aria-label khác nhau tùy ngôn ngữ
  */
 function findSendButton(doc, inputBox = null, logWhenMissing = true) {
-    // Thử các selector khác nhau
+    // UI Gemini mới: ưu tiên cụm send-button-container + icon arrow_upward
     const selectors = [
-        'button[aria-label*="Send"]',
-        'button[aria-label*="Gửi"]',
-        'button[aria-label*="send"]',
-        'button[type="submit"]'
+        'div.send-button-container button[aria-label*="Gửi"]',
+        'div.send-button-container button[aria-label*="Send"]',
+        'div.send-button-container button[data-test-id*="send"]',
+        'div.send-button-container button:has(mat-icon[fonticon="arrow_upward"])'
     ];
 
     const candidates = [];
@@ -482,7 +532,7 @@ function findSendButton(doc, inputBox = null, logWhenMissing = true) {
     if (inputBox) {
         let current = inputBox;
         let depth = 0;
-        while (current && depth < 8) {
+        while (current && depth < 10) {
             scopedRoots.push(current);
             if (current.tagName === 'BODY') break;
             current = current.parentElement;
@@ -505,7 +555,7 @@ function findSendButton(doc, inputBox = null, logWhenMissing = true) {
         }
     }
 
-    // Fallback: tìm toàn document
+    // Fallback: tìm toàn document (new-only selectors)
     for (const selector of selectors) {
         const matches = doc.querySelectorAll(selector);
         for (const button of matches) {
@@ -532,7 +582,7 @@ function findSendButton(doc, inputBox = null, logWhenMissing = true) {
     if (visible) {
         const dataTestId = visible.button.getAttribute('data-test-id') || '';
         const ariaLabel = visible.button.getAttribute('aria-label') || '';
-        console.log(`----> Tìm thấy nút Send (visible): ${visible.selector} (${visible.scope}) | data-test-id=${dataTestId} | aria-label=${ariaLabel}`);
+        console.log(`----> Tìm thấy nút Send (visible, có thể đang disabled): ${visible.selector} (${visible.scope}) | data-test-id=${dataTestId} | aria-label=${ariaLabel}`);
         return visible.button;
     }
     
@@ -592,7 +642,7 @@ async function waitForGenerationStart(doc, inputBox, label, expectedPromptLength
         // Fallback đáng tin cậy hơn input-cleared:
         // chỉ coi là đã nhận prompt khi response bắt đầu khác mốc trước gửi.
         if (baselineResponseSignature) {
-            const currentResponseSignature = buildResponseSignature(extractGeminiResponse(doc, true) || "");
+            const currentResponseSignature = getResponseSignature(doc, true);
             if (currentResponseSignature && currentResponseSignature !== baselineResponseSignature) {
                 console.log(`----> ✓ Gemini đã nhận prompt sau ${label} (response đã thay đổi)`);
                 return true;
@@ -614,7 +664,7 @@ async function confirmPromptAccepted(doc, inputBox, baselineResponseSignature, l
             return true;
         }
 
-        const currentResponseSignature = buildResponseSignature(extractGeminiResponse(doc, true) || "");
+        const currentResponseSignature = getResponseSignature(doc, true);
         if (currentResponseSignature && currentResponseSignature !== baselineResponseSignature) {
             console.log(`----> ✓ Gemini đã xác nhận nhận prompt sau ${label} (response đổi)`);
             return true;
@@ -762,15 +812,15 @@ async function tryCopyGeminiResponse(doc) {
 async function triggerSend(doc, inputBox) {
     inputBox.focus();
     const promptLength = getInputTextLength(inputBox);
-    const baselineResponseSignature = buildResponseSignature(extractGeminiResponse(doc, true) || "");
+    const baselineResponseSignature = getResponseSignature(doc, true);
 
     // Không dùng Enter vì Gemini UI hiện tại không bind Enter ổn định trong luồng này.
     // Ưu tiên click nút gửi, sau đó fallback submit form.
     const preferredSendButton = doc.querySelector(
-        'button.send-button.submit[aria-label*="Gửi"], ' +
-        'button.send-button.submit[aria-label*="Send"], ' +
-        'button.send-button.submit[aria-label*="tin nhắn"], ' +
-        'button.send-button.submit'
+        'div.send-button-container button[aria-label*="Gửi"], ' +
+        'div.send-button-container button[aria-label*="Send"], ' +
+        'div.send-button-container button[data-test-id*="send"], ' +
+        'div.send-button-container button:has(mat-icon[fonticon="arrow_upward"])'
     );
     const sendButton = preferredSendButton || findSendButton(doc, inputBox, false);
 
@@ -1026,13 +1076,14 @@ function waitForReplyCompletion(sendResponse, inputBox = null, contextDoc = null
         noStopChecks++;
 
         // Không thấy tín hiệu generate nữa, kiểm tra response có ổn định chưa.
-        const responseText = extractGeminiResponse(doc, true);
-        const responseLength = responseText ? responseText.length : 0;
+        const responseData = extractGeminiResponseData(doc, true);
+        const responseText = responseData?.text || "";
+        const responseLength = responseText.length;
 
         const hasMeaningfulResponse = responseLength > 50;
         const hasInputCleared = (getInputTextLength(inputBox || activeInputBox || null) <= 2);
         const responseSignature = hasMeaningfulResponse
-            ? buildResponseSignature(responseText)
+            ? (responseData?.signature || "")
             : '';
         const responseChangedNow = !!responseSignature && responseSignature !== baselineResponseSignature;
 
@@ -1244,9 +1295,10 @@ function waitForReplyCompletionEbookNovel(sendResponse, inputBox = null, context
             const usingPiP = contextUsingPiP || doc !== document;
             const stopControl = findVisibleStopButton(doc);
             const stopVisible = !!stopControl;
-            const rawResponseText = extractGeminiResponse(doc, true) || "";
+            const responseData = extractGeminiResponseData(doc, true);
+            const rawResponseText = responseData?.text || "";
             const responseText = rawResponseText.trim();
-            const responseSignature = buildResponseSignature(responseText);
+            const responseSignature = responseData?.signature || "";
             const responseLength = responseText.length;
             const responseChangedNow = !!responseSignature && responseSignature !== baselineResponseSignature;
             const hasEndMarker = /hết chương/i.test(responseText);
@@ -1346,8 +1398,7 @@ function waitForReplyCompletionEbookNovel(sendResponse, inputBox = null, context
                     await sleep(200);
                     await fillInputBox(effectiveInput, originalPrompt, usingPiP);
                     await sleep(500);
-                    const newBaselineText = extractGeminiResponse(doc, true) || "";
-                    const newBaselineSignature = buildResponseSignature(newBaselineText);
+                    const newBaselineSignature = getResponseSignature(doc, true);
                     const sent = await triggerSend(doc, effectiveInput);
                     if (!sent) {
                         stopAndCleanup();
@@ -1382,70 +1433,94 @@ function waitForReplyCompletionEbookNovel(sendResponse, inputBox = null, context
  * Gemini render nhiều message-content, ta lấy cái cuối cùng
  */
 function extractGeminiResponse(docOverride = null, silent = false) {
+    const data = extractGeminiResponseData(docOverride, silent);
+    return data?.text || null;
+}
+
+function extractGeminiResponseData(docOverride = null, silent = false) {
     try {
         const doc = docOverride || activeDocument || getDocumentContext();
-        
-        // PHƯƠNG PHÁP 1: Tìm tất cả các message-content
-        const allMessages = doc.querySelectorAll('message-content');
-        
-        if (allMessages.length > 0) {
-            // Lấy message cuối cùng (response mới nhất)
-            const lastMessage = allMessages[allMessages.length - 1];
-            const textContent = lastMessage.innerText || lastMessage.textContent;
-            
-            if (textContent && textContent.trim().length > 0) {
-                if (!silent) {
-                    console.log("----> ✓ Đã lấy response từ message-content");
+
+        const conversationTurns = Array.from(
+            doc.querySelectorAll('#chat-history .conversation-container, .chat-history .conversation-container')
+        ).filter((turn) => !turn.closest?.('#progress-display-container'));
+
+        const latestTurn = conversationTurns.length > 0 ? conversationTurns[conversationTurns.length - 1] : null;
+        const latestTurnId = latestTurn?.id || '';
+
+        if (latestTurn) {
+            if (!silent) {
+                console.log(`----> [RESP_TURN_FOUND] turn=${latestTurnId || 'no-id'}`);
+            }
+
+            const scopedMarkdownBlocks = Array.from(
+                latestTurn.querySelectorAll('model-response message-content .markdown, message-content .markdown')
+            ).filter((el) => !el.closest?.('#progress-display-container'));
+
+            if (scopedMarkdownBlocks.length > 0) {
+                const text = scopedMarkdownBlocks
+                    .map((el) => (el.innerText || el.textContent || '').trim())
+                    .filter(Boolean)
+                    .join('\n')
+                    .trim();
+                if (text) {
+                    const signature = buildTurnAwareSignature(latestTurnId, text);
+                    if (!silent) {
+                        console.log(`----> [RESP_TURN_CHANGED] source=turn-markdown turn=${latestTurnId || 'no-id'} len=${text.length}`);
+                    }
+                    return { text, turnId: latestTurnId, signature, source: "turn-markdown" };
                 }
-                return textContent.trim();
+            }
+
+            const scopedStructured = Array.from(
+                latestTurn.querySelectorAll('model-response structured-content-container .container, structured-content-container .container')
+            ).filter((el) => !el.closest?.('#progress-display-container'));
+            if (scopedStructured.length > 0) {
+                const text = scopedStructured
+                    .map((el) => (el.innerText || el.textContent || '').trim())
+                    .filter(Boolean)
+                    .join('\n')
+                    .trim();
+                if (text) {
+                    const signature = buildTurnAwareSignature(latestTurnId, text);
+                    if (!silent) {
+                        console.log(`----> [RESP_TURN_CHANGED] source=turn-structured turn=${latestTurnId || 'no-id'} len=${text.length}`);
+                    }
+                    return { text, turnId: latestTurnId, signature, source: "turn-structured" };
+                }
+            }
+
+            if (!silent) {
+                console.log(`----> [RESP_TURN_EMPTY] turn=${latestTurnId || 'no-id'}`);
             }
         }
-        
-        // PHƯƠNG PHÁP 2: Fallback - tìm theo data-test-id
-        const modelResponse = doc.querySelector('[data-test-id="model-response"]');
-        if (modelResponse) {
-            const text = modelResponse.innerText || modelResponse.textContent;
-            if (text && text.trim().length > 0) {
+
+        // Fallback có kiểm soát: không quét class wildcard để tránh hút nhầm.
+        const fallbackBlocks = Array.from(
+            doc.querySelectorAll('message-content .markdown, structured-content-container .container, .presented-response-container .response-content')
+        ).filter((el) => !el.closest?.('#progress-display-container'));
+
+        if (fallbackBlocks.length > 0) {
+            const last = fallbackBlocks[fallbackBlocks.length - 1];
+            const text = (last.innerText || last.textContent || '').trim();
+            if (text) {
+                const turnId = last.closest('.conversation-container')?.id || '';
+                const signature = buildTurnAwareSignature(turnId, text);
                 if (!silent) {
-                    console.log("----> ✓ Đã lấy response từ data-test-id");
+                    console.log(`----> [RESP_TURN_FALLBACK] source=fallback-last-block turn=${turnId || 'no-id'} len=${text.length}`);
                 }
-                return text.trim();
+                return { text, turnId, signature, source: "fallback-last-block" };
             }
         }
-        
-        // PHƯƠNG PHÁP 3: Tìm div chứa markdown content
-        const markdownContent = doc.querySelector('.markdown-content');
-        if (markdownContent) {
-            const text = markdownContent.innerText || markdownContent.textContent;
-            if (text && text.trim().length > 0) {
-                if (!silent) {
-                    console.log("----> ✓ Đã lấy response từ markdown-content");
-                }
-                return text.trim();
-            }
-        }
-        
-        // PHƯƠNG PHÁP 4: Tìm theo class chứa "response" hoặc "message"
-        const responseContainers = doc.querySelectorAll('[class*="response"], [class*="message"]');
-        if (responseContainers.length > 0) {
-            const lastContainer = responseContainers[responseContainers.length - 1];
-            const text = lastContainer.innerText || lastContainer.textContent;
-            if (text && text.trim().length > 0) {
-                if (!silent) {
-                    console.log("----> ✓ Đã lấy response từ class selector");
-                }
-                return text.trim();
-            }
-        }
-        
+
         if (!silent) {
-            console.warn("----> ⚠️ Không tìm thấy response content");
+            console.warn("----> ⚠️ Không tìm thấy response content (turn-aware)");
         }
-        return null;
-        
+        return { text: "", turnId: "", signature: "", source: "none" };
+
     } catch (error) {
-        console.error("----> ❌ Lỗi khi extract response:", error);
-        return null;
+        console.error("----> ❌ Lỗi khi extract response turn-aware:", error);
+        return { text: "", turnId: "", signature: "", source: "error" };
     }
 }
 
@@ -1465,15 +1540,16 @@ function isResponseDomNode(node) {
     if (node.closest && node.closest("#progress-display-container")) return false;
     if (node.matches && (
         node.matches("message-content") ||
-        node.matches('[data-test-id="model-response"]') ||
-        node.matches(".markdown-content")
+        node.matches("message-content .markdown") ||
+        node.matches("structured-content-container") ||
+        node.matches(".response-content")
     )) {
         return true;
     }
     if (node.querySelector && (
-        node.querySelector("message-content") ||
-        node.querySelector('[data-test-id="model-response"]') ||
-        node.querySelector(".markdown-content")
+        node.querySelector("message-content .markdown") ||
+        node.querySelector("structured-content-container") ||
+        node.querySelector(".response-content")
     )) {
         return true;
     }

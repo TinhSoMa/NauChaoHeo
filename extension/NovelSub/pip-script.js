@@ -240,13 +240,26 @@ async function openPiPWindow() {
     // Chúng ta cần redirect chúng vào pipWindow.document.body
     setupDOMIntercept(pipWindow);
 
-    console.log("----> 5.5. Đang bật chế độ Gemini PiP gọn...");
-    startGeminiCompactMode(pipWindow);
+    // SAFE MODE: Không bật compact-hide để tránh ẩn nhầm toàn bộ vùng chat/composer.
+    console.log("----> [PIP_SAFE_MODE] Bỏ qua compact-hide, giữ full UI để ưu tiên ổn định hiển thị");
 
     console.log("----> 6. Đang tạo Progress Display...");
 
     // 6. Tạo Progress Display (iframe progress.html)
     createProgressDisplay(pipWindow);
+
+    // Guard: kiểm tra nhanh vùng chat/composer có render usable sau khi move DOM.
+    const hasComposer = !!pipWindow.document.querySelector(
+      'rich-textarea .ql-editor[contenteditable="true"], div[contenteditable="true"][role="textbox"]'
+    );
+    const hasChatSurface = !!pipWindow.document.querySelector(
+      'chat-window, chat-window-content, message-content, structured-content-container'
+    );
+    if (!hasComposer && !hasChatSurface) {
+      console.warn("----> [PIP_SAFE_MODE_GUARD] Không thấy chat/composer khả dụng sau move DOM");
+    } else {
+      console.log("----> [PIP_SAFE_MODE_GUARD] Đã xác nhận chat/composer khả dụng trong PiP");
+    }
 
     console.log("----> ✓ PiP window đã sẵn sàng!");
     console.log(

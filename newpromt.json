@@ -6,11 +6,7 @@
     "type": "json",
     "encoding": "utf-8",
     "structure": "Phải trả về JSON hợp lệ theo một trong hai schema bên dưới",
-    "strict_json_only": "KHÔNG có markdown, KHÔNG có ```json, KHÔNG có text thừa",
-    "validation": "các subtile không được thêm dấu \" tránh gây xung đột dữ liệu, chỉ dùng ' nếu cần thiết",
-    "rule": "Độ dài mỗi câu: Không được quá dài dòng (tránh dùng từ đệm, từ lặp), nhưng không được cắt ngắn đến mức cộc lốc, mất chủ ngữ/vị ngữ hoặc mất sắc thái cảm xúc.Giới hạn từ: Có thể thoát ý, đổi cấu trúc câu để thuần Việt hơn, nhưng tổng số từ của câu dịch không được vượt quá câu gốc +3 từ.",
-    "Bảo toàn cấu trúc dòng: Số lượng câu sau khi dịch phải giữ nguyên tỷ lệ 1:1 so với câu gốc (không tự ý gộp câu hoặc tách câu)."
-      
+    "strict_json_only": "KHÔNG có markdown, KHÔNG có ```json, KHÔNG có text thừa"
   },
   
   "success_response_schema": {
@@ -24,7 +20,7 @@
       ],
       "summary": {
         "total_sentences": "number (phải bằng {{COUNT}})",
-        "input_count": "{{COUNT}}",
+        "input_count": {{COUNT}},
         "output_count": "number (phải bằng input_count)",
         "match": "boolean (true nếu counts khớp)",
         "language_style": "string (formal/casual/genz)"
@@ -467,7 +463,7 @@
   "source_text": {
     "language": "zh",
     "target_language": "vi",
-    "total_lines": "{{COUNT}}",
+    "total_lines": {{COUNT}},
     "content": "{{TEXT}}"
   }
 }

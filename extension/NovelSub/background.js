@@ -1431,19 +1431,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         State.runId += 1;
         chrome.storage.local.set({ isRunning: false });
         Utils.log("Đã nhận lệnh DỪNG. Đang hủy các tác vụ...");
-
-        if (State.geminiTabId) {
-            chrome.tabs.sendMessage(State.geminiTabId, { action: "CANCEL_POLLING" }, () => {
-                void chrome.runtime.lastError; // suppress port error
+        const cancelPollingForTab = (tabId, providerLabel) => new Promise((resolve) => {
+            if (!tabId) {
+                resolve({ provider: providerLabel, sent: false, ack: null, error: "NO_TAB_ID" });
+                return;
+            }
+            chrome.tabs.sendMessage(tabId, { action: "CANCEL_POLLING" }, (response) => {
+                const err = chrome.runtime.lastError;
+                if (err) {
+                    resolve({ provider: providerLabel, sent: false, ack: null, error: err.message || "SEND_ERROR" });
+                    return;
+                }
+                resolve({ provider: providerLabel, sent: true, ack: response?.status || null, error: null });
             });
-        }
-        if (State.grokTabId) {
-            chrome.tabs.sendMessage(State.grokTabId, { action: "CANCEL_POLLING" }, () => {
-                void chrome.runtime.lastError; // suppress port error
-            });
-        }
+        });
 
-        Utils.sendProgressUpdate("Đã dừng bởi người dùng");
+        Promise.all([
+            cancelPollingForTab(State.geminiTabId, "gemini"),
+            cancelPollingForTab(State.grokTabId, "grok")
+        ]).then((acks) => {
+            Utils.log(`[STOP_FLOW_ACK] ${JSON.stringify(acks)}`);
+            Utils.sendProgressUpdate("Đã dừng bởi người dùng");
+            sendResponse({
+                status: "STOPPED",
+                runId: State.runId,
+                acks
+            });
+        });
+        return true;
     } else if (request.action === "DOWNLOAD_FULL") {
         downloadFullStory();
     } else if (request.action === "CLEAR_DATA") {

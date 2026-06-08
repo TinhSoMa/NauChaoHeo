@@ -168,7 +168,7 @@ const UIManager = {
       const sourceBtn = hasSourceText
         ? `<button class="btn-source" data-source-index="${idx}" title="Xem text gốc">gốc</button>`
         : "";
-      const resetBtn = st === 'done'
+      const resetBtn = (st === 'done' || st === 'error')
         ? `<button class="btn-reset" data-reset-index="${idx}" title="Xóa bản dịch">x</button>`
         : "";
       const selectCheckbox = isEbookItem
@@ -1172,11 +1172,26 @@ const EventHandlers = {
     UIManager.setStatus(`Trạng thái: Đang khởi động [${activeMode}] (${modeBatchFiles.length} batch nguồn, giới hạn ${batchLimit})...`);
   },
 
-  onStop() {
+  async onStop() {
     chrome.storage.local.set({ isRunning: false });
-    chrome.runtime.sendMessage({ action: "STOP_PROCESS" });
-    setModeControlsDisabled(false);
-    UIManager.setStatus("Trạng thái: Đã dừng.");
+    let stopAck = null;
+    try {
+      stopAck = await chrome.runtime.sendMessage({ action: "STOP_PROCESS" });
+      console.log("----> [STOP_FLOW_ACK]", stopAck);
+    } catch (e) {
+      console.warn("----> [STOP_FLOW_ACK] Không nhận được ACK STOP_PROCESS:", e?.message || e);
+    }
+
+    let realRunning = false;
+    try {
+      const runningState = await chrome.runtime.sendMessage({ action: "GET_RUNNING_STATE" });
+      realRunning = !!runningState?.isRunning;
+    } catch (_) {
+      realRunning = false;
+    }
+
+    setModeControlsDisabled(realRunning);
+    UIManager.setStatus(realRunning ? "Trạng thái: Đang dừng..." : "Trạng thái: Đã dừng.");
   },
 
   onDownload() {
