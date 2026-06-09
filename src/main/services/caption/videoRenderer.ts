@@ -1219,7 +1219,7 @@ export async function renderHardsubVideo(
   let inlineThumbnail: Awaited<ReturnType<typeof injectInlineThumbnailAtEnd>>;
   try {
     inlineThumbnail = await injectInlineThumbnailAtEnd({
-      options: effectiveRenderOptions,
+      options: renderOptions,
       fps,
       filterComplexParts,
       mainVideoLabel: '[v_out]',

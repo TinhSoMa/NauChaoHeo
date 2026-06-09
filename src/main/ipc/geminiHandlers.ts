@@ -3,6 +3,7 @@
  */
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import { debounce } from '../services/shared/debounce';
 import {
   GEMINI_IPC_CHANNELS,
   KeyInfo,
@@ -151,18 +152,22 @@ export function registerGeminiHandlers(): void {
     }
   );
 
-  // Reload config
+  // Reload config (debounced 300ms)
+  const reloadConfigImpl = async (): Promise<IpcApiResponse<boolean>> => {
+    try {
+      const manager = Gemini.getApiManager();
+      manager.reload();
+      return { success: true, data: true };
+    } catch (error) {
+      console.error('[IPC] Lỗi reloadConfig:', error);
+      return { success: false, error: String(error) };
+    }
+  };
+  const debouncedReload = debounce(reloadConfigImpl, 300);
   ipcMain.handle(
     GEMINI_IPC_CHANNELS.RELOAD_CONFIG,
     async (): Promise<IpcApiResponse<boolean>> => {
-      try {
-        const manager = Gemini.getApiManager();
-        manager.reload();
-        return { success: true, data: true };
-      } catch (error) {
-        console.error('[IPC] Lỗi reloadConfig:', error);
-        return { success: false, error: String(error) };
-      }
+      return debouncedReload();
     }
   );
 
@@ -176,6 +181,9 @@ export function registerGeminiHandlers(): void {
     ): Promise<IpcApiResponse<GeminiResponse>> => {
       try {
         const result = await Gemini.callGeminiWithRotation(prompt, model || Gemini.GEMINI_MODELS.FLASH_3_0);
+        if (!result.success) {
+          return { success: false, error: result.error || 'Lỗi không xác định', data: result };
+        }
         return { success: true, data: result };
       } catch (error) {
         console.error('[IPC] Lỗi callGemini:', error);
@@ -199,6 +207,9 @@ export function registerGeminiHandlers(): void {
           targetLanguage || 'Vietnamese',
           model || Gemini.GEMINI_MODELS.FLASH_3_0
         );
+        if (!result.success) {
+          return { success: false, error: result.error || 'Lỗi dịch thuật', data: result };
+        }
         return { success: true, data: result };
       } catch (error) {
         console.error('[IPC] Lỗi Gemini.translateText:', error);
@@ -355,19 +366,40 @@ export function registerGeminiHandlers(): void {
     GEMINI_IPC_CHANNELS.KEYS_IMPORT,
     async (_event: IpcMainInvokeEvent, jsonString: string): Promise<IpcApiResponse<{ count: number }>> => {
       try {
-        console.log('[IPC] Đang import API keys...');
+        console.log('[IPC] Đang import API keys từ JSON...');
         const result = Gemini.importFromJson(jsonString);
         if (result.success) {
-          // Reload API manager sau khi import
           const manager = Gemini.getApiManager();
           manager.reload();
-          console.log(`[IPC] Import thành công ${result.count} keys`);
+          console.log(`[IPC] Import JSON thành công ${result.count} keys`);
           return { success: true, data: { count: result.count } };
         } else {
           return { success: false, error: result.error };
         }
       } catch (error) {
         console.error('[IPC] Lỗi import keys:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // Import keys từ text format (email header + multiline keys)
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_IMPORT_TEXT,
+    async (_event: IpcMainInvokeEvent, text: string): Promise<IpcApiResponse<{ count: number }>> => {
+      try {
+        console.log('[IPC] Đang import API keys từ text...');
+        const result = Gemini.importFromText(text);
+        if (result.success) {
+          const manager = Gemini.getApiManager();
+          manager.reload();
+          console.log(`[IPC] Import text thành công ${result.count} keys`);
+          return { success: true, data: { count: result.count } };
+        } else {
+          return { success: false, error: result.error };
+        }
+      } catch (error) {
+        console.error('[IPC] Lỗi import text keys:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -463,6 +495,7 @@ export function registerGeminiHandlers(): void {
         if (!updated) {
           return { success: false, error: `Không tìm thấy account: ${accountId}` };
         }
+        _event.sender.send(GEMINI_IPC_CHANNELS.KEYS_RELOADED);
         return { success: true, data: true };
       } catch (error) {
         console.error('[IPC] Lỗi disable account:', error);
@@ -480,6 +513,7 @@ export function registerGeminiHandlers(): void {
         if (!updated) {
           return { success: false, error: `Không tìm thấy account: ${accountId}` };
         }
+        _event.sender.send(GEMINI_IPC_CHANNELS.KEYS_RELOADED);
         return { success: true, data: true };
       } catch (error) {
         console.error('[IPC] Lỗi enable account:', error);
@@ -504,6 +538,7 @@ export function registerGeminiHandlers(): void {
             error: `Không tìm thấy project index=${projectIndex} trong account ${accountId}`,
           };
         }
+        _event.sender.send(GEMINI_IPC_CHANNELS.KEYS_RELOADED);
         return { success: true, data: true };
       } catch (error) {
         console.error('[IPC] Lỗi disable project:', error);
@@ -528,9 +563,57 @@ export function registerGeminiHandlers(): void {
             error: `Không tìm thấy project index=${projectIndex} trong account ${accountId}`,
           };
         }
+        _event.sender.send(GEMINI_IPC_CHANNELS.KEYS_RELOADED);
         return { success: true, data: true };
       } catch (error) {
         console.error('[IPC] Lỗi enable project:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_UPDATE_PROJECT,
+    async (
+      _event: IpcMainInvokeEvent,
+      accountId: string,
+      projectIndex: number,
+      patch: { projectName?: string; notes?: string }
+    ): Promise<IpcApiResponse<any>> => {
+      try {
+        const updated = Gemini.updateProject(accountId, projectIndex, patch);
+        if (!updated) {
+          return { success: false, error: 'Không tìm thấy project' };
+        }
+        const manager = Gemini.getApiManager();
+        manager.reload();
+        _event.sender.send(GEMINI_IPC_CHANNELS.KEYS_RELOADED);
+        return { success: true, data: updated };
+      } catch (error) {
+        console.error('[IPC] Lỗi updateProject:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.KEYS_ADD_PROJECT,
+    async (
+      _event: IpcMainInvokeEvent,
+      accountId: string,
+      project: { projectName: string; apiKey: string; notes?: string }
+    ): Promise<IpcApiResponse<any>> => {
+      try {
+        const updated = Gemini.addProject(accountId, project);
+        if (!updated) {
+          return { success: false, error: 'Không tìm thấy account' };
+        }
+        const manager = Gemini.getApiManager();
+        manager.reload();
+        _event.sender.send(GEMINI_IPC_CHANNELS.KEYS_RELOADED);
+        return { success: true, data: updated };
+      } catch (error) {
+        console.error('[IPC] Lỗi addProject:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -586,44 +669,47 @@ export function registerGeminiHandlers(): void {
     }
   );
 
-  // Lấy tất cả accounts với trạng thái chi tiết
+  // Lấy tất cả accounts với trạng thái chi tiết (không debounce — tránh promise treo)
+  const getAllWithStatusImpl = async (): Promise<IpcApiResponse<any[]>> => {
+    try {
+      const manager = Gemini.getApiManager();
+      const config = (manager as any).config;
+      
+      if (!config || !config.accounts) {
+        return { success: true, data: [] };
+      }
+      
+      // Trả về accounts với status chi tiết của từng project
+      const accountsWithStatus = config.accounts.map((acc: any) => ({
+        email: acc.email || acc.accountId,
+        accountId: acc.accountId,
+        accountStatus: acc.accountStatus || 'active',
+        projects: acc.projects.map((p: any) => ({
+          projectIndex: p.projectIndex,
+          projectName: p.projectName,
+          status: p.status || 'available',
+          apiKey: p.apiKey.substring(0, 8) + '...' + p.apiKey.substring(p.apiKey.length - 4),
+          totalRequestsToday: p.stats?.totalRequestsToday || 0,
+          successCount: p.stats?.successCount || 0,
+          errorCount: p.stats?.errorCount || 0,
+          lastUsedTimestamp: p.limitTracking?.lastUsedTimestamp || null,
+          lastErrorMessage: p.stats?.lastErrorMessage || null,
+        })),
+      }));
+      
+      return { 
+        success: true, 
+        data: accountsWithStatus,
+      };
+    } catch (error) {
+      console.error('[IPC] Lỗi lấy accounts với status:', error);
+      return { success: false, error: String(error) };
+    }
+  };
   ipcMain.handle(
     GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS,
     async (): Promise<IpcApiResponse<any[]>> => {
-      try {
-        const manager = Gemini.getApiManager();
-        const config = (manager as any).config;
-        
-        if (!config || !config.accounts) {
-          return { success: true, data: [] };
-        }
-        
-        // Trả về accounts với status chi tiết của từng project
-        const accountsWithStatus = config.accounts.map((acc: any) => ({
-          email: acc.email || acc.accountId,
-          accountId: acc.accountId,
-          accountStatus: acc.accountStatus || 'active',
-          projects: acc.projects.map((p: any) => ({
-            projectIndex: p.projectIndex,
-            projectName: p.projectName,
-            status: p.status || 'available',
-            apiKey: p.apiKey.substring(0, 8) + '...' + p.apiKey.substring(p.apiKey.length - 4),
-            totalRequestsToday: p.stats?.totalRequestsToday || 0,
-            successCount: p.stats?.successCount || 0,
-            errorCount: p.stats?.errorCount || 0,
-            lastUsedTimestamp: p.limitTracking?.lastUsedTimestamp || null,
-            lastErrorMessage: p.stats?.lastErrorMessage || null,
-          })),
-        }));
-        
-        return { 
-          success: true, 
-          data: accountsWithStatus,
-        };
-      } catch (error) {
-        console.error('[IPC] Lỗi lấy accounts với status:', error);
-        return { success: false, error: String(error) };
-      }
+      return getAllWithStatusImpl();
     }
   );
 

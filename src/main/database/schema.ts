@@ -303,6 +303,119 @@ function backfillPromptHierarchy(dbRef: Database.Database): void {
   tx();
 }
 
+function migrateLegacyGeminiTables(dbRef: Database.Database): void {
+  try {
+    const hasOldKeys = (dbRef.pragma(`table_info(gemini_api_keys)`) as any[]).length > 0;
+    const hasOldState = (dbRef.pragma(`table_info(gemini_api_state)`) as any[]).length > 0;
+    if (!hasOldKeys && !hasOldState) {
+      return;
+    }
+
+    const now = Date.now();
+
+    if (hasOldKeys) {
+      const rows = dbRef.prepare(`SELECT id, encrypted_data FROM gemini_api_keys`).all() as any[];
+      for (const row of rows) {
+        try {
+          const { decrypt } = require('../services/gemini/keyStorage');
+          const json = decrypt(row.encrypted_data);
+          const accounts = JSON.parse(json);
+          if (!Array.isArray(accounts)) continue;
+
+          const insertAccount = dbRef.prepare(
+            `INSERT OR REPLACE INTO gemini_accounts (account_id, email, account_status, sort_order, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          );
+          const insertProject = dbRef.prepare(
+            `INSERT OR REPLACE INTO gemini_projects
+              (account_id, project_index, project_name, api_key, status, total_requests_today, success_count, error_count, last_success_timestamp, last_error_message, last_used_timestamp, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+
+          accounts.forEach((acc: any, i: number) => {
+            const accountId = `acc_${String(i + 1).padStart(2, '0')}`;
+            insertAccount.run(accountId, acc.email || accountId, 'active', i, now, now);
+            (acc.projects || []).forEach((proj: any, j: number) => {
+              insertProject.run(
+                accountId,
+                j,
+                proj.projectName || `Project-${j + 1}`,
+                proj.apiKey || '',
+                'available',
+                0,
+                0,
+                0,
+                null,
+                null,
+                null,
+                now,
+                now,
+              );
+            });
+          });
+        } catch (err) {
+          console.error('[Database] migrateLegacyGeminiTables keys failed:', err);
+        }
+      }
+
+      try {
+        dbRef.exec(`DROP TABLE IF EXISTS gemini_api_keys`);
+        console.log('[Database] Dropped legacy table gemini_api_keys');
+      } catch (e) {
+        console.error('[Database] Drop legacy gemini_api_keys failed:', e);
+      }
+    }
+
+    if (hasOldState) {
+      const stateRow = dbRef.prepare(`SELECT id, state_json FROM gemini_api_state WHERE id = 1`).get() as any;
+      if (stateRow?.state_json) {
+        try {
+          const state = JSON.parse(stateRow.state_json);
+          const settingsJson = JSON.stringify(state?.settings || {});
+          const rotationJson = JSON.stringify(state?.rotationState || {});
+          dbRef.prepare(
+            `INSERT OR REPLACE INTO gemini_state (id, settings_json, rotation_state_json, updated_at) VALUES (1, ?, ?, ?)`
+          ).run(settingsJson, rotationJson, now);
+
+          if (state?.accounts) {
+            const updateAccountStatus = dbRef.prepare(
+              `UPDATE gemini_accounts SET account_status = ? WHERE account_id = ?`
+            );
+            const updateProjectStatus = dbRef.prepare(
+              `UPDATE gemini_projects SET status = ?, success_count = ?, error_count = ?, last_used_timestamp = ?, updated_at = ? WHERE account_id = ? AND project_index = ?`
+            );
+            state.accounts.forEach((acc: any) => {
+              updateAccountStatus.run(acc.accountStatus || 'active', acc.accountId);
+              (acc.projects || []).forEach((proj: any, idx: number) => {
+                updateProjectStatus.run(
+                  proj.status || 'available',
+                  proj.stats?.successCount || 0,
+                  proj.stats?.errorCount || 0,
+                  proj.limitTracking?.lastUsedTimestamp || null,
+                  now,
+                  acc.accountId,
+                  idx,
+                );
+              });
+            });
+          }
+        } catch (err) {
+          console.error('[Database] migrateLegacyGeminiTables state failed:', err);
+        }
+      }
+
+      try {
+        dbRef.exec(`DROP TABLE IF EXISTS gemini_api_state`);
+        console.log('[Database] Dropped legacy table gemini_api_state');
+      } catch (e) {
+        console.error('[Database] Drop legacy gemini_api_state failed:', e);
+      }
+    }
+  } catch (err) {
+    console.error('[Database] migrateLegacyGeminiTables failed:', err);
+  }
+}
+
 let db: Database.Database | null = null;
 
 export function getDatabase(): Database.Database {
@@ -765,6 +878,54 @@ export function initDatabase(): void {
   `);
 
   seedGeminiModelsIfEmpty(db);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
+      account_status TEXT NOT NULL DEFAULT 'active',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT NOT NULL,
+      project_index INTEGER NOT NULL DEFAULT 0,
+      project_name TEXT NOT NULL,
+      api_key TEXT NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'available',
+      total_requests_today INTEGER NOT NULL DEFAULT 0,
+      success_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      last_success_timestamp TEXT,
+      last_error_message TEXT,
+      last_used_timestamp TEXT,
+      minute_request_count INTEGER NOT NULL DEFAULT 0,
+      rate_limit_reset_at TEXT,
+      daily_limit_reset_at TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(account_id, project_index),
+      FOREIGN KEY (account_id) REFERENCES gemini_accounts(account_id) ON DELETE CASCADE
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      settings_json TEXT NOT NULL,
+      rotation_state_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  migrateLegacyGeminiTables(db);
 
   // Create grok_ui_profiles table - lưu profile Grok UI
   db.exec(`

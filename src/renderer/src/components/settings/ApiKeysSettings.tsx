@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowLeft, RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Edit3, Trash2, Save, X, Plus } from 'lucide-react';
 import { Button } from '../common/Button';
 import styles from './Settings.module.css';
 import { useMemo } from 'react';
@@ -41,7 +41,6 @@ interface ApiAccountItem {
 
 export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
   const [apiAccounts, setApiAccounts] = useState<ApiAccountItem[]>([]);
-  const [keysLocation, setKeysLocation] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
   const [pendingAccountIds, setPendingAccountIds] = useState<Set<string>>(new Set());
@@ -55,6 +54,21 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
   const [apiDelayInput, setApiDelayInput] = useState('0.5');
   const [savedApiDelaySec, setSavedApiDelaySec] = useState(0.5);
   const [isSavingApiDelay, setIsSavingApiDelay] = useState(false);
+  const [editingProject, setEditingProject] = useState<{ accountId: string; projectIndex: number; name: string; notes: string } | null>(null);
+  const [addingProjectAccountId, setAddingProjectAccountId] = useState<string | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectKey, setNewProjectKey] = useState('');
+  const [newProjectNotes, setNewProjectNotes] = useState('');
+
+  // Text import state
+  const [showImportText, setShowImportText] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importPreview, setImportPreview] = useState<{ email: string; keys: string[] }[] | null>(null);
+
+  // Add account state
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [addAccountEmail, setAddAccountEmail] = useState('');
+  const [addAccountKeys, setAddAccountKeys] = useState('');
 
   // Load API keys info
   const loadApiKeysInfo = useCallback(async () => {
@@ -63,11 +77,6 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
       const accountsRes = await window.electronAPI.gemini.getAllKeysWithStatus();
       if (accountsRes.success && accountsRes.data) {
         setApiAccounts(accountsRes.data as ApiAccountItem[]);
-      }
-      
-      const locRes = await window.electronAPI.gemini.getKeysLocation();
-      if (locRes.success && locRes.data) {
-        setKeysLocation(locRes.data);
       }
 
       const settingsRes = await window.electronAPI.appSettings.getAll();
@@ -98,6 +107,94 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
   useEffect(() => {
     loadApiKeysInfo();
   }, [loadApiKeysInfo]);
+
+  useEffect(() => {
+    const handler = () => loadApiKeysInfo();
+    const unsubscribe = window.electronAPI.gemini.onGeminiKeysReloaded(handler);
+    return unsubscribe;
+  }, [loadApiKeysInfo]);
+
+  const startEditProject = (accountId: string, projectIndex: number, name: string, notes: string) => {
+    setEditingProject({ accountId, projectIndex, name, notes });
+  };
+
+  const cancelEditProject = () => setEditingProject(null);
+
+  const saveEditProject = async () => {
+    if (!editingProject) return;
+    const trimmed = editingProject.name.trim();
+    if (!trimmed) {
+      alert('Tên project không được để trống.');
+      return;
+    }
+    try {
+      const res = await window.electronAPI.gemini.updateProject(editingProject.accountId, editingProject.projectIndex, {
+        projectName: trimmed,
+        notes: editingProject.notes,
+      });
+      if (res.success) {
+        cancelEditProject();
+      } else {
+        alert(res.error || 'Không thể cập nhật project.');
+      }
+    } catch (err) {
+      console.error('[ApiKeysSettings] Loi update project:', err);
+      alert('Không thể cập nhật project.');
+    }
+  };
+
+  const confirmDeleteProject = async (accountId: string, projectIndex: number) => {
+    const ok = confirm('Bạn có chắc muốn xóa project này? Hành động này không thể hoàn tác.');
+    if (!ok) return;
+    try {
+      const res = await window.electronAPI.gemini.removeProject(accountId, projectIndex);
+      if (!res.success) {
+        alert(res.error || 'Không thể xóa project.');
+      }
+    } catch (err) {
+      console.error('[ApiKeysSettings] Loi xoa project:', err);
+      alert('Không thể xóa project.');
+    }
+  };
+
+  const startAddProject = (accountId: string) => {
+    setAddingProjectAccountId(accountId);
+    setNewProjectName('');
+    setNewProjectKey('');
+    setNewProjectNotes('');
+  };
+
+  const cancelAddProject = () => {
+    setAddingProjectAccountId(null);
+    setNewProjectName('');
+    setNewProjectKey('');
+    setNewProjectNotes('');
+  };
+
+  const saveAddProject = async () => {
+    if (!addingProjectAccountId) return;
+    const name = newProjectName.trim();
+    const key = newProjectKey.trim();
+    if (!name || !key) {
+      alert('Tên project và API key không được để trống.');
+      return;
+    }
+    try {
+      const res = await window.electronAPI.gemini.addProject(addingProjectAccountId, {
+        projectName: name,
+        apiKey: key,
+        notes: newProjectNotes.trim(),
+      });
+      if (res.success) {
+        cancelAddProject();
+      } else {
+        alert(res.error || 'Không thể thêm project.');
+      }
+    } catch (err) {
+      console.error('[ApiKeysSettings] Loi them project:', err);
+      alert('Không thể thêm project.');
+    }
+  };
 
   // Import JSON handler
   const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,6 +238,92 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
     } catch (err) {
       console.error('[ApiKeysSettings] Loi export JSON:', err);
       alert('❌ Không thể export file JSON');
+    }
+  };
+
+  // Parse text format and show preview
+  const parseImportText = (text: string) => {
+    setImportText(text);
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    if (lines.length === 0) {
+      setImportPreview(null);
+      return;
+    }
+    const preview: { email: string; keys: string[] }[] = [];
+    let currentEmail = '';
+    let currentKeys: string[] = [];
+
+    for (const line of lines) {
+      if (line.includes('@') && !line.startsWith('AIza') && !line.startsWith('sk-')) {
+        if (currentEmail && currentKeys.length > 0) {
+          preview.push({ email: currentEmail, keys: [...currentKeys] });
+        }
+        currentEmail = line;
+        currentKeys = [];
+      } else {
+        if (!currentEmail) currentEmail = 'default@account';
+        currentKeys.push(line);
+      }
+    }
+    if (currentEmail && currentKeys.length > 0) {
+      preview.push({ email: currentEmail, keys: [...currentKeys] });
+    }
+    setImportPreview(preview.length > 0 ? preview : null);
+  };
+
+  const handleImportText = async () => {
+    if (!importText.trim()) {
+      alert('Vui lòng nhập dữ liệu API keys.');
+      return;
+    }
+    try {
+      const res = await window.electronAPI.gemini.importKeysFromText(importText);
+      if (res.success) {
+        alert(`✅ Import text thành công ${res.data?.count} keys!`);
+        setShowImportText(false);
+        setImportText('');
+        setImportPreview(null);
+        loadApiKeysInfo();
+      } else {
+        alert(`❌ Lỗi import: ${res.error}`);
+      }
+    } catch (err) {
+      console.error('[ApiKeysSettings] Loi import text:', err);
+      alert('❌ Không thể import text');
+    }
+  };
+
+  // Submit add account
+  const handleAddAccount = async () => {
+    const email = addAccountEmail.trim();
+    const keysText = addAccountKeys.trim();
+    if (!email || !keysText) {
+      alert('Vui lòng nhập email và ít nhất 1 API key.');
+      return;
+    }
+    const keyLines = keysText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    if (keyLines.length === 0) {
+      alert('Không tìm thấy API key hợp lệ.');
+      return;
+    }
+    try {
+      const projects = keyLines.map((k, i) => ({
+        projectName: `Key-${i + 1}`,
+        apiKey: k,
+      }));
+      const res = await window.electronAPI.gemini.addAccount(email, projects);
+      if (res.success) {
+        alert(`✅ Đã thêm account ${email} với ${keyLines.length} keys!`);
+        setShowAddAccount(false);
+        setAddAccountEmail('');
+        setAddAccountKeys('');
+        loadApiKeysInfo();
+      } else {
+        alert(`❌ Lỗi: ${res.error}`);
+      }
+    } catch (err) {
+      console.error('[ApiKeysSettings] Loi add account:', err);
+      alert('❌ Không thể thêm account');
     }
   };
 
@@ -379,9 +562,6 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.detailTitle}>Quản lý API Keys</div>
         <div className={styles.apiHeaderFilters}>
           <select
@@ -411,12 +591,30 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
             id="import-json-input"
             onChange={handleImportJson}
           />
+          <input
+            type="file"
+            accept=".txt,.csv"
+            style={{ display: 'none' }}
+            id="import-text-file-input"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) { file.text().then((text) => { parseImportText(text); setShowImportText(true); }); }
+              e.target.value = '';
+            }}
+          />
           <Button
             onClick={() => document.getElementById('import-json-input')?.click()}
             variant="secondary"
             className={styles.apiActionButton}
           >
-            <Upload size={16} /> Import
+            <Upload size={16} /> Import JSON
+          </Button>
+          <Button
+            onClick={() => setShowImportText(true)}
+            variant="secondary"
+            className={styles.apiActionButton}
+          >
+            <Upload size={16} /> Import Text
           </Button>
           <Button
             onClick={handleExportJson}
@@ -517,7 +715,12 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
             </div>
 
             <div className={`${styles.apiPanel} ${styles.apiListPanel}`}>
-              <div className={styles.apiPanelHeader}>Danh sách account</div>
+              <div className={styles.apiPanelHeader}>
+                Danh sách account
+                <Button variant="secondary" onClick={() => { setAddAccountEmail(''); setAddAccountKeys(''); setShowAddAccount(true); }} style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 12 }}>
+                  <Plus size={14} /> Thêm
+                </Button>
+              </div>
               <div className={styles.apiList}>
                 {loading ? (
                   <div className={styles.apiEmpty}>Đang tải dữ liệu...</div>
@@ -611,6 +814,19 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                                 ? 'Đang cập nhật...'
                                 : (p.status === 'disabled' ? 'Bật key' : 'Tắt key')}
                             </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => startEditProject(selectedAccount.accountId, p.projectIndex, p.projectName, (p as any).notes || '')}
+                            >
+                              <Edit3 size={14} />
+                            </Button>
+                            <Button
+                              variant="danger"
+                              onClick={() => confirmDeleteProject(selectedAccount.accountId, p.projectIndex)}
+                              disabled={pendingProjectKeys.has(projectKey) || pendingAccountIds.has(selectedAccount.accountId)}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
                           </div>
                         </div>
 
@@ -646,9 +862,80 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
                             )}
                           </div>
                         )}
+
+                        {editingProject && editingProject.accountId === selectedAccount.accountId && editingProject.projectIndex === p.projectIndex && (
+                          <div className={styles.apiEditForm}>
+                            <input
+                              className={styles.input}
+                              value={editingProject.name}
+                              onChange={(e) => setEditingProject({ ...editingProject, name: e.target.value })}
+                              placeholder="Tên project"
+                              maxLength={60}
+                            />
+                            <textarea
+                              className={styles.textarea}
+                              value={editingProject.notes}
+                              onChange={(e) => setEditingProject({ ...editingProject, notes: e.target.value })}
+                              placeholder="Ghi chú chức năng (tối đa 200 ký tự)"
+                              maxLength={200}
+                              rows={3}
+                            />
+                            <div className={styles.apiEditActions}>
+                              <Button variant="primary" onClick={saveEditProject} disabled={!editingProject.name.trim()}>
+                                <Save size={14} /> Lưu
+                              </Button>
+                              <Button variant="secondary" onClick={cancelEditProject}>
+                                <X size={14} /> Hủy
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
+
+                  {selectedAccount && addingProjectAccountId === selectedAccount.accountId && (
+                    <div className={styles.apiEditForm}>
+                      <input
+                        className={styles.input}
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        placeholder="Tên project mới"
+                        maxLength={60}
+                      />
+                      <input
+                        className={styles.input}
+                        value={newProjectKey}
+                        onChange={(e) => setNewProjectKey(e.target.value)}
+                        placeholder="API key"
+                        maxLength={80}
+                      />
+                      <textarea
+                        className={styles.textarea}
+                        value={newProjectNotes}
+                        onChange={(e) => setNewProjectNotes(e.target.value)}
+                        placeholder="Ghi chú chức năng (tối đa 200 ký tự)"
+                        maxLength={200}
+                        rows={3}
+                      />
+                      <div className={styles.apiEditActions}>
+                        <Button variant="primary" onClick={saveAddProject} disabled={!newProjectName.trim() || !newProjectKey.trim()}>
+                          <Save size={14} /> Thêm
+                        </Button>
+                        <Button variant="secondary" onClick={cancelAddProject}>
+                          <X size={14} /> Hủy
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!addingProjectAccountId && selectedAccount && (
+                    <div className={styles.apiAddProjectRow}>
+                      <Button variant="secondary" onClick={() => startAddProject(selectedAccount.accountId)}>
+                        <Plus size={14} /> Thêm project
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -660,6 +947,9 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
         </div>
 
         <div className={styles.saveBar}>
+          <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
+            <ArrowLeft size={20} />
+          </Button>
           <Button onClick={() => loadApiKeysInfo()} variant="secondary" disabled={loading}>
             <RotateCcw size={16} />
             Làm mới
@@ -672,6 +962,88 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
           to { transform: rotate(360deg); }
         }
       `}</style>
+
+      {/* Import Text Modal */}
+      {showImportText && (
+        <div className={styles.modalOverlay} onClick={() => setShowImportText(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Import API Keys từ Text</div>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
+              Paste dữ liệu keys theo format: dòng email, theo sau là các dòng API key.
+              Có thể tải file .txt hoặc .csv.
+            </p>
+            <textarea
+              className={styles.modalTextarea}
+              value={importText}
+              onChange={(e) => parseImportText(e.target.value)}
+              placeholder={`email1@gmail.com\nAIzaSy...key1\nAIzaSy...key2\n\nemail2@gmail.com\nAIzaSy...key3`}
+            />
+            <div>
+              <Button
+                variant="secondary"
+                onClick={() => document.getElementById('import-text-file-input')?.click()}
+              >
+                <Upload size={14} /> Tải file
+              </Button>
+            </div>
+            {importPreview && (
+              <div className={styles.modalPreview}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+                  Xem trước ({importPreview.reduce((s, p) => s + p.keys.length, 0)} keys)
+                </div>
+                {importPreview.map((item, i) => (
+                  <div key={i} className={styles.modalPreviewRow}>
+                    <span className={styles.modalPreviewEmail}>{item.email}</span>
+                    <span className={styles.modalPreviewKeys}>
+                      {item.keys.length} key{item.keys.length > 1 ? 's' : ''}:{' '}
+                      {item.keys.map((k) => k.substring(0, 8) + '...').join(', ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className={styles.modalActions}>
+              <Button variant="secondary" onClick={() => { setShowImportText(false); setImportText(''); setImportPreview(null); }}>
+                <X size={14} /> Hủy
+              </Button>
+              <Button variant="primary" onClick={handleImportText} disabled={!importPreview}>
+                <Upload size={14} /> Import
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Account Modal */}
+      {showAddAccount && (
+        <div className={styles.modalOverlay} onClick={() => setShowAddAccount(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Thêm Account mới</div>
+            <input
+              className={styles.input}
+              value={addAccountEmail}
+              onChange={(e) => setAddAccountEmail(e.target.value)}
+              placeholder="Email account (vd: myaccount@gmail.com)"
+              style={{ width: '100%' }}
+            />
+            <textarea
+              className={styles.modalTextarea}
+              value={addAccountKeys}
+              onChange={(e) => setAddAccountKeys(e.target.value)}
+              placeholder={`Mỗi dòng 1 API key:\nAIzaSy...key1\nAIzaSy...key2\nAIzaSy...key3`}
+              style={{ minHeight: 120 }}
+            />
+            <div className={styles.modalActions}>
+              <Button variant="secondary" onClick={() => setShowAddAccount(false)}>
+                <X size={14} /> Hủy
+              </Button>
+              <Button variant="primary" onClick={handleAddAccount} disabled={!addAccountEmail.trim() || !addAccountKeys.trim()}>
+                <Plus size={14} /> Thêm
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

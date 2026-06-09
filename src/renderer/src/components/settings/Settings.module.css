@@ -143,6 +143,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  row-gap: 6px;
   flex-shrink: 0;
   position: relative;
   min-height: 44px;
@@ -356,18 +358,37 @@
   gap: 16px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .apiSidebar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .apiDetail {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+}
+
+.apiDetail > .apiPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.apiDetail > .apiPanel > .apiDetailBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .apiPanel {
@@ -387,6 +408,7 @@
   letter-spacing: 0.08em;
   color: var(--color-text-secondary);
   border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
 }
 
 .apiPanelBody {
@@ -394,6 +416,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .apiKpiRow {
@@ -575,11 +598,11 @@
 }
 
 .apiListPanel {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  max-height: clamp(240px, 42vh, 360px);
+  overflow: hidden;
 }
 
 .apiDetailBody::-webkit-scrollbar {
@@ -638,6 +661,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .apiProjectMain {
@@ -683,7 +707,7 @@
 
 .apiKeyText {
   font-family: "JetBrains Mono", "Fira Code", monospace;
-  max-width: 280px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1008,8 +1032,32 @@
   padding-top: 24px;
   border-top: 1px solid var(--color-border);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
+}
+
+/* API edit/add form styles */
+.apiEditForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--glass-bg) 92%, transparent);
+}
+
+.apiEditActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.apiAddProjectRow {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
 }
 
 /* Flex utilities */
@@ -1017,4 +1065,89 @@
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+/* Modal overlay for import text / add account */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modalContent {
+  background: var(--color-bg, #1a1a2e);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 24px;
+  width: 640px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+}
+
+.modalTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.modalTextarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.modalTextarea:focus {
+  border-color: var(--color-primary);
+}
+
+.modalPreview {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  font-size: 13px;
+}
+
+.modalPreviewRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.modalPreviewEmail {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  min-width: 160px;
+}
+
+.modalPreviewKeys {
+  color: var(--color-text-secondary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }

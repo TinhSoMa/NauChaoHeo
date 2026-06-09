@@ -42,7 +42,9 @@ export interface GeminiAPI {
   
   // Key Storage Management
   importKeys: (jsonString: string) => Promise<IpcApiResponse<{ count: number }>>;
+  importKeysFromText: (text: string) => Promise<IpcApiResponse<{ count: number }>>;
   exportKeys: () => Promise<IpcApiResponse<string>>;
+  addAccount: (email: string, projects: { projectName: string; apiKey: string; notes?: string }[]) => Promise<IpcApiResponse<any>>;
   disableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
   enableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
   disableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
@@ -51,6 +53,10 @@ export interface GeminiAPI {
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>; // Sử dụng any[] hoặc EmbeddedAccount[] nếu import được
   getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
+  updateProject: (accountId: string, projectIndex: number, patch: { projectName?: string; notes?: string }) => Promise<IpcApiResponse<any>>;
+  addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) => Promise<IpcApiResponse<any>>;
+  onGeminiKeysReloaded: (callback: () => void) => void;
+  removeGeminiKeysReloadedListener: (callback: () => void) => void;
 
   // Model Catalog Management
   getModels: () => Promise<IpcApiResponse<GeminiCatalogModel[]>>;
@@ -97,7 +103,10 @@ export function createGeminiAPI(): GeminiAPI {
 
     // Key Storage Management
     importKeys: (jsonString: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_IMPORT, jsonString),
+    importKeysFromText: (text: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_IMPORT_TEXT, text),
     exportKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_EXPORT),
+    addAccount: (email: string, projects: { projectName: string; apiKey: string; notes?: string }[]) =>
+      ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_ADD_ACCOUNT, email, projects),
     disableAccount: (accountId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_DISABLE_ACCOUNT, accountId),
     enableAccount: (accountId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_ENABLE_ACCOUNT, accountId),
     disableProject: (accountId: string, projectIndex: number) => ipcRenderer.invoke(
@@ -114,6 +123,18 @@ export function createGeminiAPI(): GeminiAPI {
     getKeysLocation: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION),
     getAllKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL),
     getAllKeysWithStatus: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS),
+    updateProject: (accountId: string, projectIndex: number, patch: { projectName?: string; notes?: string }) =>
+      ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_UPDATE_PROJECT, accountId, projectIndex, patch),
+    addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) =>
+      ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_ADD_PROJECT, accountId, project),
+    onGeminiKeysReloaded: (callback: () => void) => {
+      const wrapped = () => callback();
+      ipcRenderer.on(GEMINI_IPC_CHANNELS.KEYS_RELOADED, wrapped);
+      return () => ipcRenderer.removeListener(GEMINI_IPC_CHANNELS.KEYS_RELOADED, wrapped);
+    },
+    removeGeminiKeysReloadedListener: (_callback: () => void) => {
+      // noop - use the return value of onGeminiKeysReloaded instead
+    },
 
     // Model Catalog Management
     getModels: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_GET_ALL),

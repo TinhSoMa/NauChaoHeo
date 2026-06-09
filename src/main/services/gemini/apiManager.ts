@@ -3,6 +3,11 @@
  * Thuật toán "Quét Ngang" (Horizontal Sweep):
  * - Quét qua tất cả accounts trước khi chuyển sang project tiếp theo
  * - Mỗi account được nghỉ 13-14 giây giữa các request
+ * 
+ * Optimizations v2:
+ * - Lazy recovery: không autoRecoverAll/checkDailyReset trên hot path
+ * - availableFlat cache: pre-compute flat list, O(1) rotation lookup
+ * - Cache invalidation: tự động rebuild khi có mutation
  */
 
 import {
@@ -15,6 +20,7 @@ import {
   ProjectStatus,
 } from '../../../shared/types/gemini';
 import { getMergedConfig, saveStateFromConfig } from './apiConfig';
+import { GeminiErrorCode, isKeyErrorCode } from './geminiError';
 
 // Các trạng thái của project
 const STATUS_AVAILABLE: ProjectStatus = 'available';
@@ -23,6 +29,16 @@ const STATUS_EXHAUSTED: ProjectStatus = 'exhausted';
 const STATUS_ERROR: ProjectStatus = 'error';
 const STATUS_DISABLED: ProjectStatus = 'disabled';
 
+const CACHE_TTL_MS = 5_000; // 5s cache TTL
+const RECOVERY_INTERVAL_MS = 30_000; // 30s giữa các lần recovery
+
+interface FlatEntry {
+  project: Project;
+  account: Account;
+  accIdx: number;
+  projIdx: number;
+}
+
 /**
  * API Key Manager Class
  * Quản lý rotation và trạng thái của API keys
@@ -30,11 +46,19 @@ const STATUS_DISABLED: ProjectStatus = 'disabled';
 export class ApiKeyManager {
   private config: ApiConfig;
 
+  // availableFlat cache
+  private availableFlat: FlatEntry[] | null = null;
+  private cacheTimestamp = 0;
+  private flatIndex = 0;
+
+  // Lazy recovery timestamp
+  private lastRecoveryMs = 0;
+
   constructor() {
     console.log('[ApiManager] Khởi tạo API Key Manager...');
     this.config = this.loadConfig();
-    this.autoRecoverAll();
-    this.checkDailyReset();
+    // Không gọi autoRecoverAll + checkDailyReset ở constructor
+    // Chúng chạy lazy qua tryLazyRecovery()
     console.log('[ApiManager] Đã khởi tạo xong');
   }
 
@@ -99,6 +123,53 @@ export class ApiKeyManager {
       };
     }
     return this.config.rotationState;
+  }
+
+  /**
+   * Lazy recovery: chỉ chạy autoRecoverAll + checkDailyReset
+   * nếu lần cuối > RECOVERY_INTERVAL_MS trước
+   */
+  private tryLazyRecovery(): void {
+    const now = Date.now();
+    if (now - this.lastRecoveryMs < RECOVERY_INTERVAL_MS) return;
+    this.lastRecoveryMs = now;
+    this.autoRecoverAll();
+    this.checkDailyReset();
+  }
+
+  /**
+   * Build flat list các projects available để rotation O(1) lookup
+   */
+  private buildAvailableFlat(): FlatEntry[] {
+    const now = Date.now();
+    if (this.availableFlat && (now - this.cacheTimestamp) < CACHE_TTL_MS) {
+      return this.availableFlat;
+    }
+
+    const flat: FlatEntry[] = [];
+    const accounts = this.config.accounts;
+    for (let accIdx = 0; accIdx < accounts.length; accIdx++) {
+      const account = accounts[accIdx];
+      if (account.accountStatus !== 'active') continue;
+      for (let projIdx = 0; projIdx < account.projects.length; projIdx++) {
+        const project = account.projects[projIdx];
+        if (this.isProjectAvailable(project)) {
+          flat.push({ project, account, accIdx, projIdx });
+        }
+      }
+    }
+
+    this.availableFlat = flat;
+    this.cacheTimestamp = now;
+    return flat;
+  }
+
+  /**
+   * Invalidate availableFlat cache khi có mutation
+   */
+  private invalidateCache(): void {
+    this.availableFlat = null;
+    this.cacheTimestamp = 0;
   }
 
   /**
@@ -216,150 +287,73 @@ export class ApiKeyManager {
 
   /**
    * Lấy API key tiếp theo theo thuật toán "Quét Ngang"
-   * 
-   * Logic:
-   * 1. Lấy key tại (current_account_index, current_project_index)
-   * 2. Tăng current_account_index
-   * 3. Nếu đã hết accounts -> reset account_index, tăng project_index
-   * 4. Nếu đã hết projects -> reset project_index (quay lại vòng mới)
+   * Optimized: dùng availableFlat cache, O(n) worst-case thay vì O(n*m)
    */
   getNextApiKey(): { apiKey: string | null; keyInfo: KeyInfo | null } {
-    this.autoRecoverAll();
+    this.tryLazyRecovery();
 
-    const accounts = this.config.accounts;
-    if (!accounts || accounts.length === 0) {
+    const flat = this.buildAvailableFlat();
+    if (flat.length === 0) {
+      console.warn('[ApiManager] Không còn key available nào');
       return { apiKey: null, keyInfo: null };
     }
 
-    const numAccounts = accounts.length;
-    // Tính số projects thực tế (không cố định 5)
-    const numProjects = Math.max(...accounts.map(acc => acc.projects.length), 1);
+    const startIdx = this.flatIndex % flat.length;
+    for (let i = 0; i < flat.length; i++) {
+      const idx = (startIdx + i) % flat.length;
+      const entry = flat[idx];
 
-    // Lấy state hiện tại
-    const state = this.getRotationState();
-    let currentAccIdx = state.currentAccountIndex || 0;
-    let currentProjIdx = state.currentProjectIndex || 0;
+      if (this.isProjectAvailable(entry.project)) {
+        const { project, account, accIdx, projIdx } = entry;
 
-    console.log(`[ApiManager] Bắt đầu tìm key từ acc_${currentAccIdx + 1}/project_${currentProjIdx + 1}`);
+        const keyInfo: KeyInfo = {
+          accountId: account.accountId,
+          accountEmail: account.email || '',
+          projectName: project.projectName,
+          apiKey: project.apiKey,
+          name: `${account.accountId}/${project.projectName}`,
+          accountIndex: accIdx,
+          projectIndex: projIdx,
+        };
 
-    // Thử tìm key available, quét qua tất cả accounts/projects
-    const totalAttempts = numAccounts * numProjects;
-    let attempts = 0;
+        // Cập nhật flatIndex cho lần gọi tiếp theo
+        this.flatIndex = (idx + 1) % flat.length;
 
-    while (attempts < totalAttempts) {
-      // Wrap around indices
-      const accIdx = currentAccIdx % numAccounts;
-      const projIdx = currentProjIdx % numProjects;
+        // Cập nhật rotation state
+        const state = this.getRotationState();
+        state.currentAccountIndex = accIdx;
+        state.currentProjectIndex = projIdx;
+        state.totalRequestsSent = (state.totalRequestsSent || 0) + 1;
+        this.saveConfig();
 
-      const account = accounts[accIdx];
-      const projects = account.projects;
-
-      // Kiểm tra account active và có project
-      if (account.accountStatus === 'active' && projIdx < projects.length) {
-        const project = projects[projIdx];
-
-        if (this.isProjectAvailable(project)) {
-          // Tìm thấy key available
-          const apiKey = project.apiKey;
-
-          const keyInfo: KeyInfo = {
-            accountId: account.accountId,
-            accountEmail: account.email || '',
-            projectName: project.projectName,
-            apiKey,
-            name: `${account.accountId}/${project.projectName}`,
-            accountIndex: accIdx,
-            projectIndex: projIdx,
-          };
-
-          // Cập nhật state cho lần request tiếp theo (QUAN TRỌNG: tăng trước khi lưu)
-          let nextAccIdx = accIdx + 1;
-          let nextProjIdx = projIdx;
-
-          // Nếu đã hết accounts -> chuyển sang project tiếp theo
-          if (nextAccIdx >= numAccounts) {
-            nextAccIdx = 0;
-            nextProjIdx = (projIdx + 1) % numProjects;
-            state.rotationRound = (state.rotationRound || 1) + 1;
-            console.log(`[ApiManager] Đã hết accounts, chuyển sang project ${nextProjIdx + 1}`);
-          }
-
-          state.currentAccountIndex = nextAccIdx;
-          state.currentProjectIndex = nextProjIdx;
-          state.totalRequestsSent = (state.totalRequestsSent || 0) + 1;
-
-          this.saveConfig();
-
-          console.log(`[ApiManager] Đã lấy key: ${keyInfo.name}`);
-          return { apiKey, keyInfo };
-        }
+        return { apiKey: project.apiKey, keyInfo };
       }
-
-      // Key không available, thử vị trí tiếp theo theo thuật toán quét ngang
-      currentAccIdx++;
-      if (currentAccIdx >= numAccounts) {
-        currentAccIdx = 0;
-        currentProjIdx++;
-        console.log(`[ApiManager] Đã hết accounts cho project ${currentProjIdx}, chuyển sang project ${currentProjIdx + 1}`);
-      }
-
-      attempts++;
     }
 
-    // Cập nhật state để lần gọi tiếp theo bắt đầu đúng vị trí
-    state.currentAccountIndex = currentAccIdx % numAccounts;
-    state.currentProjectIndex = currentProjIdx % numProjects;
-    this.saveConfig();
-
-    // Không tìm thấy key available nào
+    // Hết available: không thay đổi state, batch exhausted
     console.warn('[ApiManager] Không còn key available nào');
     return { apiKey: null, keyInfo: null };
   }
 
   /**
-   * Lấy tất cả API keys đang available theo thứ tự "Quét Ngang"
+   * Lấy tất cả API keys đang available — dùng availableFlat cache
    */
   getAllAvailableKeys(): KeyInfo[] {
-    this.autoRecoverAll();
+    this.tryLazyRecovery();
 
-    const maxProjects = 5;
-    const keysByProject: Map<number, KeyInfo[]> = new Map();
+    const flat = this.buildAvailableFlat();
+    const keys: KeyInfo[] = flat.map((entry) => ({
+      accountId: entry.account.accountId,
+      accountEmail: entry.account.email || '',
+      projectName: entry.project.projectName,
+      apiKey: entry.project.apiKey,
+      name: `${entry.account.accountId}/${entry.project.projectName}`,
+      accountIndex: entry.accIdx,
+      projectIndex: entry.projIdx,
+    }));
 
-    // Khởi tạo map
-    for (let i = 0; i < maxProjects; i++) {
-      keysByProject.set(i, []);
-    }
-
-    for (const account of this.config.accounts) {
-      if (account.accountStatus !== 'active') {
-        continue;
-      }
-
-      for (let projIdx = 0; projIdx < account.projects.length; projIdx++) {
-        const project = account.projects[projIdx];
-        if (this.isProjectAvailable(project)) {
-          const keyInfo: KeyInfo = {
-            accountId: account.accountId,
-            accountEmail: account.email || '',
-            projectName: project.projectName,
-            apiKey: project.apiKey,
-            name: `${account.accountId}/${project.projectName}`,
-            accountIndex: this.config.accounts.indexOf(account),
-            projectIndex: projIdx,
-          };
-          keysByProject.get(projIdx)?.push(keyInfo);
-        }
-      }
-    }
-
-    // Ghép lại theo thứ tự horizontal
-    const available: KeyInfo[] = [];
-    for (let projIdx = 0; projIdx < maxProjects; projIdx++) {
-      available.push(...(keysByProject.get(projIdx) || []));
-    }
-
-    console.log(`[ApiManager] Có ${available.length} key(s) available`);
-    return available;
+    console.log(`[ApiManager] Có ${keys.length} key(s) available`);
+    return keys;
   }
 
   /**
@@ -404,7 +398,6 @@ export class ApiKeyManager {
       project.limitTracking.minuteRequestCount++;
 
       this.saveConfig();
-      console.log(`[ApiManager] Ghi nhận thành công cho key: ${apiKey.substring(0, 10)}...`);
     }
   }
 
@@ -423,7 +416,7 @@ export class ApiKeyManager {
       project.limitTracking.rateLimitResetAt = resetTime.toISOString();
       project.limitTracking.minuteRequestCount = 0;
 
-      console.warn(`[ApiManager] API key bị rate limit, sẽ reset lúc ${resetTime.toISOString()}`);
+      this.invalidateCache();
       this.saveConfig();
     }
   }
@@ -443,7 +436,7 @@ export class ApiKeyManager {
       project.stats.lastErrorMessage = `Daily quota exhausted at ${new Date().toISOString()}`;
       project.limitTracking.dailyLimitResetAt = tomorrow.toISOString();
 
-      console.warn(`[ApiManager] API key hết quota ngày, sẽ reset lúc ${tomorrow.toISOString()}`);
+      this.invalidateCache();
       this.saveConfig();
     }
   }
@@ -451,18 +444,19 @@ export class ApiKeyManager {
   /**
    * Ghi nhận lỗi khác (không phải rate limit)
    */
-  recordError(apiKey: string, errorMessage: string): void {
+  recordError(apiKey: string, errorMessage: string, errorCode?: GeminiErrorCode): void {
     const project = this.findProjectByKey(apiKey);
     if (project) {
       project.stats.errorCount++;
-      project.stats.lastErrorMessage = errorMessage;
+      project.stats.lastErrorMessage = errorCode ? `[${errorCode}] ${errorMessage}` : errorMessage;
 
-      // Nếu lỗi nghiêm trọng (key invalid), đánh dấu error
-      if (errorMessage.toLowerCase().includes('invalid') || errorMessage.toLowerCase().includes('api key')) {
+      if (errorCode && isKeyErrorCode(errorCode)) {
+        project.status = STATUS_ERROR;
+      } else if (!errorCode && (errorMessage.toLowerCase().includes('invalid') || errorMessage.toLowerCase().includes('api key'))) {
         project.status = STATUS_ERROR;
       }
 
-      console.error(`[ApiManager] Ghi nhận lỗi cho key: ${errorMessage}`);
+      this.invalidateCache();
       this.saveConfig();
     }
   }
@@ -547,8 +541,8 @@ export class ApiKeyManager {
   reload(): void {
     console.log('[ApiManager] Đang reload config...');
     this.config = this.loadConfig();
-    this.autoRecoverAll();
-    this.checkDailyReset();
+    this.lastRecoveryMs = 0; // buộc recovery ở lần gọi tiếp theo
+    this.invalidateCache();
     console.log('[ApiManager] Đã reload xong');
   }
 
@@ -573,6 +567,7 @@ export class ApiKeyManager {
     for (const project of account.projects) {
       project.status = STATUS_DISABLED;
     }
+    this.invalidateCache();
     this.saveConfig();
     return true;
   }
@@ -588,6 +583,7 @@ export class ApiKeyManager {
       project.limitTracking.rateLimitResetAt = null;
       project.limitTracking.dailyLimitResetAt = null;
     }
+    this.invalidateCache();
     this.saveConfig();
     return true;
   }
@@ -602,6 +598,7 @@ export class ApiKeyManager {
       return false;
     }
     project.status = STATUS_DISABLED;
+    this.invalidateCache();
     this.saveConfig();
     return true;
   }
@@ -615,10 +612,10 @@ export class ApiKeyManager {
     if (!project) {
       return false;
     }
-    // Theo yêu cầu UI: bật lại project luôn về available.
     project.status = STATUS_AVAILABLE;
     project.limitTracking.rateLimitResetAt = null;
     project.limitTracking.dailyLimitResetAt = null;
+    this.invalidateCache();
     this.saveConfig();
     return true;
   }

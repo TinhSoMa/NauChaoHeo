@@ -27,7 +27,7 @@ import { OutputSettings } from './OutputSettings';
 import { TranslationSettings } from './TranslationSettings';
 import { TtsSettings } from './TtsSettings';
 import { AppSettings } from './AppSettings';
-import { ApiKeysSettings } from './ApiKeysSettings';
+import { ApiKeysManager } from './ApiKeysManager';
 import { GeminiChatSettings } from './GeminiChatSettings';
 import { GrokUiSettings } from './GrokUiSettings';
 import { ProxySettings } from './ProxySettings';
@@ -139,7 +139,7 @@ export function Settings() {
       {activeTab === 'prompts' && <PromptSettings onBack={handleBack} />}
       {activeTab === 'tts' && <TtsSettings onBack={handleBack} />}
       {activeTab === 'app' && <AppSettings onBack={handleBack} />}
-      {activeTab === 'apikeys' && <ApiKeysSettings onBack={handleBack} />}
+      {activeTab === 'apikeys' && <ApiKeysManager onBack={handleBack} />}
       {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
       {activeTab === 'grokUi' && <GrokUiSettings onBack={handleBack} />}
       {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}

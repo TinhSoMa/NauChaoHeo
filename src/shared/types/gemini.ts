@@ -244,17 +244,23 @@ export interface GeminiResponse {
   success: boolean;
   data?: string;
   error?: string;
+  errorCode?: string;
+  userMessage?: string;
 }
 
 // Embedded API key format (hardcoded trong code)
 export interface EmbeddedAccount {
   email: string;
+  accountId?: string;
+  accountStatus?: string;
   projects: EmbeddedProject[];
 }
 
 export interface EmbeddedProject {
   projectName: string;
   apiKey: string;
+  notes?: string;
+  id?: string;
 }
 
 // IPC Channels cho Gemini
@@ -276,6 +282,7 @@ export const GEMINI_IPC_CHANNELS = {
   
   // Key Storage Management
   KEYS_IMPORT: 'gemini:keys:import',
+  KEYS_IMPORT_TEXT: 'gemini:keys:importText',
   KEYS_EXPORT: 'gemini:keys:export',
   KEYS_ADD_ACCOUNT: 'gemini:keys:addAccount',
   KEYS_REMOVE_ACCOUNT: 'gemini:keys:removeAccount',
@@ -288,6 +295,9 @@ export const GEMINI_IPC_CHANNELS = {
   KEYS_GET_LOCATION: 'gemini:keys:getLocation',
   KEYS_GET_ALL: 'gemini:keys:getAll',
   KEYS_GET_ALL_WITH_STATUS: 'gemini:keys:getAllWithStatus',
+  KEYS_UPDATE_PROJECT: 'gemini:keys:updateProject',
+  KEYS_ADD_PROJECT: 'gemini:keys:addProject',
+  KEYS_RELOADED: 'gemini:keys:reloaded',
 
   // Model Catalog Management
   MODELS_GET_ALL: 'gemini:models:getAll',

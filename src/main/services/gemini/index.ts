@@ -6,6 +6,7 @@
 export { getApiManager, ApiKeyManager } from './apiManager';
 export * from './apiConfig';
 export * from './apiKeys';
+export { importFromText } from './sqliteStorage';
 
 // Session & Configuration Management (NEW)
 export { getSessionContextManager, SessionContextManager, type SessionContext } from './sessionContextManager';

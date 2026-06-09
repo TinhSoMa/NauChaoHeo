@@ -6,6 +6,17 @@ import { getProxyManager } from './proxy/proxyManager';
  * Wrapper cho fetch/axios để tự động sử dụng proxy rotation
  */
 
+export class GeminiHttpError extends Error {
+  constructor(
+    public httpStatus: number,
+    public errorStatus: string,
+    public errorMessage: string,
+  ) {
+    super(`HTTP ${httpStatus}: ${errorStatus} — ${errorMessage}`);
+    this.name = 'GeminiHttpError';
+  }
+}
+
 interface RequestOptions {
   method?: string;
   headers?: Record<string, string>;
@@ -231,7 +242,16 @@ async function makeRequest(
     const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      let errorStatus = '';
+      let errorMessage = '';
+      try {
+        const errorBody = await response.json();
+        errorStatus = errorBody?.error?.status || '';
+        errorMessage = errorBody?.error?.message || response.statusText;
+      } catch {
+        errorMessage = response.statusText;
+      }
+      throw new GeminiHttpError(response.status, errorStatus, errorMessage);
     }
 
     // Parse response

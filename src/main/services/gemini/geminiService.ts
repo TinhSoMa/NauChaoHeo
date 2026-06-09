@@ -4,6 +4,8 @@
  */
 
 import { getApiManager } from './apiManager';
+import { classifyGeminiError, GeminiErrorResult, GeminiErrorCode } from './geminiError';
+import { GeminiHttpError } from '../apiClient';
 import { 
   GeminiResponse, 
   KeyInfo,
@@ -33,26 +35,6 @@ function resolveModelForRuntime(model?: string | null): string {
     console.warn('[GeminiService] Resolve model fallback:', fallback, error);
     return fallback;
   }
-}
-
-function isGeminiServerOverloadError(error?: string): boolean {
-  const text = (error || '').toLowerCase();
-  if (!text) {
-    return false;
-  }
-
-  const hasHighDemand = text.includes('high demand')
-    || text.includes('currently experiencing high demand')
-    || text.includes('service unavailable')
-    || text.includes('temporarily unavailable');
-
-  if (hasHighDemand) {
-    return true;
-  }
-
-  const has503 = text.includes('503') || text.includes('http 503') || text.includes('api error 503');
-
-  return has503;
 }
 
 function getStopErrorMessage(control?: GeminiCallControlOptions): string {
@@ -181,10 +163,13 @@ export async function callGeminiApi(
       });
 
       if (!result.success) {
-        if (result.error?.includes('429')) {
-          return { success: false, error: 'RATE_LIMIT' };
-        }
-        return { success: false, error: result.error };
+        const classified = classifyGeminiError(result.statusCode || 0, '', result.error || '');
+        return {
+          success: false,
+          error: classified.code === GeminiErrorCode.UNKNOWN ? result.error : classified.code,
+          errorCode: classified.code,
+          userMessage: classified.userMessage,
+        };
       }
 
       // Parse response
@@ -212,24 +197,23 @@ export async function callGeminiApi(
       });
 
       // Xử lý lỗi HTTP
-      if (response.status === 429) {
-        return { success: false, error: 'RATE_LIMIT' };
-      }
-
-      if (response.status === 404) {
-        return { success: false, error: `Model ${resolvedModel} không tồn tại` };
-      }
-
       if (!response.ok) {
+        let errorStatus = '';
+        let errorMessage = response.statusText;
         try {
-          const errorDetail = await response.json();
-          const errorMsg = errorDetail?.error?.message || 'Lỗi không xác định';
-          console.error(`[GeminiService] API Error ${response.status}: ${errorMsg}`);
-          return { success: false, error: `API Error: ${errorMsg}` };
+          const errorBody = await response.json();
+          errorStatus = errorBody?.error?.status || '';
+          errorMessage = errorBody?.error?.message || response.statusText;
         } catch {
-          console.error(`[GeminiService] API Error ${response.status}: ${response.statusText}`);
-          return { success: false, error: `HTTP ${response.status}` };
+          // use defaults
         }
+        const classified = classifyGeminiError(response.status, errorStatus, errorMessage);
+        return {
+          success: false,
+          error: classified.code === GeminiErrorCode.UNKNOWN ? `HTTP ${response.status}` : classified.code,
+          errorCode: classified.code,
+          userMessage: classified.userMessage,
+        };
       }
 
       const result = await response.json();
@@ -334,21 +318,26 @@ export async function callGeminiWithRotation(
       return { ...response, keyInfo };
     }
 
-    if (response.error === 'RATE_LIMIT') {
+    const errCode = (response.errorCode || response.error || '') as string;
+    const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT' || response.error === 'RATE_LIMIT_ALL_KEYS';
+    const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
+    const isExhausted = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED && (
+      (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota'))
+    );
+
+    if (isRateLimitCode && !isExhausted) {
       console.warn(`[GeminiService] Rate limit với ${keyInfo.name}, thử key tiếp theo...`);
       manager.recordRateLimitError(apiKey);
       lastError = 'RATE_LIMIT_ALL_KEYS';
       rateLimitedCount++;
 
-      // Nghỉ ngắn trước khi thử key tiếp theo
       if (await waitWithControl(300, control)) {
         return { success: false, error: stopErrorMessage };
       }
       continue;
     }
 
-    if (isGeminiServerOverloadError(response.error)) {
-      // Lỗi 503 high-demand là lỗi hạ tầng Gemini, không phải lỗi key.
+    if (isServerOverload) {
       console.warn(`[GeminiService] Server Gemini quá tải với ${keyInfo.name}, không đánh dấu key lỗi.`);
       lastError = response.error || 'SERVER_OVERLOADED';
       if (await waitWithControl(800, control)) {
@@ -357,15 +346,16 @@ export async function callGeminiWithRotation(
       continue;
     }
 
-    // Ghi nhận lỗi khác
-    console.error(`[GeminiService] Lỗi với ${keyInfo.name}: ${response.error}`);
-
-    if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+    if (isExhausted || response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+      console.warn(`[GeminiService] Hết quota với ${keyInfo.name}`);
       manager.recordQuotaExhausted(apiKey);
-    } else {
-      manager.recordError(apiKey, response.error || 'Unknown error');
+      lastError = response.error || 'QUOTA_EXHAUSTED';
+      continue;
     }
 
+    // Ghi nhận lỗi khác
+    console.error(`[GeminiService] Lỗi với ${keyInfo.name}: ${response.error}`);
+    manager.recordError(apiKey, response.error || 'Unknown error', response.errorCode as GeminiErrorCode);
     lastError = response.error || 'Unknown error';
   }
 
@@ -418,15 +408,19 @@ export async function callGeminiWithAssignedKey(
   }
 
   // Key được chỉ định bị lỗi — ghi nhận và fallback sang rotation
-  if (response.error === 'RATE_LIMIT') {
+  const errCode = (response.errorCode || response.error || '') as string;
+  const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT';
+  const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
+
+  if (isRateLimitCode) {
     console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation`);
     manager.recordRateLimitError(assignedKey.apiKey);
-  } else if (isGeminiServerOverloadError(response.error)) {
+  } else if (isServerOverload) {
     console.warn(`[GeminiService] [assigned] Gemini server quá tải — không đánh dấu key lỗi`);
   } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
     manager.recordQuotaExhausted(assignedKey.apiKey);
   } else {
-    manager.recordError(assignedKey.apiKey, response.error || 'Unknown');
+    manager.recordError(assignedKey.apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
   }
 
   console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name}`);

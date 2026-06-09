@@ -105,7 +105,9 @@ interface GeminiAPI {
 
   // Key Storage Management
   importKeys: (jsonString: string) => Promise<IpcApiResponse<{ count: number }>>;
+  importKeysFromText: (text: string) => Promise<IpcApiResponse<{ count: number }>>;
   exportKeys: () => Promise<IpcApiResponse<string>>;
+  addAccount: (email: string, projects: { projectName: string; apiKey: string; notes?: string }[]) => Promise<IpcApiResponse<any>>;
   disableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
   enableAccount: (accountId: string) => Promise<IpcApiResponse<boolean>>;
   disableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
@@ -113,7 +115,12 @@ interface GeminiAPI {
   hasKeys: () => Promise<IpcApiResponse<boolean>>;
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>;
-  getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
+  getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>;
+  updateProject: (accountId: string, projectIndex: number, patch: { projectName?: string; notes?: string }) => Promise<IpcApiResponse<any>>;
+  addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) => Promise<IpcApiResponse<any>>;
+  removeProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;
+  onGeminiKeysReloaded: (callback: () => void) => void;
+  removeGeminiKeysReloadedListener: (callback: () => void) => void;
 
   // Model Catalog Management
   getModels: () => Promise<IpcApiResponse<GeminiCatalogModel[]>>;
