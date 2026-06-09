@@ -37,6 +37,7 @@ import {
 } from './hardsub/mediaProbe';
 import { buildVideoFilter } from './hardsub/filterBuilder';
 import { buildPortraitVideoFilter } from './hardsub/portraitFilterBuilder';
+import { resolveVideoCrop, ResolvedVideoCrop } from './hardsub/cropFilterBuilder';
 import { buildSpeedAdjustedAudioFile, buildAtempoFilter } from './hardsub/audioSpeedAdjuster';
 import { buildHardsubAudioMix } from './hardsub/audioMixBuilder';
 import {
@@ -68,6 +69,20 @@ let activeAudioPreviewProcess: ChildProcessWithoutNullStreams | null = null;
 let audioPreviewStopRequested = false;
 let activePreviewFrameProcess: ChildProcessWithoutNullStreams | null = null;
 let activePreviewFrameToken: string | null = null;
+
+async function resolveCropForVideoPath(
+  crop: RenderVideoOptions['crop'] | RenderVideoPreviewFrameOptions['crop'],
+  videoPath?: string
+): Promise<ResolvedVideoCrop | null> {
+  if (!crop?.enabled || !videoPath) {
+    return null;
+  }
+  const meta = await getVideoMetadata(videoPath);
+  if (!meta.success || !meta.metadata) {
+    return null;
+  }
+  return resolveVideoCrop(crop, meta.metadata.width, meta.metadata.actualHeight || meta.metadata.height);
+}
 let cancelAllPreviewRequests = false;
 const canceledPreviewTokens = new Set<string>();
 
@@ -1034,6 +1049,7 @@ export async function renderHardsubVideo(
     step7AudioSpeedInput: audioSpeedInput,
   };
 
+  const resolvedCrop = await resolveCropForVideoPath(options.crop, renderOptions.videoPath);
   const prep = await prepareSubtitleAndDuration(renderOptions);
   const renderSubtitle = options.renderSubtitle !== false;
   const renderMark = options.renderMark !== false;
@@ -1042,7 +1058,13 @@ export async function renderHardsubVideo(
   const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
   const videoFilter = buildVideoFilter({
     inputLabel: '[0:v]',
-    needsScale: prep.needsScale,
+    crop: resolvedCrop ? options.crop : undefined,
+    resolvedCrop,
+    sourceWidth: resolvedCrop?.sourceWidth,
+    sourceHeight: resolvedCrop?.sourceHeight,
+    needsScale: resolvedCrop
+      ? resolvedCrop.width !== prep.renderWidth || resolvedCrop.height !== prep.renderHeight
+      : prep.needsScale,
     renderWidth: prep.renderWidth,
     renderHeight: prep.renderHeight,
     renderMark,
@@ -1197,7 +1219,7 @@ export async function renderHardsubVideo(
   let inlineThumbnail: Awaited<ReturnType<typeof injectInlineThumbnailAtEnd>>;
   try {
     inlineThumbnail = await injectInlineThumbnailAtEnd({
-      options: renderOptions,
+      options: effectiveRenderOptions,
       fps,
       filterComplexParts,
       mainVideoLabel: '[v_out]',
@@ -1291,6 +1313,15 @@ export async function renderHardsubVideo(
     step7AudioSpeed,
     audioEffectiveSpeed,
     videoMarkerSec,
+    crop: resolvedCrop
+      ? {
+          enabled: true,
+          ratio: options.crop?.ratio,
+          sourceRect: { x: resolvedCrop.x, y: resolvedCrop.y, width: resolvedCrop.width, height: resolvedCrop.height },
+          outputDimensions: { width: prep.renderWidth, height: prep.renderHeight },
+          filter: resolvedCrop.filter,
+        }
+      : null,
     thumbnail: {
       mode: 'landscape_hardsub',
       cropStrategy: 'none',
@@ -1463,11 +1494,13 @@ export async function renderHardsubPortraitVideo(
     return { success: false, error: adjustedAudio.error || 'Không thể tạo audio speed-adjusted' };
   }
 
+  const resolvedCrop = await resolveCropForVideoPath(options.crop, options.videoPath);
   const portraitCanvas = resolvePortraitCanvasByPreset(options.renderResolution);
   const renderOptions: RenderVideoOptions = {
     ...options,
     width: portraitCanvas.width,
     height: portraitCanvas.height,
+    renderResolution: options.renderResolution,
     audioPath: adjustedAudio.audioPath,
     audioSpeed: 1.0,
     step7AudioSpeedInput: audioSpeedInput,
@@ -1578,12 +1611,16 @@ export async function renderHardsubPortraitVideo(
   const outputAspect = portraitCanvas.width / portraitCanvas.height;
   const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
   const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
-    aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
+    resolvedCrop || aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
   const foregroundCropPercent = normalizePortraitForegroundCropPercent(
-    options.portraitForegroundCropPercent
+    resolvedCrop ? 0 : options.portraitForegroundCropPercent
   );
   const portraitVideo = buildPortraitVideoFilter({
     inputLabel: '[0:v]',
+    crop: resolvedCrop ? options.crop : undefined,
+    resolvedCrop,
+    sourceWidth: resolvedCrop?.sourceWidth || sourceWidth,
+    sourceHeight: resolvedCrop?.sourceHeight || sourceHeight,
     outputWidth: portraitCanvas.width,
     outputHeight: portraitCanvas.height,
     renderSubtitle,
@@ -1818,6 +1855,15 @@ export async function renderHardsubPortraitVideo(
     fgFitMode: 'scale-by-aspect-keep-ratio-center',
     layoutStrategy,
     foregroundCropPercent,
+    crop: resolvedCrop
+      ? {
+          enabled: true,
+          ratio: options.crop?.ratio,
+          sourceRect: { x: resolvedCrop.x, y: resolvedCrop.y, width: resolvedCrop.width, height: resolvedCrop.height },
+          outputDimensions: { width: portraitCanvas.width, height: portraitCanvas.height },
+          filter: resolvedCrop.filter,
+        }
+      : null,
     aspect: {
       source: sourceAspect,
       output: outputAspect,
@@ -1825,7 +1871,7 @@ export async function renderHardsubPortraitVideo(
     },
     ratioNormalizeApplied: true,
     targetSar: '1:1',
-    targetDar: '9:16',
+    targetDar: `${portraitCanvas.width}:${portraitCanvas.height}`,
     thumbnail: {
       mode: 'portrait_9_16',
       cropStrategy: 'center_3_4',
@@ -2420,6 +2466,9 @@ export async function renderVideoPreviewFrame(
   const safePreviewTimeSec = Math.max(0, Math.min(seekUpperBound, effectiveRequestedTime));
   const previewEntries = selectPreviewEntriesAtTime(normalizedEntries, safePreviewTimeSec);
   const previewHwaccelArgs = resolvePreviewHwaccelArgs(options.hardwareAcceleration, options.renderMode);
+  const previewResolvedCrop = options.renderMode === 'black_bg'
+    ? null
+    : resolveVideoCrop(options.crop, sourceWidth, sourceHeight);
 
   let tempDirPath = '';
   let tempSrtPath = '';
@@ -2485,6 +2534,7 @@ export async function renderVideoPreviewFrame(
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
+      crop: options.crop,
       thumbnailText: options.thumbnailText,
       thumbnailTextSecondary: options.thumbnailTextSecondary,
       thumbnailFontName: options.thumbnailFontName,
@@ -2555,10 +2605,14 @@ export async function renderVideoPreviewFrame(
       ];
       filterComplexParts.push(`[0:v]${subtitleFilter}${finalVideoLabel}`);
     } else if (renderMode === 'hardsub_portrait_9_16') {
+      const resolvedCrop = previewResolvedCrop;
       const portraitCanvas = resolvePortraitCanvasByPreset(options.renderResolution);
       const prep = await prepareSubtitleAndDurationPortrait({
         ...renderOptionsBase,
         renderMode: 'hardsub_portrait_9_16',
+        width: portraitCanvas.width,
+        height: portraitCanvas.height,
+        renderResolution: options.renderResolution,
         videoPath: options.videoPath,
       }, portraitCanvas);
       prepTempAssPath = prep.tempAssPath;
@@ -2576,12 +2630,16 @@ export async function renderVideoPreviewFrame(
       const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
       const nearPortraitAspectThreshold = 0.05;
       const layoutStrategy: 'blur_composite' | 'direct_fit_no_blur' =
-        aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
+        resolvedCrop || aspectDiffRatio <= nearPortraitAspectThreshold ? 'direct_fit_no_blur' : 'blur_composite';
       const foregroundCropPercent = normalizePortraitForegroundCropPercent(
-        options.portraitForegroundCropPercent
+        resolvedCrop ? 0 : options.portraitForegroundCropPercent
       );
       const portraitVideo = buildPortraitVideoFilter({
         inputLabel: '[0:v]',
+        crop: resolvedCrop ? options.crop : undefined,
+        resolvedCrop,
+        sourceWidth: resolvedCrop?.sourceWidth || sourceWidth,
+        sourceHeight: resolvedCrop?.sourceHeight || sourceHeight,
         outputWidth: portraitCanvas.width,
         outputHeight: portraitCanvas.height,
         renderSubtitle: options.renderSubtitle,
@@ -2689,9 +2747,13 @@ export async function renderVideoPreviewFrame(
         persistentCache: true,
       });
     } else {
+      const resolvedCrop = previewResolvedCrop;
       const prep = await prepareSubtitleAndDuration({
         ...renderOptionsBase,
         renderMode: 'hardsub',
+        width: renderOptionsBase.width,
+        height: renderOptionsBase.height,
+        renderResolution: renderOptionsBase.renderResolution,
         videoPath: options.videoPath,
       });
       prepTempAssPath = prep.tempAssPath;
@@ -2700,7 +2762,13 @@ export async function renderVideoPreviewFrame(
       const subtitleFilter = options.renderSubtitle === false ? 'null' : getSubtitleFilter(prep.tempAssPath);
       const videoFilter = buildVideoFilter({
         inputLabel: '[0:v]',
-        needsScale: prep.needsScale,
+        crop: resolvedCrop ? options.crop : undefined,
+        resolvedCrop,
+        sourceWidth: resolvedCrop?.sourceWidth,
+        sourceHeight: resolvedCrop?.sourceHeight,
+        needsScale: resolvedCrop
+          ? resolvedCrop.width !== prep.renderWidth || resolvedCrop.height !== prep.renderHeight
+          : prep.needsScale,
         renderWidth: prep.renderWidth,
         renderHeight: prep.renderHeight,
         renderMark: options.renderMark,
@@ -2823,6 +2891,19 @@ export async function renderVideoPreviewFrame(
           featherStrategy,
           retryCount,
           featherRetryCount,
+          videoCrop: previewResolvedCrop
+            ? {
+                x: previewResolvedCrop.x,
+                y: previewResolvedCrop.y,
+                width: previewResolvedCrop.width,
+                height: previewResolvedCrop.height,
+                sourceWidth: previewResolvedCrop.sourceWidth,
+                sourceHeight: previewResolvedCrop.sourceHeight,
+                filter: previewResolvedCrop.filter,
+              }
+            : null,
+          renderSize: { width: outputWidth, height: outputHeight },
+          coverRect: options.coverQuad || null,
           args,
           filterComplex: filterComplexParts.join(';'),
           stderr,
@@ -2885,7 +2966,9 @@ export async function renderVideoPreviewFrame(
         }
         resolve({
           success: false,
-          error: summarizedError,
+          error: previewResolvedCrop
+            ? `Invalid crop/mask rect after crop. ${summarizedError}`
+            : summarizedError,
         });
       });
 

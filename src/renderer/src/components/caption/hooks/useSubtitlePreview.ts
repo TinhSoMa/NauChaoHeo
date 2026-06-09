@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ASSStyleConfig, CoverQuad, CoverQuadPoint, RenderVideoOptions, SubtitleEntry } from '@shared/types/caption';
+import { ASSStyleConfig, CoverQuad, CoverQuadPoint, RenderVideoOptions, SubtitleEntry, VideoCropRatio, VideoCropSettings } from '@shared/types/caption';
 import { resolveLandscapeOutputSize } from '@shared/utils/renderResolution';
 import {
   clampNormalizedSubtitlePosition,
@@ -29,7 +29,7 @@ interface SubtitlePreviewState {
   error: string | null;
 }
 
-export type PreviewMode = 'subtitle' | 'blackout' | 'logo' | 'text_primary' | 'text_secondary';
+export type PreviewMode = 'subtitle' | 'blackout' | 'logo' | 'text_primary' | 'text_secondary' | 'crop';
 type PreviewRenderMode = RenderVideoOptions['renderMode'];
 type PreviewRenderResolution = RenderVideoOptions['renderResolution'];
 
@@ -53,6 +53,7 @@ export interface UseSubtitlePreviewOptions {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;  // user-set scale multiplier (1.0 = native size)
+  crop?: VideoCropSettings;
   portraitForegroundCropPercent?: number; // crop ngang tổng (%) cho mode 9:16
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
@@ -83,6 +84,7 @@ export interface UseSubtitlePreviewOptions {
   onCoverQuadChange?: (quad: CoverQuad) => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  onCropChange?: (crop: VideoCropSettings) => void;
   onHardsubTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
   onHardsubTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
@@ -311,6 +313,7 @@ interface CanvasRect {
 }
 
 type CoverDragEdge = 'left' | 'right' | 'top' | 'bottom';
+type CropDragHandle = 'move' | 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
 const MIN_COVER_RECT_SIZE = 0.02;
 const MIN_PREVIEW_ZOOM = 1;
@@ -459,6 +462,73 @@ function quadToRect(quad: CoverQuad): CoverRect {
   };
 }
 
+const MIN_CROP_PX = 64;
+const DEFAULT_CROP_SETTINGS: VideoCropSettings = {
+  enabled: false,
+  mode: 'free',
+  ratio: 'free',
+  rect: { x: 0, y: 0, width: 1920, height: 1080 },
+};
+
+function ratioToNumber(ratio: VideoCropRatio): number | null {
+  if (ratio === '16:9') return 16 / 9;
+  if (ratio === '9:16') return 9 / 16;
+  if (ratio === '1:1') return 1;
+  if (ratio === '21:9') return 21 / 9;
+  if (ratio === '2.39:1') return 2.39;
+  return null;
+}
+
+function normalizeCropSettings(value: VideoCropSettings | undefined, sourceW: number, sourceH: number): VideoCropSettings {
+  const safeW = Math.max(MIN_CROP_PX, Math.round(sourceW || 1920));
+  const safeH = Math.max(MIN_CROP_PX, Math.round(sourceH || 1080));
+  const source = value || DEFAULT_CROP_SETTINGS;
+  const width = clampNumber(Math.round(source.rect?.width ?? safeW), Math.min(MIN_CROP_PX, safeW), safeW);
+  const height = clampNumber(Math.round(source.rect?.height ?? safeH), Math.min(MIN_CROP_PX, safeH), safeH);
+  const x = clampNumber(Math.round(source.rect?.x ?? 0), 0, Math.max(0, safeW - width));
+  const y = clampNumber(Math.round(source.rect?.y ?? 0), 0, Math.max(0, safeH - height));
+  const ratio = source.ratio || 'free';
+  const mode = source.mode === 'ratio' && ratio !== 'free' ? 'ratio' : 'free';
+  return {
+    enabled: Boolean(source.enabled),
+    mode,
+    ratio: mode === 'ratio' ? ratio : 'free',
+    rect: { x, y, width, height },
+  };
+}
+
+function cropToNormalizedRect(crop: VideoCropSettings, sourceW: number, sourceH: number): CoverRect {
+  const safeW = Math.max(1, sourceW);
+  const safeH = Math.max(1, sourceH);
+  return {
+    left: clamp01(crop.rect.x / safeW),
+    top: clamp01(crop.rect.y / safeH),
+    right: clamp01((crop.rect.x + crop.rect.width) / safeW),
+    bottom: clamp01((crop.rect.y + crop.rect.height) / safeH),
+  };
+}
+
+function normalizedRectToCrop(
+  rect: CoverRect,
+  sourceW: number,
+  sourceH: number,
+  base: VideoCropSettings
+): VideoCropSettings {
+  const safeW = Math.max(MIN_CROP_PX, Math.round(sourceW || 1920));
+  const safeH = Math.max(MIN_CROP_PX, Math.round(sourceH || 1080));
+  const left = clampNumber(Math.min(rect.left, rect.right), 0, 1);
+  const right = clampNumber(Math.max(rect.left, rect.right), 0, 1);
+  const top = clampNumber(Math.min(rect.top, rect.bottom), 0, 1);
+  const bottom = clampNumber(Math.max(rect.top, rect.bottom), 0, 1);
+  let width = Math.max(MIN_CROP_PX, Math.round((right - left) * safeW));
+  let height = Math.max(MIN_CROP_PX, Math.round((bottom - top) * safeH));
+  width = Math.min(width, safeW);
+  height = Math.min(height, safeH);
+  const x = clampNumber(Math.round(left * safeW), 0, Math.max(0, safeW - width));
+  const y = clampNumber(Math.round(top * safeH), 0, Math.max(0, safeH - height));
+  return { ...base, rect: { x, y, width, height } };
+}
+
 export function useSubtitlePreview({
   style,
   entries,
@@ -479,6 +549,7 @@ export function useSubtitlePreview({
   logoPath,
   logoPosition,
   logoScale,
+  crop,
   portraitForegroundCropPercent,
   thumbnailText,
   thumbnailTextSecondary,
@@ -509,6 +580,7 @@ export function useSubtitlePreview({
   onCoverQuadChange,
   onLogoPositionChange,
   onLogoScaleChange,
+  onCropChange,
   onHardsubTextPrimaryPositionChange,
   onHardsubTextSecondaryPositionChange,
   onPortraitTextPrimaryPositionChange,
@@ -589,6 +661,25 @@ export function useSubtitlePreview({
     startQuad: CoverQuad;
   } | null>(null);
   const coverActiveRegionRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+
+  const initialCrop = normalizeCropSettings(crop, state.videoSize.width, state.videoSize.height);
+  const [localCrop, setLocalCrop] = useState<VideoCropSettings>(initialCrop);
+  const localCropRef = useRef<VideoCropSettings>(initialCrop);
+  const cropDragRef = useRef<{
+    handle: CropDragHandle;
+    startPoint: CoverQuadPoint;
+    startRect: CoverRect;
+  } | null>(null);
+  const resolveCropSourceSize = useCallback(() => ({
+    width: Math.max(1, imageRef.current?.width ?? state.videoSize.width),
+    height: Math.max(1, imageRef.current?.height ?? state.videoSize.height),
+  }), [state.videoSize.height, state.videoSize.width]);
+  const setLocalCropSynced = useCallback((next: VideoCropSettings) => {
+    const sourceSize = resolveCropSourceSize();
+    const normalized = normalizeCropSettings(next, sourceSize.width, sourceSize.height);
+    localCropRef.current = normalized;
+    setLocalCrop(normalized);
+  }, [resolveCropSourceSize]);
   
   // Local logo position for dragging
   const initialLogoPosition = normalizeLayerPosition(
@@ -780,13 +871,14 @@ export function useSubtitlePreview({
     if (!isFiniteSubtitlePosition(legacyPosition) || isNormalizedSubtitlePosition(legacyPosition)) {
       return;
     }
-    const signature = `${legacyPosition.x}:${legacyPosition.y}`;
+    const finiteLegacyPosition = legacyPosition as { x: number; y: number };
+    const signature = `${finiteLegacyPosition.x}:${finiteLegacyPosition.y}`;
     if (migratedLegacySubtitleRef.current === signature) {
       return;
     }
     migratedLegacySubtitleRef.current = signature;
     const normalized = normalizeLayerPosition(
-      legacyPosition,
+      finiteLegacyPosition,
       LANDSCAPE_FRAME_WIDTH,
       LANDSCAPE_FRAME_HEIGHT
     );
@@ -810,6 +902,11 @@ export function useSubtitlePreview({
     localLogoScaleRef.current = logoScale ?? 1.0;
     setLocalLogoScale(logoScale ?? 1.0);
   }, [logoScale]);
+
+  useEffect(() => {
+    const sourceSize = resolveCropSourceSize();
+    setLocalCropSynced(normalizeCropSettings(crop, sourceSize.width, sourceSize.height));
+  }, [crop, resolveCropSourceSize, setLocalCropSynced]);
 
   useEffect(() => {
     const previewSpace = previewSpaceRef.current;
@@ -1042,6 +1139,88 @@ export function useSubtitlePreview({
     return relY;
   }, [renderMode]);
 
+  const cropCanvasRect = useCallback((cropValue = localCropRef.current): CanvasRect => {
+    const region = previewRectRef.current;
+    const sourceSize = resolveCropSourceSize();
+    const normalized = cropToNormalizedRect(cropValue, sourceSize.width, sourceSize.height);
+    return {
+      x: region.x + normalized.left * region.width,
+      y: region.y + normalized.top * region.height,
+      width: Math.max(1, (normalized.right - normalized.left) * region.width),
+      height: Math.max(1, (normalized.bottom - normalized.top) * region.height),
+    };
+  }, [resolveCropSourceSize]);
+
+  const hitCropHandle = useCallback((cx: number, cy: number): CropDragHandle | null => {
+    const rect = cropCanvasRect();
+    const hit = 12;
+    const left = rect.x;
+    const right = rect.x + rect.width;
+    const top = rect.y;
+    const bottom = rect.y + rect.height;
+    const nearX = (x: number) => Math.abs(cx - x) <= hit;
+    const nearY = (y: number) => Math.abs(cy - y) <= hit;
+    const inX = cx >= left - hit && cx <= right + hit;
+    const inY = cy >= top - hit && cy <= bottom + hit;
+    if (nearX(left) && nearY(top)) return 'top-left';
+    if (nearX(right) && nearY(top)) return 'top-right';
+    if (nearX(left) && nearY(bottom)) return 'bottom-left';
+    if (nearX(right) && nearY(bottom)) return 'bottom-right';
+    if (nearX(left) && inY) return 'left';
+    if (nearX(right) && inY) return 'right';
+    if (nearY(top) && inX) return 'top';
+    if (nearY(bottom) && inX) return 'bottom';
+    if (cx >= left && cx <= right && cy >= top && cy <= bottom) return 'move';
+    return null;
+  }, [cropCanvasRect]);
+
+  const resizeCropRect = useCallback((startRect: CoverRect, handle: CropDragHandle, point: CoverQuadPoint): CoverRect => {
+    const sourceSize = resolveCropSourceSize();
+    const sourceW = Math.max(1, sourceSize.width);
+    const sourceH = Math.max(1, sourceSize.height);
+    const minW = Math.min(MIN_CROP_PX / sourceW, 1);
+    const minH = Math.min(MIN_CROP_PX / sourceH, 1);
+    let next = { ...startRect };
+    if (handle === 'move') {
+      const width = startRect.right - startRect.left;
+      const height = startRect.bottom - startRect.top;
+      const left = clampNumber(point.x - width / 2, 0, 1 - width);
+      const top = clampNumber(point.y - height / 2, 0, 1 - height);
+      return { left, right: left + width, top, bottom: top + height };
+    }
+    if (handle.includes('left')) next.left = clampNumber(point.x, 0, next.right - minW);
+    if (handle.includes('right')) next.right = clampNumber(point.x, next.left + minW, 1);
+    if (handle.includes('top')) next.top = clampNumber(point.y, 0, next.bottom - minH);
+    if (handle.includes('bottom')) next.bottom = clampNumber(point.y, next.top + minH, 1);
+
+    const activeCrop = localCropRef.current;
+    const ratio = activeCrop.mode === 'ratio' ? ratioToNumber(activeCrop.ratio) : null;
+    if (ratio) {
+      const centerX = (next.left + next.right) / 2;
+      const centerY = (next.top + next.bottom) / 2;
+      let widthPx = (next.right - next.left) * sourceW;
+      let heightPx = (next.bottom - next.top) * sourceH;
+      if (widthPx / Math.max(1, heightPx) > ratio) {
+        widthPx = heightPx * ratio;
+      } else {
+        heightPx = widthPx / ratio;
+      }
+      widthPx = clampNumber(widthPx, MIN_CROP_PX, sourceW);
+      heightPx = clampNumber(heightPx, MIN_CROP_PX, sourceH);
+      const halfW = widthPx / sourceW / 2;
+      const halfH = heightPx / sourceH / 2;
+      const left = clampNumber(centerX - halfW, 0, 1 - halfW * 2);
+      const top = clampNumber(centerY - halfH, 0, 1 - halfH * 2);
+      next = {
+        left,
+        right: left + halfW * 2,
+        top,
+        bottom: top + halfH * 2,
+      };
+    }
+    return next;
+  }, [resolveCropSourceSize]);
+
   const drawCanvas = useCallback(() => {
     const hostCanvas = canvasRef.current;
     if (!hostCanvas) return;
@@ -1114,16 +1293,35 @@ export function useSubtitlePreview({
     }
 
     const isPortraitMode = renderMode === 'hardsub_portrait_9_16' && !renderSnapshotMode;
-    const outputRect = isPortraitMode
-      ? fitRect(cw, ch, 9, 16)
-      : fitRect(cw, ch, 16, 9);
+    const cropEditMode = mode === 'crop';
+    const cropSourceSize = {
+      width: Math.max(1, img.width || state.videoSize.width),
+      height: Math.max(1, img.height || state.videoSize.height),
+    };
+    const cropForDisplay = normalizeCropSettings(localCrop, cropSourceSize.width, cropSourceSize.height);
+    const cropOutputMode = cropForDisplay.enabled && !cropEditMode;
+    const outputRect = cropOutputMode
+      ? fitRect(cw, ch, cropForDisplay.rect.width, cropForDisplay.rect.height)
+      : cropEditMode
+        ? fitRect(cw, ch, cropSourceSize.width, cropSourceSize.height)
+        : isPortraitMode
+          ? fitRect(cw, ch, 9, 16)
+          : fitRect(cw, ch, 16, 9);
 
-    const previewWidth = isPortraitMode
-      ? Math.max(1, state.videoSize.width)
-      : LANDSCAPE_FRAME_WIDTH;
-    const previewHeight = isPortraitMode
-      ? Math.max(1, state.videoSize.height)
-      : LANDSCAPE_FRAME_HEIGHT;
+    const previewWidth = cropOutputMode
+      ? Math.max(1, cropForDisplay.rect.width)
+      : cropEditMode
+        ? cropSourceSize.width
+        : isPortraitMode
+          ? Math.max(1, state.videoSize.width)
+          : LANDSCAPE_FRAME_WIDTH;
+    const previewHeight = cropOutputMode
+      ? Math.max(1, cropForDisplay.rect.height)
+      : cropEditMode
+        ? cropSourceSize.height
+        : isPortraitMode
+          ? Math.max(1, state.videoSize.height)
+          : LANDSCAPE_FRAME_HEIGHT;
     previewRectRef.current = outputRect;
     previewSpaceRef.current = { width: previewWidth, height: previewHeight };
     markHitRectRef.current = {
@@ -1141,7 +1339,21 @@ export function useSubtitlePreview({
 
     let portraitFgRect: { x: number; y: number; width: number; height: number } | null = null;
 
-    if (isPortraitMode) {
+    if (cropOutputMode) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(outputRect.x, outputRect.y, outputRect.width, outputRect.height);
+      ctx.drawImage(
+        img,
+        cropForDisplay.rect.x,
+        cropForDisplay.rect.y,
+        cropForDisplay.rect.width,
+        cropForDisplay.rect.height,
+        outputRect.x,
+        outputRect.y,
+        outputRect.width,
+        outputRect.height
+      );
+    } else if (isPortraitMode && !cropEditMode) {
       const sourceAspect = img.width / Math.max(1, img.height);
       const outputAspect = previewWidth / Math.max(1, previewHeight);
       const aspectDiffRatio = Math.abs(sourceAspect - outputAspect) / outputAspect;
@@ -1195,6 +1407,18 @@ export function useSubtitlePreview({
         fgRect.y,
         fgRect.width,
         fgRect.height
+      );
+    } else if (cropEditMode) {
+      ctx.drawImage(
+        img,
+        0,
+        0,
+        img.width,
+        img.height,
+        outputRect.x,
+        outputRect.y,
+        outputRect.width,
+        outputRect.height
       );
     } else {
       const srcRect = coverSourceRect(img.width, img.height, outputRect.width, outputRect.height);
@@ -1757,8 +1981,60 @@ export function useSubtitlePreview({
       ctx.setLineDash([]);
     }
 
+    if (mode === 'crop') {
+      const cropRect = cropCanvasRect(localCrop);
+      const handleSize = 8;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.46)';
+      ctx.fillRect(outputRect.x, outputRect.y, outputRect.width, Math.max(0, cropRect.y - outputRect.y));
+      ctx.fillRect(outputRect.x, cropRect.y + cropRect.height, outputRect.width, Math.max(0, outputRect.y + outputRect.height - cropRect.y - cropRect.height));
+      ctx.fillRect(outputRect.x, cropRect.y, Math.max(0, cropRect.x - outputRect.x), cropRect.height);
+      ctx.fillRect(cropRect.x + cropRect.width, cropRect.y, Math.max(0, outputRect.x + outputRect.width - cropRect.x - cropRect.width), cropRect.height);
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.95)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.width, cropRect.height);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.42)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 1; i <= 2; i += 1) {
+        const gx = cropRect.x + (cropRect.width * i) / 3;
+        const gy = cropRect.y + (cropRect.height * i) / 3;
+        ctx.moveTo(gx, cropRect.y);
+        ctx.lineTo(gx, cropRect.y + cropRect.height);
+        ctx.moveTo(cropRect.x, gy);
+        ctx.lineTo(cropRect.x + cropRect.width, gy);
+      }
+      ctx.stroke();
+      const handles = [
+        [cropRect.x, cropRect.y],
+        [cropRect.x + cropRect.width / 2, cropRect.y],
+        [cropRect.x + cropRect.width, cropRect.y],
+        [cropRect.x, cropRect.y + cropRect.height / 2],
+        [cropRect.x + cropRect.width, cropRect.y + cropRect.height / 2],
+        [cropRect.x, cropRect.y + cropRect.height],
+        [cropRect.x + cropRect.width / 2, cropRect.y + cropRect.height],
+        [cropRect.x + cropRect.width, cropRect.y + cropRect.height],
+      ];
+      handles.forEach(([x, y]) => {
+        ctx.fillStyle = '#22d3ee';
+        ctx.fillRect(x - handleSize / 2, y - handleSize / 2, handleSize, handleSize);
+        ctx.strokeStyle = '#06202a';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - handleSize / 2, y - handleSize / 2, handleSize, handleSize);
+      });
+      ctx.fillStyle = 'rgba(8, 47, 73, 0.86)';
+      ctx.fillRect(cropRect.x + 8, cropRect.y + 8, 168, 24);
+      ctx.fillStyle = '#e0f2fe';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${localCrop.rect.x},${localCrop.rect.y} · ${localCrop.rect.width}x${localCrop.rect.height}`, cropRect.x + 16, cropRect.y + 20);
+      ctx.restore();
+    }
+
     presentWorldCanvas();
-  }, [state.isLoading, state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, renderSubtitle, renderMark, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
+  }, [state.isLoading, state.subtitlePosition, state.videoSize, containerSize, style, entries, localBlackoutTop, localCoverMode, localCoverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, localLogoPosition, localLogoScale, localCrop, cropCanvasRect, localTextPrimaryPosition, localTextSecondaryPosition, mode, previewZoom, renderMode, renderResolution, renderSubtitle, renderMark, portraitForegroundCropPercent, renderSnapshotMode, resolveViewOffsetWithPan, viewPan, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio]);
 
   // Load video frame image
   useEffect(() => {
@@ -1991,6 +2267,17 @@ export function useSubtitlePreview({
       const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
       onPositionChange?.(newPos);
+    } else if (mode === 'crop') {
+      const handle = hitCropHandle(wx, wy);
+      if (!handle) {
+        setIsDragging(false);
+        return;
+      }
+      cropDragRef.current = {
+        handle,
+        startPoint: canvasToPreviewNormalized(wx, wy),
+        startRect: cropToNormalizedRect(localCropRef.current, state.videoSize.width, state.videoSize.height),
+      };
     } else if (mode === 'text_primary') {
       const newPos = canvasToPreviewNormalized(wx, wy);
       setLocalTextPrimaryPositionSynced(newPos);
@@ -2050,6 +2337,7 @@ export function useSubtitlePreview({
     hitCoverEdge,
     isNearCorner,
     isPointInsideCoverQuad,
+    hitCropHandle,
     localCoverMode,
     onPositionChange,
     onPortraitTextPrimaryPositionChange,
@@ -2060,7 +2348,7 @@ export function useSubtitlePreview({
     spacePressed,
     viewPan,
     mode,
-  ]);
+  ]); 
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isPanning && panDragRef.current) {
@@ -2113,6 +2401,21 @@ export function useSubtitlePreview({
           return;
         }
         setCanvasCursor('crosshair');
+      } else if (mode === 'crop') {
+        const handle = hitCropHandle(wx, wy);
+        if (handle === 'move') {
+          setCanvasCursor('move');
+        } else if (handle === 'left' || handle === 'right') {
+          setCanvasCursor('ew-resize');
+        } else if (handle === 'top' || handle === 'bottom') {
+          setCanvasCursor('ns-resize');
+        } else if (handle === 'top-left' || handle === 'bottom-right') {
+          setCanvasCursor('nwse-resize');
+        } else if (handle === 'top-right' || handle === 'bottom-left') {
+          setCanvasCursor('nesw-resize');
+        } else {
+          setCanvasCursor('crosshair');
+        }
       } else if (mode === 'blackout' && renderMark === false) {
         setCanvasCursor('not-allowed');
       } else if (mode === 'blackout' && (localCoverMode === 'copy_from_above' || localCoverMode === 'blur_selected_region')) {
@@ -2136,6 +2439,21 @@ export function useSubtitlePreview({
     if (mode === 'subtitle') {
       const newPos = canvasToPreviewNormalized(wx, wy);
       setState(prev => ({ ...prev, subtitlePosition: newPos }));
+    } else if (mode === 'crop') {
+      if (!cropDragRef.current) {
+        return;
+      }
+      const nextPoint = canvasToPreviewNormalized(wx, wy);
+      const nextRect = resizeCropRect(
+        cropDragRef.current.startRect,
+        cropDragRef.current.handle,
+        nextPoint
+      );
+      const cropSourceSize = resolveCropSourceSize();
+      setLocalCropSynced(normalizedRectToCrop(nextRect, cropSourceSize.width, cropSourceSize.height, {
+        ...localCropRef.current,
+        enabled: true,
+      }));
     } else if (mode === 'text_primary') {
       const newPos = canvasToPreviewNormalized(wx, wy);
       setLocalTextPrimaryPositionSynced(newPos);
@@ -2186,6 +2504,7 @@ export function useSubtitlePreview({
     canvasToPreviewNormalized,
     canvasYToFraction,
     hitCoverEdge,
+    hitCropHandle,
     isNearCorner,
     isPointInsideCoverQuad,
     isDragging,
@@ -2197,7 +2516,10 @@ export function useSubtitlePreview({
     containerSize.height,
     containerSize.width,
     resizeCoverRectByEdge,
+    resizeCropRect,
+    resolveCropSourceSize,
     screenToWorldPoint,
+    setLocalCropSynced,
     previewZoom,
     spacePressed,
     state.frameData,
@@ -2229,6 +2551,67 @@ export function useSubtitlePreview({
     previewZoom,
     spacePressed,
   ]);
+
+  const setCropRatio = useCallback((ratio: VideoCropRatio) => {
+    const sourceSize = resolveCropSourceSize();
+    const sourceW = Math.max(1, sourceSize.width);
+    const sourceH = Math.max(1, sourceSize.height);
+    const ratioValue = ratioToNumber(ratio);
+    let next = normalizeCropSettings({ ...localCropRef.current, enabled: true, mode: ratioValue ? 'ratio' : 'free', ratio }, sourceW, sourceH);
+    if (ratioValue) {
+      let width = sourceW;
+      let height = Math.round(width / ratioValue);
+      if (height > sourceH) {
+        height = sourceH;
+        width = Math.round(height * ratioValue);
+      }
+      next = {
+        ...next,
+        rect: {
+          x: Math.max(0, Math.round((sourceW - width) / 2)),
+          y: Math.max(0, Math.round((sourceH - height) / 2)),
+          width: Math.max(MIN_CROP_PX, width),
+          height: Math.max(MIN_CROP_PX, height),
+        },
+      };
+    }
+    setLocalCropSynced(next);
+    onCropChange?.(next);
+  }, [onCropChange, resolveCropSourceSize, setLocalCropSynced]);
+
+  const updateCropRect = useCallback((patch: Partial<VideoCropSettings['rect']>) => {
+    const sourceSize = resolveCropSourceSize();
+    const sourceW = Math.max(1, sourceSize.width);
+    const sourceH = Math.max(1, sourceSize.height);
+    const next = normalizeCropSettings({
+      ...localCropRef.current,
+      enabled: true,
+      rect: { ...localCropRef.current.rect, ...patch },
+    }, sourceW, sourceH);
+    setLocalCropSynced(next);
+    onCropChange?.(next);
+  }, [onCropChange, resolveCropSourceSize, setLocalCropSynced]);
+
+  const applyCrop = useCallback(() => {
+    onCropChange?.(localCropRef.current);
+  }, [onCropChange]);
+
+  const cancelCrop = useCallback(() => {
+    const sourceSize = resolveCropSourceSize();
+    setLocalCropSynced(normalizeCropSettings(crop, sourceSize.width, sourceSize.height));
+  }, [crop, resolveCropSourceSize, setLocalCropSynced]);
+
+  const resetCrop = useCallback(() => {
+    const sourceSize = resolveCropSourceSize();
+    const next = normalizeCropSettings({
+      enabled: false,
+      mode: 'free',
+      ratio: 'free',
+      rect: { x: 0, y: 0, width: sourceSize.width, height: sourceSize.height },
+    }, sourceSize.width, sourceSize.height);
+    setLocalCropSynced(next);
+    onCropChange?.(next);
+  }, [onCropChange, resolveCropSourceSize, setLocalCropSynced]);
 
   const nudgeActiveObject = useCallback((dxPx: number, dyPx: number) => {
     if (!Number.isFinite(dxPx) || !Number.isFinite(dyPx)) {
@@ -2289,6 +2672,14 @@ export function useSubtitlePreview({
       return;
     }
 
+    if (mode === 'crop') {
+      updateCropRect({
+        x: localCropRef.current.rect.x + dxPx,
+        y: localCropRef.current.rect.y + dyPx,
+      });
+      return;
+    }
+
     if (renderMark === false) {
       return;
     }
@@ -2313,6 +2704,7 @@ export function useSubtitlePreview({
     mode,
     onBlackoutChange,
     onCoverQuadChange,
+    updateCropRect,
     onLogoPositionChange,
     onPositionChange,
     onPortraitTextPrimaryPositionChange,
@@ -2356,6 +2748,9 @@ export function useSubtitlePreview({
       if (state.frameData) {
         onPositionChange?.(state.subtitlePosition);
       }
+    } else if (mode === 'crop') {
+      onCropChange?.(localCropRef.current);
+      cropDragRef.current = null;
     } else if (mode === 'text_primary') {
       onPortraitTextPrimaryPositionChange?.(localTextPrimaryPositionRef.current);
     } else if (mode === 'text_secondary') {
@@ -2391,6 +2786,7 @@ export function useSubtitlePreview({
     state.frameData,
     state.subtitlePosition,
     onPositionChange,
+    onCropChange,
     onPortraitTextPrimaryPositionChange,
     onPortraitTextSecondaryPositionChange,
     onLogoPositionChange,
@@ -2512,11 +2908,19 @@ export function useSubtitlePreview({
     onCoverQuadChange?.(next);
   }, [onCoverQuadChange]);
 
+  const cropSourceSize = resolveCropSourceSize();
+  const normalizedCropForCanvas = normalizeCropSettings(localCropRef.current, cropSourceSize.width, cropSourceSize.height);
+  const effectivePreviewCanvas = normalizedCropForCanvas.enabled && mode !== 'crop'
+    ? {
+        width: Math.max(1, normalizedCropForCanvas.rect.width),
+        height: Math.max(1, normalizedCropForCanvas.rect.height),
+      }
+    : previewSpaceRef.current;
   const subtitlePositionRel = clampNormalizedSubtitlePosition(state.subtitlePosition);
   const subtitlePositionPx = toPixelSubtitlePosition(
     subtitlePositionRel,
-    Math.max(1, state.videoSize.width),
-    Math.max(1, state.videoSize.height)
+    Math.max(1, effectivePreviewCanvas.width),
+    Math.max(1, effectivePreviewCanvas.height)
   );
   const textPrimaryPositionRel = clampNormalizedSubtitlePosition(
     localTextPrimaryPositionRef.current || DEFAULT_THUMBNAIL_TEXT1_POSITION
@@ -2526,19 +2930,19 @@ export function useSubtitlePreview({
   );
   const textPrimaryPositionPx = toPixelSubtitlePosition(
     textPrimaryPositionRel,
-    Math.max(1, state.videoSize.width),
-    Math.max(1, state.videoSize.height)
+    Math.max(1, effectivePreviewCanvas.width),
+    Math.max(1, effectivePreviewCanvas.height)
   );
   const textSecondaryPositionPx = toPixelSubtitlePosition(
     textSecondaryPositionRel,
-    Math.max(1, state.videoSize.width),
-    Math.max(1, state.videoSize.height)
+    Math.max(1, effectivePreviewCanvas.width),
+    Math.max(1, effectivePreviewCanvas.height)
   );
   const logoPositionPx = localLogoPositionRef.current
     ? toPixelSubtitlePosition(
         localLogoPositionRef.current,
-        Math.max(1, state.videoSize.width),
-        Math.max(1, state.videoSize.height)
+        Math.max(1, effectivePreviewCanvas.width),
+        Math.max(1, effectivePreviewCanvas.height)
       )
     : null;
   const normalizedCoverFeather = resolveCoverFeatherPair(
@@ -2582,6 +2986,12 @@ export function useSubtitlePreview({
     coverFeatherHorizontalPercent: normalizedCoverFeather.horizontalPercent,
     coverFeatherVerticalPercent: normalizedCoverFeather.verticalPercent,
     coverQuadValid,
+    crop: localCrop,
+    setCropRatio,
+    updateCropRect,
+    applyCrop,
+    cancelCrop,
+    resetCrop,
     copyOffsetPx,
     copyRectDebug,
     blackoutTop: localBlackoutTop,

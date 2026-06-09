@@ -4,6 +4,7 @@ import {
   CoverQuad,
   RenderVideoOptions,
   SubtitleEntry,
+  VideoCropSettings,
 } from '@shared/types/caption';
 import { buildObjectFingerprint } from './captionSessionStore';
 
@@ -35,6 +36,7 @@ interface UseSubtitleRenderPreviewStateOptions {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
+  crop?: VideoCropSettings;
   hardwareAcceleration?: RenderVideoOptions['hardwareAcceleration'];
   portraitForegroundCropPercent?: number;
   thumbnailText?: string;
@@ -91,6 +93,7 @@ interface RenderVideoPreviewFrameRequest {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
+  crop?: VideoCropSettings;
   portraitForegroundCropPercent?: number;
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
@@ -216,6 +219,7 @@ export function useSubtitleRenderPreviewState(
       logoPath: options.logoPath,
       logoPosition: options.logoPosition,
       logoScale: options.logoScale,
+      crop: options.crop,
       hardwareAcceleration: options.hardwareAcceleration,
       portraitForegroundCropPercent: options.portraitForegroundCropPercent,
       thumbnailText: options.thumbnailText,
@@ -256,6 +260,7 @@ export function useSubtitleRenderPreviewState(
     options.logoPath,
     options.logoPosition,
     options.logoScale,
+    options.crop,
     options.hardwareAcceleration,
     options.portraitForegroundCropPercent,
     options.thumbnailText,

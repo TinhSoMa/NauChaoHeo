@@ -28,7 +28,7 @@ import {
   InputType,
 } from '../../../config/captionConfig';
 import { Step, ProcessingMode } from '../CaptionTypes';
-import { ASSStyleConfig, CaptionCoverMode, CaptionProjectSettings, CoverQuad } from '@shared/types/caption';
+import { ASSStyleConfig, CaptionCoverMode, CaptionProjectSettings, CoverQuad, VideoCropSettings } from '@shared/types/caption';
 import { useProjectContext } from '../../../context/ProjectContext';
 import { nowIso } from '@shared/utils/captionSession';
 import {
@@ -60,6 +60,7 @@ interface LayoutProfile {
   coverFeatherHorizontalPercent: number;
   coverFeatherVerticalPercent: number;
   foregroundCropPercent: number;
+  crop: VideoCropSettings;
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
   thumbnailDurationSec: number;
@@ -143,6 +144,13 @@ export const DEFAULT_STYLE: ASSStyleConfig = {
   shadow: 4,
   marginV: 50,
   alignment: 2,
+};
+
+const DEFAULT_VIDEO_CROP: VideoCropSettings = {
+  enabled: false,
+  mode: 'free',
+  ratio: 'free',
+  rect: { x: 0, y: 0, width: 1920, height: 1080 },
 };
 
 const MIN_SUBTITLE_FONT_SIZE = 1;
@@ -361,6 +369,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   coverFeatherHorizontalPercent: DEFAULT_COVER_FEATHER_PERCENT,
   coverFeatherVerticalPercent: DEFAULT_COVER_FEATHER_PERCENT,
   foregroundCropPercent: 0,
+  crop: { ...DEFAULT_VIDEO_CROP, rect: { ...DEFAULT_VIDEO_CROP.rect } },
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   thumbnailDurationSec: 0.5,
@@ -447,6 +456,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   coverFeatherHorizontalPercent: DEFAULT_COVER_FEATHER_PERCENT,
   coverFeatherVerticalPercent: DEFAULT_COVER_FEATHER_PERCENT,
   foregroundCropPercent: 0,
+  crop: { ...DEFAULT_VIDEO_CROP, rect: { ...DEFAULT_VIDEO_CROP.rect } },
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   thumbnailDurationSec: 0.5,
@@ -511,10 +521,49 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   portraitTextSecondaryPosition: { x: 0.5, y: 0.64 },
 };
 
+function cloneCrop(crop: VideoCropSettings | undefined): VideoCropSettings {
+  const source = crop || DEFAULT_VIDEO_CROP;
+  return {
+    enabled: Boolean(source.enabled),
+    mode: source.mode === 'ratio' ? 'ratio' : 'free',
+    ratio: source.ratio || 'free',
+    rect: {
+      x: Math.max(0, Math.round(source.rect?.x ?? 0)),
+      y: Math.max(0, Math.round(source.rect?.y ?? 0)),
+      width: Math.max(64, Math.round(source.rect?.width ?? DEFAULT_VIDEO_CROP.rect.width)),
+      height: Math.max(64, Math.round(source.rect?.height ?? DEFAULT_VIDEO_CROP.rect.height)),
+    },
+  };
+}
+
+function normalizeVideoCrop(value: unknown, fallback: VideoCropSettings): VideoCropSettings {
+  if (!value || typeof value !== 'object') {
+    return cloneCrop(fallback);
+  }
+  const raw = value as Partial<VideoCropSettings>;
+  const rect = raw.rect && typeof raw.rect === 'object' ? raw.rect as Partial<VideoCropSettings['rect']> : {};
+  const ratio = raw.ratio === '16:9' || raw.ratio === '9:16' || raw.ratio === '1:1' || raw.ratio === '21:9' || raw.ratio === '2.39:1'
+    ? raw.ratio
+    : 'free';
+  const mode = raw.mode === 'ratio' && ratio !== 'free' ? 'ratio' : 'free';
+  return {
+    enabled: Boolean(raw.enabled),
+    mode,
+    ratio: mode === 'ratio' ? ratio : 'free',
+    rect: {
+      x: Math.max(0, Math.round(Number(rect.x) || 0)),
+      y: Math.max(0, Math.round(Number(rect.y) || 0)),
+      width: Math.max(64, Math.round(Number(rect.width) || fallback.rect.width || DEFAULT_VIDEO_CROP.rect.width)),
+      height: Math.max(64, Math.round(Number(rect.height) || fallback.rect.height || DEFAULT_VIDEO_CROP.rect.height)),
+    },
+  };
+}
+
 function cloneProfile(profile: LayoutProfile): LayoutProfile {
   return {
     ...profile,
     style: { ...profile.style },
+    crop: cloneCrop(profile.crop),
     subtitlePosition: profile.subtitlePosition ? { ...profile.subtitlePosition } : null,
     coverQuad: normalizeQuad(profile.coverQuad),
     logoPosition: profile.logoPosition ? { ...profile.logoPosition } : undefined,
@@ -776,6 +825,9 @@ function normalizeProfile(
   }
   if (typeof patch.foregroundCropPercent === 'number') {
     next.foregroundCropPercent = Math.min(20, Math.max(0, patch.foregroundCropPercent));
+  }
+  if ('crop' in patch) {
+    next.crop = normalizeVideoCrop(patch.crop, fallback.crop);
   }
   if (patch.subtitlePosition === null) {
     next.subtitlePosition = null;
@@ -1567,6 +1619,13 @@ export function useCaptionSettings() {
     }));
   }, []);
 
+  const setCrop = useCallback((value: VideoCropSettings) => {
+    updateActiveProfile((current) => ({
+      ...current,
+      crop: normalizeVideoCrop(value, current.crop),
+    }));
+  }, [updateActiveProfile]);
+
   const setThumbnailTextPrimaryFontName = useCallback((value: string) => {
     const nextValue = value && value.trim().length > 0 ? value.trim() : DEFAULT_THUMBNAIL_FONT_NAME;
     markTypographyDefaultsDirty();
@@ -1726,7 +1785,7 @@ export function useCaptionSettings() {
       const outputSize = resolveOutputSizeByLayout(activeLayoutKey, current.renderResolution);
       return {
         ...current,
-        logoPosition: normalizePositionValue(value, outputSize.width, outputSize.height),
+        logoPosition: normalizePositionValue(value as { x: number; y: number }, outputSize.width, outputSize.height),
       };
     });
   }, [activeLayoutKey, updateActiveProfile]);
@@ -1742,7 +1801,7 @@ export function useCaptionSettings() {
         return { ...current, subtitlePosition: null };
       }
       const outputSize = resolveOutputSizeByLayout(activeLayoutKey, current.renderResolution);
-      const normalized = normalizePositionValue(value, outputSize.width, outputSize.height);
+      const normalized = normalizePositionValue(value as { x: number; y: number }, outputSize.width, outputSize.height);
       return { ...current, subtitlePosition: normalized };
     });
   }, [activeLayoutKey, markTypographyDefaultsDirty, updateActiveProfile]);
@@ -1946,6 +2005,7 @@ export function useCaptionSettings() {
       coverFeatherVerticalPx: activeProfile.coverFeatherVerticalPx,
       coverFeatherHorizontalPercent: activeProfile.coverFeatherHorizontalPercent,
       coverFeatherVerticalPercent: activeProfile.coverFeatherVerticalPercent,
+      crop: activeProfile.crop,
       portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
       audioSpeed,
       renderAudioSpeed,
@@ -2132,6 +2192,7 @@ export function useCaptionSettings() {
       coverFeatherHorizontalPercent: saved.coverFeatherHorizontalPercent,
       coverFeatherVerticalPercent: saved.coverFeatherVerticalPercent,
       foregroundCropPercent: saved.portraitForegroundCropPercent,
+      crop: saved.crop,
       subtitlePosition: saved.subtitlePosition,
       thumbnailFrameTimeSec: saved.thumbnailFrameTimeSec,
       thumbnailDurationSec: saved.thumbnailDurationSec,
@@ -2479,6 +2540,8 @@ export function useCaptionSettings() {
     setForegroundCropPercent,
     portraitForegroundCropPercent: layoutProfiles.portrait.foregroundCropPercent,
     setPortraitForegroundCropPercent,
+    crop: activeProfile.crop,
+    setCrop,
     subtitlePosition: activeProfile.subtitlePosition,
     setSubtitlePosition,
     thumbnailFrameTimeSec: activeProfile.thumbnailFrameTimeSec,

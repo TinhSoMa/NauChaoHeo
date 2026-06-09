@@ -50,6 +50,13 @@ export function buildHardsubTimingPayload(input: {
   fgFitMode?: string;
   layoutStrategy?: 'blur_composite' | 'direct_fit_no_blur';
   foregroundCropPercent?: number;
+  crop?: {
+    enabled: boolean;
+    ratio?: string;
+    sourceRect?: { x: number; y: number; width: number; height: number };
+    outputDimensions?: { width: number; height: number };
+    filter?: string;
+  } | null;
   aspect?: { source: number; output: number; diffRatio: number };
   ratioNormalizeApplied?: boolean;
   targetSar?: string;
@@ -102,6 +109,7 @@ export function buildHardsubTimingPayload(input: {
     fgFitMode,
     layoutStrategy,
     foregroundCropPercent,
+    crop,
     aspect,
     ratioNormalizeApplied,
     targetSar,
@@ -170,6 +178,7 @@ export function buildHardsubTimingPayload(input: {
       layoutMode: layoutMode || 'landscape_hardsub',
       layoutStrategy: layoutStrategy || null,
       foregroundCropPercent: foregroundCropPercent ?? null,
+      crop: crop || null,
       aspect: aspect || null,
       canvas: canvas || null,
       bgBlur: bgBlur || null,

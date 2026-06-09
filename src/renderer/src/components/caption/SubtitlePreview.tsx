@@ -6,10 +6,10 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { ASSStyleConfig, CoverQuad, RenderVideoOptions, SubtitleEntry } from '@shared/types/caption';
+import { ASSStyleConfig, CoverQuad, RenderVideoOptions, SubtitleEntry, VideoCropSettings } from '@shared/types/caption';
 import { useSubtitlePreview } from './hooks/useSubtitlePreview';
 import { useSubtitleRenderPreviewState } from './hooks/useSubtitleRenderPreviewState';
-import { Crosshair, RotateCcw, Square, Trash2, Image, ZoomIn, ZoomOut } from 'lucide-react';
+import { Crop, Crosshair, RotateCcw, Square, Trash2, Image, ZoomIn, ZoomOut } from 'lucide-react';
 import styles from './SubtitlePreview.module.css';
 
 interface SubtitlePreviewProps {
@@ -34,6 +34,7 @@ interface SubtitlePreviewProps {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
+  crop?: VideoCropSettings;
   portraitForegroundCropPercent?: number;
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
@@ -70,6 +71,7 @@ interface SubtitlePreviewProps {
   onPreviewLayoutChange?: (value: 'landscape' | 'portrait') => void;
   onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
   onLogoScaleChange?: (scale: number) => void;
+  onCropChange?: (crop: VideoCropSettings) => void;
   onHardsubTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
   onHardsubTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
   onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
@@ -97,7 +99,7 @@ function formatPreviewTime(seconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${secsLabel}`;
 }
 
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, renderSubtitle, renderMark, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onInPlaceBlurStrengthChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq, onFirstFrameReady }: SubtitlePreviewProps) {
+export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, renderSubtitle, renderMark, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, crop, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onInPlaceBlurStrengthChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onCropChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq, onFirstFrameReady }: SubtitlePreviewProps) {
   const notifiedFramePathRef = useRef('');
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
@@ -121,6 +123,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     logoPath,
     logoPosition,
     logoScale,
+    crop,
     portraitForegroundCropPercent,
     thumbnailText,
     thumbnailTextSecondary,
@@ -151,6 +154,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     onCoverQuadChange,
     onLogoPositionChange,
     onLogoScaleChange,
+    onCropChange,
     onHardsubTextPrimaryPositionChange,
     onHardsubTextSecondaryPositionChange,
     onPortraitTextPrimaryPositionChange,
@@ -179,6 +183,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     logoPath,
     logoPosition,
     logoScale,
+    crop,
     hardwareAcceleration,
     portraitForegroundCropPercent,
     thumbnailText,
@@ -270,6 +275,8 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
     mainInfo = `T2 Rel ${preview.textSecondaryPositionRel.x.toFixed(3)}, ${preview.textSecondaryPositionRel.y.toFixed(3)}`;
   } else if (preview.mode === 'logo') {
     mainInfo = `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`;
+  } else if (preview.mode === 'crop') {
+    mainInfo = `Crop ${preview.crop.rect.x},${preview.crop.rect.y} · ${preview.crop.rect.width}×${preview.crop.rect.height}${preview.crop.enabled ? '' : ' (draft)'}`;
   } else if (preview.mode === 'blackout') {
     mainInfo = null;
   }
@@ -330,6 +337,15 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
           <Square size={13} />
           {isPortraitMode ? 'Mờ' : 'Che'}
         </button>
+        <button
+          className={`${styles.modeBtn} ${preview.mode === 'crop' ? styles.modeBtnActive : ''}`}
+          onClick={() => preview.setMode('crop')}
+          title="Cắt khung video: kéo cạnh/góc, kéo trong khung để di chuyển"
+          disabled={isInteractionDisabled || isRealPreviewMode}
+        >
+          <Crop size={13} />
+          Crop
+        </button>
         {isPortraitMode && (
           <>
             <button
@@ -386,54 +402,58 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
         )}
       </div>
 
-      {isRealPreviewMode ? (
-        <div className={`${styles.canvasContainer} ${styles.realPreviewContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''}`}>
-          {realPreview.realFrameData ? (
-            <img
-              src={realPreview.realFrameData}
-              className={styles.realPreviewImage}
-              alt="Video preview thật"
-            />
+      <div className={styles.previewWorkArea}>
+        <div className={styles.previewCanvasPane}>
+          {isRealPreviewMode ? (
+            <div className={`${styles.canvasContainer} ${styles.realPreviewContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''}`}>
+              {realPreview.realFrameData ? (
+                <img
+                  src={realPreview.realFrameData}
+                  className={styles.realPreviewImage}
+                  alt="Video preview thật"
+                />
+              ) : (
+                <div className={styles.realPreviewPlaceholder}>
+                  {realPreview.realMessage || 'Chưa có preview thật.'}
+                </div>
+              )}
+              {(realPreview.realStatus === 'pending' || realPreview.realStatus === 'updating') && (
+                <div className={styles.loadingOverlay}>Đang cập nhật preview thật...</div>
+              )}
+              {realPreview.realStatus === 'error' && (
+                <div className={styles.disabledOverlay}>{realPreview.realMessage}</div>
+              )}
+            </div>
           ) : (
-            <div className={styles.realPreviewPlaceholder}>
-              {realPreview.realMessage || 'Chưa có preview thật.'}
+            <div
+              ref={preview.containerRef}
+              className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? ((preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
+            >
+              <canvas
+                ref={preview.canvasRef}
+                className={styles.canvas}
+                onMouseDown={isInteractionDisabled ? undefined : (event) => {
+                  event.currentTarget.focus();
+                  preview.handleMouseDown(event);
+                }}
+                onMouseMove={isInteractionDisabled ? undefined : preview.handleMouseMove}
+                onMouseUp={isInteractionDisabled ? undefined : preview.handleMouseUp}
+                onMouseLeave={isInteractionDisabled ? undefined : preview.handleMouseUp}
+                onWheel={isInteractionDisabled ? undefined : preview.handleWheel}
+                onKeyDown={isInteractionDisabled ? undefined : preview.handleKeyDown}
+                tabIndex={isInteractionDisabled ? -1 : 0}
+                style={{ cursor: isInteractionDisabled ? 'not-allowed' : preview.canvasCursor }}
+              />
+              {preview.isLoading && (
+                <div className={styles.loadingOverlay}>Đang tải preview...</div>
+              )}
+              {isInteractionDisabled && (
+                <div className={styles.disabledOverlay}>{interactiveDisabledReason}</div>
+              )}
             </div>
           )}
-          {(realPreview.realStatus === 'pending' || realPreview.realStatus === 'updating') && (
-            <div className={styles.loadingOverlay}>Đang cập nhật preview thật...</div>
-          )}
-          {realPreview.realStatus === 'error' && (
-            <div className={styles.disabledOverlay}>{realPreview.realMessage}</div>
-          )}
         </div>
-      ) : (
-        <div
-          ref={preview.containerRef}
-          className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? ((preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
-        >
-          <canvas
-            ref={preview.canvasRef}
-            className={styles.canvas}
-            onMouseDown={isInteractionDisabled ? undefined : (event) => {
-              event.currentTarget.focus();
-              preview.handleMouseDown(event);
-            }}
-            onMouseMove={isInteractionDisabled ? undefined : preview.handleMouseMove}
-            onMouseUp={isInteractionDisabled ? undefined : preview.handleMouseUp}
-            onMouseLeave={isInteractionDisabled ? undefined : preview.handleMouseUp}
-            onWheel={isInteractionDisabled ? undefined : preview.handleWheel}
-            onKeyDown={isInteractionDisabled ? undefined : preview.handleKeyDown}
-            tabIndex={isInteractionDisabled ? -1 : 0}
-            style={{ cursor: isInteractionDisabled ? 'not-allowed' : preview.canvasCursor }}
-          />
-          {preview.isLoading && (
-            <div className={styles.loadingOverlay}>Đang tải preview...</div>
-          )}
-          {isInteractionDisabled && (
-            <div className={styles.disabledOverlay}>{interactiveDisabledReason}</div>
-          )}
-        </div>
-      )}
+      </div>
 
       {isRealPreviewMode && (
         <div className={styles.realPreviewStatusRow}>

@@ -74,6 +74,7 @@ import {
   CaptionSessionV1,
   CoverQuad,
   TranslationBatchReport as SharedTranslationBatchReport,
+  VideoCropSettings,
   VoiceInfo,
   TTSTestProxyResponse,
 } from '@shared/types/caption';
@@ -983,6 +984,43 @@ export function CaptionTranslator() {
 
   // 1. Settings Hook
   const settings = useCaptionSettings();
+  const activeCrop = useMemo<VideoCropSettings>(() => (
+    settings.crop || {
+      enabled: false,
+      mode: 'free',
+      ratio: 'free',
+      rect: { x: 0, y: 0, width: 1920, height: 1080 },
+    }
+  ), [settings.crop]);
+  const updateCrop = useCallback((patch: Partial<VideoCropSettings>) => {
+    settings.setCrop({
+      ...activeCrop,
+      ...patch,
+      rect: {
+        ...activeCrop.rect,
+        ...(patch.rect || {}),
+      },
+    });
+  }, [activeCrop, settings]);
+  const updateCropRect = useCallback((key: keyof VideoCropSettings['rect'], rawValue: string | number) => {
+    const numeric = typeof rawValue === 'number' ? rawValue : Number(String(rawValue).replace(/[^\d]/g, ''));
+    const safeValue = Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+    updateCrop({
+      enabled: true,
+      rect: {
+        ...activeCrop.rect,
+        [key]: key === 'width' || key === 'height' ? Math.max(64, safeValue) : safeValue,
+      },
+    });
+  }, [activeCrop.rect, updateCrop]);
+  const resetCrop = useCallback(() => {
+    settings.setCrop({
+      enabled: false,
+      mode: 'free',
+      ratio: 'free',
+      rect: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+  }, [settings]);
   const [geminiModelOptions, setGeminiModelOptions] = useState<{ value: string; label: string }[]>(
     FALLBACK_GEMINI_MODELS
   );
@@ -1679,6 +1717,7 @@ export function CaptionTranslator() {
     logoPath: settings.logoPath,
     logoPosition: settings.logoPosition,
     logoScale: settings.logoScale,
+    crop: settings.crop,
     portraitForegroundCropPercent: settings.portraitForegroundCropPercent,
     layoutProfiles: settings.layoutProfiles,
     processingMode: settings.processingMode,
@@ -1764,6 +1803,7 @@ export function CaptionTranslator() {
     settings.logoPath,
     settings.logoPosition,
     settings.logoScale,
+    settings.crop,
     settings.portraitForegroundCropPercent,
     settings.layoutProfiles,
     settings.processingMode,
@@ -6025,6 +6065,147 @@ export function CaptionTranslator() {
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
+                <span className={styles.label}>Crop video</span>
+                <span className={styles.commonInlineValue}>
+                  {activeCrop.enabled
+                    ? `${activeCrop.rect.x},${activeCrop.rect.y} · ${activeCrop.rect.width}×${activeCrop.rect.height}`
+                    : 'Tắt'}
+                </span>
+              </div>
+              <div className={styles.commonInlineActions}>
+                <Checkbox
+                  label="Bật crop"
+                  description="Cắt frame trước khi render phụ đề/logo/mask"
+                  checked={activeCrop.enabled}
+                  onChange={(checked) => updateCrop({ enabled: checked })}
+                  disabled={settings.renderMode === 'black_bg'}
+                />
+                <button type="button" className={styles.resetBtnLike} onClick={resetCrop}>
+                  Reset
+                </button>
+              </div>
+              <div className={styles.grid2}>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>Tỷ lệ crop</label>
+                  <select
+                    className={styles.select}
+                    value={activeCrop.ratio}
+                    onChange={(e) => {
+                      const ratio = e.target.value as VideoCropSettings['ratio'];
+                      const ratioValue = ratio === '16:9'
+                        ? 16 / 9
+                        : ratio === '9:16'
+                          ? 9 / 16
+                          : ratio === '1:1'
+                            ? 1
+                            : ratio === '21:9'
+                              ? 21 / 9
+                              : ratio === '2.39:1'
+                                ? 2.39
+                                : null;
+                      let nextRect = activeCrop.rect;
+                      if (ratioValue) {
+                        const currentAspect = activeCrop.rect.width / Math.max(1, activeCrop.rect.height);
+                        let width = activeCrop.rect.width;
+                        let height = activeCrop.rect.height;
+                        if (currentAspect > ratioValue) {
+                          width = Math.max(64, Math.round(height * ratioValue));
+                        } else {
+                          height = Math.max(64, Math.round(width / ratioValue));
+                        }
+                        nextRect = {
+                          x: Math.max(0, Math.round(activeCrop.rect.x + (activeCrop.rect.width - width) / 2)),
+                          y: Math.max(0, Math.round(activeCrop.rect.y + (activeCrop.rect.height - height) / 2)),
+                          width,
+                          height,
+                        };
+                      }
+                      updateCrop({
+                        enabled: true,
+                        mode: ratio === 'free' ? 'free' : 'ratio',
+                        ratio,
+                        rect: nextRect,
+                      });
+                    }}
+                    disabled={settings.renderMode === 'black_bg'}
+                  >
+                    <option value="free">Free</option>
+                    <option value="16:9">16:9</option>
+                    <option value="9:16">9:16</option>
+                    <option value="1:1">1:1</option>
+                    <option value="21:9">21:9</option>
+                    <option value="2.39:1">2.39:1</option>
+                  </select>
+                </div>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>Trạng thái</label>
+                  <button
+                    type="button"
+                    className={styles.resetBtnLike}
+                    onClick={() => updateCrop({ enabled: true })}
+                    disabled={settings.renderMode === 'black_bg'}
+                  >
+                    Apply crop
+                  </button>
+                </div>
+              </div>
+              <div className={styles.grid2}>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>X</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={activeCrop.rect.x}
+                    onChange={(e) => updateCropRect('x', e.target.value)}
+                    disabled={settings.renderMode === 'black_bg'}
+                  />
+                </div>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>Y</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={activeCrop.rect.y}
+                    onChange={(e) => updateCropRect('y', e.target.value)}
+                    disabled={settings.renderMode === 'black_bg'}
+                  />
+                </div>
+              </div>
+              <div className={styles.grid2}>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>W</label>
+                  <Input
+                    type="number"
+                    min={64}
+                    step={1}
+                    value={activeCrop.rect.width}
+                    onChange={(e) => updateCropRect('width', e.target.value)}
+                    disabled={settings.renderMode === 'black_bg'}
+                  />
+                </div>
+                <div className={styles.inputGroup}>
+                  <label className={styles.label}>H</label>
+                  <Input
+                    type="number"
+                    min={64}
+                    step={1}
+                    value={activeCrop.rect.height}
+                    onChange={(e) => updateCropRect('height', e.target.value)}
+                    disabled={settings.renderMode === 'black_bg'}
+                  />
+                </div>
+              </div>
+              <div className={styles.commonHint}>
+                Source crop: {activeCrop.rect.x},{activeCrop.rect.y},{activeCrop.rect.width},{activeCrop.rect.height}
+                {' '}· Output canvas: {activeCrop.enabled ? `${activeCrop.rect.width}×${activeCrop.rect.height}` : 'video gốc'}.
+                {activeCrop.enabled ? ' Các chỉnh sửa phụ đề/logo/mask đang áp dụng trên khung đã crop.' : ''}
+              </div>
+            </div>
+
+            <div className={styles.commonInlineSection}>
+              <div className={styles.commonInlineHeader}>
                 <span className={styles.label}>Mức che đáy</span>
                 <span className={styles.commonInlineValue}>
                   {Math.round((1 - (settings.blackoutTop ?? 0.9)) * 100)}%
@@ -7998,6 +8179,7 @@ export function CaptionTranslator() {
                   logoPath={settings.logoPath}
                   logoPosition={settings.logoPosition}
                   logoScale={settings.logoScale}
+                  crop={settings.crop}
                   portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
                   thumbnailText={thumbnailPreviewText}
                   thumbnailTextSecondary={thumbnailPreviewSecondaryText}
@@ -8032,6 +8214,7 @@ export function CaptionTranslator() {
                   onRenderResolutionChange={settings.setRenderResolution}
                   onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
                   onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
+                  onCropChange={settings.setCrop}
                   onHardsubTextPrimaryPositionChange={settings.setHardsubTextPrimaryPosition}
                   onHardsubTextSecondaryPositionChange={settings.setHardsubTextSecondaryPosition}
                   onPortraitTextPrimaryPositionChange={settings.setPortraitTextPrimaryPosition}

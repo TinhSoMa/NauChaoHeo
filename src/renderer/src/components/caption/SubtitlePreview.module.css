@@ -68,6 +68,19 @@
   color: #fff;
 }
 
+.previewWorkArea {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.previewCanvasPane {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .canvasContainer {
   position: relative;
   width: 100%;
@@ -95,6 +108,13 @@
   object-fit: contain;
   object-position: center;
   display: block;
+}
+
+@media (max-width: 980px) {
+  .previewWorkArea {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .realPreviewPlaceholder {

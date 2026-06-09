@@ -643,6 +643,22 @@ export interface VideoMetadata {
   hasAudio?: boolean;     // Có audio stream hay không
 }
 
+export type VideoCropRatio = 'free' | '16:9' | '9:16' | '1:1' | '21:9' | '2.39:1';
+
+export interface VideoCropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VideoCropSettings {
+  enabled: boolean;
+  mode: 'free' | 'ratio';
+  ratio: VideoCropRatio;
+  rect: VideoCropRect; // Source-video pixels.
+}
+
 /**
  * Options để render video từ SRT
  */
@@ -684,6 +700,7 @@ export interface RenderVideoOptions {
   logoPath?: string;      // Đường dẫn file logo để watermark
   logoPosition?: { x: number; y: number }; // Vị trí tâm logo (ưu tiên normalized 0..1; vẫn tương thích dữ liệu pixel legacy)
   logoScale?: number;     // Tỉ lệ kích thước logo (1.0 = 100%, 0.5 = 50%, 2.0 = 200%)
+  crop?: VideoCropSettings;
   portraitForegroundCropPercent?: number; // Chỉ dùng cho mode 9:16, crop tổng theo chiều ngang (%)
   // --- Thumbnail prepend ---
   thumbnailEnabled?: boolean; // Có prepend thumbnail vào đầu video không
@@ -823,6 +840,7 @@ export interface RenderVideoPreviewFrameOptions {
   logoPath?: string;
   logoPosition?: { x: number; y: number };
   logoScale?: number;
+  crop?: VideoCropSettings;
   portraitForegroundCropPercent?: number;
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
@@ -1121,6 +1139,7 @@ export interface CaptionProjectSettingsValues {
   audioSpeed?: number;
   renderAudioSpeed?: number;
   portraitForegroundCropPercent?: number;
+  crop?: VideoCropSettings;
   videoVolume?: number; // 0..200, mapping tuyến tính 100=x1
   audioVolume?: number; // 0..400, mapping tuyến tính 100=x1
   thumbnailFontName?: string;
@@ -1255,6 +1274,7 @@ export interface CaptionProjectSettingsValues {
       portraitTextPrimaryPosition?: { x: number; y: number };
       portraitTextSecondaryPosition?: { x: number; y: number };
       foregroundCropPercent?: number;
+      crop?: VideoCropSettings;
     };
     portrait?: {
       fontSizeScaleVersion?: number;
@@ -1327,6 +1347,7 @@ export interface CaptionProjectSettingsValues {
       portraitTextPrimaryPosition?: { x: number; y: number };
       portraitTextSecondaryPosition?: { x: number; y: number };
       foregroundCropPercent?: number;
+      crop?: VideoCropSettings;
     };
   };
   logoPath?: string;

@@ -1,4 +1,5 @@
 import { buildCopyFromAboveFilter, buildInPlaceBlurFilter } from './coverMaskFilterBuilder';
+import { resolveVideoCrop } from './cropFilterBuilder';
 import { VideoFilterBuildInput, VideoFilterBuildOutput } from './types';
 
 function ensureLabelRef(value: string): string {
@@ -10,6 +11,13 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
   let currentLabel = ensureLabelRef(input.inputLabel);
   const enableMark = input.renderMark !== false;
   const enableSubtitle = input.renderSubtitle !== false;
+
+  const resolvedCrop = input.resolvedCrop || resolveVideoCrop(input.crop, input.sourceWidth || input.renderWidth, input.sourceHeight || input.renderHeight);
+  if (resolvedCrop) {
+    const cropLabel = '[v_cropped]';
+    filterParts.push(`${currentLabel}${resolvedCrop.filter}${cropLabel}`);
+    currentLabel = cropLabel;
+  }
 
   if (input.needsScale) {
     const scaledLabel = '[v_scaled]';

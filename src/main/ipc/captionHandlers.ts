@@ -751,6 +751,12 @@ export function registerCaptionHandlers(): void {
         logoPath?: string;
         logoPosition?: { x: number; y: number };
         logoScale?: number;
+        crop?: {
+          enabled: boolean;
+          mode: 'free' | 'ratio';
+          ratio: 'free' | '16:9' | '9:16' | '1:1' | '21:9' | '2.39:1';
+          rect: { x: number; y: number; width: number; height: number };
+        };
         portraitForegroundCropPercent?: number;
         thumbnailEnabled?: boolean;
         renderSubtitle?: boolean;

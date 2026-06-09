@@ -18,6 +18,7 @@ import {
   CoverQuad,
   RenderAudioPreviewProgress,
   TranslationBatchReport as SharedTranslationBatchReport,
+  VideoCropSettings,
 } from '@shared/types/caption';
 import { getCaptionSessionPathFromOutputDir, nowIso } from '@shared/utils/captionSession';
 import {
@@ -293,6 +294,7 @@ interface UseCaptionProcessingProps {
     logoPath?: string;
     logoPosition?: { x: number; y: number } | null;
     logoScale?: number;
+    crop?: VideoCropSettings;
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
     translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
@@ -603,6 +605,10 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
       settings.logoPosition
     ),
     logoScale: withFallback(readNumber(profile, 'logoScale'), settings.logoScale),
+    crop: withFallback(
+      (profile as Record<string, unknown>).crop as VideoCropSettings | undefined,
+      settings.crop
+    ),
     thumbnailFontName: withFallback(readString(profile, 'thumbnailFontName'), settings.thumbnailFontName),
     thumbnailFontSize: withFallback(readNumber(profile, 'thumbnailFontSize'), settings.thumbnailFontSize),
     thumbnailFontSizeRel: withFallback(readNumber(profile, 'thumbnailFontSizeRel'), settings.thumbnailFontSizeRel),
@@ -6086,6 +6092,7 @@ export function useCaptionProcessing({
           logoPath: cfg.logoPath,
           logoPosition: cfg.logoPosition,
           logoScale: cfg.logoScale,
+          crop: cfg.crop,
           portraitForegroundCropPercent: cfg.portraitForegroundCropPercent,
           thumbnailEnabled: thumbnailEnabledForRender,
           thumbnailDurationSec: thumbnailDurationSecForRender,

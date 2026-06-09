@@ -1,4 +1,5 @@
-import { CaptionCoverMode, CoverQuad, RenderProgress, RenderVideoOptions, VideoMetadata } from '../../../../shared/types/caption';
+import { CaptionCoverMode, CoverQuad, RenderProgress, RenderVideoOptions, VideoCropSettings, VideoMetadata } from '../../../../shared/types/caption';
+import type { ResolvedVideoCrop } from './cropFilterBuilder';
 
 export type CoverFeatherStrategy = 'auto' | 'geq_distance' | 'gblur_mask';
 
@@ -44,6 +45,10 @@ export interface HardsubAudioMixBuildOutput {
 
 export interface VideoFilterBuildInput {
   inputLabel: string;
+  crop?: VideoCropSettings | null;
+  resolvedCrop?: ResolvedVideoCrop | null;
+  sourceWidth?: number;
+  sourceHeight?: number;
   needsScale: boolean;
   renderWidth: number;
   renderHeight: number;
@@ -70,6 +75,10 @@ export interface VideoFilterBuildOutput {
 
 export interface PortraitVideoFilterBuildInput {
   inputLabel: string;
+  crop?: VideoCropSettings | null;
+  resolvedCrop?: ResolvedVideoCrop | null;
+  sourceWidth?: number;
+  sourceHeight?: number;
   outputWidth: number;
   outputHeight: number;
   renderSubtitle?: boolean;

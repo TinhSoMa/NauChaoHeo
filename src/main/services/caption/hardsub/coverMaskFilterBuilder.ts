@@ -69,6 +69,29 @@ const MAX_COVER_FEATHER_PERCENT = 50;
 const DEFAULT_COVER_FEATHER_PERCENT = 20;
 const DEFAULT_FEATHER_STRATEGY: Exclude<CoverFeatherStrategy, 'auto'> = 'geq_distance';
 
+function passthroughFilter(inputLabel: string, outputLabel: string): string[] {
+  return [`${ensureLabelRef(inputLabel)}null${outputLabel}`];
+}
+
+function clampCropRect(
+  rect: { x: number; y: number; w: number; h: number },
+  renderWidth: number,
+  renderHeight: number
+): { x: number; y: number; w: number; h: number } | null {
+  const safeW = Math.max(2, Math.floor(Number.isFinite(renderWidth) ? renderWidth : 2));
+  const safeH = Math.max(2, Math.floor(Number.isFinite(renderHeight) ? renderHeight : 2));
+  const x = Math.max(0, Math.min(safeW - 2, Math.floor(Number.isFinite(rect.x) ? rect.x : 0)));
+  const y = Math.max(0, Math.min(safeH - 2, Math.floor(Number.isFinite(rect.y) ? rect.y : 0)));
+  const maxW = Math.max(0, safeW - x);
+  const maxH = Math.max(0, safeH - y);
+  const w = Math.max(0, Math.min(maxW, Math.floor(Number.isFinite(rect.w) ? rect.w : 0)));
+  const h = Math.max(0, Math.min(maxH, Math.floor(Number.isFinite(rect.h) ? rect.h : 0)));
+  if (w < 2 || h < 2) {
+    return null;
+  }
+  return { x, y, w, h };
+}
+
 function normalizeCoverFeatherPx(value: number | undefined, maxForRect: number): number {
   const fallback = Math.min(DEFAULT_COVER_FEATHER_PX, maxForRect);
   if (!Number.isFinite(value)) {
@@ -155,7 +178,7 @@ export function buildInPlaceBlurFilter(
 
   if (!isConvexQuad(normalized)) {
     return {
-      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      filterParts: passthroughFilter(input.inputLabel, outputLabel),
       outputLabel,
       applied: false,
       reason: 'cover_quad_not_convex',
@@ -166,14 +189,24 @@ export function buildInPlaceBlurFilter(
   const normHeight = quadHeight(normalized);
   if (normHeight <= 0.001 || bbox.maxX - bbox.minX <= 0.001) {
     return {
-      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      filterParts: passthroughFilter(input.inputLabel, outputLabel),
       outputLabel,
       applied: false,
       reason: 'cover_quad_too_small',
     };
   }
 
-  const rectPx = resolveCoverRectPixels(normalized, input.renderWidth, input.renderHeight);
+  const rawRectPx = resolveCoverRectPixels(normalized, input.renderWidth, input.renderHeight);
+  const rectPx = clampCropRect(rawRectPx, input.renderWidth, input.renderHeight);
+  if (!rectPx) {
+    return {
+      filterParts: passthroughFilter(input.inputLabel, outputLabel),
+      outputLabel,
+      applied: false,
+      reason: 'cover_rect_invalid_after_crop',
+      debug: { rawRectPx, renderWidth: input.renderWidth, renderHeight: input.renderHeight },
+    };
+  }
   const blurStrength = normalizeInPlaceBlurStrength(input.inPlaceBlurStrength);
   const blurRadius = resolveInPlaceBlurRadius(blurStrength);
   const prefix = (input.labelPrefix || 'cover_blur').replace(/[^A-Za-z0-9_]/g, '_');
@@ -251,7 +284,7 @@ export function buildCopyFromAboveFilter(
 
   if (!isConvexQuad(normalized)) {
     return {
-      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      filterParts: passthroughFilter(input.inputLabel, outputLabel),
       outputLabel,
       applied: false,
       reason: 'cover_quad_not_convex',
@@ -262,7 +295,7 @@ export function buildCopyFromAboveFilter(
   const normHeight = quadHeight(normalized);
   if (normHeight <= 0.001 || bbox.maxX - bbox.minX <= 0.001) {
     return {
-      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      filterParts: passthroughFilter(input.inputLabel, outputLabel),
       outputLabel,
       applied: false,
       reason: 'cover_quad_too_small',
@@ -273,7 +306,7 @@ export function buildCopyFromAboveFilter(
   const offsetPx = Math.max(0, Math.round(offsetNorm * Math.max(1, input.renderHeight)));
   if (offsetPx <= 0) {
     return {
-      filterParts: [`${ensureLabelRef(input.inputLabel)}null${outputLabel}`],
+      filterParts: passthroughFilter(input.inputLabel, outputLabel),
       outputLabel,
       applied: false,
       reason: 'copy_offset_zero',
@@ -292,8 +325,29 @@ export function buildCopyFromAboveFilter(
   const isRect = isAxisAlignedRectangle(normalized);
 
   if (isRect) {
-    const rectPx = resolveCoverRectPixels(normalized, input.renderWidth, input.renderHeight);
-    const sourceY = resolveCopySourceY(rectPx.y, rectPx.h, offsetPx, input.renderHeight);
+    const rawRectPx = resolveCoverRectPixels(normalized, input.renderWidth, input.renderHeight);
+    const rectPx = clampCropRect(rawRectPx, input.renderWidth, input.renderHeight);
+    if (!rectPx) {
+      return {
+        filterParts: passthroughFilter(input.inputLabel, outputLabel),
+        outputLabel,
+        applied: false,
+        reason: 'cover_rect_invalid_after_crop',
+        debug: { rawRectPx, renderWidth: input.renderWidth, renderHeight: input.renderHeight },
+      };
+    }
+    const sourceYRaw = resolveCopySourceY(rectPx.y, rectPx.h, offsetPx, input.renderHeight);
+    const sourceRect = clampCropRect({ x: rectPx.x, y: sourceYRaw, w: rectPx.w, h: rectPx.h }, input.renderWidth, input.renderHeight);
+    if (!sourceRect) {
+      return {
+        filterParts: passthroughFilter(input.inputLabel, outputLabel),
+        outputLabel,
+        applied: false,
+        reason: 'copy_source_rect_invalid_after_crop',
+        debug: { rectPx, sourceYRaw, renderWidth: input.renderWidth, renderHeight: input.renderHeight },
+      };
+    }
+    const sourceY = sourceRect.y;
     const patchLabel = `[${prefix}_patch_rgb]`;
     const patchAlphaLabel = `[${prefix}_patch_alpha]`;
     const maskPatchLabel = `[${prefix}_mask_patch]`;

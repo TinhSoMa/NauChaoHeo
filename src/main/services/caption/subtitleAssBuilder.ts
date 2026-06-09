@@ -18,6 +18,7 @@ import {
 } from '../../../shared/utils/subtitleShadowProfile';
 import { hexToAssColor } from './assConverter';
 import { getVideoMetadata } from './hardsub/mediaProbe';
+import { resolveVideoCrop } from './hardsub/cropFilterBuilder';
 import { readRenderTimingContext } from './hardsub/timingContext';
 import { registerTempFile } from './garbageCollector';
 

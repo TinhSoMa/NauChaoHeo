@@ -1,5 +1,6 @@
 import { PortraitVideoFilterBuildInput, PortraitVideoFilterBuildOutput } from './types';
 import { buildCopyFromAboveFilter, buildInPlaceBlurFilter } from './coverMaskFilterBuilder';
+import { resolveVideoCrop } from './cropFilterBuilder';
 
 function appendBackgroundBottomBlur(
   parts: string[],
@@ -34,6 +35,15 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
   const parts: string[] = [];
   const enableMark = input.renderMark !== false;
   const enableSubtitle = input.renderSubtitle !== false;
+  const outputDar = `${input.outputWidth}/${input.outputHeight}`;
+  const sourceInputLabel = (() => {
+    const resolvedCrop = input.resolvedCrop || resolveVideoCrop(input.crop, input.sourceWidth || input.outputWidth, input.sourceHeight || input.outputHeight);
+    if (!resolvedCrop) {
+      return input.inputLabel;
+    }
+    parts.push(`${input.inputLabel}${resolvedCrop.filter}[portrait_crop_src]`);
+    return '[portrait_crop_src]';
+  })();
   const outputAspect = (input.outputWidth / input.outputHeight).toFixed(6);
   const sourceAspect = Number.isFinite(input.sourceAspect) ? input.sourceAspect : 0;
   const cropPercent = Math.min(20, Math.max(0, Number.isFinite(input.foregroundCropPercent) ? input.foregroundCropPercent : 0));
@@ -45,14 +55,14 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
     `scale='if(gte(a,${outputAspect}),${input.outputWidth},-2)':'if(gte(a,${outputAspect}),-2,${input.outputHeight})'`;
 
   if (input.layoutStrategy === 'direct_fit_no_blur' && sourceAspect > 0) {
-    parts.push(`${input.inputLabel}${fgScaleFilter}[fg_fit]`);
+    parts.push(`${sourceInputLabel}${fgScaleFilter}[fg_fit]`);
     parts.push(
       '[fg_fit]pad=' +
       `${input.outputWidth}:${input.outputHeight}:(ow-iw)/2:(oh-ih)/2:black,` +
-      'setsar=1,setdar=9/16[v_canvas]'
+      `setsar=1,setdar=${outputDar}[v_canvas]`
     );
   } else {
-    parts.push(`${input.inputLabel}split=2[bg][fg]`);
+    parts.push(`${sourceInputLabel}split=2[bg][fg]`);
     parts.push(
       `[bg]scale=${input.bgDownscaleWidth}:${input.bgDownscaleHeight},` +
       `boxblur=${input.bgBlurLumaRadius}:${input.bgBlurLumaPower},` +
@@ -60,7 +70,7 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
     );
     parts.push(`[fg]${fgScaleFilter}[fg_fit]`);
     const bgLabel = enableMark ? appendBackgroundBottomBlur(parts, input, 'bg_blur') : 'bg_blur';
-    parts.push(`[${bgLabel}][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=9/16[v_canvas]`);
+    parts.push(`[${bgLabel}][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=${outputDar}[v_canvas]`);
   }
 
   let currentLabel = '[v_canvas]';
