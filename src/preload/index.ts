@@ -14,6 +14,7 @@ import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
 import { grokUiApi, GrokUiAPI } from './grokUiApi'
 import { downloaderApi, DownloaderAPI } from './downloaderApi'
 import { shutdownApi, ShutdownAPI } from './shutdownApi'
+import { capcutTtsSecretsApi, CapcutTtsSecretsAPI } from './capcutTtsSecretsApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -85,6 +86,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Shutdown API (auto shutdown)
   shutdown: shutdownApi,
+
+  // CapCut TTS Secrets API
+  capcutTtsSecrets: capcutTtsSecretsApi,
 })
 
 // Declare types for the exposed API
@@ -114,6 +118,7 @@ declare global {
       rotationQueue: RotationQueueAPI
       downloader: DownloaderAPI
       shutdown: ShutdownAPI
+      capcutTtsSecrets: CapcutTtsSecretsAPI
     }
   }
 }

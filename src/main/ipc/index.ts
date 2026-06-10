@@ -20,6 +20,7 @@ import { registerGrokUiHandlers } from './grokUiHandlers';
 import { registerDownloaderHandlers } from './downloaderHandlers';
 import { registerShutdownHandlers } from './shutdownHandlers';
 import { registerMemoryContextHandlers } from './memoryContextHandlers';
+import { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -36,6 +37,9 @@ export function registerAllHandlers(): void {
 
   // Đăng ký TTS handlers (text-to-speech)
   registerTTSHandlers();
+
+  // Đăng ký CapCut TTS Secrets handlers
+  registerCapcutTtsSecretsHandlers();
 
   // Đăng ký Story handlers
   registerStoryHandlers();
@@ -100,4 +104,5 @@ export { registerCutVideoHandlers } from './cutVideoHandlers';
 export { registerRotationQueueHandlers } from './rotationQueueHandlers';
 export { registerShutdownHandlers } from './shutdownHandlers';
 export { registerMemoryContextHandlers } from './memoryContextHandlers';
+export { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 

@@ -447,7 +447,14 @@ export const CAPTION_IPC_CHANNELS = {
   TTS_AUDIT_FIT_AUDIO: 'tts:auditFitAudio',
   TTS_AUDIT_FIT_AUDIO_FROM_SESSIONS: 'tts:auditFitAudioFromSessions',
   TTS_CHECK_FILES: 'tts:checkFiles',
-  
+
+  // CapCut TTS Configs
+  CAPCUT_TTS_CONFIGS_LIST: 'tts:capcutConfigs:list',
+  CAPCUT_TTS_CONFIGS_GET: 'tts:capcutConfigs:get',
+  CAPCUT_TTS_CONFIGS_SAVE: 'tts:capcutConfigs:save',
+  CAPCUT_TTS_CONFIGS_DELETE: 'tts:capcutConfigs:delete',
+  CAPCUT_TTS_CONFIGS_SET_ACTIVE: 'tts:capcutConfigs:setActive',
+
   // Audio Merge
   AUDIO_ANALYZE: 'audio:analyze',
   AUDIO_MERGE: 'audio:merge',

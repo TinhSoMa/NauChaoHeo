@@ -1213,5 +1213,50 @@ export function initDatabase(): void {
       updated_at INTEGER NOT NULL
     );
   `);
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies)');
+  // Create capcut_tts_configs table - lưu cấu hình CapCut TTS theo version (multi-row)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS capcut_tts_configs (
+      version TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      app_key TEXT,
+      token TEXT,
+      ws_url TEXT,
+      user_agent TEXT,
+      x_ss_dp TEXT,
+      extra_headers TEXT,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Migration: copy từ capcut_tts_secrets cũ (nếu tồn tại) sang capcut_tts_configs
+  try {
+    const oldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_secrets'").get() as any;
+    if (oldTable) {
+      const oldRow = db.prepare('SELECT * FROM capcut_tts_secrets WHERE id = 1').get() as any;
+      if (oldRow && (oldRow.app_key || oldRow.token)) {
+        const configExists = db.prepare('SELECT version FROM capcut_tts_configs WHERE version = ?').get('1.5.0');
+        if (!configExists) {
+          db.prepare(`
+            INSERT INTO capcut_tts_configs (version, label, app_key, token, ws_url, user_agent, x_ss_dp, extra_headers, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+          `).run(
+            '1.5.0', 'Mặc định',
+            oldRow.app_key, oldRow.token,
+            oldRow.ws_url || 'wss://wss-global.zijieapi.com/ws',
+            oldRow.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            oldRow.x_ss_dp,
+            oldRow.extra_headers,
+            oldRow.updated_at || Date.now(),
+            oldRow.updated_at || Date.now()
+          );
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Database] Migration capcut_tts_secrets failed:', e);
+  }
+
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_configs)');
 }

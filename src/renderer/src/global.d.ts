@@ -875,6 +875,39 @@ interface AppSettings {
   };
 }
 
+interface CapcutTtsVersionData {
+  version: string;
+  label: string;
+  appKey: string | null;
+  token: string | null;
+  wsUrl: string;
+  userAgent: string;
+  xSsDp: string | null;
+  extraHeaders: Record<string, string> | null;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface CapcutTtsSecretsAPI {
+  list: () => Promise<IpcApiResponse<CapcutTtsVersionData[]>>;
+  get: (version?: string) => Promise<IpcApiResponse<CapcutTtsVersionData | null>>;
+  save: (
+    version: string,
+    label: string,
+    payload: {
+      appKey?: string | null;
+      token?: string | null;
+      wsUrl?: string;
+      userAgent?: string;
+      xSsDp?: string | null;
+      extraHeaders?: Record<string, string> | null;
+    }
+  ) => Promise<IpcApiResponse<CapcutTtsVersionData>>;
+  delete: (version: string) => Promise<IpcApiResponse<{ deleted: boolean }>>;
+  setActive: (version: string) => Promise<IpcApiResponse<CapcutTtsVersionData | null>>;
+}
+
 interface GrokUiProfileConfig {
   id: string;
   profileDir: string | null;
@@ -1426,6 +1459,9 @@ declare global {
 
       // Shutdown API
       shutdown: ShutdownAPI;
+
+      // CapCut TTS Secrets API
+      capcutTtsSecrets: CapcutTtsSecretsAPI;
     };
   }
 }

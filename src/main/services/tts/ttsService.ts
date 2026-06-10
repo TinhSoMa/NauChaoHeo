@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import WebSocket, { RawData } from 'ws';
 import { AppSettingsService } from '../appSettings';
+import { CapcutTtsConfigsDatabase } from '../../database/capcutTtsSecretsDatabase';
 import { getProxyManager } from '../proxy/proxyManager';
 import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import { getFFprobePath } from '../../utils/ffmpegPath';
@@ -720,32 +721,25 @@ function shouldPersistCapcutSecrets(
 }
 
 function loadCapCutRuntimeConfig(): { ok: true; config: CapCutRuntimeConfig } | { ok: false; error: string } {
-  const allSettings = AppSettingsService.getAll();
-  const savedSecrets = allSettings.capcutTtsSecrets || {
-    appKey: null,
-    token: null,
-    wsUrl: null,
-    userAgent: null,
-    xSsDp: null,
-    extraHeaders: null,
-  };
+  const active = CapcutTtsConfigsDatabase.getActive();
 
-  const appKey = normalizeSecretValue(savedSecrets.appKey) || normalizeSecretValue(process.env.CAPCUT_TTS_APPKEY);
-  const token = normalizeSecretValue(savedSecrets.token) || normalizeSecretValue(process.env.CAPCUT_TTS_TOKEN);
-  const wsUrl =
-    normalizeSecretValue(savedSecrets.wsUrl) ||
-    normalizeSecretValue(process.env.CAPCUT_TTS_WS_URL) ||
-    DEFAULT_CAPCUT_WS_URL;
-  const userAgent =
-    normalizeSecretValue(savedSecrets.userAgent) ||
-    normalizeSecretValue(process.env.CAPCUT_TTS_USER_AGENT) ||
-    DEFAULT_CAPCUT_USER_AGENT;
-  const xSsDp =
-    normalizeSecretValue(savedSecrets.xSsDp) ||
-    normalizeSecretValue(process.env.CAPCUT_TTS_X_SS_DP) ||
-    DEFAULT_CAPCUT_X_SS_DP;
+  if (!active) {
+    return { ok: false, error: 'Thiếu cấu hình CapCut TTS: chưa có phiên bản nào được cấu hình.' };
+  }
+
+  const envAppKey = normalizeSecretValue(process.env.CAPCUT_TTS_APPKEY);
+  const envToken = normalizeSecretValue(process.env.CAPCUT_TTS_TOKEN);
+  const envWsUrl = normalizeSecretValue(process.env.CAPCUT_TTS_WS_URL);
+  const envUserAgent = normalizeSecretValue(process.env.CAPCUT_TTS_USER_AGENT);
+  const envXsDp = normalizeSecretValue(process.env.CAPCUT_TTS_X_SS_DP);
+
+  const appKey = envAppKey || normalizeSecretValue(active.appKey) || '';
+  const token = envToken || normalizeSecretValue(active.token) || '';
+  const wsUrl = envWsUrl || active.wsUrl;
+  const userAgent = envUserAgent || active.userAgent;
+  const xSsDp = envXsDp || normalizeSecretValue(active.xSsDp) || '';
   const extraHeaders = {
-    ...normalizeHeaderMap(savedSecrets.extraHeaders),
+    ...normalizeHeaderMap(active.extraHeaders),
     ...parseExtraCapCutHeaders(process.env.CAPCUT_TTS_HEADERS_JSON),
   };
 
@@ -760,26 +754,6 @@ function loadCapCutRuntimeConfig(): { ok: true; config: CapCutRuntimeConfig } | 
   }
   const safeAppKey = appKey as string;
   const safeToken = token as string;
-
-  if (shouldPersistCapcutSecrets(savedSecrets, {
-    appKey: safeAppKey,
-    token: safeToken,
-    wsUrl,
-    userAgent,
-    xSsDp,
-    extraHeaders,
-  })) {
-    AppSettingsService.update({
-      capcutTtsSecrets: {
-        appKey: safeAppKey,
-        token: safeToken,
-        wsUrl,
-        userAgent,
-        xSsDp,
-        extraHeaders: Object.keys(extraHeaders).length > 0 ? extraHeaders : null,
-      },
-    });
-  }
 
   const headers: Record<string, string> = {
     'User-Agent': userAgent,
