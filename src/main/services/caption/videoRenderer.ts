@@ -58,6 +58,7 @@ import {
 } from './hardsub/thumbnailPipeline';
 import { registerTempFile, unregisterTempFile } from './garbageCollector';
 import { exportToSrt, msToSrtTime } from './srtParser';
+import { getAvailableHardwareEncoders } from '../../utils/ffmpegEncoders';
 import type { CoverFeatherStrategy } from './hardsub/types';
 
 export const getVideoMetadata = probeGetVideoMetadata;
@@ -121,6 +122,9 @@ interface SpeedMaxProfile {
   qsvGlobalQuality: number;
   nvencPreset: string;
   nvencCq: number;
+  nvencBFrames: number;
+  nvencTune: string;
+  nvencMultiPass: string;
   x264Preset: string;
   x264Crf: number;
   portraitBgDownscaleDivisor: number;
@@ -134,6 +138,9 @@ const SPEED_MAX_PROFILE: SpeedMaxProfile = {
   qsvGlobalQuality: 27,
   nvencPreset: 'p1',
   nvencCq: 25,
+  nvencBFrames: 3,
+  nvencTune: 'hq',
+  nvencMultiPass: '2pass-full',
   x264Preset: 'veryfast',
   x264Crf: 24,
   portraitBgDownscaleDivisor: 10,
@@ -197,15 +204,29 @@ function resolveEncoderProfile(
   }
 
   if (hardware === 'nvenc') {
+    const available = getAvailableHardwareEncoders();
+    if (!available.nvenc) {
+      console.warn('[VideoRenderer] NVENC không khả dụng, fallback về libx264.');
+      return {
+        hwaccelArgs: [],
+        videoCodec: 'libx264',
+        codecParams: ['-preset', SPEED_MAX_PROFILE.x264Preset, '-crf', String(SPEED_MAX_PROFILE.x264Crf)],
+        pixelFormat: 'yuv420p',
+        decodePath: 'software (nvenc fallback)',
+      };
+    }
     return {
       hwaccelArgs: [],
       videoCodec: 'h264_nvenc',
-      // Ưu tiên tốc độ khi user chọn NVENC.
       codecParams: [
         '-preset', SPEED_MAX_PROFILE.nvencPreset,
         '-rc', 'vbr',
         '-cq', String(SPEED_MAX_PROFILE.nvencCq),
         '-b:v', '0',
+        '-bf', String(SPEED_MAX_PROFILE.nvencBFrames),
+        '-b_ref_mode', 'middle',
+        '-tune', SPEED_MAX_PROFILE.nvencTune,
+        '-multipass', SPEED_MAX_PROFILE.nvencMultiPass,
       ],
       pixelFormat: 'nv12',
       decodePath: 'software_decode + nvenc_encode',
@@ -751,6 +772,8 @@ function summarizeFfmpegStderr(stderr: string): string {
 
 const COVER_FEATHER_RETRYABLE_PATTERN =
   /(could not open encoder before eof|output file is empty|nothing was written|error while filtering|error initializing (complex )?filters?|invalid argument)/i;
+
+const UNKNOWN_ENCODER_RETRYABLE_PATTERN = /unknown encoder/i;
 
 function shouldRetryWithGblurFeather(
   coverMode: string | undefined,
@@ -1446,6 +1469,21 @@ export async function renderHardsubVideo(
     });
     return renderHardsubVideo(options, progressCallback, 'gblur_mask');
   }
+  if (
+    !renderResult.success &&
+    options.hardwareAcceleration !== 'none' &&
+    UNKNOWN_ENCODER_RETRYABLE_PATTERN.test(renderResult.error || '')
+  ) {
+    console.warn('[VideoRenderer][Hardsub] Unknown encoder, fallback về software libx264.', {
+      hardware: options.hardwareAcceleration,
+      error: renderResult.error,
+    });
+    return renderHardsubVideo(
+      { ...options, hardwareAcceleration: 'none' },
+      progressCallback,
+      featherStrategy
+    );
+  }
   const renderWallMs = Date.now() - renderStartedAtMs;
   if (renderResult.success) {
     renderResult.timingPayload = {
@@ -1998,6 +2036,21 @@ export async function renderHardsubPortraitVideo(
       error: renderResult.error,
     });
     return renderHardsubPortraitVideo(options, progressCallback, 'gblur_mask');
+  }
+  if (
+    !renderResult.success &&
+    options.hardwareAcceleration !== 'none' &&
+    UNKNOWN_ENCODER_RETRYABLE_PATTERN.test(renderResult.error || '')
+  ) {
+    console.warn('[VideoRenderer][HardsubPortrait] Unknown encoder, fallback về software libx264.', {
+      hardware: options.hardwareAcceleration,
+      error: renderResult.error,
+    });
+    return renderHardsubPortraitVideo(
+      { ...options, hardwareAcceleration: 'none' },
+      progressCallback,
+      featherStrategy
+    );
   }
   const renderWallMs = Date.now() - renderStartedAtMs;
   if (renderResult.success) {
