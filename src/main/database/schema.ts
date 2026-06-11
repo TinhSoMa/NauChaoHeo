@@ -1213,50 +1213,145 @@ export function initDatabase(): void {
       updated_at INTEGER NOT NULL
     );
   `);
-  // Create capcut_tts_configs table - lưu cấu hình CapCut TTS theo version (multi-row)
+  // Create capcut_tts_shared_config table - singleton chứa appKey/wsUrl/userAgent/xSsDp/extraHeaders dùng chung
   db.exec(`
-    CREATE TABLE IF NOT EXISTS capcut_tts_configs (
-      version TEXT PRIMARY KEY,
-      label TEXT NOT NULL DEFAULT '',
+    CREATE TABLE IF NOT EXISTS capcut_tts_shared_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
       app_key TEXT,
-      token TEXT,
-      ws_url TEXT,
-      user_agent TEXT,
+      ws_url TEXT NOT NULL DEFAULT 'wss://wss-global.zijieapi.com/ws',
+      user_agent TEXT NOT NULL DEFAULT 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       x_ss_dp TEXT,
       extra_headers TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  // Create capcut_tts_tokens table - per-version token/label/isActive
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS capcut_tts_tokens (
+      version TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      token TEXT,
       is_active INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
   `);
 
-  // Migration: copy từ capcut_tts_secrets cũ (nếu tồn tại) sang capcut_tts_configs
-  try {
-    const oldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_secrets'").get() as any;
-    if (oldTable) {
-      const oldRow = db.prepare('SELECT * FROM capcut_tts_secrets WHERE id = 1').get() as any;
-      if (oldRow && (oldRow.app_key || oldRow.token)) {
-        const configExists = db.prepare('SELECT version FROM capcut_tts_configs WHERE version = ?').get('1.5.0');
-        if (!configExists) {
-          db.prepare(`
-            INSERT INTO capcut_tts_configs (version, label, app_key, token, ws_url, user_agent, x_ss_dp, extra_headers, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-          `).run(
-            '1.5.0', 'Mặc định',
-            oldRow.app_key, oldRow.token,
-            oldRow.ws_url || 'wss://wss-global.zijieapi.com/ws',
-            oldRow.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            oldRow.x_ss_dp,
-            oldRow.extra_headers,
-            oldRow.updated_at || Date.now(),
-            oldRow.updated_at || Date.now()
-          );
-        }
+  // Migration: từ capcut_tts_configs (cũ) hoặc capcut_tts_secrets (cũ hơn) sang 2 bảng mới
+  const migrateToNewSchema = (): void => {
+    const targetEmpty = !db.prepare('SELECT version FROM capcut_tts_tokens LIMIT 1').get();
+    if (!targetEmpty) return;
+
+    const now = Date.now();
+
+    // Helper: upsert shared config singleton
+    const upsertSharedConfig = (row: { app_key?: string | null; ws_url?: string | null; user_agent?: string | null; x_ss_dp?: string | null; extra_headers?: string | null }): void => {
+      const existing = db.prepare('SELECT id FROM capcut_tts_shared_config WHERE id = 1').get();
+      if (existing) {
+        db.prepare(`
+          UPDATE capcut_tts_shared_config
+          SET app_key = COALESCE(?, app_key),
+              ws_url = COALESCE(?, ws_url),
+              user_agent = COALESCE(?, user_agent),
+              x_ss_dp = COALESCE(?, x_ss_dp),
+              extra_headers = COALESCE(?, extra_headers),
+              updated_at = ?
+          WHERE id = 1
+        `).run(
+          row.app_key ?? null, row.ws_url ?? null, row.user_agent ?? null,
+          row.x_ss_dp ?? null, row.extra_headers ?? null, now
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO capcut_tts_shared_config (id, app_key, ws_url, user_agent, x_ss_dp, extra_headers, updated_at)
+          VALUES (1, ?, ?, ?, ?, ?, ?)
+        `).run(
+          row.app_key ?? null, row.ws_url || 'wss://wss-global.zijieapi.com/ws',
+          row.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          row.x_ss_dp ?? null, row.extra_headers ?? null, now
+        );
       }
+    };
+
+    try {
+      // Case 1: migrate từ capcut_tts_configs (multi-row)
+      const configsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_configs'").get() as any;
+      if (configsTable) {
+        const rows = db.prepare('SELECT * FROM capcut_tts_configs ORDER BY is_active DESC, created_at ASC').all() as any[];
+        if (rows.length > 0) {
+          // Shared config: lấy từ active row, fallback row đầu tiên
+          const activeRow = rows.find((r: any) => r.is_active === 1) || rows[0];
+          upsertSharedConfig({
+            app_key: activeRow.app_key,
+            ws_url: activeRow.ws_url,
+            user_agent: activeRow.user_agent,
+            x_ss_dp: activeRow.x_ss_dp,
+            extra_headers: activeRow.extra_headers,
+          });
+
+          // Per-version tokens
+          for (const row of rows) {
+            const existing = db.prepare('SELECT version FROM capcut_tts_tokens WHERE version = ?').get(row.version);
+            if (!existing) {
+              db.prepare(`
+                INSERT INTO capcut_tts_tokens (version, label, token, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+              `).run(row.version, row.label, row.token, row.is_active, row.created_at || now, row.updated_at || now);
+            }
+          }
+
+          console.log('[Database] Migration: migrated ' + rows.length + ' configs from capcut_tts_configs');
+        }
+
+        // Drop old table
+        try { db.exec('DROP TABLE IF EXISTS capcut_tts_configs'); console.log('[Database] Dropped legacy table capcut_tts_configs'); } catch (e) { console.error('[Database] Drop capcut_tts_configs failed:', e); }
+        return;
+      }
+
+      // Case 2: migrate từ capcut_tts_secrets cũ (single-row, pre-capcut_tts_configs era)
+      const secretsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_secrets'").get() as any;
+      if (secretsTable) {
+        const oldRow = db.prepare('SELECT * FROM capcut_tts_secrets WHERE id = 1').get() as any;
+        if (oldRow && (oldRow.app_key || oldRow.token)) {
+          upsertSharedConfig({
+            app_key: oldRow.app_key,
+            ws_url: oldRow.ws_url,
+            user_agent: oldRow.user_agent,
+            x_ss_dp: oldRow.x_ss_dp,
+            extra_headers: oldRow.extra_headers,
+          });
+
+          db.prepare(`
+            INSERT INTO capcut_tts_tokens (version, label, token, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, ?)
+          `).run('1.5.0', 'Mặc định', oldRow.token, now, now);
+
+          console.log('[Database] Migration: migrated from capcut_tts_secrets');
+        }
+
+        try { db.exec('DROP TABLE IF EXISTS capcut_tts_secrets'); console.log('[Database] Dropped legacy table capcut_tts_secrets'); } catch (e) { console.error('[Database] Drop capcut_tts_secrets failed:', e); }
+      }
+    } catch (e) {
+      console.error('[Database] Migration to new schema failed:', e);
+    }
+  };
+
+  migrateToNewSchema();
+
+  // Ensure shared config singleton exists (with defaults) if still empty
+  try {
+    const sharedExists = db.prepare('SELECT id FROM capcut_tts_shared_config WHERE id = 1').get();
+    if (!sharedExists) {
+      db.prepare(`
+        INSERT INTO capcut_tts_shared_config (id, app_key, ws_url, user_agent, x_ss_dp, extra_headers, updated_at)
+        VALUES (1, NULL, 'wss://wss-global.zijieapi.com/ws', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', NULL, NULL, ?)
+      `).run(Date.now());
+      console.log('[Database] Created default capcut_tts_shared_config');
     }
   } catch (e) {
-    console.error('[Database] Migration capcut_tts_secrets failed:', e);
+    console.error('[Database] Ensure shared config failed:', e);
   }
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_configs)');
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens)');
 }

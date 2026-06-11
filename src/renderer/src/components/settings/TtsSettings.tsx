@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Plus, Trash2, Star, Undo2 } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Plus, Trash2, Star } from 'lucide-react';
 import styles from './TtsSettings.module.css';
 import {
   VOICES,
@@ -10,44 +10,6 @@ import {
   DEFAULT_VOLUME,
 } from '../../config/captionConfig';
 import type { CapcutTtsVersionData } from '../../../../preload/capcutTtsSecretsApi';
-
-interface CapcutForm {
-  appKey: string;
-  token: string;
-  wsUrl: string;
-  userAgent: string;
-  xSsDp: string;
-  extraHeaders: string;
-}
-
-const EMPTY_FORM: CapcutForm = {
-  appKey: '',
-  token: '',
-  wsUrl: '',
-  userAgent: '',
-  xSsDp: '',
-  extraHeaders: '',
-};
-
-const DEFAULT_150: CapcutForm = {
-  appKey: '',
-  token: '',
-  wsUrl: 'wss://wss-global.zijieapi.com/ws',
-  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-  xSsDp: '',
-  extraHeaders: '',
-};
-
-function toForm(v: CapcutTtsVersionData): CapcutForm {
-  return {
-    appKey: v.appKey ?? '',
-    token: v.token ?? '',
-    wsUrl: v.wsUrl || '',
-    userAgent: v.userAgent || '',
-    xSsDp: v.xSsDp ?? '',
-    extraHeaders: v.extraHeaders ? JSON.stringify(v.extraHeaders, null, 2) : '',
-  };
-}
 
 interface TtsSettingsProps {
   onBack: () => void;
@@ -61,12 +23,10 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
   const [versions, setVersions] = useState<CapcutTtsVersionData[]>([]);
   const [selectedVersion, setSelectedVersion] = useState('');
   const [activeVersion, setActiveVersion] = useState('');
-  const [form, setForm] = useState<CapcutForm>(EMPTY_FORM);
-  const [showSecrets, setShowSecrets] = useState(true);
+  const [token, setToken] = useState('');
   const [saving, setSaving] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newVersionName, setNewVersionName] = useState('');
-  const prevSelectedVersion = useRef(selectedVersion);
   const versionInputRef = useRef<HTMLInputElement>(null);
 
   const loadData = useCallback(async () => {
@@ -83,29 +43,25 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
 
     if (list.length > 0 && !selectedVersion) {
       setSelectedVersion(list[0].version);
-      setForm(toForm(list[0]));
+      setToken(list[0].token ?? '');
     } else if (list.length > 0) {
       const match = list.find((v) => v.version === selectedVersion);
-      if (match) setForm(toForm(match));
+      if (match) setToken(match.token ?? '');
     }
   }, [selectedVersion]);
 
   useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
-    if (selectedVersion !== prevSelectedVersion.current) {
-      prevSelectedVersion.current = selectedVersion;
-      const v = versions.find((x) => x.version === selectedVersion);
-      if (v) setForm(toForm(v));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVersion]);
-
-  useEffect(() => {
     if (showAddForm && versionInputRef.current) {
       versionInputRef.current.focus();
     }
   }, [showAddForm]);
+
+  useEffect(() => {
+    const v = versions.find((x) => x.version === selectedVersion);
+    if (v) setToken(v.token ?? '');
+  }, [selectedVersion, versions]);
 
   const handleVersionChange = useCallback((ver: string) => {
     setSelectedVersion(ver);
@@ -121,41 +77,15 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
     if (!ver) { alert('Vui lòng nhập tên phiên bản.'); return; }
     const label = ver;
 
-    const template = versions.find((v) => v.version === activeVersion);
-    const payload = template
-      ? {
-          appKey: '',
-          token: '',
-          wsUrl: template.wsUrl,
-          userAgent: template.userAgent,
-          xSsDp: '',
-          extraHeaders: null as Record<string, string> | null,
-        }
-      : {
-          appKey: '',
-          token: '',
-          wsUrl: DEFAULT_150.wsUrl,
-          userAgent: DEFAULT_150.userAgent,
-          xSsDp: '',
-          extraHeaders: null as Record<string, string> | null,
-        };
-
-    const res = await window.electronAPI.capcutTtsSecrets.save(ver, label, payload);
+    const res = await window.electronAPI.capcutTtsSecrets.save(ver, label, { token: '' });
     if (!res.success) { alert('Lỗi: ' + (res.error || '')); return; }
 
     const listRes = await window.electronAPI.capcutTtsSecrets.list();
     if (listRes.data) setVersions(listRes.data);
     setSelectedVersion(ver);
-    setForm({
-      appKey: payload.appKey ?? '',
-      token: payload.token ?? '',
-      wsUrl: payload.wsUrl || '',
-      userAgent: payload.userAgent || '',
-      xSsDp: payload.xSsDp ?? '',
-      extraHeaders: '',
-    });
+    setToken('');
     setShowAddForm(false);
-  }, [newVersionName, versions, activeVersion]);
+  }, [newVersionName]);
 
   const handleDeleteVersion = useCallback(async () => {
     if (!selectedVersion) return;
@@ -182,7 +112,7 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
         setSelectedVersion(listRes.data[0].version);
       } else {
         setSelectedVersion('');
-        setForm(EMPTY_FORM);
+        setToken('');
       }
     }
   }, [selectedVersion, versions, activeVersion]);
@@ -197,45 +127,15 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
     }
   }, [selectedVersion]);
 
-  const handleResetDefaults = useCallback(async () => {
-    if (!selectedVersion) return;
-    if (!window.confirm(`Reset tất cả fields của "${selectedVersion}" về giá trị mặc định của phiên bản 1.5.0?`)) return;
-
-    const v150 = versions.find((x) => x.version === '1.5.0');
-    if (!v150) { alert('Không tìm thấy phiên bản 1.5.0 (mặc định).'); return; }
-
-    setForm(toForm(v150));
-  }, [selectedVersion, versions]);
-
   const handleSave = useCallback(async () => {
     if (!selectedVersion) return;
     setSaving(true);
-
-    let extraHeaders: Record<string, string> | null = null;
-    const h = form.extraHeaders.trim();
-    if (h) {
-      try {
-        extraHeaders = JSON.parse(h);
-        if (typeof extraHeaders !== 'object' || extraHeaders === null || Array.isArray(extraHeaders)) {
-          alert('extraHeaders phải là object JSON.');
-          setSaving(false); return;
-        }
-      } catch {
-        alert('extraHeaders không đúng định dạng JSON.');
-        setSaving(false); return;
-      }
-    }
 
     const v = versions.find((x) => x.version === selectedVersion);
     const label = v?.label || selectedVersion;
 
     const res = await window.electronAPI.capcutTtsSecrets.save(selectedVersion, label, {
-      appKey: form.appKey || null,
-      token: form.token || null,
-      wsUrl: form.wsUrl || undefined,
-      userAgent: form.userAgent || undefined,
-      xSsDp: form.xSsDp || null,
-      extraHeaders,
+      token: token || null,
     });
 
     if (!res.success) {
@@ -246,7 +146,7 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
       if (listRes.data) setVersions(listRes.data);
     }
     setSaving(false);
-  }, [selectedVersion, versions, form]);
+  }, [selectedVersion, versions, token]);
 
   const handleResetVoice = useCallback(() => {
     setDefaultVoice(DEFAULT_VOICE);
@@ -255,7 +155,6 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
   }, []);
 
   const selectedIsActive = selectedVersion === activeVersion;
-  const isDefault150 = selectedVersion === '1.5.0';
 
   return (
     <div className={styles.container}>
@@ -366,83 +265,18 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
 
         {selectedVersion && (
           <div className={styles.configCard}>
-            <div className={styles.cardTitle}>Thông số phiên bản</div>
-            <div className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>appKey</span>
-              <input
-                type={showSecrets ? 'text' : 'password'}
-                value={form.appKey}
-                onChange={(e) => setForm((p) => ({ ...p, appKey: e.target.value }))}
-                className={styles.fieldTextInput}
-                placeholder="appKey riêng"
-              />
-            </div>
+            <div className={styles.cardTitle}>Token phiên bản</div>
             <div className={styles.fieldGroup}>
               <span className={styles.fieldLabel}>token</span>
               <input
-                type={showSecrets ? 'text' : 'password'}
-                value={form.token}
-                onChange={(e) => setForm((p) => ({ ...p, token: e.target.value }))}
+                type="text"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
                 className={styles.fieldTextInput}
                 placeholder="token riêng"
+                spellCheck={false}
               />
             </div>
-            <div className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>wsUrl</span>
-              <input
-                type="text"
-                value={form.wsUrl}
-                onChange={(e) => setForm((p) => ({ ...p, wsUrl: e.target.value }))}
-                className={styles.fieldTextInput}
-                placeholder="wss://..."
-              />
-            </div>
-            <div className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>userAgent</span>
-              <input
-                type="text"
-                value={form.userAgent}
-                onChange={(e) => setForm((p) => ({ ...p, userAgent: e.target.value }))}
-                className={styles.fieldTextInput}
-                placeholder="User-Agent"
-              />
-            </div>
-            <div className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>xSsDp</span>
-              <input
-                type="text"
-                value={form.xSsDp}
-                onChange={(e) => setForm((p) => ({ ...p, xSsDp: e.target.value }))}
-                className={styles.fieldTextInput}
-                placeholder="X-SS-DP header"
-              />
-            </div>
-            <div className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>extraHeaders</span>
-              <textarea
-                value={form.extraHeaders}
-                onChange={(e) => setForm((p) => ({ ...p, extraHeaders: e.target.value }))}
-                className={styles.fieldTextarea}
-                placeholder='{"key": "value"}'
-                rows={3}
-              />
-            </div>
-            {!isDefault150 && (
-              <div className={styles.resetRow}>
-                <button className={styles.btnSecondary} onClick={handleResetDefaults}>
-                  <Undo2 size={14} />
-                  Reset về mặc định (1.5.0)
-                </button>
-              </div>
-            )}
-            <label className={styles.checkRow}>
-              <input
-                type="checkbox"
-                checked={showSecrets}
-                onChange={(e) => setShowSecrets(e.target.checked)}
-              />
-              Hiển thị giá trị bí mật
-            </label>
           </div>
         )}
 

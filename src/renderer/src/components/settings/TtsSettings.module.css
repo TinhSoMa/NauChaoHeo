@@ -135,25 +135,6 @@
   white-space: nowrap;
 }
 
-.fieldTextarea {
-  flex: 1;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  font-size: 13px;
-  outline: none;
-  resize: vertical;
-  transition: border-color 0.2s;
-  font-family: inherit;
-  line-height: 1.4;
-}
-
-.fieldTextarea:focus {
-  border-color: var(--color-primary);
-}
-
 /* Version row */
 .versionRow {
   display: flex;
@@ -281,22 +262,6 @@
   gap: 12px;
 }
 
-/* Password checkbox row */
-.checkRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 24px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.checkRow input {
-  accent-color: var(--color-primary);
-  cursor: pointer;
-}
-
 /* Inline add version form */
 .addForm {
   padding: 14px 24px;
@@ -313,8 +278,4 @@
   justify-content: flex-end;
 }
 
-/* Special: the reset defaults row is a fieldGroup with only a button */
-.resetRow {
-  composes: fieldGroup;
-  justify-content: flex-end;
-}
+

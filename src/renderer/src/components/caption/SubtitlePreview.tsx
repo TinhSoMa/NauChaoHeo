@@ -1,235 +1,105 @@
-/**
- * SubtitlePreview - Canvas preview hiển thị frame video + subtitle có thể kéo thả
- * Hỗ trợ 2 chế độ:
- *  - subtitle: kéo để đặt vị trí subtitle
- *  - blackout: landscape = tô đen đáy, portrait = blur đáy foreground
- */
-
 import { useEffect, useRef } from 'react';
-import { ASSStyleConfig, CoverQuad, RenderVideoOptions, SubtitleEntry, VideoCropSettings } from '@shared/types/caption';
-import { useSubtitlePreview } from './hooks/useSubtitlePreview';
-import { useSubtitleRenderPreviewState } from './hooks/useSubtitleRenderPreviewState';
-import { Crop, Crosshair, RotateCcw, Square, Trash2, Image, ZoomIn, ZoomOut } from 'lucide-react';
+import { Crop, Crosshair, Square, Trash2, Image } from 'lucide-react';
 import styles from './SubtitlePreview.module.css';
 
 interface SubtitlePreviewProps {
   videoPath: string | null;
-  style: ASSStyleConfig;
-  entries?: SubtitleEntry[];
-  subtitlePosition?: { x: number; y: number } | null;
-  blackoutTop?: number | null;
-  coverMode?: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region';
-  coverQuad?: CoverQuad;
-  inPlaceBlurStrength?: number;
-  coverFeatherPx?: number;
-  coverFeatherHorizontalPx?: number;
-  coverFeatherVerticalPx?: number;
-  coverFeatherHorizontalPercent?: number;
-  coverFeatherVerticalPercent?: number;
-  renderMode?: 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
-  renderResolution?: 'original' | '1080p' | '720p' | '540p' | '360p';
-  renderSubtitle?: boolean;
-  renderMark?: boolean;
-  hardwareAcceleration?: RenderVideoOptions['hardwareAcceleration'];
-  logoPath?: string;
-  logoPosition?: { x: number; y: number };
-  logoScale?: number;
-  crop?: VideoCropSettings;
-  portraitForegroundCropPercent?: number;
-  thumbnailText?: string;
-  thumbnailTextSecondary?: string;
-  hardsubPortraitTextPrimary?: string;
-  hardsubPortraitTextSecondary?: string;
-  thumbnailFontName?: string;
-  thumbnailFontSize?: number;
-  hardsubPortraitTextPrimaryFontName?: string;
-  hardsubPortraitTextPrimaryFontSize?: number;
-  hardsubPortraitTextPrimaryColor?: string;
-  hardsubPortraitTextSecondaryFontName?: string;
-  hardsubPortraitTextSecondaryFontSize?: number;
-  hardsubPortraitTextSecondaryColor?: string;
-  hardsubTextPrimaryPosition?: { x: number; y: number };
-  hardsubTextSecondaryPosition?: { x: number; y: number };
-  hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
-  hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
-  portraitTextPrimaryFontName?: string;
-  portraitTextPrimaryFontSize?: number;
-  portraitTextPrimaryColor?: string;
-  portraitTextSecondaryFontName?: string;
-  portraitTextSecondaryFontSize?: number;
-  portraitTextSecondaryColor?: string;
-  thumbnailLineHeightRatio?: number;
-  portraitTextPrimaryPosition?: { x: number; y: number };
-  portraitTextSecondaryPosition?: { x: number; y: number };
-  onPositionChange: (pos: { x: number; y: number } | null) => void;
-  onBlackoutChange?: (value: number | null) => void;
-  onCoverModeChange?: (value: 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region') => void;
-  onInPlaceBlurStrengthChange?: (value: number) => void;
-  onCoverQuadChange?: (value: CoverQuad) => void;
-  onRenderResolutionChange?: (value: 'original' | '1080p' | '720p' | '540p' | '360p') => void;
-  previewLayoutValue?: 'landscape' | 'portrait';
-  onPreviewLayoutChange?: (value: 'landscape' | 'portrait') => void;
-  onLogoPositionChange?: (pos: { x: number; y: number } | null) => void;
-  onLogoScaleChange?: (scale: number) => void;
-  onCropChange?: (crop: VideoCropSettings) => void;
-  onHardsubTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
-  onHardsubTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
-  onPortraitTextPrimaryPositionChange?: (pos: { x: number; y: number }) => void;
-  onPortraitTextSecondaryPositionChange?: (pos: { x: number; y: number }) => void;
-  onSelectLogo?: () => void;
-  onRemoveLogo?: () => void;
+  preview: {
+    canvasRef: React.RefObject<HTMLCanvasElement | null>;
+    containerRef: React.RefObject<HTMLDivElement | null>;
+    frameData: string | null;
+    isLoading: boolean;
+    isDragging: boolean;
+    isPanning: boolean;
+    canvasCursor: string;
+    mode: string;
+    setMode: (mode: any) => void;
+    coverMode: string;
+    setCoverMode: (mode: any) => void;
+    loadPreview: (path: string) => void;
+    loadFrameAt: (time: number) => void;
+    frameTimeSec: number;
+    videoDuration: number;
+    handleMouseDown: (event: React.MouseEvent<HTMLCanvasElement>) => void;
+    handleMouseMove: (event: React.MouseEvent<HTMLCanvasElement>) => void;
+    handleMouseUp: (event: React.MouseEvent<HTMLCanvasElement>) => void;
+    handleWheel: (event: React.WheelEvent<HTMLCanvasElement>) => void;
+    handleKeyDown: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
+    subtitlePositionRel: { x: number; y: number };
+    textPrimaryPositionRel: { x: number; y: number };
+    textSecondaryPositionRel: { x: number; y: number };
+    logoPosition: { x: number; y: number } | null;
+    logoScale: number;
+    crop: { rect: { x: number; y: number; width: number; height: number }; enabled: boolean };
+    videoSize: { width: number; height: number };
+    zoom: number;
+    setZoom: (zoom: number) => void;
+    zoomIn: () => void;
+    zoomOut: () => void;
+    resetViewTransform: () => void;
+    resetToCenter: () => void;
+    setFrameTimeSec: (time: number) => void;
+  };
+  realPreview: {
+    mode: 'live' | 'real';
+    setMode: (mode: 'live' | 'real') => void;
+    realStatus: 'idle' | 'pending' | 'updating' | 'ready' | 'error';
+    realMessage: string;
+    realFrameData: string | null;
+    realSize: { width: number; height: number } | null;
+    lastSyncHash: string;
+  };
   renderSnapshotMode?: boolean;
   interactiveDisabledReason?: string;
   realPreviewDisabledReason?: string;
-  hydrationSeq?: number;
+  renderMode?: string;
+  renderSubtitle?: boolean;
+  renderMark?: boolean;
+  onSelectLogo?: () => void;
+  onRemoveLogo?: () => void;
   onFirstFrameReady?: (videoPath: string) => void;
+  hydrationSeq?: number;
 }
 
-function formatPreviewTime(seconds: number): string {
-  const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const secs = safeSeconds % 60;
-  const secsLabel = secs.toFixed(2).padStart(5, '0');
-
-  if (hours > 0) {
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${secsLabel}`;
-  }
-
-  return `${String(minutes).padStart(2, '0')}:${secsLabel}`;
-}
-
-export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, blackoutTop, coverMode, coverQuad, inPlaceBlurStrength, coverFeatherPx, coverFeatherHorizontalPx, coverFeatherVerticalPx, coverFeatherHorizontalPercent, coverFeatherVerticalPercent, renderMode, renderResolution, renderSubtitle, renderMark, hardwareAcceleration, previewLayoutValue, onPreviewLayoutChange, logoPath, logoPosition, logoScale, crop, portraitForegroundCropPercent, thumbnailText, thumbnailTextSecondary, hardsubPortraitTextPrimary, hardsubPortraitTextSecondary, thumbnailFontName, thumbnailFontSize, hardsubPortraitTextPrimaryFontName, hardsubPortraitTextPrimaryFontSize, hardsubPortraitTextPrimaryColor, hardsubPortraitTextSecondaryFontName, hardsubPortraitTextSecondaryFontSize, hardsubPortraitTextSecondaryColor, hardsubTextPrimaryPosition, hardsubTextSecondaryPosition, portraitTextPrimaryFontName, portraitTextPrimaryFontSize, portraitTextPrimaryColor, portraitTextSecondaryFontName, portraitTextSecondaryFontSize, portraitTextSecondaryColor, thumbnailLineHeightRatio, hardsubPortraitTextPrimaryPosition, hardsubPortraitTextSecondaryPosition, portraitTextPrimaryPosition, portraitTextSecondaryPosition, onPositionChange, onBlackoutChange, onCoverModeChange, onInPlaceBlurStrengthChange, onCoverQuadChange, onRenderResolutionChange, onLogoPositionChange, onLogoScaleChange, onCropChange, onHardsubTextPrimaryPositionChange, onHardsubTextSecondaryPositionChange, onPortraitTextPrimaryPositionChange, onPortraitTextSecondaryPositionChange, onSelectLogo, onRemoveLogo, renderSnapshotMode, interactiveDisabledReason, realPreviewDisabledReason, hydrationSeq, onFirstFrameReady }: SubtitlePreviewProps) {
+export function SubtitlePreview({
+  videoPath,
+  preview,
+  realPreview,
+  renderSnapshotMode,
+  interactiveDisabledReason,
+  realPreviewDisabledReason,
+  renderMode,
+  renderSubtitle,
+  renderMark,
+  onSelectLogo,
+  onRemoveLogo,
+  onFirstFrameReady,
+  hydrationSeq,
+}: SubtitlePreviewProps) {
   const notifiedFramePathRef = useRef('');
   const isPortraitMode = renderMode === 'hardsub_portrait_9_16';
   const isInteractionDisabled = Boolean(interactiveDisabledReason);
-  const preview = useSubtitlePreview({
-    style,
-    entries,
-    subtitlePosition,
-    blackoutTop,
-    coverMode,
-    coverQuad,
-    inPlaceBlurStrength,
-    coverFeatherPx,
-    coverFeatherHorizontalPx,
-    coverFeatherVerticalPx,
-    coverFeatherHorizontalPercent,
-    coverFeatherVerticalPercent,
-    renderMode,
-    renderResolution,
-    renderSubtitle,
-    renderMark,
-    logoPath,
-    logoPosition,
-    logoScale,
-    crop,
-    portraitForegroundCropPercent,
-    thumbnailText,
-    thumbnailTextSecondary,
-    hardsubPortraitTextPrimary,
-    hardsubPortraitTextSecondary,
-    hardsubPortraitTextPrimaryFontName,
-    hardsubPortraitTextPrimaryFontSize,
-    hardsubPortraitTextPrimaryColor,
-    hardsubPortraitTextSecondaryFontName,
-    hardsubPortraitTextSecondaryFontSize,
-    hardsubPortraitTextSecondaryColor,
-    hardsubTextPrimaryPosition,
-    hardsubTextSecondaryPosition,
-    hardsubPortraitTextPrimaryPosition,
-    hardsubPortraitTextSecondaryPosition,
-    portraitTextPrimaryFontName,
-    portraitTextPrimaryFontSize,
-    portraitTextPrimaryColor,
-    portraitTextSecondaryFontName,
-    portraitTextSecondaryFontSize,
-    portraitTextSecondaryColor,
-    thumbnailLineHeightRatio,
-    portraitTextPrimaryPosition,
-    portraitTextSecondaryPosition,
-    onPositionChange: (pos) => onPositionChange(pos),
-    onBlackoutChange,
-    onCoverModeChange,
-    onCoverQuadChange,
-    onLogoPositionChange,
-    onLogoScaleChange,
-    onCropChange,
-    onHardsubTextPrimaryPositionChange,
-    onHardsubTextSecondaryPositionChange,
-    onPortraitTextPrimaryPositionChange,
-    onPortraitTextSecondaryPositionChange,
-    renderSnapshotMode,
-  });
-  const realPreview = useSubtitleRenderPreviewState({
-    videoPath,
-    entries,
-    previewTimeSec: preview.frameTimeSec,
-    style,
-    renderMode,
-    renderResolution,
-    renderSubtitle,
-    renderMark,
-    subtitlePosition,
-    blackoutTop,
-    coverMode,
-    coverQuad,
-    inPlaceBlurStrength,
-    coverFeatherPx,
-    coverFeatherHorizontalPx,
-    coverFeatherVerticalPx,
-    coverFeatherHorizontalPercent,
-    coverFeatherVerticalPercent,
-    logoPath,
-    logoPosition,
-    logoScale,
-    crop,
-    hardwareAcceleration,
-    portraitForegroundCropPercent,
-    thumbnailText,
-    thumbnailTextSecondary,
-    hardsubPortraitTextPrimary,
-    hardsubPortraitTextSecondary,
-    thumbnailFontName,
-    thumbnailFontSize,
-    hardsubPortraitTextPrimaryFontName,
-    hardsubPortraitTextPrimaryFontSize,
-    hardsubPortraitTextPrimaryColor,
-    hardsubPortraitTextSecondaryFontName,
-    hardsubPortraitTextSecondaryFontSize,
-    hardsubPortraitTextSecondaryColor,
-    hardsubPortraitTextPrimaryPosition,
-    hardsubPortraitTextSecondaryPosition,
-    portraitTextPrimaryFontName,
-    portraitTextPrimaryFontSize,
-    portraitTextPrimaryColor,
-    portraitTextSecondaryFontName,
-    portraitTextSecondaryFontSize,
-    portraitTextSecondaryColor,
-    thumbnailLineHeightRatio,
-    portraitTextPrimaryPosition,
-    portraitTextSecondaryPosition,
-    hydrationSeq,
-    disabled: Boolean(realPreviewDisabledReason),
-    disabledReason: realPreviewDisabledReason,
-  });
   const isRealPreviewMode = realPreview.mode === 'real';
   const canUseRealPreview = !renderSnapshotMode;
 
-  // Load preview when video path changes
   useEffect(() => {
     if (videoPath) {
       preview.loadPreview(videoPath);
     }
   }, [videoPath]);
 
+  const prevIsRealRef = useRef(isRealPreviewMode);
   useEffect(() => {
     if (!videoPath || preview.videoDuration <= 0 || isRealPreviewMode) {
+      prevIsRealRef.current = isRealPreviewMode;
       return;
     }
+    const justSwitchedFromReal = prevIsRealRef.current === true && isRealPreviewMode === false;
+    prevIsRealRef.current = isRealPreviewMode;
+    const delay = justSwitchedFromReal ? 0 : 120;
     const timer = window.setTimeout(() => {
       preview.loadFrameAt(preview.frameTimeSec);
-    }, 120);
+    }, delay);
     return () => window.clearTimeout(timer);
   }, [hydrationSeq, videoPath, preview.videoDuration, preview.frameTimeSec, preview.loadFrameAt, isRealPreviewMode]);
 
@@ -249,38 +119,6 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
       realPreview.setMode('live');
     }
   }, [realPreview.mode, realPreview.setMode, renderSnapshotMode]);
-
-  const resolutionOptions = isPortraitMode
-    ? [
-        { value: '1080p', label: '1080p' },
-        { value: '720p', label: '720p' },
-        { value: '540p', label: '540p' },
-        { value: '360p', label: '360p' },
-      ]
-    : [
-        { value: 'original', label: 'Gốc' },
-        { value: '1080p', label: '1080p' },
-        { value: '720p', label: '720p' },
-        { value: '540p', label: '540p' },
-        { value: '360p', label: '360p' },
-      ];
-  const displayRenderResolution = isPortraitMode && (renderResolution === 'original' || !renderResolution)
-    ? '1080p'
-    : (renderResolution || 'original');
-
-  let mainInfo: string | null = `Rel ${preview.subtitlePositionRel.x.toFixed(3)}, ${preview.subtitlePositionRel.y.toFixed(3)}`;
-  if (preview.mode === 'text_primary') {
-    mainInfo = `T1 Rel ${preview.textPrimaryPositionRel.x.toFixed(3)}, ${preview.textPrimaryPositionRel.y.toFixed(3)}`;
-  } else if (preview.mode === 'text_secondary') {
-    mainInfo = `T2 Rel ${preview.textSecondaryPositionRel.x.toFixed(3)}, ${preview.textSecondaryPositionRel.y.toFixed(3)}`;
-  } else if (preview.mode === 'logo') {
-    mainInfo = `Pos ${preview.logoPosition ? `${preview.logoPosition.x}, ${preview.logoPosition.y}` : 'Auto'} · Scale ${Math.round(preview.logoScale * 100)}%`;
-  } else if (preview.mode === 'crop') {
-    mainInfo = `Crop ${preview.crop.rect.x},${preview.crop.rect.y} · ${preview.crop.rect.width}×${preview.crop.rect.height}${preview.crop.enabled ? '' : ' (draft)'}`;
-  } else if (preview.mode === 'blackout') {
-    mainInfo = null;
-  }
-  const resolutionInfo = `${preview.videoSize.width}×${preview.videoSize.height} · ${isPortraitMode ? '9:16' : '16:9'} ${displayRenderResolution}`;
 
   return (
     <div className={styles.previewSection}>
@@ -368,7 +206,7 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
             </button>
           </>
         )}
-        {logoPath ? (
+        {onRemoveLogo ? (
           <div style={{ display: 'flex', gap: 4 }}>
             <button
               className={`${styles.modeBtn} ${preview.mode === 'logo' ? styles.modeBtnActive : ''}`}
@@ -404,7 +242,34 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
 
       <div className={styles.previewWorkArea}>
         <div className={styles.previewCanvasPane}>
-          {isRealPreviewMode ? (
+          <div
+            ref={preview.containerRef}
+            className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? ((preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
+            style={{ display: isRealPreviewMode ? 'none' : undefined }}
+          >
+            <canvas
+              ref={preview.canvasRef}
+              className={styles.canvas}
+              onMouseDown={isInteractionDisabled || isRealPreviewMode ? undefined : (event) => {
+                event.currentTarget.focus();
+                preview.handleMouseDown(event);
+              }}
+              onMouseMove={isInteractionDisabled || isRealPreviewMode ? undefined : preview.handleMouseMove}
+              onMouseUp={isInteractionDisabled || isRealPreviewMode ? undefined : preview.handleMouseUp}
+              onMouseLeave={isInteractionDisabled || isRealPreviewMode ? undefined : preview.handleMouseUp}
+              onWheel={isInteractionDisabled || isRealPreviewMode ? undefined : preview.handleWheel}
+              onKeyDown={isInteractionDisabled || isRealPreviewMode ? undefined : preview.handleKeyDown}
+              tabIndex={isInteractionDisabled || isRealPreviewMode ? -1 : 0}
+              style={{ cursor: isInteractionDisabled ? 'not-allowed' : isRealPreviewMode ? undefined : preview.canvasCursor }}
+            />
+            {preview.isLoading && (
+              <div className={styles.loadingOverlay}>Đang tải preview...</div>
+            )}
+            {(isInteractionDisabled || isRealPreviewMode) && (
+              <div className={styles.disabledOverlay}>{isRealPreviewMode ? '' : interactiveDisabledReason}</div>
+            )}
+          </div>
+          {isRealPreviewMode && (
             <div className={`${styles.canvasContainer} ${styles.realPreviewContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''}`}>
               {realPreview.realFrameData ? (
                 <img
@@ -424,207 +289,6 @@ export function SubtitlePreview({ videoPath, style, entries, subtitlePosition, b
                 <div className={styles.disabledOverlay}>{realPreview.realMessage}</div>
               )}
             </div>
-          ) : (
-            <div
-              ref={preview.containerRef}
-              className={`${styles.canvasContainer} ${renderMode === 'hardsub_portrait_9_16' ? styles.canvasContainerPortrait : ''} ${preview.isDragging ? styles.dragging : ''} ${preview.isPanning ? styles.panning : ''} ${preview.mode === 'blackout' ? ((preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') ? styles.coverCopyMode : styles.blackoutMode) : ''}`}
-            >
-              <canvas
-                ref={preview.canvasRef}
-                className={styles.canvas}
-                onMouseDown={isInteractionDisabled ? undefined : (event) => {
-                  event.currentTarget.focus();
-                  preview.handleMouseDown(event);
-                }}
-                onMouseMove={isInteractionDisabled ? undefined : preview.handleMouseMove}
-                onMouseUp={isInteractionDisabled ? undefined : preview.handleMouseUp}
-                onMouseLeave={isInteractionDisabled ? undefined : preview.handleMouseUp}
-                onWheel={isInteractionDisabled ? undefined : preview.handleWheel}
-                onKeyDown={isInteractionDisabled ? undefined : preview.handleKeyDown}
-                tabIndex={isInteractionDisabled ? -1 : 0}
-                style={{ cursor: isInteractionDisabled ? 'not-allowed' : preview.canvasCursor }}
-              />
-              {preview.isLoading && (
-                <div className={styles.loadingOverlay}>Đang tải preview...</div>
-              )}
-              {isInteractionDisabled && (
-                <div className={styles.disabledOverlay}>{interactiveDisabledReason}</div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {isRealPreviewMode && (
-        <div className={styles.realPreviewStatusRow}>
-          <span className={styles.realPreviewStatusBadge}>{realPreview.realStatus.toUpperCase()}</span>
-          <span className={styles.realPreviewStatusText}>
-            {realPreview.realMessage}
-            {realPreview.realSize
-              ? ` (${realPreview.realSize.width}x${realPreview.realSize.height})`
-              : ''}
-          </span>
-        </div>
-      )}
-
-      {!renderSnapshotMode && videoPath && preview.videoDuration > 0 && (
-        <div className={styles.scrubberRow}>
-          <span className={styles.scrubberLabel}>Frame</span>
-          <input
-            className={styles.scrubber}
-            type="range"
-            min={0}
-            max={preview.videoDuration}
-            step={Math.max(0.01, preview.videoDuration / 500)}
-            value={Math.min(preview.frameTimeSec, preview.videoDuration)}
-            onChange={(e) => preview.setFrameTimeSec(Number(e.target.value) || 0)}
-            disabled={isInteractionDisabled || preview.isLoading}
-          />
-          <span className={styles.scrubberHint}>
-            {formatPreviewTime(preview.frameTimeSec)} / {formatPreviewTime(preview.videoDuration)}
-          </span>
-        </div>
-      )}
-
-      {!renderSnapshotMode && !isRealPreviewMode && (
-        <div className={styles.zoomRow}>
-          <button
-            className={styles.zoomBtn}
-            onClick={preview.zoomOut}
-            disabled={isInteractionDisabled}
-            title="Thu nhỏ preview"
-          >
-            <ZoomOut size={12} />
-          </button>
-          <input
-            className={styles.zoomSlider}
-            type="range"
-            min={100}
-            max={400}
-            step={5}
-            value={Math.round(preview.zoom * 100)}
-            onChange={(e) => preview.setZoom((Number(e.target.value) || 100) / 100)}
-            disabled={isInteractionDisabled}
-          />
-          <button
-            className={styles.zoomBtn}
-            onClick={preview.zoomIn}
-            disabled={isInteractionDisabled}
-            title="Phóng to preview"
-          >
-            <ZoomIn size={12} />
-          </button>
-          <button
-            className={styles.resetBtn}
-            onClick={preview.resetViewTransform}
-            disabled={isInteractionDisabled}
-            title="Reset zoom/pan"
-          >
-            <RotateCcw size={12} /> Phóng {Math.round(preview.zoom * 100)}%
-          </button>
-        </div>
-      )}
-
-      <div className={styles.infoBar}>
-        <div className={styles.infoPills}>
-          {mainInfo && (
-            <span className={`${styles.positionInfo} ${styles.positionInfoPrimary}`}>{mainInfo}</span>
-          )}
-          <span className={styles.positionInfo}>{resolutionInfo}</span>
-        </div>
-        <div className={styles.actionRow}>
-          <button
-            className={styles.resetBtn}
-            onClick={preview.resetToCenter}
-            disabled={isInteractionDisabled}
-          >
-            <RotateCcw size={12} /> Căn giữa
-          </button>
-
-          {onPreviewLayoutChange && (
-            <select
-              className={styles.resolutionSelect}
-              value={previewLayoutValue || (isPortraitMode ? 'portrait' : 'landscape')}
-              onChange={(e) => onPreviewLayoutChange(e.target.value as 'landscape' | 'portrait')}
-              title="Tỷ lệ khung preview"
-              disabled={isInteractionDisabled}
-            >
-              <option value="landscape">16:9</option>
-              <option value="portrait">9:16</option>
-            </select>
-          )}
-          
-          <select
-             className={styles.resolutionSelect}
-             value={displayRenderResolution}
-             onChange={e => onRenderResolutionChange?.(e.target.value as any)}
-          title={renderSnapshotMode ? 'Snapshot dùng đúng độ phân giải video render' : (isPortraitMode ? 'Độ phân giải render 9:16' : 'Độ phân giải render 16:9')}
-          disabled={isInteractionDisabled}
-          >
-             {resolutionOptions.map((item) => (
-               <option key={item.value} value={item.value}>
-                 {item.label}
-               </option>
-             ))}
-           </select>
-
-          {preview.mode === 'subtitle' && (
-            <button
-              className={styles.resetBtn}
-              onClick={() => onPositionChange(null)}
-              title="Xóa position, dùng alignment mặc định"
-              disabled={isInteractionDisabled}
-            >
-              Tự
-            </button>
-          )}
-
-          {preview.mode === 'blackout' && (
-            <select
-              className={styles.resolutionSelect}
-              value={preview.coverMode}
-              onChange={(e) => preview.setCoverMode(e.target.value as 'blackout_bottom' | 'copy_from_above' | 'blur_selected_region')}
-              disabled={isInteractionDisabled || renderMode === 'black_bg'}
-              title="Chọn kiểu che video"
-            >
-              <option value="blackout_bottom">Che đen đáy</option>
-              <option value="copy_from_above">Copy vùng trên (hình chữ nhật)</option>
-              <option value="blur_selected_region">Blur vùng đã chọn (nhanh)</option>
-            </select>
-          )}
-
-          {preview.mode === 'blackout' && preview.coverMode === 'blur_selected_region' && (
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={Math.max(0, Math.min(100, Math.round(inPlaceBlurStrength ?? 65)))}
-              onChange={(e) => onInPlaceBlurStrengthChange?.(Number(e.target.value))}
-              disabled={isInteractionDisabled || renderMode === 'black_bg' || renderMark === false}
-              title="Cường độ blur trong vùng chọn"
-            />
-          )}
-          
-          {preview.mode === 'blackout' && preview.coverMode === 'blackout_bottom' && preview.blackoutTop !== null && (
-            <button
-              className={`${styles.resetBtn} ${styles.dangerBtn}`}
-              onClick={preview.clearBlackout}
-              title={isPortraitMode ? 'Xóa vùng blur đáy' : 'Xóa vùng tô đen'}
-              disabled={isInteractionDisabled}
-            >
-              <Trash2 size={12} /> Xóa
-            </button>
-          )}
-          {preview.mode === 'blackout' && (preview.coverMode === 'copy_from_above' || preview.coverMode === 'blur_selected_region') && (
-            <button
-              className={styles.resetBtn}
-              onClick={preview.resetCoverQuad}
-              title="Đưa vùng chữ nhật về mặc định"
-              disabled={isInteractionDisabled || renderMode === 'black_bg'}
-            >
-              <RotateCcw size={12} /> Đặt lại vùng
-            </button>
           )}
         </div>
       </div>

@@ -3500,3 +3500,127 @@
     gap: 2px;
   }
 }
+
+/* Preview controls (inspector panel) */
+.previewControlsSection {
+  border-top: 1px solid var(--color-border);
+  padding-top: 6px;
+  margin-top: 6px;
+}
+
+.previewControlsSection:first-child {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.previewControlsLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 2px;
+}
+
+.scrubberRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.scrubberHint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.zoomRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.zoomBtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.zoomBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
+.zoomSlider {
+  width: min(260px, 50vw);
+  height: 4px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.positionInfo {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--color-surface);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.infoPills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.resolutionSelect {
+  width: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  height: 24px;
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  border-radius: 6px;
+}
+
+.realPreviewStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.realPreviewStatusBadge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-accent, #4a9eff) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent, #4a9eff) 12%, var(--color-surface));
+  color: var(--color-accent, #4a9eff);
+}
+
+.realPreviewStatusText {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}

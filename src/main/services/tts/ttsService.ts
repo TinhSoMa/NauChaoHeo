@@ -11,7 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 import WebSocket, { RawData } from 'ws';
 import { AppSettingsService } from '../appSettings';
-import { CapcutTtsConfigsDatabase } from '../../database/capcutTtsSecretsDatabase';
+import { CapcutTtsSharedConfigDatabase } from '../../database/capcutTtsSharedConfigDatabase';
+import { CapcutTtsTokensDatabase } from '../../database/capcutTtsTokensDatabase';
 import { getProxyManager } from '../proxy/proxyManager';
 import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
 import { getFFprobePath } from '../../utils/ffmpegPath';
@@ -721,10 +722,14 @@ function shouldPersistCapcutSecrets(
 }
 
 function loadCapCutRuntimeConfig(): { ok: true; config: CapCutRuntimeConfig } | { ok: false; error: string } {
-  const active = CapcutTtsConfigsDatabase.getActive();
+  const sharedConfig = CapcutTtsSharedConfigDatabase.get();
+  const activeToken = CapcutTtsTokensDatabase.getActive();
 
-  if (!active) {
-    return { ok: false, error: 'Thiếu cấu hình CapCut TTS: chưa có phiên bản nào được cấu hình.' };
+  if (!sharedConfig) {
+    return { ok: false, error: 'Thiếu cấu hình CapCut TTS: chưa có shared config.' };
+  }
+  if (!activeToken) {
+    return { ok: false, error: 'Thiếu cấu hình CapCut TTS: chưa có phiên bản token nào active.' };
   }
 
   const envAppKey = normalizeSecretValue(process.env.CAPCUT_TTS_APPKEY);
@@ -733,13 +738,13 @@ function loadCapCutRuntimeConfig(): { ok: true; config: CapCutRuntimeConfig } | 
   const envUserAgent = normalizeSecretValue(process.env.CAPCUT_TTS_USER_AGENT);
   const envXsDp = normalizeSecretValue(process.env.CAPCUT_TTS_X_SS_DP);
 
-  const appKey = envAppKey || normalizeSecretValue(active.appKey) || '';
-  const token = envToken || normalizeSecretValue(active.token) || '';
-  const wsUrl = envWsUrl || active.wsUrl;
-  const userAgent = envUserAgent || active.userAgent;
-  const xSsDp = envXsDp || normalizeSecretValue(active.xSsDp) || '';
+  const appKey = envAppKey || normalizeSecretValue(sharedConfig.appKey) || '';
+  const token = envToken || normalizeSecretValue(activeToken.token) || '';
+  const wsUrl = envWsUrl || sharedConfig.wsUrl;
+  const userAgent = envUserAgent || sharedConfig.userAgent;
+  const xSsDp = envXsDp || normalizeSecretValue(sharedConfig.xSsDp) || '';
   const extraHeaders = {
-    ...normalizeHeaderMap(active.extraHeaders),
+    ...normalizeHeaderMap(sharedConfig.extraHeaders),
     ...parseExtraCapCutHeaders(process.env.CAPCUT_TTS_HEADERS_JSON),
   };
 

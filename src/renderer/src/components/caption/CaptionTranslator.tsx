@@ -42,6 +42,8 @@ import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 import { useHardsubSettings } from './hooks/useHardsubSettings';
 import { ensureCaptionFontLoaded } from './hooks/captionFontLoader';
 import { getVideoMetadataCached } from './hooks/videoMetadataClientCache';
+import { useSubtitlePreview } from './hooks/useSubtitlePreview';
+import { useSubtitleRenderPreviewState } from './hooks/useSubtitleRenderPreviewState';
 import {
   getInputPaths,
   getSessionPathForInputPath,
@@ -67,7 +69,7 @@ import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
 import { Step4ProxyTestPopup } from './components/Step4ProxyTestPopup';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw, Trash2, Database } from 'lucide-react';
+import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw, Trash2, Database, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   CaptionProjectSettingsValues,
   FitAudioAuditResponse,
@@ -83,7 +85,7 @@ type TtsVoiceProvider = 'edge' | 'capcut';
 type TtsVoiceTier = 'free' | 'pro';
 type CommonConfigTab = 'render' | 'typography' | 'audio';
 type LayoutSwitchValue = 'landscape' | 'portrait';
-type InspectorPane = 'step' | 'common' | 'snapshot' | 'thumbnail' | 'batch3';
+type InspectorPane = 'step' | 'common' | 'snapshot' | 'thumbnail' | 'batch3' | 'preview';
 type Step3BatchState = NonNullable<CaptionSessionV1['data']['step3BatchState']>;
 type Step3BatchStatus = 'waiting' | 'running' | 'success' | 'failed';
 type Step3RuntimePhase = 'waiting' | 'running' | 'success' | 'failed';
@@ -2893,7 +2895,8 @@ export function CaptionTranslator() {
   // --- Download prompt preview ---
   const handleDownloadPromptPreview = async () => {
     const entries = fileManager.entries;
-    const linesPerBatch = 50;
+    const linesPerBatch = Math.max(1, settings.linesPerFile || 50);
+    const totalBatches = Math.ceil(entries.length / linesPerBatch);
     const batchTexts = entries.slice(0, linesPerBatch).map(e => e.text);
     const count = batchTexts.length;
 
@@ -2943,11 +2946,44 @@ export function CaptionTranslator() {
       responseFormat = 'json';
     }
 
+    // Fetch memory context (giống captionTranslator.ts:1307-1327)
+    let memoryPromptContext: string | undefined;
+    try {
+      const projectIdValue = (projectId || '').trim();
+      const sourcePathValue = (fileManager.filePath || '').trim();
+      if (projectIdValue && sourcePathValue && typeof crypto.subtle?.digest === 'function') {
+        const encoder = new TextEncoder();
+        const hashBuffer = await crypto.subtle.digest('SHA-1', encoder.encode(sourcePathValue));
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const fingerprint = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+        const namespace = `caption:${projectIdValue}:${fingerprint}`;
+        const memoryRes = await (window.electronAPI as any).invoke('memoryContext:search', {
+          projectId: projectIdValue,
+          feature: 'caption.translation',
+          namespace,
+          queryText: batchTexts.join('\n'),
+          topK: 3,
+          metadata: { batchIndex: 1, chapterIndex: 1, totalChapters: totalBatches },
+        });
+        if (memoryRes?.success && memoryRes.promptContext) {
+          memoryPromptContext = memoryRes.promptContext;
+        }
+      }
+    } catch (e) {
+      console.warn('[PromptPreview] Không fetch được memory context:', e);
+    }
+
+    // Append memory context vào prompt (giống textSplitter.ts:145-151)
+    if (memoryPromptContext) {
+      prompt += `\n\n=== BỐI CẢNH DỊCH THUẬT (Translation Context) ===\nĐây là các bản dịch trước đó trong cùng dự án để tham khảo:\n${memoryPromptContext}\nSử dụng ngữ cảnh trên để giữ NHẤT QUÁN thuật ngữ, tên nhân vật, phong cách dịch.\nTUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 object output.\n`;
+    }
+
     const header = [
       `; === CAPTION PROMPT PREVIEW ===`,
       `; Prompt: ${customTemplate ? promptName : '(default built-in)'}`,
       `; Response format: ${responseFormat}`,
-      `; Batch size: ${count} / ${entries.length} dòng (chỉ batch đầu tiên)`,
+      `; Batch size: ${count} / ${entries.length} dòng (linesPerFile=${linesPerBatch})`,
+      `; Memory context: ${memoryPromptContext ? 'Có (kèm trong prompt)' : 'Không có'}`,
       `; ================================`,
       '',
     ].join('\n');
@@ -3956,6 +3992,118 @@ export function CaptionTranslator() {
           : ''
       )
     : (hardsubSettings.videoTextSecondary || '');
+  const previewHook = useSubtitlePreview({
+    style: settings.style,
+    entries: previewEntries,
+    subtitlePosition: settings.subtitlePosition,
+    blackoutTop: settings.blackoutTop,
+    coverMode: settings.coverMode,
+    coverQuad: settings.coverQuad,
+    inPlaceBlurStrength: settings.inPlaceBlurStrength ?? 65,
+    coverFeatherPx: settings.coverFeatherPx,
+    coverFeatherHorizontalPx: settings.coverFeatherHorizontalPx,
+    coverFeatherVerticalPx: settings.coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent: settings.coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent: settings.coverFeatherVerticalPercent,
+    renderMode: settings.renderMode,
+    renderResolution: settings.renderResolution,
+    renderSubtitle: settings.renderSubtitle,
+    renderMark: settings.renderMark,
+    logoPath: settings.logoPath,
+    logoPosition: settings.logoPosition,
+    logoScale: settings.logoScale,
+    crop: settings.crop,
+    portraitForegroundCropPercent: settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0,
+    thumbnailText: thumbnailPreviewText || '',
+    thumbnailTextSecondary: thumbnailPreviewSecondaryText || '',
+    hardsubPortraitTextPrimary: videoPreviewText || '',
+    hardsubPortraitTextSecondary: videoPreviewSecondaryText || '',
+    hardsubPortraitTextPrimaryFontName: settings.hardsubPortraitTextPrimaryFontName || settings.portraitTextPrimaryFontName,
+    hardsubPortraitTextPrimaryFontSize: settings.hardsubPortraitTextPrimaryFontSize ?? settings.portraitTextPrimaryFontSize,
+    hardsubPortraitTextPrimaryColor: settings.hardsubPortraitTextPrimaryColor || settings.portraitTextPrimaryColor,
+    hardsubPortraitTextSecondaryFontName: settings.hardsubPortraitTextSecondaryFontName || settings.portraitTextSecondaryFontName,
+    hardsubPortraitTextSecondaryFontSize: settings.hardsubPortraitTextSecondaryFontSize ?? settings.portraitTextSecondaryFontSize,
+    hardsubPortraitTextSecondaryColor: settings.hardsubPortraitTextSecondaryColor || settings.portraitTextSecondaryColor,
+    hardsubTextPrimaryPosition: settings.hardsubTextPrimaryPosition,
+    hardsubTextSecondaryPosition: settings.hardsubTextSecondaryPosition,
+    hardsubPortraitTextPrimaryPosition: settings.hardsubPortraitTextPrimaryPosition || settings.portraitTextPrimaryPosition,
+    hardsubPortraitTextSecondaryPosition: settings.hardsubPortraitTextSecondaryPosition || settings.portraitTextSecondaryPosition,
+    portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize: settings.portraitTextPrimaryFontSize,
+    portraitTextPrimaryColor: settings.portraitTextPrimaryColor,
+    portraitTextSecondaryFontName: settings.portraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize: settings.portraitTextSecondaryFontSize,
+    portraitTextSecondaryColor: settings.portraitTextSecondaryColor,
+    thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+    portraitTextPrimaryPosition: settings.portraitTextPrimaryPosition,
+    portraitTextSecondaryPosition: settings.portraitTextSecondaryPosition,
+    onPositionChange: settings.setSubtitlePosition,
+    onBlackoutChange: settings.setBlackoutTop,
+    onCoverModeChange: settings.setCoverMode,
+    onCoverQuadChange: settings.setCoverQuad,
+    onLogoPositionChange: (pos: { x: number; y: number } | null) => settings.setLogoPosition(pos || undefined),
+    onLogoScaleChange: (scale: number) => settings.setLogoScale(scale),
+    onCropChange: settings.setCrop,
+    onHardsubTextPrimaryPositionChange: settings.setHardsubTextPrimaryPosition,
+    onHardsubTextSecondaryPositionChange: settings.setHardsubTextSecondaryPosition,
+    onPortraitTextPrimaryPositionChange: settings.setPortraitTextPrimaryPosition,
+    onPortraitTextSecondaryPositionChange: settings.setPortraitTextSecondaryPosition,
+    renderSnapshotMode: effectivePreviewMode === 'render',
+  });
+  const previewRealPreview = useSubtitleRenderPreviewState({
+    videoPath: previewVideoPath,
+    entries: previewEntries,
+    previewTimeSec: previewHook.frameTimeSec,
+    style: settings.style,
+    renderMode: settings.renderMode,
+    renderResolution: settings.renderResolution,
+    renderSubtitle: settings.renderSubtitle,
+    renderMark: settings.renderMark,
+    subtitlePosition: settings.subtitlePosition,
+    blackoutTop: settings.blackoutTop,
+    coverMode: settings.coverMode,
+    coverQuad: settings.coverQuad,
+    inPlaceBlurStrength: settings.inPlaceBlurStrength ?? 65,
+    coverFeatherPx: settings.coverFeatherPx,
+    coverFeatherHorizontalPx: settings.coverFeatherHorizontalPx,
+    coverFeatherVerticalPx: settings.coverFeatherVerticalPx,
+    coverFeatherHorizontalPercent: settings.coverFeatherHorizontalPercent,
+    coverFeatherVerticalPercent: settings.coverFeatherVerticalPercent,
+    logoPath: settings.logoPath,
+    logoPosition: settings.logoPosition,
+    logoScale: settings.logoScale,
+    crop: settings.crop,
+    hardwareAcceleration: settings.hardwareAcceleration,
+    portraitForegroundCropPercent: settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0,
+    thumbnailText: thumbnailPreviewText || '',
+    thumbnailTextSecondary: thumbnailPreviewSecondaryText || '',
+    hardsubPortraitTextPrimary: videoPreviewText || '',
+    hardsubPortraitTextSecondary: videoPreviewSecondaryText || '',
+    thumbnailFontName: settings.thumbnailFontName,
+    thumbnailFontSize: settings.thumbnailFontSize,
+    hardsubPortraitTextPrimaryFontName: settings.hardsubPortraitTextPrimaryFontName || settings.portraitTextPrimaryFontName,
+    hardsubPortraitTextPrimaryFontSize: settings.hardsubPortraitTextPrimaryFontSize ?? settings.portraitTextPrimaryFontSize,
+    hardsubPortraitTextPrimaryColor: settings.hardsubPortraitTextPrimaryColor || settings.portraitTextPrimaryColor,
+    hardsubPortraitTextSecondaryFontName: settings.hardsubPortraitTextSecondaryFontName || settings.portraitTextSecondaryFontName,
+    hardsubPortraitTextSecondaryFontSize: settings.hardsubPortraitTextSecondaryFontSize ?? settings.portraitTextSecondaryFontSize,
+    hardsubPortraitTextSecondaryColor: settings.hardsubPortraitTextSecondaryColor || settings.portraitTextSecondaryColor,
+    hardsubPortraitTextPrimaryPosition: settings.hardsubPortraitTextPrimaryPosition || settings.portraitTextPrimaryPosition,
+    hardsubPortraitTextSecondaryPosition: settings.hardsubPortraitTextSecondaryPosition || settings.portraitTextSecondaryPosition,
+    portraitTextPrimaryFontName: settings.portraitTextPrimaryFontName,
+    portraitTextPrimaryFontSize: settings.portraitTextPrimaryFontSize,
+    portraitTextPrimaryColor: settings.portraitTextPrimaryColor,
+    portraitTextSecondaryFontName: settings.portraitTextSecondaryFontName,
+    portraitTextSecondaryFontSize: settings.portraitTextSecondaryFontSize,
+    portraitTextSecondaryColor: settings.portraitTextSecondaryColor,
+    thumbnailLineHeightRatio: settings.thumbnailLineHeightRatio,
+    portraitTextPrimaryPosition: settings.portraitTextPrimaryPosition,
+    portraitTextSecondaryPosition: settings.portraitTextSecondaryPosition,
+    hydrationSeq: settings.hydrationSeq,
+    disabled: Boolean(processing.status === 'running'),
+    disabledReason: processing.status === 'running'
+      ? 'Pipeline đang chạy. Tạm khóa preview thật để tránh tranh chấp FFmpeg.'
+      : undefined,
+  });
   const videoNameByFolderPath = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     Object.entries(fileManager.folderVideos || {}).forEach(([folderPath, info]) => {
@@ -6109,147 +6257,6 @@ export function CaptionTranslator() {
 
             <div className={styles.commonInlineSection}>
               <div className={styles.commonInlineHeader}>
-                <span className={styles.label}>Crop video</span>
-                <span className={styles.commonInlineValue}>
-                  {activeCrop.enabled
-                    ? `${activeCrop.rect.x},${activeCrop.rect.y} · ${activeCrop.rect.width}×${activeCrop.rect.height}`
-                    : 'Tắt'}
-                </span>
-              </div>
-              <div className={styles.commonInlineActions}>
-                <Checkbox
-                  label="Bật crop"
-                  description="Cắt frame trước khi render phụ đề/logo/mask"
-                  checked={activeCrop.enabled}
-                  onChange={(checked) => updateCrop({ enabled: checked })}
-                  disabled={settings.renderMode === 'black_bg'}
-                />
-                <button type="button" className={styles.resetBtnLike} onClick={resetCrop}>
-                  Reset
-                </button>
-              </div>
-              <div className={styles.grid2}>
-                <div className={styles.inputGroup}>
-                  <label className={styles.label}>Tỷ lệ crop</label>
-                  <select
-                    className={styles.select}
-                    value={activeCrop.ratio}
-                    onChange={(e) => {
-                      const ratio = e.target.value as VideoCropSettings['ratio'];
-                      const ratioValue = ratio === '16:9'
-                        ? 16 / 9
-                        : ratio === '9:16'
-                          ? 9 / 16
-                          : ratio === '1:1'
-                            ? 1
-                            : ratio === '21:9'
-                              ? 21 / 9
-                              : ratio === '2.39:1'
-                                ? 2.39
-                                : null;
-                      let nextRect = activeCrop.rect;
-                      if (ratioValue) {
-                        const currentAspect = activeCrop.rect.width / Math.max(1, activeCrop.rect.height);
-                        let width = activeCrop.rect.width;
-                        let height = activeCrop.rect.height;
-                        if (currentAspect > ratioValue) {
-                          width = Math.max(64, Math.round(height * ratioValue));
-                        } else {
-                          height = Math.max(64, Math.round(width / ratioValue));
-                        }
-                        nextRect = {
-                          x: Math.max(0, Math.round(activeCrop.rect.x + (activeCrop.rect.width - width) / 2)),
-                          y: Math.max(0, Math.round(activeCrop.rect.y + (activeCrop.rect.height - height) / 2)),
-                          width,
-                          height,
-                        };
-                      }
-                      updateCrop({
-                        enabled: true,
-                        mode: ratio === 'free' ? 'free' : 'ratio',
-                        ratio,
-                        rect: nextRect,
-                      });
-                    }}
-                    disabled={settings.renderMode === 'black_bg'}
-                  >
-                    <option value="free">Free</option>
-                    <option value="16:9">16:9</option>
-                    <option value="9:16">9:16</option>
-                    <option value="1:1">1:1</option>
-                    <option value="21:9">21:9</option>
-                    <option value="2.39:1">2.39:1</option>
-                  </select>
-                </div>
-                <div className={styles.inputGroup}>
-                  <label className={styles.label}>Trạng thái</label>
-                  <button
-                    type="button"
-                    className={styles.resetBtnLike}
-                    onClick={() => updateCrop({ enabled: true })}
-                    disabled={settings.renderMode === 'black_bg'}
-                  >
-                    Apply crop
-                  </button>
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div className={styles.inputGroup}>
-                  <label className={styles.label}>X</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={activeCrop.rect.x}
-                    onChange={(e) => updateCropRect('x', e.target.value)}
-                    disabled={settings.renderMode === 'black_bg'}
-                  />
-                </div>
-                <div className={styles.inputGroup}>
-                  <label className={styles.label}>Y</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={activeCrop.rect.y}
-                    onChange={(e) => updateCropRect('y', e.target.value)}
-                    disabled={settings.renderMode === 'black_bg'}
-                  />
-                </div>
-              </div>
-              <div className={styles.grid2}>
-                <div className={styles.inputGroup}>
-                  <label className={styles.label}>W</label>
-                  <Input
-                    type="number"
-                    min={64}
-                    step={1}
-                    value={activeCrop.rect.width}
-                    onChange={(e) => updateCropRect('width', e.target.value)}
-                    disabled={settings.renderMode === 'black_bg'}
-                  />
-                </div>
-                <div className={styles.inputGroup}>
-                  <label className={styles.label}>H</label>
-                  <Input
-                    type="number"
-                    min={64}
-                    step={1}
-                    value={activeCrop.rect.height}
-                    onChange={(e) => updateCropRect('height', e.target.value)}
-                    disabled={settings.renderMode === 'black_bg'}
-                  />
-                </div>
-              </div>
-              <div className={styles.commonHint}>
-                Source crop: {activeCrop.rect.x},{activeCrop.rect.y},{activeCrop.rect.width},{activeCrop.rect.height}
-                {' '}· Output canvas: {activeCrop.enabled ? `${activeCrop.rect.width}×${activeCrop.rect.height}` : 'video gốc'}.
-                {activeCrop.enabled ? ' Các chỉnh sửa phụ đề/logo/mask đang áp dụng trên khung đã crop.' : ''}
-              </div>
-            </div>
-
-            <div className={styles.commonInlineSection}>
-              <div className={styles.commonInlineHeader}>
                 <span className={styles.label}>Mức che đáy</span>
                 <span className={styles.commonInlineValue}>
                   {Math.round((1 - (settings.blackoutTop ?? 0.9)) * 100)}%
@@ -7193,6 +7200,281 @@ export function CaptionTranslator() {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  function formatPreviewTime(seconds: number): string {
+    const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const secs = safeSeconds % 60;
+    const secsLabel = secs.toFixed(2).padStart(5, '0');
+    if (hours > 0) return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${secsLabel}`;
+    return `${String(minutes).padStart(2, '0')}:${secsLabel}`;
+  }
+
+  const previewControlsBar = (
+    <div className={styles.panelSection}>
+      <div className={styles.configSummaryTitle}>Preview Controls</div>
+      <div className={styles.previewControlsSection}>
+        <div className={styles.previewControlsLabel}>Frame</div>
+        {previewVideoPath && previewHook.videoDuration > 0 && (
+          <div className={styles.scrubberRow}>
+            <input
+              type="range"
+              min={0}
+              max={previewHook.videoDuration}
+              step={Math.max(0.01, previewHook.videoDuration / 500)}
+              value={Math.min(previewHook.frameTimeSec, previewHook.videoDuration)}
+              onChange={(e) => previewHook.setFrameTimeSec(Number(e.target.value) || 0)}
+            />
+            <span className={styles.scrubberHint}>
+              {formatPreviewTime(previewHook.frameTimeSec)} / {formatPreviewTime(previewHook.videoDuration)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className={styles.previewControlsSection}>
+        <div className={styles.previewControlsLabel}>Zoom</div>
+        <div className={styles.zoomRow}>
+          <button className={styles.zoomBtn} onClick={previewHook.zoomOut} title="Thu nhỏ preview">
+            <ZoomOut size={12} />
+          </button>
+          <input
+            className={styles.zoomSlider}
+            type="range" min={100} max={400} step={5}
+            value={Math.round(previewHook.zoom * 100)}
+            onChange={(e) => previewHook.setZoom((Number(e.target.value) || 100) / 100)}
+          />
+          <button className={styles.zoomBtn} onClick={previewHook.zoomIn} title="Phóng to preview">
+            <ZoomIn size={12} />
+          </button>
+          <button className={styles.resetBtnLike} onClick={previewHook.resetViewTransform} title="Reset zoom/pan">
+            <RotateCcw size={12} /> Phóng {Math.round(previewHook.zoom * 100)}%
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.previewControlsSection}>
+        <div className={styles.infoPills}>
+          {(() => {
+            let mainInfo: string | null = `Rel ${previewHook.subtitlePositionRel.x.toFixed(3)}, ${previewHook.subtitlePositionRel.y.toFixed(3)}`;
+            if (previewHook.mode === 'text_primary') {
+              mainInfo = `T1 Rel ${previewHook.textPrimaryPositionRel.x.toFixed(3)}, ${previewHook.textPrimaryPositionRel.y.toFixed(3)}`;
+            } else if (previewHook.mode === 'text_secondary') {
+              mainInfo = `T2 Rel ${previewHook.textSecondaryPositionRel.x.toFixed(3)}, ${previewHook.textSecondaryPositionRel.y.toFixed(3)}`;
+            } else if (previewHook.mode === 'logo') {
+              mainInfo = `Pos ${previewHook.logoPosition ? `${previewHook.logoPosition.x}, ${previewHook.logoPosition.y}` : 'Auto'} · Scale ${Math.round(previewHook.logoScale * 100)}%`;
+            } else if (previewHook.mode === 'crop') {
+              mainInfo = `Crop ${previewHook.crop.rect.x},${previewHook.crop.rect.y} · ${previewHook.crop.rect.width}×${previewHook.crop.rect.height}${previewHook.crop.enabled ? '' : ' (draft)'}`;
+            } else if (previewHook.mode === 'blackout') {
+              mainInfo = null;
+            }
+            const isPortraitMode = settings.renderMode === 'hardsub_portrait_9_16';
+            const resolutionInfo = `${previewHook.videoSize.width}×${previewHook.videoSize.height} · ${isPortraitMode ? '9:16' : '16:9'}`;
+            return (
+              <>
+                {mainInfo && <span className={styles.positionInfo}>{mainInfo}</span>}
+                <span className={styles.positionInfo}>{resolutionInfo}</span>
+              </>
+            );
+          })()}
+        </div>
+        <div className={styles.actionRow}>
+          <button className={styles.resetBtnLike} onClick={previewHook.resetToCenter}>
+            <RotateCcw size={12} /> Căn giữa
+          </button>
+          <select
+            className={styles.resolutionSelect}
+            value={activeLayoutSwitch}
+            onChange={(e) => handlePreviewLayoutChange(e.target.value as 'landscape' | 'portrait')}
+          >
+            <option value="landscape">16:9</option>
+            <option value="portrait">9:16</option>
+          </select>
+          <select
+            className={styles.resolutionSelect}
+            value={settings.renderResolution || 'original'}
+            onChange={(e) => settings.setRenderResolution(e.target.value as any)}
+          >
+            <option value="original">Gốc</option>
+            <option value="1080p">1080p</option>
+            <option value="720p">720p</option>
+            <option value="540p">540p</option>
+            <option value="360p">360p</option>
+          </select>
+          {previewHook.mode === 'subtitle' && (
+            <button className={styles.resetBtnLike} onClick={() => settings.setSubtitlePosition(null)}>Tự</button>
+          )}
+          {previewHook.mode === 'blackout' && (
+            <select
+              className={styles.resolutionSelect}
+              value={previewHook.coverMode}
+              onChange={(e) => previewHook.setCoverMode(e.target.value as any)}
+            >
+              <option value="blackout_bottom">Che đen đáy</option>
+              <option value="copy_from_above">Copy vùng trên</option>
+              <option value="blur_selected_region">Blur vùng đã chọn</option>
+            </select>
+          )}
+          {previewHook.mode === 'blackout' && previewHook.coverMode === 'blur_selected_region' && (
+            <input type="range" min={0} max={100} step={1}
+              value={settings.inPlaceBlurStrength ?? 65}
+              onChange={(e) => settings.setInPlaceBlurStrength(Number(e.target.value))}
+            />
+          )}
+        </div>
+      </div>
+
+      {previewRealPreview.mode === 'real' && (
+        <div className={styles.realPreviewStatusRow}>
+          <span className={styles.realPreviewStatusBadge}>{previewRealPreview.realStatus.toUpperCase()}</span>
+          <span className={styles.realPreviewStatusText}>
+            {previewRealPreview.realMessage}
+            {previewRealPreview.realSize ? ` (${previewRealPreview.realSize.width}x${previewRealPreview.realSize.height})` : ''}
+          </span>
+        </div>
+      )}
+
+      <div className={styles.previewControlsSection}>
+        <div className={styles.commonInlineHeader}>
+          <span className={styles.label}>Crop video</span>
+          <span className={styles.commonInlineValue}>
+            {activeCrop.enabled
+              ? `${activeCrop.rect.x},${activeCrop.rect.y} · ${activeCrop.rect.width}×${activeCrop.rect.height}`
+              : 'Tắt'}
+          </span>
+        </div>
+        <div className={styles.commonInlineActions}>
+          <Checkbox
+            label="Bật crop"
+            description="Cắt frame trước khi render phụ đề/logo/mask"
+            checked={activeCrop.enabled}
+            onChange={(checked) => updateCrop({ enabled: checked })}
+            disabled={settings.renderMode === 'black_bg'}
+          />
+          <button type="button" className={styles.resetBtnLike} onClick={resetCrop}>Reset</button>
+        </div>
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Tỷ lệ crop</label>
+            <select
+              className={styles.select}
+              value={activeCrop.ratio}
+              onChange={(e) => {
+                const ratio = e.target.value as VideoCropSettings['ratio'];
+                const ratioValue = ratio === '16:9'
+                  ? 16 / 9
+                  : ratio === '9:16'
+                    ? 9 / 16
+                    : ratio === '1:1'
+                      ? 1
+                      : ratio === '21:9'
+                        ? 21 / 9
+                        : ratio === '2.39:1'
+                          ? 2.39
+                          : null;
+                let nextRect = activeCrop.rect;
+                if (ratioValue) {
+                  const currentAspect = activeCrop.rect.width / Math.max(1, activeCrop.rect.height);
+                  let width = activeCrop.rect.width;
+                  let height = activeCrop.rect.height;
+                  if (currentAspect > ratioValue) {
+                    width = Math.max(64, Math.round(height * ratioValue));
+                  } else {
+                    height = Math.max(64, Math.round(width / ratioValue));
+                  }
+                  nextRect = {
+                    x: Math.max(0, Math.round(activeCrop.rect.x + (activeCrop.rect.width - width) / 2)),
+                    y: Math.max(0, Math.round(activeCrop.rect.y + (activeCrop.rect.height - height) / 2)),
+                    width,
+                    height,
+                  };
+                }
+                updateCrop({
+                  enabled: true,
+                  mode: ratio === 'free' ? 'free' : 'ratio',
+                  ratio,
+                  rect: nextRect,
+                });
+              }}
+              disabled={settings.renderMode === 'black_bg'}
+            >
+              <option value="free">Free</option>
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="1:1">1:1</option>
+              <option value="21:9">21:9</option>
+              <option value="2.39:1">2.39:1</option>
+            </select>
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Trạng thái</label>
+            <button
+              type="button"
+              className={styles.resetBtnLike}
+              onClick={() => updateCrop({ enabled: true })}
+              disabled={settings.renderMode === 'black_bg'}
+            >
+              Apply crop
+            </button>
+          </div>
+        </div>
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>X</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={activeCrop.rect.x}
+              onChange={(e) => updateCropRect('x', e.target.value)}
+              disabled={settings.renderMode === 'black_bg'}
+            />
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Y</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={activeCrop.rect.y}
+              onChange={(e) => updateCropRect('y', e.target.value)}
+              disabled={settings.renderMode === 'black_bg'}
+            />
+          </div>
+        </div>
+        <div className={styles.grid2}>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>W</label>
+            <input
+              type="number"
+              min={64}
+              step={1}
+              value={activeCrop.rect.width}
+              onChange={(e) => updateCropRect('width', e.target.value)}
+              disabled={settings.renderMode === 'black_bg'}
+            />
+          </div>
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>H</label>
+            <input
+              type="number"
+              min={64}
+              step={1}
+              value={activeCrop.rect.height}
+              onChange={(e) => updateCropRect('height', e.target.value)}
+              disabled={settings.renderMode === 'black_bg'}
+            />
+          </div>
+        </div>
+        <div className={styles.commonHint}>
+          Source crop: {activeCrop.rect.x},{activeCrop.rect.y},{activeCrop.rect.width},{activeCrop.rect.height}
+          {' '}· Output canvas: {activeCrop.enabled ? `${activeCrop.rect.width}×${activeCrop.rect.height}` : 'video gốc'}.
+          {activeCrop.enabled ? ' Các chỉnh sửa phụ đề/logo/mask đang áp dụng trên khung đã crop.' : ''}
         </div>
       </div>
     </div>
@@ -8243,90 +8525,32 @@ export function CaptionTranslator() {
           </div>
 
           <div className={styles.stageBody}>
-            {activePreviewTab === 'subtitle' ? (
-              <div className={styles.previewSurface}>
-                <SubtitlePreview
-                  videoPath={previewVideoPath}
-                  style={settings.style}
-                  entries={previewEntries}
-                  subtitlePosition={settings.subtitlePosition}
-                  blackoutTop={settings.blackoutTop}
-                  coverMode={settings.coverMode}
-                  coverQuad={settings.coverQuad}
-                  inPlaceBlurStrength={settings.inPlaceBlurStrength ?? 65}
-                  coverFeatherPx={settings.coverFeatherPx}
-                  coverFeatherHorizontalPx={settings.coverFeatherHorizontalPx}
-                  coverFeatherVerticalPx={settings.coverFeatherVerticalPx}
-                  coverFeatherHorizontalPercent={settings.coverFeatherHorizontalPercent}
-                  coverFeatherVerticalPercent={settings.coverFeatherVerticalPercent}
-                  renderMode={settings.renderMode}
-                  renderResolution={settings.renderResolution}
-                  renderSubtitle={settings.renderSubtitle}
-                  renderMark={settings.renderMark}
-                  hardwareAcceleration={settings.hardwareAcceleration}
-                  previewLayoutValue={activeLayoutSwitch}
-                  onPreviewLayoutChange={handlePreviewLayoutChange}
-                  logoPath={settings.logoPath}
-                  logoPosition={settings.logoPosition}
-                  logoScale={settings.logoScale}
-                  crop={settings.crop}
-                  portraitForegroundCropPercent={settings.portraitForegroundCropPercent ?? settings.foregroundCropPercent ?? 0}
-                  thumbnailText={thumbnailPreviewText}
-                  thumbnailTextSecondary={thumbnailPreviewSecondaryText}
-                  hardsubPortraitTextPrimary={videoPreviewText}
-                  hardsubPortraitTextSecondary={videoPreviewSecondaryText}
-                  thumbnailFontName={settings.thumbnailFontName}
-                  thumbnailFontSize={settings.thumbnailFontSize}
-                  hardsubPortraitTextPrimaryFontName={settings.hardsubPortraitTextPrimaryFontName || settings.portraitTextPrimaryFontName}
-                  hardsubPortraitTextPrimaryFontSize={settings.hardsubPortraitTextPrimaryFontSize ?? settings.portraitTextPrimaryFontSize}
-                  hardsubPortraitTextPrimaryColor={settings.hardsubPortraitTextPrimaryColor || settings.portraitTextPrimaryColor}
-                  hardsubPortraitTextSecondaryFontName={settings.hardsubPortraitTextSecondaryFontName || settings.portraitTextSecondaryFontName}
-                  hardsubPortraitTextSecondaryFontSize={settings.hardsubPortraitTextSecondaryFontSize ?? settings.portraitTextSecondaryFontSize}
-                  hardsubPortraitTextSecondaryColor={settings.hardsubPortraitTextSecondaryColor || settings.portraitTextSecondaryColor}
-                  portraitTextPrimaryFontName={settings.portraitTextPrimaryFontName}
-                  portraitTextPrimaryFontSize={settings.portraitTextPrimaryFontSize}
-                  portraitTextPrimaryColor={settings.portraitTextPrimaryColor}
-                  portraitTextSecondaryFontName={settings.portraitTextSecondaryFontName}
-                  portraitTextSecondaryFontSize={settings.portraitTextSecondaryFontSize}
-                  portraitTextSecondaryColor={settings.portraitTextSecondaryColor}
-                  thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
-                  hardsubTextPrimaryPosition={settings.hardsubTextPrimaryPosition}
-                  hardsubTextSecondaryPosition={settings.hardsubTextSecondaryPosition}
-                  hardsubPortraitTextPrimaryPosition={settings.hardsubPortraitTextPrimaryPosition || settings.portraitTextPrimaryPosition}
-                  hardsubPortraitTextSecondaryPosition={settings.hardsubPortraitTextSecondaryPosition || settings.portraitTextSecondaryPosition}
-                  portraitTextPrimaryPosition={settings.portraitTextPrimaryPosition}
-                  portraitTextSecondaryPosition={settings.portraitTextSecondaryPosition}
-                  onPositionChange={settings.setSubtitlePosition}
-                  onBlackoutChange={settings.setBlackoutTop}
-                  onCoverModeChange={settings.setCoverMode}
-                  onInPlaceBlurStrengthChange={settings.setInPlaceBlurStrength}
-                  onCoverQuadChange={settings.setCoverQuad}
-                  onRenderResolutionChange={settings.setRenderResolution}
-                  onLogoPositionChange={(pos) => settings.setLogoPosition(pos || undefined)}
-                  onLogoScaleChange={(scale) => settings.setLogoScale(scale)}
-                  onCropChange={settings.setCrop}
-                  onHardsubTextPrimaryPositionChange={settings.setHardsubTextPrimaryPosition}
-                  onHardsubTextSecondaryPositionChange={settings.setHardsubTextSecondaryPosition}
-                  onPortraitTextPrimaryPositionChange={settings.setPortraitTextPrimaryPosition}
-                  onPortraitTextSecondaryPositionChange={settings.setPortraitTextSecondaryPosition}
-                  renderSnapshotMode={effectivePreviewMode === 'render'}
-                  onSelectLogo={handleSelectLogo}
-                  onRemoveLogo={handleRemoveLogo}
-                  hydrationSeq={settings.hydrationSeq}
-                  interactiveDisabledReason={
-                    effectivePreviewMode === 'render'
-                      ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
-                      : undefined
-                  }
-                  realPreviewDisabledReason={
-                    processing.status === 'running'
-                      ? 'Pipeline đang chạy. Tạm khóa preview thật để tránh tranh chấp FFmpeg.'
-                      : undefined
-                  }
-                  onFirstFrameReady={handlePreviewFirstFrameReady}
-                />
-              </div>
-            ) : (
+            <div className={styles.previewSurface} style={{ display: activePreviewTab !== 'subtitle' ? 'none' : undefined }}>
+              <SubtitlePreview
+                videoPath={previewVideoPath}
+                preview={previewHook}
+                realPreview={previewRealPreview}
+                renderSnapshotMode={effectivePreviewMode === 'render'}
+                interactiveDisabledReason={
+                  effectivePreviewMode === 'render'
+                    ? 'Đang xem snapshot render 100% từ caption_session.json. Chuyển Live để chỉnh layer.'
+                    : undefined
+                }
+                realPreviewDisabledReason={
+                  processing.status === 'running'
+                    ? 'Pipeline đang chạy. Tạm khóa preview thật để tránh tranh chấp FFmpeg.'
+                    : undefined
+                }
+                renderMode={settings.renderMode}
+                renderSubtitle={settings.renderSubtitle}
+                renderMark={settings.renderMark}
+                onSelectLogo={handleSelectLogo}
+                onRemoveLogo={handleRemoveLogo}
+                onFirstFrameReady={handlePreviewFirstFrameReady}
+                hydrationSeq={settings.hydrationSeq}
+              />
+            </div>
+            {activePreviewTab === 'thumbnail' && (
               <div className={styles.previewSurface}>
                 <ThumbnailPreviewPanel
                   videoPath={thumbnailPreviewVideoPath}
@@ -8416,6 +8640,13 @@ export function CaptionTranslator() {
             >
               Thumbnail
             </button>
+            <button
+              type="button"
+              className={`${styles.inspectorTabBtn} ${inspectorPane === 'preview' ? styles.inspectorTabBtnActive : ''}`}
+              onClick={() => setInspectorPane('preview')}
+            >
+              Preview
+            </button>
           </div>
           <div className={styles.inspectorBody}>
             {inspectorPane === 'step' && activeStepContent}
@@ -8435,6 +8666,7 @@ export function CaptionTranslator() {
             )}
             {inspectorPane === 'batch3' && step3BatchInspectorPane}
             {inspectorPane === 'thumbnail' && thumbnailConfigBar}
+            {inspectorPane === 'preview' && previewControlsBar}
             <div className={styles.commonHint} style={{ marginTop: 8 }} title={fileManager.filePath || undefined}>
               {inspectorPane === 'step'
                 ? (settings.inputType === 'draft'
@@ -8448,6 +8680,8 @@ export function CaptionTranslator() {
                       : 'Tab Batch chỉ dùng cho Step 3.')
                   : inspectorPane === 'thumbnail'
                     ? (thumbnailPreviewSourceLabel || 'Thumbnail config')
+                  : inspectorPane === 'preview'
+                    ? 'Preview: frame/zoom/info. Crop video settings.'
                     : `Snapshot: trạng thái ${processing.status}, rà nhanh trước khi chạy.`}
             </div>
           </div>

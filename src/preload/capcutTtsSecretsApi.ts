@@ -10,12 +10,7 @@ interface IpcApiResponse<T = unknown> {
 export interface CapcutTtsVersionData {
   version: string;
   label: string;
-  appKey: string | null;
   token: string | null;
-  wsUrl: string;
-  userAgent: string;
-  xSsDp: string | null;
-  extraHeaders: Record<string, string> | null;
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
@@ -27,14 +22,7 @@ export interface CapcutTtsSecretsAPI {
   save: (
     version: string,
     label: string,
-    payload: {
-      appKey?: string | null;
-      token?: string | null;
-      wsUrl?: string;
-      userAgent?: string;
-      xSsDp?: string | null;
-      extraHeaders?: Record<string, string> | null;
-    }
+    payload: { token?: string | null }
   ) => Promise<IpcApiResponse<CapcutTtsVersionData>>;
   delete: (version: string) => Promise<IpcApiResponse<{ deleted: boolean }>>;
   setActive: (version: string) => Promise<IpcApiResponse<CapcutTtsVersionData | null>>;

@@ -1,18 +1,18 @@
 import { ipcMain } from 'electron';
 import { CAPTION_IPC_CHANNELS } from '../../shared/types/caption';
-import { CapcutTtsConfigsDatabase } from '../database/capcutTtsSecretsDatabase';
-import type { CapcutTtsVersionRow } from '../database/capcutTtsSecretsDatabase';
+import { CapcutTtsTokensDatabase } from '../database/capcutTtsTokensDatabase';
+import type { CapcutTtsTokenRow } from '../database/capcutTtsTokensDatabase';
 
 type IpcResponse<T = unknown> = { success: boolean; data?: T; error?: string };
 
 export function registerCapcutTtsSecretsHandlers(): void {
   ipcMain.handle(
     CAPTION_IPC_CHANNELS.CAPCUT_TTS_CONFIGS_LIST,
-    async (): Promise<IpcResponse<CapcutTtsVersionRow[]>> => {
+    async (): Promise<IpcResponse<CapcutTtsTokenRow[]>> => {
       try {
-        return { success: true, data: CapcutTtsConfigsDatabase.list() };
+        return { success: true, data: CapcutTtsTokensDatabase.list() };
       } catch (error) {
-        console.error('[CapcutTtsConfigs] Lỗi list:', error);
+        console.error('[CapcutTtsTokens] Lỗi list:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -20,14 +20,14 @@ export function registerCapcutTtsSecretsHandlers(): void {
 
   ipcMain.handle(
     CAPTION_IPC_CHANNELS.CAPCUT_TTS_CONFIGS_GET,
-    async (_event, version?: string): Promise<IpcResponse<CapcutTtsVersionRow | null>> => {
+    async (_event, version?: string): Promise<IpcResponse<CapcutTtsTokenRow | null>> => {
       try {
         const result = version
-          ? CapcutTtsConfigsDatabase.get(version)
-          : CapcutTtsConfigsDatabase.getActive();
+          ? CapcutTtsTokensDatabase.get(version)
+          : CapcutTtsTokensDatabase.getActive();
         return { success: true, data: result };
       } catch (error) {
-        console.error('[CapcutTtsConfigs] Lỗi get:', error);
+        console.error('[CapcutTtsTokens] Lỗi get:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -39,20 +39,13 @@ export function registerCapcutTtsSecretsHandlers(): void {
       _event,
       version: string,
       label: string,
-      payload: {
-        appKey?: string | null;
-        token?: string | null;
-        wsUrl?: string;
-        userAgent?: string;
-        xSsDp?: string | null;
-        extraHeaders?: Record<string, string> | null;
-      }
-    ): Promise<IpcResponse<CapcutTtsVersionRow>> => {
+      payload: { token?: string | null }
+    ): Promise<IpcResponse<CapcutTtsTokenRow>> => {
       try {
-        const saved = CapcutTtsConfigsDatabase.upsert(version, label, payload);
+        const saved = CapcutTtsTokensDatabase.upsert(version, label, payload);
         return { success: true, data: saved };
       } catch (error) {
-        console.error('[CapcutTtsConfigs] Lỗi save:', error);
+        console.error('[CapcutTtsTokens] Lỗi save:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -62,10 +55,10 @@ export function registerCapcutTtsSecretsHandlers(): void {
     CAPTION_IPC_CHANNELS.CAPCUT_TTS_CONFIGS_DELETE,
     async (_event, version: string): Promise<IpcResponse<{ deleted: boolean }>> => {
       try {
-        const deleted = CapcutTtsConfigsDatabase.delete(version);
+        const deleted = CapcutTtsTokensDatabase.delete(version);
         return { success: true, data: { deleted } };
       } catch (error) {
-        console.error('[CapcutTtsConfigs] Lỗi delete:', error);
+        console.error('[CapcutTtsTokens] Lỗi delete:', error);
         return { success: false, error: String(error) };
       }
     }
@@ -73,12 +66,12 @@ export function registerCapcutTtsSecretsHandlers(): void {
 
   ipcMain.handle(
     CAPTION_IPC_CHANNELS.CAPCUT_TTS_CONFIGS_SET_ACTIVE,
-    async (_event, version: string): Promise<IpcResponse<CapcutTtsVersionRow | null>> => {
+    async (_event, version: string): Promise<IpcResponse<CapcutTtsTokenRow | null>> => {
       try {
-        const row = CapcutTtsConfigsDatabase.setActive(version);
+        const row = CapcutTtsTokensDatabase.setActive(version);
         return { success: true, data: row };
       } catch (error) {
-        console.error('[CapcutTtsConfigs] Lỗi setActive:', error);
+        console.error('[CapcutTtsTokens] Lỗi setActive:', error);
         return { success: false, error: String(error) };
       }
     }
