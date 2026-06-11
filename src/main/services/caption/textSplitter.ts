@@ -86,7 +86,8 @@ export interface TranslationPromptResult {
 export function createTranslationPrompt(
   texts: string[],
   targetLanguage: string = 'Vietnamese',
-  customTemplate?: string
+  customTemplate?: string,
+  memoryContext?: string
 ): TranslationPromptResult {
   const count = texts.length;
 
@@ -108,7 +109,7 @@ export function createTranslationPrompt(
 
   // --- Default prompt: JSON-only, mỗi câu tương ứng 1 object ---
   const sourcePayload = texts.map((text, i) => ({ index: i + 1, text }));
-  const prompt = `Dịch ${count} dòng subtitle sau sang tiếng ${targetLanguage}.
+  let prompt = `Dịch ${count} dòng subtitle sau sang tiếng ${targetLanguage}.
 YÊU CẦU BẮT BUỘC:
 1. CHỈ trả về JSON thuần túy, không markdown, không text thừa.
 2. JSON success schema:
@@ -140,6 +141,14 @@ YÊU CẦU BẮT BUỘC:
 
 Nguồn:
 ${JSON.stringify(sourcePayload)}`;
+
+  if (memoryContext) {
+    prompt += `\n\n=== BỐI CẢNH DỊCH THUẬT (Translation Context) ===
+Đây là các bản dịch trước đó trong cùng dự án để tham khảo:
+${memoryContext}
+Sử dụng ngữ cảnh trên để giữ NHẤT QUÁN thuật ngữ, tên nhân vật, phong cách dịch.
+TUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 object output.\n`;
+  }
 
   console.log('[TextSplitter] Sử dụng default prompt, format: json');
   return { prompt, responseFormat: 'json' };

@@ -67,7 +67,7 @@ import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
 import { Step4ProxyTestPopup } from './components/Step4ProxyTestPopup';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw } from 'lucide-react';
+import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw, Trash2, Database } from 'lucide-react';
 import {
   CaptionProjectSettingsValues,
   FitAudioAuditResponse,
@@ -1028,6 +1028,8 @@ export function CaptionTranslator() {
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
   );
   const [commonColorHistory, setCommonColorHistory] = useState<string[]>([]);
+  const [memoryAvailable, setMemoryAvailable] = useState<boolean | null>(null);
+  const [memoryCount, setMemoryCount] = useState<number>(0);
   const commonColorHistoryStorageKey = useMemo(
     () => `${COMMON_COLOR_HISTORY_STORAGE_PREFIX}:${projectId || 'global'}`,
     [projectId]
@@ -3391,11 +3393,20 @@ export function CaptionTranslator() {
     return Array.from({ length: expectedCount }, (_, offset) => {
       const globalIndex = row.startIndex + offset;
       const entry = sourceEntries[globalIndex];
+      const translatedText = typeof entry?.translatedText === 'string' ? entry.translatedText : '';
+      const originalText = typeof entry?.text === 'string' ? entry.text : '';
+      let status: 'ok' | 'missing' | 'error' = 'ok';
+      if (!translatedText.trim()) {
+        status = 'missing';
+      } else if (/^\s*\{?\s*"status"\s*:\s*"error"|ERROR|LỖI|FAIL/i.test(translatedText)) {
+        status = 'error';
+      }
       return {
         lineNo: offset + 1,
         globalIndex: globalIndex + 1,
-        originalText: typeof entry?.text === 'string' ? entry.text : '',
-        translatedText: typeof entry?.translatedText === 'string' ? entry.translatedText : '',
+        originalText,
+        translatedText,
+        status,
       };
     });
   }, [fileManager.entries, sessionPreviewEntries]);
@@ -5514,6 +5525,39 @@ export function CaptionTranslator() {
     processing.status,
   ]);
 
+  // Memory context health & stats
+  useEffect(() => {
+    let active = true;
+    const fetchMemoryInfo = async () => {
+      try {
+        const healthRes: any = await window.electronAPI.invoke('caption:memoryHealth');
+        if (!active) return;
+        if (healthRes?.success && healthRes.data?.available) {
+          setMemoryAvailable(true);
+          if (projectId && stepInspectorActiveInputPath) {
+            const statsRes: any = await window.electronAPI.invoke('caption:memoryStats', {
+              projectId,
+              sourcePath: stepInspectorActiveInputPath,
+            });
+            if (active && statsRes?.success) {
+              setMemoryCount(statsRes.data?.count ?? 0);
+            }
+          }
+        } else {
+          setMemoryAvailable(false);
+          setMemoryCount(0);
+        }
+      } catch {
+        if (active) {
+          setMemoryAvailable(false);
+          setMemoryCount(0);
+        }
+      }
+    };
+    void fetchMemoryInfo();
+    return () => { active = false; };
+  }, [projectId, stepInspectorActiveInputPath, isStepInspectorOpen]);
+
   useEffect(() => {
     if (!isStepInspectorOpen) {
       return;
@@ -7547,6 +7591,52 @@ export function CaptionTranslator() {
                     : 'API: dùng model đã chọn'}
             </div>
           </div>
+          {(memoryAvailable !== null) && (
+            <div className={styles.stepCard}>
+              <div className={styles.stepCardHeader}>
+                <div className={styles.stepCardTitle}>
+                  <Database size={13} style={{ marginRight: 4 }} />
+                  Translation Memory
+                </div>
+              </div>
+              <div className={styles.stepOptionRow} style={{ alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                {memoryAvailable
+                  ? (
+                    <>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {memoryCount} bản ghi nhớ
+                      </span>
+                      <Button
+                        variant="danger"
+                        onClick={async () => {
+                          if (!projectId || !stepInspectorActiveInputPath) return;
+                          try {
+                            await window.electronAPI.invoke('caption:memoryClear', {
+                              projectId,
+                              sourcePath: stepInspectorActiveInputPath,
+                            });
+                            setMemoryCount(0);
+                          } catch (err) {
+                            console.error('[Memory] Clear failed:', err);
+                          }
+                        }}
+                        title="Xoá bộ nhớ dịch của dự án này"
+                        className={styles.stepCompactBtn}
+                      >
+                        <Trash2 size={12} />
+                        Xoá
+                      </Button>
+                    </>
+                  )
+                  : (
+                    <span style={{ fontSize: 12, color: 'var(--text-danger)' }}>
+                      <AlertCircle size={12} style={{ marginRight: 4 }} />
+                      Memory context không khả dụng
+                    </span>
+                  )}
+              </div>
+            </div>
+          )}
           <div className={styles.stepCard}>
             <div className={styles.stepCardHeader}>
               <div className={styles.stepCardTitle}>Runtime theo kênh dịch</div>

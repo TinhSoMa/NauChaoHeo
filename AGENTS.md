@@ -8,7 +8,9 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 - **Path aliases**: `@/` = `src/renderer/src/`, `@shared/` = `src/shared/`
 - **Entrypoints**: `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/index.html`
 - **State**: React Router v7 (HashRouter) + Zustand
-- **Styling**: Tailwind CSS v4 with CSS-variable-based theming
+- **Styling**: Tailwind CSS v4 with CSS-variable-based theming (light/dark in `src/renderer/src/styles/globals.css`)
+- **Database**: single `nauchaoheo.db` at `app.getPath('userData')`, shared via `getDatabase()` from `src/main/database/schema.ts:421`. All `*Database.ts` modules import `getDatabase()` — no separate DBs. `src/main/database/index.ts` is empty.
+- **Current branch**: `feat/update-capcut-token`
 
 ## Dev Commands
 
@@ -16,12 +18,20 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 |---|---|
 | `npm run dev` | `chcp 65001 && electron-vite dev` (UTF-8) |
 | `npm run build` | `electron-vite build` |
+| `npm run start` / `preview` | `electron-vite preview` |
 | `npm run build:win` | Full pipeline: prep yt-dlp → aria2c → Go worker → Python runtime → build → electron-builder (NSIS) |
-| `npm run build:mac` / `build:linux` | Build then electron-builder (no prep scripts) |
+| `npm run build:mac` | `npm run build && electron-builder --mac` |
+| `npm run build:linux` | `npm run build && electron-builder --linux` |
 | `npm run build:go-worker` | Compile `src/main/services/tts/go/main.go` → `resources/tts/go/edge_tts_worker.exe` |
-| `npm run test:extension` | Node native test runner on `tests/extension/*.test.mjs` |
+| `npm run prepare:python-runtime` | `scripts/prepare-python-runtime.ps1` |
+| `npm run prepare:yt-dlp` | `scripts/prepare-yt-dlp.ps1` |
+| `npm run prepare:aria2c` | `scripts/prepare-aria2c.ps1` |
+| `npm run test:extension` | `node --test tests/extension/*.test.mjs` |
+| `npm run test:extension:background` | `node --test tests/extension/background.logic.test.mjs` |
+| `npm run bench:edge-tts-worker` | `node ./scripts/benchmark-edge-tts-worker.js` |
+| `npm run bench:rotation-queue` | Compile TS then run queue benchmark |
 
-No lint, typecheck, or formatter scripts exist.
+**No lint, typecheck, or formatter scripts exist.**
 
 ## Key Directories
 
@@ -38,11 +48,12 @@ No lint, typecheck, or formatter scripts exist.
 | `src/main/services/cutVideo/` | Video cut/split/merge, audio extract, CapCut auto-batch |
 | `src/main/services/shared/universalRotationQueue/` | Configurable API key rotation + request queuing |
 | `src/main/services/proxy/` | Rotating proxy manager + Webshare API integration |
-| `src/main/database/` | SQLite via better-sqlite3 (5+ DBs for cookies, proxies, models, settings) |
-| `extension/` | Browser extensions: Qidian Helper (MV3), TikTok Auto Follow Like |
+| `src/main/database/` | SQLite via better-sqlite3 — `getDatabase()` singleton from `schema.ts` |
+| `extension/` | 5 browser extension projects: EbookExtension, NovelSub, qidian (MV3), qidian_old, tiktok |
 | `tests/extension/` | Node test runner tests for extension background logic |
-| `resources/` | Bundled tools: FFmpeg, yt-dlp, aria2c, Python runtime, fonts, icons |
-| `scripts/` | PS1 scripts for preparing yt-dlp, aria2c, Python runtime; benchmark |
+| `resources/` | Bundled tools: FFmpeg, yt-dlp, aria2c, Python runtime, fonts, icons, gemma GGUF models |
+| `Grok3API/` | Vendored Python library for Grok 3 API (no login/cookies) |
+| `scripts/` | PS1 scripts for preparing bundled tools; benchmark scripts |
 
 ## Service Workers (External Processes)
 
@@ -60,16 +71,17 @@ All Python workers communicate via **stdin/stdout JSON-line protocol** (one JSON
 ## Configuration & Secrets
 
 - **Gemini API keys**: `gemini_keys.json` (gitignored) or `resources/api-keys.example.json` as template
-- **App model ID**: `com.veo3promptbuilder` (Windows)
-- **All DB files**: SQLite via better-sqlite3, created at runtime (no migrations on startup beyond schema init)
+- **App model ID (runtime)**: `com.veo3promptbuilder` (`src/main/index.ts`)
+- **App ID (electron-builder)**: `com.tinhsoma.nauchaoheo`
+- **Renderer console capture**: `installRendererConsoleCapture()` at module level in `src/renderer/src/main.tsx`
+- **Main console capture**: `installMainConsoleCapture()` at module level in `src/main/index.ts`
 
 ## Testing
 
 - Uses **Node.js built-in test runner** (`node:test` + `node:assert/strict`)
-- Extension tests only: `npm run test:extension`
 - Chrome API mocked via `tests/extension/harness/mock-chrome.mjs`
-- No test runner config file — tests run via `--test` flag
-- `src/main/services/downloader/__tests__/downloadIntent.test.ts` is a TypeScript test (no runner configured)
+- `src/main/services/downloader/__tests__/downloadIntent.test.ts` is TypeScript (no configured runner)
+- Focused test: `npm run test:extension:background`
 
 ## Conventions
 
@@ -78,4 +90,7 @@ All Python workers communicate via **stdin/stdout JSON-line protocol** (one JSON
 - Renderer config (Tailwind, PostCSS) lives inside `src/renderer/`, not project root
 - Electron main process config is at `electron.vite.config.ts` (root)
 - `README (2).md` is an unrelated Mem0 project README — not this project's documentation
-- `NewPromt.md` is the subtitle translation system prompt sent to AI models
+- `NewPromt.md` and `newpromt.json` are the subtitle translation system prompt (markdown + JSON)
+- `tsconfig.json` at root covers renderer; `tsconfig.main.json` covers main/preload/shared (project references)
+- `.vscode/settings.json` has auto-approve rules for downloader service grep commands
+- `.claude/skills/` has 4 skill files using code-review-graph MCP (knowledge graph DB at `.code-review-graph/graph.db`)

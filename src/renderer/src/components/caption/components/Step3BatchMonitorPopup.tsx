@@ -6,6 +6,7 @@ export type Step3BatchEditableLine = {
   globalIndex: number;
   originalText: string;
   translatedText: string;
+  status?: 'ok' | 'missing' | 'error';
 };
 
 type Step3BatchMonitorPopupProps = {
@@ -25,7 +26,6 @@ function normalizeLineSnapshot(lines: Step3BatchEditableLine[]): string {
 
 export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
   const [draftLines, setDraftLines] = useState<Step3BatchEditableLine[]>(props.lines);
-  const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!props.visible) {
@@ -33,6 +33,37 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
     }
     setDraftLines(props.lines.map((line) => ({ ...line })));
   }, [props.lines, props.visible, props.batchIndex]);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const [missingCursor, setMissingCursor] = useState(-1);
+
+  const missingIndices = useMemo(
+    () => draftLines.reduce<number[]>((acc, line, i) => {
+      if (!line.translatedText?.trim() || line.status === 'error') acc.push(i);
+      return acc;
+    }, []),
+    [draftLines],
+  );
+
+  useEffect(() => {
+    setMissingCursor(-1);
+  }, [props.lines]);
+
+  const handleJumpMissing = () => {
+    const next = missingCursor === -1
+      ? 0
+      : (missingCursor + 1) % missingIndices.length;
+    setMissingCursor(next);
+    const targetIndex = missingIndices[next];
+    const container = listRef.current;
+    if (!container) return;
+    const child = container.children[targetIndex] as HTMLElement | undefined;
+    if (child) {
+      child.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const textarea = child.querySelector('textarea');
+      requestAnimationFrame(() => textarea?.focus());
+    }
+  };
 
   const initialSnapshot = useMemo(() => normalizeLineSnapshot(props.lines), [props.lines]);
   const currentSnapshot = useMemo(() => normalizeLineSnapshot(draftLines), [draftLines]);
@@ -110,23 +141,37 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
           <div>
             <div className={styles.title}>Step 3 Batch #{props.batchIndex}</div>
           </div>
-          <button
-            type="button"
-            className={styles.closeBtn}
-            onClick={() => { void handleRequestClose(); }}
-            disabled={props.busy}
-          >
-            ✕
-          </button>
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.jumpBtn}
+              onClick={handleJumpMissing}
+              disabled={props.busy || missingIndices.length === 0}
+            >
+              {missingIndices.length === 0
+                ? 'Không có dòng thiếu'
+                : `Tìm dòng thiếu (${missingCursor === -1 ? 0 : missingCursor + 1}/${missingIndices.length})`}
+            </button>
+            <button
+              type="button"
+              className={styles.closeBtn}
+              onClick={() => { void handleRequestClose(); }}
+              disabled={props.busy}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className={styles.body}>
-          <div ref={listRef} className={styles.list}>
-            {draftLines.map((line, index) => (
+          <div className={styles.list} ref={listRef}>
+            {draftLines.map((line, idx) => {
+              const isCurrent = missingCursor >= 0 && missingIndices[missingCursor] === idx;
+              return (
               <div
                 key={`s3-edit-${line.lineNo}-${line.globalIndex}`}
-                data-line-index={index}
-                className={styles.item}
+                data-index={idx}
+                className={`${styles.item} ${line.status === 'missing' ? styles.itemMissing : line.status === 'error' ? styles.itemError : ''} ${isCurrent ? styles.itemCurrent : ''}`}
               >
                 <div className={styles.itemHeader}>
                   <span className={styles.itemMeta}>Batch line #{line.lineNo} · Global #{line.globalIndex}</span>
@@ -152,7 +197,8 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
                   placeholder="Nhập subtitle đã dịch..."
                 />
               </div>
-            ))}
+            );
+          })}
           </div>
 
           {props.error && <div className={styles.error}>{props.error}</div>}

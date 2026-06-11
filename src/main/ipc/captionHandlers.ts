@@ -2,6 +2,7 @@
  * Caption IPC Handlers - Xử lý các IPC request liên quan đến Caption
  */
 
+import crypto from 'crypto';
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron';
 import {
   CAPTION_IPC_CHANNELS,
@@ -27,6 +28,7 @@ import * as TTSService from '../services/tts';
 import { AppSettingsService } from '../services/appSettings';
 import { PromptService } from '../services/promptService';
 import { getGrokUiRuntime } from '../services/grokUi';
+import { getMemoryContextService } from '../services/memoryContext';
 
 /**
  * Response chuẩn cho IPC
@@ -1489,7 +1491,77 @@ export function registerCaptionHandlers(): void {
     }
   );
 
+  // ============================================
+  // CAPTION MEMORY CONTEXT
+  // ============================================
+  ipcMain.handle(
+    'caption:memoryHealth',
+    async (): Promise<IpcResponse<{ available: boolean; message?: string }>> => {
+      try {
+        const service = getMemoryContextService();
+        const health = await service.getHealth();
+        const available = health.success && health.pythonOk && health.backend !== 'unavailable';
+        return {
+          success: true,
+          data: {
+            available,
+            message: health.warning || health.error || (available ? undefined : 'Memory context không khả dụng'),
+          },
+        };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'caption:memoryStats',
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { projectId: string; sourcePath: string }
+    ): Promise<IpcResponse<{ count: number }>> => {
+      try {
+        const service = getMemoryContextService();
+        const ns = buildCaptionMemoryNamespace(payload.projectId, payload.sourcePath);
+        const stats = await service.getStats({
+          projectId: payload.projectId,
+          feature: 'caption.translation',
+          namespace: ns,
+        });
+        return { success: true, data: { count: stats.totalMemories || 0 } };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'caption:memoryClear',
+    async (
+      _event: IpcMainInvokeEvent,
+      payload: { projectId: string; sourcePath: string }
+    ): Promise<IpcResponse<{ clearedCount: number }>> => {
+      try {
+        const service = getMemoryContextService();
+        const ns = buildCaptionMemoryNamespace(payload.projectId, payload.sourcePath);
+        const result = await service.clearNamespace({
+          projectId: payload.projectId,
+          feature: 'caption.translation',
+          namespace: ns,
+        });
+        return { success: true, data: { clearedCount: result.clearedCount || 0 } };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   console.log('[CaptionHandlers] Đã đăng ký handlers thành công');
+}
+
+function buildCaptionMemoryNamespace(projectId: string, sourcePath: string): string {
+  const fingerprint = crypto.createHash('sha1').update(sourcePath).digest('hex').slice(0, 12);
+  return `caption:${projectId}:${fingerprint}`;
 }
 
 
