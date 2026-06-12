@@ -73,7 +73,9 @@ export function createTranslationPrompt(
   texts: string[],
   targetLanguage: string = 'Vietnamese',
   customTemplate?: string,
-  memoryContext?: string
+  memoryContext?: string,
+  debugSaveDir?: string,
+  batchIndex?: number,
 ): TranslationPromptResult {
   const count = texts.length;
 
@@ -95,6 +97,7 @@ export function createTranslationPrompt(
     }
 
     console.log('[TextSplitter] Sử dụng custom prompt + memory context, format: json');
+    savePromptDebug(debugSaveDir, batchIndex, prompt);
     return { prompt, responseFormat: 'json' };
   }
 
@@ -155,7 +158,24 @@ ${JSON.stringify(sourcePayload, null, 2)}
   }
 
   console.log('[TextSplitter] Sử dụng default prompt (markdown), format: json');
+  savePromptDebug(debugSaveDir, batchIndex, prompt);
   return { prompt, responseFormat: 'json' };
+}
+
+function savePromptDebug(debugSaveDir?: string, batchIndex?: number, prompt?: string): void {
+  if (!debugSaveDir || !prompt) return;
+  try {
+    const idx = typeof batchIndex === 'number' ? batchIndex + 1 : Date.now();
+    const fileName = `step3_prompt_batch_${idx}.txt`;
+    const dir = debugSaveDir;
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(dir, fileName), prompt, 'utf-8');
+    console.log(`[TextSplitter] Đã lưu prompt debug: ${path.join(dir, fileName)}`);
+  } catch (error) {
+    console.warn('[TextSplitter] Không thể lưu prompt debug:', error);
+  }
 }
 
 export interface JsonTranslationParseResult {

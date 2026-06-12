@@ -46,6 +46,9 @@ import {
 } from './textSplitter';
 import { getMemoryContextService } from '../memoryContext';
 import { createHash } from 'crypto';
+import * as path from 'path';
+import * as fs from 'fs';
+import { getCaptionOutputDirFromInput } from '../../../shared/utils/captionSession';
 
 type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
 
@@ -312,11 +315,12 @@ async function translateBatch(
   shouldStop?: () => boolean,
   stopSignal?: AbortSignal,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   const keyLabel = assignedKey ? assignedKey.keyInfo.name : 'rotation';
   console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [key: ${keyLabel}]`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
     const control = shouldStop
@@ -392,10 +396,11 @@ async function translateBatchImpit(
   targetLanguage: string,
   promptTemplate?: string,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [Impit] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
     const result = await callGeminiImpitAutoSelect(prompt);
@@ -449,10 +454,11 @@ async function translateBatchGrokUi(
   promptTemplate: string | undefined,
   timeoutMs: number,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [GrokUI] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
     const result = await getGrokUiRuntime().ask({ prompt, timeoutMs });
@@ -518,9 +524,10 @@ async function translateBatchGeminiWebQueue(
   queueContext: CaptionGeminiWebQueueRuntimeContext,
   dispatchOptions?: GeminiWebQueueDispatchOptions,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [GeminiWebQueue] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
   const { queue, resourceLabelById } = queueContext;
 
   try {
@@ -1215,7 +1222,7 @@ export async function translateAll(
       ? `tuần tự 1 job, chờ sau hoàn thành theo setting (${queueGapSecLabel}s+)`
       : `tuần tự 1 job, pacing ${queueGapSecLabel}s`;
     let progressTokenLabel = defaultTokenLabel;
-    const totalAttempts = useGeminiWebQueue
+  const totalAttempts = useGeminiWebQueue
       ? CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS
       : Math.max(1, MAX_BATCH_RETRY + 1);
     let attempt = 0;
@@ -1828,6 +1835,10 @@ export async function translateSingleBatch(
         console.timeEnd(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1}`);
         if (searchResult.success && searchResult.promptContext) {
           localMemoryContext = searchResult.promptContext;
+          const lineCount = searchResult.promptContext.split('\n').filter((l) => l.trim()).length;
+          console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: found ${searchResult.memories?.length ?? 0} memories (${lineCount} lines)`);
+        } else {
+          console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: no context returned (success=${searchResult.success})`);
         }
       }
     }
@@ -1859,6 +1870,22 @@ export async function translateSingleBatch(
       }
     }
   }
+
+  // Tạo thư mục debug lưu prompt
+  const debugSaveDir = (() => {
+    try {
+      const rawSourcePath = (sourcePath || '').trim();
+      if (!rawSourcePath) return undefined;
+      const inputType = rawSourcePath.toLowerCase().endsWith('.srt') ? 'srt' : 'draft';
+      const outputDir = getCaptionOutputDirFromInput(inputType as 'srt' | 'draft', rawSourcePath);
+      if (!outputDir) return undefined;
+      const debugDir = path.join(outputDir, 'debug_prompts');
+      fs.mkdirSync(debugDir, { recursive: true });
+      return debugDir;
+    } catch {
+      return undefined;
+    }
+  })();
 
   const totalAttempts = useGeminiWebQueue
     ? CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS
@@ -1905,11 +1932,12 @@ export async function translateSingleBatch(
           geminiWebQueueContext!,
           { preferredResourceId: geminiStickyResourceId || undefined, maxAttempts: 1 },
           localMemoryContext,
+          debugSaveDir,
         )
       : useImpit
-        ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext)
+        ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext, debugSaveDir)
         : useGrokUi
-          ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, queueGapMs, localMemoryContext)
+          ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
           : await translateBatch(
               batch,
               model as GeminiModel,
@@ -1919,6 +1947,7 @@ export async function translateSingleBatch(
               () => shouldStopTranslation(runId),
               undefined,
               localMemoryContext,
+              debugSaveDir,
             );
 
     lastResult = batchResult;
@@ -1941,7 +1970,7 @@ export async function translateSingleBatch(
         const memSourcePath = (sourcePath || '').trim();
         if (memProjectId && memSourcePath) {
           const memoryNamespace = buildCaptionMemoryNamespace(memProjectId, memSourcePath);
-          await getMemoryContextService().addMemory({
+          const addResult = await getMemoryContextService().addMemory({
             projectId: memProjectId,
             feature: CAPTION_MEMORY_FEATURE,
             namespace: memoryNamespace,
@@ -1953,9 +1982,14 @@ export async function translateSingleBatch(
               batchSize: batch.texts.length,
             },
           });
+          if (addResult.success) {
+            console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: stored (${batch.texts.length} dòng)`);
+          } else {
+            console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store failed: ${addResult.error || 'unknown'}`);
+          }
         }
-      } catch {
-        // Non-fatal
+      } catch (error) {
+        console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store exception:`, error);
       }
 
       return {
