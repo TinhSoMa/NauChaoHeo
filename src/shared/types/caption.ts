@@ -99,6 +99,37 @@ export interface TranslationResult extends TranslationQueuePacingMetadata {
 }
 
 /**
+ * Options cho single batch translation (1 batch/lần)
+ */
+export interface SingleBatchOptions {
+  entries: SubtitleEntry[];
+  batchIndex: number;           // 0-based batch index
+  totalBatches: number;         // Tổng số batch cho toàn bộ file
+  linesPerBatch: number;
+  targetLanguage: string;
+  model: string;
+  promptTemplate?: string;
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  projectId?: string;
+  sourcePath?: string;
+  runId?: string;
+}
+
+/**
+ * Kết quả single batch translation
+ */
+export interface SingleBatchResult {
+  success: boolean;
+  translatedTexts: string[];
+  batchIndex: number;
+  error?: string;
+  transport?: string;
+  resourceId?: string;
+  resourceLabel?: string;
+  queueRuntimeKey?: string;
+}
+
+/**
  * Progress callback cho quá trình dịch
  */
 export interface TranslationProgress extends TranslationQueuePacingMetadata {
@@ -424,9 +455,7 @@ export const CAPTION_IPC_CHANNELS = {
   // Caption
   PARSE_SRT: 'caption:parseSrt',
   FIND_SRT_IN_FOLDERS: 'caption:findSrtInFolders',
-  TRANSLATE: 'caption:translate',
-  TRANSLATE_PROGRESS: 'caption:translateProgress',
-  TRANSLATE_PROGRESS_ACK: 'caption:translateProgressAck',
+  TRANSLATE_BATCH: 'caption:translateBatch',
   EXPORT_SRT: 'caption:exportSrt',
   EXPORT_PLAIN_TEXT: 'caption:exportPlainText',
   SPLIT: 'caption:split',

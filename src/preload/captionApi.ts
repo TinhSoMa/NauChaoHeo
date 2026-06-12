@@ -7,9 +7,8 @@ import {
   CAPTION_IPC_CHANNELS,
   CAPTION_SESSION_IPC_CHANNELS,
   ParseSrtResult,
-  TranslationOptions,
-  TranslationResult,
-  TranslationProgress,
+  SingleBatchOptions,
+  SingleBatchResult,
   SubtitleEntry,
   TTSOptions,
   TTSResult,
@@ -51,10 +50,8 @@ export interface CaptionAPI {
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
 
-  // Translation
-  translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
-  onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
-  ackTranslateProgress: (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => Promise<IpcApiResponse<void>>;
+  // Translation (1 batch/lần)
+  translateBatch: (options: SingleBatchOptions) => Promise<IpcApiResponse<SingleBatchResult>>;
 
   // Split text files
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
@@ -144,18 +141,8 @@ export function createCaptionAPI(): CaptionAPI {
     exportPlainText: (content: string, outputPath: string) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.EXPORT_PLAIN_TEXT, content, outputPath),
 
-    translate: (options: TranslationOptions) =>
-      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE, options),
-
-    onTranslateProgress: (callback: (progress: TranslationProgress) => void) => {
-      ipcRenderer.removeAllListeners(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS);
-      ipcRenderer.on(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS, (_event, progress) => {
-        callback(progress);
-      });
-    },
-
-    ackTranslateProgress: (payload) =>
-      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS_ACK, payload),
+    translateBatch: (options: SingleBatchOptions) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE_BATCH, options),
 
     split: (options: SplitOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options),

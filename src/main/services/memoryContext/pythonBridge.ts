@@ -81,6 +81,10 @@ export class MemoryContextPythonBridge {
     buildStamp: null
   };
 
+  isStarted(): boolean {
+    return this.proc !== null;
+  }
+
   async ensureStarted(): Promise<void> {
     if (this.proc) {
       return;
@@ -118,9 +122,6 @@ export class MemoryContextPythonBridge {
     const workerPath = this.resolveWorkerPath();
     const availability = await checkPythonModuleAvailability(['sqlite3', 'mem0', 'spacy', 'underthesea'], {
       preferredVersion: '3.12',
-      postCheckScript: 'import spacy; spacy.load("xx_ent_wiki_sm")',
-      postCheckDescription: 'Không thể load spaCy model xx_ent_wiki_sm.',
-      postCheckErrorCode: 'EMBEDDED_SPACY_MODEL_MISSING'
     });
 
     this.runtime = availability.runtime || null;

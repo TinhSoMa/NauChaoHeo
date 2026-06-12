@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron';
 import {
   CAPTION_IPC_CHANNELS,
+  CAPTION_PROCESS_STOP_SIGNAL,
   CAPTION_SESSION_IPC_CHANNELS,
   ParseSrtResult,
   RenderAudioPreviewOptions,
@@ -17,8 +18,8 @@ import {
   RenderThumbnailPreviewFrameResult,
   RenderThumbnailFileOptions,
   RenderThumbnailFileResult,
-  TranslationOptions,
-  TranslationResult,
+  SingleBatchOptions,
+  SingleBatchResult,
   SubtitleEntry,
   VideoMetadata,
   CAPTION_VIDEO_IPC_CHANNELS
@@ -41,9 +42,7 @@ interface IpcResponse<T = unknown> {
 
 const SUPPORTED_CAPTION_FONT_EXTENSIONS = new Set(['.ttf', '.otf']);
 const sessionPathLocks = new Map<string, Promise<unknown>>();
-const translateAckWaiters = new Map<string, { resolve: () => void; timer: NodeJS.Timeout }>();
-const translateAckEarly = new Map<string, number>();
-const TRANSLATE_ACK_TIMEOUT_MS = 30_000;
+// ACK infrastructure removed (kiến trúc 1 batch/lần không cần progress push)
 
 async function withSessionLock<T>(sessionPath: string, task: () => Promise<T>): Promise<T> {
   const key = sessionPath;
@@ -245,56 +244,7 @@ function decodeTextFromBuffer(buffer: Buffer): string {
   return maybeFixMojibake(text);
 }
 
-function buildTranslateAckKey(payload: { runId?: string; batchIndex: number; eventType: string }): string {
-  const runId = (payload.runId || '__default_run__').trim();
-  return `${runId}:${payload.eventType}:${payload.batchIndex}`;
-}
-
-function recordEarlyTranslateAck(key: string): void {
-  translateAckEarly.set(key, Date.now());
-  if (translateAckEarly.size > 1000) {
-    const threshold = Date.now() - 5 * 60_000;
-    for (const [storedKey, ts] of translateAckEarly.entries()) {
-      if (ts < threshold) {
-        translateAckEarly.delete(storedKey);
-      }
-    }
-  }
-}
-
-function flushTranslateAckWaiters(): void {
-  for (const [key, waiter] of translateAckWaiters.entries()) {
-    clearTimeout(waiter.timer);
-    try {
-      waiter.resolve();
-    } catch {
-      // ignore
-    }
-    translateAckWaiters.delete(key);
-  }
-  translateAckEarly.clear();
-}
-
-async function waitForTranslateAck(payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }): Promise<boolean> {
-  const key = buildTranslateAckKey(payload);
-  if (translateAckEarly.has(key)) {
-    translateAckEarly.delete(key);
-    return true;
-  }
-  return new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => {
-      translateAckWaiters.delete(key);
-      resolve(false);
-    }, TRANSLATE_ACK_TIMEOUT_MS);
-    translateAckWaiters.set(key, {
-      resolve: () => {
-        clearTimeout(timer);
-        resolve(true);
-      },
-      timer,
-    });
-  });
-}
+// ACK helpers removed (kiến trúc 1 batch/lần không cần progress push)
 
 function decodeJsonTextFromBuffer(buffer: Buffer): string {
   if (!buffer || buffer.length === 0) {
@@ -505,113 +455,39 @@ export function registerCaptionHandlers(): void {
   );
 
   // ============================================
-  // TRANSLATE
+  // TRANSLATE BATCH (1 batch/lần)
   // ============================================
   ipcMain.handle(
-    CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS_ACK,
-    async (_event: IpcMainInvokeEvent, payload?: { runId?: string; batchIndex?: number; eventType?: string }): Promise<IpcResponse<void>> => {
-      try {
-        if (!payload || typeof payload.batchIndex !== 'number' || !payload.eventType) {
-          return { success: false, error: 'INVALID_ACK_PAYLOAD' };
-        }
-        const key = buildTranslateAckKey({
-          runId: payload.runId,
-          batchIndex: payload.batchIndex,
-          eventType: payload.eventType,
-        });
-        const waiter = translateAckWaiters.get(key);
-        if (waiter) {
-          waiter.resolve();
-          translateAckWaiters.delete(key);
-        } else {
-          recordEarlyTranslateAck(key);
-        }
-        return { success: true };
-      } catch (error) {
-        return { success: false, error: String(error) };
-      }
-    }
-  );
-
-  ipcMain.handle(
-    CAPTION_IPC_CHANNELS.TRANSLATE,
+    CAPTION_IPC_CHANNELS.TRANSLATE_BATCH,
     async (
-      event: IpcMainInvokeEvent,
-      options: TranslationOptions
-    ): Promise<IpcResponse<TranslationResult>> => {
-      console.log(`[CaptionHandlers] Translate: ${options.entries.length} entries`);
+      _event: IpcMainInvokeEvent,
+      options: SingleBatchOptions
+    ): Promise<IpcResponse<SingleBatchResult>> => {
+      console.log(`[CaptionHandlers] Translate batch #${options.batchIndex + 1}/${options.totalBatches}: ${options.entries.length} entries`);
+
+      const runId = typeof options.runId === 'string' ? options.runId : undefined;
+      let isError = false;
 
       try {
-        const runId = typeof options.runId === 'string' ? options.runId : undefined;
-        if (CaptionService.isTranslationActive()) {
-          return { success: false, error: 'TRANSLATION_ALREADY_RUNNING' };
-        }
-        CaptionService.beginTranslationRun(runId);
-        // Inject prompt from DB if captionPromptId is set and no client override
-        if (!options.promptTemplate) {
-          const appSettings = AppSettingsService.getAll();
-          if (appSettings.captionPromptFamilyId) {
-            const familyPrompt = PromptService.resolveLatestByFamily(appSettings.captionPromptFamilyId);
-            if (familyPrompt?.content) {
-              options.promptTemplate = familyPrompt.content;
-              console.log(`[CaptionHandlers] Sử dụng caption prompt family latest: ${familyPrompt.name} v${familyPrompt.version}`);
-            } else {
-              console.warn(`[CaptionHandlers] Không tìm thấy caption prompt family: ${appSettings.captionPromptFamilyId}`);
-            }
-          }
-          if (!options.promptTemplate && appSettings.captionPromptId) {
-            const prompt = PromptService.getById(appSettings.captionPromptId);
-            if (prompt?.content) {
-              options.promptTemplate = prompt.content;
-              console.log(`[CaptionHandlers] Sử dụng caption prompt: ${prompt.name}`);
-            }
-          }
+        // First batch → start run
+        if (options.batchIndex === 0 && !CaptionService.isTranslationActive(runId)) {
+          CaptionService.beginTranslationRun(runId);
         }
 
-        // Progress callback - gửi về renderer
-        const progressCallback = (progress: unknown) => {
-          const window = BrowserWindow.fromWebContents(event.sender);
-          if (window) {
-            window.webContents.send(CAPTION_IPC_CHANNELS.TRANSLATE_PROGRESS, progress);
-          }
-        };
+        const result = await CaptionService.translateSingleBatch(options);
+        return { success: result.success, data: result };
 
-        const progressAck = async (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => {
-          if (options.translateMethod !== 'grok_ui') {
-            return;
-          }
-          const startedAt = Date.now();
-          console.log(
-            `[CaptionHandlers] Grok UI chờ ACK (runId=${payload.runId || 'n/a'}, batch=${payload.batchIndex}, event=${payload.eventType})`
-          );
-          const ok = await waitForTranslateAck(payload);
-          if (!ok) {
-            console.warn(
-              `[CaptionHandlers] Grok UI ACK timeout (runId=${payload.runId || 'n/a'}, batch=${payload.batchIndex}, event=${payload.eventType})`
-            );
-            return;
-          }
-          console.log(
-            `[CaptionHandlers] Grok UI đã nhận ACK sau ${Date.now() - startedAt}ms (runId=${payload.runId || 'n/a'}, batch=${payload.batchIndex})`
-          );
-        };
-
-        const result = await CaptionService.translateAll(options, progressCallback, progressAck);
-        return { success: result.success, data: result, error: result.errors?.join(', ') };
       } catch (error) {
-        console.error('[CaptionHandlers] Lỗi translate:', error);
+        isError = true;
+        console.error('[CaptionHandlers] Lỗi translate batch:', error);
         return { success: false, error: String(error) };
       } finally {
-        if (options.translateMethod === 'grok_ui') {
-          try {
-            await getGrokUiRuntime().closeDriver();
-            console.log('[CaptionHandlers] Grok UI: close driver after translate.');
-          } catch (error) {
-            console.warn('[CaptionHandlers] Không thể close Grok UI driver:', error);
+        const isLastBatch = options.batchIndex >= options.totalBatches - 1;
+        if (!isError && isLastBatch) {
+          if (CaptionService.isTranslationActive(runId)) {
+            CaptionService.endTranslationRun(runId);
           }
         }
-        const runId = typeof options.runId === 'string' ? options.runId : undefined;
-        CaptionService.endTranslationRun(runId);
       }
     }
   );
@@ -628,7 +504,6 @@ export function registerCaptionHandlers(): void {
       try {
         const runId = typeof payload?.runId === 'string' ? payload.runId : undefined;
         const translateStop = CaptionService.stopActiveTranslation(runId);
-        flushTranslateAckWaiters();
         try {
           await getGrokUiRuntime().shutdown({ hard: true });
         } catch (error) {

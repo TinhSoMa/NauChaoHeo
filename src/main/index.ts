@@ -8,6 +8,7 @@ import { createDashboardWindow } from './windowManager'
 import { cleanTempFiles } from './services/caption/garbageCollector'
 import { installMainConsoleCapture } from './services/logging/consoleCapture'
 import { shutdownScheduler } from './services/shutdownScheduler'
+import { getMemoryContextService } from './services/memoryContext/memoryContextService'
 
 installMainConsoleCapture()
 let isQuitInProgress = false
@@ -28,6 +29,9 @@ app.whenReady().then(() => {
 
   // Auto import dev keys
   tryImportDevKeys()
+
+  // Warm memory context worker in background (không block app startup)
+  getMemoryContextService().getHealth().catch(() => {})
 
   // Tối ưu hóa shortcuts trong development
   app.on('browser-window-created', (_, window) => {

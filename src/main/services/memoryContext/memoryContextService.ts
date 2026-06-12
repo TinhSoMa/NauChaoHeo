@@ -13,13 +13,25 @@ import { MemoryContextPythonBridge } from './pythonBridge';
 
 export class MemoryContextService {
   private readonly bridge = new MemoryContextPythonBridge();
+  private available: boolean | null = null;
+
+  /** Lightweight check: returns true/false if already determined, null if never tested. */
+  isAvailable(): boolean | null {
+    return this.available;
+  }
+
+  private markAvailable(value: boolean): void {
+    this.available = value;
+  }
 
   async getHealth(): Promise<MemoryContextHealthResult> {
     try {
       const response = await this.bridge.request<MemoryContextHealthResult>('health', {}, 10000);
       if (!response.success || !response.data) {
+        this.markAvailable(false);
         return this.buildUnavailableHealth(response.error || 'Memory context health failed');
       }
+      this.markAvailable(true);
       const runtimeInfo = this.bridge.getRuntimeInfo();
       const diagnostics = this.bridge.getDiagnostics();
       return {
@@ -37,6 +49,7 @@ export class MemoryContextService {
         }
       };
     } catch (error) {
+      this.markAvailable(false);
       return this.buildUnavailableHealth(String(error));
     }
   }
@@ -49,6 +62,7 @@ export class MemoryContextService {
         30000
       );
       if (!response.success || !response.data) {
+        this.markAvailable(false);
         return {
           success: false,
           memories: [],
@@ -62,6 +76,7 @@ export class MemoryContextService {
           error: response.error || 'Memory context search failed'
         };
       }
+      this.markAvailable(true);
       const data = response.data as any;
       return {
         success: true,
@@ -79,6 +94,7 @@ export class MemoryContextService {
         warning: data.warning
       };
     } catch (error) {
+      this.markAvailable(false);
       return {
         success: false,
         memories: [],

@@ -23,33 +23,6 @@ export interface TextBatch {
  * @param entries - Danh sách SubtitleEntry
  * @param linesPerBatch - Số dòng mỗi batch (mặc định 50)
  */
-export function splitForTranslation(
-  entries: SubtitleEntry[],
-  linesPerBatch: number = 50
-): TextBatch[] {
-  console.log(`[TextSplitter] Chia ${entries.length} entries thành batches (${linesPerBatch} dòng/batch)`);
-  
-  const batches: TextBatch[] = [];
-  const totalBatches = Math.ceil(entries.length / linesPerBatch);
-  
-  for (let i = 0; i < totalBatches; i++) {
-    const startIndex = i * linesPerBatch;
-    const endIndex = Math.min(startIndex + linesPerBatch, entries.length);
-    const batchEntries = entries.slice(startIndex, endIndex);
-    
-    batches.push({
-      batchIndex: i,
-      startIndex,
-      endIndex,
-      entries: batchEntries,
-      texts: batchEntries.map(e => e.text),
-    });
-  }
-  
-  console.log(`[TextSplitter] Đã chia thành ${batches.length} batches`);
-  return batches;
-}
-
 /**
  * Merge kết quả dịch vào entries gốc
  * @param entries - Entries gốc

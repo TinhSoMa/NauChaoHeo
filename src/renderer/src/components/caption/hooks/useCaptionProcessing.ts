@@ -3,7 +3,6 @@ import {
   Step,
   ProcessStatus,
   SubtitleEntry,
-  TranslationProgress,
   TTSProgress,
   ProcessingMode,
   StepDependencyIssue,
@@ -17,6 +16,8 @@ import {
   CAPTION_PROCESS_STOP_SIGNAL,
   CoverQuad,
   RenderAudioPreviewProgress,
+  SingleBatchOptions,
+  SingleBatchResult,
   TranslationBatchReport as SharedTranslationBatchReport,
   VideoCropSettings,
 } from '@shared/types/caption';
@@ -365,6 +366,8 @@ interface UseCaptionProcessingProps {
   };
   enabledSteps: Set<Step>;
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
+  onBatchComplete?: (report: SharedTranslationBatchReport, plan: StepBatchPlanItem, batchError: string | null, totalBatches: number) => void;
+  onBatchStart?: (batchIndex: number, totalBatches: number) => void;
 }
 
 type ProcessingSettings = UseCaptionProcessingProps['settings'];
@@ -1935,44 +1938,54 @@ function extractStep3BackendErrorCode(rawError: string): string {
   return '';
 }
 
-function deriveBatchReportFromProgress(
-  progress: TranslationProgress
-): SharedTranslationBatchReport | null {
-  if (!progress.translatedChunk || !Array.isArray(progress.translatedChunk.texts)) {
-    return null;
-  }
+function buildBatchReportFromResult(
+  plan: StepBatchPlanItem,
+  sbResult: any,
+  batchError: string | null
+): SharedTranslationBatchReport {
+  const translatedTexts = sbResult?.data?.translatedTexts as string[] | undefined;
+  const isSuccess = sbResult?.data?.success === true && !batchError && Array.isArray(translatedTexts);
 
-  const startIndex = Math.max(0, Math.floor(progress.translatedChunk.startIndex || 0));
-  const texts = progress.translatedChunk.texts;
-  const expectedLines = texts.length;
-  const missingLinesInBatch: number[] = [];
-  const missingGlobalLineIndexes: number[] = [];
-  let translatedLines = 0;
-
-  for (let i = 0; i < expectedLines; i++) {
-    if (typeof texts[i] === 'string' && texts[i].trim().length > 0) {
-      translatedLines++;
-    } else {
-      missingLinesInBatch.push(i + 1);
-      missingGlobalLineIndexes.push(startIndex + i + 1);
+  if (isSuccess) {
+    let translatedLines = 0;
+    const missingLinesInBatch: number[] = [];
+    for (let i = 0; i < translatedTexts.length; i++) {
+      if (typeof translatedTexts[i] === 'string' && translatedTexts[i].trim().length > 0) {
+        translatedLines++;
+      } else {
+        missingLinesInBatch.push(i + 1);
+      }
     }
+    const missingGlobalLineIndexes = missingLinesInBatch.map(i => plan.startIndex + i - 1);
+    return {
+      batchIndex: plan.batchIndex,
+      startIndex: plan.startIndex,
+      endIndex: plan.endIndex,
+      expectedLines: plan.lineCount,
+      translatedLines,
+      missingLinesInBatch,
+      missingGlobalLineIndexes,
+      attempts: 1,
+      status: missingLinesInBatch.length === 0 ? 'success' : 'failed',
+      error: missingLinesInBatch.length > 0 ? 'MISSING_TRANSLATED_LINES' : undefined,
+      transport: sbResult.data?.transport,
+      resourceId: sbResult.data?.resourceId,
+      resourceLabel: sbResult.data?.resourceLabel,
+      queueRuntimeKey: sbResult.data?.queueRuntimeKey,
+    };
   }
-
-  const fallbackBatchIndex = typeof progress.batchIndex === 'number'
-    ? progress.batchIndex + 1
-    : 1;
 
   return {
-    batchIndex: fallbackBatchIndex,
-    startIndex,
-    endIndex: Math.max(startIndex, startIndex + expectedLines - 1),
-    expectedLines,
-    translatedLines,
-    missingLinesInBatch,
-    missingGlobalLineIndexes,
+    batchIndex: plan.batchIndex,
+    startIndex: plan.startIndex,
+    endIndex: plan.endIndex,
+    expectedLines: plan.lineCount,
+    translatedLines: 0,
+    missingLinesInBatch: Array.from({ length: plan.lineCount }, (_, i) => i + 1),
+    missingGlobalLineIndexes: Array.from({ length: plan.lineCount }, (_, i) => plan.startIndex + i),
     attempts: 1,
-    status: progress.eventType === 'batch_failed' ? 'failed' : 'success',
-    error: progress.eventType === 'batch_failed' ? 'BATCH_INCOMPLETE' : undefined,
+    status: 'failed',
+    error: batchError || 'UNKNOWN_ERROR',
   };
 }
 
@@ -2037,10 +2050,12 @@ export function useCaptionProcessing({
   settings,
   enabledSteps,
   setEnabledSteps,
+  onBatchComplete,
+  onBatchStart,
 }: UseCaptionProcessingProps) {
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [status, setStatus] = useState<ProcessStatus>('idle');
-  const [progress, setProgress] = useState<TranslationProgress>({ current: 0, total: 0, message: 'Sẵn sàng.' });
+  const [progress, setProgress] = useState<{ current: number; total: number; message: string }>({ current: 0, total: 0, message: 'Sẵn sàng.' });
   const [currentFolder, setCurrentFolder] = useState<{ index: number; total: number; name: string; path: string } | null>(null);
   const [stepDependencyIssues, setStepDependencyIssues] = useState<StepDependencyIssue[]>([]);
   
@@ -2054,7 +2069,7 @@ export function useCaptionProcessing({
   // Ref cho abort flag — cho phép handleStop() dừng vòng lặp đang chạy
   const abortRef = useRef(false);
   const runIdRef = useRef<string | null>(null);
-  const translateBatchProgressHandlerRef = useRef<((progress: TranslationProgress) => void | Promise<void>) | null>(null);
+  // translateBatchProgressHandlerRef removed (kiến trúc 1 batch/lần)
   const audioPreviewStopRequestedRef = useRef(false);
   const baseInputPaths = useMemo(
     () => getInputPaths(inputType as 'srt' | 'draft', filePath),
@@ -3246,25 +3261,6 @@ export function useCaptionProcessing({
       console.warn('[CaptionProcessing] Không thể reset auto shutdown trước run mới:', error);
     }
 
-    // Listen for progress — đăng ký 1 lần với replace (ghi đè listener cũ)
-    // @ts-ignore
-    window.electronAPI.caption.onTranslateProgress((p: TranslationProgress) => {
-      if (abortRef.current) {
-        return;
-      }
-      setProgress({
-        ...p,
-        current: p.current,
-        total: p.total,
-        message: p.message,
-      });
-      const batchHandler = translateBatchProgressHandlerRef.current;
-      if (batchHandler) {
-        Promise.resolve(batchHandler(p)).catch((error) => {
-          console.warn('[CaptionProcessing] Lỗi cập nhật batch progress Step 3:', error);
-        });
-      }
-    });
     // @ts-ignore
     window.electronAPI.tts.onProgress((p: TTSProgress) => {
       setProgress({ current: p.current, total: p.total, message: p.message });
@@ -4230,16 +4226,6 @@ export function useCaptionProcessing({
 
           if (needsRetry) {
             retryBatchIndexSet.add(batchIndex);
-            let retryReason = 'RETRY_REQUIRED';
-            if (!hasReport) retryReason = 'NO_BATCH_REPORT';
-            else if (report?.status === 'failed') retryReason = report.error || 'BATCH_FAILED';
-            else if (hasMissingText) retryReason = 'MISSING_TRANSLATED_LINES';
-            else if (markedMissing) retryReason = 'MISSING_BATCH_STATE';
-
-            batchReportsMap.set(
-              batchIndex,
-              buildFailedBatchReportFromEntries(batchPlan, liveTranslatedEntries, retryReason, report?.attempts || 1)
-            );
             if (!hasReport) {
               placeholderBatchIndexes.add(batchIndex);
             }
@@ -4247,278 +4233,159 @@ export function useCaptionProcessing({
             batchReportsMap.set(batchIndex, report);
           }
         }
+        // Force retry các batch chưa có success report từ session cũ
+        const successBatchCount = Array.from(previousReportsByIndex.values())
+          .filter((r) => r.status === 'success').length;
+        if (successBatchCount < totalBatches) {
+          for (const batchPlan of step3BatchPlan) {
+            const report = previousReportsByIndex.get(batchPlan.batchIndex);
+            if (!report || report.status !== 'success') {
+              retryBatchIndexSet.add(batchPlan.batchIndex);
+              if (!report) placeholderBatchIndexes.add(batchPlan.batchIndex);
+            }
+          }
+        }
 
-        const retryBatchIndexes = Array.from(retryBatchIndexSet).sort((a, b) => a - b);
-        const isStep3RetryMode = retryBatchIndexes.length > 0;
-        const scheduledBatchIndexes = isStep3RetryMode ? retryBatchIndexes : [];
+        const batchesToProcess = retryBatchIndexSet.size > 0
+          ? Array.from(retryBatchIndexSet).sort((a, b) => a - b)
+          : Array.from({ length: totalBatches }, (_, i) => i + 1);
+
         let step3PersistQueue: Promise<void> = Promise.resolve();
+        let backendCallSucceeded = true;
+        let backendErrorRaw = '';
 
         setProgress({
           current: 0,
           total: currentEntries.length,
-          message: isStep3RetryMode
-            ? msgCtx(`Bước 3: Dịch lại batch lỗi ${retryBatchIndexes.map((idx) => `#${idx}`).join(', ')}...`)
-            : msgCtx('Bước 3: Không có batch cần dịch lại, dùng lại bản dịch hiện tại.'),
+          message: msgCtx(`Bước 3: Dịch ${batchesToProcess.length} batch...`),
         });
-        await updateSessionForStep(currentPath, step, folderIdx, (session) => {
-          const initialBatchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
-          return {
-            ...session,
-            data: {
-              ...session.data,
-              step2BatchPlan: step3BatchPlan,
-              translatedEntries: liveTranslatedEntries,
-              translatedSrtContent: entriesToSrtText(liveTranslatedEntries),
-              step3BatchState: {
-                ...buildStep3BatchState(totalBatches, initialBatchReports),
-                planFingerprint,
-              },
-            },
-            runtime: {
-              ...session.runtime,
-              lastMessage: isStep3RetryMode
-                ? msgCtx(`Bước 3: Khởi tạo resume cho batch lỗi ${retryBatchIndexes.map((idx) => `#${idx}`).join(', ')}`)
-                : msgCtx('Bước 3: Khởi tạo trạng thái batch...'),
-            },
-          };
-        });
+        await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+          ...session,
+          data: {
+            ...session.data,
+            step2BatchPlan: step3BatchPlan,
+            translatedEntries: liveTranslatedEntries,
+            translatedSrtContent: entriesToSrtText(liveTranslatedEntries),
+          },
+          runtime: {
+            ...session.runtime,
+            lastMessage: msgCtx('Bước 3: Khởi tạo dịch batch...'),
+          },
+        }));
 
-        translateBatchProgressHandlerRef.current = async (progressEvent: TranslationProgress) => {
-          if (abortRef.current) {
-            return;
+        for (const batchIdx of batchesToProcess) {
+          if (abortRef.current) break;
+
+          const plan = step3BatchPlan.find(p => p.batchIndex === batchIdx);
+          if (!plan) {
+            console.warn(`[CaptionProcessing] Batch plan #${batchIdx} not found, skip`);
+            continue;
           }
-          step3PersistQueue = step3PersistQueue
-            .catch(() => undefined)
-            .then(async () => {
-              const eventType = progressEvent.eventType;
-              const isBatchEvent = eventType === 'batch_started'
-                || eventType === 'batch_retry'
-                || eventType === 'batch_completed'
-                || eventType === 'batch_failed';
-              if (!isBatchEvent) {
-                return;
-              }
-              if (progressEvent.translatedChunk) {
-                liveTranslatedEntries = mergeTranslatedChunkIntoEntries(liveTranslatedEntries, progressEvent.translatedChunk);
-              }
-              const batchIndexFromProgress = typeof progressEvent.batchReport?.batchIndex === 'number'
-                ? Math.floor(progressEvent.batchReport.batchIndex)
-                : (typeof progressEvent.batchIndex === 'number' ? Math.floor(progressEvent.batchIndex) + 1 : null);
-              const incomingBatchReport = progressEvent.batchReport
-                ? ({ ...progressEvent.batchReport } as SharedTranslationBatchReport)
-                : deriveBatchReportFromProgress(progressEvent);
-              const effectiveBatchIndex = incomingBatchReport?.batchIndex ?? batchIndexFromProgress;
-              if (effectiveBatchIndex != null && effectiveBatchIndex > 0) {
-                const existing = batchReportsMap.get(effectiveBatchIndex);
-                if (!incomingBatchReport && !existing && (eventType === 'batch_started' || eventType === 'batch_retry')) {
-                  return;
-                }
-                placeholderBatchIndexes.delete(effectiveBatchIndex);
-                const plan = step3BatchPlan.find(p => p.batchIndex === effectiveBatchIndex);
-                const baseReport: Partial<SharedTranslationBatchReport> = plan
-                  ? {
-                      batchIndex: plan.batchIndex,
-                      startIndex: plan.startIndex,
-                      endIndex: plan.endIndex,
-                      expectedLines: plan.lineCount,
-                      translatedLines: 0,
-                      missingLinesInBatch: [],
-                      missingGlobalLineIndexes: [],
-                      attempts: 0,
-                      status: existing?.status ?? (incomingBatchReport?.status ?? 'failed'),
-                    }
-                  : {};
-                const merged: SharedTranslationBatchReport = {
-                  ...(baseReport as SharedTranslationBatchReport),
-                  ...(existing || {}),
-                  ...(incomingBatchReport || {}),
-                  error: incomingBatchReport?.error ?? existing?.error,
-                  status: incomingBatchReport?.status ?? existing?.status ?? 'failed',
-                  attempts: typeof incomingBatchReport?.attempts === 'number'
-                    ? incomingBatchReport.attempts
-                    : (existing?.attempts ?? 0),
-                  startedAt: incomingBatchReport?.startedAt ?? (typeof progressEvent.startedAt === 'number' ? progressEvent.startedAt : existing?.startedAt),
-                  endedAt: incomingBatchReport?.endedAt ?? (typeof progressEvent.endedAt === 'number' ? progressEvent.endedAt : existing?.endedAt),
-                  durationMs: incomingBatchReport?.durationMs ?? existing?.durationMs,
-                  transport: incomingBatchReport?.transport ?? progressEvent.transport ?? existing?.transport,
-                  resourceId: incomingBatchReport?.resourceId ?? progressEvent.resourceId ?? existing?.resourceId,
-                  resourceLabel: incomingBatchReport?.resourceLabel ?? progressEvent.resourceLabel ?? existing?.resourceLabel,
-                  queueRuntimeKey: incomingBatchReport?.queueRuntimeKey ?? progressEvent.queueRuntimeKey ?? existing?.queueRuntimeKey,
-                  queuePacingMode: incomingBatchReport?.queuePacingMode ?? progressEvent.queuePacingMode ?? existing?.queuePacingMode,
-                  queueGapMs: incomingBatchReport?.queueGapMs ?? progressEvent.queueGapMs ?? existing?.queueGapMs,
-                  nextAllowedAt: incomingBatchReport?.nextAllowedAt ?? progressEvent.nextAllowedAt ?? existing?.nextAllowedAt,
-                };
-                if (typeof merged.durationMs !== 'number') {
-                  const startedAt = typeof merged.startedAt === 'number' ? merged.startedAt : undefined;
-                  const endedAt = typeof merged.endedAt === 'number' ? merged.endedAt : undefined;
-                  if (startedAt !== undefined && endedAt !== undefined && endedAt >= startedAt) {
-                    merged.durationMs = endedAt - startedAt;
-                  }
-                }
-                batchReportsMap.set(effectiveBatchIndex, merged);
-              }
-              const isGrokUi = (progressEvent.transport || cfg.translateMethod) === 'grok_ui';
-              if (isGrokUi) {
-                const chunkStart = progressEvent.translatedChunk?.startIndex ?? -1;
-                const chunkLines = Array.isArray(progressEvent.translatedChunk?.texts)
-                  ? progressEvent.translatedChunk?.texts.length
-                  : 0;
-                const reportStart = typeof incomingBatchReport?.startIndex === 'number'
-                  ? incomingBatchReport.startIndex
-                  : -1;
-                const safeProgressBatchIndex = typeof progressEvent.batchIndex === 'number'
-                  ? progressEvent.batchIndex
-                  : null;
-                console.log(
-                  `[CaptionProcessing][GrokUI][Debug] progress batchIndex=${safeProgressBatchIndex ?? 'n/a'} reportBatch=${incomingBatchReport?.batchIndex ?? 'n/a'} reportStart=${reportStart} chunkStart=${chunkStart} lines=${chunkLines}`
-                );
-              }
-              const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
-              const step3BatchState = buildStep3BatchState(totalBatches, batchReports);
-              const translatedSnapshot = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
-              const translatedSrtContent = entriesToSrtText(translatedSnapshot);
-              await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
-                ...session,
-                data: {
-                  ...session.data,
-                  translatedEntries: translatedSnapshot,
-                  translatedSrtContent,
-                  step3BatchState: {
-                    ...step3BatchState,
-                    planFingerprint,
-                  },
-                },
-                runtime: {
-                  ...session.runtime,
-                  lastMessage: msgCtx(progressEvent.message || `Bước 3: Cập nhật batch #${incomingBatchReport?.batchIndex || '?'}`),
-                },
-              }));
-              if (progressEvent.eventType === 'batch_completed' || progressEvent.eventType === 'batch_failed') {
-                const shouldAck = isGrokUi;
-                if (!shouldAck) {
-                  return;
-                }
-                const safeProgressBatchIndex = typeof progressEvent.batchIndex === 'number'
-                  ? progressEvent.batchIndex
-                  : null;
-                const ackBatchIndex = incomingBatchReport?.batchIndex ?? (safeProgressBatchIndex != null ? safeProgressBatchIndex + 1 : null);
-                if (ackBatchIndex == null) {
-                  console.warn('[CaptionProcessing][GrokUI] Bỏ qua ACK vì thiếu batchIndex.');
-                  return;
-                }
-                const ackRunId = progressEvent.runId || runIdRef.current || undefined;
-                try {
-                  const ackResult = await window.electronAPI.caption.ackTranslateProgress({
-                    runId: ackRunId,
-                    batchIndex: ackBatchIndex,
-                    eventType: progressEvent.eventType,
-                  });
-                  if (!ackResult?.success) {
-                    console.warn('[CaptionProcessing][GrokUI] ACK thất bại:', ackResult?.error || 'UNKNOWN_ERROR');
-                  } else {
-                    console.log(
-                      `[CaptionProcessing][GrokUI] Đã gửi ACK (batch=${ackBatchIndex}, event=${progressEvent.eventType})`
-                    );
-                  }
-                } catch (error) {
-                  console.warn('[CaptionProcessing] Không thể ACK translate progress:', error);
-                }
-              }
-            });
-          await step3PersistQueue;
-        };
 
-        let result: any;
-        if (isStep3RetryMode) {
+          const batchEntries = currentEntries.slice(plan.startIndex, plan.endIndex + 1);
+          const runId = runIdRef.current || undefined;
+
+          const sbOpts: SingleBatchOptions = {
+            entries: batchEntries,
+            batchIndex: plan.batchIndex - 1,
+            totalBatches,
+            linesPerBatch,
+            targetLanguage: 'Vietnamese',
+            model: cfg.geminiModel,
+            translateMethod: cfg.translateMethod,
+            projectId: projectId || undefined,
+            sourcePath: resolveSourcePath(currentPath),
+            runId,
+          };
+
+          let sbResult: any;
+          let batchError: string | null = null;
+
+          onBatchStart?.(batchIdx, totalBatches);
+
           try {
-            // @ts-ignore
-            result = await window.electronAPI.caption.translate({
-              entries: liveTranslatedEntries,
-              targetLanguage: 'Vietnamese',
-              model: cfg.geminiModel,
-              linesPerBatch,
-              translateMethod: cfg.translateMethod,
-              retryBatchIndexes,
-              projectId: projectId || undefined,
-              sourcePath: resolveSourcePath(currentPath),
-              runId: runIdRef.current || undefined,
-            });
+            sbResult = await window.electronAPI.caption.translateBatch(sbOpts);
+            if (!sbResult?.success) {
+              const errorStr = sbResult?.error || '';
+              if (typeof errorStr === 'string' && errorStr.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
+                abortRef.current = true;
+                break;
+              }
+              batchError = errorStr || 'TRANSLATE_BATCH_FAILED';
+              backendCallSucceeded = false;
+              backendErrorRaw = batchError;
+            }
           } catch (error) {
             const stopSignal = isProcessStopSignal(error)
               || (typeof error === 'string' && error.includes(CAPTION_PROCESS_STOP_SIGNAL))
               || (error instanceof Error && error.message.includes(CAPTION_PROCESS_STOP_SIGNAL));
             if (stopSignal) {
               abortRef.current = true;
-              result = {
-                success: false,
-                error: CAPTION_PROCESS_STOP_SIGNAL,
-                data: {
-                  entries: liveTranslatedEntries,
-                  batchReports: Array.from(batchReportsMap.values()),
-                  missingBatchIndexes: [],
-                  missingGlobalLineIndexes: [],
-                },
-              };
-            } else {
-              throw error;
+              break;
             }
-          } finally {
-            translateBatchProgressHandlerRef.current = null;
+            batchError = String(error);
+            backendCallSucceeded = false;
+            backendErrorRaw = batchError;
           }
-        } else {
-          translateBatchProgressHandlerRef.current = null;
-          result = {
-            success: true,
-            data: {
-              entries: liveTranslatedEntries,
-              batchReports: Array.from(batchReportsMap.values()),
-              missingBatchIndexes: [],
-              missingGlobalLineIndexes: [],
-            },
-          };
+
+          const report: SharedTranslationBatchReport = buildBatchReportFromResult(
+            plan, sbResult, batchError
+          );
+
+          const hasNewTranslations = report.translatedLines > 0 && Array.isArray(sbResult?.data?.translatedTexts);
+          if (hasNewTranslations) {
+            liveTranslatedEntries = mergeTranslatedChunkIntoEntries(liveTranslatedEntries, {
+              startIndex: plan.startIndex,
+              texts: sbResult.data.translatedTexts as string[],
+            });
+          }
+
+          placeholderBatchIndexes.delete(plan.batchIndex);
+          batchReportsMap.set(plan.batchIndex, report);
+
+          onBatchComplete?.(report, plan, batchError, totalBatches);
+
+          const batchReports = Array.from(batchReportsMap.values()).sort((a, b) => a.batchIndex - b.batchIndex);
+          const step3BatchState = buildStep3BatchState(totalBatches, batchReports);
+          const translatedSnapshot = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
+          const translatedSrtContent = entriesToSrtText(translatedSnapshot);
+
+          if (hasNewTranslations) {
+            step3PersistQueue = step3PersistQueue
+              .catch(() => undefined)
+              .then(async () => {
+                await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+                  ...session,
+                  data: {
+                    ...session.data,
+                    translatedEntries: translatedSnapshot,
+                    translatedSrtContent,
+                    step3BatchState: {
+                      ...step3BatchState,
+                      planFingerprint,
+                    },
+                  },
+                  runtime: {
+                    ...session.runtime,
+                    lastMessage: msgCtx(report.status === 'success'
+                      ? `Bước 3: Batch #${plan.batchIndex} OK (${report.translatedLines} dòng)`
+                      : `Bước 3: Batch #${plan.batchIndex} lỗi: ${report.error || batchError || 'UNKNOWN'}`),
+                  },
+                }));
+              });
+          }
+
+          setProgress({
+            current: report.translatedLines,
+            total: currentEntries.length,
+            message: report.status === 'success'
+              ? msgCtx(`Bước 3: Đã dịch batch #${plan.batchIndex}/${totalBatches} (${report.translatedLines} dòng)`)
+              : msgCtx(`Bước 3: Batch #${plan.batchIndex} lỗi - ${report.error || batchError || 'UNKNOWN'}`),
+          });
         }
         await step3PersistQueue;
 
-        if (!result?.success && typeof result?.error === 'string' && result.error.includes('TRANSLATION_ALREADY_RUNNING')) {
-          throw new Error('Đang có phiên dịch đang chạy, vui lòng đợi dừng hoàn tất.');
-        }
-
-        const stopSignalDetected = typeof result?.error === 'string'
-          && result.error.includes(CAPTION_PROCESS_STOP_SIGNAL);
-        if (stopSignalDetected) {
-          abortRef.current = true;
-        }
-
-        const backendCallSucceeded = result?.success === true;
-        const backendErrorRaw = typeof result?.error === 'string' && result.error.trim().length > 0
-          ? result.error.trim()
-          : 'TRANSLATE_CALL_FAILED';
-        const backendErrorMessage = normalizeStep3BackendErrorMessage(backendErrorRaw);
-        const backendErrorCode = extractStep3BackendErrorCode(backendErrorRaw);
-        const translateData = (result?.data && typeof result.data === 'object')
-          ? (result.data as Record<string, unknown>)
-          : {};
-
-        if (Array.isArray(translateData.entries) && translateData.entries.length === currentEntries.length) {
-          liveTranslatedEntries = normalizeEntriesForSession(compactEntries(translateData.entries as SubtitleEntry[]));
-        }
-
-        const backendReports = Array.isArray(translateData.batchReports)
-          ? (translateData.batchReports as SharedTranslationBatchReport[])
-          : [];
-        for (const report of backendReports) {
-          if (!report || typeof report.batchIndex !== 'number') {
-            continue;
-          }
-          batchReportsMap.set(report.batchIndex, report);
-          placeholderBatchIndexes.delete(report.batchIndex);
-        }
-
-        const isStoppedByUser = abortRef.current
-          || (typeof result?.error === 'string' && result.error.includes(CAPTION_PROCESS_STOP_SIGNAL));
-        const fallbackFailureReason = backendCallSucceeded
-          ? 'MISSING_BATCH_REPORT'
-          : `TRANSLATE_CALL_FAILED: ${backendErrorRaw}`;
+        const isStoppedByUser = abortRef.current;
         const postTranslateEntries = normalizeEntriesForSession(compactEntries(liveTranslatedEntries));
         const finalBatchReports: SharedTranslationBatchReport[] = [];
         for (const batchPlan of step3BatchPlan) {
@@ -4533,7 +4400,7 @@ export function useCaptionProcessing({
           if (!report) {
             if (!isStoppedByUser) {
               finalBatchReports.push(
-                buildFailedBatchReportFromEntries(batchPlan, postTranslateEntries, fallbackFailureReason)
+                buildFailedBatchReportFromEntries(batchPlan, postTranslateEntries, backendCallSucceeded ? 'MISSING_BATCH_REPORT' : `TRANSLATE_CALL_FAILED: ${backendErrorRaw}`)
               );
             }
             continue;
@@ -4549,7 +4416,7 @@ export function useCaptionProcessing({
           if (report.status === 'failed') {
             const errorReason = (typeof report.error === 'string' && report.error.trim().length > 0)
               ? report.error
-              : (fallbackFailureReason || 'BATCH_FAILED');
+              : (backendErrorRaw || 'BATCH_FAILED');
             finalBatchReports.push(
               buildFailedBatchReportFromEntries(batchPlan, postTranslateEntries, errorReason, report.attempts || 1)
             );
@@ -4557,22 +4424,40 @@ export function useCaptionProcessing({
           }
 
           if (report.status === 'success' && !hasMissingText) {
-            finalBatchReports.push({
-              ...report,
-              error: undefined,
-            });
+            finalBatchReports.push({ ...report, error: undefined });
           } else {
             finalBatchReports.push(report);
           }
         }
         finalBatchReports.sort((a, b) => a.batchIndex - b.batchIndex);
         const generatedStep3BatchState = buildStep3BatchState(totalBatches, finalBatchReports);
-        const missingBatchIndexes: number[] = generatedStep3BatchState.missingBatchIndexes.length > 0
+        const finalMissingBatchIndexes = generatedStep3BatchState.missingBatchIndexes.length > 0
           ? generatedStep3BatchState.missingBatchIndexes
-          : (!backendCallSucceeded && !isStoppedByUser ? scheduledBatchIndexes : []);
-        const missingGlobalLineIndexes: number[] = generatedStep3BatchState.missingGlobalLineIndexes.length > 0
-          ? generatedStep3BatchState.missingGlobalLineIndexes
-          : [];
+          : (!backendCallSucceeded && !isStoppedByUser ? batchesToProcess : []);
+        const finalReportIndexSet = new Set<number>(finalBatchReports.map((r) => r.batchIndex));
+        const reportedButMissing = finalMissingBatchIndexes.filter((idx) => idx >= 1 && idx <= totalBatches);
+        const unreportedIndexes: number[] = [];
+        const hasMissingReports = finalBatchReports.length < totalBatches;
+        if (hasMissingReports) {
+          for (const batchPlan of step3BatchPlan) {
+            if (!finalReportIndexSet.has(batchPlan.batchIndex)) {
+              unreportedIndexes.push(batchPlan.batchIndex);
+            }
+          }
+        }
+        const missingBatchIndexes: number[] = Array.from(
+          new Set([...reportedButMissing, ...unreportedIndexes])
+        ).sort((a, b) => a - b);
+        const missingGlobalLineIndexes: number[] = Array.from(
+          new Set([
+            ...generatedStep3BatchState.missingGlobalLineIndexes,
+            ...unreportedIndexes.flatMap((batchIdx) => {
+              const plan = step3BatchPlan.find((p) => p.batchIndex === batchIdx);
+              if (!plan) return [];
+              return Array.from({ length: plan.lineCount }, (_, i) => plan.startIndex + i);
+            }),
+          ])
+        ).sort((a, b) => a - b);
         const finalStep3BatchState: Step3BatchState = {
           ...generatedStep3BatchState,
           failedBatches: Math.max(generatedStep3BatchState.failedBatches, missingBatchIndexes.length),
@@ -4584,7 +4469,7 @@ export function useCaptionProcessing({
         const failedLines = missingGlobalLineIndexes.length;
         const translatedLines = finalBatchReports.length > 0
           ? finalBatchReports.reduce((sum, report) => sum + report.translatedLines, 0)
-          : (typeof translateData.translatedLines === 'number' ? translateData.translatedLines : 0);
+          : 0;
 
         currentEntries = postTranslateEntries;
         if (!isMulti) setEntries(currentEntries);
@@ -4623,12 +4508,8 @@ export function useCaptionProcessing({
         const isGrokUiMethod = (cfg.translateMethod || 'api') === 'grok_ui';
         const hasAllBatchReports = finalBatchReports.length >= totalBatches;
         const stoppedWithIncompleteBatches = isStoppedByUser && !hasAllBatchReports;
-        const isStep3Complete = !stoppedWithIncompleteBatches && (isGrokUiMethod
-          ? (missingBatchIndexes.length === 0 && failedLines === 0)
-          : (backendCallSucceeded && missingBatchIndexes.length === 0 && failedLines === 0));
-        if (isGrokUiMethod && isStep3Complete && !backendCallSucceeded) {
-          console.warn('[CaptionProcessing][GrokUI] Backend failed but data saved → mark as success.');
-        }
+        const isStep3Complete = !stoppedWithIncompleteBatches && missingBatchIndexes.length === 0 && failedLines === 0;
+        const backendErrorCode = extractStep3BackendErrorCode(backendErrorRaw);
         setProgress({
           current: translatedLines,
           total: currentEntries.length,
@@ -4639,7 +4520,7 @@ export function useCaptionProcessing({
               : msgCtx(
                 backendCallSucceeded
                   ? `Bước 3: Thiếu ${failedLines} dòng (batch lỗi: ${missingBatchIndexes.map((v) => `#${v}`).join(', ')})`
-                  : `Bước 3: Backend lỗi (${backendErrorMessage})`
+                  : `Bước 3: Backend lỗi (${normalizeStep3BackendErrorMessage(backendErrorRaw)})`
               ),
         });
 
@@ -4733,7 +4614,8 @@ export function useCaptionProcessing({
 
         if (!isStep3Complete) {
           if (stoppedWithIncompleteBatches) {
-            return;
+            abortRef.current = true;
+            throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
           }
           const fallbackMissingDetails = missingBatchIndexes
             .map((batchIndex) => `#${batchIndex}`)

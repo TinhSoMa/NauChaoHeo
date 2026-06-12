@@ -39,7 +39,7 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
 
   const missingIndices = useMemo(
     () => draftLines.reduce<number[]>((acc, line, i) => {
-      if (!line.translatedText?.trim() || line.status === 'error') acc.push(i);
+      if (!line.translatedText?.trim() || line.status === 'missing' || line.status === 'error') acc.push(i);
       return acc;
     }, []),
     [draftLines],
@@ -101,7 +101,7 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
   const handleLineChange = (lineNo: number, value: string) => {
     setDraftLines((prev) => prev.map((line) => (
       line.lineNo === lineNo
-        ? { ...line, translatedText: value }
+        ? { ...line, translatedText: value, status: value.trim() ? 'ok' : line.status }
         : line
     )));
   };
@@ -195,6 +195,7 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
                   onChange={(event) => handleLineChange(line.lineNo, event.target.value)}
                   disabled={props.busy}
                   placeholder="Nhập subtitle đã dịch..."
+                  spellCheck={false}
                 />
               </div>
             );
