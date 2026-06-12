@@ -56,6 +56,13 @@ function extractTextFromContent(content: string): string {
     }
   }
   
+  // CapCut v1.5: strip XML tags <font><color><size>
+  if (content.includes('<font') || content.includes('<size=')) {
+    const sizeMatch = content.match(/<size=[\d.]+>\[?(.*?)\]?<\/size>/);
+    if (sizeMatch) return sizeMatch[1];
+    return content.replace(/<[^>]*>/g, '').trim();
+  }
+  
   return content;
 }
 

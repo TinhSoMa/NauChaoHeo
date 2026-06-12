@@ -1,3 +1,21 @@
 {
-  "css.lint.unknownAtRules": "ignore"
+  "css.lint.unknownAtRules": "ignore",
+  "chat.tools.terminal.autoApprove": {
+    "/^Select-String -Path src/main/services/downloader/ytDlpService\\.ts -Pattern \"downloadSeparateAudio\",\"--merge-output-format\",\"--postprocessor-args\",\",bestaudio\",\"--no-merge-output\" \\| ForEach-Object \\{ \"\\{0\\}:\\{1\\}\" -f \\$_\\.LineNumber, \\$_\\.Line\\.Trim\\(\\) \\}$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^\\$i=0; Get-Content src/main/services/downloader/ytDlpService\\.ts \\| ForEach-Object \\{ \\$i\\+\\+; if \\(\\$_ -match 'aria2c readout line\\|connectionCount\\|engine: useAria2\\|\\\\\\[#\\\\\\(\\[0-9a-f\\\\\\]\\\\\\)\\|aria2PercentSpeed'\\) \\{ \"\\{0\\}:\\{1\\}\" -f \\$i, \\$_\\.Trim\\(\\) \\} \\}$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^\\$i=0; Get-Content src/shared/types/downloader\\.ts \\| ForEach-Object \\{ \\$i\\+\\+; if \\(\\$_ -match 'connectionCount\\\\\\?:\\|engine\\\\\\?:'\\) \\{ \"\\{0\\}:\\{1\\}\" -f \\$i, \\$_\\.Trim\\(\\) \\} \\}$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^\\$i=0; Get-Content src/renderer/src/components/downloader/DownloaderPage\\.tsx \\| ForEach-Object \\{ \\$i\\+\\+; if \\(\\$_ -match 'IDM-like segmented\\|CN \\\\\\{progressInfo\\\\\\.connectionCount\\\\\\}'\\) \\{ \"\\{0\\}:\\{1\\}\" -f \\$i, \\$_\\.Trim\\(\\) \\} \\}$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
 }

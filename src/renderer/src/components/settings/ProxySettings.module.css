@@ -1,0 +1,481 @@
+.tabBar {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.tabButton {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tabButtonActive {
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+.tabSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.proxyContent {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: hidden;
+  flex: 1;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbarGroup {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.toolbarActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.searchInput {
+  min-width: 220px;
+}
+
+.filterSelect {
+  min-width: 140px;
+}
+
+.tableWrapper {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+  overflow-y: auto;
+  overflow-x: auto;
+  height: calc(100vh - 240px);
+  max-height: calc(100vh - 240px);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.proxyTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.proxyTable thead {
+  background: color-mix(in srgb, var(--glass-bg) 95%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.proxyTable th,
+.proxyTable td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent);
+  vertical-align: middle;
+}
+
+.proxyRow:hover {
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+}
+
+.actionsCol {
+  text-align: right;
+  width: 220px;
+}
+
+.rowActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.iconButton {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.iconButton:hover {
+  background: color-mix(in srgb, var(--glass-bg) 70%, transparent);
+  border-color: var(--glass-border);
+}
+
+.iconDanger {
+  color: var(--color-error);
+}
+
+.detailToggle {
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.statusOk {
+  background: rgba(34, 197, 94, 0.15);
+  color: #166534;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.statusWarn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.statusOff {
+  background: color-mix(in srgb, var(--glass-bg) 70%, transparent);
+  color: var(--color-text-secondary);
+  border-color: var(--glass-border);
+}
+
+.typeBadge {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.monoText {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+}
+
+.locationCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.locationMain {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.locationSub {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.muted {
+  color: var(--color-text-tertiary);
+}
+
+.rateWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rateBar {
+  width: 72px;
+  height: 6px;
+  background: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.rateFill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.rateText {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  min-width: 36px;
+}
+
+.proxyDetailRow td {
+  background: color-mix(in srgb, var(--glass-bg) 92%, transparent);
+}
+
+.proxyDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.detailLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+
+.detailValue {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.emptyState {
+  padding: 28px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scopeGrid {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  height: auto;
+  align-items: flex-start;
+}
+
+.scopeCard {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  min-width: 280px;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  height: auto;
+}
+
+.scopeHeader {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.scopeInfo {
+  min-width: 180px;
+}
+
+.scopeTitle {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.scopeDesc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.scopeControls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scopeMeta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scopeChip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+}
+
+.scopeInline {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--glass-border);
+}
+
+.scopeInlineGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.scopeInlineActions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scopeHint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accordionItem {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+}
+
+.accordionHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.accordionHint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.accordionBody {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accordionActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.formRow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.helpText {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.bulkTextarea {
+  width: 100%;
+  height: 120px;
+  resize: none;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  padding: 10px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+  color: var(--color-text-primary);
+}
+
+.noteBox {
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border-radius: 12px;
+  padding: 16px;
+  color: var(--color-text-secondary);
+}
+
+.noteBox h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--color-primary);
+}
+
+.noteBox ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .actionsCol {
+    width: auto;
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+}

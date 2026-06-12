@@ -1,0 +1,22 @@
+{
+	"name": "TikTok Auto Follow Like",
+	"version": "0.1.0",
+	"manifest_version": 3,
+	"description": "Auto follow and like flow for TikTok feed.",
+	"permissions": ["activeTab", "scripting", "storage"],
+	"host_permissions": ["https://www.tiktok.com/*"],
+	"action": {
+		"default_popup": "popup.html",
+		"default_title": "TikTok Auto"
+	},
+	"background": {
+		"service_worker": "background.js"
+	},
+	"content_scripts": [
+		{
+			"matches": ["https://www.tiktok.com/*"],
+			"js": ["pip-script.js"],
+			"run_at": "document_idle"
+		}
+	]
+}

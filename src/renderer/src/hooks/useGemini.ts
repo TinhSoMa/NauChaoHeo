@@ -5,17 +5,6 @@
 
 import { useState, useCallback, useEffect } from 'react';
 
-// Types
-interface KeyInfo {
-  accountId: string;
-  accountEmail: string;
-  projectName: string;
-  apiKey: string;
-  name: string;
-  accountIndex: number;
-  projectIndex: number;
-}
-
 interface ApiStats {
   totalAccounts: number;
   totalProjects: number;

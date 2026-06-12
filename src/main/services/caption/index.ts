@@ -6,6 +6,7 @@
 export {
   parseSrtFile,
   exportToSrt,
+  exportPlainText,
   extractTextLines,
   srtTimeToMs,
   msToSrtTime,
@@ -22,6 +23,7 @@ export {
   splitForTranslation,
   mergeTranslatedTexts,
   createTranslationPrompt,
+  parseJsonTranslationResponse,
   parseTranslationResponse,
   splitText,
   type TextBatch,
@@ -31,5 +33,45 @@ export {
 export {
   translateAll,
   translateSingleText,
+  stopActiveTranslation,
+  beginTranslationRun,
+  endTranslationRun,
+  isTranslationActive,
 } from './captionTranslator';
 
+export {
+  CAPTION_GEMINI_WEB_QUEUE_RUNTIME_KEY,
+  CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
+  CAPTION_GEMINI_WEB_QUEUE_FEATURE,
+  CAPTION_GEMINI_WEB_QUEUE_SERVICE_ID,
+  ensureCaptionGeminiWebQueueRuntime,
+} from './captionGeminiWebQueueRuntime';
+
+export {
+  getConversation as getCaptionGeminiConversation,
+  upsertConversation as upsertCaptionGeminiConversation,
+  clearConversation as clearCaptionGeminiConversation,
+} from './captionGeminiConversationStore';
+
+// ASS Converter (SRT -> ASS)
+export {
+  srtTimeToAss,
+  hexToAssColor,
+  convertSrtToAss,
+  getAssDuration,
+  DEFAULT_ASS_STYLE,
+} from './assConverter';
+
+// Video Renderer (SRT -> Video)
+export {
+  getVideoMetadata,
+  extractVideoFrame,
+  renderVideo,
+  renderVideoPreviewFrame,
+  stopActiveVideoPreviewFrame,
+  stopActiveRender,
+  renderStep7AudioPreview,
+  stopActiveAudioPreview,
+  renderThumbnailPreviewFrame,
+  findBestVideoInFolders,
+} from './videoRenderer';

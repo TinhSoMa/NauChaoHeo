@@ -1,0 +1,19 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "images/icon128.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "browser_specific_settings": {
+      "gecko": {
+         "id": "qidian-helper@local",
+         "strict_min_version": "109.0"
+      }
+   },
+   "description": "Hỗ trợ lấy text từ Qidian",
+   "manifest_version": 3,
+   "name": "Qidian Helper",
+   "permissions": [ "tabs", "storage", "scripting", "activeTab" ],
+   "version": "2.2.5"
+}

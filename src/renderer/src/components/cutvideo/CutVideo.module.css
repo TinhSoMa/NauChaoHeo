@@ -1,0 +1,1257 @@
+/**
+ * CutVideo Styles - CSS Module
+ */
+
+.container {
+  width: 100%;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 100%;
+
+  --glass-bg: color-mix(in srgb, var(--color-card) 65%, transparent);
+  --glass-border: color-mix(in srgb, var(--color-border) 55%, transparent);
+  --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.14);
+  --glass-highlight: color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.workspaceLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.mainWorkspace {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.menuRail {
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.menuRailTitle {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  padding: 2px 2px 0;
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.menuButton {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-primary);
+  text-align: left;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+}
+
+.menuButton:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-1px);
+}
+
+.menuButtonActive {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--glass-border));
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--glass-bg));
+}
+
+.menuButtonTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menuLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.menuSubtitle {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+.menuChip {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.emptyWorkspace {
+  border: 1px dashed var(--glass-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--glass-bg) 70%, transparent);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+  min-height: 220px;
+  padding: 18px;
+}
+
+.emptyWorkspaceTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.emptyWorkspaceSubtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.workspaceHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workspaceTitle {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: 0.2px;
+}
+
+.workspaceSubtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.overviewCard {
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--glass-bg);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  box-shadow: var(--glass-shadow);
+}
+
+.overviewCard:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-2px);
+}
+
+.overviewIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  flex-shrink: 0;
+}
+
+.overviewBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.overviewTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overviewTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.overviewDesc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.overviewChip {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.detailPanel {
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+}
+
+.detailHeaderMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detailIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.detailTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.detailSubtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.detailBackButton {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.detailBackButton:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-1px);
+}
+
+.detailBody {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.panelTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panelTopPathGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.panelTopPathField {
+  min-width: 0;
+}
+
+.panelTopPathField .label {
+  margin-bottom: 6px;
+}
+
+.panelTopActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panelBackButton {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.panelBackButton:hover {
+  border-color: var(--glass-highlight);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 1100px) {
+  .workspaceLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .menuRail {
+    order: -1;
+  }
+
+  .menuList {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .overviewGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .panelLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .panelTopBar {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .panelTopPathGrid {
+    order: 3;
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .panelTopActions {
+    margin-left: auto;
+  }
+
+  .panelColumnSticky {
+    position: static;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .workspaceTitle {
+    font-size: 20px;
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+  min-height: 0;
+}
+
+.panelLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+}
+
+.panelColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panelColumnSticky {
+  position: sticky;
+  top: 8px;
+  align-self: start;
+}
+
+.panelActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panelTitle {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--color-primary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 10px;
+}
+
+.section {
+  padding: 14px;
+  border-radius: 12px;
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionStretch {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sectionCompact {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionSummary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sectionSummary::-webkit-details-marker {
+  display: none;
+}
+
+.sectionSummary::after {
+  content: '▸';
+  float: right;
+  color: var(--color-text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+details[open] > .sectionSummary::after {
+  transform: rotate(90deg);
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0;
+}
+
+/* Base Form Elements */
+.select {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--color-primary);
+}
+
+.inputSmall {
+  width: auto;
+  min-width: 80px;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+  display: block;
+}
+
+.checkboxContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  user-select: none;
+}
+
+.radio {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-primary);
+}
+
+/* Grids */
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.flexRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.flexRowRight {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.fullWidth {
+  grid-column: 1 / -1;
+}
+
+/* Folder List */
+.folderList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.folderList::-webkit-scrollbar {
+  width: 6px;
+}
+.folderList::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 4px;
+}
+
+.folderItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  gap: 12px;
+}
+
+/* Alternate row color manually or via nth-child */
+.folderItem:nth-child(even) {
+  background-color: var(--color-background);
+}
+
+.folderPath {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folderIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.folderStats {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.removeButton {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.removeButton:hover {
+  color: var(--color-danger, #ff4d4f);
+  background-color: rgba(255, 77, 79, 0.1);
+}
+
+/* Folder Grid (Boxes like CaptionTranslator) */
+.folderGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.folderGrid::-webkit-scrollbar {
+  width: 6px;
+}
+.folderGrid::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 4px;
+}
+
+.folderBox {
+  position: relative;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.folderBox:hover {
+  border-color: var(--glass-highlight);
+  background-color: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+}
+
+.folderBoxHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.folderName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.folderBoxSubText {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.removeFolderBoxBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.folderBox:hover .removeFolderBoxBtn {
+  opacity: 1;
+}
+
+.removeFolderBoxBtn:hover {
+  background-color: var(--color-danger, #ff4d4f);
+  color: white;
+  border-color: transparent;
+}
+
+.iconButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.iconButton:hover {
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.iconButtonDanger:hover {
+  color: var(--color-danger, #ff4d4f);
+  background-color: rgba(255, 77, 79, 0.1);
+}
+
+.emptyState {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  border: 1px dashed var(--glass-border);
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+}
+
+/* Progress */
+.progressContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.progressItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progressLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.progressBar {
+  height: 6px;
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.progressFillGreen {
+  background-color: var(--color-success, #52c41a);
+}
+
+.progressFillBlue {
+  background-color: var(--color-primary, #1890ff);
+}
+
+/* Logs Table */
+.tableContainer {
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+
+.tableContainerStretch {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  height: 0;
+}
+
+.tableDragging {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--glass-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+.tableContainer::-webkit-scrollbar {
+  width: 6px;
+}
+.tableContainer::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background-color: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  z-index: 10;
+}
+
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+}
+
+.draggableRow {
+  cursor: grab;
+  user-select: none;
+  transition: background-color 0.12s ease, outline-color 0.12s ease;
+}
+
+.selectedRow {
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+}
+
+.draggableRow:active {
+  cursor: grabbing;
+}
+
+.draggingRow {
+  cursor: grabbing;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  opacity: 0.82;
+}
+
+.draggingSelectionRow {
+  cursor: grabbing;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  opacity: 0.86;
+}
+
+.dragOverRow {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.dropBeforeRow {
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--color-primary) 90%, white 10%);
+}
+
+.dropAfterRow {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--color-primary) 90%, white 10%);
+}
+
+.dragStatusPill {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.badgeSuccess {
+  background-color: rgba(82, 196, 26, 0.1);
+  color: #52c41a;
+  border: 1px solid rgba(82, 196, 26, 0.2);
+}
+
+.badgeError {
+  background-color: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+  border: 1px solid rgba(255, 77, 79, 0.2);
+}
+
+.bagdePending {
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.badgeProcessing {
+  background-color: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
+  border: 1px solid rgba(24, 144, 255, 0.2);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Drag & Drop */
+.dropzone {
+  border: 1px dashed var(--glass-border);
+  border-radius: 12px;
+  padding: 24px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background-color: color-mix(in srgb, var(--glass-bg) 80%, transparent);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.dropzone:hover, .dropzoneActive {
+  border-color: var(--glass-highlight);
+  background-color: color-mix(in srgb, var(--glass-bg) 90%, transparent);
+}
+
+.dropzoneIcon {
+  font-size: 32px;
+}
+
+.dropzoneText {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.dropzoneSubText {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.fileInfoCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+}
+
+.fileInfoDetails {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.fileInfoItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.btnPrimary {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.btnPrimary:hover {
+  background-color: var(--color-primary-hover, #40a9ff);
+}
+
+.btnSuccess {
+  background-color: var(--color-success, #52c41a);
+  color: white;
+}
+
+.btnSuccess:hover {
+  background-color: #73d13d;
+}
+
+.btnDanger {
+  background-color: var(--color-danger, #ff4d4f);
+  color: white;
+}
+
+.btnDanger:hover {
+  background-color: #ff7875;
+}
+
+.btnSecondary {
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border-color: var(--glass-border);
+  color: var(--color-text-primary);
+}
+
+.btnSecondary:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btnOutline {
+  background-color: transparent;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btnOutline:hover {
+  background-color: rgba(24, 144, 255, 0.05);
+}
+
+.btnSmall {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.btnIcon {
+  padding: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  border-radius: 4px;
+}
+
+.btnIcon:hover {
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.inputGroup {
+  display: flex;
+}
+
+.inputGroup .input {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.inputGroup .btn {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  white-space: nowrap;
+}
+
+.volumeControl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.rangeInput {
+  width: 100%;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.textMuted {
+  color: var(--color-text-secondary);
+}
+
+/* Video clip editor table specific styles */
+.clipInput {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--glass-bg) 85%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.clipInput:focus {
+  border-color: var(--color-primary);
+}
+
+.clipTimeInput {
+  width: 75px;
+  text-align: center;
+  font-family: monospace;
+}
+
+.mergeWarning {
+  color: var(--color-danger, #ff4d4f);
+  font-size: 12px;
+  border: 1px solid rgba(255, 77, 79, 0.25);
+  background: rgba(255, 77, 79, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.mergeSuccess {
+  color: var(--color-success, #52c41a);
+  font-size: 12px;
+  border: 1px solid rgba(82, 196, 26, 0.25);
+  background: rgba(82, 196, 26, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  word-break: break-all;
+}
+
+.mergeListNote {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}

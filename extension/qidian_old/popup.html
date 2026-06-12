@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Qidian Helper</title>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+    <meta charset="UTF-8">
+</head>
+<body>
+    <div class="header-row">
+        <h1>
+            Qidian Helper 2.2
+        </h1>
+        <div class="header-lang">
+            <div class="lang">Lang:</div>
+            <select class="lang-select" style="margin-left: 4px">
+                <option value="en">English</option>
+                <option value="vi">Tiếng Việt</option>
+            </select>
+        </div>
+    </div>
+    <div class="content">
+        <div class="recommend">
+            Recommend for book setting: font size > 20 and background color is black
+        </div>
+        <div>
+            <label>Token</label>
+            <input name="token" />
+            <br/>
+            <label class="char-per-page" style="margin-top: 8px;">CharPerPage</label>
+            <input name="charPerPage" value="3000" style="margin-top: 8px;" />
+            <br/>
+            <div class="char-per-page-memo"/>
+        </div>
+        <div class="ocr-config">
+            <label>OCR API Key</label>
+            <input name="ocrKey" placeholder="ocr.space apikey" />
+            <div class="ocr-status">OCR: idle</div>
+        </div>
+        <div class="capture-options">
+            <label class="checkbox-row">
+                <input type="checkbox" name="saveImages" />
+                <span>Save images to device</span>
+            </label>
+        </div>
+        <div class="ocr-output">
+            <label>OCR Draft</label>
+            <textarea class="ocr-text" rows="8" placeholder="OCR result will appear here..."></textarea>
+            <div class="ocr-actions">
+                <button id="copyOcr" style="background-color: #444; color: white;">Copy draft</button>
+                <button id="saveOcr" style="background-color: #666; color: white;">Save .txt</button>
+            </div>
+        </div>
+        <div>
+            <label>Point:</label>
+            <span class="point">(Ready to capture screenshots)</span>
+            <span>Contact:</span>
+            <a href="https://www.facebook.com/qidian.vietpharse/" target="_blank">Fanpage</a>
+            <a href="https://qidian-vp.blogspot.com/" target="_blank">Blog</a>
+        </div>
+        <div class="buttons">
+            <button id="clean" style="background-color: cornflowerblue; color: white;">[Free] Clean trash</button>
+            <button id="getNewText" style="background-color: seagreen; color: white;">
+                Chụp ảnh
+            </button>
+            <!-- <button id="getImages">Get Images (Free)</button> -->
+            <!-- <button id="saveImages">Tải ảnh chưa ghép, dùng kèm G (Free)</button> -->
+            <!-- <button class="need-token disable" id="getFullImageOnServer">Find Full Image On Server (1vnd)</button>
+            <button class="need-token disable" id="getTextOnServer">Find Text On Server (1vnd)</button>
+            <button class="need-token disable" id="getNewFullImage">Get New Full Image (5vnd)</button> -->
+        </div>
+        <pre class="changelogs" style="white-space: pre-wrap;">Debug logs:
+</pre>
+    </div>
+    <div class="warning">
+        This isn't Qidian
+    </div>
+    <div class="loading">
+        <div class="loading-icon" />
+    </div>
+    <script src="popup.min.js"></script>
+</body>
+</html>

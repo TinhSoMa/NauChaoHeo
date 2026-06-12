@@ -1,0 +1,281 @@
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+
+  --glass-bg: color-mix(in srgb, var(--color-card) 65%, transparent);
+  --glass-border: color-mix(in srgb, var(--color-border) 55%, transparent);
+  --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.14);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-bg);
+}
+
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.fixedBackBtn {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 100;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-card) 80%, transparent);
+  border: 1px solid var(--glass-border);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  transition: all 0.2s ease;
+}
+
+.fixedBackBtn:hover {
+  background: color-mix(in srgb, var(--color-card) 95%, transparent);
+  transform: scale(1.05);
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 0;
+}
+
+/* Card base */
+.basicCard,
+.versionCard,
+.configCard {
+  flex-shrink: 0;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+/* Field group */
+.fieldGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--color-card) 85%, transparent);
+}
+
+.fieldGroup:last-child {
+  border-bottom: none;
+}
+
+.fieldLabel {
+  width: 120px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.fieldInput {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+
+.fieldInput:focus {
+  border-color: var(--color-primary);
+}
+
+.fieldTextInput {
+  composes: fieldInput;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Version row */
+.versionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-wrap: wrap;
+}
+
+.versionSelect {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.versionSelect:focus {
+  border-color: var(--color-primary);
+}
+
+.versionActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Active row */
+.activeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+}
+
+.activeBadge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+/* Buttons - native, no Button component dependency */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  outline: none;
+  user-select: none;
+  border: none;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btnPrimary {
+  composes: btn;
+  background: var(--color-primary);
+  color: var(--color-text-invert);
+}
+
+.btnPrimary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btnSecondary {
+  composes: btn;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background: var(--color-border);
+  transform: translateY(-1px);
+}
+
+.btnIcon {
+  composes: btn;
+  padding: 6px;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.btnIcon:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.btnDanger {
+  composes: btn;
+  background: var(--color-error);
+  color: white;
+}
+
+/* Bottom footer */
+.footer {
+  margin-top: auto;
+  padding: 24px 0 28px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Inline add version form */
+.addForm {
+  padding: 14px 24px;
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: color-mix(in srgb, var(--color-card) 85%, transparent);
+}
+
+.addFormActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+

@@ -1,0 +1,66 @@
+src/renderer/src/components/caption/CaptionTranslator.tsx(328,32): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/renderer/src/components/caption/CaptionTranslator.tsx(424,54): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/renderer/src/components/caption/CaptionTranslator.tsx(443,54): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/renderer/src/components/caption/CaptionTranslator.tsx(557,55): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/renderer/src/components/caption/CaptionVideo.tsx(11,8): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/caption.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/caption.ts'.
+src/renderer/src/components/caption/CaptionVideo.tsx(369,18): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+src/renderer/src/components/caption/hooks/useCaptionSettings.ts(16,32): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/caption.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/caption.ts'.
+src/renderer/src/components/caption/hooks/useSubtitlePreview.ts(2,47): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/caption.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/caption.ts'.
+src/renderer/src/components/caption/SubtitlePreview.tsx(9,47): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/caption.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/caption.ts'.
+src/renderer/src/components/cutvideo/AudioExtractor.tsx(8,19): error TS6133: 'setFolders' is declared but its value is never read.
+src/renderer/src/components/cutvideo/AudioExtractor.tsx(13,16): error TS6133: 'setLogs' is declared but its value is never read.
+src/renderer/src/components/cutvideo/AudioExtractor.tsx(38,19): error TS2322: Type '"outline"' is not assignable to type '"primary" | "secondary" | "success" | "danger" | undefined'.
+src/renderer/src/components/cutvideo/AudioExtractor.tsx(81,43): error TS2322: Type '{ children: string; variant: "secondary"; icon: Element; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'icon' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/AudioExtractor.tsx(158,34): error TS2322: Type '{ children: string; variant: "danger"; icon: Element; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'icon' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/AudioExtractor.tsx(159,35): error TS2322: Type '{ children: string; variant: "success"; icon: Element; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'icon' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(9,17): error TS6133: 'setClips' is declared but its value is never read.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(26,21): error TS2322: Type '"outline"' is not assignable to type '"primary" | "secondary" | "success" | "danger" | undefined'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(42,41): error TS2322: Type '{ children: string; variant: "secondary"; size: string; onClick: () => void; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(54,41): error TS2322: Type '{ children: string; variant: "secondary"; size: string; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(55,41): error TS2322: Type '{ children: string; variant: "secondary"; size: string; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'size' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(95,19): error TS2322: Type '"outline"' is not assignable to type '"primary" | "secondary" | "success" | "danger" | undefined'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(137,41): error TS2322: Type '{ children: string; variant: "secondary"; icon: Element; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'icon' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(137,48): error TS2304: Cannot find name 'FolderOpen'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(183,34): error TS2322: Type '{ children: string; variant: "danger"; icon: Element; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'icon' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/cutvideo/VideoSplitter.tsx(184,35): error TS2322: Type '{ children: string; variant: "primary"; icon: Element; }' is not assignable to type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+  Property 'icon' does not exist on type 'IntrinsicAttributes & ButtonProps & RefAttributes<HTMLButtonElement>'.
+src/renderer/src/components/settings/ApiKeysSettings.tsx(9,33): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/gemini.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/gemini.ts'.
+src/renderer/src/components/settings/ProxySettings.tsx(2,41): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/proxy.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/proxy.ts'.
+src/renderer/src/components/settings/TranslationSettings.tsx(10,29): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/gemini.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/gemini.ts'.
+src/renderer/src/components/settings/TranslationSettings.tsx(59,34): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/renderer/src/components/story/hooks/useChapterSelection.ts(2,30): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/hooks/useStoryBatchTranslation.ts(2,66): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/hooks/useStoryBatchTranslation.ts(5,30): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/utils/delayUtils.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/utils/delayUtils.ts'.
+src/renderer/src/components/story/hooks/useStoryExport.ts(2,25): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/hooks/useStoryFileManagement.ts(2,84): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/hooks/useStorySummaryGeneration.ts(2,66): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/hooks/useStorySummaryGeneration.ts(4,30): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/utils/delayUtils.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/utils/delayUtils.ts'.
+src/renderer/src/components/story/hooks/useStorySummaryGeneration.ts(65,3): error TS6133: 'summaryTitles' is declared but its value is never read.
+src/renderer/src/components/story/hooks/useStorySummaryGeneration.ts(66,3): error TS6133: 'chapterModels' is declared but its value is never read.
+src/renderer/src/components/story/hooks/useStorySummaryGeneration.ts(67,3): error TS6133: 'chapterMethods' is declared but its value is never read.
+src/renderer/src/components/story/hooks/useStorySummaryGeneration.ts(68,3): error TS6133: 'tokenContexts' is declared but its value is never read.
+src/renderer/src/components/story/hooks/useStoryTranslation.ts(2,66): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/hooks/useStoryTranslatorPersistence.ts(2,30): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/services/ebookExporter.ts(1,30): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/services/ebookExporter.ts(2,36): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/StorySummary.tsx(2,66): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/StorySummary.tsx(4,35): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/constants/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/constants/index.ts'.
+src/renderer/src/components/story/StorySummary.tsx(1138,44): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/renderer/src/components/story/StoryTranslator.tsx(2,45): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/components/story/StoryTranslator.tsx(4,35): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/constants/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/constants/index.ts'.
+src/renderer/src/components/story/StoryTranslator.tsx(356,44): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/renderer/src/components/story/StoryTranslatorWeb.tsx(2,84): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/index.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/index.ts'.
+src/renderer/src/config/captionConfig.ts(14,8): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/gemini.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/gemini.ts'.
+src/renderer/src/config/captionConfig.ts(20,52): error TS7006: Parameter 'm' implicitly has an 'any' type.
+src/renderer/src/context/ProjectContext.tsx(2,43): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/project.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/project.ts'.
+src/renderer/src/hooks/useGemini.ts(9,11): error TS6196: 'KeyInfo' is declared but never used.
+src/renderer/src/hooks/useProjectFeatureState.ts(33,37): error TS6305: Output file 'D:/NauChaoHeo/dist/main/src/shared/types/project.d.ts' has not been built from source file 'D:/NauChaoHeo/src/shared/types/project.ts'.
+src/renderer/src/hooks/useProjectOpen.ts(12,55): error TS2345: Argument of type '{ projectId?: string | undefined; id?: string | undefined; }' is not assignable to parameter of type 'string'.

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Translator Control Center</title>
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --border: #d6dbe3;
+        --border-soft: #e7eaf0;
+        --control: #f9fafb;
+        --primary: #2563eb;
+        --success-bg: #e8f7ee;
+        --success-text: #176b3a;
+        --warn-bg: #fff4d6;
+        --warn-text: #8a5a00;
+        --error-bg: #fde8e8;
+        --error-text: #9b1c1c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        min-height: 100%;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      .app {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .app-header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 12px 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .app-title {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .header-status {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .app-body {
+        display: grid;
+        grid-template-columns: 420px minmax(0, 1fr);
+        gap: 14px;
+        padding: 16px;
+        flex: 1;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 14px;
+      }
+
+      .panel h2 {
+        margin: 0 0 12px 0;
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .field {
+        margin-bottom: 12px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .radio-row,
+      .checkbox-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .radio-row label,
+      .checkbox-row label {
+        margin: 0;
+        font-weight: 400;
+      }
+
+      .tab-select-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 96px;
+        gap: 8px;
+        align-items: center;
+      }
+
+      select,
+      input[type="number"],
+      input[type="text"],
+      input[type="file"] {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--control);
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      .hint,
+      .status-text {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.4;
+        margin-top: 6px;
+      }
+
+      .controls-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      button {
+        width: 100%;
+        min-height: 36px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      #btnStart {
+        background: #1f8f4d;
+        color: #fff;
+      }
+
+      #btnStop {
+        background: #b42318;
+        color: #fff;
+      }
+
+      #btnDownload {
+        background: var(--primary);
+        color: #fff;
+      }
+
+      #btnDownloadEbook {
+        background: #0f766e;
+        color: #fff;
+      }
+
+      #btnClear {
+        background: #8a5a00;
+        color: #fff;
+      }
+
+      #btnRefreshProviderTabs {
+        background: #f3f4f6;
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .list-wrap {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+        min-height: 240px;
+        max-height: calc(100vh - 310px);
+        overflow: auto;
+      }
+
+      .file-list {
+        padding: 6px;
+      }
+
+      .file-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border-bottom: 1px solid var(--border-soft);
+        font-size: 12px;
+      }
+
+      .file-item:last-child {
+        border-bottom: none;
+      }
+
+      .file-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .chapter-check {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        flex-shrink: 0;
+      }
+
+      .file-item.translating {
+        background: #f0f6ff;
+      }
+
+      .file-name {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .file-badge {
+        flex-shrink: 0;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .badge-pending {
+        background: #f3f4f6;
+        color: #4b5563;
+      }
+
+      .badge-translating {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+
+      .badge-done {
+        background: var(--success-bg);
+        color: var(--success-text);
+      }
+
+      .badge-error {
+        background: var(--error-bg);
+        color: var(--error-text);
+      }
+
+      .file-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .btn-view,
+      .btn-source,
+      .btn-reset {
+        min-height: 24px;
+        padding: 0 7px;
+        border-radius: 5px;
+        border: none;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      .btn-view {
+        background: #eef4ff;
+        color: #1d4ed8;
+      }
+
+      .btn-source {
+        background: #eefaf2;
+        color: #166534;
+      }
+
+      .btn-reset {
+        background: #fee2e2;
+        color: #7f1d1d;
+      }
+
+      .summary-row {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .list-tools {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 6px;
+      }
+
+      .btn-select-all {
+        width: auto;
+        min-height: 28px;
+        padding: 0 10px;
+        font-size: 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #f9fafb;
+        color: var(--text);
+      }
+
+      .status-card {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px;
+        background: var(--control);
+        font-size: 13px;
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        padding: 16px;
+      }
+
+      .modal.show {
+        display: flex;
+      }
+
+      .modal-content {
+        width: min(1100px, 100%);
+        max-height: 90vh;
+        background: #fff;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .modal-close {
+        border: 1px solid var(--border);
+        background: #f3f4f6;
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+
+      .modal-body {
+        padding: 12px;
+        font-size: 13px;
+        white-space: pre-wrap;
+        overflow: auto;
+      }
+
+      @media (max-width: 900px) {
+        .app-body {
+          grid-template-columns: 1fr;
+        }
+
+        .list-wrap {
+          max-height: none;
+          min-height: 200px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <h1 class="app-title">Bảng Điều Khiển Dịch</h1>
+        <div id="statusLog" class="header-status">Trạng thái: Sẵn sàng</div>
+      </header>
+
+      <main class="app-body">
+        <section class="panel">
+          <h2>Cấu hình</h2>
+
+          <div class="field">
+            <label for="providerSelect">Nhà cung cấp</label>
+            <select id="providerSelect">
+              <option value="gemini">Gemini</option>
+              <option value="grok">Grok</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="providerTabSelect">Tab chạy</label>
+            <div class="tab-select-row">
+              <select id="providerTabSelect"></select>
+              <button id="btnRefreshProviderTabs" type="button">Làm mới</button>
+            </div>
+            <div id="providerTabStatus" class="hint">Chưa tải danh sách tab.</div>
+          </div>
+
+          <div class="field">
+            <label>Chế độ nhập dữ liệu</label>
+            <div class="radio-row">
+              <input type="radio" id="modeFile" name="inputMode" value="file" checked />
+              <label for="modeFile">Chọn file lẻ</label>
+              <input type="radio" id="modeFolder" name="inputMode" value="folder" />
+              <label for="modeFolder">Chọn thư mục</label>
+              <input type="radio" id="modeEbook" name="inputMode" value="ebook" />
+              <label for="modeEbook">Chọn ebook (.epub)</label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="promptPresetSelect">Prompt preset</label>
+            <select id="promptPresetSelect"></select>
+            <div id="promptStatus" class="status-text">Đang tải danh sách prompt...</div>
+          </div>
+
+          <div id="fileInputWrapper" class="field">
+            <label for="fileInput">Chọn batch file .txt (mỗi file 50 dòng)</label>
+            <input type="file" id="fileInput" accept=".txt" multiple />
+          </div>
+
+          <div id="folderInputWrapper" class="field" style="display: none;">
+            <label for="folderInput">Chọn thư mục chứa dự án</label>
+            <input type="file" id="folderInput" webkitdirectory multiple />
+            <div class="hint">Tự động tìm file .txt trong `[ten_du_an]/caption_output/text/`.</div>
+          </div>
+
+          <div id="ebookInputWrapper" class="field" style="display: none;">
+            <label for="ebookInput">Chọn file Ebook (.epub)</label>
+            <input type="file" id="ebookInput" accept=".epub,application/epub+zip" />
+            <div class="hint">Mỗi chapter trong ebook sẽ thành một batch dịch.</div>
+          </div>
+
+          <div id="fileStatus" class="status-text">Chưa chọn file</div>
+
+          <div class="field checkbox-row">
+            <input type="checkbox" id="copyOnlyMode" />
+            <label for="copyOnlyMode">Chỉ copy (không gửi sang provider)</label>
+          </div>
+
+          <div class="field">
+            <label for="batchLimit">Số batch muốn dịch</label>
+            <input type="number" id="batchLimit" value="50" min="1" max="10000" />
+          </div>
+
+          <div class="field">
+            <label for="promptDelay">Thời gian nghỉ giữa 2 batch (giây)</label>
+            <input type="number" id="promptDelay" value="10" min="1" max="300" />
+          </div>
+
+          <div id="alwaysOnTopSection" class="field checkbox-row">
+            <input type="checkbox" id="alwaysOnTop" checked />
+            <label for="alwaysOnTop">Luôn giữ cửa sổ trên cùng</label>
+          </div>
+
+          <div class="controls-grid">
+            <button id="btnStart">Bắt đầu chạy</button>
+            <button id="btnStop">Dừng lại</button>
+            <button id="btnDownload">Tải JSONL (.jsonl)</button>
+            <button id="btnDownloadEbook">Tải EPUB đã dịch</button>
+            <button id="btnClear">Xóa bộ nhớ</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Tiến độ</h2>
+
+          <div id="fileListContainer">
+            <label>Danh sách batch file đã chọn</label>
+            <div class="list-tools">
+              <button type="button" id="btnToggleSelectAll" class="btn-select-all">Bỏ chọn tất cả</button>
+            </div>
+            <div class="list-wrap">
+              <div id="fileList" class="file-list"></div>
+            </div>
+            <div id="fileSummary" class="summary-row">Tổng batch: 0</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="dataModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span id="dataModalTitle">Dữ liệu đã lưu</span>
+          <button id="dataModalClose" class="modal-close">Đóng</button>
+        </div>
+        <div id="dataModalBody" class="modal-body"></div>
+      </div>
+    </div>
+
+    <script src="libs/jszip.min.js"></script>
+    <script src="libs/txml.min.js"></script>
+    <script src="ebook-parser.js"></script>
+    <script src="ebook-export-service.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
