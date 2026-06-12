@@ -718,6 +718,7 @@ interface TTSAPI {
   onProgress: (callback: (progress: TTSProgress) => void) => void;
   analyzeAudio: (audioFiles: AudioFile[], srtDuration: number) => Promise<IpcApiResponse<unknown>>;
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;
+  onMergeProgress: (callback: (progress: AudioMergeProgress) => void) => void;
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceToPaths: (

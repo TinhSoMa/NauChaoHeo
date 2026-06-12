@@ -351,6 +351,13 @@ export interface MergeResult {
   error?: string;
 }
 
+export interface AudioMergeProgress {
+  currentBatch: number;
+  totalBatches: number;
+  phase: 'mixing' | 'finalizing' | 'done';
+  message?: string;
+}
+
 /**
  * Input/output mapping for trim silence
  */

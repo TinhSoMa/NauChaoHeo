@@ -18,6 +18,7 @@ import {
   TTSTestVoiceRequest,
   TTSTestVoiceResponse,
   MergeResult,
+  AudioMergeProgress,
   FitAudioResponse,
   FitAudioAuditItem,
   FitAudioAuditFromSessionsRequest,
@@ -95,6 +96,7 @@ export interface TTSAPI {
     outputPath: string,
     timeScale?: number
   ) => Promise<IpcApiResponse<MergeResult>>;
+  onMergeProgress: (callback: (progress: AudioMergeProgress) => void) => void;
 
   // Trim Silence
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
@@ -189,6 +191,13 @@ export function createTTSAPI(): TTSAPI {
 
     mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale: number = 1.0) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.AUDIO_MERGE, audioFiles, outputPath, timeScale),
+
+    onMergeProgress: (callback: (progress: AudioMergeProgress) => void) => {
+      ipcRenderer.removeAllListeners(CAPTION_IPC_CHANNELS.AUDIO_MERGE_PROGRESS);
+      ipcRenderer.on(CAPTION_IPC_CHANNELS.AUDIO_MERGE_PROGRESS, (_event, progress) => {
+        callback(progress);
+      });
+    },
 
     trimSilence: (audioPaths: string[]) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TTS_TRIM_SILENCE, audioPaths),

@@ -68,6 +68,10 @@ extraResources:
     to: memoryContext/python
     filter:
       - "mem0_context_worker.py"
+  - from: src/main/services/audioMerge/python
+    to: audioMerge/python
+    filter:
+      - "audio_merge_worker.py"
   - from: resources/tts/go
     to: tts/go
     filter:

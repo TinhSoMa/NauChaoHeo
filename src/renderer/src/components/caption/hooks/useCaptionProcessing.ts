@@ -5481,6 +5481,10 @@ export function useCaptionProcessing({
         }
         setProgress({ current: 0, total: 1, message: msgCtx('Bước 6: Đang ghép audio...') });
         // @ts-ignore
+        window.electronAPI.tts.onMergeProgress((p: { currentBatch: number; totalBatches: number; phase: string; message?: string }) => {
+          setProgress({ current: p.currentBatch, total: p.totalBatches, message: `Bước 6: ${p.message || p.phase}` });
+        });
+        // @ts-ignore
         const result = await window.electronAPI.tts.mergeAudio(filesToMerge, mergedPath, safeSrtSpeed);
         if (!result.success && ((result?.error || '') === CAPTION_PROCESS_STOP_SIGNAL || abortRef.current)) {
           throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
