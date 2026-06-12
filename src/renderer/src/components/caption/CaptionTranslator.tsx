@@ -7,6 +7,7 @@ import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
 import { useProjectContext } from '../../context/ProjectContext';
+import { useCaptionMemory } from './useCaptionMemory';
 import {
   GEMINI_MODELS as FALLBACK_GEMINI_MODELS,
   VOICES,
@@ -1030,8 +1031,7 @@ export function CaptionTranslator() {
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
   );
   const [commonColorHistory, setCommonColorHistory] = useState<string[]>([]);
-  const [memoryAvailable, setMemoryAvailable] = useState<boolean | null>(null);
-  const [memoryCount, setMemoryCount] = useState<number>(0);
+  const { memoryAvailable } = useCaptionMemory();
   const commonColorHistoryStorageKey = useMemo(
     () => `${COMMON_COLOR_HISTORY_STORAGE_PREFIX}:${projectId || 'global'}`,
     [projectId]
@@ -2403,6 +2403,8 @@ export function CaptionTranslator() {
     },
     enabledSteps: settings.enabledSteps,
     setEnabledSteps: settings.setEnabledSteps,
+    onBatchComplete: handleBatchComplete,
+    onBatchStart: handleBatchStart,
   });
 
   const handleBulkExportThumbnails = useCallback(() => {
@@ -3072,6 +3074,7 @@ export function CaptionTranslator() {
   const [uiNowMs, setUiNowMs] = useState<number>(() => Date.now());
   const [stepLiveStartMs, setStepLiveStartMs] = useState<Partial<Record<Step, number>>>({});
   const [step3BatchRuntimeMap, setStep3BatchRuntimeMap] = useState<Record<number, Step3BatchRuntimeEntry>>({});
+  const [step3LiveReports, setStep3LiveReports] = useState<Record<number, SharedTranslationBatchReport>>({});
   const [step3LiveTotalBatches, setStep3LiveTotalBatches] = useState<number | null>(null);
   const [step3ManualModal, setStep3ManualModal] = useState<{ mode: 'single' | 'bulk'; batchIndex?: number } | null>(null);
   const [step3ManualInput, setStep3ManualInput] = useState('');
@@ -3434,7 +3437,7 @@ export function CaptionTranslator() {
       let status: 'ok' | 'missing' | 'error' = 'ok';
       if (!translatedText.trim()) {
         status = 'missing';
-      } else if (/^\s*\{?\s*"status"\s*:\s*"error"|ERROR|LỖI|FAIL/i.test(translatedText)) {
+      } else if (/^\s*\{?\s*"status"\s*:\s*"(?:error|lỗi)"|\bERROR\b|\bFAIL\b/i.test(translatedText)) {
         status = 'error';
       }
       return {
@@ -4877,6 +4880,42 @@ export function CaptionTranslator() {
     });
   }, [processing.currentFolder?.path]);
 
+  function handleBatchComplete(report: SharedTranslationBatchReport, plan: any, _batchError: string | null, totalBatches: number) {
+    const nowMs = Date.now();
+    const batchIndex = plan.batchIndex;
+    setStep3BatchRuntimeMap((prev) => {
+      const entry: Step3BatchRuntimeEntry = {
+        phase: report.status === 'success' ? 'success' : 'failed',
+        queuedAtMs: nowMs,
+        dispatchAtMs: nowMs,
+        completedAtMs: nowMs,
+        nextAllowedAtMs: null,
+        error: report.error || undefined,
+      };
+      if (prev[batchIndex]?.phase === entry.phase) {
+        return prev;
+      }
+      return { ...prev, [batchIndex]: entry };
+    });
+    setStep3LiveReports((prev) => ({ ...prev, [batchIndex]: report }));
+    setStep3LiveTotalBatches((prev) => (prev == null ? totalBatches : prev));
+  }
+
+  function handleBatchStart(batchIndex: number, totalBatches: number) {
+    const nowMs = Date.now();
+    setStep3BatchRuntimeMap((prev) => ({
+      ...prev,
+      [batchIndex]: {
+        phase: 'running',
+        queuedAtMs: nowMs,
+        dispatchAtMs: nowMs,
+        completedAtMs: null,
+        nextAllowedAtMs: null,
+      },
+    }));
+    setStep3LiveTotalBatches((prev) => (prev == null ? totalBatches : prev));
+  }
+
   useEffect(() => {
     if (!isStep3Running) {
       setStep3RuntimeTimer((prev) => {
@@ -4938,104 +4977,14 @@ export function CaptionTranslator() {
     });
   }, [isStep3Running, processing.progress.message, settings.translateMethod]);
 
-  useEffect(() => {
-    const totalBatches = typeof processing.progress.totalBatches === 'number' && Number.isFinite(processing.progress.totalBatches)
-      ? Math.max(1, Math.floor(processing.progress.totalBatches))
-      : null;
-    if (totalBatches !== null) {
-      setStep3LiveTotalBatches((prev) => (prev === totalBatches ? prev : totalBatches));
-    }
-
-    if (!isStep3Running) {
-      return;
-    }
-
-    const eventType = processing.progress.eventType;
-    if (eventType !== 'batch_started' && eventType !== 'batch_retry' && eventType !== 'batch_completed' && eventType !== 'batch_failed') {
-      return;
-    }
-
-    const fromReport = typeof processing.progress.batchReport?.batchIndex === 'number'
-      ? Math.floor(processing.progress.batchReport.batchIndex)
-      : null;
-    const fromProgress = typeof processing.progress.batchIndex === 'number'
-      ? Math.floor(processing.progress.batchIndex) + 1
-      : null;
-    const batchIndex = fromReport ?? fromProgress;
-    if (!batchIndex || batchIndex <= 0) {
-      return;
-    }
-
-    const nowMs = Date.now();
-    const progressStartMs = toEpochMs(processing.progress.startedAt);
-    const progressEndMs = toEpochMs(processing.progress.endedAt);
-    const progressNextAllowedMs = toEpochMs(processing.progress.nextAllowedAt);
-
-    setStep3BatchRuntimeMap((prev) => {
-      const current = prev[batchIndex];
-      const next: Step3BatchRuntimeEntry = current
-        ? { ...current }
-        : {
-            phase: 'waiting',
-            queuedAtMs: nowMs,
-            dispatchAtMs: null,
-            completedAtMs: null,
-            nextAllowedAtMs: null,
-          };
-
-      if (eventType === 'batch_started' || eventType === 'batch_retry') {
-        if (progressStartMs !== null) {
-          next.phase = 'running';
-          next.dispatchAtMs = progressStartMs;
-          next.queuedAtMs = next.queuedAtMs ?? nowMs;
-        } else if (next.phase !== 'running') {
-          next.phase = 'waiting';
-          next.queuedAtMs = next.queuedAtMs ?? nowMs;
-        }
-        next.nextAllowedAtMs = progressNextAllowedMs ?? next.nextAllowedAtMs;
-      } else if (eventType === 'batch_completed' || eventType === 'batch_failed') {
-        next.phase = eventType === 'batch_completed' ? 'success' : 'failed';
-        next.dispatchAtMs = toEpochMs(processing.progress.batchReport?.startedAt) ?? progressStartMs ?? next.dispatchAtMs;
-        next.completedAtMs = toEpochMs(processing.progress.batchReport?.endedAt) ?? progressEndMs ?? nowMs;
-        next.error = processing.progress.batchReport?.error;
-      }
-
-      if (
-        current
-        && current.phase === next.phase
-        && current.queuedAtMs === next.queuedAtMs
-        && current.dispatchAtMs === next.dispatchAtMs
-        && current.completedAtMs === next.completedAtMs
-        && current.nextAllowedAtMs === next.nextAllowedAtMs
-        && current.error === next.error
-      ) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        [batchIndex]: next,
-      };
-    });
-  }, [
-    isStep3Running,
-    processing.progress.eventType,
-    processing.progress.batchIndex,
-    processing.progress.totalBatches,
-    processing.progress.batchReport?.batchIndex,
-    processing.progress.batchReport?.startedAt,
-    processing.progress.batchReport?.endedAt,
-    processing.progress.batchReport?.error,
-    processing.progress.startedAt,
-    processing.progress.endedAt,
-    processing.progress.nextAllowedAt,
-  ]);
+  // Live batch runtime map updated via onBatchComplete callback
 
   useEffect(() => {
     if (isStep3Running) {
       return;
     }
     setStep3BatchRuntimeMap({});
+    setStep3LiveReports({});
     setStep3LiveTotalBatches(null);
   }, [isStep3Running]);
 
@@ -5102,11 +5051,15 @@ export function CaptionTranslator() {
       if (!report || typeof report.batchIndex !== 'number') {
         continue;
       }
-      if (step3Stopped && report.status === 'failed' && report.error === 'NO_BATCH_REPORT') {
-        continue;
-      }
       const batchIndex = Math.max(1, Math.floor(report.batchIndex));
       reportMap.set(batchIndex, report);
+    }
+
+    for (const [batchIdx, liveReport] of Object.entries(step3LiveReports)) {
+      const idx = Number(batchIdx);
+      if (Number.isFinite(idx) && idx > 0) {
+        reportMap.set(idx, liveReport);
+      }
     }
 
     const planMap = new Map<number, { startIndex: number; endIndex: number; lineCount: number }>();
@@ -5295,6 +5248,7 @@ export function CaptionTranslator() {
     sessionStep2BatchPlan,
     sessionStep2BatchPlanCount,
     step3BatchRuntimeMap,
+    step3LiveReports,
     step3LiveTotalBatches,
     uiNowMs,
   ]);
@@ -5579,6 +5533,30 @@ export function CaptionTranslator() {
     [processingInputPaths]
   );
   const stepInspectorActiveInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? stepInspectorInputPaths[0] ?? '';
+  const [memoryCount, setMemoryCount] = useState<number>(0);
+  useEffect(() => {
+    if (!memoryAvailable || !projectId || !stepInspectorActiveInputPath) return;
+    let active = true;
+    (async () => {
+      const statsRes: any = await window.electronAPI.invoke('caption:memoryStats', {
+        projectId,
+        sourcePath: stepInspectorActiveInputPath,
+      });
+      if (active && statsRes?.success) {
+        setMemoryCount(statsRes.data?.count ?? 0);
+      }
+    })();
+    return () => { active = false; };
+  }, [memoryAvailable, projectId, stepInspectorActiveInputPath]);
+  const clearMemory = async () => {
+    if (!projectId || !stepInspectorActiveInputPath) return;
+    try {
+      await window.electronAPI.invoke('caption:memoryClear', { projectId, sourcePath: stepInspectorActiveInputPath });
+      setMemoryCount(0);
+    } catch (err) {
+      console.error('[Memory] Clear failed:', err);
+    }
+  };
   const stepInspectorFolderLabel = useMemo(() => {
     const currentFolderName = (processing.currentFolder?.name || '').trim();
     if (currentFolderName) {
@@ -5672,39 +5650,6 @@ export function CaptionTranslator() {
     processing.currentStep,
     processing.status,
   ]);
-
-  // Memory context health & stats
-  useEffect(() => {
-    let active = true;
-    const fetchMemoryInfo = async () => {
-      try {
-        const healthRes: any = await window.electronAPI.invoke('caption:memoryHealth');
-        if (!active) return;
-        if (healthRes?.success && healthRes.data?.available) {
-          setMemoryAvailable(true);
-          if (projectId && stepInspectorActiveInputPath) {
-            const statsRes: any = await window.electronAPI.invoke('caption:memoryStats', {
-              projectId,
-              sourcePath: stepInspectorActiveInputPath,
-            });
-            if (active && statsRes?.success) {
-              setMemoryCount(statsRes.data?.count ?? 0);
-            }
-          }
-        } else {
-          setMemoryAvailable(false);
-          setMemoryCount(0);
-        }
-      } catch {
-        if (active) {
-          setMemoryAvailable(false);
-          setMemoryCount(0);
-        }
-      }
-    };
-    void fetchMemoryInfo();
-    return () => { active = false; };
-  }, [projectId, stepInspectorActiveInputPath, isStepInspectorOpen]);
 
   useEffect(() => {
     if (!isStepInspectorOpen) {
@@ -6878,7 +6823,6 @@ export function CaptionTranslator() {
                     type="button"
                     className={styles.step3BatchActionBtn}
                     onClick={() => openStep3BatchEditor(row)}
-                    disabled={processing.status === 'running'}
                     title={`Xem/Sửa subtitle của batch #${row.batchIndex}`}
                   >
                     Xem/Sửa
@@ -7890,18 +7834,7 @@ export function CaptionTranslator() {
                       </span>
                       <Button
                         variant="danger"
-                        onClick={async () => {
-                          if (!projectId || !stepInspectorActiveInputPath) return;
-                          try {
-                            await window.electronAPI.invoke('caption:memoryClear', {
-                              projectId,
-                              sourcePath: stepInspectorActiveInputPath,
-                            });
-                            setMemoryCount(0);
-                          } catch (err) {
-                            console.error('[Memory] Clear failed:', err);
-                          }
-                        }}
+                        onClick={clearMemory}
                         title="Xoá bộ nhớ dịch của dự án này"
                         className={styles.stepCompactBtn}
                       >

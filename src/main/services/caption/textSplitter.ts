@@ -23,33 +23,6 @@ export interface TextBatch {
  * @param entries - Danh sách SubtitleEntry
  * @param linesPerBatch - Số dòng mỗi batch (mặc định 50)
  */
-export function splitForTranslation(
-  entries: SubtitleEntry[],
-  linesPerBatch: number = 50
-): TextBatch[] {
-  console.log(`[TextSplitter] Chia ${entries.length} entries thành batches (${linesPerBatch} dòng/batch)`);
-  
-  const batches: TextBatch[] = [];
-  const totalBatches = Math.ceil(entries.length / linesPerBatch);
-  
-  for (let i = 0; i < totalBatches; i++) {
-    const startIndex = i * linesPerBatch;
-    const endIndex = Math.min(startIndex + linesPerBatch, entries.length);
-    const batchEntries = entries.slice(startIndex, endIndex);
-    
-    batches.push({
-      batchIndex: i,
-      startIndex,
-      endIndex,
-      entries: batchEntries,
-      texts: batchEntries.map(e => e.text),
-    });
-  }
-  
-  console.log(`[TextSplitter] Đã chia thành ${batches.length} batches`);
-  return batches;
-}
-
 /**
  * Merge kết quả dịch vào entries gốc
  * @param entries - Entries gốc
@@ -76,43 +49,72 @@ export interface TranslationPromptResult {
 }
 
 /**
+ * Format memory context thành markdown section để gắn vào prompt.
+ */
+function formatMemoryContextMarkdown(context: string): string {
+  return `\n\n## Memory Context (Translation History)\n\n` +
+    `Các bản dịch trước đó trong cùng dự án để tham khảo:\n\n` +
+    `${context}\n\n` +
+    `---\n` +
+    `Dùng ngữ cảnh trên để giữ NHẤT QUÁN thuật ngữ, tên nhân vật, phong cách dịch.\n` +
+    `TUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 object output.\n`;
+}
+
+/**
  * Tạo prompt template cho việc dịch batch.
  * Nếu customTemplate được cung cấp, thay thế các biến:
  *   {{COUNT}}     → số dòng trong batch
  *   {{TEXT}}      → nội dung các dòng (thuần văn bản, mỗi dòng một câu)
  *   {{FILE_NAME}} → 'subtitle'
- * Step 3 đã chuyển sang JSON-only: luôn yêu cầu model trả về JSON hợp lệ.
+ * Prompt luôn ở định dạng markdown, memory context được append dưới dạng markdown section.
+ * Output AI vẫn là JSON (responseFormat = 'json').
  */
 export function createTranslationPrompt(
   texts: string[],
   targetLanguage: string = 'Vietnamese',
   customTemplate?: string,
-  memoryContext?: string
+  memoryContext?: string,
+  debugSaveDir?: string,
+  batchIndex?: number,
 ): TranslationPromptResult {
   const count = texts.length;
 
   if (customTemplate) {
-    // --- Custom prompt: thay thế biến, KHÔNG kết hợp với default ---
-    // Nếu template có "{{TEXT}}" (có dấu nháy bao quanh) → thay bằng JSON array
-    // Nếu template có {{TEXT}} (không dấu nháy) → thay bằng plain text
+    // --- Custom prompt: chỉ thay thế biến, KHÔNG sửa nội dung JSON ---
+    // Đặt JSON raw trong markdown heading để phân ranh với memory context
     const arrayText = JSON.stringify(texts);
     const rawText = texts.join('\n');
-    const prompt = customTemplate
+    const content = customTemplate
       .replace(/"\{\{TEXT\}\}"/g, arrayText)   // "{{TEXT}}" → ["line1","line2",...]
       .replace(/\{\{TEXT\}\}/g, rawText)          // {{TEXT}} → plain fallback
       .replace(/\{\{COUNT\}\}/g, String(count))
       .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
 
-    console.log('[TextSplitter] Sử dụng custom prompt, format: json');
+    let prompt = `## User Translation Rules\n${content}\n`;
+
+    if (memoryContext) {
+      prompt += formatMemoryContextMarkdown(memoryContext);
+    }
+
+    console.log('[TextSplitter] Sử dụng custom prompt + memory context, format: json');
+    savePromptDebug(debugSaveDir, batchIndex, prompt);
     return { prompt, responseFormat: 'json' };
   }
 
-  // --- Default prompt: JSON-only, mỗi câu tương ứng 1 object ---
+  // --- Default prompt: markdown format, nhúng JSON schema trong code blocks ---
   const sourcePayload = texts.map((text, i) => ({ index: i + 1, text }));
-  let prompt = `Dịch ${count} dòng subtitle sau sang tiếng ${targetLanguage}.
-YÊU CẦU BẮT BUỘC:
-1. CHỈ trả về JSON thuần túy, không markdown, không text thừa.
-2. JSON success schema:
+  let prompt = `# Subtitle Translation Prompt
+
+## Task
+Dịch **${count}** dòng subtitle sau sang tiếng **${targetLanguage}**.
+
+## Output Format
+- **Type:** JSON
+- **Encoding:** UTF-8
+- **Strict JSON Only:** KHÔNG markdown, KHÔNG \`\`\`json, KHÔNG text thừa.
+
+## Success Response Schema
+\`\`\`json
 {
   "status": "success",
   "data": {
@@ -128,9 +130,10 @@ YÊU CẦU BẮT BUỘC:
     }
   }
 }
-3. translations phải có CHÍNH XÁC ${count} object, index từ 1..${count}, không thiếu, không trùng.
-4. Mỗi câu input tương ứng đúng 1 câu translated, không gộp/không tách câu.
-5. Nếu không thể xử lý, trả JSON error:
+\`\`\`
+
+## Error Response Schema
+\`\`\`json
 {
   "status": "error",
   "error": {
@@ -138,20 +141,41 @@ YÊU CẦU BẮT BUỘC:
     "message": "..."
   }
 }
+\`\`\`
 
-Nguồn:
-${JSON.stringify(sourcePayload)}`;
+## Critical Rules
+1. translations phải có CHÍNH XÁC **${count}** object, index từ **1..${count}**, không thiếu, không trùng.
+2. Mỗi câu input tương ứng đúng **1** câu translated — KHÔNG gộp, KHÔNG tách câu.
+3. MỖI CÂU INPUT = 1 OBJECT OUTPUT. Index phải khớp tuyệt đối.
+
+## Source Text
+\`\`\`json
+${JSON.stringify(sourcePayload, null, 2)}
+\`\`\``;
 
   if (memoryContext) {
-    prompt += `\n\n=== BỐI CẢNH DỊCH THUẬT (Translation Context) ===
-Đây là các bản dịch trước đó trong cùng dự án để tham khảo:
-${memoryContext}
-Sử dụng ngữ cảnh trên để giữ NHẤT QUÁN thuật ngữ, tên nhân vật, phong cách dịch.
-TUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 object output.\n`;
+    prompt += formatMemoryContextMarkdown(memoryContext);
   }
 
-  console.log('[TextSplitter] Sử dụng default prompt, format: json');
+  console.log('[TextSplitter] Sử dụng default prompt (markdown), format: json');
+  savePromptDebug(debugSaveDir, batchIndex, prompt);
   return { prompt, responseFormat: 'json' };
+}
+
+function savePromptDebug(debugSaveDir?: string, batchIndex?: number, prompt?: string): void {
+  if (!debugSaveDir || !prompt) return;
+  try {
+    const idx = typeof batchIndex === 'number' ? batchIndex + 1 : Date.now();
+    const fileName = `step3_prompt_batch_${idx}.txt`;
+    const dir = debugSaveDir;
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(dir, fileName), prompt, 'utf-8');
+    console.log(`[TextSplitter] Đã lưu prompt debug: ${path.join(dir, fileName)}`);
+  } catch (error) {
+    console.warn('[TextSplitter] Không thể lưu prompt debug:', error);
+  }
 }
 
 export interface JsonTranslationParseResult {

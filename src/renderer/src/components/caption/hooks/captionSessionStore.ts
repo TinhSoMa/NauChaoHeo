@@ -671,6 +671,15 @@ export function validateStepOutputForSkip(
     if (typeof step3BatchState.failedBatches === 'number' && step3BatchState.failedBatches > 0) {
       return { ok: false, reason: 'step3_has_failed_batches' };
     }
+    // Kiểm tra: số success reports có khớp với batch plan không
+    const batchPlan = Array.isArray(data.step2BatchPlan) ? data.step2BatchPlan : [];
+    const reports = Array.isArray(step3BatchState.batches) ? step3BatchState.batches : [];
+    if (batchPlan.length > 0) {
+      const successBatches = reports.filter((r: any) => r.status === 'success').length;
+      if (successBatches < batchPlan.length) {
+        return { ok: false, reason: 'step3_incomplete_batches' };
+      }
+    }
     return { ok: true };
   }
 

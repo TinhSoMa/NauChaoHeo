@@ -156,60 +156,26 @@ interface ParseSrtResult {
   error?: string;
 }
 
-interface TranslationOptions {
+interface SingleBatchOptions {
   entries: SubtitleEntry[];
+  batchIndex: number;
+  totalBatches: number;
+  linesPerBatch: number;
   targetLanguage: string;
   model: string;
-  linesPerBatch: number;
   promptTemplate?: string;
   translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
-  retryBatchIndexes?: number[];
   projectId?: string;
   sourcePath?: string;
   runId?: string;
 }
 
-interface TranslationResult {
+interface SingleBatchResult {
   success: boolean;
-  entries: SubtitleEntry[];
-  totalLines: number;
-  translatedLines: number;
-  failedLines: number;
-  errors?: string[];
-  batchReports?: TranslationBatchReport[];
-  missingBatchIndexes?: number[];
-  missingGlobalLineIndexes?: number[];
-}
-
-interface TranslationBatchReport {
+  translatedTexts: string[];
   batchIndex: number;
-  startIndex: number;
-  endIndex: number;
-  expectedLines: number;
-  translatedLines: number;
-  missingLinesInBatch: number[];
-  missingGlobalLineIndexes: number[];
-  attempts: number;
-  status: 'success' | 'failed';
   error?: string;
-}
-
-interface TranslationProgress {
-  current: number;
-  total: number;
-  batchIndex: number;
-  totalBatches: number;
-  status: 'translating' | 'completed' | 'error';
-  message: string;
-  runId?: string;
-  eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
-  batchReport?: TranslationBatchReport;
-  translatedChunk?: {
-    startIndex: number;
-    texts: string[];
-  };
-  folderHint?: string;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  transport?: string;
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
@@ -529,9 +495,7 @@ interface CaptionAPI {
   findSrtInFolders: (folderPaths: string[]) => Promise<IpcApiResponse<Record<string, string>>>;
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
-  translate: (options: TranslationOptions) => Promise<IpcApiResponse<TranslationResult>>;
-  onTranslateProgress: (callback: (progress: TranslationProgress) => void) => void;
-  ackTranslateProgress: (payload: { runId?: string; batchIndex: number; eventType: 'batch_completed' | 'batch_failed' }) => Promise<IpcApiResponse<void>>;
+  translateBatch: (options: SingleBatchOptions) => Promise<IpcApiResponse<SingleBatchResult>>;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
   stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   readSession: (sessionPath: string) => Promise<IpcApiResponse<any | null>>;
@@ -754,6 +718,7 @@ interface TTSAPI {
   onProgress: (callback: (progress: TTSProgress) => void) => void;
   analyzeAudio: (audioFiles: AudioFile[], srtDuration: number) => Promise<IpcApiResponse<unknown>>;
   mergeAudio: (audioFiles: AudioFile[], outputPath: string, timeScale?: number) => Promise<IpcApiResponse<MergeResult>>;
+  onMergeProgress: (callback: (progress: AudioMergeProgress) => void) => void;
   trimSilence: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceEnd: (audioPaths: string[]) => Promise<IpcApiResponse<TrimSilenceResult>>;
   trimSilenceToPaths: (

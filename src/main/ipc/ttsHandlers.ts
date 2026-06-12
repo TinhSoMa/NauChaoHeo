@@ -703,7 +703,12 @@ export function registerTTSHandlers(): void {
 
       try {
         TTSService.resetTtsStopRequest();
-        const result = await TTSService.mergeAudioFiles(audioFiles, outputPath, timeScale);
+        const window = BrowserWindow.fromWebContents(event.sender);
+        const result = await TTSService.mergeAudioFiles(audioFiles, outputPath, timeScale, (progress) => {
+          if (window) {
+            window.webContents.send(CAPTION_IPC_CHANNELS.AUDIO_MERGE_PROGRESS, progress);
+          }
+        });
         return { success: result.success, data: result, error: result.error };
       } catch (error) {
         if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {

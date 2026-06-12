@@ -10,6 +10,8 @@ import {
   TranslationProgress,
   TranslationBatchReport,
   TranslationQueuePacingMetadata,
+  SingleBatchOptions,
+  SingleBatchResult,
   CAPTION_PROCESS_STOP_SIGNAL,
 } from '../../../shared/types/caption';
 import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type GeminiModel } from '../gemini';
@@ -37,7 +39,6 @@ import {
   upsertConversation as upsertCaptionGeminiConversation,
 } from './captionGeminiConversationStore';
 import {
-  splitForTranslation,
   mergeTranslatedTexts,
   createTranslationPrompt,
   parseJsonTranslationResponse,
@@ -45,6 +46,9 @@ import {
 } from './textSplitter';
 import { getMemoryContextService } from '../memoryContext';
 import { createHash } from 'crypto';
+import * as path from 'path';
+import * as fs from 'fs';
+import { getCaptionOutputDirFromInput } from '../../../shared/utils/captionSession';
 
 type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
 
@@ -122,6 +126,8 @@ const createTranslationStopSignal = (runId?: string | null): { promise: Promise<
 };
 
 export function beginTranslationRun(runId?: string | null): void {
+  translateStopRequested = false;
+  translateStopRunId = undefined;
   activeTranslateRunId = normalizeRunId(runId);
 }
 
@@ -309,11 +315,12 @@ async function translateBatch(
   shouldStop?: () => boolean,
   stopSignal?: AbortSignal,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   const keyLabel = assignedKey ? assignedKey.keyInfo.name : 'rotation';
   console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [key: ${keyLabel}]`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
     const control = shouldStop
@@ -337,7 +344,7 @@ async function translateBatch(
       throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
     }
 
-    if (!response.success || !response.data) {
+    if (!response.success || typeof response.data !== 'string') {
       return {
         success: false,
         translatedTexts: [],
@@ -389,10 +396,11 @@ async function translateBatchImpit(
   targetLanguage: string,
   promptTemplate?: string,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [Impit] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
     const result = await callGeminiImpitAutoSelect(prompt);
@@ -446,10 +454,11 @@ async function translateBatchGrokUi(
   promptTemplate: string | undefined,
   timeoutMs: number,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [GrokUI] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
     const result = await getGrokUiRuntime().ask({ prompt, timeoutMs });
@@ -515,9 +524,10 @@ async function translateBatchGeminiWebQueue(
   queueContext: CaptionGeminiWebQueueRuntimeContext,
   dispatchOptions?: GeminiWebQueueDispatchOptions,
   memoryContext?: string,
+  debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] [GeminiWebQueue] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng)`);
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext);
+  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
   const { queue, resourceLabelById } = queueContext;
 
   try {
@@ -770,9 +780,21 @@ export async function translateAll(
     console.log(`[CaptionTranslator] Bắt đầu dịch ${entries.length} entries`);
     console.log(`[CaptionTranslator] Model: ${model}, Target: ${targetLanguage}`);
 
-    // Chia thành batches
-    const allBatches = splitForTranslation(entries, linesPerBatch);
-    const maxBatchIndex = allBatches.length;
+    // Chia thành batches (lazy: chỉ compute batch khi cần)
+    const totalBatches = Math.ceil(entries.length / linesPerBatch);
+    const maxBatchIndex = totalBatches;
+    const getBatchAtIndex = (index: number): TextBatch => {
+      const startIndex = index * linesPerBatch;
+      const endIndex = Math.min(startIndex + linesPerBatch, entries.length);
+      const batchEntries = entries.slice(startIndex, endIndex);
+      return {
+        batchIndex: index,
+        startIndex,
+        endIndex,
+        entries: batchEntries,
+        texts: batchEntries.map((e) => e.text),
+      };
+    };
     const retryIndexesProvided = Array.isArray(options.retryBatchIndexes);
     const retryBatchIndexesInput: number[] = retryIndexesProvided ? (options.retryBatchIndexes as number[]) : [];
     const normalizedRetryBatchIndexes = retryIndexesProvided
@@ -786,19 +808,14 @@ export async function translateAll(
     const retryBatchIndexSet = validRetryBatchIndexes.length > 0
       ? new Set<number>(validRetryBatchIndexes)
       : null;
-    const batches = retryBatchIndexSet
-      ? allBatches.filter((batch) => retryBatchIndexSet.has(batch.batchIndex + 1))
-      : allBatches;
-    const collectMissingGlobalLineIndexes = (targetBatches: TextBatch[]): number[] => Array.from(
-      new Set(
-        targetBatches.flatMap((batch) =>
-          Array.from({ length: batch.texts.length }, (_, offset) => batch.startIndex + offset + 1)
-        )
-      )
-    ).sort((a, b) => a - b);
-    if (retryIndexesProvided && (requestedRetryBatchIndexes.length === 0 || invalidRetryBatchIndexes.length > 0 || batches.length === 0)) {
-      const mappedRetryBatches = allBatches.filter((batch) => retryBatchIndexSet?.has(batch.batchIndex + 1));
-      const missingGlobalLineIndexes = collectMissingGlobalLineIndexes(mappedRetryBatches);
+    if (retryIndexesProvided && (requestedRetryBatchIndexes.length === 0 || invalidRetryBatchIndexes.length > 0 || !retryBatchIndexSet)) {
+      const missingGlobalLineIndexes = Array.from(retryBatchIndexSet ?? [])
+        .sort((a, b) => a - b)
+        .flatMap((batchNumber) => {
+          const start = (batchNumber - 1) * linesPerBatch;
+          const end = Math.min(start + linesPerBatch, entries.length);
+          return Array.from({ length: end - start }, (_, i) => start + i + 1);
+        });
       const errorMessage = invalidRetryBatchIndexes.length > 0
         ? `ERROR_INVALID_RETRY_BATCH_INDEXES: out_of_range=${JSON.stringify(invalidRetryBatchIndexes)}, maxBatchIndex=${maxBatchIndex}`
         : `ERROR_INVALID_RETRY_BATCH_INDEXES: ${JSON.stringify(options.retryBatchIndexes)}`;
@@ -823,21 +840,14 @@ export async function translateAll(
     const allTranslatedTexts: string[] = entries.map((entry) => (
       typeof entry.translatedText === 'string' ? entry.translatedText : ''
     ));
-    const preservedTranslatedCount = retryBatchIndexSet
-      ? allBatches.reduce((sum, batch) => {
-        const batchNumber = batch.batchIndex + 1;
-        if (retryBatchIndexSet.has(batchNumber)) {
-          return sum;
-        }
-        let batchTranslated = 0;
-        for (let i = batch.startIndex; i < batch.endIndex; i++) {
-          if ((allTranslatedTexts[i] || '').trim().length > 0) {
-            batchTranslated++;
-          }
-        }
-        return sum + batchTranslated;
-      }, 0)
-      : 0;
+    let preservedTranslatedCount = 0;
+    if (retryBatchIndexSet) {
+      for (let entryIdx = 0; entryIdx < entries.length; entryIdx++) {
+        const batchIdx = Math.floor(entryIdx / linesPerBatch);
+        if (retryBatchIndexSet.has(batchIdx + 1)) continue;
+        if ((allTranslatedTexts[entryIdx] || '').trim().length > 0) preservedTranslatedCount++;
+      }
+    }
     const errors: string[] = [];
     const batchReports: TranslationBatchReport[] = [];
 
@@ -977,7 +987,7 @@ export async function translateAll(
     );
     if (enabledResources.length === 0) {
       const errorMessage = 'Không có account Gemini Web hợp lệ (is_active + __Secure-1PSID + __Secure-1PSIDTS).';
-      const missingGlobalLineIndexes = collectMissingGlobalLineIndexes(batches);
+      const missingGlobalLineIndexes = Array.from({ length: entries.length }, (_, i) => i + 1);
       return {
         success: false,
         entries,
@@ -986,7 +996,7 @@ export async function translateAll(
         failedLines: missingGlobalLineIndexes.length,
         errors: [errorMessage],
         batchReports: [],
-        missingBatchIndexes: batches.map((batch) => batch.batchIndex + 1),
+        missingBatchIndexes: Array.from({ length: totalBatches }, (_, i) => i + 1),
         missingGlobalLineIndexes,
         queuePacingMode: 'dispatch_spacing_global',
         queueGapMs,
@@ -1180,7 +1190,7 @@ export async function translateAll(
         current: Math.min(processedLines, entries.length),
         total: entries.length,
         batchIndex: Math.max(0, report.batchIndex - 1),
-        totalBatches: batches.length,
+        totalBatches,
         status: 'error',
         message: `Batch #${report.batchIndex} bị lỗi ngoài dự kiến, đã đánh dấu failed.`,
         runId,
@@ -1196,7 +1206,7 @@ export async function translateAll(
     await awaitProgressAckIfNeeded('batch_failed', report.batchIndex);
   };
 
-  // Dịch song song tối đa MAX_CONCURRENT batch cùng lúc
+  // Dịch tuần tự từng batch (batch trước xong mới đến batch sau)
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
     assertNotStopped();
     const methodLabel: TranslationTransport = useGeminiWebQueue
@@ -1210,9 +1220,9 @@ export async function translateAll(
     const queueGapSecLabel = Number((queueGapMs / 1000).toFixed(1)).toString().replace(/\.0$/, '');
     const dispatchModeLabel = useGeminiWebQueue
       ? `tuần tự 1 job, chờ sau hoàn thành theo setting (${queueGapSecLabel}s+)`
-      : `${MAX_CONCURRENT} song song, pacing ${queueGapSecLabel}s`;
+      : `tuần tự 1 job, pacing ${queueGapSecLabel}s`;
     let progressTokenLabel = defaultTokenLabel;
-    const totalAttempts = useGeminiWebQueue
+  const totalAttempts = useGeminiWebQueue
       ? CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS
       : Math.max(1, MAX_BATCH_RETRY + 1);
     let attempt = 0;
@@ -1220,6 +1230,31 @@ export async function translateAll(
     let bestTranslatedCount = -1;
     let lastResult: BatchTranslationResult | null = null;
     let lastDispatchTiming: DispatchTimingMetadata | null = null;
+
+    // Search memory context 1 lần duy nhất cho batch này, dùng chung cho mọi attempt
+    let localMemoryContext: string | undefined;
+    try {
+      const memoryProjectId = (projectId || '').trim();
+      const memorySourcePath = (sourcePath || '').trim();
+      if (memoryProjectId && memorySourcePath && getMemoryContextService().isAvailable() !== false) {
+        const memoryNamespace = buildCaptionMemoryNamespace(memoryProjectId, memorySourcePath);
+        console.time(`[CaptionTranslator] [Memory] search batch #${batchNumber}`);
+        const searchResult = await getMemoryContextService().searchContext({
+          projectId: memoryProjectId,
+          feature: CAPTION_MEMORY_FEATURE,
+          namespace: memoryNamespace,
+          queryText: batch.texts.join('\n'),
+          topK: CAPTION_MEMORY_TOP_K,
+          metadata: { batchIndex: batch.batchIndex, chapterIndex: batch.batchIndex, totalChapters: maxBatchIndex },
+        });
+        console.timeEnd(`[CaptionTranslator] [Memory] search batch #${batchNumber}`);
+        if (searchResult.success && searchResult.promptContext) {
+          localMemoryContext = searchResult.promptContext;
+        }
+      }
+    } catch (error) {
+      console.warn(`[CaptionTranslator] [Memory] search batch #${batchNumber} thất bại:`, error);
+    }
 
     while (attempt < totalAttempts) {
       assertNotStopped();
@@ -1303,28 +1338,6 @@ export async function translateAll(
       console.log(
         `[CaptionTranslator] Dispatch batch #${batchNumber}/${totalBatchCount} attempt ${attempt}/${totalAttempts} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
       );
-
-      let localMemoryContext: string | undefined;
-      try {
-        const memoryProjectId = (projectId || '').trim();
-        const memorySourcePath = (sourcePath || '').trim();
-        if (memoryProjectId && memorySourcePath) {
-          const memoryNamespace = buildCaptionMemoryNamespace(memoryProjectId, memorySourcePath);
-          const searchResult = await getMemoryContextService().searchContext({
-            projectId: memoryProjectId,
-            feature: CAPTION_MEMORY_FEATURE,
-            namespace: memoryNamespace,
-            queryText: batch.texts.join('\n'),
-            topK: CAPTION_MEMORY_TOP_K,
-            metadata: { batchIndex: batch.batchIndex, chapterIndex: batch.batchIndex, totalChapters: maxBatchIndex }
-          });
-          if (searchResult.success && searchResult.promptContext) {
-            localMemoryContext = searchResult.promptContext;
-          }
-        }
-      } catch {
-        // Memory search failure is non-fatal
-      }
 
       const batchResult: BatchTranslationResult = useGeminiWebQueue
         ? await translateBatchGeminiWebQueue(
@@ -1502,8 +1515,8 @@ export async function translateAll(
     if (progressCallback && !shouldStopTranslation(runId)) {
       const reportMissingGlobalRanges = formatIndexRanges(report.missingGlobalLineIndexes);
       const completionMessage = report.status === 'success'
-        ? `Batch #${report.batchIndex} hoàn tất ${report.translatedLines}/${report.expectedLines} dòng, đã lưu partial. (${completedBatches}/${batches.length}) [${methodLabel}] [token:${progressTokenLabel}]`
-        : `Batch #${report.batchIndex} còn thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng (global: ${reportMissingGlobalRanges}), đã lưu partial. (${completedBatches}/${batches.length}) [${methodLabel}] [token:${progressTokenLabel}]`;
+        ? `Batch #${report.batchIndex} hoàn tất ${report.translatedLines}/${report.expectedLines} dòng, đã lưu partial. (${completedBatches}/${totalBatches}) [${methodLabel}] [token:${progressTokenLabel}]`
+        : `Batch #${report.batchIndex} còn thiếu ${report.missingGlobalLineIndexes.length}/${report.expectedLines} dòng (global: ${reportMissingGlobalRanges}), đã lưu partial. (${completedBatches}/${totalBatches}) [${methodLabel}] [token:${progressTokenLabel}]`;
       progressCallback({
         current: Math.min(processedLines, entries.length),
         total: entries.length,
@@ -1553,12 +1566,13 @@ export async function translateAll(
     }
   };
 
-  // Chạy theo từng nhóm MAX_CONCURRENT batch
+  // Chạy tuần tự từng batch (tránh rate limit, memory context cần batch trước hoàn thành)
   const manager = getApiManager();
   if (useGeminiWebQueue) {
     assertNotStopped();
-    for (let i = 0; i < batches.length; i += 1) {
-      const batch = batches[i];
+    for (let i = 0; i < totalBatches; i += 1) {
+      if (retryBatchIndexSet && !retryBatchIndexSet.has(i + 1)) continue;
+      const batch = getBatchAtIndex(i);
       await processBatch(batch, i).catch(async (error) => {
         if (isStopSignal(error)) {
           throw error;
@@ -1570,49 +1584,44 @@ export async function translateAll(
       }
     }
   } else {
-    for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
+    for (let i = 0; i < totalBatches; i += 1) {
+      if (retryBatchIndexSet && !retryBatchIndexSet.has(i + 1)) continue;
       assertNotStopped();
-      const chunk = batches.slice(i, i + MAX_CONCURRENT);
+      const batch = getBatchAtIndex(i);
 
-      // Pre-assign 1 key riêng biệt cho mỗi batch trong chunk (chỉ áp dụng cho API, không phải impit)
-      const assignedKeys: Array<{ apiKey: string; keyInfo: KeyInfo } | undefined> = [];
+      // Gán key riêng cho batch này (chỉ áp dụng cho API, không phải impit)
+      let assignedKey: { apiKey: string; keyInfo: KeyInfo } | undefined;
       if (!useImpit && !useGrokUi) {
-        for (let k = 0; k < chunk.length; k++) {
-          const { apiKey, keyInfo } = manager.getNextApiKey();
-          assignedKeys.push(apiKey && keyInfo ? { apiKey, keyInfo } : undefined);
-        }
-        const keyNames = assignedKeys.map(k => k?.keyInfo.name ?? 'rotation').join(', ');
-        console.log(`[CaptionTranslator] Chunk ${Math.floor(i / MAX_CONCURRENT) + 1}: gán key [${keyNames}]`);
+        const { apiKey, keyInfo } = manager.getNextApiKey();
+        assignedKey = apiKey && keyInfo ? { apiKey, keyInfo } : undefined;
+        console.log(`[CaptionTranslator] Batch ${i + 1}/${totalBatches}: gán key [${assignedKey?.keyInfo.name ?? 'rotation'}]`);
       }
 
-      // Stagger start: mỗi batch trong chunk delay 300ms để tránh burst cùng lúc
-      await Promise.all(
-        chunk.map((batch, offset) =>
-          new Promise<void>((resolve, reject) =>
-            setTimeout(() => {
-              processBatch(batch, i + offset, assignedKeys[offset])
-                .catch(async (error) => {
-                  if (isStopSignal(error)) {
-                    reject(error);
-                    return;
-                  }
-                  await registerUnexpectedBatchFailure(batch, error);
-                })
-                .finally(resolve);
-            }, offset * 300)
-          )
-        )
-      );
+      await processBatch(batch, i, assignedKey).catch(async (error) => {
+        if (isStopSignal(error)) {
+          throw error;
+        }
+        await registerUnexpectedBatchFailure(batch, error);
+      });
+
+      // Nếu batch thất bại sau tất cả retry → dừng toàn bộ, không dịch batch sau
+      const lastReport = batchReports[batchReports.length - 1];
+      if (lastReport && lastReport.status === 'failed') {
+        console.log(`[CaptionTranslator] Batch ${i + 1} thất bại sau tất cả retry — dừng dịch các batch còn lại.`);
+        break;
+      }
     }
   }
 
   if (useGeminiWebQueue && geminiExhaustedError) {
     const reportedBatchIndexes = new Set(batchReports.map((report) => report.batchIndex));
-    for (const batch of batches) {
-      const batchNumber = batch.batchIndex + 1;
+    for (let i = 0; i < totalBatches; i += 1) {
+      if (retryBatchIndexSet && !retryBatchIndexSet.has(i + 1)) continue;
+      const batchNumber = i + 1;
       if (reportedBatchIndexes.has(batchNumber)) {
         continue;
       }
+      const batch = getBatchAtIndex(i);
       const fallbackTexts = Array.from(
         { length: batch.texts.length },
         (_, offset) => allTranslatedTexts[batch.startIndex + offset] ?? ''
@@ -1638,6 +1647,42 @@ export async function translateAll(
     if (!errors.includes(geminiExhaustedError)) {
       errors.push(geminiExhaustedError);
     }
+  }
+
+  // Fallback cho API/Impit/Grok UI: nếu có batch bị skip do break
+  if (!useGeminiWebQueue && completedBatches < totalBatches) {
+    const reportedBatchIndexes = new Set(batchReports.map((r) => r.batchIndex));
+    const methodLabel: TranslationTransport = useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api');
+    for (let i = 0; i < totalBatches; i += 1) {
+      if (retryBatchIndexSet && !retryBatchIndexSet.has(i + 1)) continue;
+      const batchNumber = i + 1;
+      if (reportedBatchIndexes.has(batchNumber)) continue;
+      const batch = getBatchAtIndex(i);
+      const fallbackTexts = Array.from(
+        { length: batch.texts.length },
+        (_, offset) => allTranslatedTexts[batch.startIndex + offset] ?? ''
+      );
+      const report = buildBatchReport(
+        batch,
+        fallbackTexts,
+        0,
+        'failed',
+        `BATCH_SKIPPED: batch #${batchNumber} bị bỏ qua do batch trước thất bại hoàn toàn`,
+        undefined,
+        methodLabel,
+        undefined,
+        undefined,
+        undefined,
+      );
+      batchReports.push(report);
+      translatedCount += report.translatedLines;
+      failedCount += report.missingGlobalLineIndexes.length;
+      completedBatches += 1;
+      processedLines += batch.texts.length;
+    }
+    const skipMessage = `Dừng sớm: batch hiện tại thất bại sau tất cả retry — ${totalBatches - batchReports.length} batch còn lại đã bị bỏ qua`;
+    console.warn(`[CaptionTranslator] ${skipMessage}`);
+    errors.push(skipMessage);
   }
 
   // Merge kết quả vào entries
@@ -1720,6 +1765,287 @@ export async function translateAll(
     }
     stopSignal.dispose();
   }
+}
+
+/**
+ * Dịch 1 batch đơn lẻ (dùng cho kiến trúc 1 batch/lần)
+ */
+export async function translateSingleBatch(
+  options: SingleBatchOptions
+): Promise<SingleBatchResult> {
+  const {
+    entries,
+    batchIndex,
+    totalBatches,
+    targetLanguage,
+    model,
+    promptTemplate,
+    translateMethod,
+    projectId,
+    sourcePath,
+    runId,
+  } = options;
+
+  throwIfTranslationStopped(runId);
+
+  // Build TextBatch từ entries
+  const batch: TextBatch = {
+    batchIndex,
+    startIndex: 0,
+    endIndex: Math.max(0, entries.length - 1),
+    entries,
+    texts: entries.map((e) => e.text),
+  };
+
+  const useGeminiWebQueue = translateMethod === 'gemini_webapi_queue';
+  const useImpit = translateMethod === 'impit';
+  const useGrokUi = translateMethod === 'grok_ui';
+
+  // Search memory context (non-blocking: timeout 3s nếu worker chưa sẵn sàng)
+  let localMemoryContext: string | undefined;
+  try {
+    const memProjectId = (projectId || '').trim();
+    const memSourcePath = (sourcePath || '').trim();
+    if (memProjectId && memSourcePath) {
+      const service = getMemoryContextService();
+      const avail = service.isAvailable();
+      let canSearch = avail === true;
+      if (avail === null) {
+        try {
+          await Promise.race([
+            service.getHealth(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('MEMORY_TIMEOUT')), 3000)),
+          ]);
+          canSearch = service.isAvailable() === true;
+        } catch {
+          // Worker not ready yet — skip memory, batch proceeds without waiting
+        }
+      }
+      if (canSearch) {
+        const memoryNamespace = buildCaptionMemoryNamespace(memProjectId, memSourcePath);
+        console.time(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1}`);
+        const searchResult = await service.searchContext({
+          projectId: memProjectId,
+          feature: CAPTION_MEMORY_FEATURE,
+          namespace: memoryNamespace,
+          queryText: batch.texts.join('\n'),
+          topK: CAPTION_MEMORY_TOP_K,
+          metadata: { batchIndex, chapterIndex: batchIndex, totalChapters: totalBatches },
+        });
+        console.timeEnd(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1}`);
+        if (searchResult.success && searchResult.promptContext) {
+          localMemoryContext = searchResult.promptContext;
+          const lineCount = searchResult.promptContext.split('\n').filter((l) => l.trim()).length;
+          console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: found ${searchResult.memories?.length ?? 0} memories (${lineCount} lines)`);
+        } else {
+          console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: no context returned (success=${searchResult.success})`);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1} thất bại:`, error);
+  }
+
+  // Lấy API key nếu cần
+  let assignedKey: { apiKey: string; keyInfo: KeyInfo } | undefined;
+  if (!useImpit && !useGrokUi && !useGeminiWebQueue) {
+    const manager = getApiManager();
+    const keyResult = manager.getNextApiKey();
+    assignedKey = keyResult.apiKey && keyResult.keyInfo ? { apiKey: keyResult.apiKey, keyInfo: keyResult.keyInfo } : undefined;
+    console.log(`[CaptionTranslator] Batch #${batchIndex + 1}: gán key [${assignedKey?.keyInfo.name ?? 'rotation'}]`);
+  }
+
+  // Gemini Web Queue setup
+  let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
+  let geminiStickyResourceId: string | null = null;
+  if (useGeminiWebQueue) {
+    geminiWebQueueContext = ensureCaptionGeminiWebQueueRuntime();
+    if (geminiWebQueueContext) {
+      const snapshot = geminiWebQueueContext.queue.getSnapshot();
+      const enabledResources = snapshot.resources.filter(
+        (r) => r.poolId === CAPTION_GEMINI_WEB_QUEUE_POOL_ID && r.enabled
+      );
+      if (enabledResources.length > 0) {
+        geminiStickyResourceId = enabledResources[0].resourceId;
+      }
+    }
+  }
+
+  // Tạo thư mục debug lưu prompt
+  const debugSaveDir = (() => {
+    try {
+      const rawSourcePath = (sourcePath || '').trim();
+      if (!rawSourcePath) return undefined;
+      const inputType = rawSourcePath.toLowerCase().endsWith('.srt') ? 'srt' : 'draft';
+      const outputDir = getCaptionOutputDirFromInput(inputType as 'srt' | 'draft', rawSourcePath);
+      if (!outputDir) return undefined;
+      const debugDir = path.join(outputDir, 'debug_prompts');
+      fs.mkdirSync(debugDir, { recursive: true });
+      return debugDir;
+    } catch {
+      return undefined;
+    }
+  })();
+
+  const totalAttempts = useGeminiWebQueue
+    ? CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS
+    : Math.max(1, 2 + 1); // 1 lần đầu + 2 lần retry
+  const queueGapMs = useGrokUi
+    ? Number(AppSettingsService.getAll().grokUiRequestDelayMs || 3000)
+    : Number(AppSettingsService.getAll().apiRequestDelayMs || 2000);
+
+  let attempt = 0;
+  let lastResult: BatchTranslationResult | null = null;
+  let bestTexts: string[] = Array.from({ length: batch.texts.length }, () => '');
+  let bestTranslatedCount = -1;
+
+  while (attempt < totalAttempts) {
+    throwIfTranslationStopped(runId);
+    attempt++;
+    const isRetryAttempt = attempt > 1;
+
+    if (useGeminiWebQueue && !geminiStickyResourceId) {
+      lastResult = {
+        success: false,
+        translatedTexts: bestTexts,
+        error: `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Không còn account Gemini Web khả dụng.`,
+        transport: 'gemini_webapi_queue' as TranslationTransport,
+      };
+      break;
+    }
+
+    // Pacing giữa các lần retry
+    if (isRetryAttempt) {
+      const cooldown = queueGapMs;
+      console.log(`[CaptionTranslator] Retry cooldown ${cooldown}ms`);
+      await new Promise((resolve) => setTimeout(resolve, cooldown));
+      throwIfTranslationStopped(runId);
+    }
+
+    const batchResult: BatchTranslationResult = useGeminiWebQueue
+      ? await translateBatchGeminiWebQueue(
+          batch,
+          targetLanguage,
+          promptTemplate,
+          (projectId || '').trim() || '__default_project__',
+          (sourcePath || '').trim() || '__unknown_source__',
+          geminiWebQueueContext!,
+          { preferredResourceId: geminiStickyResourceId || undefined, maxAttempts: 1 },
+          localMemoryContext,
+          debugSaveDir,
+        )
+      : useImpit
+        ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext, debugSaveDir)
+        : useGrokUi
+          ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
+          : await translateBatch(
+              batch,
+              model as GeminiModel,
+              targetLanguage,
+              promptTemplate,
+              assignedKey,
+              () => shouldStopTranslation(runId),
+              undefined,
+              localMemoryContext,
+              debugSaveDir,
+            );
+
+    lastResult = batchResult;
+
+    const normalizedTexts = Array.from(
+      { length: batch.texts.length },
+      (_, idx) => batchResult.translatedTexts?.[idx] ?? '',
+    );
+    const translatedLineCount = normalizedTexts.filter((t) => t.trim()).length;
+    if (translatedLineCount > bestTranslatedCount) {
+      bestTranslatedCount = translatedLineCount;
+      bestTexts = normalizedTexts;
+    }
+
+    if (batchResult.success) {
+      bestTexts = normalizedTexts;
+      // Store memory
+      try {
+        const memProjectId = (projectId || '').trim();
+        const memSourcePath = (sourcePath || '').trim();
+        if (memProjectId && memSourcePath) {
+          const memoryNamespace = buildCaptionMemoryNamespace(memProjectId, memSourcePath);
+          const addResult = await getMemoryContextService().addMemory({
+            projectId: memProjectId,
+            feature: CAPTION_MEMORY_FEATURE,
+            namespace: memoryNamespace,
+            sourceText: batch.texts.join('\n'),
+            translatedText: normalizedTexts.join('\n'),
+            metadata: {
+              chapterIndex: batchIndex,
+              totalChapters: totalBatches,
+              batchSize: batch.texts.length,
+            },
+          });
+          if (addResult.success) {
+            console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: stored (${batch.texts.length} dòng)`);
+          } else {
+            console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store failed: ${addResult.error || 'unknown'}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store exception:`, error);
+      }
+
+      return {
+        success: true,
+        translatedTexts: bestTexts,
+        batchIndex,
+        transport: batchResult.transport,
+        resourceId: batchResult.resourceId,
+        resourceLabel: batchResult.resourceLabel,
+        queueRuntimeKey: batchResult.queueRuntimeKey,
+      };
+    }
+
+    // Gemini Web Queue: failover
+    if (useGeminiWebQueue) {
+      const failedResourceId = (batchResult.resourceId || '').trim();
+      if (failedResourceId && geminiWebQueueContext) {
+        geminiWebQueueContext.queue.setResourceEnabled(
+          CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
+          failedResourceId,
+          false,
+        );
+      }
+      if (geminiStickyResourceId === failedResourceId) {
+        geminiStickyResourceId = null;
+      }
+      if (attempt >= totalAttempts) {
+        break;
+      }
+      continue;
+    }
+
+    // API/Impit/Grok UI: kiểm tra retryable
+    let retryable = !batchResult.success;
+    if (retryable && batchResult.error) {
+      const errorText = batchResult.error.toLowerCase();
+      if (!errorText.includes('error_count_mismatch') && !(errorText.includes('thiếu') && errorText.includes('dòng'))) {
+        const translatedCount = normalizedTexts.filter((t) => t.trim()).length;
+        retryable = translatedCount < batch.texts.length;
+      }
+    }
+    if (!retryable || attempt >= totalAttempts) {
+      break;
+    }
+  }
+
+  return {
+    success: lastResult?.success ?? false,
+    translatedTexts: bestTexts,
+    batchIndex,
+    error: lastResult?.error || 'Batch translation failed',
+    transport: lastResult?.transport,
+    resourceId: lastResult?.resourceId,
+    resourceLabel: lastResult?.resourceLabel,
+    queueRuntimeKey: lastResult?.queueRuntimeKey,
+  };
 }
 
 /**

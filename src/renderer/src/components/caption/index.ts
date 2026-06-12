@@ -8,7 +8,6 @@ export { ThumbnailListPanel } from './components/ThumbnailListPanel';
 export { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
 export type {
   SubtitleEntry,
-  TranslationProgress,
   TTSProgress,
   ThumbnailFolderItem,
   HardsubTimingMetrics,

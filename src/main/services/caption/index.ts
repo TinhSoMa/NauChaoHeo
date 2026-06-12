@@ -20,7 +20,6 @@ export {
 
 // Text Splitter
 export {
-  splitForTranslation,
   mergeTranslatedTexts,
   createTranslationPrompt,
   parseJsonTranslationResponse,
@@ -32,6 +31,7 @@ export {
 // Caption Translator
 export {
   translateAll,
+  translateSingleBatch,
   translateSingleText,
   stopActiveTranslation,
   beginTranslationRun,

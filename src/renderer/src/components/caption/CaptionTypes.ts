@@ -10,32 +10,6 @@ export interface SubtitleEntry {
   translatedText?: string;
 }
 
-export interface TranslationProgress {
-  current: number;
-  total: number;
-  message: string;
-  runId?: string;
-  batchIndex?: number;
-  totalBatches?: number;
-  status?: 'translating' | 'completed' | 'error';
-  eventType?: 'batch_started' | 'batch_retry' | 'batch_completed' | 'batch_failed' | 'summary';
-  batchReport?: TranslationBatchReport;
-  translatedChunk?: {
-    startIndex: number;
-    texts: string[];
-  };
-  folderHint?: string;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
-  resourceId?: string;
-  resourceLabel?: string;
-  queueRuntimeKey?: string;
-  queuePacingMode?: 'dispatch_spacing_global';
-  queueGapMs?: number;
-  startedAt?: number;
-  endedAt?: number;
-  nextAllowedAt?: number;
-}
-
 export interface TranslationBatchReport {
   batchIndex: number;
   startIndex: number;

@@ -570,8 +570,6 @@ class WorkerRuntime:
             chapter_label = f"{chapter_label}: {chapter_title}" if chapter_label else chapter_title
         glossary = ", ".join(entities[:8])
         translated = " ".join(str(payload.get("translatedText") or "").split())
-        if len(translated) > 500:
-            translated = translated[:500].rstrip() + "..."
         parts = []
         if chapter_label:
             parts.append(f"[{chapter_label}]")
