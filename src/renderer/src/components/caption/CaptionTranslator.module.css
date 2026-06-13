@@ -49,14 +49,14 @@
 }
 
 .previewDockTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-primary);
   margin-bottom: 8px;
 }
 
 .previewDockHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   margin-bottom: 8px;
 }
@@ -76,9 +76,9 @@
 }
 
 .previewSourceTag {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   padding: 2px 6px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -101,19 +101,19 @@
 }
 
 .thumbnailPreviewTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .thumbnailPreviewSource {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .thumbnailPreviewMeta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   margin-bottom: 8px;
 }
@@ -140,7 +140,7 @@
 }
 
 .thumbnailPreviewPlaceholder {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -153,14 +153,14 @@
 }
 
 .thumbnailPreviewStatus {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .thumbnailPreviewMessage {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -168,7 +168,7 @@
 }
 
 .header {
-  font-size: 24px;
+  font-size: var(--font-size-3xl);
   font-weight: bold;
   color: var(--color-primary);
   margin-bottom: 8px;
@@ -207,7 +207,7 @@
 }
 
 .accordionTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -227,7 +227,7 @@
 }
 
 .statusBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 999px;
@@ -266,14 +266,14 @@
 }
 
 .sectionTitle {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--color-primary);
   margin-bottom: 12px;
 }
 
 .sectionTitleCompact {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-primary);
   margin-bottom: 10px;
@@ -288,7 +288,7 @@
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
   outline: none;
   cursor: pointer;
 }
@@ -302,7 +302,7 @@
 
 
 .label {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   margin-bottom: 4px;
   display: block;
@@ -314,7 +314,7 @@
 
 .textMuted {
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
 }
 
 .progressBar {
@@ -378,7 +378,7 @@
 }
 
 .step7SummaryTitle {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -386,7 +386,7 @@
 }
 
 .step7SummaryHint {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -411,14 +411,14 @@
 }
 
 .step7SummaryItemLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .step7SummaryItemValue {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.25;
@@ -426,7 +426,7 @@
 }
 
 .step7SummaryItemDetail {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   word-break: break-word;
 }
@@ -450,19 +450,19 @@
 }
 
 .step7AudioTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .step7AudioSubtitle {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .step7AudioStatusBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   border-radius: 999px;
   border: 1px solid var(--color-border);
@@ -515,14 +515,14 @@
 }
 
 .step7AudioMetaLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-secondary);
 }
 
 .step7AudioMetaValue {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   min-width: 0;
   word-break: break-word;
@@ -555,7 +555,7 @@
 }
 
 .audioPreviewProgressText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -573,7 +573,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -604,14 +604,14 @@
 }
 
 .stepGuardTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--color-error, #ef4444);
   margin-bottom: 6px;
 }
 
 .stepGuardItem {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   line-height: 1.4;
 }
@@ -625,7 +625,7 @@
 }
 
 .configSummaryTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-primary);
   margin-bottom: 6px;
@@ -645,13 +645,13 @@
 }
 
 .configSummaryKey {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .configSummaryValue {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   text-align: right;
   overflow: hidden;
@@ -674,7 +674,7 @@
 }
 
 .resetBtnLike {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 10px;
   border-radius: 6px;
   background: var(--color-surface);
@@ -694,13 +694,13 @@
 
 .runBarHeader .statusBadge {
   padding: 2px 6px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   border-radius: 999px;
 }
 
 .runBarHeader .resetBtnLike {
   padding: 3px 8px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
 }
 
 /* Progress Section */
@@ -809,14 +809,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-text-primary);
   width: 100%;
 }
 
 .folderBoxSubText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -841,7 +841,7 @@
 }
 
 .folderSrtLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -859,7 +859,7 @@
   background: transparent;
   border-radius: 6px;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   cursor: pointer;
 }
@@ -887,7 +887,7 @@
 }
 
 .folderIcon {
-  font-size: 14px;
+  font-size: var(--font-size-base);
 }
 
 .folderName {
@@ -912,7 +912,7 @@
   align-items: flex-start;
   gap: 10px;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
   flex-wrap: wrap;
@@ -925,7 +925,7 @@
 }
 
 .thumbnailListHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 400;
   color: var(--color-text-secondary);
 }
@@ -939,7 +939,7 @@
 }
 
 .thumbnailListCountBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1;
   padding: 5px 8px;
   border-radius: 999px;
@@ -966,7 +966,7 @@
 }
 
 .thumbnailToolbarLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1000,7 +1000,7 @@
   background: var(--color-card);
   color: var(--color-text-primary);
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   outline: none;
 }
 
@@ -1013,7 +1013,7 @@
   border-radius: 6px;
   background: var(--color-card);
   color: var(--color-text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   padding: 6px 10px;
   cursor: pointer;
@@ -1039,7 +1039,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-card);
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
 }
 
@@ -1067,7 +1067,7 @@
   background: var(--color-card);
   color: var(--color-text-primary);
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 1.4;
   resize: vertical;
   min-height: 108px;
@@ -1085,7 +1085,7 @@
 }
 
 .thumbnailBulkHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   line-height: 1.35;
 }
@@ -1094,7 +1094,7 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 7px 9px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.4;
   background: var(--color-surface);
   color: var(--color-text-primary);
@@ -1159,7 +1159,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
   background: var(--color-surface);
@@ -1173,7 +1173,7 @@
 
 .thumbnailListFolder,
 .thumbnailListVideo {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   white-space: normal;
   word-break: break-word;
@@ -1186,9 +1186,9 @@
 }
 
 .thumbnailListPath {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   border: 1px dashed var(--color-border);
   border-radius: 6px;
   padding: 5px 8px;
@@ -1212,7 +1212,7 @@
 }
 
 .thumbnailListFieldLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--color-text-secondary);
 }
@@ -1224,7 +1224,7 @@
   background: var(--color-surface);
   color: var(--color-text-primary);
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   outline: none;
   resize: vertical;
@@ -1245,7 +1245,7 @@
 
 .thumbnailListWarning {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-warning, #f59e0b);
 }
 
@@ -1259,7 +1259,7 @@
 
 .thumbnailOverrideBadge,
 .thumbnailFollowBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 999px;
@@ -1283,7 +1283,7 @@
   border-radius: 6px;
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   padding: 4px 6px;
   cursor: pointer;
 }
@@ -1385,7 +1385,7 @@
 }
 
 .topStripMeta span {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -1429,7 +1429,7 @@
 }
 
 .stepRailTitle {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1438,7 +1438,7 @@
 }
 
 .stepRailCurrent {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   color: var(--color-text-primary);
   border: 1px solid var(--color-border);
@@ -1508,13 +1508,13 @@
 }
 
 .stepStatusCode {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .stepStatusName {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1523,9 +1523,9 @@
 
 .stepStatusElapsed {
   margin-left: auto;
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   border: 1px dashed color-mix(in srgb, var(--color-border) 84%, transparent);
   border-radius: 999px;
   padding: 1px 5px;
@@ -1533,7 +1533,7 @@
 }
 
 .stepStatusState {
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1654,7 +1654,7 @@
   right: 28px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   font-weight: 800;
   padding: 2px 6px;
   border-radius: 999px;
@@ -1717,7 +1717,7 @@
 }
 
 .stepTabLabel {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -1745,7 +1745,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
   margin-right: auto;
@@ -1773,7 +1773,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   outline: none;
 }
 
@@ -1810,7 +1810,7 @@
 }
 
 .commonConfigTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
   text-transform: uppercase;
@@ -1834,7 +1834,7 @@
   color: var(--color-text-secondary);
   border-radius: 7px;
   padding: 5px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1881,13 +1881,13 @@
 }
 
 .commonInlineValue {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   font-weight: 700;
 }
 
 .commonHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   word-break: break-word;
 }
@@ -1908,7 +1908,7 @@
 }
 
 .colorHistoryLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1962,20 +1962,20 @@
 }
 
 .inspectorTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
   margin-bottom: 4px;
 }
 
 .inspectorHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .inspectorStepDataBtn {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 9px;
   margin-left: auto;
 }
@@ -1993,7 +1993,7 @@
   color: var(--color-text-secondary);
   border-radius: 7px;
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   cursor: pointer;
 }
@@ -2048,12 +2048,12 @@
 }
 
 .step3BatchStatLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
 }
 
 .step3BatchStatValue {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -2080,20 +2080,20 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   flex-wrap: wrap;
 }
 
 .step3BatchMetaMono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
 }
 
 .step3BatchTableHeader {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.5fr) minmax(0, 0.8fr) minmax(0, 0.5fr);
   gap: 8px;
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-secondary);
@@ -2133,7 +2133,7 @@
   background: var(--color-card);
   color: var(--color-text-primary);
   border-radius: 8px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   padding: 4px 8px;
   cursor: pointer;
@@ -2151,13 +2151,13 @@
 }
 
 .step3BatchTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .step3BatchSub {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   min-width: 0;
   overflow: hidden;
@@ -2172,7 +2172,7 @@
   justify-content: center;
   border-radius: 999px;
   border: 1px solid var(--color-border);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   line-height: 1;
   padding: 4px 7px;
@@ -2203,10 +2203,10 @@
 }
 
 .step3BatchTime {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
 }
 
 .step3BatchErrorRow {
@@ -2217,7 +2217,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-error, #ef4444);
   flex-wrap: wrap;
 }
@@ -2244,7 +2244,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
 
@@ -2254,19 +2254,19 @@
 }
 
 .ttsErrorPath {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   color: var(--color-text-secondary);
 }
 
 .ttsErrorText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .ttsErrorReason {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-error, #ef4444);
   word-break: break-word;
 }
@@ -2303,7 +2303,7 @@
 }
 
 .modalTitle {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -2323,12 +2323,12 @@
 }
 
 .modalError {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-error, #ef4444);
 }
 
 .modalHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -2342,7 +2342,7 @@
 .modalSecondaryBtn {
   border-radius: 8px;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   cursor: pointer;
 }
@@ -2383,7 +2383,7 @@
   color: var(--color-text-primary);
   border-radius: 8px;
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   cursor: pointer;
 }
@@ -2395,7 +2395,7 @@
 
 .step3BulkMultiCount {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -2405,11 +2405,11 @@
   color: var(--color-warning, #f59e0b);
   border-radius: 8px;
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .step3BulkMultiMessage {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -2423,7 +2423,7 @@
 }
 
 .step3BulkMultiResultTitle {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -2444,7 +2444,7 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .step3BulkMultiResultRowSuccess {
@@ -2484,7 +2484,7 @@
 }
 
 .step3BulkMultiResultIssue {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
@@ -2500,7 +2500,7 @@
 }
 
 .step3BulkMultiResultIssueMore {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
 }
 
@@ -2522,7 +2522,7 @@
 }
 
 .step3BulkMultiColumnTitle {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -2562,16 +2562,16 @@
 .step3BulkMultiFileRow .step3BulkMultiBadge {
   min-width: 16px;
   height: 16px;
-  font-size: 8px;
+  font-size: calc(var(--font-size-2xs) - 1px);
 }
 
 .step3BulkMultiFileRow .step3BulkMultiText {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   line-height: 1.15;
 }
 
 .step3BulkMultiFileRow .step3BulkMultiMeta {
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   line-height: 1.1;
 }
 
@@ -2604,14 +2604,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   font-weight: 700;
   background: color-mix(in srgb, var(--color-accent, #4a9eff) 22%, transparent);
   color: var(--color-accent, #4a9eff);
 }
 
 .step3BulkMultiText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   flex: 1;
   overflow: hidden;
@@ -2620,12 +2620,12 @@
 }
 
 .step3BulkMultiMeta {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
 }
 
 .step3BulkMultiEmpty {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   padding: 4px;
 }
@@ -2641,7 +2641,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
 }
 
@@ -2684,13 +2684,13 @@
 }
 
 .step3BulkMultiDetailTitle {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .step3BulkMultiDetailFilter {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   display: inline-flex;
   align-items: center;
@@ -2698,7 +2698,7 @@
 }
 
 .step3BulkMultiDetailHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -2708,11 +2708,11 @@
   background: color-mix(in srgb, var(--color-error, #ef4444) 10%, transparent);
   color: var(--color-error, #ef4444);
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .step3BulkMultiDetailMeta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -2755,13 +2755,13 @@
 }
 
 .step3BulkMultiDetailBatchMeta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   flex: 1;
 }
 
 .step3BulkMultiDetailBatchStatus {
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   font-weight: 700;
   border-radius: 999px;
   padding: 2px 7px;
@@ -2792,7 +2792,7 @@
 }
 
 .step3BulkMultiDetailIndexError {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-error, #ef4444);
 }
 
@@ -2802,7 +2802,7 @@
 }
 
 .step3BulkMultiDetailIssue {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   border: 1px solid var(--color-border);
   border-radius: 7px;
   padding: 4px 6px;
@@ -2844,7 +2844,7 @@
 
 .step3BulkMultiDetailLineTable th,
 .step3BulkMultiDetailLineTable td {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   text-align: left;
   vertical-align: top;
   color: var(--color-text-primary);
@@ -2867,7 +2867,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: calc(var(--font-size-2xs) - 1px);
   font-weight: 700;
   border-radius: 999px;
   padding: 2px 6px;
@@ -2920,7 +2920,7 @@
 }
 
 .step3BulkMultiDetailPopupTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -2988,13 +2988,13 @@
 }
 
 .stepDataDrawerTitle {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 800;
   color: var(--color-text-primary);
 }
 
 .stepDataDrawerHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -3026,7 +3026,7 @@
   min-width: 38px;
   height: 26px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   cursor: pointer;
 }
@@ -3053,7 +3053,7 @@
   border-radius: 7px;
   height: 28px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   cursor: pointer;
 }
@@ -3074,7 +3074,7 @@
   border: 1px dashed var(--color-border);
   border-radius: 10px;
   padding: 14px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   background: var(--color-surface);
 }
@@ -3099,7 +3099,7 @@
 }
 
 .stepDataSectionTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   color: var(--color-text-primary);
   margin-bottom: 4px;
@@ -3113,12 +3113,12 @@
 }
 
 .stepDataSummaryLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .stepDataSummaryValue {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   word-break: break-word;
 }
@@ -3136,11 +3136,11 @@
 }
 
 .stepDataMono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .stepDataEmptyText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -3163,20 +3163,20 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .stepDataArtifactPath {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   word-break: break-all;
 }
 
 .stepDataArtifactNote {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
 }
 
@@ -3190,10 +3190,10 @@
 .stepDataJsonBlock {
   margin: 0;
   padding: 12px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.45;
   color: var(--color-text-primary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   max-height: min(68vh, 760px);
   overflow: auto;
   white-space: pre;
@@ -3210,7 +3210,7 @@
 }
 
 .stepDataCopyNotice {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -3237,13 +3237,13 @@
 }
 
 .stepCardTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .stepCardHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -3255,7 +3255,7 @@
 }
 
 .stepMetaPill {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
@@ -3291,14 +3291,14 @@
 }
 
 .durationFilterUnit {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--color-text-secondary);
 }
 
 .stepCompactBtn {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   height: 28px;
   display: inline-flex;
   align-items: center;
@@ -3321,13 +3321,13 @@
   border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   background: var(--color-surface);
 }
 
 .stepInfoNote {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -3344,9 +3344,9 @@
 }
 
 .step4VoiceTestStatus {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .step4VoiceTestStatusError {
@@ -3370,14 +3370,14 @@
 }
 
 .stepRuntimeLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
 }
 
 .stepRuntimeValue {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   font-weight: 700;
   overflow: hidden;
@@ -3386,9 +3386,9 @@
 }
 
 .stepRuntimeTimer {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-accent, #4a9eff);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .folderIconCompact {
@@ -3433,7 +3433,7 @@
 }
 
 .runBarTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -3515,7 +3515,7 @@
 }
 
 .previewControlsLabel {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3531,7 +3531,7 @@
 }
 
 .scrubberHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
@@ -3570,9 +3570,9 @@
 }
 
 .positionInfo {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   background: var(--color-surface);
   padding: 4px 8px;
   border-radius: 4px;
@@ -3593,7 +3593,7 @@
 .resolutionSelect {
   width: auto;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   height: 24px;
   background-color: transparent;
   border: 1px solid var(--color-border);
@@ -3610,7 +3610,7 @@
 }
 
 .realPreviewStatusBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 2px 8px;
@@ -3621,6 +3621,6 @@
 }
 
 .realPreviewStatusText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }

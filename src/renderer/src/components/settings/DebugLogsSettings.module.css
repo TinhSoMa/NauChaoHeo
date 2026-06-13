@@ -5,7 +5,7 @@
 }
 
 .headerSubtitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
 
@@ -30,7 +30,7 @@
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
   outline: none;
   min-width: 140px;
   cursor: pointer;
@@ -53,7 +53,7 @@
 
 .logPanelTitle {
   font-weight: 600;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 
 .logPanelBody {
@@ -79,7 +79,7 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   opacity: 0.72;
 }
@@ -87,7 +87,7 @@
 .badge {
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
 }
 
@@ -134,14 +134,14 @@
 .sourceChip {
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
 }
 
 .message {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--color-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
@@ -155,5 +155,5 @@
 }
 
 .mono {
-  font-family: 'SFMono-Regular', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-family: var(--font-mono);
 }

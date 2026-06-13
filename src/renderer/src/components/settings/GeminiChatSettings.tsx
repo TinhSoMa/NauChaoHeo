@@ -20,7 +20,6 @@ import {
   getTokenStats,
   type GeminiChatConfig,
   type GeminiChatListTab,
-  type GeminiChatSettingsProps,
   type LiveTokenStats,
   type ProxyInfo,
   type TokenStats
@@ -33,7 +32,7 @@ const MIN_SEND_INTERVAL_SECONDS = 5;
 const MAX_SEND_INTERVAL_SECONDS = 120;
 const DEFAULT_SEND_INTERVAL_SECONDS = 20;
 
-export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
+export function GeminiChatSettings() {
   // Mode: 'list' | 'edit' | 'create'
   const [mode, setMode] = useState<'list' | 'edit' | 'create'>('list');
   const [configs, setConfigs] = useState<GeminiChatConfig[]>([]);
@@ -538,7 +537,6 @@ export function GeminiChatSettings({ onBack }: GeminiChatSettingsProps) {
     return (
       <div className={styles.detailContainer}>
         <div className={styles.detailHeader}>
-          <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại"><ArrowLeft size={20} /></Button>
           <div className="flex-1">
              <div className={styles.detailTitle}>Gemini Chat (Web)</div>
              <div className="text-xs text-(--color-text-secondary) mt-1">

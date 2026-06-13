@@ -3,6 +3,15 @@
 
 @theme {
   --animate-fade-in: fade-in 0.3s ease-out;
+  --text-2xs: var(--font-size-2xs);
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-base: var(--font-size-base);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
+  --text-2xl: var(--font-size-2xl);
+  --text-3xl: var(--font-size-3xl);
+  --text-hero: var(--font-size-hero);
 }
 
 @keyframes fade-in {
@@ -13,7 +22,20 @@
 /* Light Mode (Ocean Breeze) - Default */
 :root {
   color-scheme: light;
-  
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-size-2xs: calc(var(--font-size-base) - 4px);
+  --font-size-xs: calc(var(--font-size-base) - 2px);
+  --font-size-sm: calc(var(--font-size-base) - 1px);
+  --font-size-base: 14px;
+  --font-size-md: calc(var(--font-size-base) + 1px);
+  --font-size-lg: calc(var(--font-size-base) + 2px);
+  --font-size-xl: calc(var(--font-size-base) + 4px);
+  --font-size-2xl: calc(var(--font-size-base) + 8px);
+  --font-size-3xl: calc(var(--font-size-base) + 10px);
+  --font-size-hero: calc(var(--font-size-base) + 16px);
+    
   --color-background: #f8fafc; /* Slate 50 */
   --color-sidebar:    #ffffff;
   --color-card:       #ffffff;
@@ -83,7 +105,9 @@
 body {
   background-color: var(--color-background);
   color: var(--color-text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* @apply selection:bg-primary-light/30 selection:text-primary; - removed due to build error with opacity modifier on var */

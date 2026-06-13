@@ -33,7 +33,7 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
   background: color-mix(in srgb, var(--color-card) 85%, transparent);
   color: var(--color-text-primary);
@@ -45,14 +45,14 @@
 
 .title {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--font-size-3xl);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .subtitle {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
 
@@ -128,7 +128,7 @@
   padding: 7px 9px;
   background: color-mix(in srgb, var(--color-card) 86%, transparent);
   color: var(--color-text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .volumeBox {
@@ -139,7 +139,7 @@
 }
 
 .volumeLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -165,7 +165,7 @@
 }
 
 .percent {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -178,7 +178,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .table th {
@@ -223,13 +223,13 @@
 
 .outputText {
   word-break: break-all;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .errorText {
   margin-top: 4px;
   color: var(--color-error);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .emptyCell {
@@ -267,7 +267,7 @@
 }
 
 .cardTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -278,7 +278,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -298,7 +298,7 @@
 
 .progressMeta {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -331,7 +331,7 @@
 }
 
 .logEmpty {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -349,7 +349,7 @@
 }
 
 .logTime {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -367,7 +367,7 @@
 
 .logMessage {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   word-break: break-word;
 }
@@ -378,7 +378,7 @@
   justify-content: center;
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
 }
 

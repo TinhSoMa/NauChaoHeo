@@ -12,7 +12,7 @@
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   padding: 8px 14px;
   border-radius: 10px;
   cursor: pointer;
@@ -86,14 +86,14 @@
 .proxyTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .proxyTable thead {
   background: color-mix(in srgb, var(--glass-bg) 95%, transparent);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -145,7 +145,7 @@
   border: 1px solid var(--glass-border);
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   padding: 4px 8px;
   border-radius: 999px;
   cursor: pointer;
@@ -157,7 +157,7 @@
   gap: 6px;
   padding: 4px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   border: 1px solid transparent;
 }
@@ -181,7 +181,7 @@
 }
 
 .typeBadge {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 8px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--glass-bg) 80%, transparent);
@@ -190,8 +190,8 @@
 }
 
 .monoText {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }
 
 .locationCell {
@@ -201,13 +201,13 @@
 }
 
 .locationMain {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .locationSub {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -236,7 +236,7 @@
 }
 
 .rateText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   min-width: 36px;
 }
@@ -252,14 +252,14 @@
 }
 
 .detailLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-secondary);
 }
 
 .detailValue {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-primary);
 }
 
@@ -316,7 +316,7 @@
 }
 
 .scopeDesc {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -333,7 +333,7 @@
 }
 
 .scopeChip {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 3px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--glass-bg) 80%, transparent);
@@ -361,7 +361,7 @@
 }
 
 .scopeHint {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
 }
 
@@ -387,12 +387,12 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--color-text-primary);
 }
 
 .accordionHint {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -426,12 +426,12 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
 
 .helpText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -442,7 +442,7 @@
   border-radius: 10px;
   border: 1px solid var(--glass-border);
   padding: 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
   color: var(--color-text-primary);
 }
@@ -457,7 +457,7 @@
 
 .noteBox h4 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-primary);
 }
 
@@ -467,7 +467,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 @media (max-width: 1100px) {

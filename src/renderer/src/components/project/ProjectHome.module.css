@@ -21,25 +21,25 @@
 }
 
 .title {
-  font-size: 22px;
+  font-size: var(--font-size-2xl);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .subtitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   margin-top: 4px;
 }
 
 .path {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
   margin-top: 4px;
 }
 
 .mono {
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .headerActions {
@@ -51,7 +51,7 @@
 .secondaryButton {
   border-radius: 10px;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   border: 1px solid var(--glass-border);
   background: color-mix(in srgb, var(--glass-bg) 90%, transparent);
   color: var(--color-text-primary);
@@ -120,13 +120,13 @@
 }
 
 .tileTitle {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .tileDesc {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   line-height: 1.4;
 }

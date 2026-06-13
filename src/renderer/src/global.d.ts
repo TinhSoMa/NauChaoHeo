@@ -1356,6 +1356,27 @@ declare global {
     onCountdown: (callback: (payload: ShutdownStatus) => void) => () => void;
   }
 
+  interface OpenRouterAPI {
+    chat: (messages: any[], options?: any) => Promise<IpcApiResponse>;
+    getModels: () => Promise<IpcApiResponse>;
+    getKeyInfo: () => Promise<IpcApiResponse>;
+    getConfig: () => Promise<IpcApiResponse>;
+    setConfig: (partial: any) => Promise<IpcApiResponse>;
+    getAllAccounts: () => Promise<IpcApiResponse>;
+    addAccount: (email: string, projects: { projectName: string; apiKey: string; notes?: string }[]) => Promise<IpcApiResponse>;
+    removeAccount: (accountId: string) => Promise<IpcApiResponse>;
+    addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) => Promise<IpcApiResponse>;
+    removeProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse>;
+    enableAccount: (accountId: string) => Promise<IpcApiResponse>;
+    disableAccount: (accountId: string) => Promise<IpcApiResponse>;
+    enableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse>;
+    disableProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse>;
+    importKeys: (jsonString: string) => Promise<IpcApiResponse>;
+    exportKeys: () => Promise<IpcApiResponse>;
+    hasKeys: () => Promise<IpcApiResponse>;
+    getKeyStats: () => Promise<IpcApiResponse>;
+  }
+
   interface Window {
     electronAPI: {
       // Cac method co ban
@@ -1415,6 +1436,9 @@ declare global {
 
       // CapCut TTS Secrets API
       capcutTtsSecrets: CapcutTtsSecretsAPI;
+
+      // OpenRouter API
+      openRouter: OpenRouterAPI;
     };
   }
 }

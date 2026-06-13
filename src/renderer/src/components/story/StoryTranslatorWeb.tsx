@@ -824,7 +824,7 @@ export function StoryTranslatorWeb() {
                 </button>
                 <span className={`truncate text-sm flex-1 ${!isChapterIncluded(c.id) && 'opacity-50 line-through'}`}>{c.title}</span>
                 {processingTimes.has(c.id) && (
-                    <span className="text-[10px] text-gray-400 font-mono">
+                    <span className="text-2xs text-gray-400 font-mono">
                         {(processingTimes.get(c.id)! / 1000).toFixed(1)}s
                     </span>
                 )}

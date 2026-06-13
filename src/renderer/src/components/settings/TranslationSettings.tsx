@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { ArrowLeft, Save, RotateCcw, Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Save, RotateCcw, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import styles from './Settings.module.css';
@@ -12,10 +12,6 @@ import {
   DEFAULT_BATCH_SIZE,
   DEFAULT_RETRY_COUNT,
 } from '../../config/captionConfig';
-
-interface TranslationSettingsProps {
-  onBack: () => void;
-}
 
 type ModelDraft = {
   modelId: string;
@@ -60,7 +56,7 @@ function sortModels(models: ModelDraft[]): ModelDraft[] {
   });
 }
 
-export function TranslationSettings({ onBack }: TranslationSettingsProps) {
+export function TranslationSettings() {
   const [defaultModel, setDefaultModel] = useState<string>(DEFAULT_GEMINI_MODEL);
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
   const [retryCount, setRetryCount] = useState(DEFAULT_RETRY_COUNT);
@@ -369,9 +365,6 @@ export function TranslationSettings({ onBack }: TranslationSettingsProps) {
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.detailTitle}>Dịch thuật</div>
       </div>
       

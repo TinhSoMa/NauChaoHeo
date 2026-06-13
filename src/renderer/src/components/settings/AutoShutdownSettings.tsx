@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Save, RotateCcw, Power, TimerReset } from 'lucide-react';
+import { Save, RotateCcw, Power, TimerReset } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import styles from './Settings.module.css';
-
-interface AutoShutdownSettingsProps {
-  onBack: () => void;
-}
 
 const DEFAULT_DELAY_MINUTES = 5;
 const MIN_DELAY_MINUTES = 1;
@@ -20,7 +16,7 @@ function clampDelay(value: unknown): number {
   return Math.min(MAX_DELAY_MINUTES, Math.max(MIN_DELAY_MINUTES, Math.round(numeric)));
 }
 
-export function AutoShutdownSettings({ onBack }: AutoShutdownSettingsProps) {
+export function AutoShutdownSettings() {
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
   const [delayInput, setDelayInput] = useState(String(DEFAULT_DELAY_MINUTES));
@@ -80,9 +76,6 @@ export function AutoShutdownSettings({ onBack }: AutoShutdownSettingsProps) {
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.detailTitle}>Auto Shutdown</div>
       </div>
 

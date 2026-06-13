@@ -31,7 +31,7 @@
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 700;
 }
 
@@ -63,13 +63,13 @@
 }
 
 .summaryLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted, #9cb0cc);
   margin-bottom: 4px;
 }
 
 .summaryValue {
-  font-size: 17px;
+  font-size: calc(var(--font-size-lg) + 1px);
   font-weight: 700;
 }
 
@@ -83,7 +83,7 @@
 
 .sectionTitle {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-muted, #9cb0cc);
 }
@@ -97,7 +97,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .table thead {
@@ -126,7 +126,7 @@
   min-width: 52px;
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -142,7 +142,7 @@
 }
 
 .muted {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted, #9cb0cc);
 }
 
@@ -152,7 +152,7 @@
   padding: 10px;
   background: rgba(248, 113, 113, 0.1);
   color: #fecaca;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .footer {

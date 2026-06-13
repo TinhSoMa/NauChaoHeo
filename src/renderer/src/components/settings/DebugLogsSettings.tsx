@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import sharedStyles from './Settings.module.css';
 import styles from './DebugLogsSettings.module.css';
-import type { SettingsDetailProps } from './types';
 import type { AppLogEntry, AppLogLevel, AppLogSource } from '@shared/types/appLogs';
 
 const MAX_LOCAL_LOGS = 1500;
@@ -27,7 +26,7 @@ function getRowClass(level: AppLogLevel): string {
   return styles.rowInfo;
 }
 
-export function DebugLogsSettings({ onBack }: SettingsDetailProps) {
+export function DebugLogsSettings() {
   const [logs, setLogs] = useState<AppLogEntry[]>([]);
   const [levelFilter, setLevelFilter] = useState<AppLogLevel | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState<AppLogSource | 'all'>('all');
@@ -80,9 +79,6 @@ export function DebugLogsSettings({ onBack }: SettingsDetailProps) {
   return (
     <div className={sharedStyles.detailContainer}>
       <div className={sharedStyles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.headerInfo}>
           <div className={sharedStyles.detailTitle}>Debug Logs</div>
           <div className={styles.headerSubtitle}>

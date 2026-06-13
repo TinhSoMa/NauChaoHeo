@@ -14,7 +14,7 @@
   --chip: color-mix(in srgb, var(--color-surface) 82%, transparent);
   --shadow: 0 18px 38px rgba(0, 0, 0, 0.18);
 
-  font-family: "Space Grotesk", "IBM Plex Sans", "Inter", system-ui, sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   background: transparent;
   min-height: 100%;
@@ -57,13 +57,13 @@
 }
 
 .brandTitle {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   letter-spacing: 0.2px;
 }
 
 .brandSubtitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -82,7 +82,7 @@
 .statusChip {
   padding: 6px 12px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   border: 1px solid var(--border-strong);
   background: var(--chip);
   color: var(--muted);
@@ -194,7 +194,7 @@
 }
 
 .panelTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   display: inline-flex;
@@ -204,7 +204,7 @@
 }
 
 .panelMeta {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -231,7 +231,7 @@
   border: none;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
   transition: all 150ms ease;
 }
@@ -270,7 +270,7 @@
 }
 
 .fieldLabel {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -312,8 +312,8 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text);
-  font-size: 12px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
   padding: 10px 12px;
 }
 
@@ -323,7 +323,7 @@
   color: var(--muted);
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -338,22 +338,22 @@
 }
 
 .helperTextMuted {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
 .errorText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--danger);
 }
 
 .warningText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--warning);
 }
 
 .successText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--success);
   display: inline-flex;
   align-items: center;
@@ -368,8 +368,8 @@
 }
 
 .monoText {
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   color: var(--text);
   max-width: 100%;
   overflow: hidden;
@@ -385,7 +385,7 @@
 .queueHeader {
   display: grid;
   grid-template-columns: 90px 1.2fr 1fr 160px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--muted);
@@ -429,7 +429,7 @@
   border-radius: 999px;
   border: 1px solid var(--border-strong);
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -470,7 +470,7 @@
 }
 
 .queueTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -478,19 +478,19 @@
 }
 
 .queueProgress {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
 .queueError {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--danger);
 }
 
 .queueOutput {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -511,7 +511,7 @@
   border: 1px solid var(--border);
   background: var(--panel-2);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .selectDisabled {
@@ -530,7 +530,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
   transition: all 150ms ease;
 }
@@ -559,7 +559,7 @@
 }
 
 .subFormatLabel {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -569,7 +569,7 @@
   border: 1px solid var(--border);
   background: var(--panel-2);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .playlistInfoBox {
@@ -580,7 +580,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -602,7 +602,7 @@
 }
 
 .progressMeta {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -624,12 +624,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
 .stageLabel {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--accent);
 }
 
@@ -640,8 +640,8 @@
   border: 1px solid var(--border);
   background: var(--panel-2);
   padding: 10px 12px;
-  font-size: 12px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
   color: var(--muted);
   scrollbar-width: thin;
 }
@@ -675,7 +675,7 @@
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 10px;
   cursor: pointer;
   transition: all 150ms ease;
@@ -716,7 +716,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   text-align: center;
   padding: 10px;
@@ -740,14 +740,14 @@
   display: grid;
   grid-template-columns: 90px 1fr;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .metaLabel {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
 }
 
 .metaValue {
@@ -804,7 +804,7 @@
 }
 
 .playlistModalTitle {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--text);
 }
@@ -822,7 +822,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--muted);
 }
 
@@ -830,7 +830,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .durationDot {
@@ -849,7 +849,7 @@
 }
 
 .playlistModalCount {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   display: inline-flex;
   align-items: center;
@@ -875,7 +875,7 @@
 }
 
 .playlistModalLoading {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   display: inline-flex;
   align-items: center;
@@ -896,7 +896,7 @@
   display: grid;
   grid-template-columns: 34px 36px 2fr 1fr 90px 1fr;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -939,7 +939,7 @@
 }
 
 .playlistModalIndex {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 
@@ -951,7 +951,7 @@
 }
 
 .playlistModalTitleText {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -960,7 +960,7 @@
 }
 
 .playlistModalSubText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -968,7 +968,7 @@
 }
 
 .playlistModalMetaCell {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -1027,7 +1027,7 @@
   background: transparent;
   border: none;
   color: var(--muted);
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   cursor: pointer;
 }
 
@@ -1052,7 +1052,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   background: var(--panel-2);
 }
 
@@ -1081,7 +1081,7 @@
 }
 
 .newCookieTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1094,7 +1094,7 @@
 }
 
 .fileLoaded {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--success);
 }
 
@@ -1104,8 +1104,8 @@
   border: 1px solid var(--border);
   background: var(--panel-2);
   color: var(--text);
-  font-size: 12px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
   padding: 8px 10px;
 }
 

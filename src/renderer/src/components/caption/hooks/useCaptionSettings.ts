@@ -1249,6 +1249,7 @@ export function useCaptionSettings() {
 
   const [inputType, setInputType] = useState<InputType>(DEFAULT_INPUT_TYPE);
   const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
+  const [openrouterModel, setOpenrouterModel] = useState<string>('');
   const [voice, setVoiceState] = useState(DEFAULT_VOICE);
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
@@ -1333,7 +1334,7 @@ export function useCaptionSettings() {
   }, []);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 6, 7]));
-  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui'>('api');
+  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter'>('api');
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
 
   const [settingsRevision, setSettingsRevision] = useState<number>(0);
@@ -1969,6 +1970,7 @@ export function useCaptionSettings() {
       subtitleFontSizeRel: activeProfile.subtitleFontSizeRel,
       inputType,
       geminiModel,
+      openrouterModel,
       translateMethod,
       voice,
       rate,
@@ -2072,6 +2074,7 @@ export function useCaptionSettings() {
     [
       inputType,
       geminiModel,
+      openrouterModel,
       translateMethod,
       voice,
       rate,
@@ -2110,8 +2113,9 @@ export function useCaptionSettings() {
     const fallback = fallbackProfiles ?? createDefaultLayoutProfiles();
     if (saved.inputType) setInputType(saved.inputType);
     if (saved.geminiModel) setGeminiModel(saved.geminiModel);
+    if (saved.openrouterModel) setOpenrouterModel(saved.openrouterModel);
     if (saved.translateMethod) {
-      setTranslateMethod(saved.translateMethod as 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui');
+      setTranslateMethod(saved.translateMethod as 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter');
     }
     if (saved.voice) setVoice(saved.voice);
     if (saved.rate) setRate(String(saved.rate));
@@ -2485,6 +2489,7 @@ export function useCaptionSettings() {
   return {
     inputType, setInputType,
     geminiModel, setGeminiModel,
+    openrouterModel, setOpenrouterModel,
     translateMethod, setTranslateMethod,
     voice, setVoice,
     rate, setRate,

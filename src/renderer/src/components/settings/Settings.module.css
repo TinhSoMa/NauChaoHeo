@@ -33,7 +33,7 @@
 }
 
 .pageTitle {
-  font-size: 24px;
+  font-size: var(--font-size-3xl);
   font-weight: 800;
   color: var(--color-text-primary);
   margin-bottom: 8px;
@@ -41,7 +41,7 @@
 }
 
 .pageDesc {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
 }
 
@@ -108,13 +108,13 @@
 }
 
 .cardTitle {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .cardDesc {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--color-text-secondary);
   line-height: 1.5;
 }
@@ -180,7 +180,7 @@
 
 
 .detailTitle {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -251,13 +251,13 @@
 }
 
 .labelText {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--color-text-primary);
   font-weight: 500;
 }
 
 .labelDesc {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   max-width: 400px;
 }
@@ -270,7 +270,7 @@
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
   outline: none;
   transition: border-color 0.2s;
 }
@@ -285,7 +285,7 @@
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
   outline: none;
   resize: vertical;
   transition: border-color 0.2s;
@@ -302,7 +302,7 @@
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
   outline: none;
   min-width: 180px;
   cursor: pointer;
@@ -403,7 +403,7 @@
 
 .apiPanelHeader {
   padding: 12px 14px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-secondary);
@@ -437,27 +437,27 @@
 }
 
 .apiKpiLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .apiKpiValue {
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   font-weight: 700;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   color: var(--color-text-primary);
 }
 
 .apiMetaRow {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .apiMetaValue {
   color: var(--color-text-primary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .apiToolbar {
@@ -474,13 +474,13 @@
 }
 
 .apiFieldLabel {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .apiFieldDesc {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -538,7 +538,7 @@
 }
 
 .apiAccountName {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -547,12 +547,12 @@
 }
 
 .apiAccountMeta {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .apiBadge {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 8px;
   border-radius: 999px;
   font-weight: 600;
@@ -569,15 +569,15 @@
 }
 
 .apiDetailTitle {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .apiDetailSubtitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .apiDetailActions {
@@ -627,7 +627,7 @@
 .apiActionButton {
   height: 32px;
   padding: 0 12px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   border-radius: 10px;
   background: color-mix(in srgb, var(--color-card) 70%, transparent);
   border: 1px solid var(--glass-border);
@@ -675,14 +675,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 6px;
   border-radius: 6px;
   font-weight: 600;
 }
 
 .apiProjectName {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -701,12 +701,12 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .apiKeyText {
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -738,7 +738,7 @@
   color: var(--color-error);
   padding: 6px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -750,13 +750,13 @@
   padding: 8px 10px;
   border: 1px solid var(--glass-border);
   background: color-mix(in srgb, var(--color-card) 85%, transparent);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .apiEmpty {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   text-align: center;
   padding: 16px 8px;
@@ -777,7 +777,7 @@
   color: var(--color-text-primary);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .settingsError {
@@ -786,7 +786,7 @@
   color: var(--color-text-primary);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .modelPanelHeader {
@@ -812,7 +812,7 @@
 }
 
 .modelStatChip {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   border: 1px solid var(--glass-border);
   border-radius: 999px;
@@ -840,7 +840,7 @@
   color: var(--color-text-secondary);
   border-radius: 999px;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
   transition: all 0.18s ease;
 }
@@ -865,7 +865,7 @@
 }
 
 .modelCreateTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
@@ -892,7 +892,7 @@
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
   padding: 16px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   text-align: center;
 }
 
@@ -919,14 +919,14 @@
 
 .modelIdText {
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .modelNameText {
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .modelBadges {
@@ -937,7 +937,7 @@
 }
 
 .modelBadge {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   border-radius: 999px;
   padding: 4px 8px;
   border: 1px solid var(--glass-border);
@@ -987,11 +987,11 @@
   align-items: center;
   gap: 6px;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .modelSource {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   border: 1px solid var(--glass-border);
   border-radius: 999px;
@@ -1093,7 +1093,7 @@
 }
 
 .modalTitle {
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -1106,8 +1106,8 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 13px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
   resize: vertical;
   outline: none;
   transition: border-color 0.2s;
@@ -1124,7 +1124,7 @@
   max-height: 200px;
   overflow-y: auto;
   background: color-mix(in srgb, var(--glass-bg) 85%, transparent);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .modalPreviewRow {
@@ -1142,8 +1142,8 @@
 
 .modalPreviewKeys {
   color: var(--color-text-secondary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }
 
 .modalActions {

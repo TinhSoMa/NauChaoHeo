@@ -15,6 +15,7 @@ import { grokUiApi, GrokUiAPI } from './grokUiApi'
 import { downloaderApi, DownloaderAPI } from './downloaderApi'
 import { shutdownApi, ShutdownAPI } from './shutdownApi'
 import { capcutTtsSecretsApi, CapcutTtsSecretsAPI } from './capcutTtsSecretsApi'
+import { createOpenRouterAPI, OpenRouterAPI } from './openrouterApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -89,6 +90,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // CapCut TTS Secrets API
   capcutTtsSecrets: capcutTtsSecretsApi,
+
+  // OpenRouter API
+  openRouter: createOpenRouterAPI(),
 })
 
 // Declare types for the exposed API
@@ -119,6 +123,7 @@ declare global {
       downloader: DownloaderAPI
       shutdown: ShutdownAPI
       capcutTtsSecrets: CapcutTtsSecretsAPI
+      openRouter: OpenRouterAPI
     }
   }
 }

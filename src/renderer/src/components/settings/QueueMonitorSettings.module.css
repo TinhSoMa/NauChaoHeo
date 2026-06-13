@@ -46,7 +46,7 @@
 
 .headerSubTitle {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -57,12 +57,12 @@
   border: 1px solid #e8b93c;
   background-color: #fff8e5;
   color: #8a6112;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .noticeWarning code {
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   padding: 1px 4px;
   background: rgba(0, 0, 0, 0.06);
   border-radius: 4px;
@@ -77,7 +77,7 @@
   border-radius: 10px;
   background: var(--color-card);
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .loadingText {
@@ -134,7 +134,7 @@
 
 .paneHeader h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -170,7 +170,7 @@
 }
 
 .cardTitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -204,13 +204,13 @@
 }
 
 .runtimeKey {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   word-break: break-all;
 }
 
 .runtimeMeta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -234,7 +234,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -244,7 +244,7 @@
 }
 
 .fieldLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -272,7 +272,7 @@
   padding: 0 10px;
   display: inline-flex;
   align-items: center;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -319,13 +319,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .kpiValue {
   margin-top: 6px;
-  font-size: 15px;
+  font-size: var(--font-size-md);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -360,18 +360,18 @@
 }
 
 .poolName {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   word-break: break-all;
 }
 
 .poolStats {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .poolHealthBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
 }
 
 .metricRow {
@@ -379,7 +379,7 @@
   grid-template-columns: 90px 1fr;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -414,7 +414,7 @@
   border-radius: 999px;
   border: 1px solid var(--color-border);
   padding: 2px 7px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -443,14 +443,14 @@
 }
 
 .resourceId {
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   word-break: break-all;
 }
 
 .resourceName {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
   word-break: break-word;
@@ -458,15 +458,15 @@
 
 .resourceDebugId {
   margin-top: 2px;
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   opacity: 0.75;
   word-break: break-all;
 }
 
 .resourceMeta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -483,7 +483,7 @@
 }
 
 .resourceTaskPrimary {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
   overflow: hidden;
@@ -492,7 +492,7 @@
 }
 
 .resourceTaskSecondary {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -512,7 +512,7 @@
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   padding: 4px 8px;
   border-radius: 999px;
@@ -536,7 +536,7 @@
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   padding: 4px 8px;
   cursor: pointer;
@@ -550,7 +550,7 @@
 
 .jobsCount {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -564,7 +564,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .table thead th {
@@ -589,23 +589,23 @@
 }
 
 .monoCell {
-  font-family: Consolas, 'Courier New', monospace;
+  font-family: var(--font-mono);
   word-break: break-all;
 }
 
 .subCell {
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
 }
 
 .taskPrimary {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .accountName {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   color: var(--color-text-primary);
   max-width: 180px;
@@ -616,8 +616,8 @@
 
 .accountIdDebug {
   margin-top: 1px;
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   opacity: 0.75;
   max-width: 180px;
@@ -664,12 +664,12 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
 }
 
 .timelineSeq {
-  font-family: Consolas, 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-weight: 700;
 }
 
@@ -681,7 +681,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .emptyState {
@@ -690,7 +690,7 @@
   padding: 12px;
   text-align: center;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .toneRunning {

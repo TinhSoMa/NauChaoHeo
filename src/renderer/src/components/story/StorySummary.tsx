@@ -1807,7 +1807,7 @@ export function StorySummary() {
                     <Clock size={10} />
                     <span className="font-mono">{elapsedTime}s</span>
                     {processingInfo.retryCount && processingInfo.retryCount > 0 && (
-                      <span className="text-[10px] ml-1 opacity-80 whitespace-nowrap">
+                      <span className="text-2xs ml-1 opacity-80 whitespace-nowrap">
                         {processingInfo.phase === 'retry_wait'
                           ? `retry #${processingInfo.retryCount}`
                           : `retry #${processingInfo.retryCount}`}

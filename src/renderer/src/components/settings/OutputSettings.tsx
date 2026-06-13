@@ -3,17 +3,13 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
+import { Save, RotateCcw } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Checkbox } from '../common/Checkbox';
 import { Input } from '../common/Input';
 import styles from './Settings.module.css';
 
-interface OutputSettingsProps {
-  onBack: () => void;
-}
-
-export function OutputSettings({ onBack }: OutputSettingsProps) {
+export function OutputSettings() {
   const [projectsBasePath, setProjectsBasePath] = useState<string>('');
   const [renderVideoOutputDir, setRenderVideoOutputDir] = useState<string>('');
   const [downloaderOutputDir, setDownloaderOutputDir] = useState<string>('');
@@ -122,9 +118,6 @@ export function OutputSettings({ onBack }: OutputSettingsProps) {
   return (
     <div className={styles.detailContainer}>
       <div className={styles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.detailTitle}>Thư mục Projects</div>
       </div>
       

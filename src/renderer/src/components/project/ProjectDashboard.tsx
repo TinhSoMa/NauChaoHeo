@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen, Plus, Settings as SettingsIcon, RefreshCw, FolderCog, Subtitles, Trash2 } from 'lucide-react'
 import { useThemeEffect } from '../../hooks/useTheme'
+import { useFontEffect } from '../../hooks/useFontSettings'
 
 interface ProjectMetadata {
   id: string
@@ -18,6 +19,7 @@ interface ProjectMetadata {
 // Dashboard chọn project - quét từ thư mục được cấu hình
 export function ProjectDashboard() {
   useThemeEffect()
+  useFontEffect()
   
   const [projects, setProjects] = useState<ProjectMetadata[]>([])
   const [loading, setLoading] = useState(false)

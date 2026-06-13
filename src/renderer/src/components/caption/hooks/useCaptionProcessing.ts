@@ -252,6 +252,7 @@ interface UseCaptionProcessingProps {
     fontSizeScaleVersion?: number;
     subtitleFontSizeRel?: number;
     geminiModel: string;
+    openrouterModel?: string;
     splitByLines: boolean;
     linesPerFile: number;
     numberOfParts: number;
@@ -298,7 +299,7 @@ interface UseCaptionProcessingProps {
     crop?: VideoCropSettings;
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
-    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
     thumbnailText?: string;
@@ -3684,6 +3685,7 @@ export function useCaptionProcessing({
       subtitleFontSizeRel: cfg.subtitleFontSizeRel,
       inputType: inputType as 'srt' | 'draft',
       geminiModel: cfg.geminiModel,
+      openrouterModel: cfg.openrouterModel,
       translateMethod: cfg.translateMethod,
       voice: cfg.voice,
       rate: cfg.rate,
@@ -4291,7 +4293,7 @@ export function useCaptionProcessing({
             totalBatches,
             linesPerBatch,
             targetLanguage: 'Vietnamese',
-            model: cfg.geminiModel,
+            model: cfg.translateMethod === 'openrouter' ? (cfg.openrouterModel || '') : cfg.geminiModel,
             translateMethod: cfg.translateMethod,
             projectId: projectId || undefined,
             sourcePath: resolveSourcePath(currentPath),

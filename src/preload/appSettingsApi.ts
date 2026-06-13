@@ -76,6 +76,8 @@ export interface AppSettings {
   captionStandaloneSettings: string | null;
   autoShutdownEnabled: boolean;
   autoShutdownDelayMinutes: number;
+  uiFontFamily: string;
+  uiFontSize: number;
   capcutTtsSecrets: {
     appKey: string | null;
     token: string | null;

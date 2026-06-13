@@ -57,6 +57,16 @@ export interface AppSettings {
   autoShutdownDelayMinutes: number;
   capcutTtsSecrets: CapcutTtsSecrets;
   geminiWebApiCookieFallback: GeminiWebApiCookieFallback;
+
+  // Font UI
+  uiFontFamily: string;
+  uiFontSize: number;
+
+  // OpenRouter
+  openrouterApiKey: string | null;
+  openrouterDefaultModel: string;
+  openrouterSiteUrl: string | null;
+  openrouterAppTitle: string | null;
 }
 
 export interface CapcutTtsSecrets {
@@ -413,6 +423,16 @@ function normalizeStringOrNull(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const UI_FONT_SIZE_MIN = 11;
+const UI_FONT_SIZE_MAX = 20;
+const UI_FONT_SIZE_DEFAULT = 14;
+
+function normalizeUiFontSize(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return UI_FONT_SIZE_DEFAULT;
+  return Math.max(UI_FONT_SIZE_MIN, Math.min(UI_FONT_SIZE_MAX, Math.round(numeric)));
+}
+
 function normalizeProxyMode(value: unknown): 'off' | 'direct-list' | 'rotating-endpoint' {
   return value === 'off' || value === 'rotating-endpoint' ? value : 'direct-list';
 }
@@ -635,6 +655,15 @@ const DEFAULT_SETTINGS: AppSettings = {
     sourceBrowser: null,
     updatedAt: null,
   },
+
+  // Font UI defaults
+  uiFontFamily: 'Inter',
+  uiFontSize: 14,
+
+  openrouterApiKey: null,
+  openrouterDefaultModel: 'openai/gpt-4o-mini',
+  openrouterSiteUrl: null,
+  openrouterAppTitle: null,
 };
 
 // ============================================
@@ -843,6 +872,12 @@ class AppSettingsServiceClass {
       });
     }
 
+    if (Object.prototype.hasOwnProperty.call(partial, 'uiFontFamily')) {
+      nextPartial.uiFontFamily = normalizeStringOrNull(partial.uiFontFamily) ?? DEFAULT_SETTINGS.uiFontFamily;
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'uiFontSize')) {
+      nextPartial.uiFontSize = normalizeUiFontSize(partial.uiFontSize);
+    }
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {
       const minMs = nextPartial.geminiMinSendIntervalMs as number;
       const currentMax = Object.prototype.hasOwnProperty.call(nextPartial, 'geminiMaxSendIntervalMs')

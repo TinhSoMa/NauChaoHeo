@@ -21,6 +21,7 @@ import { registerDownloaderHandlers } from './downloaderHandlers';
 import { registerShutdownHandlers } from './shutdownHandlers';
 import { registerMemoryContextHandlers } from './memoryContextHandlers';
 import { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
+import { registerOpenRouterHandlers } from './openrouterHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -83,6 +84,9 @@ export function registerAllHandlers(): void {
   // Đăng ký Shutdown handlers (auto shutdown sau pipeline)
   registerShutdownHandlers();
 
+  // Đăng ký OpenRouter handlers
+  registerOpenRouterHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -105,4 +109,5 @@ export { registerRotationQueueHandlers } from './rotationQueueHandlers';
 export { registerShutdownHandlers } from './shutdownHandlers';
 export { registerMemoryContextHandlers } from './memoryContextHandlers';
 export { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
+export { registerOpenRouterHandlers } from './openrouterHandlers';
 

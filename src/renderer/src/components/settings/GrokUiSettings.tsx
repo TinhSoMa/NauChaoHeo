@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Save, RotateCcw, FolderOpen, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { Save, RotateCcw, FolderOpen, Plus, Trash2, RefreshCcw } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Checkbox } from '../common/Checkbox';
 import sharedStyles from './Settings.module.css';
 import styles from './GrokUiSettings.module.css';
-import type { SettingsDetailProps } from './types';
 import type {
   GrokUiProfileConfig,
   GrokUiProfileStatus,
@@ -46,7 +45,7 @@ function toProfileDraft(profile: Partial<GrokUiProfileConfig>): GrokUiProfileDra
   };
 }
 
-export function GrokUiSettings({ onBack }: SettingsDetailProps) {
+export function GrokUiSettings() {
   const [profiles, setProfiles] = useState<GrokUiProfileDraft[]>([]);
   const [timeoutSec, setTimeoutSec] = useState(DEFAULT_TIMEOUT_SEC);
   const [requestDelaySec, setRequestDelaySec] = useState(DEFAULT_DELAY_SEC);
@@ -263,9 +262,6 @@ export function GrokUiSettings({ onBack }: SettingsDetailProps) {
   return (
     <div className={sharedStyles.detailContainer}>
       <div className={sharedStyles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.headerInfo}>
           <div className={sharedStyles.detailTitle}>Grok UI</div>
           <div className={styles.headerSubtitle}>

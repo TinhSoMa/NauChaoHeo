@@ -36,7 +36,7 @@
 }
 
 .title {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -48,7 +48,7 @@
 }
 
 .count {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
 
@@ -58,7 +58,7 @@
   color: var(--color-text-secondary);
   padding: 4px 8px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
 }
 
@@ -73,7 +73,7 @@
   color: #fff;
   padding: 4px 10px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
 }
 
@@ -92,7 +92,7 @@
 
 .empty {
   padding: 12px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
 
@@ -109,7 +109,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-muted);
   text-transform: uppercase;
 }
@@ -144,9 +144,9 @@
 
 .message {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
 }

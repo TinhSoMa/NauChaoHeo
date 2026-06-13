@@ -1,12 +1,15 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useThemeEffect } from './hooks/useTheme'
+import { useFontEffect } from './hooks/useFontSettings'
 import { AppLayout } from './components/layout/AppLayout'
 import { ProjectDashboard } from './components/project/ProjectDashboard'
 import { SettingsStandalone } from './components/project/SettingsStandalone'
+import { OpenRouterStandalone } from './components/openrouter/OpenRouterStandalone'
 import { TabProvider } from './context/TabContext'
 
 function App() {
   useThemeEffect()
+  useFontEffect()
 
   return (
     <TabProvider>
@@ -15,6 +18,7 @@ function App() {
           {/* Dashboard độc lập, không dùng AppLayout */}
           <Route path="/projects" element={<ProjectDashboard />} />
           <Route path="/settings-standalone" element={<SettingsStandalone />} />
+          <Route path="/openrouter-settings" element={<OpenRouterStandalone />} />
 
           {/* Điều hướng mặc định */}
           <Route path="/" element={<Navigate to="/project-home" replace />} />

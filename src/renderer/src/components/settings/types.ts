@@ -18,7 +18,8 @@ export type SettingsTab =
   | 'prompts'
   | 'queueMonitor'
   | 'debugLogs'
-  | 'autoShutdown';
+  | 'autoShutdown'
+  | 'openrouter';
 
 // Theme & Language types
 export type ThemeMode = 'light' | 'dark';

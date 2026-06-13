@@ -1,16 +1,11 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { ArrowLeft, RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronRight, Plus, Edit3, Trash2, Save, FileText } from 'lucide-react';
-import { Button } from '../common/Button';
+import { RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronRight, Plus, Edit3, Trash2, Save, FileText } from 'lucide-react';
 import styles from './ApiKeysManager.module.css';
 
 const API_WORKER_MIN = 1;
 const API_WORKER_MAX = 10;
 const API_DELAY_MIN_SEC = 0;
 const API_DELAY_MAX_SEC = 30;
-
-interface ApiKeysManagerProps {
-  onBack: () => void;
-}
 
 type StatusTabFilter = 'all' | 'available' | 'rate_limited' | 'exhausted' | 'error' | 'disabled';
 
@@ -67,7 +62,7 @@ interface ApiAccountItem {
   projects: ApiProjectItem[];
 }
 
-export function ApiKeysManager({ onBack }: ApiKeysManagerProps) {
+export function ApiKeysManager() {
   const [apiAccounts, setApiAccounts] = useState<ApiAccountItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
@@ -532,10 +527,10 @@ export function ApiKeysManager({ onBack }: ApiKeysManagerProps) {
       <div style={{ padding: '0 24px', flexShrink: 0, borderBottom: '1px solid var(--color-border)' }}>
         <div style={{ display: 'flex', gap: 16, padding: '10px 0', flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Worker API:</span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Worker API:</span>
             <input type="number" min={API_WORKER_MIN} max={API_WORKER_MAX} value={apiWorkerInput}
               onChange={(e) => setApiWorkerInput(e.target.value)}
-              style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none' }}
+              style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--font-size-sm)', outline: 'none' }}
             />
             <button className={styles.smallBtn} onClick={handleSaveApiWorkerCount}
               disabled={isSavingApiWorker || Number(apiWorkerInput) === savedApiWorkerCount}>
@@ -543,12 +538,12 @@ export function ApiKeysManager({ onBack }: ApiKeysManagerProps) {
             </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Delay request:</span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Delay request:</span>
             <input type="number" min={API_DELAY_MIN_SEC} max={API_DELAY_MAX_SEC} step="0.1" value={apiDelayInput}
               onChange={(e) => setApiDelayInput(e.target.value)}
-              style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none' }}
+              style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--font-size-sm)', outline: 'none' }}
             />
-            <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>giây</span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>giây</span>
             <button className={styles.smallBtn} onClick={handleSaveApiDelay}
               disabled={isSavingApiDelay || Number(apiDelayInput) === savedApiDelaySec}>
               Lưu
@@ -711,12 +706,7 @@ export function ApiKeysManager({ onBack }: ApiKeysManagerProps) {
         </div>
       </div>
 
-      {/* Floating back button */}
-      <div className={styles.floatingBack}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
-      </div>
+
 
       {/* Import Text Modal */}
       {showImportText && (
@@ -736,7 +726,7 @@ export function ApiKeysManager({ onBack }: ApiKeysManagerProps) {
             </div>
             {importPreview && (
               <div className={styles.modalPreview}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+                <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
                   Xem trước ({importPreview.reduce((s, p) => s + p.keys.length, 0)} keys)
                 </div>
                 {importPreview.map((item, i) => (

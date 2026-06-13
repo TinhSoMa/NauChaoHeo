@@ -22,7 +22,7 @@
 }
 
 .snapshotBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   padding: 3px 8px;
   border-radius: 999px;
@@ -32,7 +32,7 @@
 }
 
 .modeBtn {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 5px 12px;
   border-radius: 6px;
   background: var(--color-surface);
@@ -126,7 +126,7 @@
   text-align: center;
   padding: 16px;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 @media (max-width: 1200px) {
@@ -196,9 +196,9 @@
 }
 
 .positionInfo {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   background: var(--color-surface);
   padding: 4px 8px;
   border-radius: 4px;
@@ -225,7 +225,7 @@
 .resolutionSelect {
   width: auto;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   height: 24px;
   background-color: transparent;
   border: 1px solid var(--color-border);
@@ -234,7 +234,7 @@
 }
 
 .resetBtn {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 4px 10px;
   border-radius: 6px;
   background: var(--color-surface);
@@ -271,7 +271,7 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   border-radius: 8px;
 }
 
@@ -283,7 +283,7 @@
   justify-content: center;
   background: rgba(15, 23, 42, 0.64);
   color: #e2e8f0;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-align: center;
   padding: 12px;
@@ -299,7 +299,7 @@
 }
 
 .realPreviewStatusBadge {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 2px 8px;
@@ -310,12 +310,12 @@
 }
 
 .realPreviewStatusText {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
 .hint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
   margin-top: 4px;
 }
@@ -329,15 +329,15 @@
 }
 
 .scrubberLabel {
-  font-size: 11px;
-  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
   color: var(--color-text-secondary);
   min-width: 32px;
   text-align: right;
 }
 
 .scrubberHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
@@ -388,7 +388,7 @@
 }
 
 .zoomHint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -401,7 +401,7 @@
 }
 
 .thumbnailTextLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
   min-width: 62px;
@@ -415,7 +415,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   outline: none;
 }
 

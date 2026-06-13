@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  ArrowLeft,
   PauseCircle,
   PlayCircle,
   RefreshCw,
@@ -14,7 +13,6 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import sharedStyles from './Settings.module.css';
 import styles from './QueueMonitorSettings.module.css';
-import { SettingsDetailProps } from './types';
 import { useQueueMonitor } from './hooks/useQueueMonitor';
 
 type UnknownRecord = Record<string, unknown>;
@@ -275,7 +273,7 @@ function makeResourceKey(poolId: string, resourceId: string): string {
   return `${poolId}::${resourceId}`;
 }
 
-export function QueueMonitorSettings({ onBack }: SettingsDetailProps) {
+export function QueueMonitorSettings() {
   const {
     status,
     runtimeInfos,
@@ -542,9 +540,6 @@ export function QueueMonitorSettings({ onBack }: SettingsDetailProps) {
   return (
     <div className={sharedStyles.detailContainer}>
       <div className={sharedStyles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={styles.headerInfo}>
           <div className={sharedStyles.detailTitle}>Queue Monitor</div>
           <div className={styles.headerSubTitle}>

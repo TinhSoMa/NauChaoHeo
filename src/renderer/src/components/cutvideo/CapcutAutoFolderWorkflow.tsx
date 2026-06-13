@@ -353,7 +353,7 @@ export const CapcutAutoFolderWorkflow: React.FC<{ onBack?: () => void }> = ({ on
                 </div>
               </div>
             </div>
-            <div className={styles.textMuted} style={{ fontSize: 12, marginTop: 8 }}>
+            <div className={styles.textMuted} style={{ fontSize: 'var(--font-size-xs)', marginTop: 8 }}>
               {progress.total > 0 ? `Đã xử lý ${progress.current}/${progress.total}` : 'Chưa bắt đầu.'}
               {progress.currentFolderName ? ` | Folder: ${progress.currentFolderName}` : ''}
             </div>

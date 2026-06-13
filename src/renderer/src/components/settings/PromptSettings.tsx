@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
-  ArrowLeft,
   BookOpen,
   Check,
   Edit2,
@@ -15,10 +14,6 @@ import {
 import { Button } from '../common/Button';
 import shellStyles from './Settings.module.css';
 import styles from './PromptSettings.module.css';
-
-interface PromptSettingsProps {
-  onBack: () => void;
-}
 
 type PromptType = 'translation' | 'summary' | 'caption';
 type PromptFunction = PromptType;
@@ -277,7 +272,7 @@ function toFamilyRecord(row: any): PromptFamilyRecord {
   };
 }
 
-export function PromptSettings({ onBack }: PromptSettingsProps) {
+export function PromptSettings() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<PanelTab>('assign');
 
@@ -1228,16 +1223,6 @@ export function PromptSettings({ onBack }: PromptSettingsProps) {
           </div>
         )}
       </div>
-
-      <Button
-        variant="secondary"
-        iconOnly
-        className={styles.floatingBackButton}
-        onClick={onBack}
-        title="Quay lại"
-      >
-        <ArrowLeft size={18} />
-      </Button>
 
       {toast && (
         <div className={`${styles.toast} ${styles[`toast_${toast.type}`]}`}>

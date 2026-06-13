@@ -42,6 +42,8 @@ import { useCaptionFileManagement } from './hooks/useCaptionFileManagement';
 import { useCaptionProcessing } from './hooks/useCaptionProcessing';
 import { useHardsubSettings } from './hooks/useHardsubSettings';
 import { ensureCaptionFontLoaded } from './hooks/captionFontLoader';
+import { ModelPicker } from '../openrouter/ModelPicker';
+import type { OpenRouterModel } from '@shared/types/openrouter';
 import { getVideoMetadataCached } from './hooks/videoMetadataClientCache';
 import { useSubtitlePreview } from './hooks/useSubtitlePreview';
 import { useSubtitleRenderPreviewState } from './hooks/useSubtitleRenderPreviewState';
@@ -1027,6 +1029,36 @@ export function CaptionTranslator() {
   const [geminiModelOptions, setGeminiModelOptions] = useState<{ value: string; label: string }[]>(
     FALLBACK_GEMINI_MODELS
   );
+  const [openrouterModels, setOpenrouterModels] = useState<OpenRouterModel[]>([]);
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const [modelsRes, configRes] = await Promise.all([
+          window.electronAPI.openRouter.getModels(),
+          window.electronAPI.openRouter.getConfig(),
+        ])
+        if (!active) return
+        const models = (modelsRes.success ? modelsRes.data : []) as any[]
+        setOpenrouterModels(models)
+        if (!settings.openrouterModel && settings.translateMethod === 'openrouter' && models.length > 0) {
+          const cfg = configRes.success ? (configRes.data as { defaultModel?: string }) : undefined
+          settings.setOpenrouterModel(cfg?.defaultModel || models[0].id)
+        }
+      } catch { /* silent */ }
+    }
+    void load()
+    return () => { active = false }
+  }, [])
+
+  // Auto-select OpenRouter default when switching method and none selected
+  useEffect(() => {
+    if (settings.translateMethod === 'openrouter' && !settings.openrouterModel && openrouterModels.length > 0) {
+      settings.setOpenrouterModel(openrouterModels[0].id)
+    }
+  }, [settings.translateMethod, openrouterModels])
+
   const [ttsVoiceOptions, setTtsVoiceOptions] = useState<TtsUiVoiceOption[]>(() =>
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
   );
@@ -6029,7 +6061,7 @@ export function CaptionTranslator() {
             {defaultSaveState === 'saving' ? 'Đang lưu...' : 'Lưu mặc định'}
           </button>
           {defaultSaveMessage && (
-            <span className={styles.textMuted} style={{ fontSize: '12px' }}>
+            <span className={styles.textMuted} style={{ fontSize: 'var(--font-size-xs)' }}>
               {defaultSaveMessage}
             </span>
           )}
@@ -7758,7 +7790,7 @@ export function CaptionTranslator() {
             </div>
             <div className={styles.stepOptionRow}>
               <RadioButton
-                label="API"
+                label="Gemini"
                 checked={settings.translateMethod === 'api'}
                 onChange={() => settings.setTranslateMethod('api')}
                 name="translateMethod"
@@ -7781,22 +7813,42 @@ export function CaptionTranslator() {
                 onChange={() => settings.setTranslateMethod('grok_ui')}
                 name="translateMethod"
               />
+              <RadioButton
+                label="OpenRouter"
+                checked={settings.translateMethod === 'openrouter'}
+                onChange={() => settings.setTranslateMethod('openrouter')}
+                name="translateMethod"
+              />
             </div>
             <div className={styles.inputGroup}>
-              <label className={styles.label}>Gemini model</label>
-              <select
-                value={settings.geminiModel}
-                onChange={(e) => settings.setGeminiModel(e.target.value)}
-                className={styles.select}
-                disabled={settings.translateMethod !== 'api'}
-                style={settings.translateMethod !== 'api' ? { opacity: 0.4 } : undefined}
-              >
-                {geminiModelOptions.map((m: { value: string; label: string }) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+              {settings.translateMethod === 'openrouter' ? (
+                <>
+                  <label className={styles.label}>OpenRouter model</label>
+                  <ModelPicker
+                    models={openrouterModels}
+                    value={settings.openrouterModel || ''}
+                    onChange={(id) => settings.setOpenrouterModel(id)}
+                    placeholder="Chọn OpenRouter model..."
+                  />
+                </>
+              ) : (
+                <>
+                  <label className={styles.label}>Gemini model</label>
+                  <select
+                    value={settings.geminiModel}
+                    onChange={(e) => settings.setGeminiModel(e.target.value)}
+                    className={styles.select}
+                    disabled={settings.translateMethod !== 'api'}
+                    style={settings.translateMethod !== 'api' ? { opacity: 0.4 } : undefined}
+                  >
+                    {geminiModelOptions.map((m: { value: string; label: string }) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
             <div
               className={styles.stepCardHint}
@@ -7806,7 +7858,9 @@ export function CaptionTranslator() {
                   ? 'GeminiWebApi Queue chạy tuần tự 1 job, chờ theo setting send interval; account lỗi sẽ đổi account khác, hết account thì dừng Step 3.'
                   : settings.translateMethod === 'grok_ui'
                     ? 'Grok UI dùng Grok3API qua trình duyệt, không phụ thuộc Gemini model.'
-                    : 'API sẽ dùng model đã chọn để dịch batch.'}
+                    : settings.translateMethod === 'openrouter'
+                      ? 'OpenRouter dùng model mặc định từ cài đặt OpenRouter. Tự động xoay API key khi có nhiều key.'
+                      : 'API sẽ dùng model đã chọn để dịch batch.'}
             >
               {settings.translateMethod === 'impit'
                 ? 'Impit: bỏ qua model'
@@ -7814,7 +7868,9 @@ export function CaptionTranslator() {
                   ? 'Queue: tuần tự, đổi account'
                   : settings.translateMethod === 'grok_ui'
                     ? 'Grok UI: qua browser'
-                    : 'API: dùng model đã chọn'}
+                    : settings.translateMethod === 'openrouter'
+                      ? 'OpenRouter: model từ cài đặt'
+                      : 'API: dùng model đã chọn'}
             </div>
           </div>
           {(memoryAvailable !== null) && (
@@ -7829,7 +7885,7 @@ export function CaptionTranslator() {
                 {memoryAvailable
                   ? (
                     <>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
                         {memoryCount} bản ghi nhớ
                       </span>
                       <Button
@@ -7844,7 +7900,7 @@ export function CaptionTranslator() {
                     </>
                   )
                   : (
-                    <span style={{ fontSize: 12, color: 'var(--text-danger)' }}>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-danger)' }}>
                       <AlertCircle size={12} style={{ marginRight: 4 }} />
                       Memory context không khả dụng
                     </span>
@@ -8916,16 +8972,16 @@ export function CaptionTranslator() {
         <div className={styles.progressSection}>
           {processing.currentFolder && processing.currentFolder.total > 1 && (
             <div className={styles.progressHeader} style={{ marginBottom: '4px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
+              <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-accent, #4a9eff)' }}>
                 Project {processing.currentFolder.index}/{processing.currentFolder.total}: {processing.currentFolder.name}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
                 {processing.currentFolder.index}/{processing.currentFolder.total}
               </span>
             </div>
           )}
           {processing.enabledSteps.has(7) && originalVideoDuration > 0 && (
-            <div style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', marginBottom: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-muted)', marginBottom: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <span title={videoInfo?.name ?? 'Video'}>{shortenMiddle(videoInfo?.name ?? 'Video', 40)}</span>
               <span>{formatDuration(originalVideoDuration)}</span>
               <span>Sync: {formatDuration(videoSubBaseDuration)}</span>
@@ -8937,7 +8993,7 @@ export function CaptionTranslator() {
             </div>
           )}
           {step7RenderUiLog && (
-            <div className={styles.textMuted} style={{ fontSize: '11px', marginBottom: '4px' }}>
+            <div className={styles.textMuted} style={{ fontSize: 'var(--font-size-xs)', marginBottom: '4px' }}>
               {step7RenderUiLog}
             </div>
           )}

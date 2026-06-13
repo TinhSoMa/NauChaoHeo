@@ -971,6 +971,40 @@ export function initDatabase(): void {
     console.error('[Database] Seed grok_ui_profiles failed:', e);
   }
 
+  // Create openrouter_accounts table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS openrouter_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
+      account_status TEXT NOT NULL DEFAULT 'active',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS openrouter_projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT NOT NULL,
+      project_index INTEGER NOT NULL DEFAULT 0,
+      project_name TEXT NOT NULL,
+      api_key TEXT NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'available',
+      total_requests_today INTEGER NOT NULL DEFAULT 0,
+      success_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      last_error_message TEXT,
+      last_used_timestamp TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(account_id, project_index),
+      FOREIGN KEY (account_id) REFERENCES openrouter_accounts(account_id) ON DELETE CASCADE
+    );
+  `);
+
   // Migration: Update proxies unique constraint to include type
   try {
     const database = db;

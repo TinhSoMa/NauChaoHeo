@@ -45,7 +45,7 @@ export interface TranslationOptions {
   model: string;                 // "gemini-2.5-flash"
   linesPerBatch: number;         // Số dòng mỗi batch (default: 50)
   promptTemplate?: string;       // Custom prompt template
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui'; // Phương thức dịch (default: 'api')
+  translateMethod?: TranslationTransport;
   retryBatchIndexes?: number[];  // Chỉ dịch lại các batch index 1-based (Step 3 resume)
   projectId?: string;
   sourcePath?: string;
@@ -66,7 +66,7 @@ export interface TranslationBatchReport {
   startedAt?: number;
   endedAt?: number;
   durationMs?: number;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  transport?: TranslationTransport;
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
@@ -109,7 +109,7 @@ export interface SingleBatchOptions {
   targetLanguage: string;
   model: string;
   promptTemplate?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  translateMethod?: TranslationTransport;
   projectId?: string;
   sourcePath?: string;
   runId?: string;
@@ -147,7 +147,7 @@ export interface TranslationProgress extends TranslationQueuePacingMetadata {
     texts: string[];
   };
   folderHint?: string;
-  transport?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  transport?: TranslationTransport;
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
@@ -457,6 +457,8 @@ export interface CheckFilesResult {
 // ============================================
 // IPC CHANNELS
 // ============================================
+
+export type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter'
 
 export const CAPTION_IPC_CHANNELS = {
   // Caption
@@ -1141,7 +1143,8 @@ export interface CaptionProjectSettingsValues {
   subtitleFontSizeRel?: number;
   inputType?: 'srt' | 'draft';
   geminiModel?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  openrouterModel?: string;
+  translateMethod?: TranslationTransport;
   voice?: string;
   rate?: string;
   volume?: string;

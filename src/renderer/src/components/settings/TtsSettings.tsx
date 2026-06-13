@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, Save, RotateCcw, Plus, Trash2, Star } from 'lucide-react';
+import { Save, RotateCcw, Plus, Trash2, Star } from 'lucide-react';
 import styles from './TtsSettings.module.css';
 import {
   VOICES,
@@ -11,11 +11,7 @@ import {
 } from '../../config/captionConfig';
 import type { CapcutTtsVersionData } from '../../../../preload/capcutTtsSecretsApi';
 
-interface TtsSettingsProps {
-  onBack: () => void;
-}
-
-export function TtsSettings({ onBack }: TtsSettingsProps) {
+export function TtsSettings() {
   const [defaultVoice, setDefaultVoice] = useState(DEFAULT_VOICE);
   const [defaultRate, setDefaultRate] = useState(DEFAULT_RATE);
   const [defaultVolume, setDefaultVolume] = useState(DEFAULT_VOLUME);
@@ -161,10 +157,6 @@ export function TtsSettings({ onBack }: TtsSettingsProps) {
       <div className={styles.header}>
         <div className={styles.title}>Voice & TTS</div>
       </div>
-
-      <button className={styles.fixedBackBtn} onClick={onBack} title="Quay lại">
-        <ArrowLeft size={20} />
-      </button>
       <div className={styles.content}>
         <div className={styles.basicCard}>
           <div className={styles.cardTitle}>Cài đặt giọng đọc</div>

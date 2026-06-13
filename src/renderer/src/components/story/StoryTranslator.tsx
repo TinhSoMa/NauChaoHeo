@@ -1085,11 +1085,11 @@ export function StoryTranslator() {
               <option value="sequential">Tuần tự</option>
             </select>
             {isMemoryFeatureEnabled ? (
-              <span className="text-[10px] text-text-secondary block mt-1">
+              <span className="text-2xs text-text-secondary block mt-1">
                 Memory mode bật: ép chạy tuần tự để chỉ dùng context từ chapter trước.
               </span>
             ) : webQueueMode === 'multi_auto' && (
-              <span className="text-[10px] text-text-secondary block mt-1">
+              <span className="text-2xs text-text-secondary block mt-1">
                 {isWebQueueTranslating
                   ? `Auto workers: ${webQueueResolvedWorkerCount ?? 3}`
                   : 'Tự điều phối'}
@@ -1427,7 +1427,7 @@ export function StoryTranslator() {
                     <div className="flex gap-1 shrink-0 ml-auto">
                       {translatedChapters.has(chapter.id) && (
                         <span 
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-500 border border-green-500/30"
+                          className="text-2xs font-bold px-1.5 py-0.5 rounded bg-green-500/20 text-green-500 border border-green-500/30"
                           title="Đã dịch"
                         >
                           D
@@ -1435,7 +1435,7 @@ export function StoryTranslator() {
                       )}
                       {summaries.has(chapter.id) && (
                         <span 
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-500 border border-teal-500/30"
+                          className="text-2xs font-bold px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-500 border border-teal-500/30"
                           title="Đã tóm tắt"
                         >
                           T
@@ -1474,7 +1474,7 @@ export function StoryTranslator() {
                     <Clock size={10} />
                     <span className="font-mono">{elapsedTime}s</span>
                     {processingInfo.retryCount && processingInfo.retryCount > 0 && (
-                        <span className="text-[10px] ml-1 opacity-80 whitespace-nowrap">
+                        <span className="text-2xs ml-1 opacity-80 whitespace-nowrap">
                           {processingInfo.phase === 'retry_wait'
                             ? `retry #${processingInfo.retryCount}`
                             : `retry #${processingInfo.retryCount}`}

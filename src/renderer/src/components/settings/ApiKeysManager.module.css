@@ -18,7 +18,7 @@
 }
 
 .headerTitle {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--color-text-primary);
   margin-right: auto;
@@ -42,7 +42,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   outline: none;
   cursor: pointer;
 }
@@ -54,7 +54,7 @@
 .actionBtn {
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   border-radius: 8px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -102,17 +102,17 @@
 }
 
 .kpiLabel {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .kpiValue {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--color-text-primary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .body {
@@ -176,7 +176,7 @@
 }
 
 .accountEmail {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--color-text-primary);
   flex: 1;
@@ -187,7 +187,7 @@
 }
 
 .accountKeyCount {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   background: var(--color-surface);
   padding: 2px 8px;
@@ -215,7 +215,7 @@
 .smallBtn {
   height: 28px;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -284,7 +284,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 3px 7px;
   border-radius: 6px;
   font-weight: 600;
@@ -292,7 +292,7 @@
 }
 
 .projectName {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -301,8 +301,8 @@
 }
 
 .projectKey {
-  font-size: 12px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
   color: var(--color-text-secondary);
   max-width: 200px;
   overflow: hidden;
@@ -318,7 +318,7 @@
 }
 
 .statChip {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 2px 6px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--color-card) 80%, transparent);
@@ -335,7 +335,7 @@
 }
 
 .projectTime {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -382,7 +382,7 @@
 .addMainBtn {
   height: 36px;
   padding: 0 16px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   border-radius: 8px;
   border: 1px dashed var(--color-border);
   background: transparent;
@@ -425,7 +425,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   outline: none;
 }
 
@@ -440,7 +440,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   outline: none;
   resize: vertical;
   font-family: inherit;
@@ -466,7 +466,7 @@
   color: var(--color-error);
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -479,9 +479,9 @@
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-card) 90%, transparent);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -511,13 +511,13 @@
 }
 
 .modalTitle {
-  font-size: 17px;
+  font-size: calc(var(--font-size-lg) + 1px);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .modalDesc {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
@@ -531,8 +531,8 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  font-size: 13px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
   resize: vertical;
   outline: none;
 }
@@ -548,7 +548,7 @@
   max-height: 180px;
   overflow-y: auto;
   background: var(--color-surface);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .modalPreviewRow {
@@ -566,8 +566,8 @@
 
 .modalPreviewKeys {
   color: var(--color-text-secondary);
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }
 
 .modalActions {
@@ -584,7 +584,7 @@
   gap: 12px;
   padding: 48px 24px;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--font-size-base);
 }
 
 .emptyIcon {
@@ -595,12 +595,12 @@
   text-align: center;
   padding: 24px;
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 /* Status tabs bar */
 .headerFilterLabel {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -614,7 +614,7 @@
 .statusTab {
   height: 28px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -645,7 +645,7 @@
 }
 
 .statusTabCount {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   opacity: 0.55;
 }
 
@@ -701,7 +701,7 @@
 }
 
 .accSummaryChip {
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   padding: 1px 5px;
   border-radius: 3px;
   font-weight: 600;
@@ -745,7 +745,7 @@
   border-radius: 999px;
   background: #ef4444;
   color: #fff;
-  font-size: 10px;
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;

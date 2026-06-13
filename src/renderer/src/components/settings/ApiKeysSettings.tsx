@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowLeft, RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Edit3, Trash2, Save, X, Plus } from 'lucide-react';
+import { RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Edit3, Trash2, Save, X, Plus } from 'lucide-react';
 import { Button } from '../common/Button';
 import styles from './Settings.module.css';
 import { useMemo } from 'react';
@@ -12,10 +12,6 @@ const API_WORKER_MIN = 1;
 const API_WORKER_MAX = 10;
 const API_DELAY_MIN_SEC = 0;
 const API_DELAY_MAX_SEC = 30;
-
-interface ApiKeysSettingsProps {
-  onBack: () => void;
-}
 
 type AccountFilter = 'all' | 'active' | 'disabled';
 type ProjectFilter = 'all' | 'available' | 'disabled';
@@ -39,7 +35,7 @@ interface ApiAccountItem {
   projects: ApiProjectItem[];
 }
 
-export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
+export function ApiKeysSettings() {
   const [apiAccounts, setApiAccounts] = useState<ApiAccountItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
@@ -717,7 +713,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
             <div className={`${styles.apiPanel} ${styles.apiListPanel}`}>
               <div className={styles.apiPanelHeader}>
                 Danh sách account
-                <Button variant="secondary" onClick={() => { setAddAccountEmail(''); setAddAccountKeys(''); setShowAddAccount(true); }} style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 12 }}>
+                <Button variant="secondary" onClick={() => { setAddAccountEmail(''); setAddAccountKeys(''); setShowAddAccount(true); }} style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 'var(--font-size-xs)' }}>
                   <Plus size={14} /> Thêm
                 </Button>
               </div>
@@ -947,9 +943,6 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
         </div>
 
         <div className={styles.saveBar}>
-          <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-            <ArrowLeft size={20} />
-          </Button>
           <Button onClick={() => loadApiKeysInfo()} variant="secondary" disabled={loading}>
             <RotateCcw size={16} />
             Làm mới
@@ -968,7 +961,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
         <div className={styles.modalOverlay} onClick={() => setShowImportText(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalTitle}>Import API Keys từ Text</div>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
               Paste dữ liệu keys theo format: dòng email, theo sau là các dòng API key.
               Có thể tải file .txt hoặc .csv.
             </p>
@@ -988,7 +981,7 @@ export function ApiKeysSettings({ onBack }: ApiKeysSettingsProps) {
             </div>
             {importPreview && (
               <div className={styles.modalPreview}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
+                <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
                   Xem trước ({importPreview.reduce((s, p) => s + p.keys.length, 0)} keys)
                 </div>
                 {importPreview.map((item, i) => (

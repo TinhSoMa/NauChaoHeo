@@ -14,7 +14,10 @@ import {
   SingleBatchResult,
   CAPTION_PROCESS_STOP_SIGNAL,
 } from '../../../shared/types/caption';
-import { callGeminiWithRotation, callGeminiWithAssignedKey, GEMINI_MODELS, type GeminiModel } from '../gemini';
+import { callGeminiWithRotation, GEMINI_MODELS, type GeminiModel } from '../gemini';
+import { type AIProvider } from './aiProvider';
+import { createGeminiProvider } from './providers/geminiProvider';
+import { createOpenRouterProvider } from './providers/openrouterProvider';
 import { AppSettingsService } from '../appSettings';
 import { type KeyInfo } from '../../../shared/types/gemini';
 import { getApiManager } from '../gemini/apiManager';
@@ -50,7 +53,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getCaptionOutputDirFromInput } from '../../../shared/utils/captionSession';
 
-type TranslationTransport = 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+import { TranslationTransport } from '../../../shared/types/caption';
+
+function createProviderForMethod(
+  method: string,
+  assignedKey?: { apiKey: string; keyInfo: KeyInfo },
+): AIProvider | null {
+  if (method === 'api') return createGeminiProvider(assignedKey)
+  if (method === 'openrouter') return createOpenRouterProvider()
+  return null
+}
 
 const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
 const GROK_UI_RATE_LIMIT_MESSAGE = 'Grok UI: tất cả profile bị rate limit, dừng dịch.';
@@ -308,39 +320,23 @@ function extractConversationTraceId(metadata: unknown): string {
  */
 async function translateBatch(
   batch: TextBatch,
-  model: GeminiModel,
+  provider: AIProvider,
+  model: string,
   targetLanguage: string,
   promptTemplate?: string,
-  assignedKey?: { apiKey: string; keyInfo: KeyInfo },
   shouldStop?: () => boolean,
   stopSignal?: AbortSignal,
   memoryContext?: string,
   debugSaveDir?: string,
 ): Promise<BatchTranslationResult> {
-  const keyLabel = assignedKey ? assignedKey.keyInfo.name : 'rotation';
-  console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [key: ${keyLabel}]`);
+  console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [transport: ${provider.transport}]`);
 
   const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
 
   try {
-    const control = shouldStop
-      ? {
-          shouldStop,
-          stopErrorMessage: CAPTION_PROCESS_STOP_SIGNAL,
-          stopSignal,
-        }
-      : (stopSignal
-        ? {
-            stopSignal,
-            stopErrorMessage: CAPTION_PROCESS_STOP_SIGNAL,
-          }
-        : undefined);
+    const response = await provider.call({ prompt, model, signal: stopSignal });
 
-    const response = assignedKey
-      ? await callGeminiWithAssignedKey(prompt, assignedKey, model, control)
-      : await callGeminiWithRotation(prompt, model, 10, control);
-
-    if (!response.success && response.error === CAPTION_PROCESS_STOP_SIGNAL) {
+    if (!response.success && response.error === 'STOP_REQUESTED') {
       throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
     }
 
@@ -349,7 +345,7 @@ async function translateBatch(
         success: false,
         translatedTexts: [],
         error: response.error || 'Không có response',
-        transport: 'api',
+        transport: provider.transport,
       };
     }
 
@@ -360,7 +356,7 @@ async function translateBatch(
         success: false,
         translatedTexts,
         error: `${parsed.errorCode || 'ERROR_PROCESSING_FAILED'}: ${parsed.errorMessage || 'JSON response không hợp lệ'}`,
-        transport: 'api',
+        transport: provider.transport,
       };
     }
 
@@ -369,10 +365,10 @@ async function translateBatch(
       console.warn(
         `[CaptionTranslator] Batch ${batch.batchIndex + 1}: Thiếu dòng ${validCount}/${batch.texts.length} — sẽ retry`
       );
-      return { success: false, translatedTexts, error: `Thiếu ${batch.texts.length - validCount} dòng`, transport: 'api' };
+      return { success: false, translatedTexts, error: `Thiếu ${batch.texts.length - validCount} dòng`, transport: provider.transport };
     }
 
-    return { success: true, translatedTexts, transport: 'api' };
+    return { success: true, translatedTexts, transport: provider.transport };
   } catch (error) {
     if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
       throw error;
@@ -383,7 +379,7 @@ async function translateBatch(
       success: false,
       translatedTexts: [],
       error: String(error),
-      transport: 'api',
+      transport: provider.transport,
     };
   }
 }
@@ -859,6 +855,7 @@ export async function translateAll(
     const useImpit = options.translateMethod === 'impit';
     const useGeminiWebQueue = options.translateMethod === 'gemini_webapi_queue';
     const useGrokUi = options.translateMethod === 'grok_ui';
+    const useProvider = !useImpit && !useGeminiWebQueue && !useGrokUi;
     const projectId = (options.projectId || '').trim() || '__default_project__';
     const sourcePath = (options.sourcePath || '').trim() || '__unknown_source__';
     const apiWorkerCountSetting = (() => {
@@ -1209,9 +1206,12 @@ export async function translateAll(
   // Dịch tuần tự từng batch (batch trước xong mới đến batch sau)
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
     assertNotStopped();
+    const provider = useProvider
+      ? createProviderForMethod(options.translateMethod || 'api', assignedKey)
+      : null;
     const methodLabel: TranslationTransport = useGeminiWebQueue
       ? 'gemini_webapi_queue'
-      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
+      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : (provider?.transport || 'api')));
     const batchNumber = batch.batchIndex + 1;
     const totalBatchCount = maxBatchIndex;
     const defaultTokenLabel = useGeminiWebQueue
@@ -1357,16 +1357,16 @@ export async function translateAll(
           ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext)
           : useGrokUi
             ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, grokUiTimeoutMs, localMemoryContext)
-            : await translateBatch(
-              batch,
-              model as GeminiModel,
-              targetLanguage,
-              promptTemplate,
-              assignedKey,
-              () => shouldStopTranslation(runId),
-              stopAbortController.signal,
-              localMemoryContext,
-            );
+            : translateBatch(
+                batch,
+                provider!,
+                model,
+                targetLanguage,
+                promptTemplate,
+                () => shouldStopTranslation(runId),
+                stopAbortController.signal,
+                localMemoryContext,
+              );
 
       assertNotStopped();
       lastResult = batchResult;
@@ -1800,6 +1800,7 @@ export async function translateSingleBatch(
   const useGeminiWebQueue = translateMethod === 'gemini_webapi_queue';
   const useImpit = translateMethod === 'impit';
   const useGrokUi = translateMethod === 'grok_ui';
+  const useProvider = !useImpit && !useGeminiWebQueue && !useGrokUi;
 
   // Search memory context (non-blocking: timeout 3s nếu worker chưa sẵn sàng)
   let localMemoryContext: string | undefined;
@@ -1848,12 +1849,14 @@ export async function translateSingleBatch(
 
   // Lấy API key nếu cần
   let assignedKey: { apiKey: string; keyInfo: KeyInfo } | undefined;
-  if (!useImpit && !useGrokUi && !useGeminiWebQueue) {
+  if (useProvider) {
     const manager = getApiManager();
     const keyResult = manager.getNextApiKey();
     assignedKey = keyResult.apiKey && keyResult.keyInfo ? { apiKey: keyResult.apiKey, keyInfo: keyResult.keyInfo } : undefined;
     console.log(`[CaptionTranslator] Batch #${batchIndex + 1}: gán key [${assignedKey?.keyInfo.name ?? 'rotation'}]`);
   }
+
+  const provider = useProvider ? createProviderForMethod(translateMethod, assignedKey) : null;
 
   // Gemini Web Queue setup
   let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
@@ -1938,12 +1941,12 @@ export async function translateSingleBatch(
         ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext, debugSaveDir)
         : useGrokUi
           ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
-          : await translateBatch(
+          : translateBatch(
               batch,
-              model as GeminiModel,
+              provider!,
+              model,
               targetLanguage,
               promptTemplate,
-              assignedKey,
               () => shouldStopTranslation(runId),
               undefined,
               localMemoryContext,

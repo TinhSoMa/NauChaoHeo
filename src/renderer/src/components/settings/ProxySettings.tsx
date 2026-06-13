@@ -3,15 +3,11 @@ import { ProxyConfig, ProxyStats } from '@shared/types/proxy';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { ArrowLeft, Plus, Trash2, TestTube, Check, X, Download, Upload, RotateCcw, FileText } from 'lucide-react';
+import { Plus, Trash2, TestTube, Check, X, Download, Upload, RotateCcw, FileText } from 'lucide-react';
 import sharedStyles from './Settings.module.css';
 import styles from './ProxySettings.module.css';
 
-interface ProxySettingsProps {
-  onBack: () => void;
-}
-
-export function ProxySettings({ onBack }: ProxySettingsProps) {
+export function ProxySettings() {
   type ScopeKey = 'caption' | 'story' | 'chat' | 'tts' | 'other';
   type RotatingForm = {
     protocol: 'http' | 'socks5';
@@ -706,9 +702,6 @@ export function ProxySettings({ onBack }: ProxySettingsProps) {
   return (
     <div className={sharedStyles.detailContainer}>
       <div className={sharedStyles.detailHeader}>
-        <Button variant="secondary" iconOnly onClick={onBack} title="Quay lại">
-          <ArrowLeft size={20} />
-        </Button>
         <div className={sharedStyles.detailTitle}>Quản lý Proxy</div>
       </div>
       

@@ -16,7 +16,8 @@ import {
   ListOrdered,
   Terminal,
   Bot,
-  Power
+  Power,
+  Globe
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -35,6 +36,8 @@ import { PromptSettings } from './PromptSettings.tsx';
 import { QueueMonitorSettings } from './QueueMonitorSettings';
 import { DebugLogsSettings } from './DebugLogsSettings';
 import { AutoShutdownSettings } from './AutoShutdownSettings';
+import { OpenRouterDetail } from './OpenRouterDetail';
+import { BackButton } from './BackButton';
 
 // Menu items configuration
 const menuItems: SettingsMenuItem[] = [
@@ -110,6 +113,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Tự động tắt máy sau khi pipeline chạy xong hoặc lỗi',
     icon: Power
   },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    desc: 'Quản lý API keys, models và cấu hình OpenRouter',
+    icon: Globe
+  },
 ];
 
 export function Settings() {
@@ -134,18 +143,20 @@ export function Settings() {
       )}
 
       {/* Detail Modes - Each tab has its own component */}
-      {activeTab === 'output' && <OutputSettings onBack={handleBack} />}
-      {activeTab === 'translation' && <TranslationSettings onBack={handleBack} />}
-      {activeTab === 'prompts' && <PromptSettings onBack={handleBack} />}
-      {activeTab === 'tts' && <TtsSettings onBack={handleBack} />}
-      {activeTab === 'app' && <AppSettings onBack={handleBack} />}
-      {activeTab === 'apikeys' && <ApiKeysManager onBack={handleBack} />}
-      {activeTab === 'geminichat' && <GeminiChatSettings onBack={handleBack} />}
-      {activeTab === 'grokUi' && <GrokUiSettings onBack={handleBack} />}
-      {activeTab === 'proxy' && <ProxySettings onBack={handleBack} />}
-      {activeTab === 'queueMonitor' && <QueueMonitorSettings onBack={handleBack} />}
-      {activeTab === 'debugLogs' && <DebugLogsSettings onBack={handleBack} />}
-      {activeTab === 'autoShutdown' && <AutoShutdownSettings onBack={handleBack} />}
+      {activeTab !== 'overview' && <BackButton onClick={handleBack} />}
+      {activeTab === 'output' && <OutputSettings />}
+      {activeTab === 'translation' && <TranslationSettings />}
+      {activeTab === 'prompts' && <PromptSettings />}
+      {activeTab === 'tts' && <TtsSettings />}
+      {activeTab === 'app' && <AppSettings />}
+      {activeTab === 'apikeys' && <ApiKeysManager />}
+      {activeTab === 'geminichat' && <GeminiChatSettings />}
+      {activeTab === 'grokUi' && <GrokUiSettings />}
+      {activeTab === 'proxy' && <ProxySettings />}
+      {activeTab === 'queueMonitor' && <QueueMonitorSettings />}
+      {activeTab === 'debugLogs' && <DebugLogsSettings />}
+      {activeTab === 'autoShutdown' && <AutoShutdownSettings />}
+      {activeTab === 'openrouter' && <OpenRouterDetail />}
     </div>
   );
 }

@@ -68,13 +68,13 @@
 }
 
 .label {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-primary);
   font-weight: 500;
 }
 
 .description {
-  font-size: 11px;
+  font-size: var(--font-size-2xs);
   color: var(--color-text-secondary);
   line-height: 1.2;
 }

@@ -30,7 +30,7 @@
 }
 
 .title {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 700;
   color: #0f172a;
 }
@@ -50,13 +50,13 @@
 }
 
 .label {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: #475569;
   font-weight: 600;
 }
 
 .value {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: #334155;
   background: #f8fafc;
   border: 1px solid #dbe3ee;
@@ -70,7 +70,7 @@
   border: 1px solid #cdd8e5;
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: #0f172a;
 }
 
@@ -78,7 +78,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: #334155;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -92,7 +92,7 @@
   border: 1px solid #fecdca;
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .tableWrap {
@@ -104,7 +104,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .table th,
@@ -148,7 +148,7 @@
   border-radius: 8px;
   height: 34px;
   padding: 0 12px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   cursor: pointer;
 }
