@@ -954,7 +954,7 @@ export async function mergeAudioFiles(
     
     throwIfTtsStopped();
     const finalTimeline = tempFiles.map((item) => ({ path: item.path, startMs: item.startMs }));
-    const finalResult = await mergeSmallBatch(finalTimeline, finalOutputPath, ffmpegBin, 0);
+    const finalResult = await ffmpegMergeSmallBatch(finalTimeline, finalOutputPath, ffmpegBin, 0);
     
     // Cleanup temp files
     for (const tf of tempFiles) {
