@@ -1,4 +1,4 @@
-import { getAllAvailableKeys, updateProjectStats, getAllAccounts } from './openrouterDatabase.js'
+import { getAllAvailableKeys, updateProjectStats, getAllAccounts, setProjectStatus, setProjectRateLimitReset } from './openrouterDatabase.js'
 
 interface KeyEntry {
   accountId: string
@@ -7,9 +7,13 @@ interface KeyEntry {
   projectName: string
 }
 
+const RATE_LIMIT_COOLDOWN_MS = 65_000
+
 class OpenRouterKeyManager {
   private keys: KeyEntry[] = []
   private currentIndex = 0
+  private lastRecoveryCheck = 0
+  private readonly RECOVERY_INTERVAL_MS = 30_000
 
   reload(): void {
     this.keys = getAllAvailableKeys()
@@ -41,7 +45,32 @@ class OpenRouterKeyManager {
     }
   }
 
+  recordRateLimitError(apiKey: string, retryAfterMs?: number): void {
+    const entry = this.keys.find((k) => k.apiKey === apiKey)
+    if (!entry) return
+
+    const cooldown = retryAfterMs && retryAfterMs > 0 ? retryAfterMs : RATE_LIMIT_COOLDOWN_MS
+    const resetAt = new Date(Date.now() + cooldown).toISOString()
+
+    setProjectStatus(entry.accountId, entry.projectIndex, 'rate_limited')
+    setProjectRateLimitReset(entry.accountId, entry.projectIndex, resetAt)
+    updateProjectStats(entry.accountId, entry.projectIndex, { error: 'rate_limited' })
+
+    // Remove from in-memory keys so getNextApiKey() skips it
+    this.keys = this.keys.filter((k) => k.apiKey !== apiKey)
+  }
+
+  autoRecover(): void {
+    const now = Date.now()
+    if (now - this.lastRecoveryCheck < this.RECOVERY_INTERVAL_MS) return
+    this.lastRecoveryCheck = now
+
+    // Reload will pick up expired rate_limited keys as 'available'
+    this.reload()
+  }
+
   hasKeys(): boolean {
+    this.autoRecover()
     if (this.keys.length === 0) this.reload()
     return this.keys.length > 0
   }

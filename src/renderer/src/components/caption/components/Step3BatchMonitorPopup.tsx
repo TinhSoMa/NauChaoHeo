@@ -65,6 +65,8 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
     }
   };
 
+  const hasContent = useMemo(() => draftLines.some((line) => line.translatedText.trim().length > 0), [draftLines]);
+
   const initialSnapshot = useMemo(() => normalizeLineSnapshot(props.lines), [props.lines]);
   const currentSnapshot = useMemo(() => normalizeLineSnapshot(draftLines), [draftLines]);
   const isDirty = initialSnapshot !== currentSnapshot;
@@ -114,6 +116,12 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
     )));
   };
 
+  const handleClearBatch = () => {
+    const confirmed = window.confirm(`Xóa toàn bộ bản dịch Batch #${props.batchIndex}?`);
+    if (!confirmed) return;
+    setDraftLines((prev) => prev.map((line) => ({ ...line, translatedText: '', status: 'missing' as const })));
+  };
+
   const handleSave = async () => {
     if (props.busy) {
       return;
@@ -142,6 +150,15 @@ export function Step3BatchMonitorPopup(props: Step3BatchMonitorPopupProps) {
             <div className={styles.title}>Step 3 Batch #{props.batchIndex}</div>
           </div>
           <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.clearBatchBtn}
+              onClick={handleClearBatch}
+              disabled={props.busy || !hasContent}
+              title="Xóa toàn bộ bản dịch batch này"
+            >
+              Xóa toàn bộ batch
+            </button>
             <button
               type="button"
               className={styles.jumpBtn}

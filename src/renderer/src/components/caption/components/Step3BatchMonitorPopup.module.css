@@ -209,11 +209,24 @@
   white-space: nowrap;
 }
 
+.clearBatchBtn {
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--color-error, #ef4444) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error, #ef4444) 50%, var(--color-border));
+  color: var(--color-error, #ef4444);
+  white-space: nowrap;
+}
+
 .secondaryBtn:disabled,
 .primaryBtn:disabled,
 .closeBtn:disabled,
 .deleteBtn:disabled,
-.jumpBtn:disabled {
+.jumpBtn:disabled,
+.clearBatchBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

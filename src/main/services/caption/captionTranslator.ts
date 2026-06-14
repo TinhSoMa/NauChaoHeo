@@ -946,6 +946,10 @@ export async function translateAll(
     if (errorText.includes('thiếu') && errorText.includes('dòng')) {
       return true;
     }
+    // Retry on rate limit (429) — the key rotation in callChatCompletionWithRotation may free up capacity
+    if (errorText.includes('429') || errorText.includes('rate limit') || errorText.includes('too many requests')) {
+      return true;
+    }
     const translatedCount = countTranslatedLines(normalizedTexts);
     return translatedCount < expectedCount;
   };
@@ -1467,6 +1471,13 @@ export async function translateAll(
         console.log(
           `[CaptionTranslator] [GrokUI] Cooldown trước retry ${queueGapMs}ms (next=${new Date(nextDispatchAtMs).toISOString()})`
         );
+      }
+      // Rate limit cooldown: wait before retrying to let the rate limit window pass
+      const errorText = (lastResult?.error || '').toLowerCase();
+      if (errorText.includes('429') || errorText.includes('rate limit')) {
+        const cooldownMs = Math.min(10_000 + attempt * 5_000, 60_000); // 15s → 20s → 25s ... max 60s
+        console.log(`[CaptionTranslator] ⏳ Rate limit hit, cooldown ${cooldownMs}ms trước retry...`);
+        await sleepWithStop(cooldownMs);
       }
     }
 

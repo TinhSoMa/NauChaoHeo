@@ -32,6 +32,7 @@ interface RequestResult {
   data?: any;
   error?: string;
   statusCode?: number;
+  retryAfter?: number; // seconds to wait before retry (from Retry-After header)
 }
 
 /**
@@ -91,6 +92,7 @@ export async function makeRequestWithProxy(
 
     } catch (error: any) {
       lastError = error.message || String(error);
+      const retryAfter = error.retryAfter as number | undefined;
 
       if (lastError === 'REQUEST_ABORTED') {
         return {
@@ -106,10 +108,15 @@ export async function makeRequestWithProxy(
 
       console.warn(`[ApiClient] ❌ Attempt ${attempt + 1} failed:`, lastError);
 
-      // Retry với proxy khác
+      // Retry (có thể qua proxy hoặc direct)
       if (attempt < maxRetries - 1) {
-        console.log(`[ApiClient] 🔄 Retry với proxy khác...`);
-        await sleep(500); // Giảm delay xuống 500ms để fail faster
+        const label = useProxy ? 'proxy khác' : 'direct';
+        console.log(`[ApiClient] 🔄 Retry với ${label}...`);
+        // Retry delay: dùng retryAfter nếu có (từ 429), fallback exponential backoff
+        const delay = retryAfter && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 30_000)
+          : Math.min(1000 * Math.pow(2, attempt), 30_000);
+        await sleep(delay);
         continue;
       }
     }
@@ -244,6 +251,7 @@ async function makeRequest(
     if (!response.ok) {
       let errorStatus = '';
       let errorMessage = '';
+      let retryAfter: number | undefined;
       try {
         const errorBody = await response.json();
         errorStatus = errorBody?.error?.status || '';
@@ -251,7 +259,15 @@ async function makeRequest(
       } catch {
         errorMessage = response.statusText;
       }
-      throw new GeminiHttpError(response.status, errorStatus, errorMessage);
+      // Extract Retry-After header
+      const retryAfterHeader = response.headers.get('retry-after');
+      if (retryAfterHeader) {
+        retryAfter = parseInt(retryAfterHeader, 10);
+        if (isNaN(retryAfter)) retryAfter = undefined;
+      }
+      const error = new GeminiHttpError(response.status, errorStatus, errorMessage);
+      (error as any).retryAfter = retryAfter;
+      throw error;
     }
 
     // Parse response

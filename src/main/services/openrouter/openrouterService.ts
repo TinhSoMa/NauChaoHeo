@@ -90,8 +90,7 @@ export async function callChatCompletion(
       body,
       timeout: REQUEST_TIMEOUT_MS,
       signal: options?.signal,
-      useProxy: true,
-      proxyScope: 'other',
+      useProxy: false,
     }, MAX_RETRIES)
 
     if (!result.success) {
@@ -198,8 +197,7 @@ async function fetchModelsWithKey(key: string): Promise<OpenRouterModel[] | null
       method: 'GET',
       headers: { 'Authorization': `Bearer ${key}` },
       timeout: REQUEST_TIMEOUT_MS,
-      useProxy: true,
-      proxyScope: 'other',
+      useProxy: false,
     }, 1)
 
     if (!result.success || !result.data?.data) return null
@@ -278,8 +276,7 @@ async function fetchKeyInfoWithKey(apiKey: string): Promise<{ success: true; dat
       method: 'GET',
       headers: { 'Authorization': `Bearer ${apiKey}` },
       timeout: 15_000,
-      useProxy: true,
-      proxyScope: 'other',
+      useProxy: false,
     }, 1)
 
     if (!result.success || !result.data?.data) return null

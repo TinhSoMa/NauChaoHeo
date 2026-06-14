@@ -1005,6 +1005,13 @@ export function initDatabase(): void {
     );
   `);
 
+  // Migration: add rate_limit_reset_at column to openrouter_projects
+  try {
+    db.exec(`ALTER TABLE openrouter_projects ADD COLUMN rate_limit_reset_at TEXT`);
+  } catch {
+    // Column already exists — ignore
+  }
+
   // Migration: Update proxies unique constraint to include type
   try {
     const database = db;

@@ -16,12 +16,13 @@ export interface OpenRouterDbProject {
   project_name: string
   api_key: string
   notes: string | null
-  status: 'available' | 'error' | 'disabled'
+  status: 'available' | 'rate_limited' | 'error' | 'disabled'
   total_requests_today: number
   success_count: number
   error_count: number
   last_error_message: string | null
   last_used_timestamp: string | null
+  rate_limit_reset_at: string | null
   created_at: number
   updated_at: number
 }
@@ -38,12 +39,13 @@ export interface OpenRouterProjectItem {
   projectName: string
   apiKey: string
   notes: string | null
-  status: 'available' | 'error' | 'disabled'
+  status: 'available' | 'rate_limited' | 'error' | 'disabled'
   totalRequestsToday: number
   successCount: number
   errorCount: number
   lastErrorMessage: string | null
   lastUsedTimestamp: string | null
+  rateLimitResetAt: string | null
 }
 
 export function getAllAccounts(): OpenRouterAccountItem[] {
@@ -73,6 +75,7 @@ export function getAllAccounts(): OpenRouterAccountItem[] {
           errorCount: p.error_count,
           lastErrorMessage: p.last_error_message,
           lastUsedTimestamp: p.last_used_timestamp,
+          rateLimitResetAt: p.rate_limit_reset_at,
         })),
       }
     })
@@ -198,7 +201,7 @@ export function removeProject(accountId: string, projectIndex: number): boolean 
 export function setProjectStatus(
   accountId: string,
   projectIndex: number,
-  status: 'available' | 'error' | 'disabled'
+  status: 'available' | 'rate_limited' | 'error' | 'disabled'
 ): boolean {
   try {
     const db = getDatabase()
@@ -208,6 +211,23 @@ export function setProjectStatus(
     return (result as any).changes > 0
   } catch (error) {
     console.error('[OpenRouterDatabase] Lỗi set project status:', error)
+    return false
+  }
+}
+
+export function setProjectRateLimitReset(
+  accountId: string,
+  projectIndex: number,
+  resetAt: string | null
+): boolean {
+  try {
+    const db = getDatabase()
+    const result = db.prepare(
+      `UPDATE openrouter_projects SET rate_limit_reset_at = ?, updated_at = ? WHERE account_id = ? AND project_index = ?`
+    ).run(resetAt, Date.now(), accountId, projectIndex)
+    return (result as any).changes > 0
+  } catch (error) {
+    console.error('[OpenRouterDatabase] Lỗi set rate_limit_reset_at:', error)
     return false
   }
 }
@@ -239,13 +259,18 @@ export function updateProjectStats(
 export function getAllAvailableKeys(): { accountId: string; projectIndex: number; apiKey: string; projectName: string }[] {
   try {
     const db = getDatabase()
+    const now = new Date().toISOString()
     const rows = db.prepare(
-      `SELECT p.account_id, p.project_index, p.api_key, p.project_name
+      `SELECT p.account_id, p.project_index, p.api_key, p.project_name, p.status, p.rate_limit_reset_at
        FROM openrouter_projects p
        INNER JOIN openrouter_accounts a ON a.account_id = p.account_id
-       WHERE p.status = 'available' AND a.account_status = 'active'
+       WHERE a.account_status = 'active'
+         AND (
+           p.status = 'available'
+           OR (p.status = 'rate_limited' AND (p.rate_limit_reset_at IS NULL OR p.rate_limit_reset_at <= ?))
+         )
        ORDER BY a.sort_order ASC, p.project_index ASC`
-    ).all() as { account_id: string; project_index: number; api_key: string; project_name: string }[]
+    ).all(now) as { account_id: string; project_index: number; api_key: string; project_name: string; status: string; rate_limit_reset_at: string | null }[]
 
     return rows.map((r) => ({
       accountId: r.account_id,
