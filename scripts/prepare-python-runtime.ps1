@@ -121,18 +121,21 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Installing locked pycapcut dependencies..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "-r", $requirementsPath, "--disable-pip-version-check", "--no-warn-script-location")
 
+Write-Host "[Python Runtime] Installing Gemini Web API + TTS dependencies..."
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "gemini-webapi", "browser-cookie3", "edge-tts", "aiohttp", "--disable-pip-version-check", "--no-warn-script-location")
+
 Write-Host "[Python Runtime] Installing memory context dependencies (mem0ai[nlp], underthesea, spaCy model)..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "mem0ai[nlp]", "--disable-pip-version-check", "--no-warn-script-location")
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "underthesea", "--disable-pip-version-check", "--no-warn-script-location")
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "spacy", "download", "xx_ent_wiki_sm")
 
-Write-Host "[Python Runtime] Removing unused speech/browser automation packages (funasr-onnx, selenium, undetected-chromedriver)..."
-Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "uninstall", "-y", "funasr-onnx", "selenium", "undetected-chromedriver", "--disable-pip-version-check")
+Write-Host "[Python Runtime] Removing unused heavy packages (torch, transformers, scipy, onnxruntime) to reduce runtime size..."
+Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "uninstall", "-y", "torch", "torchvision", "torchaudio", "transformers", "scipy", "onnxruntime", "onnxruntime-directml", "funasr-onnx", "--disable-pip-version-check")
 
 Write-Host "[Python Runtime] Running smoke test..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "-c",
-  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy,underthesea; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm') + ' underthesea=' + getattr(underthesea, '__version__', 'unknown'))"
+  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy,underthesea,edge_tts,gemini_webapi; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm') + ' underthesea=' + getattr(underthesea, '__version__', 'unknown'))"
 )
 
 Write-Host "[Python Runtime] Writing memory runtime build stamp..."

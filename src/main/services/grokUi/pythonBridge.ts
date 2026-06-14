@@ -274,6 +274,7 @@ export class GrokUiPythonBridge {
 
   private buildPythonPath(devContext: { isDev: boolean }): string {
     const packagedSitePackages = path.join(process.resourcesPath || '', 'python', 'Lib', 'site-packages');
+    const vendorPath = path.join(process.resourcesPath || '', 'python', 'vendor');
     const existing = process.env.PYTHONPATH?.trim();
     const override = process.env.GROK_UI_PYTHONPATH?.trim();
     const hasDevPath = fs.existsSync(GROK_UI_DEV_PYTHONPATH);
@@ -284,10 +285,13 @@ export class GrokUiPythonBridge {
     }
 
     if (!isDev) {
+      const productionPath = fs.existsSync(vendorPath)
+        ? `${packagedSitePackages}${path.delimiter}${vendorPath}`
+        : packagedSitePackages;
       if (existing && existing.length > 0) {
-        return `${packagedSitePackages}${path.delimiter}${existing}`;
+        return `${productionPath}${path.delimiter}${existing}`;
       }
-      return packagedSitePackages;
+      return productionPath;
     }
 
     if (hasDevPath) {
