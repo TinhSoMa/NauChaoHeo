@@ -12,10 +12,16 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
   const enableMark = input.renderMark !== false;
   const enableSubtitle = input.renderSubtitle !== false;
 
+  let cropOutputLabel: string | undefined;
   const resolvedCrop = input.resolvedCrop || resolveVideoCrop(input.crop, input.sourceWidth || input.renderWidth, input.sourceHeight || input.renderHeight);
   if (resolvedCrop) {
     const cropLabel = '[v_cropped]';
     filterParts.push(`${currentLabel}${resolvedCrop.filter}${cropLabel}`);
+    if (input.thumbnailEnabled && !input.thumbnailHasSeparateInput) {
+      const thumbCropLabel = '[v_cropped_thumb]';
+      filterParts.push(`${cropLabel}split=2${cropLabel}${thumbCropLabel}`);
+      cropOutputLabel = thumbCropLabel;
+    }
     currentLabel = cropLabel;
   }
 
@@ -85,5 +91,6 @@ export function buildVideoFilter(input: VideoFilterBuildInput): VideoFilterBuild
   return {
     filterParts,
     outputLabel,
+    cropOutputLabel,
   };
 }

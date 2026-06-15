@@ -8559,6 +8559,7 @@ export function CaptionTranslator() {
                   thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
                   thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
                   thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
+                  crop={settings.crop}
                   thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
                   thumbnailTextConstrainTo34={settings.thumbnailTextConstrainTo34}
                   onThumbnailTextConstrainTo34Change={settings.setThumbnailTextConstrainTo34}

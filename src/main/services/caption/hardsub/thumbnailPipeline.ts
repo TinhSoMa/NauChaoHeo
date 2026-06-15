@@ -13,6 +13,7 @@ import {
 import { estimateTextWidthPx, layoutThumbnailText, ThumbnailTextLayoutResult } from '../../../../shared/utils/thumbnailTextLayout';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
+import { resolveVideoCrop } from './cropFilterBuilder';
 import { summarizeThumbnailTextForLog } from './timingDebugWriter';
 import {
   InlineThumbnailSilentAudioBuildInput,
@@ -148,7 +149,7 @@ function toFfmpegDrawTextColor(hexColor: string): string {
 
 function ensureEven(value: number): number {
   const rounded = Math.max(2, Math.round(value));
-  return rounded % 2 === 0 ? rounded : rounded - 1;
+  return rounded % 2 === 0 ? rounded : rounded + 1;
 }
 
 function clamp01(value: number): number {
@@ -834,10 +835,11 @@ async function readPngDimensions(filePath: string): Promise<{ width: number; hei
 function buildLandscapeThumbnailFilter(
   safeW: number,
   safeH: number,
-  drawTextFilter: string | null
+  drawTextFilter: string | null,
+  inputLabel = '[0:v]'
 ): ThumbnailLayoutBuildResult {
   const parts: string[] = [
-    `[0:v]scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[v_layout]`,
+    `${inputLabel}scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[v_layout]`,
   ];
   if (drawTextFilter) {
     parts.push(`[v_layout]${drawTextFilter}[v_out]`);
@@ -859,7 +861,8 @@ function buildPortraitThumbnailFilter(
   safeH: number,
   sourceWidth: number,
   sourceHeight: number,
-  drawTextFilter: string | null
+  drawTextFilter: string | null,
+  inputLabel = '[0:v]'
 ): ThumbnailLayoutBuildResult {
   const cropH = sourceHeight;
   const cropW = ensureEven(Math.min(sourceWidth, sourceHeight * 3 / 4));
@@ -873,7 +876,7 @@ function buildPortraitThumbnailFilter(
   }
 
   const parts: string[] = [
-    `[0:v]crop=${cropW}:${cropH}:${cropX}:0,split=2[crop_bg][crop_fg]`,
+    `${inputLabel}crop=${cropW}:${cropH}:${cropX}:0,split=2[crop_bg][crop_fg]`,
     `[crop_bg]scale=${safeW}:${safeH}[bg_fill]`,
     `[crop_fg]scale=${fgW}:${fgH}[fg_fit]`,
     `[bg_fill][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=${safeW}/${safeH}[v_layout]`,
@@ -1373,6 +1376,13 @@ export async function renderThumbnailPreviewFrame(
       ? (sourceMeta.metadata.actualHeight || sourceMeta.metadata.height)
       : 1080;
 
+    const resolvedCrop = options.crop
+      ? resolveVideoCrop(options.crop, sourceWidth, sourceHeight)
+      : null;
+    const effectiveSW = resolvedCrop ? resolvedCrop.width : sourceWidth;
+    const effectiveSH = resolvedCrop ? resolvedCrop.height : sourceHeight;
+    const cropInputLabel = resolvedCrop ? '[v_preview_cropped]' : '[0:v]';
+
     const outputCanvas = options.renderMode === 'hardsub_portrait_9_16'
       ? resolvePortraitCanvasByPreset(options.renderResolution)
       : resolveLandscapeCanvasBySource(sourceWidth, sourceHeight, options.renderResolution);
@@ -1397,22 +1407,29 @@ export async function renderThumbnailPreviewFrame(
       renderMode: options.renderMode,
       outputWidth: safeW,
       outputHeight: safeH,
-      sourceWidth,
-      sourceHeight,
+      sourceWidth: effectiveSW,
+      sourceHeight: effectiveSH,
       textFilePath,
       secondaryTextFilePath,
     });
 
     const layoutResult = options.renderMode === 'hardsub_portrait_9_16'
-      ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextContext.drawTextFilter)
-      : buildLandscapeThumbnailFilter(safeW, safeH, drawTextContext.drawTextFilter);
+      ? buildPortraitThumbnailFilter(safeW, safeH, effectiveSW, effectiveSH, drawTextContext.drawTextFilter, cropInputLabel)
+      : buildLandscapeThumbnailFilter(safeW, safeH, drawTextContext.drawTextFilter, cropInputLabel);
+
+    const filterParts: string[] = [];
+    if (resolvedCrop) {
+      filterParts.push(`[0:v]${resolvedCrop.filter}[v_preview_cropped]`);
+    }
+    filterParts.push(layoutResult.filterComplex);
+    const filterComplex = filterParts.join(';');
 
     let stderr = '';
     const chunks: Buffer[] = [];
     const args = [
       '-y',
       '-i', framePng,
-      '-filter_complex', layoutResult.filterComplex,
+      '-filter_complex', filterComplex,
       '-map', `[${layoutResult.outputLabel}]`,
       '-frames:v', '1',
       '-f', 'image2pipe',

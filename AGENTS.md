@@ -12,7 +12,7 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 - **Database**: single `nauchaoheo.db` at `app.getPath('userData')`, shared via `getDatabase()` from `src/main/database/schema.ts:421`. All `*Database.ts` modules import `getDatabase()`. `index.ts` is empty. `migrations.ts` is empty — no migration framework.
 - **App init flow**: `app.whenReady()` → `initDatabase()` → `AppSettingsService.initialize()` → `registerAllHandlers()` → `tryImportDevKeys()`
 - **AI services**: `gemini/` (API keys), `geminiWebApi/` (cookie-based, Python bridge), `chatGemini/` (chat-specific), `grokUi/` (Python bridge)
-- **Current branch**: `feat/update-capcut-token`
+- **Current branch**: `feat/update-caption-step6-audio`
 
 ## Commands
 
@@ -51,6 +51,7 @@ All Python workers communicate via **stdin/stdout JSON-line protocol**. Bundled 
 | `edge_tts_worker.py` | `src/main/services/tts/python/` | `resources/tts/python/` |
 | `ebooklib_story_worker.py` | `src/main/services/story/python/` | `resources/story/python/` |
 | `mem0_context_worker.py` | `src/main/services/memoryContext/python/` | `resources/memoryContext/python/` |
+| `audio_merge_worker.py` | `src/main/services/audioMerge/python/` | `resources/audioMerge/python/` |
 | `edge_tts_worker.exe` (Go) | `src/main/services/tts/go/` | `resources/tts/go/` (scaffold, not functional) |
 
 ## Config & Secrets
@@ -71,4 +72,4 @@ All Python workers communicate via **stdin/stdout JSON-line protocol**. Bundled 
 - `check` script not required for v4 tailwindcss.
 - `README (2).md` is an unrelated Mem0 project — not this project's documentation.
 - `NewPromt.md` + `newpromt.json` are the subtitle translation system prompt.
-- `.claude/skills/` has 4 custom Claude skill files; `.code-review-graph/graph.db` is a knowledge graph (MCP).
+- `.claude/skills/` has 4 custom skill files (debug-issue, explore-codebase, refactor-safely, review-changes).

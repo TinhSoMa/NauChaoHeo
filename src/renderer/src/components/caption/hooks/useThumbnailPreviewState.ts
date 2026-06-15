@@ -26,6 +26,7 @@ interface UseThumbnailPreviewStateOptions {
   videoPath: string | null;
   renderMode: RenderMode;
   renderResolution: RenderResolution;
+  crop?: import('@shared/types/caption').VideoCropSettings;
   thumbnailText: string;
   thumbnailTextSecondary: string;
   thumbnailFrameTimeSec: number | null;
@@ -132,6 +133,7 @@ export function useThumbnailPreviewState(
     onThumbnailTextSecondaryPositionChange,
     contextKey,
     inputType,
+    crop,
   } = options;
 
   const contextId = contextKey
@@ -517,6 +519,7 @@ export function useThumbnailPreviewState(
       thumbnailTextConstrainTo34,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
+      crop,
     });
   }, [
     committedFrameTimeSec,
@@ -536,6 +539,7 @@ export function useThumbnailPreviewState(
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     thumbnailTextSecondary,
+    crop,
     videoPath,
   ]);
 
@@ -577,6 +581,7 @@ export function useThumbnailPreviewState(
           thumbnailTimeSec: committedFrameTimeSec,
           renderMode,
           renderResolution,
+          crop,
           thumbnailText,
           thumbnailTextSecondary,
           thumbnailFontName,
@@ -665,6 +670,7 @@ export function useThumbnailPreviewState(
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondary,
     thumbnailTextSecondaryPosition,
+    crop,
     videoPath,
   ]);
 

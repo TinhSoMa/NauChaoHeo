@@ -954,6 +954,7 @@ export interface RenderThumbnailPreviewFrameOptions {
   thumbnailTimeSec: number;
   renderMode?: RenderVideoOptions['renderMode'];
   renderResolution?: RenderVideoOptions['renderResolution'];
+  crop?: VideoCropSettings;
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
   thumbnailFontName?: string;

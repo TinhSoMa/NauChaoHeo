@@ -66,11 +66,14 @@ export interface VideoFilterBuildInput {
   videoSpeedMultiplier: number;
   renderSubtitle?: boolean;
   subtitleFilter: string;
+  thumbnailEnabled?: boolean;
+  thumbnailHasSeparateInput?: boolean;
 }
 
 export interface VideoFilterBuildOutput {
   filterParts: string[];
   outputLabel: string;
+  cropOutputLabel?: string;
 }
 
 export interface PortraitVideoFilterBuildInput {
@@ -102,11 +105,14 @@ export interface PortraitVideoFilterBuildInput {
   bgDownscaleHeight: number;
   bgBlurLumaRadius: number;
   bgBlurLumaPower: number;
+  thumbnailEnabled?: boolean;
+  thumbnailHasSeparateInput?: boolean;
 }
 
 export interface PortraitVideoFilterBuildOutput {
   filterParts: string[];
   outputLabel: string;
+  cropOutputLabel?: string;
 }
 
 export interface InlineThumbnailVideoFilterBuildInput {

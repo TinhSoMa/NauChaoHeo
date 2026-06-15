@@ -124,7 +124,6 @@ interface SpeedMaxProfile {
   nvencCq: number;
   nvencBFrames: number;
   nvencTune: string;
-  nvencMultiPass: string;
   x264Preset: string;
   x264Crf: number;
   portraitBgDownscaleDivisor: number;
@@ -140,7 +139,6 @@ const SPEED_MAX_PROFILE: SpeedMaxProfile = {
   nvencCq: 25,
   nvencBFrames: 3,
   nvencTune: 'hq',
-  nvencMultiPass: '2pass-full',
   x264Preset: 'veryfast',
   x264Crf: 24,
   portraitBgDownscaleDivisor: 10,
@@ -196,7 +194,7 @@ function resolveEncoderProfile(
         '-preset', SPEED_MAX_PROFILE.qsvPreset,
         '-global_quality', String(SPEED_MAX_PROFILE.qsvGlobalQuality),
       ],
-      pixelFormat: 'nv12',
+      pixelFormat: context?.thumbnailEnabled ? 'yuv420p' : 'nv12',
       decodePath: enableQsvDecode
         ? (heavyPipeline ? 'qsv_decode(forced) + qsv_encode' : 'qsv_decode + qsv_encode')
         : 'software_decode + qsv_encode',
@@ -222,11 +220,9 @@ function resolveEncoderProfile(
         '-preset', SPEED_MAX_PROFILE.nvencPreset,
         '-rc', 'vbr',
         '-cq', String(SPEED_MAX_PROFILE.nvencCq),
-        '-b:v', '0',
         '-bf', String(SPEED_MAX_PROFILE.nvencBFrames),
         '-b_ref_mode', 'middle',
         '-tune', SPEED_MAX_PROFILE.nvencTune,
-        '-multipass', SPEED_MAX_PROFILE.nvencMultiPass,
       ],
       pixelFormat: 'nv12',
       decodePath: 'software_decode + nvenc_encode',
@@ -385,6 +381,20 @@ function ensureAudioLabelForConcat(
   const sourceLabel = ensureFilterLabelReference(mapAudioArg);
   filterComplexParts.push(
     `${sourceLabel}aformat=channel_layouts=stereo,aresample=44100[${outputLabelName}]`
+  );
+  return `[${outputLabelName}]`;
+}
+
+function ensureVideoLabelForConcat(
+  sourceLabel: string,
+  filterComplexParts: string[],
+  outputLabelName: string,
+  width: number,
+  height: number
+): string {
+  const ref = ensureFilterLabelReference(sourceLabel);
+  filterComplexParts.push(
+    `${ref}scale=${width}:${height},setsar=1,format=yuv420p[${outputLabelName}]`
   );
   return `[${outputLabelName}]`;
 }
@@ -774,6 +784,7 @@ const COVER_FEATHER_RETRYABLE_PATTERN =
   /(could not open encoder before eof|output file is empty|nothing was written|error while filtering|error initializing (complex )?filters?|invalid argument)/i;
 
 const UNKNOWN_ENCODER_RETRYABLE_PATTERN = /unknown encoder/i;
+const NVENC_API_MISMATCH_PATTERN = /driver does not support the required nvenc api version|minimum required nvidia driver for nvenc/i;
 
 function shouldRetryWithGblurFeather(
   coverMode: string | undefined,
@@ -935,6 +946,9 @@ async function injectInlineThumbnailAtEnd(input: {
   sourceHeight: number;
   thumbnailVideoInputLabel?: string;
   thumbnailInputSeeked?: boolean;
+  thumbnailSourceWidth?: number;
+  thumbnailSourceHeight?: number;
+  thumbnailIsSourceCropped?: boolean;
 }): Promise<{
   finalVideoLabel: string;
   finalAudioLabel: string | null;
@@ -960,8 +974,8 @@ async function injectInlineThumbnailAtEnd(input: {
     videoInputLabel: input.thumbnailVideoInputLabel || '[0:v]',
     outputWidth: input.outputWidth,
     outputHeight: input.outputHeight,
-    sourceWidth: input.sourceWidth,
-    sourceHeight: input.sourceHeight,
+    sourceWidth: input.thumbnailSourceWidth ?? input.sourceWidth,
+    sourceHeight: input.thumbnailSourceHeight ?? input.sourceHeight,
     fps: input.fps,
     thumbnailTimeSec: input.thumbnailInputSeeked ? 0 : input.options.thumbnailTimeSec,
     thumbnailDurationSec,
@@ -984,6 +998,10 @@ async function injectInlineThumbnailAtEnd(input: {
 
   const mainVideoLabel = ensureFilterLabelReference(input.mainVideoLabel);
   const thumbVideoLabel = ensureFilterLabelReference(thumbVideo.outputLabel);
+  const mainVideoNormLabel = 'v_main_norm';
+  const thumbVideoNormLabel = 'v_thumb_norm';
+  const mainVideoNorm = ensureVideoLabelForConcat(mainVideoLabel, input.filterComplexParts, mainVideoNormLabel, input.outputWidth, input.outputHeight);
+  const thumbVideoNorm = ensureVideoLabelForConcat(thumbVideoLabel, input.filterComplexParts, thumbVideoNormLabel, input.outputWidth, input.outputHeight);
   const finalVideoRawLabel = '[v_out_inline_raw]';
   const finalVideoLabel = '[v_out_inline]';
 
@@ -993,10 +1011,10 @@ async function injectInlineThumbnailAtEnd(input: {
       `${ensureFilterLabelReference(input.mainAudioLabel)}adelay=${delayMs}:all=1[a_out_inline]`
     );
     input.filterComplexParts.push(
-      `${thumbVideoLabel}${mainVideoLabel}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoRawLabel)}]`
+      `${thumbVideoNorm}${mainVideoNorm}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoRawLabel)}]`
     );
     input.filterComplexParts.push(
-      `${finalVideoRawLabel}format=yuv420p,setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
+      `${finalVideoRawLabel}setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
     );
     console.log('[VideoRenderer][ThumbnailInline]', {
       enabled: true,
@@ -1019,10 +1037,10 @@ async function injectInlineThumbnailAtEnd(input: {
   }
 
   input.filterComplexParts.push(
-    `${thumbVideoLabel}${mainVideoLabel}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoRawLabel)}]`
+    `${thumbVideoNorm}${mainVideoNorm}concat=n=2:v=1:a=0[${extractFilterLabelName(finalVideoRawLabel)}]`
   );
   input.filterComplexParts.push(
-    `${finalVideoRawLabel}format=yuv420p,setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
+    `${finalVideoRawLabel}setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
   );
   console.log('[VideoRenderer][ThumbnailInline]', {
     enabled: true,
@@ -1079,6 +1097,7 @@ export async function renderHardsubVideo(
   const subtitleFilter = renderSubtitle ? getSubtitleFilter(prep.tempAssPath) : 'null';
   const coverMode = renderMark ? (options.coverMode || 'blackout_bottom') : undefined;
   const effectiveFeatherStrategy: CoverFeatherStrategy = featherStrategy;
+  const thumbnailHasSeparateInput = Boolean(options.thumbnailEnabled && options.thumbnailTimeSec != null);
   const videoFilter = buildVideoFilter({
     inputLabel: '[0:v]',
     crop: resolvedCrop ? options.crop : undefined,
@@ -1104,6 +1123,8 @@ export async function renderHardsubVideo(
     videoSpeedMultiplier: prep.videoSpeedMultiplier,
     renderSubtitle,
     subtitleFilter,
+    thumbnailEnabled: Boolean(options.thumbnailEnabled),
+    thumbnailHasSeparateInput,
   });
 
   const encoderProfile = resolveEncoderProfile(options.hardwareAcceleration, options.renderMode, {
@@ -1238,6 +1259,22 @@ export async function renderHardsubVideo(
   const inlineMainAudioLabel = options.thumbnailEnabled
     ? ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_main_concat_hardsub')
     : (audioMix.mapAudioArg && audioMix.mapAudioArg.startsWith('[') ? audioMix.mapAudioArg : null);
+  let effectiveThumbnailLabel = thumbnailVideoInputLabel;
+  let effectiveSourceWidth = prep.renderWidth;
+  let effectiveSourceHeight = prep.renderHeight;
+  let thumbnailIsSourceCropped = false;
+  if (resolvedCrop && videoFilter.cropOutputLabel) {
+    effectiveSourceWidth = resolvedCrop.width;
+    effectiveSourceHeight = resolvedCrop.height;
+    thumbnailIsSourceCropped = true;
+    if (thumbnailInputSeeked) {
+      const cropFilterStr = `crop=${resolvedCrop.width}:${resolvedCrop.height}:${resolvedCrop.x}:${resolvedCrop.y}`;
+      filterComplexParts.push(`${thumbnailVideoInputLabel}${cropFilterStr}[v_thumb_seek_cropped]`);
+      effectiveThumbnailLabel = '[v_thumb_seek_cropped]';
+    } else {
+      effectiveThumbnailLabel = videoFilter.cropOutputLabel;
+    }
+  }
   let inlineThumbnailError: string | null = null;
   let inlineThumbnail: Awaited<ReturnType<typeof injectInlineThumbnailAtEnd>>;
   try {
@@ -1251,8 +1288,11 @@ export async function renderHardsubVideo(
       outputHeight: prep.renderHeight,
       sourceWidth: prep.renderWidth,
       sourceHeight: prep.renderHeight,
-      thumbnailVideoInputLabel,
+      thumbnailVideoInputLabel: effectiveThumbnailLabel,
       thumbnailInputSeeked,
+      thumbnailSourceWidth: effectiveSourceWidth,
+      thumbnailSourceHeight: effectiveSourceHeight,
+      thumbnailIsSourceCropped,
     });
   } catch (error) {
     inlineThumbnailError = String(error);
@@ -1303,6 +1343,7 @@ export async function renderHardsubVideo(
     '-y',
     outputPath,
   ];
+  console.log('[VideoRenderer][FilterGraph]', filterComplexParts.join(';'));
   console.log('[VideoRenderer][Hardsub] Encoder profile', {
     hardware: options.hardwareAcceleration || 'none',
     codec: encoderProfile.videoCodec,
@@ -1472,7 +1513,8 @@ export async function renderHardsubVideo(
   if (
     !renderResult.success &&
     options.hardwareAcceleration !== 'none' &&
-    UNKNOWN_ENCODER_RETRYABLE_PATTERN.test(renderResult.error || '')
+    (UNKNOWN_ENCODER_RETRYABLE_PATTERN.test(renderResult.error || '') ||
+     NVENC_API_MISMATCH_PATTERN.test(renderResult.error || ''))
   ) {
     console.warn('[VideoRenderer][Hardsub] Unknown encoder, fallback về software libx264.', {
       hardware: options.hardwareAcceleration,
@@ -1653,6 +1695,7 @@ export async function renderHardsubPortraitVideo(
   const foregroundCropPercent = normalizePortraitForegroundCropPercent(
     resolvedCrop ? 0 : options.portraitForegroundCropPercent
   );
+  const thumbnailHasSeparateInput = Boolean(options.thumbnailEnabled && options.thumbnailTimeSec != null);
   const portraitVideo = buildPortraitVideoFilter({
     inputLabel: '[0:v]',
     crop: resolvedCrop ? options.crop : undefined,
@@ -1682,6 +1725,8 @@ export async function renderHardsubPortraitVideo(
     bgDownscaleHeight,
     bgBlurLumaRadius,
     bgBlurLumaPower,
+    thumbnailEnabled: Boolean(options.thumbnailEnabled),
+    thumbnailHasSeparateInput,
   });
 
   const filterComplexParts: string[] = [];
@@ -1792,6 +1837,22 @@ export async function renderHardsubPortraitVideo(
   const inlineMainAudioLabel = options.thumbnailEnabled
     ? ensureAudioLabelForConcat(audioMix.mapAudioArg, filterComplexParts, 'a_main_concat_portrait')
     : (audioMix.mapAudioArg && audioMix.mapAudioArg.startsWith('[') ? audioMix.mapAudioArg : null);
+  let effectiveThumbnailLabel = thumbnailVideoInputLabel;
+  let effectiveSourceWidth = sourceWidth;
+  let effectiveSourceHeight = sourceHeight;
+  let thumbnailIsSourceCropped = false;
+  if (resolvedCrop && portraitVideo.cropOutputLabel) {
+    effectiveSourceWidth = resolvedCrop.width;
+    effectiveSourceHeight = resolvedCrop.height;
+    thumbnailIsSourceCropped = true;
+    if (thumbnailInputSeeked) {
+      const cropFilterStr = `crop=${resolvedCrop.width}:${resolvedCrop.height}:${resolvedCrop.x}:${resolvedCrop.y}`;
+      filterComplexParts.push(`${thumbnailVideoInputLabel}${cropFilterStr}[v_thumb_seek_cropped]`);
+      effectiveThumbnailLabel = '[v_thumb_seek_cropped]';
+    } else {
+      effectiveThumbnailLabel = portraitVideo.cropOutputLabel;
+    }
+  }
   let inlineThumbnailError: string | null = null;
   let inlineThumbnail: Awaited<ReturnType<typeof injectInlineThumbnailAtEnd>>;
   try {
@@ -1805,8 +1866,11 @@ export async function renderHardsubPortraitVideo(
       outputHeight: portraitCanvas.height,
       sourceWidth,
       sourceHeight,
-      thumbnailVideoInputLabel,
+      thumbnailVideoInputLabel: effectiveThumbnailLabel,
       thumbnailInputSeeked,
+      thumbnailSourceWidth: effectiveSourceWidth,
+      thumbnailSourceHeight: effectiveSourceHeight,
+      thumbnailIsSourceCropped,
     });
   } catch (error) {
     inlineThumbnailError = String(error);
@@ -1857,6 +1921,8 @@ export async function renderHardsubPortraitVideo(
     '-y',
     outputPath,
   ];
+
+  console.log('[VideoRenderer][FilterGraph]', filterComplexParts.join(';'));
 
   const hardsubTimingDebug = buildHardsubTimingPayload({
     options,
@@ -2040,7 +2106,8 @@ export async function renderHardsubPortraitVideo(
   if (
     !renderResult.success &&
     options.hardwareAcceleration !== 'none' &&
-    UNKNOWN_ENCODER_RETRYABLE_PATTERN.test(renderResult.error || '')
+    (UNKNOWN_ENCODER_RETRYABLE_PATTERN.test(renderResult.error || '') ||
+     NVENC_API_MISMATCH_PATTERN.test(renderResult.error || ''))
   ) {
     console.warn('[VideoRenderer][HardsubPortrait] Unknown encoder, fallback về software libx264.', {
       hardware: options.hardwareAcceleration,
@@ -2716,6 +2783,7 @@ export async function renderVideoPreviewFrame(
         bgDownscaleHeight: even(portraitCanvas.height / SPEED_MAX_PROFILE.portraitBgDownscaleDivisor),
         bgBlurLumaRadius: SPEED_MAX_PROFILE.portraitBgBlurLumaRadius,
         bgBlurLumaPower: SPEED_MAX_PROFILE.portraitBgBlurLumaPower,
+        thumbnailEnabled: false,
       });
       inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];
       filterComplexParts.push(...portraitVideo.filterParts);
@@ -2838,6 +2906,7 @@ export async function renderVideoPreviewFrame(
         videoSpeedMultiplier: 1.0,
         renderSubtitle: options.renderSubtitle,
         subtitleFilter,
+        thumbnailEnabled: false,
       });
       inputArgs = [...previewHwaccelArgs, '-ss', safePreviewTimeSec.toFixed(3), '-i', options.videoPath];
       filterComplexParts.push(...videoFilter.filterParts);
