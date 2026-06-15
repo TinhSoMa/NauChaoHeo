@@ -82,8 +82,10 @@ function findFFmpegInExtracted(baseDir: string): boolean {
         mkdirSync(targetDir, { recursive: true });
       }
       try {
-        spawnSync('cmd', ['/c', 'copy', '/Y', ffmpeg, path.join(targetDir, 'ffmpeg.exe')]);
-        spawnSync('cmd', ['/c', 'copy', '/Y', ffprobe, path.join(targetDir, 'ffprobe.exe')]);
+        const ffmpegTarget = path.join(targetDir, 'ffmpeg.exe');
+        const ffprobeTarget = path.join(targetDir, 'ffprobe.exe');
+        spawnSync('powershell', ['-NoProfile', '-Command', `Copy-Item -Path '${ffmpeg}' -Destination '${ffmpegTarget}' -Force`], { windowsHide: true, timeout: 30000 });
+        spawnSync('powershell', ['-NoProfile', '-Command', `Copy-Item -Path '${ffprobe}' -Destination '${ffprobeTarget}' -Force`], { windowsHide: true, timeout: 30000 });
       } catch {}
       return existsSync(getLegacyFFmpegPath());
     }
