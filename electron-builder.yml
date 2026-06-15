@@ -76,6 +76,10 @@ extraResources:
     to: tts/go
     filter:
       - "edge_tts_worker.exe"
+  - from: scripts/install-detect-ffmpeg.ps1
+    to: install-detect-ffmpeg.ps1
+    filter:
+      - "*.ps1"
 
 # Cấu hình Windows
 win:
@@ -95,6 +99,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
+  include: build/installer.nsh
   # installerIcon: resources/icons/icon.ico  # Bỏ comment khi đã có icon
   # uninstallerIcon: resources/icons/icon.ico
 
