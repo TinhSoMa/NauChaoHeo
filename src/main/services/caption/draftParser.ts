@@ -89,8 +89,8 @@ export async function parseDraftJson(filePath: string): Promise<ParseDraftResult
             const cacheInfo = JSON.parse(fragment.subtitle_cache_info);
             if (cacheInfo.sentence_list) {
               for (const sentence of cacheInfo.sentence_list) {
-                const startMs = sentence.start_time || 0;
-                const endMs = sentence.end_time || 0;
+                const startMs = (sentence.start_time || 0) / 1000;
+                const endMs = (sentence.end_time || 0) / 1000;
                 const text = sentence.text || '';
                 
                 if (text) {
@@ -125,8 +125,8 @@ export async function parseDraftJson(filePath: string): Promise<ParseDraftResult
         if (track.segments) {
           for (const segment of track.segments) {
             const materialId = segment.material_id;
-            const startMs = segment.target_timerange?.start || 0;
-            const durationMs = segment.target_timerange?.duration || 0;
+            const startMs = (segment.target_timerange?.start || 0) / 1000;
+            const durationMs = (segment.target_timerange?.duration || 0) / 1000;
             const endMs = startMs + durationMs;
             
             // Tìm text material tương ứng

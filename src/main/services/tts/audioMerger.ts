@@ -19,9 +19,15 @@ import { getAudioDuration, throwIfTtsStopped } from './ttsService';
 import { getFFmpegPath } from '../../utils/ffmpegPath';
 import { runAudioMergeWorker } from '../audioMerge/pythonBridge';
 
-const MAX_BATCH_SPAN_MS = 20 * 60 * 1000; // 20 phút
+// Tự động chọn batch size dựa trên tổng số file
+// Python numpy decode tuần tự, 1 canvas duy nhất nên chịu được batch lớn
+function computeBatchSize(totalFiles: number): number {
+  if (totalFiles <= 3000) return 300;
+  if (totalFiles <= 5000) return 250;
+  return 200;
+}
 
-const BATCH_CONCURRENCY = 3;
+const BATCH_CONCURRENCY = 1;
 const DEBUG_AUDIO_MERGER = process.env.AUDIO_MERGER_DEBUG === '1';
 const activeAudioMergerProcesses = new Set<ChildProcess>();
 
@@ -453,7 +459,8 @@ export async function analyzeAudioFiles(
 }
 
 /**
- * Ghép một batch nhỏ audio files
+ * Ghép một batch nhỏ audio files bằng Python numpy worker
+ * (decode từng file → 1 canvas duy nhất, RAM không tăng theo số file)
  */
 async function mergeSmallBatch(
   files: Array<{ path: string; startMs: number }>,
@@ -468,7 +475,7 @@ async function mergeSmallBatch(
   }
 
   const lastFile = files[files.length - 1];
-  debugLog('Bắt đầu mergeSmallBatch (Python bridge)', {
+  debugLog('Bắt đầu mergeSmallBatch (Python numpy)', {
     outputPath,
     files: files.length,
     firstStartMs: files[0].startMs,
@@ -481,8 +488,34 @@ async function mergeSmallBatch(
     startMs: Math.max(0, f.startMs - baseStartMs),
   }));
 
-  const relativeLastMs = adjustedFiles[adjustedFiles.length - 1].startMs;
-  const totalDurationMs = relativeLastMs + 10000;
+  // Tính canvas duration — sanitize lastDur để phát hiện file corrupt
+  const last = adjustedFiles[adjustedFiles.length - 1];
+  const lastDur = await getAudioDuration(last.path);
+
+  // Audio TTS caption không thể dài hơn 120 giây
+  const MAX_SINGLE_AUDIO_MS = 120_000;
+  const MAX_BATCH_DURATION_MS = 3_600_000; // 1 giờ tổng canvas/batch
+
+  const sanitizedLastDur = lastDur > MAX_SINGLE_AUDIO_MS
+    ? (() => {
+        console.warn(
+          `[AudioMerger] ⚠️ getAudioDuration trả về ${lastDur}ms (~${(lastDur / 3600000).toFixed(1)}h) cho file: ${last.path}. ` +
+          `File này có thể bị corrupt. Dùng fallback 5000ms.`
+        );
+        return 5000;
+      })()
+    : lastDur;
+
+  const rawDurationMs = last.startMs + Math.max(sanitizedLastDur, 5000);
+
+  if (rawDurationMs > MAX_BATCH_DURATION_MS) {
+    console.warn(
+      `[AudioMerger] ⚠️ rawDurationMs=${rawDurationMs}ms vượt cap ${MAX_BATCH_DURATION_MS}ms. ` +
+      `last.startMs=${last.startMs}ms, sanitizedLastDur=${sanitizedLastDur}ms`
+    );
+  }
+
+  const totalDurationMs = Math.min(rawDurationMs, MAX_BATCH_DURATION_MS);
 
   const result = await runAudioMergeWorker(adjustedFiles, outputPath, totalDurationMs);
 
@@ -789,25 +822,17 @@ export async function mergeAudioFiles(
       return { success: true, outputPath: finalOutputPath };
     }
     
-    // Chia thành batches theo span timeline
+    // Chia thành batches theo số lượng caption (tránh quá nhiều input stream cho FFmpeg)
+    const batchSize = computeBatchSize(timeline.length);
     const batches: Array<Array<{ path: string; startMs: number }>> = [];
     let currentBatch: Array<{ path: string; startMs: number }> = [];
-    let batchStartMs = 0;
     for (const item of timeline) {
       throwIfTtsStopped();
-      if (currentBatch.length === 0) {
-        currentBatch.push(item);
-        batchStartMs = item.startMs;
-        continue;
-      }
-      const spanMs = item.startMs - batchStartMs;
-      if (spanMs > MAX_BATCH_SPAN_MS) {
+      if (currentBatch.length >= batchSize) {
         batches.push(currentBatch);
-        currentBatch = [item];
-        batchStartMs = item.startMs;
-      } else {
-        currentBatch.push(item);
+        currentBatch = [];
       }
+      currentBatch.push(item);
     }
     if (currentBatch.length > 0) {
       batches.push(currentBatch);
@@ -822,82 +847,57 @@ export async function mergeAudioFiles(
       onProgress({ currentBatch: 0, totalBatches: batches.length, phase: 'mixing', message: `Đang chia ${batches.length} batches...` });
     }
 
-    for (let i = 0; i < batches.length; i += BATCH_CONCURRENCY) {
+    // Ghép tuần tự từng batch (BATCH_CONCURRENCY=1 — tránh quá tải Windows)
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
       throwIfTtsStopped();
-      const group = batches.slice(i, i + BATCH_CONCURRENCY);
-      const results = await Promise.all(group.map(async (batch, offset) => {
-        throwIfTtsStopped();
-        const batchIdx = i + offset;
-        const batchLastItem = batch[batch.length - 1];
-        console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${batches.length}`);
-        const tempPath = path.join(outputDir, `${baseName}_temp_${batchIdx}${ext}`);
-        const batchStartMs = batch[0].startMs;
-        debugLog('Thông tin batch', {
-          batchNumber: batchIdx + 1,
-          totalBatches: batches.length,
-          segmentCount: batch.length,
-          batchStartMs,
-          batchEndMs: batchLastItem.startMs,
-          tempPath,
-          spanMs: batchLastItem.startMs - batch[0].startMs,
-        });
-        const batchResult = await mergeSmallBatch(batch, tempPath, ffmpegBin, batchStartMs);
-        return { batchIdx, tempPath, batchStartMs, batchResult };
-      }));
+      const batch = batches[batchIdx];
+      const lastItem = batch[batch.length - 1];
+      console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${batches.length}`);
 
-      const failed = results.find(r => !r.batchResult.success);
-      if (failed) {
-        const failedInputName = failed.batchResult.failingInputPath
-          ? path.basename(failed.batchResult.failingInputPath)
-          : 'không xác định';
-        const failedInputSource = classifyAudioInputSource(failed.batchResult.failingInputPath);
-        const failedReason = failed.batchResult.error ?? 'FFmpeg báo lỗi không xác định';
-        const suspectedInputSummary = failed.batchResult.suspectedInputSummary;
-        debugLog('Batch merge thất bại, bắt đầu cleanup temp files', {
-          failedBatch: failed.batchIdx + 1,
-          tempFilesCount: tempFiles.filter(Boolean).length,
-          error: failedReason,
-          failingInputPath: failed.batchResult.failingInputPath,
-          failingInputSource: failedInputSource.source,
-          suspectedInputPaths: failed.batchResult.suspectedInputPaths,
-          suspectedInputSummary,
-          stderrTail: failed.batchResult.stderrTail,
-        });
-        for (const res of results) {
-          if (res.batchResult.success) {
-            tempFiles[res.batchIdx] = { path: res.tempPath, startMs: res.batchStartMs };
-          }
-        }
-        for (const tf of tempFiles.filter((item): item is { path: string; startMs: number } => !!item)) {
-          try {
-            await fs.unlink(tf.path);
-            debugLog('Đã xóa temp file sau lỗi batch', { tempFile: tf.path });
-          } catch (cleanupError) {
-            debugLog('Không thể xóa temp file sau lỗi batch', {
-              tempFile: tf.path,
-              error: String(cleanupError),
-            });
-          }
+      const tempPath = path.join(outputDir, `${baseName}_temp_${batchIdx}${ext}`);
+      const batchStartMs = batch[0].startMs;
+      debugLog('Thông tin batch', {
+        batchNumber: batchIdx + 1,
+        totalBatches: batches.length,
+        segmentCount: batch.length,
+        batchStartMs,
+        batchEndMs: lastItem.startMs,
+        tempPath,
+        spanMs: lastItem.startMs - batch[0].startMs,
+      });
+
+      const batchResult = await mergeSmallBatch(batch, tempPath, ffmpegBin, batchStartMs);
+      if (!batchResult.success) {
+        // Cleanup temp files đã tạo trước đó
+        for (let t = 0; t < batchIdx; t++) {
+          try { await fs.unlink(tempFiles[t].path); } catch {}
         }
         return {
           success: false,
           outputPath: finalOutputPath,
-          error: `Lỗi ghép batch ${failed.batchIdx + 1}: ${failedReason} | file: ${failedInputName} | nguồn: ${failedInputSource.label}${suspectedInputSummary ? ` | files nghi lỗi: ${suspectedInputSummary}` : ''}`,
+          error: `Lỗi ghép batch ${batchIdx + 1}: ${batchResult.error ?? 'unknown'}`,
         };
       }
 
-      for (const res of results) {
-        tempFiles[res.batchIdx] = { path: res.tempPath, startMs: res.batchStartMs };
-        debugLog('Batch merge thành công', {
-          batchNumber: res.batchIdx + 1,
-          tempPath: res.tempPath,
-          batchStartMs: res.batchStartMs,
-        });
-      }
+      tempFiles[batchIdx] = { path: tempPath, startMs: batchStartMs };
+
+      // Log boundaries kiểm tra overlap giữa các batch
+      const lastDur = await getAudioDuration(lastItem.path);
+      const estimateEndMs = batchStartMs + (lastItem.startMs - batchStartMs) + Math.max(lastDur, 5000);
+      const nextStartMs = batches[batchIdx + 1]?.[0]?.startMs;
+      debugLog(`Batch ${batchIdx + 1}/${batches.length} boundaries`, {
+        startMs: batchStartMs,
+        estimateEndMs,
+        nextBatchStartMs: nextStartMs ?? 'N/A',
+        overlap: nextStartMs != null && estimateEndMs > nextStartMs ? '⚠️ OVERLAP' : 'OK',
+      });
 
       if (onProgress) {
-        const doneBatches = Math.min(i + BATCH_CONCURRENCY, batches.length);
-        onProgress({ currentBatch: doneBatches, totalBatches: batches.length, phase: 'mixing', message: `Đã ghép ${doneBatches}/${batches.length} batches` });
+        onProgress({
+          currentBatch: batchIdx + 1, totalBatches: batches.length,
+          phase: 'mixing',
+          message: `Đã ghép ${batchIdx + 1}/${batches.length} batches`,
+        });
       }
     }
     

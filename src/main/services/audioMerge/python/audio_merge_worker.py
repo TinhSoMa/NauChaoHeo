@@ -124,7 +124,33 @@ def main() -> None:
         "channels": channels,
     })
 
-    canvas = np.zeros(total_samples, dtype=np.float32)
+    # Sanity check: từ chối alloc nếu canvas quá lớn (>400 MB float32)
+    MAX_ALLOWED_SAMPLES = 100_000_000
+    if total_samples > MAX_ALLOWED_SAMPLES:
+        emit({
+            "event": "error",
+            "message": (
+                f"REFUSE_ALLOC: canvas={total_samples} samples "
+                f"({total_samples * 4 / 1024**3:.2f} GiB). "
+                f"total_duration_ms={total_duration_ms}ms "
+                f"({total_duration_ms / 3600000:.1f}h), "
+                f"sample_rate={sample_rate}. "
+                f"Kiểm tra file corrupt hoặc timestamp SRT bất thường."
+            )
+        })
+        sys.exit(1)
+
+    try:
+        canvas = np.zeros(total_samples, dtype=np.float32)
+    except MemoryError:
+        emit({
+            "event": "error",
+            "message": (
+                f"OOM: không thể alloc {total_samples} samples "
+                f"({total_samples * 4 / 1024**3:.1f} GiB)"
+            )
+        })
+        sys.exit(1)
     decoded_count = 0
 
     for i, f in enumerate(files):
