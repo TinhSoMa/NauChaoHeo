@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { getFFmpegPath } from './ffmpegPath';
 
-let cachedEncoders: { nvenc: boolean; qsv: boolean } | null = null;
+const encoderCache = new Map<string, { nvenc: boolean; qsv: boolean }>();
 
 function parseEncoderList(output: string): { nvenc: boolean; qsv: boolean } {
   const lines = output.split(/\r?\n/);
@@ -15,31 +15,36 @@ function parseEncoderList(output: string): { nvenc: boolean; qsv: boolean } {
   return { nvenc, qsv };
 }
 
-export function getAvailableHardwareEncoders(): { nvenc: boolean; qsv: boolean } {
-  if (cachedEncoders) {
-    return cachedEncoders;
+export function getAvailableHardwareEncoders(ffmpegPath?: string): { nvenc: boolean; qsv: boolean } {
+  const resolvedPath = ffmpegPath || getFFmpegPath();
+  const cached = encoderCache.get(resolvedPath);
+  if (cached) {
+    return cached;
   }
 
-  const ffmpegPath = getFFmpegPath();
   try {
-    const result = spawnSync(ffmpegPath, ['-encoders'], {
+    const result = spawnSync(resolvedPath, ['-encoders'], {
       encoding: 'utf-8',
       timeout: 10000,
       windowsHide: true,
     });
     if (result.status !== 0 || result.error) {
-      cachedEncoders = { nvenc: false, qsv: false };
-      return cachedEncoders;
+      const empty = { nvenc: false, qsv: false };
+      encoderCache.set(resolvedPath, empty);
+      return empty;
     }
-    cachedEncoders = parseEncoderList(result.stdout || result.stderr || '');
+    const encoders = parseEncoderList(result.stdout || result.stderr || '');
+    encoderCache.set(resolvedPath, encoders);
+    return encoders;
   } catch {
-    cachedEncoders = { nvenc: false, qsv: false };
+    const empty = { nvenc: false, qsv: false };
+    encoderCache.set(resolvedPath, empty);
+    return empty;
   }
-  return cachedEncoders;
 }
 
-export function detectBestEncoder(): 'nvenc' | 'qsv' | 'none' {
-  const encoders = getAvailableHardwareEncoders();
+export function detectBestEncoder(ffmpegPath?: string): 'nvenc' | 'qsv' | 'none' {
+  const encoders = getAvailableHardwareEncoders(ffmpegPath);
   if (encoders.nvenc) return 'nvenc';
   if (encoders.qsv) return 'qsv';
   return 'none';

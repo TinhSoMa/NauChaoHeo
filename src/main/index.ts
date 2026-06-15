@@ -4,6 +4,7 @@ import { registerAllHandlers } from './ipc'
 import { initDatabase } from './database/schema'
 import { tryImportDevKeys } from './services/gemini/apiKeys'
 import { AppSettingsService } from './services/appSettings'
+import { initFFmpeg } from './utils/ffmpegSetup'
 import { createDashboardWindow } from './windowManager'
 import { cleanTempFiles } from './services/caption/garbageCollector'
 import { installMainConsoleCapture } from './services/logging/consoleCapture'
@@ -29,6 +30,9 @@ app.whenReady().then(() => {
 
   // Auto import dev keys
   tryImportDevKeys()
+
+  // Init FFmpeg — detect NVIDIA driver, download legacy FFmpeg if needed
+  initFFmpeg()
 
   // Warm memory context worker in background (không block app startup)
   getMemoryContextService().getHealth().catch(() => {})

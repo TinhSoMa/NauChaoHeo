@@ -27,6 +27,7 @@ export interface RunFFmpegProcessOptions {
   progressCallback?: (progress: RenderProgress) => void;
   debugLabel?: string;
   includeFullStderrOnError?: boolean;
+  ffmpegPath?: string;
 }
 
 export interface HardsubAudioMixBuildInput {

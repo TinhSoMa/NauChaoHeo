@@ -23,7 +23,9 @@ import {
   SubtitleEntry,
   VideoMetadata,
 } from '../../../shared/types/caption';
-import { getFFmpegPath, getFFprobePath, isFFmpegAvailable } from '../../utils/ffmpegPath';
+import { getFFmpegPath, getFFprobePath, isFFmpegAvailable, getBestFFmpegPath, getBestFFprobePath } from '../../utils/ffmpegPath';
+import { getNvidiaDriverVersion, isNvencDriverSufficient } from '../../utils/nvidiaDriver';
+import { isLegacyFFmpegReady } from '../../utils/ffmpegSetup';
 import {
   prepareSubtitleAndDuration,
   prepareSubtitleAndDurationPortrait,
@@ -68,6 +70,16 @@ const AUDIO_PREVIEW_STOPPED_MESSAGE = 'Đã dừng test audio theo yêu cầu.';
 const VIDEO_PREVIEW_STOPPED_MESSAGE = 'Đã dừng preview frame theo yêu cầu.';
 let activeAudioPreviewProcess: ChildProcessWithoutNullStreams | null = null;
 let audioPreviewStopRequested = false;
+
+function resolveRenderFFmpegPath(hardware: RenderVideoOptions['hardwareAcceleration'] | undefined): string {
+  if (hardware === 'nvenc') {
+    const driverVersion = getNvidiaDriverVersion();
+    if (driverVersion != null && !isNvencDriverSufficient(driverVersion) && isLegacyFFmpegReady()) {
+      return getBestFFmpegPath(true);
+    }
+  }
+  return getFFmpegPath();
+}
 let activePreviewFrameProcess: ChildProcessWithoutNullStreams | null = null;
 let activePreviewFrameToken: string | null = null;
 
@@ -1490,6 +1502,7 @@ export async function renderHardsubVideo(
     progressCallback,
     debugLabel: `hardsub:${effectiveFeatherStrategy}`,
     includeFullStderrOnError,
+    ffmpegPath: resolveRenderFFmpegPath(options.hardwareAcceleration),
   });
   if (
     !renderResult.success &&
@@ -2083,6 +2096,7 @@ export async function renderHardsubPortraitVideo(
     progressCallback,
     debugLabel: `hardsub_portrait:${effectiveFeatherStrategy}`,
     includeFullStderrOnError,
+    ffmpegPath: resolveRenderFFmpegPath(options.hardwareAcceleration),
   });
   if (
     !renderResult.success &&
@@ -2247,6 +2261,7 @@ export async function renderBlackBackgroundVideo(
     tempAssPath: prep.tempAssPath,
     duration: prep.duration,
     progressCallback,
+    ffmpegPath: resolveRenderFFmpegPath(options.hardwareAcceleration),
   });
   if (renderResult.success) {
     renderResult.timingPayload = {

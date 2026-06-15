@@ -49,7 +49,7 @@ export function isRenderInProgress(): boolean {
 }
 
 export function runFFmpegProcess(options: RunFFmpegProcessOptions): Promise<RenderResult> {
-  const ffmpegPath = getFFmpegPath();
+  const ffmpegPath = options.ffmpegPath || getFFmpegPath();
 
   const cleanupTempFiles = async (): Promise<void> => {
     try {

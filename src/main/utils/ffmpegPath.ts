@@ -13,24 +13,20 @@ import { existsSync } from 'fs';
  */
 export function getFFmpegPath(): string {
   const isPackaged = app.isPackaged;
-  
+
   if (isPackaged) {
-    // Khi đóng gói: process.resourcesPath/ffmpeg/ffmpeg.exe
     return path.join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe');
   } else {
-    // Dev mode: app root/resources/ffmpeg/win64/ffmpeg.exe
     return path.join(app.getAppPath(), 'resources', 'ffmpeg', 'win64', 'ffmpeg.exe');
   }
 }
 
 /**
  * Lấy đường dẫn tới ffprobe.exe
- * - Dev mode: resources/ffmpeg/win64/ffprobe.exe
- * - Production: resources/ffmpeg/ffprobe.exe
  */
 export function getFFprobePath(): string {
   const isPackaged = app.isPackaged;
-  
+
   if (isPackaged) {
     return path.join(process.resourcesPath, 'ffmpeg', 'ffprobe.exe');
   } else {
@@ -38,39 +34,65 @@ export function getFFprobePath(): string {
   }
 }
 
-/**
- * Kiểm tra FFmpeg đã được cài đặt chưa
- */
+export function getNvencFFmpegPath(): string {
+  const isPackaged = app.isPackaged;
+  if (isPackaged) {
+    return path.join(process.resourcesPath, 'ffmpeg-nvenc', 'ffmpeg.exe');
+  }
+  return path.join(app.getAppPath(), 'resources', 'ffmpeg-nvenc', 'win64', 'ffmpeg.exe');
+}
+
+export function getNvencFFprobePath(): string {
+  const isPackaged = app.isPackaged;
+  if (isPackaged) {
+    return path.join(process.resourcesPath, 'ffmpeg-nvenc', 'ffprobe.exe');
+  }
+  return path.join(app.getAppPath(), 'resources', 'ffmpeg-nvenc', 'win64', 'ffprobe.exe');
+}
+
+export function getBestFFmpegPath(useNvencFFmpeg?: boolean): string {
+  if (useNvencFFmpeg) {
+    const nvencPath = getNvencFFmpegPath();
+    if (existsSync(nvencPath)) return nvencPath;
+  }
+  return getFFmpegPath();
+}
+
+export function getBestFFprobePath(useNvencFFmpeg?: boolean): string {
+  if (useNvencFFmpeg) {
+    const nvencPath = getNvencFFprobePath();
+    if (existsSync(nvencPath)) return nvencPath;
+  }
+  return getFFprobePath();
+}
+
 export function isFFmpegAvailable(): boolean {
   const ffmpegPath = getFFmpegPath();
   const ffprobePath = getFFprobePath();
-  
+
   const ffmpegExists = existsSync(ffmpegPath);
   const ffprobeExists = existsSync(ffprobePath);
-  
+
   if (!ffmpegExists) {
     console.warn(`[FFmpeg] Không tìm thấy ffmpeg tại: ${ffmpegPath}`);
   }
   if (!ffprobeExists) {
     console.warn(`[FFmpeg] Không tìm thấy ffprobe tại: ${ffprobePath}`);
   }
-  
+
   return ffmpegExists && ffprobeExists;
 }
 
-/**
- * Lấy thông tin đường dẫn FFmpeg để debug
- */
-export function getFFmpegInfo(): { 
-  ffmpegPath: string; 
-  ffprobePath: string; 
+export function getFFmpegInfo(): {
+  ffmpegPath: string;
+  ffprobePath: string;
   isPackaged: boolean;
   ffmpegExists: boolean;
   ffprobeExists: boolean;
 } {
   const ffmpegPath = getFFmpegPath();
   const ffprobePath = getFFprobePath();
-  
+
   return {
     ffmpegPath,
     ffprobePath,
