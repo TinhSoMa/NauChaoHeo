@@ -19,7 +19,8 @@ export type SettingsTab =
   | 'queueMonitor'
   | 'debugLogs'
   | 'autoShutdown'
-  | 'openrouter';
+  | 'openrouter'
+  | 'cliAgentScan';
 
 // Theme & Language types
 export type ThemeMode = 'light' | 'dark';

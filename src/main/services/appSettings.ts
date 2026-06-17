@@ -9,6 +9,7 @@ import * as path from 'path';
 import type { ASSStyleConfig } from '../../shared/types/caption';
 import type { GrokUiProfileConfig } from '../../shared/types/grokUi';
 
+
 // ============================================
 // TYPES
 // ============================================
@@ -67,6 +68,14 @@ export interface AppSettings {
   openrouterDefaultModel: string;
   openrouterSiteUrl: string | null;
   openrouterAppTitle: string | null;
+
+  cliAgentConfig: Record<string, CliAgentConfigEntry>;
+}
+
+export interface CliAgentConfigEntry {
+  customBinPath: string | null;
+  env: Record<string, string>;
+  enabled: boolean;
 }
 
 export interface CapcutTtsSecrets {
@@ -550,6 +559,26 @@ function normalizeProxyScopes(
   return next;
 }
 
+function normalizeCliAgentConfig(value: unknown): AppSettings['cliAgentConfig'] {
+  if (!value || typeof value !== 'object') return {};
+  const raw = value as Record<string, unknown>;
+  const config: Record<string, CliAgentConfigEntry> = {};
+  for (const [key, val] of Object.entries(raw)) {
+    if (!val || typeof val !== 'object') continue;
+    const entry = val as Record<string, unknown>;
+    config[key] = {
+      customBinPath: typeof entry.customBinPath === 'string' && entry.customBinPath.trim().length > 0 ? entry.customBinPath.trim() : null,
+      env: entry.env && typeof entry.env === 'object' ? Object.fromEntries(
+        Object.entries(entry.env as Record<string, unknown>)
+          .filter(([, v]) => typeof v === 'string')
+          .map(([k, v]) => [k, v as string])
+      ) : {},
+      enabled: entry.enabled !== false,
+    };
+  }
+  return config;
+}
+
 export function normalizeGeminiMinSendIntervalMs(value: unknown): number {
   let numeric: number;
   if (typeof value === 'number') {
@@ -664,6 +693,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   openrouterDefaultModel: 'openai/gpt-4o-mini',
   openrouterSiteUrl: null,
   openrouterAppTitle: null,
+
+  cliAgentConfig: {},
 };
 
 // ============================================
@@ -733,6 +764,7 @@ class AppSettingsServiceClass {
           autoShutdownDelayMinutes: normalizeAutoShutdownDelayMinutes(loaded?.autoShutdownDelayMinutes),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
+          cliAgentConfig: normalizeCliAgentConfig(loaded?.cliAgentConfig),
         };
         applyNativeTheme(this.settings.theme);
         console.log('[AppSettings] Loaded settings successfully');
@@ -872,6 +904,9 @@ class AppSettingsServiceClass {
       });
     }
 
+    if (Object.prototype.hasOwnProperty.call(partial, 'cliAgentConfig')) {
+      nextPartial.cliAgentConfig = normalizeCliAgentConfig(partial.cliAgentConfig);
+    }
     if (Object.prototype.hasOwnProperty.call(partial, 'uiFontFamily')) {
       nextPartial.uiFontFamily = normalizeStringOrNull(partial.uiFontFamily) ?? DEFAULT_SETTINGS.uiFontFamily;
     }

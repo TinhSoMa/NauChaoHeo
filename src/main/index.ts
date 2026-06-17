@@ -9,6 +9,7 @@ import { cleanTempFiles } from './services/caption/garbageCollector'
 import { installMainConsoleCapture } from './services/logging/consoleCapture'
 import { shutdownScheduler } from './services/shutdownScheduler'
 import { getMemoryContextService } from './services/memoryContext/memoryContextService'
+import { warmupCliAgentScan } from './ipc/cliAgentScanHandlers'
 
 installMainConsoleCapture()
 let isQuitInProgress = false
@@ -23,6 +24,9 @@ app.whenReady().then(() => {
 
   // Khởi tạo App Settings
   AppSettingsService.initialize()
+
+  // Warmup CLI Agent Scan (fire-and-forget)
+  warmupCliAgentScan()
 
   // Đăng ký IPC handlers
   registerAllHandlers()

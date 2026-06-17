@@ -17,7 +17,8 @@ import {
   Terminal,
   Bot,
   Power,
-  Globe
+  Globe,
+  Cpu
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -37,6 +38,7 @@ import { QueueMonitorSettings } from './QueueMonitorSettings';
 import { DebugLogsSettings } from './DebugLogsSettings';
 import { AutoShutdownSettings } from './AutoShutdownSettings';
 import { OpenRouterDetail } from './OpenRouterDetail';
+import { CliAgentScanPanel } from './CliAgentScanPanel';
 import { BackButton } from './BackButton';
 
 // Menu items configuration
@@ -119,6 +121,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Quản lý API keys, models và cấu hình OpenRouter',
     icon: Globe
   },
+  {
+    id: 'cliAgentScan',
+    label: 'CLI Agents',
+    desc: 'Quét và hiển thị các CLI coding agent đã cài đặt',
+    icon: Cpu
+  },
 ];
 
 export function Settings() {
@@ -157,6 +165,7 @@ export function Settings() {
       {activeTab === 'debugLogs' && <DebugLogsSettings />}
       {activeTab === 'autoShutdown' && <AutoShutdownSettings />}
       {activeTab === 'openrouter' && <OpenRouterDetail />}
+      {activeTab === 'cliAgentScan' && <CliAgentScanPanel />}
     </div>
   );
 }

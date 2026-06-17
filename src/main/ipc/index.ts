@@ -22,12 +22,17 @@ import { registerShutdownHandlers } from './shutdownHandlers';
 import { registerMemoryContextHandlers } from './memoryContextHandlers';
 import { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 import { registerOpenRouterHandlers } from './openrouterHandlers';
+import { registerAgentHandlers } from './agentHandlers';
+import { registerCliAgentScanHandlers } from './cliAgentScanHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
  */
 export function registerAllHandlers(): void {
   console.log('[IPC] Đang đăng ký tất cả handlers...');
+
+  // Đăng ký Agent handlers (agent registry & detection)
+  registerAgentHandlers();
 
   // Đăng ký Gemini handlers
   registerGeminiHandlers();
@@ -87,6 +92,9 @@ export function registerAllHandlers(): void {
   // Đăng ký OpenRouter handlers
   registerOpenRouterHandlers();
 
+  // Đăng ký CLI Agent Scan handlers
+  registerCliAgentScanHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -110,4 +118,5 @@ export { registerShutdownHandlers } from './shutdownHandlers';
 export { registerMemoryContextHandlers } from './memoryContextHandlers';
 export { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 export { registerOpenRouterHandlers } from './openrouterHandlers';
+export { registerCliAgentScanHandlers } from './cliAgentScanHandlers';
 
