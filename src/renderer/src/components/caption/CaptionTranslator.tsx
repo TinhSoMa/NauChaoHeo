@@ -6,6 +6,7 @@ import videoIconUrl from '../../../../../resources/icons/video.svg';
 import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
+import { SearchableModelSelect } from '../common/SearchableModelSelect';
 import { useProjectContext } from '../../context/ProjectContext';
 import { useCaptionMemory } from './useCaptionMemory';
 import {
@@ -1095,6 +1096,70 @@ export function CaptionTranslator() {
       active = false;
     };
   }, []);
+
+  interface CliAgentOption {
+    id: string;
+    name: string;
+    models: { id: string; label: string }[];
+    supportsCustomModel?: boolean;
+  }
+  const [cliAgentOptions, setCliAgentOptions] = useState<CliAgentOption[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const [scanRes, configRes] = await Promise.all([
+          window.electronAPI.cliAgentScan.scan(),
+          window.electronAPI.cliAgentScan.getConfig(),
+        ]);
+        if (!active) return;
+        const enabledAgents = scanRes
+          .filter((a: any) => a.available && configRes[a.id]?.enabled !== false)
+          .map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            models: a.models || [],
+            supportsCustomModel: a.supportsCustomModel,
+          }));
+        setCliAgentOptions(enabledAgents);
+        if (enabledAgents.length > 0 && !settings.cliAgentId) {
+          settings.setCliAgentId(enabledAgents[0].id);
+        }
+      } catch { /* silent */ }
+    };
+    void load();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (settings.translateMethod !== 'cli_agent') return;
+    if (settings.cliAgentId) return;
+    if (cliAgentOptions.length > 0) {
+      settings.setCliAgentId(cliAgentOptions[0].id);
+    }
+  }, [settings.translateMethod, cliAgentOptions]);
+
+  useEffect(() => {
+    if (settings.translateMethod !== 'cli_agent') return;
+    const agent = cliAgentOptions.find((a) => a.id === settings.cliAgentId);
+    if (!agent) return;
+    const currentModel = settings.cliAgentModel;
+    if (currentModel && agent.models.some((m) => m.id === currentModel)) return;
+    if (agent.models.length > 0) {
+      settings.setCliAgentModel(agent.models[0].id);
+    } else {
+      settings.setCliAgentModel('');
+    }
+  }, [settings.cliAgentId]);
+
+  // Sync cliAgentSelection to AppSettings when selection changes
+  useEffect(() => {
+    if (!settings.cliAgentId) return;
+    window.electronAPI.appSettings.update({
+      cliAgentSelection: { agentId: settings.cliAgentId, model: settings.cliAgentModel },
+    }).catch(() => {});
+  }, [settings.cliAgentId, settings.cliAgentModel]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -7819,6 +7884,12 @@ export function CaptionTranslator() {
                 onChange={() => settings.setTranslateMethod('openrouter')}
                 name="translateMethod"
               />
+              <RadioButton
+                label="CLI Agent"
+                checked={settings.translateMethod === 'cli_agent'}
+                onChange={() => settings.setTranslateMethod('cli_agent')}
+                name="translateMethod"
+              />
             </div>
             <div className={styles.inputGroup}>
               {settings.translateMethod === 'openrouter' ? (
@@ -7830,6 +7901,39 @@ export function CaptionTranslator() {
                     onChange={(id) => settings.setOpenrouterModel(id)}
                     placeholder="Chọn OpenRouter model..."
                   />
+                </>
+              ) : settings.translateMethod === 'cli_agent' ? (
+                <>
+                  <label className={styles.label}>CLI Agent</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <select
+                      value={settings.cliAgentId}
+                      onChange={(e) => settings.setCliAgentId(e.target.value)}
+                      className={styles.select}
+                      style={{ flex: 1 }}
+                    >
+                      {cliAgentOptions.length === 0 && (
+                        <option value="">Không có agent khả dụng</option>
+                      )}
+                      {cliAgentOptions.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </select>
+                    {(() => {
+                      const agent = cliAgentOptions.find((a) => a.id === settings.cliAgentId);
+                      if (!agent || agent.models.length === 0) return null;
+                      return (
+                        <SearchableModelSelect
+                          models={agent.models}
+                          value={settings.cliAgentModel}
+                          onChange={settings.setCliAgentModel}
+                          searchPlaceholder="Tìm model..."
+                          minSearchableOptions={1}
+                          style={{ flex: 1 }}
+                        />
+                      );
+                    })()}
+                  </div>
                 </>
               ) : (
                 <>
@@ -7860,7 +7964,9 @@ export function CaptionTranslator() {
                     ? 'Grok UI dùng Grok3API qua trình duyệt, không phụ thuộc Gemini model.'
                     : settings.translateMethod === 'openrouter'
                       ? 'OpenRouter dùng model mặc định từ cài đặt OpenRouter. Tự động xoay API key khi có nhiều key.'
-                      : 'API sẽ dùng model đã chọn để dịch batch.'}
+                      : settings.translateMethod === 'cli_agent'
+                        ? 'CLI Agent dùng agent coding đã cài trên máy (VD: Claude Code, Codex, OpenCode). Vào Settings > CLI Agents để cấu hình.'
+                        : 'API sẽ dùng model đã chọn để dịch batch.'}
             >
               {settings.translateMethod === 'impit'
                 ? 'Impit: bỏ qua model'
@@ -7870,7 +7976,9 @@ export function CaptionTranslator() {
                     ? 'Grok UI: qua browser'
                     : settings.translateMethod === 'openrouter'
                       ? 'OpenRouter: model từ cài đặt'
-                      : 'API: dùng model đã chọn'}
+                      : settings.translateMethod === 'cli_agent'
+                        ? 'CLI Agent: agent coding trên máy'
+                        : 'API: dùng model đã chọn'}
             </div>
           </div>
           {(memoryAvailable !== null) && (

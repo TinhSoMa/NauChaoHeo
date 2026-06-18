@@ -7,6 +7,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'claude',
     versionArgs: ['--version'],
     homepage: 'https://docs.anthropic.com/en/docs/claude-code/overview',
+    supportsCustomModel: true,
   },
   {
     id: 'codex',
@@ -14,6 +15,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'codex',
     versionArgs: ['--version'],
     homepage: 'https://codex.cli/',
+    supportsCustomModel: true,
   },
   {
     id: 'opencode',
@@ -22,6 +24,16 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     fallbackBins: ['opencode'],
     versionArgs: ['--version'],
     homepage: 'https://opencode.ai',
+    supportsCustomModel: true,
+    listModels: {
+      args: ['models'],
+      parse: (stdout) => {
+        const ids = stdout.split('\n').map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith('#'));
+        if (ids.length === 0) return null;
+        return ids.map((id) => ({ id, label: id }));
+      },
+      timeoutMs: 15000,
+    },
   },
   {
     id: 'gemini-cli',
@@ -29,6 +41,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'gemini',
     versionArgs: ['--version'],
     homepage: 'https://cloud.google.com/vertex-ai/generative-ai/docs/gemini-cli',
+    supportsCustomModel: true,
   },
   {
     id: 'cursor-agent',
@@ -36,6 +49,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'cursor',
     versionArgs: ['--version'],
     homepage: 'https://cursor.com',
+    supportsCustomModel: true,
   },
   {
     id: 'copilot',
@@ -43,6 +57,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'gh',
     versionArgs: ['--version'],
     homepage: 'https://github.com/github/gh-copilot',
+    supportsCustomModel: false,
   },
   {
     id: 'qwen',
@@ -50,6 +65,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'qwen',
     versionArgs: ['--version'],
     homepage: 'https://github.com/QwenLM/qwen-agent',
+    supportsCustomModel: true,
   },
   {
     id: 'qoder',
@@ -57,6 +73,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'qoder',
     versionArgs: ['--version'],
     homepage: 'https://qoder.ai',
+    supportsCustomModel: true,
   },
   {
     id: 'deepseek',
@@ -64,6 +81,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'deepseek',
     versionArgs: ['--version'],
     homepage: 'https://platform.deepseek.com',
+    supportsCustomModel: true,
   },
   {
     id: 'aider',
@@ -71,6 +89,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'aider',
     versionArgs: ['--version'],
     homepage: 'https://aider.chat',
+    supportsCustomModel: true,
   },
   {
     id: 'pi',
@@ -78,6 +97,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'pi',
     versionArgs: ['--version'],
     homepage: 'https://pi.ai',
+    supportsCustomModel: false,
   },
   {
     id: 'kilo',
@@ -85,6 +105,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'kilo',
     versionArgs: ['--version'],
     homepage: 'https://github.com/kilox/kilox',
+    supportsCustomModel: true,
   },
   {
     id: 'kiro',
@@ -92,6 +113,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'kiro',
     versionArgs: ['--version'],
     homepage: 'https://kiro.dev',
+    supportsCustomModel: true,
   },
   {
     id: 'vibe',
@@ -99,6 +121,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'vibe',
     versionArgs: ['--version'],
     homepage: 'https://vibe.dev',
+    supportsCustomModel: true,
   },
   {
     id: 'devin',
@@ -106,6 +129,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'devin',
     versionArgs: ['--version'],
     homepage: 'https://devin.ai',
+    supportsCustomModel: false,
   },
   {
     id: 'hermes',
@@ -113,6 +137,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'hermes',
     versionArgs: ['--version'],
     homepage: 'https://hermes.ai',
+    supportsCustomModel: true,
   },
   {
     id: 'kimi',
@@ -120,6 +145,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'kimi',
     versionArgs: ['--version'],
     homepage: 'https://kimi.ai',
+    supportsCustomModel: false,
   },
   {
     id: 'antigravity',
@@ -127,6 +153,7 @@ const CLI_AGENT_DEFS: CliAgentDef[] = [
     bin: 'antigravity',
     versionArgs: ['--version'],
     homepage: 'https://antigravity.dev',
+    supportsCustomModel: true,
   },
 ];
 

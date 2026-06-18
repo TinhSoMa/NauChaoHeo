@@ -1,10 +1,6 @@
+import { ProxyAgent } from 'undici';
 import { ProxyConfig } from '../../shared/types/proxy';
 import { getProxyManager } from './proxy/proxyManager';
-
-/**
- * API Client với proxy support
- * Wrapper cho fetch/axios để tự động sử dụng proxy rotation
- */
 
 export class GeminiHttpError extends Error {
   constructor(
@@ -23,7 +19,7 @@ interface RequestOptions {
   body?: any;
   timeout?: number;
   signal?: AbortSignal;
-  useProxy?: boolean; // Tùy chọn bật/tắt proxy cho request này
+  useProxy?: boolean;
   proxyScope?: 'caption' | 'story' | 'chat' | 'tts' | 'other';
 }
 
@@ -32,12 +28,17 @@ interface RequestResult {
   data?: any;
   error?: string;
   statusCode?: number;
-  retryAfter?: number; // seconds to wait before retry (from Retry-After header)
+  retryAfter?: number;
 }
 
-/**
- * Make HTTP request với proxy support và auto-retry
- */
+function buildDispatcher(proxy: ProxyConfig | null): { dispatcher?: ProxyAgent } {
+  if (!proxy) return {};
+  const proxyUrl = proxy.username
+    ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
+    : `${proxy.type}://${proxy.host}:${proxy.port}`;
+  return { dispatcher: new ProxyAgent(proxyUrl) };
+}
+
 export async function makeRequestWithProxy(
   url: string,
   options: RequestOptions = {},
@@ -47,7 +48,7 @@ export async function makeRequestWithProxy(
     method = 'GET',
     headers = {},
     body = null,
-    timeout = 150000, // Tăng lên 15s (proxy chậm hơn direct)
+    timeout = 150000,
     signal,
     useProxy: useProxyOverride,
     proxyScope = 'other',
@@ -60,10 +61,8 @@ export async function makeRequestWithProxy(
   let lastError: string = '';
   let currentProxy: ProxyConfig | null = null;
 
-  // Retry loop
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      // Lấy proxy nếu enabled
       if (useProxy) {
         currentProxy = proxyManager.getNextProxy(undefined, proxyScope);
       }
@@ -79,7 +78,6 @@ export async function makeRequestWithProxy(
         proxy: currentProxy,
       });
 
-      // Thành công
       if (currentProxy) {
         proxyManager.markProxySuccess(currentProxy.id);
       }
@@ -100,19 +98,16 @@ export async function makeRequestWithProxy(
           error: 'REQUEST_ABORTED',
         };
       }
-      
-      // Đánh dấu proxy thất bại
+
       if (currentProxy) {
         proxyManager.markProxyFailed(currentProxy.id, lastError);
       }
 
       console.warn(`[ApiClient] ❌ Attempt ${attempt + 1} failed:`, lastError);
 
-      // Retry (có thể qua proxy hoặc direct)
       if (attempt < maxRetries - 1) {
         const label = useProxy ? 'proxy khác' : 'direct';
         console.log(`[ApiClient] 🔄 Retry với ${label}...`);
-        // Retry delay: dùng retryAfter nếu có (từ 429), fallback exponential backoff
         const delay = retryAfter && retryAfter > 0
           ? Math.min(retryAfter * 1000, 30_000)
           : Math.min(1000 * Math.pow(2, attempt), 30_000);
@@ -129,7 +124,6 @@ export async function makeRequestWithProxy(
     };
   }
 
-  // Hết retry, thử fallback về direct connection
   if (useProxy && proxyManager.shouldFallbackToDirect()) {
     console.log('[ApiClient] 🔄 Fallback về direct connection...');
     try {
@@ -143,7 +137,7 @@ export async function makeRequestWithProxy(
       });
 
       console.log('[ApiClient] ✅ Direct connection thành công');
-      
+
       return {
         success: true,
         data: result.data,
@@ -155,16 +149,12 @@ export async function makeRequestWithProxy(
     }
   }
 
-  // Tất cả đều thất bại
   return {
     success: false,
     error: `Request failed after ${maxRetries} retries: ${lastError}`,
   };
 }
 
-/**
- * Core request function với proxy agent
- */
 async function makeRequest(
   url: string,
   options: {
@@ -176,35 +166,6 @@ async function makeRequest(
     proxy: ProxyConfig | null;
   }
 ): Promise<{ data: any; statusCode: number }> {
-  const { default: fetch } = await import('node-fetch');
-  const { HttpsProxyAgent } = await import('https-proxy-agent');
-  const { SocksProxyAgent } = await import('socks-proxy-agent');
-  const AbortController = globalThis.AbortController || (await import('abort-controller')).AbortController;
-
-  let agent: any = undefined;
-
-  // Tạo proxy agent nếu có proxy
-  if (options.proxy) {
-    const p = options.proxy;
-    const proxyUrl = p.username
-      ? `${p.type}://${p.username}:${p.password}@${p.host}:${p.port}`
-      : `${p.type}://${p.host}:${p.port}`;
-
-    if (p.type === 'socks5') {
-      agent = new SocksProxyAgent(proxyUrl, {
-        timeout: options.timeout,
-      });
-    } else {
-      // HttpsProxyAgent options
-      agent = new HttpsProxyAgent(proxyUrl, {
-        timeout: options.timeout,
-        rejectUnauthorized: false, // Allow self-signed certs from proxy
-        keepAlive: false, // Don't keep connections alive
-      });
-    }
-  }
-
-  // Setup AbortController for timeout
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = setTimeout(() => {
@@ -225,16 +186,12 @@ async function makeRequest(
   }
 
   try {
-    // Prepare request
     const fetchOptions: any = {
       method: options.method,
       headers: options.headers,
       signal: controller.signal,
+      ...buildDispatcher(options.proxy),
     };
-
-    if (agent) {
-      fetchOptions.agent = agent;
-    }
 
     if (options.body) {
       if (typeof options.body === 'string') {
@@ -245,7 +202,6 @@ async function makeRequest(
       }
     }
 
-    // Make request
     const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
@@ -259,7 +215,6 @@ async function makeRequest(
       } catch {
         errorMessage = response.statusText;
       }
-      // Extract Retry-After header
       const retryAfterHeader = response.headers.get('retry-after');
       if (retryAfterHeader) {
         retryAfter = parseInt(retryAfterHeader, 10);
@@ -270,7 +225,6 @@ async function makeRequest(
       throw error;
     }
 
-    // Parse response
     const contentType = response.headers.get('content-type');
     let data: any;
 
@@ -285,7 +239,6 @@ async function makeRequest(
       statusCode: response.status,
     };
   } catch (error: any) {
-    // Handle timeout
     if (error.name === 'AbortError') {
       if (options.signal?.aborted && !timedOut) {
         throw new Error('REQUEST_ABORTED');
@@ -301,26 +254,20 @@ async function makeRequest(
   }
 }
 
-/**
- * Helper sleep function
- */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Axios-style wrapper (nếu cần tương thích với code cũ)
- */
 export const proxyClient = {
-  get: (url: string, config?: RequestOptions) => 
+  get: (url: string, config?: RequestOptions) =>
     makeRequestWithProxy(url, { ...config, method: 'GET' }),
-  
+
   post: (url: string, data?: any, config?: RequestOptions) =>
     makeRequestWithProxy(url, { ...config, method: 'POST', body: data }),
-  
+
   put: (url: string, data?: any, config?: RequestOptions) =>
     makeRequestWithProxy(url, { ...config, method: 'PUT', body: data }),
-  
+
   delete: (url: string, config?: RequestOptions) =>
     makeRequestWithProxy(url, { ...config, method: 'DELETE' }),
 };

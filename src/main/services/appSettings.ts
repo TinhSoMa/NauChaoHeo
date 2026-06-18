@@ -70,12 +70,14 @@ export interface AppSettings {
   openrouterAppTitle: string | null;
 
   cliAgentConfig: Record<string, CliAgentConfigEntry>;
+  cliAgentSelection: { agentId: string; model: string } | null;
 }
 
 export interface CliAgentConfigEntry {
   customBinPath: string | null;
   env: Record<string, string>;
   enabled: boolean;
+  selectedModel?: string | null;
 }
 
 export interface CapcutTtsSecrets {
@@ -574,9 +576,19 @@ function normalizeCliAgentConfig(value: unknown): AppSettings['cliAgentConfig'] 
           .map(([k, v]) => [k, v as string])
       ) : {},
       enabled: entry.enabled !== false,
+      selectedModel: typeof entry.selectedModel === 'string' && entry.selectedModel.trim().length > 0 ? entry.selectedModel.trim() : null,
     };
   }
   return config;
+}
+
+function normalizeCliAgentSelection(value: unknown): AppSettings['cliAgentSelection'] {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const agentId = typeof raw.agentId === 'string' && raw.agentId.trim().length > 0 ? raw.agentId.trim() : null;
+  const model = typeof raw.model === 'string' && raw.model.trim().length > 0 ? raw.model.trim() : null;
+  if (!agentId) return null;
+  return { agentId, model: model || '' };
 }
 
 export function normalizeGeminiMinSendIntervalMs(value: unknown): number {
@@ -695,6 +707,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openrouterAppTitle: null,
 
   cliAgentConfig: {},
+  cliAgentSelection: null,
 };
 
 // ============================================
@@ -765,6 +778,7 @@ class AppSettingsServiceClass {
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
           cliAgentConfig: normalizeCliAgentConfig(loaded?.cliAgentConfig),
+          cliAgentSelection: normalizeCliAgentSelection(loaded?.cliAgentSelection),
         };
         applyNativeTheme(this.settings.theme);
         console.log('[AppSettings] Loaded settings successfully');
@@ -906,6 +920,9 @@ class AppSettingsServiceClass {
 
     if (Object.prototype.hasOwnProperty.call(partial, 'cliAgentConfig')) {
       nextPartial.cliAgentConfig = normalizeCliAgentConfig(partial.cliAgentConfig);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'cliAgentSelection')) {
+      nextPartial.cliAgentSelection = normalizeCliAgentSelection(partial.cliAgentSelection);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'uiFontFamily')) {
       nextPartial.uiFontFamily = normalizeStringOrNull(partial.uiFontFamily) ?? DEFAULT_SETTINGS.uiFontFamily;

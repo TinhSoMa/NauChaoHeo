@@ -18,6 +18,7 @@ import { callGeminiWithRotation, GEMINI_MODELS, type GeminiModel } from '../gemi
 import { type AIProvider } from './aiProvider';
 import { createGeminiProvider } from './providers/geminiProvider';
 import { createOpenRouterProvider } from './providers/openrouterProvider';
+import { createCliAgentProvider } from './providers/cliAgentProvider';
 import { AppSettingsService } from '../appSettings';
 import { type KeyInfo } from '../../../shared/types/gemini';
 import { getApiManager } from '../gemini/apiManager';
@@ -61,6 +62,7 @@ function createProviderForMethod(
 ): AIProvider | null {
   if (method === 'api') return createGeminiProvider(assignedKey)
   if (method === 'openrouter') return createOpenRouterProvider()
+  if (method === 'cli_agent') return createCliAgentProvider()
   return null
 }
 
@@ -1930,6 +1932,9 @@ export async function translateSingleBatch(
 
     // Pacing giữa các lần retry
     if (isRetryAttempt) {
+      if (lastResult?.error) {
+        console.log(`[CaptionTranslator] Lần ${attempt}/${totalAttempts} thất bại: ${lastResult.error}`);
+      }
       const cooldown = queueGapMs;
       console.log(`[CaptionTranslator] Retry cooldown ${cooldown}ms`);
       await new Promise((resolve) => setTimeout(resolve, cooldown));

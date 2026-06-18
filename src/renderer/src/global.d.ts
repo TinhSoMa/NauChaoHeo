@@ -164,7 +164,7 @@ interface SingleBatchOptions {
   targetLanguage: string;
   model: string;
   promptTemplate?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'cli_agent';
   projectId?: string;
   sourcePath?: string;
   runId?: string;
@@ -838,6 +838,13 @@ interface AppSettings {
     xSsDp: string | null;
     extraHeaders: Record<string, string> | null;
   };
+  cliAgentConfig: Record<string, {
+    customBinPath: string | null;
+    env: Record<string, string>;
+    enabled: boolean;
+    selectedModel?: string | null;
+  }>;
+  cliAgentSelection: { agentId: string; model: string } | null;
 }
 
 interface CapcutTtsVersionData {
@@ -1356,6 +1363,12 @@ declare global {
     onCountdown: (callback: (payload: ShutdownStatus) => void) => () => void;
   }
 
+  interface CliAgentScanAPI {
+    scan: () => Promise<any[]>;
+    getConfig: () => Promise<Record<string, { customBinPath: string | null; env: Record<string, string>; enabled: boolean; selectedModel?: string | null }>>;
+    updateConfig: (agentId: string, entry: { customBinPath: string | null; env: Record<string, string>; enabled: boolean; selectedModel?: string | null }) => Promise<Record<string, any>>;
+  }
+
   interface Window {
     electronAPI: {
       // Cac method co ban
@@ -1415,6 +1428,9 @@ declare global {
 
       // CapCut TTS Secrets API
       capcutTtsSecrets: CapcutTtsSecretsAPI;
+
+      // CLI Agent Scan API
+      cliAgentScan: CliAgentScanAPI;
     };
   }
 }

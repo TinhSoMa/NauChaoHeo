@@ -1,3 +1,4 @@
+import { ProxyAgent } from 'undici';
 import { ProxyConfig, ProxyStats } from '../../../shared/types/proxy';
 import { ProxyDatabase } from '../../database/proxyDatabase';
 import { AppSettingsService, ProxyScopeMode, ProxyScopeName, ProxyTypePreference, ProxyScopeSettings } from '../appSettings';
@@ -324,21 +325,14 @@ export class ProxyManager {
 
     try {
       const startTime = Date.now();
-      
-      // Test bằng cách gọi API đơn giản (httpbin.org)
-      const { default: fetch } = await import('node-fetch');
-      const { HttpsProxyAgent } = await import('https-proxy-agent');
-      
       const proxyUrl = proxy.username 
         ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
         : `${proxy.type}://${proxy.host}:${proxy.port}`;
-      
-      const agent = new HttpsProxyAgent(proxyUrl);
-      
+
       const response = await fetch('https://httpbin.org/ip', {
         method: 'GET',
-        agent: agent as any,
-        timeout: this.settings.timeout,
+        dispatcher: new ProxyAgent(proxyUrl),
+        signal: AbortSignal.timeout(this.settings.timeout),
       });
 
       if (!response.ok) {
@@ -357,20 +351,11 @@ export class ProxyManager {
     }
   }
 
-  private async createProxyAgent(proxy: ProxyConfig): Promise<any> {
-    const { HttpsProxyAgent } = await import('https-proxy-agent');
-    const { SocksProxyAgent } = await import('socks-proxy-agent');
-
-    const proxyScheme = proxy.type === 'socks5' ? 'socks5h' : proxy.type;
+  private createProxyAgent(proxy: ProxyConfig): ProxyAgent {
     const proxyUrl = proxy.username
-      ? `${proxyScheme}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
-      : `${proxyScheme}://${proxy.host}:${proxy.port}`;
-
-    if (proxy.type === 'socks5') {
-      return new SocksProxyAgent(proxyUrl, { timeout: this.settings.timeout });
-    }
-
-    return new HttpsProxyAgent(proxyUrl, { timeout: this.settings.timeout });
+      ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
+      : `${proxy.type}://${proxy.host}:${proxy.port}`;
+    return new ProxyAgent(proxyUrl);
   }
 
   async checkProxyConnectivity(proxyId: string, url: string = 'https://generativelanguage.googleapis.com'): Promise<{ success: boolean; latency?: number; status?: number; error?: string }> {
@@ -381,13 +366,12 @@ export class ProxyManager {
 
     try {
       const startTime = Date.now();
-      const { default: fetch } = await import('node-fetch');
-      const agent = await this.createProxyAgent(proxy);
+      const agent = this.createProxyAgent(proxy);
 
       const response = await fetch(url, {
         method: 'HEAD',
-        agent: agent as any,
-        timeout: this.settings.timeout,
+        dispatcher: agent,
+        signal: AbortSignal.timeout(this.settings.timeout),
       });
 
       const latency = Date.now() - startTime;
@@ -443,12 +427,11 @@ export class ProxyManager {
 
     try {
       const start = Date.now();
-      const { default: fetch } = await import('node-fetch');
-      const agent = await this.createProxyAgent(proxy);
+      const agent = this.createProxyAgent(proxy);
       const response = await fetch('https://ipv4.webshare.io/', {
         method: 'GET',
-        agent: agent as any,
-        timeout: this.settings.timeout,
+        dispatcher: agent,
+        signal: AbortSignal.timeout(this.settings.timeout),
       });
 
       if (!response.ok) {

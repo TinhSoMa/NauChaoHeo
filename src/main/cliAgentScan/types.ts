@@ -18,6 +18,17 @@ export type CliAgentId =
   | 'kimi'
   | 'antigravity';
 
+export interface CliAgentModelOption {
+  id: string;
+  label: string;
+}
+
+export interface CliAgentListModels {
+  args: string[];
+  parse: (stdout: string) => CliAgentModelOption[] | null;
+  timeoutMs?: number;
+}
+
 export interface CliAgentDef {
   id: CliAgentId;
   name: string;
@@ -25,6 +36,13 @@ export interface CliAgentDef {
   fallbackBins?: string[];
   versionArgs: string[];
   homepage?: string;
+  models?: CliAgentModelOption[];
+  supportsCustomModel?: boolean;
+  listModels?: CliAgentListModels;
+  fetchModels?: (
+    resolvedBin: string,
+    env: Record<string, string>,
+  ) => Promise<CliAgentModelOption[] | null>;
 }
 
 export interface DetectedCliAgent extends CliAgentDef {
@@ -32,6 +50,7 @@ export interface DetectedCliAgent extends CliAgentDef {
   path: string | null;
   version: string | null;
   error?: string;
+  modelsSource?: 'live' | 'fallback';
 }
 
 export type DetectedCliAgentMap = Record<CliAgentId, DetectedCliAgent>;

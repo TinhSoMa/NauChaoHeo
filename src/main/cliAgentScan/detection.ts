@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import { getAllCliAgentDefs } from './registry';
-import type { DetectedCliAgent, DetectedCliAgentMap } from './types';
+import type { CliAgentDef, CliAgentModelOption, DetectedCliAgent, DetectedCliAgentMap } from './types';
 
 const SCAN_TIMEOUT = 5000;
 
@@ -52,7 +52,7 @@ function resolvePathDirs(): string[] {
   return dirs;
 }
 
-function resolveOnPath(bin: string): string | null {
+export function resolveOnPath(bin: string): string | null {
   const exts =
     process.platform === 'win32'
       ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((e) => e.trim().toLowerCase())
@@ -73,7 +73,7 @@ interface CommandInvocation {
   windowsVerbatimArguments?: boolean;
 }
 
-function createCommandInvocation(command: string, args: string[]): CommandInvocation {
+export function createCommandInvocation(command: string, args: string[]): CommandInvocation {
   if (process.platform === 'win32' && /\.(bat|cmd)$/i.test(command)) {
     const quote = (w: string) => /[\s"&<>|^%]/.test(w) ? `"${w.replace(/"/g, '""')}"` : w;
     const inner = [command, ...args].map(quote).join(' ');
@@ -108,8 +108,53 @@ function probeVersion(binPath: string, args: string[], extraEnv?: Record<string,
   });
 }
 
+async function fetchModels(
+  def: CliAgentDef,
+  resolvedBin: string,
+  env?: Record<string, string>,
+): Promise<{ models: CliAgentModelOption[]; source: 'live' | 'fallback' }> {
+  if (typeof def.fetchModels === 'function') {
+    try {
+      const parsed = await def.fetchModels(resolvedBin, env || {});
+      if (!parsed || parsed.length === 0) {
+        return { models: def.models || [], source: 'fallback' };
+      }
+      return { models: parsed, source: 'live' };
+    } catch {
+      return { models: def.models || [], source: 'fallback' };
+    }
+  }
+
+  if (!def.listModels) {
+    return { models: def.models || [], source: 'fallback' };
+  }
+
+  try {
+    const invocation = createCommandInvocation(resolvedBin, def.listModels.args);
+    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+      execFile(invocation.command, invocation.args, {
+        timeout: def.listModels!.timeoutMs ?? 10000,
+        windowsHide: true,
+        windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+        env: env && Object.keys(env).length > 0 ? { ...process.env, ...env } : undefined,
+        maxBuffer: 8 * 1024 * 1024,
+      }, (error, stdoutBuffer) => {
+        if (error) { reject(error); return; }
+        resolve({ stdout: (stdoutBuffer || '').toString() });
+      });
+    });
+    const parsed = def.listModels.parse(stdout);
+    if (!parsed || parsed.length === 0) {
+      return { models: def.models || [], source: 'fallback' };
+    }
+    return { models: parsed, source: 'live' };
+  } catch {
+    return { models: def.models || [], source: 'fallback' };
+  }
+}
+
 async function detectSingleAgent(
-  def: { id: string; name: string; bin: string; fallbackBins?: string[]; versionArgs: string[] },
+  def: CliAgentDef,
   config?: CliAgentScanConfig,
 ): Promise<DetectedCliAgent> {
   if (config?.enabled === false) {
@@ -119,6 +164,9 @@ async function detectSingleAgent(
       bin: def.bin,
       fallbackBins: def.fallbackBins,
       versionArgs: def.versionArgs,
+      models: def.models,
+      modelsSource: 'fallback',
+      supportsCustomModel: def.supportsCustomModel,
       available: false,
       path: null,
       version: null,
@@ -140,6 +188,9 @@ async function detectSingleAgent(
         bin: def.bin,
         fallbackBins: def.fallbackBins,
         versionArgs: def.versionArgs,
+        models: def.models,
+        modelsSource: 'fallback',
+        supportsCustomModel: def.supportsCustomModel,
         available: false,
         path: null,
         version: null,
@@ -165,6 +216,9 @@ async function detectSingleAgent(
       bin: def.bin,
       fallbackBins: def.fallbackBins,
       versionArgs: def.versionArgs,
+      models: def.models,
+      modelsSource: 'fallback',
+      supportsCustomModel: def.supportsCustomModel,
       available: false,
       path: null,
       version: null,
@@ -172,7 +226,10 @@ async function detectSingleAgent(
     };
   }
 
-  const version = await probeVersion(resolvedPath, def.versionArgs, config?.env);
+  const [version, { models, source: modelsSource }] = await Promise.all([
+    probeVersion(resolvedPath, def.versionArgs, config?.env),
+    fetchModels(def, resolvedPath, config?.env),
+  ]);
 
   return {
     id: def.id as any,
@@ -180,6 +237,9 @@ async function detectSingleAgent(
     bin: foundBin || def.bin,
     fallbackBins: def.fallbackBins,
     versionArgs: def.versionArgs,
+    models,
+    modelsSource,
+    supportsCustomModel: def.supportsCustomModel,
     available: true,
     path: resolvedPath,
     version,
@@ -187,7 +247,7 @@ async function detectSingleAgent(
 }
 
 async function detectSingleAgentSafe(
-  def: { id: string; name: string; bin: string; fallbackBins?: string[]; versionArgs: string[] },
+  def: CliAgentDef,
   config?: CliAgentScanConfig,
 ): Promise<DetectedCliAgent> {
   try {
@@ -199,6 +259,9 @@ async function detectSingleAgentSafe(
       bin: def.bin,
       fallbackBins: def.fallbackBins,
       versionArgs: def.versionArgs,
+      models: def.models,
+      modelsSource: 'fallback',
+      supportsCustomModel: def.supportsCustomModel,
       available: false,
       path: null,
       version: null,

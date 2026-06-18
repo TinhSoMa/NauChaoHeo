@@ -1,0 +1,127 @@
+.wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.open {
+  z-index: 1400;
+}
+
+.button {
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface)
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")
+    no-repeat right 10px center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.button:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.1);
+}
+
+.button:hover {
+  border-color: var(--color-border-hover);
+}
+
+.popover {
+  position: fixed;
+  z-index: 1401;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.searchRow {
+  padding: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.searchInput {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 30px 8px 10px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  position: relative;
+  font-size: var(--font-size-sm);
+}
+
+.option:hover {
+  background: var(--color-surface);
+}
+
+.optionActive {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-card));
+  color: var(--color-primary);
+}
+
+.optionActive:hover {
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-card));
+}
+
+.option[data-selected='true']::after {
+  content: '✓';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  color: currentColor;
+}
+
+.optionLabel {
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}
+
+.empty {
+  padding: 12px 10px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

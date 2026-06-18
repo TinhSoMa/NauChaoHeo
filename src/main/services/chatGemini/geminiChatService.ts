@@ -3,6 +3,7 @@
  * Luu tru trong SQLite database
  */
 
+import { ProxyAgent } from 'undici';
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../../database/schema';
 import { getConfigurationService } from '../gemini/configurationService';
@@ -554,26 +555,12 @@ export class GeminiChatServiceClass {
         }
     }
 
-    private async createProxyAgent(proxy: ProxyConfig | null, timeoutMs: number): Promise<any | undefined> {
+    private createProxyAgent(proxy: ProxyConfig | null): ProxyAgent | undefined {
         if (!proxy) return undefined;
-
-        const { HttpsProxyAgent } = await import('https-proxy-agent');
-        const { SocksProxyAgent } = await import('socks-proxy-agent');
-
-        const proxyScheme = proxy.type === 'socks5' ? 'socks5h' : proxy.type;
         const proxyUrl = proxy.username
-            ? `${proxyScheme}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
-            : `${proxyScheme}://${proxy.host}:${proxy.port}`;
-
-        if (proxy.type === 'socks5') {
-            return new SocksProxyAgent(proxyUrl, { timeout: timeoutMs });
-        }
-
-        return new HttpsProxyAgent(proxyUrl, {
-            timeout: timeoutMs,
-            rejectUnauthorized: false,
-            keepAlive: false,
-        });
+            ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
+            : `${proxy.type}://${proxy.host}:${proxy.port}`;
+        return new ProxyAgent(proxyUrl);
     }
 
     private async fetchWithProxy(
@@ -608,11 +595,9 @@ export class GeminiChatServiceClass {
             }
         }
 
-        const { default: fetch } = await import('node-fetch');
-
         try {
-            const agent = await this.createProxyAgent(currentProxy, timeoutMs);
-            const response = await fetch(url, { ...fetchOptions, ...(agent ? { agent } : {}) });
+            const agent = this.createProxyAgent(currentProxy);
+            const response = await fetch(url, { ...fetchOptions, ...(agent ? { dispatcher: agent } : {}) });
 
             if (response.ok) {
                 if (currentProxy) {

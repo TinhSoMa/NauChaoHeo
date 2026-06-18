@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ExternalLink, CheckCircle2, XCircle, Loader2, Cpu, Settings2, Save } from 'lucide-react';
 import { Button } from '../common/Button';
+import { SearchableModelSelect } from '../common/SearchableModelSelect';
 import sharedStyles from './Settings.module.css';
 import styles from './CliAgentScanPanel.module.css';
+
+interface CliAgentModelOption {
+  id: string;
+  label: string;
+}
 
 interface DetectedCliAgent {
   id: string;
@@ -11,6 +17,8 @@ interface DetectedCliAgent {
   fallbackBins?: string[];
   versionArgs: string[];
   homepage?: string;
+  models?: CliAgentModelOption[];
+  supportsCustomModel?: boolean;
   available: boolean;
   path: string | null;
   version: string | null;
@@ -21,6 +29,7 @@ interface CliAgentConfigEntry {
   customBinPath: string | null;
   env: Record<string, string>;
   enabled: boolean;
+  selectedModel?: string | null;
 }
 
 function formatTime(ts: number): string {
@@ -70,7 +79,7 @@ export function CliAgentScanPanel() {
   const handleToggle = useCallback((agentId: string, enabled: boolean) => {
     setConfig((prev) => ({
       ...prev,
-      [agentId]: { ...prev[agentId], customBinPath: prev[agentId]?.customBinPath ?? null, env: prev[agentId]?.env ?? {}, enabled },
+      [agentId]: { ...prev[agentId], customBinPath: prev[agentId]?.customBinPath ?? null, env: prev[agentId]?.env ?? {}, enabled, selectedModel: prev[agentId]?.selectedModel ?? null },
     }));
   }, []);
 
@@ -82,8 +91,23 @@ export function CliAgentScanPanel() {
         customBinPath: value || null,
         env: prev[agentId]?.env ?? {},
         enabled: prev[agentId]?.enabled ?? true,
+        selectedModel: prev[agentId]?.selectedModel ?? null,
       },
     }));
+  }, []);
+
+  const handleModelChange = useCallback((agentId: string, model: string) => {
+    setConfig((prev) => {
+      const entry = {
+        ...prev[agentId],
+        selectedModel: model || null,
+        customBinPath: prev[agentId]?.customBinPath ?? null,
+        env: prev[agentId]?.env ?? {},
+        enabled: prev[agentId]?.enabled ?? true,
+      };
+      window.electronAPI.cliAgentScan.updateConfig(agentId, entry).catch(() => {});
+      return { ...prev, [agentId]: entry };
+    });
   }, []);
 
   const handleSaveConfig = useCallback(async (agentId: string) => {
@@ -105,7 +129,7 @@ export function CliAgentScanPanel() {
   const availableCount = agents.filter((a) => a.available).length;
 
   const getAgentConfig = (id: string): CliAgentConfigEntry =>
-    config[id] ?? { customBinPath: null, env: {}, enabled: true };
+    config[id] ?? { customBinPath: null, env: {}, enabled: true, selectedModel: null };
 
   return (
     <div className={sharedStyles.detailContainer}>
@@ -230,6 +254,18 @@ export function CliAgentScanPanel() {
                               onChange={(e) => handleCustomPath(agent.id, e.target.value)}
                             />
                           </div>
+                          {agent.models && agent.models.length > 0 && (
+                            <div className={styles.configRow}>
+                              <label className={styles.configLabel}>Model</label>
+                              <SearchableModelSelect
+                                models={agent.models}
+                                value={cfg.selectedModel || ''}
+                                onChange={(model) => handleModelChange(agent.id, model)}
+                                searchPlaceholder="Tìm model..."
+                                minSearchableOptions={1}
+                              />
+                            </div>
+                          )}
                           <div className={styles.configActions}>
                             <Button
                               variant="primary"
