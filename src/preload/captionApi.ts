@@ -232,6 +232,7 @@ import {
   RenderAudioPreviewResult,
   RenderVideoPreviewFrameOptions,
   RenderVideoPreviewFrameResult,
+  VideoCropSettings,
   VideoMetadata,
   RenderProgress,
   CAPTION_VIDEO_IPC_CHANNELS,
@@ -425,8 +426,8 @@ export function createCaptionVideoAPI(): CaptionVideoAPI {
     getVideoMetadata: (videoPath: string) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.GET_VIDEO_METADATA, videoPath),
 
-    extractFrame: (videoPath: string, frameNumber?: number) =>
-      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.EXTRACT_FRAME, videoPath, frameNumber),
+    extractFrame: (videoPath: string, frameNumber?: number, crop?: VideoCropSettings) =>
+      ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.EXTRACT_FRAME, videoPath, frameNumber, crop),
 
     renderThumbnailPreviewFrame: (options: RenderThumbnailPreviewFrameOptions) =>
       ipcRenderer.invoke(CAPTION_VIDEO_IPC_CHANNELS.RENDER_THUMBNAIL_PREVIEW_FRAME, options),

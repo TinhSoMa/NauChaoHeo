@@ -139,6 +139,7 @@ export interface InlineThumbnailVideoFilterBuildInput {
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
   thumbnailTextConstrainTo34?: boolean;
+  crop?: VideoCropSettings;
 }
 
 export interface InlineThumbnailVideoFilterBuildOutput {

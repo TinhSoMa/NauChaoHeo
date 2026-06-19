@@ -301,6 +301,7 @@ interface UseCaptionProcessingProps {
     translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
+    thumbnailPrependEnabled?: boolean;
     thumbnailText?: string;
     thumbnailTextSecondary?: string;
     thumbnailFontName?: string;
@@ -400,6 +401,11 @@ function readNumber(record: LooseRecord, key: string): number | undefined {
 function readString(record: LooseRecord, key: string): string | undefined {
   const value = record[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function readBoolean(record: LooseRecord, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function readPoint(record: LooseRecord, key: string): { x: number; y: number } | undefined {
@@ -598,6 +604,7 @@ function resolveRenderLayoutOverrides(settings: ProcessingSettings): Partial<Pro
       settings.thumbnailFrameTimeSec
     ),
     thumbnailDurationSec: withFallback(readNumber(profile, 'thumbnailDurationSec'), settings.thumbnailDurationSec),
+    thumbnailPrependEnabled: withFallback(readBoolean(profile, 'thumbnailPrependEnabled'), settings.thumbnailPrependEnabled),
     thumbnailTextConstrainTo34: withFallback(
       thumbnailTextConstrainTo34,
       settings.thumbnailTextConstrainTo34
@@ -5932,7 +5939,7 @@ export function useCaptionProcessing({
           `videoText1="${hardsubTextPrimaryForRender}", videoText2="${hardsubTextSecondaryForRender}"`
         );
 
-        const thumbnailEnabledForRender = true;
+        const thumbnailEnabledForRender = cfg.thumbnailPrependEnabled !== false;
         const thumbnailTimeSecForRender = cfg.thumbnailFrameTimeSec ?? 0;
         const thumbnailDurationSecForRender = cfg.thumbnailDurationSec ?? 0.5;
 

@@ -64,6 +64,7 @@ interface LayoutProfile {
   subtitlePosition: { x: number; y: number } | null;
   thumbnailFrameTimeSec: number | null;
   thumbnailDurationSec: number;
+  thumbnailPrependEnabled: boolean;
   thumbnailTextSecondary: string;
   logoPath?: string;
   logoPosition?: { x: number; y: number };
@@ -373,6 +374,7 @@ const DEFAULT_LANDSCAPE_PROFILE: LayoutProfile = {
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   thumbnailDurationSec: 0.5,
+  thumbnailPrependEnabled: true,
   thumbnailTextSecondary: '',
   logoPath: undefined,
   logoPosition: undefined,
@@ -460,6 +462,7 @@ const DEFAULT_PORTRAIT_PROFILE: LayoutProfile = {
   subtitlePosition: null,
   thumbnailFrameTimeSec: null,
   thumbnailDurationSec: 0.5,
+  thumbnailPrependEnabled: true,
   thumbnailTextSecondary: '',
   logoPath: undefined,
   logoPosition: undefined,
@@ -846,6 +849,9 @@ function normalizeProfile(
   }
   if (typeof patch.thumbnailDurationSec === 'number' && Number.isFinite(patch.thumbnailDurationSec)) {
     next.thumbnailDurationSec = Math.min(10, Math.max(0.1, patch.thumbnailDurationSec));
+  }
+  if (typeof patch.thumbnailPrependEnabled === 'boolean') {
+    next.thumbnailPrependEnabled = patch.thumbnailPrependEnabled;
   }
   if (typeof patch.thumbnailTextSecondary === 'string') {
     next.thumbnailTextSecondary = patch.thumbnailTextSecondary;
@@ -1816,6 +1822,10 @@ export function useCaptionSettings() {
     updateActiveProfile((current) => ({ ...current, thumbnailDurationSec: normalized }));
   }, [updateActiveProfile]);
 
+  const setThumbnailPrependEnabled = useCallback((value: boolean) => {
+    updateActiveProfile((current) => ({ ...current, thumbnailPrependEnabled: value }));
+  }, [updateActiveProfile]);
+
   const setThumbnailTextSecondary = useCallback((value: string) => {
     updateActiveProfile((current) => ({ ...current, thumbnailTextSecondary: value }));
   }, [updateActiveProfile]);
@@ -2553,6 +2563,8 @@ export function useCaptionSettings() {
     setThumbnailFrameTimeSec,
     thumbnailDurationSec: activeProfile.thumbnailDurationSec,
     setThumbnailDurationSec,
+    thumbnailPrependEnabled: activeProfile.thumbnailPrependEnabled,
+    setThumbnailPrependEnabled,
     audioSpeed, setAudioSpeed,
     renderAudioSpeed, setRenderAudioSpeed,
     videoVolume, setVideoVolume,

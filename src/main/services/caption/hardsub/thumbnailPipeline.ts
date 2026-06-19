@@ -9,7 +9,9 @@ import {
   RenderThumbnailPreviewFrameOptions,
   RenderThumbnailPreviewFrameResult,
   RenderVideoOptions,
+  VideoCropSettings,
 } from '../../../../shared/types/caption';
+import { resolveVideoCrop, ResolvedVideoCrop } from './cropFilterBuilder';
 import { estimateTextWidthPx, layoutThumbnailText, ThumbnailTextLayoutResult } from '../../../../shared/utils/thumbnailTextLayout';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
@@ -41,6 +43,7 @@ interface ThumbnailClipOptions {
   thumbnailTextConstrainTo34?: boolean;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
+  crop?: VideoCropSettings;
   width: number;
   height: number;
   renderMode?: RenderVideoOptions['renderMode'];
@@ -513,9 +516,14 @@ async function extractFrameToPng(
   ffmpegPath: string,
   videoPath: string,
   timeSec: number,
-  outputPngPath: string
+  outputPngPath: string,
+  resolvedCrop: ResolvedVideoCrop | null = null
 ): Promise<{ success: boolean; error?: string }> {
-  const extractArgs = ['-y', '-ss', String(timeSec), '-i', videoPath, '-vframes', '1', '-q:v', '2', outputPngPath];
+  const extractArgs = ['-y', '-ss', String(timeSec), '-i', videoPath];
+  if (resolvedCrop) {
+    extractArgs.push('-vf', resolvedCrop.filter);
+  }
+  extractArgs.push('-vframes', '1', '-q:v', '2', outputPngPath);
   let extractStderr = '';
   const extractOk = await new Promise<boolean>((resolve) => {
     const proc = spawn(ffmpegPath, extractArgs);
@@ -836,11 +844,22 @@ function buildLandscapeThumbnailFilter(
   safeW: number,
   safeH: number,
   drawTextFilter: string | null,
-  inputLabel = '[0:v]'
+  inputLabel = '[0:v]',
+  resolvedCrop: ResolvedVideoCrop | null = null
 ): ThumbnailLayoutBuildResult {
-  const parts: string[] = [
-    `${inputLabel}scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[v_layout]`,
-  ];
+  const parts: string[] = [];
+  let debugCrop: Record<string, unknown> = { cropRatio: 'none' };
+  if (resolvedCrop) {
+    const croppedLabel = 'v_thumb_cropped';
+    parts.push(`${inputLabel}${resolvedCrop.filter}[${croppedLabel}]`);
+    parts.push(`[${croppedLabel}]scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[v_layout]`);
+    debugCrop = {
+      cropRatio: 'user',
+      cropRect: { x: resolvedCrop.x, y: resolvedCrop.y, width: resolvedCrop.width, height: resolvedCrop.height },
+    };
+  } else {
+    parts.push(`${inputLabel}scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[v_layout]`);
+  }
   if (drawTextFilter) {
     parts.push(`[v_layout]${drawTextFilter}[v_out]`);
   }
@@ -849,7 +868,7 @@ function buildLandscapeThumbnailFilter(
     outputLabel: drawTextFilter ? 'v_out' : 'v_layout',
     debug: {
       mode: 'landscape_hardsub',
-      cropRatio: 'none',
+      ...debugCrop,
       outputSize: `${safeW}x${safeH}`,
       bgFillMode: 'scale_to_output',
     },
@@ -862,8 +881,21 @@ function buildPortraitThumbnailFilter(
   sourceWidth: number,
   sourceHeight: number,
   drawTextFilter: string | null,
-  inputLabel = '[0:v]'
+  inputLabel = '[0:v]',
+  resolvedCrop: ResolvedVideoCrop | null = null
 ): ThumbnailLayoutBuildResult {
+  const parts: string[] = [];
+  let sourceInputLabel = inputLabel;
+  let debugCrop: Record<string, unknown> = { cropRatio: '3:4' };
+  if (resolvedCrop) {
+    const croppedLabel = 'v_thumb_cropped';
+    parts.push(`${inputLabel}${resolvedCrop.filter}[${croppedLabel}]`);
+    sourceInputLabel = `[${croppedLabel}]`;
+    debugCrop = {
+      cropRatio: '3:4+user',
+      userCropRect: { x: resolvedCrop.x, y: resolvedCrop.y, width: resolvedCrop.width, height: resolvedCrop.height },
+    };
+  }
   const cropH = sourceHeight;
   const cropW = ensureEven(Math.min(sourceWidth, sourceHeight * 3 / 4));
   const cropX = Math.max(0, Math.floor((sourceWidth - cropW) / 2));
@@ -875,12 +907,12 @@ function buildPortraitThumbnailFilter(
     fgW = ensureEven((fgH * cropW) / cropH);
   }
 
-  const parts: string[] = [
-    `${inputLabel}crop=${cropW}:${cropH}:${cropX}:0,split=2[crop_bg][crop_fg]`,
+  parts.push(
+    `${sourceInputLabel}crop=${cropW}:${cropH}:${cropX}:0,split=2[crop_bg][crop_fg]`,
     `[crop_bg]scale=${safeW}:${safeH}[bg_fill]`,
     `[crop_fg]scale=${fgW}:${fgH}[fg_fit]`,
     `[bg_fill][fg_fit]overlay=(W-w)/2:(H-h)/2,setsar=1,setdar=${safeW}/${safeH}[v_layout]`,
-  ];
+  );
   if (drawTextFilter) {
     parts.push(`[v_layout]${drawTextFilter}[v_out]`);
   }
@@ -890,8 +922,7 @@ function buildPortraitThumbnailFilter(
     outputLabel: drawTextFilter ? 'v_out' : 'v_layout',
     debug: {
       mode: 'portrait_9_16',
-      cropRatio: '3:4',
-      cropRect: { x: cropX, y: 0, width: cropW, height: cropH },
+      ...debugCrop,
       outputSize: `${safeW}x${safeH}`,
       fgSize: `${fgW}x${fgH}`,
       bgFillMode: 'from_cropped_frame',
@@ -906,13 +937,24 @@ function buildInlineLandscapeThumbnailFilterParts(
   outputLabelPrefix: string,
   safeW: number,
   safeH: number,
-  drawTextFilter: string | null
+  drawTextFilter: string | null,
+  resolvedCrop: ResolvedVideoCrop | null = null
 ): { filterParts: string[]; outputLabel: string; debug: Record<string, unknown> } {
   const layoutLabel = `${outputLabelPrefix}_layout`;
   const outputLabel = drawTextFilter ? `${outputLabelPrefix}_out` : layoutLabel;
-  const parts: string[] = [
-    `${inputLabel}scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`,
-  ];
+  const parts: string[] = [];
+  let cropDebug: Record<string, unknown> = { cropRatio: 'none' };
+  if (resolvedCrop) {
+    const croppedLabel = `${outputLabelPrefix}_crop`;
+    parts.push(`${inputLabel}${resolvedCrop.filter}[${croppedLabel}]`);
+    parts.push(`[${croppedLabel}]scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`);
+    cropDebug = {
+      cropRatio: 'user',
+      cropRect: { x: resolvedCrop.x, y: resolvedCrop.y, width: resolvedCrop.width, height: resolvedCrop.height },
+    };
+  } else {
+    parts.push(`${inputLabel}scale=${safeW}:${safeH},setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`);
+  }
   if (drawTextFilter) {
     parts.push(`[${layoutLabel}]${drawTextFilter}[${outputLabel}]`);
   }
@@ -921,7 +963,7 @@ function buildInlineLandscapeThumbnailFilterParts(
     outputLabel,
     debug: {
       mode: 'landscape_hardsub',
-      cropRatio: 'none',
+      ...cropDebug,
       outputSize: `${safeW}x${safeH}`,
       bgFillMode: 'scale_to_output',
     },
@@ -935,8 +977,22 @@ function buildInlinePortraitThumbnailFilterParts(
   safeH: number,
   sourceWidth: number,
   sourceHeight: number,
-  drawTextFilter: string | null
+  drawTextFilter: string | null,
+  resolvedCrop: ResolvedVideoCrop | null = null
 ): { filterParts: string[]; outputLabel: string; debug: Record<string, unknown> } {
+  let inputSourceLabel = inputLabel;
+  let cropDebug: Record<string, unknown> = { cropRatio: '3:4' };
+  const parts: string[] = [];
+  if (resolvedCrop) {
+    const preCroppedLabel = `${outputLabelPrefix}_precrop`;
+    parts.push(`${inputLabel}${resolvedCrop.filter}[${preCroppedLabel}]`);
+    inputSourceLabel = `[${preCroppedLabel}]`;
+    cropDebug = {
+      cropRatio: '3:4+user',
+      userCropRect: { x: resolvedCrop.x, y: resolvedCrop.y, width: resolvedCrop.width, height: resolvedCrop.height },
+    };
+  }
+
   const cropH = sourceHeight;
   const cropW = ensureEven(Math.min(sourceWidth, sourceHeight * 3 / 4));
   const cropX = Math.max(0, Math.floor((sourceWidth - cropW) / 2));
@@ -954,12 +1010,12 @@ function buildInlinePortraitThumbnailFilterParts(
   const fgFitLabel = `${outputLabelPrefix}_fg_fit`;
   const layoutLabel = `${outputLabelPrefix}_layout`;
   const outputLabel = drawTextFilter ? `${outputLabelPrefix}_out` : layoutLabel;
-  const parts: string[] = [
-    `${inputLabel}crop=${cropW}:${cropH}:${cropX}:0,format=yuv420p,split=2[${cropBgLabel}][${cropFgLabel}]`,
+  parts.push(
+    `${inputSourceLabel}crop=${cropW}:${cropH}:${cropX}:0,format=yuv420p,split=2[${cropBgLabel}][${cropFgLabel}]`,
     `[${cropBgLabel}]scale=${safeW}:${safeH},format=yuv420p[${bgFillLabel}]`,
     `[${cropFgLabel}]scale=${fgW}:${fgH},format=yuv420p[${fgFitLabel}]`,
     `[${bgFillLabel}][${fgFitLabel}]overlay=(W-w)/2:(H-h)/2,format=yuv420p,setsar=1,setdar=${safeW}/${safeH}[${layoutLabel}]`,
-  ];
+  );
   if (drawTextFilter) {
     parts.push(`[${layoutLabel}]${drawTextFilter}[${outputLabel}]`);
   }
@@ -969,12 +1025,10 @@ function buildInlinePortraitThumbnailFilterParts(
     outputLabel,
     debug: {
       mode: 'portrait_9_16',
-      cropRatio: '3:4',
-      cropRect: { x: cropX, y: 0, width: cropW, height: cropH },
+      ...cropDebug,
       outputSize: `${safeW}x${safeH}`,
       fgSize: `${fgW}x${fgH}`,
       bgFillMode: 'from_cropped_frame',
-      cropStrategy: 'center_3_4',
       fillStrategy: 'cropped_bg_fill_top_bottom',
     },
   };
@@ -1030,6 +1084,8 @@ export async function buildInlineThumbnailVideoFilter(
     `tpad=stop_mode=clone:stop_duration=${durationSec},trim=duration=${durationSec},fps=${safeFps},format=yuv420p` +
     `[${sourceFreezeLabel}]`;
 
+  const resolvedCrop = resolveVideoCrop(options.crop, safeSourceW, safeSourceH);
+
   const layout = options.renderMode === 'hardsub_portrait_9_16'
     ? buildInlinePortraitThumbnailFilterParts(
         `[${sourceFreezeLabel}]`,
@@ -1038,14 +1094,16 @@ export async function buildInlineThumbnailVideoFilter(
         safeH,
         safeSourceW,
         safeSourceH,
-        drawTextContext.drawTextFilter
+        drawTextContext.drawTextFilter,
+        resolvedCrop
       )
     : buildInlineLandscapeThumbnailFilterParts(
         `[${sourceFreezeLabel}]`,
         prefix,
         safeW,
         safeH,
-        drawTextContext.drawTextFilter
+        drawTextContext.drawTextFilter,
+        resolvedCrop
       );
 
   return {
@@ -1141,6 +1199,8 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   const includeAudio = opts.includeAudio !== false;
   const isPortraitMode = opts.renderMode === 'hardsub_portrait_9_16';
 
+  const resolvedCrop = resolveVideoCrop(opts.crop, safeW, safeH);
+
   const extractRes = await extractFrameToPng(ffmpegPath, opts.videoPath, opts.timeSec, framePng);
   if (!extractRes.success) {
     return { success: false, error: extractRes.error };
@@ -1180,8 +1240,8 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   const drawTextFilter = drawTextContext.drawTextFilter;
 
   const layoutResult = isPortraitMode
-    ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextFilter)
-    : buildLandscapeThumbnailFilter(safeW, safeH, drawTextFilter);
+    ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextFilter, resolvedCrop)
+    : buildLandscapeThumbnailFilter(safeW, safeH, drawTextFilter, resolvedCrop);
 
   const thumbTextLog = summarizeThumbnailTextForLog(opts.thumbnailText);
   const thumbText2Log = summarizeThumbnailTextForLog(opts.thumbnailTextSecondary);
@@ -1382,6 +1442,11 @@ export async function renderThumbnailPreviewFrame(
     const effectiveSW = resolvedCrop ? resolvedCrop.width : sourceWidth;
     const effectiveSH = resolvedCrop ? resolvedCrop.height : sourceHeight;
     const cropInputLabel = resolvedCrop ? '[v_preview_cropped]' : '[0:v]';
+    console.log('[ThumbnailPreview] crop check', {
+      hasCropOption: !!options.crop,
+      cropEnabled: options.crop?.enabled,
+      resolved: resolvedCrop ? { x: resolvedCrop.x, y: resolvedCrop.y, w: resolvedCrop.width, h: resolvedCrop.height, filter: resolvedCrop.filter } : null,
+    });
 
     const outputCanvas = options.renderMode === 'hardsub_portrait_9_16'
       ? resolvePortraitCanvasByPreset(options.renderResolution)
@@ -1602,6 +1667,7 @@ export async function applyThumbnailPostProcess(
     thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition,
     thumbnailTextConstrainTo34: options.thumbnailTextConstrainTo34,
+    crop: options.crop,
     width: outputMeta.metadata.width,
     height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
     renderMode: options.renderMode,

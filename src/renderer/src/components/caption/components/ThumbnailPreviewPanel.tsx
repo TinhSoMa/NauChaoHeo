@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './ThumbnailPreviewPanel.module.css';
 import { useThumbnailPreviewState } from '../hooks/useThumbnailPreviewState';
 import { ThumbnailPreviewContextKey, ThumbnailPreviewLayer } from '../CaptionTypes';
+import type { VideoCropSettings } from '@shared/types/caption';
 import { layoutThumbnailText } from '@shared/utils/thumbnailTextLayout';
 import type { VideoCropSettings } from '@shared/types/caption';
 
@@ -13,6 +14,7 @@ interface ThumbnailPreviewPanelProps {
   sourceLabel: string;
   renderMode: RenderMode;
   renderResolution: RenderResolution;
+  crop?: VideoCropSettings;
   thumbnailText: string;
   thumbnailTextSecondary: string;
   thumbnailTextHelper?: string;

@@ -1,9 +1,10 @@
 import { spawn } from 'child_process';
 import { existsSync, statSync } from 'fs';
-import { ExtractFrameResult, VideoMetadata } from '../../../../shared/types/caption';
+import { ExtractFrameResult, VideoCropSettings, VideoMetadata } from '../../../../shared/types/caption';
 import { getFFmpegPath, getFFprobePath } from '../../../utils/ffmpegPath';
 import { parseSrtFile } from '../srtParser';
 import { MediaProbeResult } from './types';
+import { resolveVideoCrop } from './cropFilterBuilder';
 
 const METADATA_CACHE_TTL_MS = 45_000;
 const METADATA_CACHE_MAX_ENTRIES = 6;
@@ -190,7 +191,8 @@ export async function getVideoMetadata(videoPath: string): Promise<MediaProbeRes
 
 export async function extractVideoFrame(
   videoPath: string,
-  frameNumber?: number
+  frameNumber?: number,
+  crop?: VideoCropSettings
 ): Promise<ExtractFrameResult> {
   if (!existsSync(videoPath)) {
     return { success: false, error: `File không tồn tại: ${videoPath}` };
@@ -211,15 +213,17 @@ export async function extractVideoFrame(
     ? frameNumber / fps
     : duration * (0.1 + Math.random() * 0.8);
 
+  const resolvedCrop = resolveVideoCrop(crop, width, height);
+
   return new Promise((resolve) => {
     const args = [
       '-ss', seekTime.toFixed(2),
       '-i', videoPath,
-      '-vframes', '1',
-      '-f', 'image2pipe',
-      '-vcodec', 'png',
-      '-',
     ];
+    if (resolvedCrop) {
+      args.push('-vf', resolvedCrop.filter);
+    }
+    args.push('-vframes', '1', '-f', 'image2pipe', '-vcodec', 'png', '-');
 
     const process = spawn(ffmpegPath, args);
     const chunks: Buffer[] = [];
@@ -237,8 +241,8 @@ export async function extractVideoFrame(
       resolve({
         success: true,
         frameData: frameBuffer.toString('base64'),
-        width,
-        height,
+        width: resolvedCrop ? resolvedCrop.width : width,
+        height: resolvedCrop ? resolvedCrop.height : height,
       });
     });
 

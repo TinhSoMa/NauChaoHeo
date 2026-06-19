@@ -21,6 +21,7 @@ import {
   SingleBatchOptions,
   SingleBatchResult,
   SubtitleEntry,
+  VideoCropSettings,
   VideoMetadata,
   CAPTION_VIDEO_IPC_CHANNELS
 } from '../../shared/types/caption';
@@ -956,7 +957,8 @@ export function registerCaptionHandlers(): void {
     async (
       _event: IpcMainInvokeEvent,
       videoPath: string,
-      frameNumber?: number
+      frameNumber?: number,
+      crop?: VideoCropSettings
     ): Promise<IpcResponse<{
       frameData: string;
       width: number;
@@ -965,7 +967,7 @@ export function registerCaptionHandlers(): void {
       console.log(`[CaptionHandlers] Extract frame: ${videoPath}, frame=${frameNumber || 'random'}`);
 
       try {
-        const result = await CaptionService.extractVideoFrame(videoPath, frameNumber);
+        const result = await CaptionService.extractVideoFrame(videoPath, frameNumber, crop);
         if (result.success && result.frameData) {
           return {
             success: true,

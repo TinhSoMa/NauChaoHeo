@@ -993,6 +993,7 @@ async function injectInlineThumbnailAtEnd(input: {
     thumbnailTextPrimaryPosition: input.options.thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition: input.options.thumbnailTextSecondaryPosition,
     thumbnailTextConstrainTo34: input.options.thumbnailTextConstrainTo34,
+    crop: input.options.crop,
   });
   input.filterComplexParts.push(...thumbVideo.filterParts);
 
