@@ -18,6 +18,7 @@ import {
   ThumbnailPreviewTab,
 } from '../CaptionTypes';
 import { getVideoMetadataCached } from './videoMetadataClientCache';
+import { VideoCropSettings } from '@shared/types/caption';
 
 type RenderMode = 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
 type RenderResolution = 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -26,6 +27,7 @@ interface UseThumbnailPreviewStateOptions {
   videoPath: string | null;
   renderMode: RenderMode;
   renderResolution: RenderResolution;
+  crop?: VideoCropSettings;
   thumbnailText: string;
   thumbnailTextSecondary: string;
   thumbnailFrameTimeSec: number | null;
@@ -112,6 +114,7 @@ export function useThumbnailPreviewState(
     videoPath,
     renderMode,
     renderResolution,
+    crop,
     thumbnailText,
     thumbnailTextSecondary,
     thumbnailFrameTimeSec,
@@ -132,6 +135,7 @@ export function useThumbnailPreviewState(
     onThumbnailTextSecondaryPositionChange,
     contextKey,
     inputType,
+    crop,
   } = options;
 
   const contextId = contextKey
@@ -416,10 +420,11 @@ export function useThumbnailPreviewState(
     return buildThumbnailPreviewHash({
       videoPath,
       frameIndex: draftFrameIndex,
+      crop,
       tab,
       refreshSeq: sourceRefreshSeq,
     });
-  }, [draftFrameIndex, sourceRefreshSeq, tab, videoPath]);
+  }, [crop, draftFrameIndex, sourceRefreshSeq, tab, videoPath]);
 
   useEffect(() => {
     if (!videoPath) {
@@ -434,7 +439,7 @@ export function useThumbnailPreviewState(
       return;
     }
     sourceHashRef.current = sourceDependencyHash;
-    const cacheKey = `${videoPath}|${draftFrameIndex}`;
+    const cacheKey = `${videoPath}|${draftFrameIndex}|${sourceDependencyHash}`;
     const cachedFrame = sourceFrameCacheRef.current.get(cacheKey);
     if (cachedFrame) {
       setFrameData(cachedFrame);
@@ -458,7 +463,7 @@ export function useThumbnailPreviewState(
     sourceTimerRef.current = window.setTimeout(async () => {
       try {
         const api = (window.electronAPI as any).captionVideo;
-        const frameRes = await api.extractFrame(videoPath, draftFrameIndex);
+        const frameRes = await api.extractFrame(videoPath, draftFrameIndex, crop);
         if (requestId !== sourceRequestRef.current || contextRef.current !== contextId) return;
         if (!frameRes?.success || !frameRes.data?.frameData) {
           setFrameData(null);
@@ -494,7 +499,7 @@ export function useThumbnailPreviewState(
         sourceTimerRef.current = null;
       }
     };
-  }, [contextId, draftFrameIndex, draftFrameTimeSec, frameData, persistRuntimePatch, sourceDependencyHash, tab, videoPath]);
+  }, [contextId, crop, draftFrameIndex, draftFrameTimeSec, frameData, persistRuntimePatch, sourceDependencyHash, tab, videoPath]);
 
   const realDependencyHash = useMemo(() => {
     if (!videoPath) return '';
@@ -503,6 +508,7 @@ export function useThumbnailPreviewState(
       frameTimeSec: committedFrameTimeSec,
       renderMode,
       renderResolution,
+      crop,
       thumbnailText,
       thumbnailTextSecondary,
       thumbnailFontName,
@@ -517,11 +523,13 @@ export function useThumbnailPreviewState(
       thumbnailTextConstrainTo34,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
+      crop,
     });
   }, [
     committedFrameTimeSec,
     renderMode,
     renderResolution,
+    crop,
     thumbnailFontName,
     thumbnailFontSize,
     thumbnailTextPrimaryFontName,
@@ -536,6 +544,7 @@ export function useThumbnailPreviewState(
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     thumbnailTextSecondary,
+    crop,
     videoPath,
   ]);
 
@@ -577,6 +586,7 @@ export function useThumbnailPreviewState(
           thumbnailTimeSec: committedFrameTimeSec,
           renderMode,
           renderResolution,
+          crop,
           thumbnailText,
           thumbnailTextSecondary,
           thumbnailFontName,
@@ -665,6 +675,7 @@ export function useThumbnailPreviewState(
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondary,
     thumbnailTextSecondaryPosition,
+    crop,
     videoPath,
   ]);
 

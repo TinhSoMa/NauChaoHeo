@@ -975,6 +975,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
       subtitlePosition: settings.subtitlePosition,
       thumbnailFrameTimeSec: settings.thumbnailFrameTimeSec,
       thumbnailDurationSec: settings.thumbnailDurationSec,
+      thumbnailPrependEnabled: settings.thumbnailPrependEnabled,
       portraitForegroundCropPercent: settings.portraitForegroundCropPercent,
       layoutProfiles: settings.layoutProfiles,
     },

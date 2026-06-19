@@ -6972,6 +6972,19 @@ export function CaptionTranslator() {
           {bulkExportLabel}
         </button>
       </div>
+      <div className={styles.commonInlineSection}>
+        <div className={styles.commonInlineHeader}>
+          <span className={styles.label}>Nối thumbnail</span>
+          <span className={styles.commonInlineValue}>{settings.thumbnailPrependEnabled ? 'Bật' : 'Tắt'}</span>
+        </div>
+        <div className={styles.commonInlineActions}>
+          <Checkbox
+            label="Nối thumbnail vào đầu video"
+            checked={settings.thumbnailPrependEnabled}
+            onChange={(checked) => settings.setThumbnailPrependEnabled(checked)}
+          />
+        </div>
+      </div>
       <div className={styles.commonConfigSection}>
         <div className={styles.grid2}>
           <div className={styles.inputGroup}>
@@ -8654,6 +8667,7 @@ export function CaptionTranslator() {
                   sourceLabel={thumbnailPreviewSourceLabel}
                   renderMode={settings.renderMode}
                   renderResolution={settings.renderResolution}
+                  crop={settings.crop}
                   thumbnailText={thumbnailPreviewText}
                   thumbnailTextSecondary={thumbnailPreviewSecondaryText}
                   thumbnailTextHelper={undefined}
@@ -8667,6 +8681,7 @@ export function CaptionTranslator() {
                   thumbnailTextSecondaryFontName={settings.thumbnailTextSecondaryFontName}
                   thumbnailTextSecondaryFontSize={settings.thumbnailTextSecondaryFontSize}
                   thumbnailTextSecondaryColor={settings.thumbnailTextSecondaryColor}
+                  crop={settings.crop}
                   thumbnailLineHeightRatio={settings.thumbnailLineHeightRatio}
                   thumbnailTextConstrainTo34={settings.thumbnailTextConstrainTo34}
                   onThumbnailTextConstrainTo34Change={settings.setThumbnailTextConstrainTo34}

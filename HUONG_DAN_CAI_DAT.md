@@ -151,6 +151,14 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 ffmpeg -version
 ```
 
+**Sau đó copy FFmpeg vào thư mục project** (app cần ffmpeg ở `resources/ffmpeg/win64/` để merge video sau khi tải):
+
+```powershell
+New-Item -ItemType Directory -Path "resources\ffmpeg\win64" -Force
+Copy-Item "C:\ProgramData\ffmpeg\bin\ffmpeg.exe" "resources\ffmpeg\win64\ffmpeg.exe" -Force
+Copy-Item "C:\ProgramData\ffmpeg\bin\ffprobe.exe" "resources\ffmpeg\win64\ffprobe.exe" -Force
+```
+
 ---
 
 ## 4. Tải mã nguồn
@@ -235,6 +243,16 @@ Lệnh này sẽ tải toàn bộ dependencies JavaScript:
 >    npx electron --version
 >    ```
 >    Kết quả mong đợi: `v39.8.10`
+
+### 5.x. Tải tất cả binary (yt-dlp, aria2c, Go worker, Python runtime)
+
+Chạy lệnh này để tải toàn bộ công cụ cần thiết:
+
+```powershell
+npm run prepare:yt-dlp && npm run prepare:aria2c && npm run prepare:go-worker && npm run prepare:python-runtime
+```
+
+> **Lưu ý:** Quá trình này có thể mất 10-20 phút. Các lệnh riêng lẻ vẫn có thể chạy nếu cần.
 
 ### 5.2. yt-dlp
 

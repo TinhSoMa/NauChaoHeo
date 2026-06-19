@@ -36,12 +36,17 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
   const enableMark = input.renderMark !== false;
   const enableSubtitle = input.renderSubtitle !== false;
   const outputDar = `${input.outputWidth}/${input.outputHeight}`;
+  let cropOutputLabel: string | undefined;
   const sourceInputLabel = (() => {
     const resolvedCrop = input.resolvedCrop || resolveVideoCrop(input.crop, input.sourceWidth || input.outputWidth, input.sourceHeight || input.outputHeight);
     if (!resolvedCrop) {
       return input.inputLabel;
     }
     parts.push(`${input.inputLabel}${resolvedCrop.filter}[portrait_crop_src]`);
+    if (input.thumbnailEnabled && !input.thumbnailHasSeparateInput) {
+      parts.push('[portrait_crop_src]split=2[portrait_crop_src][portrait_crop_thumb]');
+      cropOutputLabel = '[portrait_crop_thumb]';
+    }
     return '[portrait_crop_src]';
   })();
   const outputAspect = (input.outputWidth / input.outputHeight).toFixed(6);
@@ -124,5 +129,6 @@ export function buildPortraitVideoFilter(input: PortraitVideoFilterBuildInput): 
   return {
     filterParts: parts,
     outputLabel: 'v_portrait_out',
+    cropOutputLabel,
   };
 }

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './ThumbnailPreviewPanel.module.css';
 import { useThumbnailPreviewState } from '../hooks/useThumbnailPreviewState';
 import { ThumbnailPreviewContextKey, ThumbnailPreviewLayer } from '../CaptionTypes';
+import type { VideoCropSettings } from '@shared/types/caption';
 import { layoutThumbnailText } from '@shared/utils/thumbnailTextLayout';
+import type { VideoCropSettings } from '@shared/types/caption';
 
 type RenderMode = 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
 type RenderResolution = 'original' | '1080p' | '720p' | '540p' | '360p';
@@ -12,6 +14,7 @@ interface ThumbnailPreviewPanelProps {
   sourceLabel: string;
   renderMode: RenderMode;
   renderResolution: RenderResolution;
+  crop?: VideoCropSettings;
   thumbnailText: string;
   thumbnailTextSecondary: string;
   thumbnailTextHelper?: string;
@@ -28,6 +31,7 @@ interface ThumbnailPreviewPanelProps {
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextConstrainTo34?: boolean;
+  crop?: VideoCropSettings;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;
@@ -159,6 +163,7 @@ export function ThumbnailPreviewPanel({
   sourceLabel,
   renderMode,
   renderResolution,
+  crop,
   thumbnailText,
   thumbnailTextSecondary,
   thumbnailTextHelper,
@@ -202,6 +207,7 @@ export function ThumbnailPreviewPanel({
     videoPath,
     renderMode,
     renderResolution,
+    crop,
     thumbnailText,
     thumbnailTextSecondary,
     thumbnailFrameTimeSec,
@@ -636,6 +642,7 @@ export function ThumbnailPreviewPanel({
         thumbnailTimeSec: previewState.draftFrameTimeSec,
         renderMode,
         renderResolution,
+        crop,
         thumbnailText,
         thumbnailTextSecondary,
         thumbnailFontName,

@@ -683,9 +683,14 @@ class YtDlpService {
         if (code === 0 || code === null) {
           const finalizeSuccess = async () => {
             if (shouldDownloadVideo && mergeAudio && !keepOriginalVideo) {
-              const cleaned = this.cleanupMergedSourceVideoFiles(options.outputDir)
-              if (cleaned.removed > 0) {
-                onLog(`[Downloader] Đã xóa ${cleaned.removed} file video gốc sau ghép. Giữ lại audio gốc.`)
+              const hasMergedVideo = this.hasMergedVideoFile(options.outputDir)
+              if (!hasMergedVideo) {
+                onLog('[Downloader] WARN: không tìm thấy file video đã merge, bỏ qua cleanup (giữ nguyên file gốc)')
+              } else {
+                const cleaned = this.cleanupMergedSourceVideoFiles(options.outputDir)
+                if (cleaned.removed > 0) {
+                  onLog(`[Downloader] Đã xóa ${cleaned.removed} file video gốc sau ghép. Giữ lại audio gốc.`)
+                }
               }
               if (cleaned.errors.length > 0) {
                 for (const err of cleaned.errors.slice(0, 5)) {
@@ -746,6 +751,26 @@ class YtDlpService {
 
   cleanupTempCookie(cookiePath: string): void {
     try { fs.unlinkSync(cookiePath) } catch { /* ignore */ }
+  }
+
+  private hasMergedVideoFile(rootDir: string): boolean {
+    if (!rootDir || !fs.existsSync(rootDir)) return false
+    const walk = (dirPath: string): boolean => {
+      try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry.name)
+          if (entry.isDirectory()) { if (walk(fullPath)) return true; continue }
+          if (!entry.isFile()) continue
+          const ext = path.extname(entry.name).toLowerCase()
+          if (!['.mp4', '.mkv', '.webm', '.mov'].includes(ext)) continue
+          if (/\.f\d+\./i.test(entry.name)) continue
+          return true
+        }
+      } catch { /* ignore */ }
+      return false
+    }
+    return walk(rootDir)
   }
 
   private cleanupMergedSourceVideoFiles(rootDir: string): { removed: number; errors: string[] } {

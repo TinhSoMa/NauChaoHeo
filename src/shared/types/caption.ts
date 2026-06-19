@@ -954,6 +954,7 @@ export interface RenderThumbnailPreviewFrameOptions {
   thumbnailTimeSec: number;
   renderMode?: RenderVideoOptions['renderMode'];
   renderResolution?: RenderVideoOptions['renderResolution'];
+  crop?: VideoCropSettings;
   thumbnailText?: string;
   thumbnailTextSecondary?: string;
   thumbnailFontName?: string;
@@ -1243,6 +1244,7 @@ export interface CaptionProjectSettingsValues {
   hardsubTextsByOrder?: string[];
   hardsubTextsSecondaryByOrder?: string[];
   thumbnailDurationSec?: number;
+  thumbnailPrependEnabled?: boolean;
   thumbnailText?: string;
   subtitlePosition?: { x: number; y: number } | null;
   thumbnailFrameTimeSec?: number | null;
@@ -1265,6 +1267,7 @@ export interface CaptionProjectSettingsValues {
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
+      thumbnailPrependEnabled?: boolean;
       logoPath?: string;
       logoPosition?: { x: number; y: number };
       logoScale?: number;
@@ -1322,6 +1325,44 @@ export interface CaptionProjectSettingsValues {
       crop?: VideoCropSettings;
     };
     portrait?: {
+      hardsubTextPrimary?: string;
+      hardsubTextSecondary?: string;
+      hardsubTextPrimaryFontName?: string;
+      hardsubTextPrimaryFontSize?: number;
+      hardsubTextPrimaryFontSizeRel?: number;
+      hardsubTextPrimaryColor?: string;
+      hardsubTextSecondaryFontName?: string;
+      hardsubTextSecondaryFontSize?: number;
+      hardsubTextSecondaryFontSizeRel?: number;
+      hardsubTextSecondaryColor?: string;
+      hardsubTextPrimaryPosition?: { x: number; y: number };
+      hardsubTextSecondaryPosition?: { x: number; y: number };
+      hardsubPortraitTextPrimary?: string;
+      hardsubPortraitTextSecondary?: string;
+      hardsubPortraitTextPrimaryFontName?: string;
+      hardsubPortraitTextPrimaryFontSize?: number;
+      hardsubPortraitTextPrimaryFontSizeRel?: number;
+      hardsubPortraitTextPrimaryColor?: string;
+      hardsubPortraitTextSecondaryFontName?: string;
+      hardsubPortraitTextSecondaryFontSize?: number;
+      hardsubPortraitTextSecondaryFontSizeRel?: number;
+      hardsubPortraitTextSecondaryColor?: string;
+      hardsubPortraitTextPrimaryPosition?: { x: number; y: number };
+      hardsubPortraitTextSecondaryPosition?: { x: number; y: number };
+      portraitTextPrimaryFontName?: string;
+      portraitTextPrimaryFontSize?: number;
+      portraitTextPrimaryFontSizeRel?: number;
+      portraitTextPrimaryColor?: string;
+      portraitTextSecondaryFontName?: string;
+      portraitTextSecondaryFontSize?: number;
+      portraitTextSecondaryFontSizeRel?: number;
+      portraitTextSecondaryColor?: string;
+      portraitTextPrimaryPosition?: { x: number; y: number };
+      portraitTextSecondaryPosition?: { x: number; y: number };
+      foregroundCropPercent?: number;
+      crop?: VideoCropSettings;
+    };
+    portrait?: {
       fontSizeScaleVersion?: number;
       subtitleFontSizeRel?: number;
       style?: ASSStyleConfig;
@@ -1339,6 +1380,7 @@ export interface CaptionProjectSettingsValues {
       subtitlePosition?: { x: number; y: number } | null;
       thumbnailFrameTimeSec?: number | null;
       thumbnailDurationSec?: number;
+      thumbnailPrependEnabled?: boolean;
       logoPath?: string;
       logoPosition?: { x: number; y: number };
       logoScale?: number;
