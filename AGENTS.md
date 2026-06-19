@@ -10,8 +10,10 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 - **State**: React Router v7 (HashRouter) + Zustand
 - **Styling**: Tailwind CSS v4 (`@tailwindcss/postcss`) with CSS-variable theming (light/dark in `src/renderer/src/styles/globals.css`)
 - **Database**: single `nauchaoheo.db` at `app.getPath('userData')`, shared via `getDatabase()` from `src/main/database/schema.ts:421`. All `*Database.ts` modules import `getDatabase()`. `index.ts` is empty. `migrations.ts` is empty — no migration framework.
-- **App init flow**: `app.whenReady()` → `initDatabase()` → `AppSettingsService.initialize()` → `registerAllHandlers()` → `tryImportDevKeys()`
-- **AI services**: `gemini/` (API keys), `geminiWebApi/` (cookie-based, Python bridge), `chatGemini/` (chat-specific), `grokUi/` (Python bridge)
+- **App init flow**: `app.whenReady()` → `initDatabase()` → `AppSettingsService.initialize()` → `registerAllHandlers()` → `tryImportDevKeys()` → `createDashboardWindow()`
+- **AI services**: `gemini/` (API keys), `geminiWebApi/` (cookie-based, Python bridge), `chatGemini/` (chat-specific), `grokUi/` (Python bridge), `openrouter/`
+- **23 IPC handler files** in `src/main/ipc/` wired via `registerAllHandlers()` in `src/main/ipc/index.ts`
+- **21 preload API modules** exposed via `window.electronAPI` in `src/preload/index.ts`
 - **Current branch**: `feat/update-caption-step6-audio`
 
 ## Commands
@@ -28,6 +30,7 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 | `npm run test:extension` | `node --test tests/extension/*.test.mjs` |
 | `npm run test:extension:background` | `node --test tests/extension/background.logic.test.mjs` |
 | `npm run bench:{edge-tts-worker,rotation-queue}` | Benchmark scripts |
+| `postinstall` | `electron-rebuild -f -w better-sqlite3` (runs automatically on `npm install`) |
 | `npm test` | Prints hint to use `test:extension` |
 
 **No lint, typecheck, or formatter scripts exist.**
@@ -57,7 +60,7 @@ All Python workers communicate via **stdin/stdout JSON-line protocol**. Bundled 
 ## Config & Secrets
 
 - **Gemini API keys**: `gemini_keys.json` (gitignored) or `resources/api-keys.example.json`
-- **App model ID (runtime)**: `com.veo3promptbuilder` — set in `src/main/index.ts:18`
+- **App model ID (runtime)**: `com.veo3promptbuilder` — set in `src/main/index.ts:20`
 - **App ID (electron-builder)**: `com.tinhsoma.nauchaoheo` — set in `electron-builder.yml:2`
 - **Native addon**: `better-sqlite3` must be in `asarUnpack` (already configured in `electron-builder.yml:22`)
 - **Extensions**: 5 projects in `extension/` dir — EbookExtension, NovelSub, qidian (MV3), qidian_old, tiktok
@@ -69,7 +72,9 @@ All Python workers communicate via **stdin/stdout JSON-line protocol**. Bundled 
 - **Renderer tsconfig** (`tsconfig.json`): `strict`, `noUnusedLocals`, `noUnusedParameters`, `moduleResolution: "bundler"`, `noEmit: true`.
 - **Main/preload tsconfig** (`tsconfig.main.json`): `module: "Node16"`, `moduleResolution: "node16"` — imports must include `.js` extension.
 - `electron.vite.config.ts` at root is the main build config.
-- `check` script not required for v4 tailwindcss.
-- `README (2).md` is an unrelated Mem0 project — not this project's documentation.
+- `.claude/skills/` has 4 skill files (debug-issue, explore-codebase, refactor-safely, review-changes).
 - `NewPromt.md` + `newpromt.json` are the subtitle translation system prompt.
-- `.claude/skills/` has 4 custom skill files (debug-issue, explore-codebase, refactor-safely, review-changes).
+- `README (2).md` is an unrelated Mem0 project — not this project's documentation.
+- `HUONG_DAN_CAI_DAT.md` is the real setup guide (Vietnamese).
+- Stale `.electron.vite.config.*.mjs` backup files in root — ignore and do not commit.
+- `.kilo/` is an unrelated plugin directory (`@kilocode/plugin`), not part of the app.

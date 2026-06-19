@@ -4,7 +4,6 @@ import { useThumbnailPreviewState } from '../hooks/useThumbnailPreviewState';
 import { ThumbnailPreviewContextKey, ThumbnailPreviewLayer } from '../CaptionTypes';
 import type { VideoCropSettings } from '@shared/types/caption';
 import { layoutThumbnailText } from '@shared/utils/thumbnailTextLayout';
-import type { VideoCropSettings } from '@shared/types/caption';
 
 type RenderMode = 'hardsub' | 'black_bg' | 'hardsub_portrait_9_16';
 type RenderResolution = 'original' | '1080p' | '720p' | '540p' | '360p';
