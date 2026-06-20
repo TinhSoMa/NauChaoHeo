@@ -18,6 +18,7 @@ import { capcutTtsSecretsApi, CapcutTtsSecretsAPI } from './capcutTtsSecretsApi'
 import { createOpenRouterAPI, OpenRouterAPI } from './openrouterApi'
 import { agentApi, AgentAPI } from './agentApi'
 import { cliAgentScanApi, CliAgentScanAPI } from './cliAgentScanApi'
+import { createAgentTranslationApi, AgentTranslationAPI } from './agentTranslationApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -101,6 +102,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // CLI Agent Scan API
   cliAgentScan: cliAgentScanApi,
+
+  // Agent Translation API (dịch truyện bằng coding agent)
+  agentTranslation: createAgentTranslationApi(),
 })
 
 // Declare types for the exposed API
@@ -134,6 +138,7 @@ declare global {
       openRouter: OpenRouterAPI
       agents: AgentAPI
       cliAgentScan: CliAgentScanAPI
+      agentTranslation: AgentTranslationAPI
     }
   }
 }

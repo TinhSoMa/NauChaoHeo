@@ -35,9 +35,19 @@ import { useStoryExport } from './hooks/useStoryExport';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
+import { useAgentTranslation } from './hooks/useAgentTranslation';
+import { SearchableModelSelect } from '../common/SearchableModelSelect';
 import { resolveStoryReadingThemePalette } from './styles/readerThemes';
 import { ReaderPane } from './components/ReaderPane';
 import { useProjectContext } from '../../context/ProjectContext';
+const AGENT_BATCH_SIZE = 10;
+
+interface CliAgentOption {
+  id: string;
+  name: string;
+  models: { id: string; label: string }[];
+  supportsCustomModel?: boolean;
+}
 const READER_MODE_BREAKPOINT = 1024;
 const READER_PAGE_OVERLAP_PX = 72;
 const READER_MIN_PAGE_STEP = 220;
@@ -99,6 +109,9 @@ export function StoryTranslator() {
   const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
   const [isGeminiWebQueueEnabled, setIsGeminiWebQueueEnabled] = useState(false);
   const [webQueueMode, setWebQueueMode] = useState<StoryWebQueueMode>('multi_auto');
+  const [agentId, setAgentId] = useState('');
+  const [agentModel, setAgentModel] = useState('');
+  const [agentOptions, setAgentOptions] = useState<CliAgentOption[]>([]);
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [memoryTopK, setMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
   const [memoryNamespace, setMemoryNamespace] = useState<string>('');
@@ -257,6 +270,9 @@ export function StoryTranslator() {
     forceSequential: isMemoryFeatureEnabled,
     promptSaveSettings
   });
+
+  // Agent translation hook (dịch bằng OpenCode)
+  const agentTranslation = useAgentTranslation();
 
   // Single translation hook (using processingChapters from batch hook)
   const translation = useStoryTranslation({
@@ -827,6 +843,51 @@ export function StoryTranslator() {
     }
   }, [isGeminiWebQueueEnabled, isQueueMethodSelected]);
 
+  // Load available CLI agents
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const [scanRes, configRes] = await Promise.all([
+          window.electronAPI.cliAgentScan.scan(),
+          window.electronAPI.cliAgentScan.getConfig(),
+        ]);
+        if (!active) return;
+        const enabledAgents = scanRes
+          .filter((a: any) => a.available && configRes[a.id]?.enabled !== false)
+          .map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            models: a.models || [],
+            supportsCustomModel: a.supportsCustomModel,
+          }));
+        setAgentOptions(enabledAgents);
+        if (enabledAgents.length > 0 && !agentId) {
+          setAgentId(enabledAgents[0].id);
+        }
+      } catch { /* silent */ }
+    };
+    void load();
+    return () => { active = false; };
+  }, []);
+
+  // Auto-select first model when agent changes
+  useEffect(() => {
+    if (!agentId) return;
+    const agent = agentOptions.find((a) => a.id === agentId);
+    if (agent && agent.models.length > 0 && !agentModel) {
+      setAgentModel(agent.models[0].id);
+    }
+  }, [agentId, agentOptions, agentModel]);
+
+  // Sync to AppSettings
+  useEffect(() => {
+    if (!agentId) return;
+    window.electronAPI.appSettings.update({
+      cliAgentSelection: { agentId, model: agentModel },
+    }).catch(() => {});
+  }, [agentId, agentModel]);
+
   // Listen for progress/retry events
   useEffect(() => {
     // Note: onMessage returns a cleanup function in implementation, but type def says void.
@@ -866,6 +927,19 @@ export function StoryTranslator() {
       return;
     }
 
+    if (translationMethod === 'agent') {
+      const includedChapters = chapters.filter((c) => isChapterIncluded(c.id))
+      await agentTranslation.start(
+        includedChapters,
+        sourceLang,
+        targetLang,
+        AGENT_BATCH_SIZE,
+        null,
+        agentId || 'opencode'
+      );
+      return;
+    }
+
     if (isMemoryFeatureEnabled && isQueueMethodSelected) {
       await handleTranslateAllWebQueue();
       return;
@@ -885,6 +959,10 @@ export function StoryTranslator() {
   };
 
   const handleStopBatchByMethod = async () => {
+    if (agentTranslation.running) {
+      await agentTranslation.cancel();
+      return;
+    }
     if (isBatchTranslating || isBatchStopping) {
       handleStopBatchTranslation();
     }
@@ -1054,23 +1132,62 @@ export function StoryTranslator() {
           />
         </div>
 
-        <div className="md:col-span-1 min-w-0">
-          <Select
-            label="Mode"
-            value={translationMethod}
-            onChange={(e) => setTranslationMethod(e.target.value as StoryTranslationMethod)}
-            options={[
-              { value: 'api', label: 'API' },
-              { value: 'token', label: 'IMPIT Token' },
-              ...(isGeminiWebQueueEnabled
-                ? [
-                    { value: 'gemini_webapi_queue', label: 'Gemini WebAPI Queue' },
-                    ...(isMemoryFeatureEnabled ? [] : [{ value: 'api_gemini_webapi_queue', label: 'Kết hợp (API + Queue)' }])
-                  ]
-                : [])
-            ]}
-          />
-        </div>
+          <div className="md:col-span-1 min-w-0">
+            <Select
+              label="Mode"
+              value={translationMethod}
+              onChange={(e) => setTranslationMethod(e.target.value as StoryTranslationMethod)}
+              options={[
+                { value: 'api', label: 'API' },
+                { value: 'token', label: 'IMPIT Token' },
+                ...(isGeminiWebQueueEnabled
+                  ? [
+                      { value: 'gemini_webapi_queue', label: 'Gemini WebAPI Queue' },
+                      ...(isMemoryFeatureEnabled ? [] : [{ value: 'api_gemini_webapi_queue', label: 'Kết hợp (API + Queue)' }])
+                    ]
+                  : []),
+                { value: 'agent', label: 'OpenCode Agent' }
+              ]}
+            />
+          </div>
+
+          {translationMethod === 'agent' && (
+            <div className="md:col-span-2 min-w-0 flex gap-2">
+              <div className="flex-1 min-w-0">
+                <label className="text-xs text-text-secondary mb-1 block">Agent</label>
+                <select
+                  value={agentId}
+                  onChange={(e) => { setAgentId(e.target.value); setAgentModel(''); }}
+                  disabled={agentTranslation.running}
+                  className="h-8 px-2 rounded-md border border-border bg-card text-text-primary text-xs w-full"
+                >
+                  {agentOptions.length === 0 && (
+                    <option value="">Không có agent khả dụng</option>
+                  )}
+                  {agentOptions.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+              {(() => {
+                const agent = agentOptions.find((a) => a.id === agentId);
+                if (!agent || agent.models.length === 0) return null;
+                return (
+                  <div className="flex-1 min-w-0">
+                    <label className="text-xs text-text-secondary mb-1 block">Model</label>
+                    <SearchableModelSelect
+                      models={agent.models}
+                      value={agentModel}
+                      onChange={setAgentModel}
+                      searchPlaceholder="Tìm model..."
+                      minSearchableOptions={1}
+                      className="h-8 text-xs w-full"
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
         {isGeminiWebQueueEnabled && isQueueMethodSelected && (
           <div className="md:col-span-2 min-w-0">
@@ -1211,6 +1328,16 @@ export function StoryTranslator() {
                     ? `Đang dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
                     : `Dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
                 </Button>
+              ) : agentTranslation.running ? (
+                <Button
+                  onClick={handleStopBatchByMethod}
+                  variant="secondary"
+                  className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                  title="Dừng agent translation"
+                >
+                  <StopCircle size={16} />
+                  {`Dừng Agent (${agentTranslation.completedBatches}/${agentTranslation.totalBatches})`}
+                </Button>
               ) : (isBatchTranslating || isWebQueueTranslating) && combinedBatchProgress ? (
                 <Button
                   onClick={handleStopBatchByMethod}
@@ -1235,6 +1362,7 @@ export function StoryTranslator() {
                       isSummaryStopping ||
                       isBatchStopping ||
                       isWebQueueStopping ||
+                      agentTranslation.running ||
                       status === 'running'
                     }
                     title="Dịch batch theo Mode đã chọn"

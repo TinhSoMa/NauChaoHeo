@@ -24,6 +24,7 @@ import { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 import { registerOpenRouterHandlers } from './openrouterHandlers';
 import { registerAgentHandlers } from './agentHandlers';
 import { registerCliAgentScanHandlers } from './cliAgentScanHandlers';
+import { registerAgentTranslationHandlers } from './agentTranslationHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -95,6 +96,9 @@ export function registerAllHandlers(): void {
   // Đăng ký CLI Agent Scan handlers
   registerCliAgentScanHandlers();
 
+  // Đăng ký Agent Translation handlers (dịch truyện bằng coding agent)
+  registerAgentTranslationHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -119,4 +123,5 @@ export { registerMemoryContextHandlers } from './memoryContextHandlers';
 export { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 export { registerOpenRouterHandlers } from './openrouterHandlers';
 export { registerCliAgentScanHandlers } from './cliAgentScanHandlers';
+export { registerAgentTranslationHandlers } from './agentTranslationHandlers';
 

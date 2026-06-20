@@ -21,7 +21,8 @@ export type StoryTranslationMethod =
   | 'api'
   | 'token'
   | 'gemini_webapi_queue'
-  | 'api_gemini_webapi_queue';
+  | 'api_gemini_webapi_queue'
+  | 'agent';
 
 export type StoryChapterMethod = 'api' | 'token' | 'gemini_webapi_queue';
 

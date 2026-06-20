@@ -1431,6 +1431,15 @@ declare global {
 
       // CLI Agent Scan API
       cliAgentScan: CliAgentScanAPI;
+
+      // Agent Translation API (dịch truyện bằng coding agent)
+      agentTranslation: {
+        detect: (agentId?: string) => Promise<import('@shared/types/agentTranslation').AgentTranslationDetectResult>;
+        start: (payload: import('@shared/types/agentTranslation').AgentTranslationStartPayload) => Promise<import('@shared/types/agentTranslation').AgentTranslationStartResult>;
+        cancel: () => Promise<{ success: boolean }>;
+        getStatus: () => Promise<import('@shared/types/agentTranslation').AgentTranslationStatus>;
+        onProgress: (callback: (progress: import('@shared/types/agentTranslation').AgentTranslationProgress) => void) => () => void;
+      };
     };
   }
 }

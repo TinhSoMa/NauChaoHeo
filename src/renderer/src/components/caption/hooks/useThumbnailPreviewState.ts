@@ -522,7 +522,6 @@ export function useThumbnailPreviewState(
       thumbnailTextConstrainTo34,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
-      crop,
     });
   }, [
     committedFrameTimeSec,
@@ -543,7 +542,6 @@ export function useThumbnailPreviewState(
     thumbnailTextPrimaryPosition,
     thumbnailTextSecondaryPosition,
     thumbnailTextSecondary,
-    crop,
     videoPath,
   ]);
 

@@ -1,0 +1,6 @@
+export { detectAgent } from './agentDetector'
+export type { AgentDetectResult } from './agentDetector'
+export { buildBatchPrompt } from './agentPromptBuilder'
+export type { BatchChapter } from './agentPromptBuilder'
+export { AgentSpawner } from './spawner'
+export type { SpawnOptions, SpawnEvent } from './spawner'

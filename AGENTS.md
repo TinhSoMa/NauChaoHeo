@@ -78,3 +78,20 @@ All Python workers communicate via **stdin/stdout JSON-line protocol**. Bundled 
 - `HUONG_DAN_CAI_DAT.md` is the real setup guide (Vietnamese).
 - Stale `.electron.vite.config.*.mjs` backup files in root — ignore and do not commit.
 - `.kilo/` is an unrelated plugin directory (`@kilocode/plugin`), not part of the app.
+
+## Agent Translation Feature
+
+- `src/main/services/agentTranslation/` — agent-based story translation pipeline
+- **Per-batch approach**: each batch (default 10 chapters) spawns a separate `opencode run --format json` process via stdin. No tools needed — agent just outputs translated JSON in its text response.
+- `agentPromptBuilder.ts` — `buildBatchPrompt()`: builds per-batch prompt with chapters inline (~20KB per batch), tells agent "DO NOT use tools, output JSON in response"
+- `spawner.ts` — AgentSpawner: loops through batches, spawns one agent per batch, parses stdout for `{"type":"message","part":{"type":"text","text":"..."}}` JSON events, extracts batch JSON from text, writes `batch_XXX.json` directly
+- `agentDetector.ts` — thin wrapper over `cliAgentScan/registry` + `detection`
+- No OutputWatcher, no `input/chapters.json`, no file permissions needed
+- UI: agent + model dropdown in `StoryTranslator.tsx` (SearchableModelSelect) when `translationMethod === 'agent'`
+
+### Critical Context
+- OpenCode detected at `C:\Users\congt\AppData\Roaming\npm\opencode.cmd` (cmd wrapper) — `createCommandInvocation` wraps `.cmd` in `cmd.exe /d /s /c`
+- Model resolved: `opencode/big-pickle`
+- Per-batch spawn avoids tool permission issues and ENAMETOOLONG (each prompt is ~20KB via stdin)
+- Output files: `batch_XXX.json` in outputDir, written by Node.js (not agent)
+- Preload MUST use relative paths (`../shared/types/...`), NOT `@shared/` alias
