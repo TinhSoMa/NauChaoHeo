@@ -135,7 +135,6 @@ export function useThumbnailPreviewState(
     onThumbnailTextSecondaryPositionChange,
     contextKey,
     inputType,
-    crop,
   } = options;
 
   const contextId = contextKey
