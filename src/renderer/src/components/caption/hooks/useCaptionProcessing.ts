@@ -298,7 +298,7 @@ interface UseCaptionProcessingProps {
     crop?: VideoCropSettings;
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
-    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
     thumbnailPrependEnabled?: boolean;
