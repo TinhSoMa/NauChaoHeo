@@ -1976,7 +1976,7 @@ export class StoryService {
         const path = require('path');
         const os = require('os');
         const fs = require('fs');
-        const EPub = require('epub');
+        const { EPub } = require('epub2');
         
         const { chapters, title, author, outputDir, filename, cover, sourceEpubPath } = options;
         
