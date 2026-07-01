@@ -48,8 +48,6 @@ import {
   parseJsonTranslationResponse,
   TextBatch,
 } from './textSplitter';
-import { getMemoryContextService } from '../memoryContext';
-import { createHash } from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getCaptionOutputDirFromInput } from '../../../shared/utils/captionSession';
@@ -69,13 +67,6 @@ const STOP_TRANSLATION_MESSAGE = 'Đã gửi tín hiệu dừng dịch.';
 const GROK_UI_RATE_LIMIT_MESSAGE = 'Grok UI: tất cả profile bị rate limit, dừng dịch.';
 const GROK_UI_HARD_STOP_MESSAGE = 'Grok UI batch failed, stopped.';
 const GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE = 'ALL_GEMINI_WEB_ACCOUNTS_FAILED';
-const CAPTION_MEMORY_FEATURE = 'caption.translation';
-const CAPTION_MEMORY_TOP_K = 3;
-
-function buildCaptionMemoryNamespace(projectId: string, sourcePath: string): string {
-  const fingerprint = createHash('sha1').update(sourcePath).digest('hex').slice(0, 12);
-  return `caption:${projectId}:${fingerprint}`;
-}
 const CAPTION_GEMINI_WEB_QUEUE_MAX_ATTEMPTS = 2; // 1 lan dau + 1 lan retry
 let activeTranslateRunId: string | undefined;
 let translateStopRequested = false;
@@ -1240,30 +1231,7 @@ export async function translateAll(
     let lastResult: BatchTranslationResult | null = null;
     let lastDispatchTiming: DispatchTimingMetadata | null = null;
 
-    // Search memory context 1 lần duy nhất cho batch này, dùng chung cho mọi attempt
     let localMemoryContext: string | undefined;
-    try {
-      const memoryProjectId = (projectId || '').trim();
-      const memorySourcePath = (sourcePath || '').trim();
-      if (memoryProjectId && memorySourcePath && getMemoryContextService().isAvailable() !== false) {
-        const memoryNamespace = buildCaptionMemoryNamespace(memoryProjectId, memorySourcePath);
-        console.time(`[CaptionTranslator] [Memory] search batch #${batchNumber}`);
-        const searchResult = await getMemoryContextService().searchContext({
-          projectId: memoryProjectId,
-          feature: CAPTION_MEMORY_FEATURE,
-          namespace: memoryNamespace,
-          queryText: batch.texts.join('\n'),
-          topK: CAPTION_MEMORY_TOP_K,
-          metadata: { batchIndex: batch.batchIndex, chapterIndex: batch.batchIndex, totalChapters: maxBatchIndex },
-        });
-        console.timeEnd(`[CaptionTranslator] [Memory] search batch #${batchNumber}`);
-        if (searchResult.success && searchResult.promptContext) {
-          localMemoryContext = searchResult.promptContext;
-        }
-      }
-    } catch (error) {
-      console.warn(`[CaptionTranslator] [Memory] search batch #${batchNumber} thất bại:`, error);
-    }
 
     while (attempt < totalAttempts) {
       assertNotStopped();
@@ -1414,30 +1382,6 @@ export async function translateAll(
 
       if (batchResult.success) {
         bestTexts = normalizedTexts;
-        // Lưu memory context sau batch success
-        try {
-          const memoryProjectId = (projectId || '').trim();
-          const memorySourcePath = (sourcePath || '').trim();
-          if (memoryProjectId && memorySourcePath) {
-            const memoryNamespace = buildCaptionMemoryNamespace(memoryProjectId, memorySourcePath);
-            const sourceTexts = batch.texts.join('\n');
-            const translatedTexts = normalizedTexts.join('\n');
-            await getMemoryContextService().addMemory({
-              projectId: memoryProjectId,
-              feature: CAPTION_MEMORY_FEATURE,
-              namespace: memoryNamespace,
-              sourceText: sourceTexts,
-              translatedText: translatedTexts,
-              metadata: {
-                chapterIndex: batch.batchIndex,
-                totalChapters: maxBatchIndex,
-                batchSize: batch.texts.length,
-              },
-            });
-          }
-        } catch {
-          // Memory storage failure is non-fatal
-        }
         break;
       }
 
@@ -1839,9 +1783,8 @@ export async function translateSingleBatch(
   const useGrokUi = translateMethod === 'grok_ui';
   const useProvider = !useImpit && !useGeminiWebQueue && !useGrokUi;
 
-  // Search memory context from previous batches (highest priority)
+  // Build memory context from previous batches
   let localMemoryContext: string | undefined;
-
   if (options.previousBatches && options.previousBatches.length > 0) {
     const ctxParts: string[] = [];
     for (const pb of options.previousBatches) {
@@ -1856,50 +1799,6 @@ export async function translateSingleBatch(
     }
     localMemoryContext = ctxParts.join('\n\n');
     console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: using ${options.previousBatches.length} previous batch(es) as context`);
-  } else {
-    // Fallback: search mem0 context
-    try {
-      const memProjectId = (projectId || '').trim();
-      const memSourcePath = (sourcePath || '').trim();
-      if (memProjectId && memSourcePath) {
-        const service = getMemoryContextService();
-        const avail = service.isAvailable();
-        let canSearch = avail === true;
-        if (avail === null) {
-          try {
-            await Promise.race([
-              service.getHealth(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('MEMORY_TIMEOUT')), 3000)),
-            ]);
-            canSearch = service.isAvailable() === true;
-          } catch {
-            // Worker not ready yet — skip memory, batch proceeds without waiting
-          }
-        }
-        if (canSearch) {
-          const memoryNamespace = buildCaptionMemoryNamespace(memProjectId, memSourcePath);
-          console.time(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1}`);
-          const searchResult = await service.searchContext({
-            projectId: memProjectId,
-            feature: CAPTION_MEMORY_FEATURE,
-            namespace: memoryNamespace,
-            queryText: batch.texts.join('\n'),
-            topK: CAPTION_MEMORY_TOP_K,
-            metadata: { batchIndex, chapterIndex: batchIndex, totalChapters: totalBatches },
-          });
-          console.timeEnd(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1}`);
-          if (searchResult.success && searchResult.promptContext) {
-            localMemoryContext = searchResult.promptContext;
-            const lineCount = searchResult.promptContext.split('\n').filter((l) => l.trim()).length;
-            console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: found ${searchResult.memories?.length ?? 0} memories (${lineCount} lines)`);
-          } else {
-            console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: no context returned (success=${searchResult.success})`);
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(`[CaptionTranslator] [Memory] search batch #${batchIndex + 1} thất bại:`, error);
-    }
   }
 
   // Lấy API key nếu cần
@@ -2023,34 +1922,6 @@ export async function translateSingleBatch(
 
     if (batchResult.success) {
       bestTexts = normalizedTexts;
-      // Store memory
-      try {
-        const memProjectId = (projectId || '').trim();
-        const memSourcePath = (sourcePath || '').trim();
-        if (memProjectId && memSourcePath) {
-          const memoryNamespace = buildCaptionMemoryNamespace(memProjectId, memSourcePath);
-          const addResult = await getMemoryContextService().addMemory({
-            projectId: memProjectId,
-            feature: CAPTION_MEMORY_FEATURE,
-            namespace: memoryNamespace,
-            sourceText: batch.texts.join('\n'),
-            translatedText: normalizedTexts.join('\n'),
-            metadata: {
-              chapterIndex: batchIndex,
-              totalChapters: totalBatches,
-              batchSize: batch.texts.length,
-            },
-          });
-          if (addResult.success) {
-            console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: stored (${batch.texts.length} dòng)`);
-          } else {
-            console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store failed: ${addResult.error || 'unknown'}`);
-          }
-        }
-      } catch (error) {
-        console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store exception:`, error);
-      }
-
       throwIfTranslationStopped(runId);
       return {
         success: true,
