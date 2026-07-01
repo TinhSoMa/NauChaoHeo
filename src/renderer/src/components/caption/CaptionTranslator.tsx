@@ -7,7 +7,6 @@ import { Input } from '../common/Input';
 import { RadioButton } from '../common/RadioButton';
 import { Checkbox } from '../common/Checkbox';
 import { useProjectContext } from '../../context/ProjectContext';
-import { useCaptionMemory } from './useCaptionMemory';
 import {
   GEMINI_MODELS as FALLBACK_GEMINI_MODELS,
   VOICES,
@@ -72,7 +71,7 @@ import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
 import { Step4ProxyTestPopup } from './components/Step4ProxyTestPopup';
 import { SubtitlePreview } from './SubtitlePreview';
 import { calculateHardsubTiming } from '@shared/utils/hardsubTiming';
-import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw, Trash2, Database, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertCircle, Download, Eye, Power, PowerOff, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   CaptionProjectSettingsValues,
   FitAudioAuditResponse,
@@ -1064,7 +1063,6 @@ export function CaptionTranslator() {
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
   );
   const [commonColorHistory, setCommonColorHistory] = useState<string[]>([]);
-  const { memoryAvailable } = useCaptionMemory();
   const commonColorHistoryStorageKey = useMemo(
     () => `${COMMON_COLOR_HISTORY_STORAGE_PREFIX}:${projectId || 'global'}`,
     [projectId]
@@ -2931,7 +2929,6 @@ export function CaptionTranslator() {
   const handleDownloadPromptPreview = async () => {
     const entries = fileManager.entries;
     const linesPerBatch = Math.max(1, settings.linesPerFile || 50);
-    const totalBatches = Math.ceil(entries.length / linesPerBatch);
     const batchTexts = entries.slice(0, linesPerBatch).map(e => e.text);
     const count = batchTexts.length;
 
@@ -2981,44 +2978,11 @@ export function CaptionTranslator() {
       responseFormat = 'json';
     }
 
-    // Fetch memory context (giống captionTranslator.ts:1307-1327)
-    let memoryPromptContext: string | undefined;
-    try {
-      const projectIdValue = (projectId || '').trim();
-      const sourcePathValue = (fileManager.filePath || '').trim();
-      if (projectIdValue && sourcePathValue && typeof crypto.subtle?.digest === 'function') {
-        const encoder = new TextEncoder();
-        const hashBuffer = await crypto.subtle.digest('SHA-1', encoder.encode(sourcePathValue));
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const fingerprint = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
-        const namespace = `caption:${projectIdValue}:${fingerprint}`;
-        const memoryRes = await (window.electronAPI as any).invoke('memoryContext:search', {
-          projectId: projectIdValue,
-          feature: 'caption.translation',
-          namespace,
-          queryText: batchTexts.join('\n'),
-          topK: 3,
-          metadata: { batchIndex: 1, chapterIndex: 1, totalChapters: totalBatches },
-        });
-        if (memoryRes?.success && memoryRes.promptContext) {
-          memoryPromptContext = memoryRes.promptContext;
-        }
-      }
-    } catch (e) {
-      console.warn('[PromptPreview] Không fetch được memory context:', e);
-    }
-
-    // Append memory context vào prompt (giống textSplitter.ts:145-151)
-    if (memoryPromptContext) {
-      prompt += `\n\n=== BỐI CẢNH DỊCH THUẬT (Translation Context) ===\nĐây là các bản dịch trước đó trong cùng dự án để tham khảo:\n${memoryPromptContext}\nSử dụng ngữ cảnh trên để giữ NHẤT QUÁN thuật ngữ, tên nhân vật, phong cách dịch.\nTUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 object output.\n`;
-    }
-
     const header = [
       `; === CAPTION PROMPT PREVIEW ===`,
       `; Prompt: ${customTemplate ? promptName : '(default built-in)'}`,
       `; Response format: ${responseFormat}`,
       `; Batch size: ${count} / ${entries.length} dòng (linesPerFile=${linesPerBatch})`,
-      `; Memory context: ${memoryPromptContext ? 'Có (kèm trong prompt)' : 'Không có'}`,
       `; ================================`,
       '',
     ].join('\n');
@@ -5568,30 +5532,6 @@ export function CaptionTranslator() {
     [processingInputPaths]
   );
   const stepInspectorActiveInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? stepInspectorInputPaths[0] ?? '';
-  const [memoryCount, setMemoryCount] = useState<number>(0);
-  useEffect(() => {
-    if (!memoryAvailable || !projectId || !stepInspectorActiveInputPath) return;
-    let active = true;
-    (async () => {
-      const statsRes: any = await window.electronAPI.invoke('caption:memoryStats', {
-        projectId,
-        sourcePath: stepInspectorActiveInputPath,
-      });
-      if (active && statsRes?.success) {
-        setMemoryCount(statsRes.data?.count ?? 0);
-      }
-    })();
-    return () => { active = false; };
-  }, [memoryAvailable, projectId, stepInspectorActiveInputPath]);
-  const clearMemory = async () => {
-    if (!projectId || !stepInspectorActiveInputPath) return;
-    try {
-      await window.electronAPI.invoke('caption:memoryClear', { projectId, sourcePath: stepInspectorActiveInputPath });
-      setMemoryCount(0);
-    } catch (err) {
-      console.error('[Memory] Clear failed:', err);
-    }
-  };
   const stepInspectorFolderLabel = useMemo(() => {
     const currentFolderName = (processing.currentFolder?.name || '').trim();
     if (currentFolderName) {
@@ -7889,41 +7829,6 @@ export function CaptionTranslator() {
                       : 'API: dùng model đã chọn'}
             </div>
           </div>
-          {(memoryAvailable !== null) && (
-            <div className={styles.stepCard}>
-              <div className={styles.stepCardHeader}>
-                <div className={styles.stepCardTitle}>
-                  <Database size={13} style={{ marginRight: 4 }} />
-                  Translation Memory
-                </div>
-              </div>
-              <div className={styles.stepOptionRow} style={{ alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                {memoryAvailable
-                  ? (
-                    <>
-                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
-                        {memoryCount} bản ghi nhớ
-                      </span>
-                      <Button
-                        variant="danger"
-                        onClick={clearMemory}
-                        title="Xoá bộ nhớ dịch của dự án này"
-                        className={styles.stepCompactBtn}
-                      >
-                        <Trash2 size={12} />
-                        Xoá
-                      </Button>
-                    </>
-                  )
-                  : (
-                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-danger)' }}>
-                      <AlertCircle size={12} style={{ marginRight: 4 }} />
-                      Memory context không khả dụng
-                    </span>
-                  )}
-              </div>
-            </div>
-          )}
           <div className={styles.stepCard}>
             <div className={styles.stepCardHeader}>
               <div className={styles.stepCardTitle}>Runtime theo kênh dịch</div>
