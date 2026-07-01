@@ -15,6 +15,8 @@ import {
 } from '../../../shared/types/gemini';
 import { getGeminiModelsService } from './geminiModelsService';
 
+import { getApiRequestTimeoutMs } from '../appSettings.js';
+
 // Re-export để các module khác có thể import từ đây
 export { GEMINI_MODELS, getGeminiModelInfo };
 export type GeminiModel = string;
@@ -126,8 +128,9 @@ export async function callGeminiApi(
   prompt: string | object,
   apiKey: string,
   model?: string,
-  useProxy: boolean = true, // Mặc định sử dụng proxy
+  useProxy: boolean = true,
   abortSignal?: AbortSignal,
+  timeoutMs: number = getApiRequestTimeoutMs(),
 ): Promise<GeminiResponse> {
   try {
     const resolvedModel = resolveModelForRuntime(model);
@@ -156,7 +159,7 @@ export async function callGeminiApi(
           'Content-Type': 'application/json',
         },
         body: payload,
-        timeout: 30000, // 30s cho translation
+        timeout: timeoutMs,
         useProxy: true,
         proxyScope: 'other',
         signal: abortSignal,
@@ -187,13 +190,16 @@ export async function callGeminiApi(
       return { success: false, error: 'Response không có nội dung' };
     } else {
       // Fallback về fetch trực tiếp (không dùng proxy)
+      const fetchSignal = abortSignal
+        ? AbortSignal.any ? AbortSignal.any([abortSignal, AbortSignal.timeout(timeoutMs)]) : abortSignal
+        : AbortSignal.timeout(timeoutMs);
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
-        signal: abortSignal,
+        signal: fetchSignal,
       });
 
       // Xử lý lỗi HTTP
@@ -232,6 +238,9 @@ export async function callGeminiApi(
   } catch (error) {
     if (abortSignal?.aborted) {
       return { success: false, error: 'REQUEST_ABORTED' };
+    }
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return { success: false, error: 'REQUEST_TIMEOUT' };
     }
     console.error('[GeminiService] Lỗi gọi API:', error);
     return { success: false, error: String(error) };
@@ -307,6 +316,7 @@ export async function callGeminiWithRotation(
       resolvedModel,
       useProxySetting,
       requestAbortController.signal,
+      getApiRequestTimeoutMs(),
     );
     detachAbortForwarding();
 
@@ -397,6 +407,7 @@ export async function callGeminiWithAssignedKey(
     resolvedModel,
     false,
     requestAbortController.signal,
+    getApiRequestTimeoutMs(),
   );
   detachAbortForwarding();
 

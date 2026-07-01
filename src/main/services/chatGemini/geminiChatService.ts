@@ -11,6 +11,7 @@ import { getGeminiWebApiRuntime } from '../geminiWebApi';
 import { getProxyManager } from '../proxy/proxyManager';
 import {
     AppSettingsService,
+    getApiRequestTimeoutMs,
     GEMINI_MIN_SEND_INTERVAL_DEFAULT_MS,
     normalizeGeminiMinSendIntervalMs,
     normalizeGeminiMaxSendIntervalMs,
@@ -1112,7 +1113,7 @@ export class GeminiChatServiceClass {
           return await this.withTokenLock(tokenKey, async () => {
               const response = await getGeminiWebApiRuntime().generateContent({
                   prompt,
-                  timeoutMs: 120000,
+                  timeoutMs: getApiRequestTimeoutMs(),
                   accountConfigId: config!.id,
                   conversationKey,
                   useChatSession: true,
@@ -1291,11 +1292,12 @@ export class GeminiChatServiceClass {
 
                 const useHttp3 = !proxyUrl;
 
+                const impitTimeoutMs = getApiRequestTimeoutMs();
                 const impit = new Impit({
                     browser: assignedBrowser,
                     proxyUrl: proxyUrl,
                     ignoreTlsErrors: true,
-                    timeout: 300000,
+                    timeout: impitTimeoutMs,
                     http3: useHttp3, 
                     followRedirects: true,
                     maxRedirects: 10

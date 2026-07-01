@@ -810,6 +810,7 @@ interface AppSettings {
   geminiSendIntervalMode: 'fixed' | 'random';
   apiWorkerCount: number;
   apiRequestDelayMs: number;
+  apiRequestTimeoutMs: number;
   translationPromptId: string | null;
   summaryPromptId: string | null;
   captionPromptId: string | null;

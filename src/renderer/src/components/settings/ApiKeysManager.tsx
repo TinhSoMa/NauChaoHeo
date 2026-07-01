@@ -6,6 +6,8 @@ const API_WORKER_MIN = 1;
 const API_WORKER_MAX = 10;
 const API_DELAY_MIN_SEC = 0;
 const API_DELAY_MAX_SEC = 30;
+const API_TIMEOUT_MIN_SEC = 5;
+const API_TIMEOUT_MAX_SEC = 300;
 
 type StatusTabFilter = 'all' | 'available' | 'rate_limited' | 'exhausted' | 'error' | 'disabled';
 
@@ -76,6 +78,9 @@ export function ApiKeysManager() {
   const [apiDelayInput, setApiDelayInput] = useState('0.5');
   const [savedApiDelaySec, setSavedApiDelaySec] = useState(0.5);
   const [isSavingApiDelay, setIsSavingApiDelay] = useState(false);
+  const [apiTimeoutInput, setApiTimeoutInput] = useState('60');
+  const [savedApiTimeoutSec, setSavedApiTimeoutSec] = useState(60);
+  const [isSavingApiTimeout, setIsSavingApiTimeout] = useState(false);
   const [editingProject, setEditingProject] = useState<{ accountId: string; projectIndex: number; name: string; notes: string } | null>(null);
   const [addingProjectAccountId, setAddingProjectAccountId] = useState<string | null>(null);
   const [newProjectName, setNewProjectName] = useState('');
@@ -100,6 +105,7 @@ export function ApiKeysManager() {
         const appSettings = settingsRes.data as unknown as {
           apiWorkerCount?: number;
           apiRequestDelayMs?: number;
+          apiRequestTimeoutMs?: number;
         };
         const raw = Number(appSettings.apiWorkerCount);
         const normalized = Number.isFinite(raw) ? Math.min(API_WORKER_MAX, Math.max(API_WORKER_MIN, Math.floor(raw))) : API_WORKER_MIN;
@@ -112,6 +118,12 @@ export function ApiKeysManager() {
         const delaySec = Math.max(API_DELAY_MIN_SEC, Math.min(API_DELAY_MAX_SEC, normalizedDelayMs / 1000));
         setApiDelayInput(String(delaySec));
         setSavedApiDelaySec(delaySec);
+        const rawTimeoutSec = Number(appSettings.apiRequestTimeoutMs) / 1000;
+        const normalizedTimeoutSec = Number.isFinite(rawTimeoutSec)
+          ? Math.min(API_TIMEOUT_MAX_SEC, Math.max(API_TIMEOUT_MIN_SEC, Math.floor(rawTimeoutSec)))
+          : 60;
+        setApiTimeoutInput(String(normalizedTimeoutSec));
+        setSavedApiTimeoutSec(normalizedTimeoutSec);
       }
     } catch (err) {
       console.error('[ApiKeysManager] Loi load:', err);
@@ -350,6 +362,23 @@ export function ApiKeysManager() {
     } finally { setIsSavingApiDelay(false); }
   };
 
+  const handleSaveApiTimeout = async () => {
+    const trimmed = apiTimeoutInput.trim();
+    if (!/^\d+$/.test(trimmed)) { alert(`Timeout từ ${API_TIMEOUT_MIN_SEC}-${API_TIMEOUT_MAX_SEC}s.`); return; }
+    const nextSec = Number(trimmed);
+    if (!Number.isFinite(nextSec) || nextSec < API_TIMEOUT_MIN_SEC || nextSec > API_TIMEOUT_MAX_SEC) { alert(`Timeout từ ${API_TIMEOUT_MIN_SEC}-${API_TIMEOUT_MAX_SEC}s.`); return; }
+    try {
+      setIsSavingApiTimeout(true);
+      const nextMs = Math.floor(nextSec * 1000);
+      const result = await window.electronAPI.appSettings.update({ apiRequestTimeoutMs: nextMs } as any);
+      if (result.success) { setSavedApiTimeoutSec(nextSec); setApiTimeoutInput(String(nextSec)); }
+      else alert('Lỗi cập nhật.');
+    } catch (error) {
+      console.error('[ApiKeysManager] Error updating apiRequestTimeoutMs:', error);
+      alert('Lỗi cập nhật.');
+    } finally { setIsSavingApiTimeout(false); }
+  };
+
   const toggleErrorMessage = (projectKey: string) => {
     setExpandedErrors(prev => {
       const next = new Set(prev);
@@ -546,6 +575,18 @@ export function ApiKeysManager() {
             <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>giây</span>
             <button className={styles.smallBtn} onClick={handleSaveApiDelay}
               disabled={isSavingApiDelay || Number(apiDelayInput) === savedApiDelaySec}>
+              Lưu
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Timeout request:</span>
+            <input type="number" min={API_TIMEOUT_MIN_SEC} max={API_TIMEOUT_MAX_SEC} step="1" value={apiTimeoutInput}
+              onChange={(e) => setApiTimeoutInput(e.target.value)}
+              style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text-primary)', fontSize: 'var(--font-size-sm)', outline: 'none' }}
+            />
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>giây</span>
+            <button className={styles.smallBtn} onClick={handleSaveApiTimeout}
+              disabled={isSavingApiTimeout || Number(apiTimeoutInput) === savedApiTimeoutSec}>
               Lưu
             </button>
           </div>

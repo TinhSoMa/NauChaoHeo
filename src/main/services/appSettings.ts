@@ -35,6 +35,7 @@ export interface AppSettings {
   geminiSendIntervalMode: 'fixed' | 'random'; // Chế độ khoảng gửi: cố định hoặc ngẫu nhiên
   apiWorkerCount: number; // Số worker API song song (Story + Caption Step3)
   apiRequestDelayMs: number; // Delay giữa request API (ms)
+  apiRequestTimeoutMs: number; // Timeout cho mỗi request API (ms)
   grokUiProfileDir: string | null;
   grokUiProfileName: string | null;
   grokUiAnonymous: boolean;
@@ -127,6 +128,9 @@ export const API_WORKER_COUNT_MAX = 10;
 export const API_REQUEST_DELAY_DEFAULT_MS = 500;
 export const API_REQUEST_DELAY_MIN_MS = 0;
 export const API_REQUEST_DELAY_MAX_MS = 30_000;
+export const API_REQUEST_TIMEOUT_DEFAULT_MS = 60_000;
+export const API_REQUEST_TIMEOUT_MIN_MS = 5_000;
+export const API_REQUEST_TIMEOUT_MAX_MS = 300_000;
 export const GROK_UI_TIMEOUT_DEFAULT_MS = 120_000;
 export const GROK_UI_TIMEOUT_MIN_MS = 10_000;
 export const GROK_UI_TIMEOUT_MAX_MS = 300_000;
@@ -268,6 +272,14 @@ function normalizeApiRequestDelayMs(rawValue: unknown): number {
     return API_REQUEST_DELAY_DEFAULT_MS;
   }
   return clamp(Math.floor(numeric), API_REQUEST_DELAY_MIN_MS, API_REQUEST_DELAY_MAX_MS);
+}
+
+function normalizeApiRequestTimeoutMs(rawValue: unknown): number {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return API_REQUEST_TIMEOUT_DEFAULT_MS;
+  }
+  return clamp(Math.floor(numeric), API_REQUEST_TIMEOUT_MIN_MS, API_REQUEST_TIMEOUT_MAX_MS);
 }
 
 function applyNativeTheme(theme: AppSettings['theme']): void {
@@ -623,6 +635,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiSendIntervalMode: 'fixed',
   apiWorkerCount: API_WORKER_COUNT_DEFAULT,
   apiRequestDelayMs: API_REQUEST_DELAY_DEFAULT_MS,
+  apiRequestTimeoutMs: API_REQUEST_TIMEOUT_DEFAULT_MS,
   grokUiProfileDir: DEFAULT_GROK_UI_PROFILE.profileDir,
   grokUiProfileName: DEFAULT_GROK_UI_PROFILE.profileName,
   grokUiAnonymous: DEFAULT_GROK_UI_PROFILE.anonymous,
@@ -721,6 +734,7 @@ class AppSettingsServiceClass {
           geminiSendIntervalMode: normalizeGeminiSendIntervalMode(loaded?.geminiSendIntervalMode),
           apiWorkerCount: normalizeApiWorkerCount(loaded?.apiWorkerCount),
           apiRequestDelayMs: normalizeApiRequestDelayMs(loaded?.apiRequestDelayMs),
+          apiRequestTimeoutMs: normalizeApiRequestTimeoutMs(loaded?.apiRequestTimeoutMs),
           grokUiProfileDir: normalizeStringOrNull(loaded?.grokUiProfileDir) ?? DEFAULT_SETTINGS.grokUiProfileDir,
           grokUiProfileName: normalizeStringOrNull(loaded?.grokUiProfileName) ?? DEFAULT_SETTINGS.grokUiProfileName,
           grokUiAnonymous: loaded?.grokUiAnonymous === true,
@@ -817,6 +831,9 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'apiRequestDelayMs')) {
       nextPartial.apiRequestDelayMs = normalizeApiRequestDelayMs(partial.apiRequestDelayMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'apiRequestTimeoutMs')) {
+      nextPartial.apiRequestTimeoutMs = normalizeApiRequestTimeoutMs(partial.apiRequestTimeoutMs);
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'downloaderOutputDir')) {
       nextPartial.downloaderOutputDir = normalizeStringOrNull(partial.downloaderOutputDir);
@@ -943,3 +960,11 @@ class AppSettingsServiceClass {
 
 // Singleton instance
 export const AppSettingsService = new AppSettingsServiceClass();
+
+export function getApiRequestTimeoutMs(): number {
+  try {
+    return AppSettingsService.getAll().apiRequestTimeoutMs ?? API_REQUEST_TIMEOUT_DEFAULT_MS;
+  } catch {
+    return API_REQUEST_TIMEOUT_DEFAULT_MS;
+  }
+}

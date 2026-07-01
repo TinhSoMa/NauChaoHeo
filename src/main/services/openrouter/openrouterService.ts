@@ -1,4 +1,4 @@
-import { AppSettingsService } from '../appSettings.js'
+import { AppSettingsService, getApiRequestTimeoutMs } from '../appSettings.js'
 import { makeRequestWithProxy } from '../apiClient.js'
 import {
   OPENROUTER_API_BASE,
@@ -14,7 +14,7 @@ import {
   type OpenRouterProjectItem,
   type OpenRouterKeyStatsResult,
 } from '../../../shared/types/openrouter'
-import { DEFAULT_HEADERS, REQUEST_TIMEOUT_MS, MAX_RETRIES } from './openrouterConfig.js'
+import { DEFAULT_HEADERS, MAX_RETRIES } from './openrouterConfig.js'
 import { getKeyManager } from './openrouterKeyManager.js'
 import {
   getAllAccounts as dbGetAllAccounts,
@@ -88,7 +88,7 @@ export async function callChatCompletion(
       method: 'POST',
       headers,
       body,
-      timeout: REQUEST_TIMEOUT_MS,
+      timeout: getApiRequestTimeoutMs(),
       signal: options?.signal,
       useProxy: false,
     }, MAX_RETRIES)
@@ -196,7 +196,7 @@ async function fetchModelsWithKey(key: string): Promise<OpenRouterModel[] | null
     const result = await makeRequestWithProxy(url, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${key}` },
-      timeout: REQUEST_TIMEOUT_MS,
+      timeout: getApiRequestTimeoutMs(),
       useProxy: false,
     }, 1)
 
