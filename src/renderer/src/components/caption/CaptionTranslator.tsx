@@ -118,6 +118,7 @@ type Step3BatchViewRow = {
   missingLabel: string;
   error?: string;
   transportLabel: string;
+  keySwitchCount?: number;
 };
 type Step3BatchViewModel = {
   totalBatches: number;
@@ -5253,6 +5254,7 @@ export function CaptionTranslator() {
         missingLabel: missingLines > 0 ? formatNumberList(report?.missingGlobalLineIndexes || [], 16) : '--',
         error: report?.error || runtimeEntry?.error,
         transportLabel,
+        keySwitchCount: (report as any)?.keySwitchCount,
       });
     }
 
@@ -6849,7 +6851,7 @@ export function CaptionTranslator() {
                 </div>
                 <div className={styles.step3BatchColTime}>
                   <span className={styles.step3BatchTime}>{row.timeLabel}</span>
-                  <span className={styles.step3BatchSub}>try {row.attempts || '--'} · {row.transportLabel}</span>
+                  <span className={styles.step3BatchSub}>{row.transportLabel}{row.keySwitchCount ? '/' + row.keySwitchCount : ''} · try {row.attempts || '--'}</span>
                 </div>
                 <div className={styles.step3BatchColAction}>
                   <button

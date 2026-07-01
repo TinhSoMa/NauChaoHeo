@@ -52,12 +52,13 @@ export interface TranslationPromptResult {
  * Format memory context thành markdown section để gắn vào prompt.
  */
 function formatMemoryContextMarkdown(context: string): string {
-  return `\n\n## Memory Context (Translation History)\n\n` +
-    `Các bản dịch trước đó trong cùng dự án để tham khảo:\n\n` +
+  return `\n\n## Translation Memory\n\n` +
+    `Các bản dịch trước để tham khảo. Giữ NHẤT QUÁN thuật ngữ, ` +
+    `tên nhân vật và phong cách dịch.\n\n` +
     `${context}\n\n` +
     `---\n` +
-    `Dùng ngữ cảnh trên để giữ NHẤT QUÁN thuật ngữ, tên nhân vật, phong cách dịch.\n` +
-    `TUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 object output.\n`;
+    `Dùng ngữ cảnh trên để giữ NHẤT QUÁN tên nhân vật, thuật ngữ, ` +
+    `và phong cách dịch. TUYỆT ĐỐI KHÔNG gộp câu — mỗi câu input = 1 output.\n`;
 }
 
 /**

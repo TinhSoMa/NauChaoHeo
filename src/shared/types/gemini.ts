@@ -246,6 +246,7 @@ export interface GeminiResponse {
   error?: string;
   errorCode?: string;
   userMessage?: string;
+  keySwitchCount?: number;
 }
 
 // Embedded API key format (hardcoded trong code)

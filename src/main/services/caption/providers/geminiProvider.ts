@@ -21,13 +21,14 @@ export function createGeminiProvider(assignedKey?: GeminiAssignedKey): AIProvide
       }
 
       if (response.success && typeof response.data === 'string') {
-        return { success: true, data: response.data }
+        return { success: true, data: response.data, keySwitchCount: response.keySwitchCount }
       }
 
       return {
         success: false,
         error: response.error || 'Gemini API error',
         errorCode: response.errorCode,
+        keySwitchCount: response.keySwitchCount,
       }
     },
   }

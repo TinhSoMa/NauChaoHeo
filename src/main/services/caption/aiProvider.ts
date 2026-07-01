@@ -5,6 +5,7 @@ export interface AIProviderResult {
   data?: string
   error?: string
   errorCode?: string
+  keySwitchCount?: number
 }
 
 export interface AIProviderParams {

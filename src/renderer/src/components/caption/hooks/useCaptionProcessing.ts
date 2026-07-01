@@ -1978,6 +1978,7 @@ function buildBatchReportFromResult(
       resourceId: sbResult.data?.resourceId,
       resourceLabel: sbResult.data?.resourceLabel,
       queueRuntimeKey: sbResult.data?.queueRuntimeKey,
+      keySwitchCount: sbResult.data?.keySwitchCount,
     };
   }
 
@@ -4279,6 +4280,8 @@ export function useCaptionProcessing({
           },
         }));
 
+        const previousBatches: import('@shared/types/caption').PreviousBatchTranslations[] = [];
+
         for (const batchIdx of batchesToProcess) {
           if (abortRef.current) break;
 
@@ -4302,6 +4305,7 @@ export function useCaptionProcessing({
             projectId: projectId || undefined,
             sourcePath: resolveSourcePath(currentPath),
             runId,
+            previousBatches: previousBatches.length > 0 ? [...previousBatches] : undefined,
           };
 
           let sbResult: any;
@@ -4343,6 +4347,10 @@ export function useCaptionProcessing({
             liveTranslatedEntries = mergeTranslatedChunkIntoEntries(liveTranslatedEntries, {
               startIndex: plan.startIndex,
               texts: sbResult.data.translatedTexts as string[],
+            });
+            previousBatches.push({
+              entries: batchEntries,
+              translatedTexts: sbResult.data.translatedTexts as string[],
             });
           }
 

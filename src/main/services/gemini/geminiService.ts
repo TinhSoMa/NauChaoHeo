@@ -272,10 +272,11 @@ export async function callGeminiWithRotation(
   let lastError = '';
   let rateLimitedCount = 0;
   const triedKeys = new Set<string>();
+  let keySwitchCount = 0;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     if (isControlStopped(control)) {
-      return { success: false, error: stopErrorMessage };
+      return { success: false, error: stopErrorMessage, keySwitchCount };
     }
 
     const { apiKey, keyInfo } = manager.getNextApiKey();
@@ -295,7 +296,8 @@ export async function callGeminiWithRotation(
     }
 
     triedKeys.add(apiKey);
-    console.log(`[GeminiService] Thử API key #${triedKeys.size} (${keyInfo.name})`);
+    keySwitchCount = triedKeys.size;
+    console.log(`[GeminiService] Thử API key #${keySwitchCount} (${keyInfo.name})`);
 
     const requestAbortController = new AbortController();
     const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
@@ -309,13 +311,13 @@ export async function callGeminiWithRotation(
     detachAbortForwarding();
 
     if (isControlStopped(control)) {
-      return { success: false, error: stopErrorMessage };
+      return { success: false, error: stopErrorMessage, keySwitchCount };
     }
 
     if (response.success) {
       manager.recordSuccess(apiKey);
       console.log(`[GeminiService] Thành công với ${keyInfo.name}`);
-      return { ...response, keyInfo };
+      return { ...response, keyInfo, keySwitchCount };
     }
 
     const errCode = (response.errorCode || response.error || '') as string;
@@ -332,7 +334,7 @@ export async function callGeminiWithRotation(
       rateLimitedCount++;
 
       if (await waitWithControl(300, control)) {
-        return { success: false, error: stopErrorMessage };
+        return { success: false, error: stopErrorMessage, keySwitchCount };
       }
       continue;
     }
@@ -341,7 +343,7 @@ export async function callGeminiWithRotation(
       console.warn(`[GeminiService] Server Gemini quá tải với ${keyInfo.name}, không đánh dấu key lỗi.`);
       lastError = response.error || 'SERVER_OVERLOADED';
       if (await waitWithControl(800, control)) {
-        return { success: false, error: stopErrorMessage };
+        return { success: false, error: stopErrorMessage, keySwitchCount };
       }
       continue;
     }
@@ -362,10 +364,10 @@ export async function callGeminiWithRotation(
   // Kiểm tra kết quả
   if (rateLimitedCount > 0 && rateLimitedCount >= triedKeys.size) {
     console.warn(`[GeminiService] Tất cả ${rateLimitedCount} keys đã thử đều bị rate limit`);
-    return { success: false, error: 'RATE_LIMIT_ALL_KEYS' };
+    return { success: false, error: 'RATE_LIMIT_ALL_KEYS', keySwitchCount };
   }
 
-  return { success: false, error: `Thất bại sau ${triedKeys.size} lần thử: ${lastError}` };
+  return { success: false, error: `Thất bại sau ${triedKeys.size} lần thử: ${lastError}`, keySwitchCount };
 }
 
 /**
@@ -404,7 +406,7 @@ export async function callGeminiWithAssignedKey(
 
   if (response.success) {
     manager.recordSuccess(assignedKey.apiKey);
-    return { ...response, keyInfo: assignedKey.keyInfo };
+    return { ...response, keyInfo: assignedKey.keyInfo, keySwitchCount: 1 };
   }
 
   // Key được chỉ định bị lỗi — ghi nhận và fallback sang rotation

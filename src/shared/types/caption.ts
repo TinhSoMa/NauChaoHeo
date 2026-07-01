@@ -73,6 +73,7 @@ export interface TranslationBatchReport {
   queuePacingMode?: 'dispatch_spacing_global';
   queueGapMs?: number;
   nextAllowedAt?: number;
+  keySwitchCount?: number;
 }
 
 export interface TranslationQueuePacingMetadata {
@@ -101,6 +102,11 @@ export interface TranslationResult extends TranslationQueuePacingMetadata {
 /**
  * Options cho single batch translation (1 batch/lần)
  */
+export interface PreviousBatchTranslations {
+  entries: SubtitleEntry[];
+  translatedTexts: string[];
+}
+
 export interface SingleBatchOptions {
   entries: SubtitleEntry[];
   batchIndex: number;           // 0-based batch index
@@ -113,6 +119,7 @@ export interface SingleBatchOptions {
   projectId?: string;
   sourcePath?: string;
   runId?: string;
+  previousBatches?: PreviousBatchTranslations[];
 }
 
 /**
@@ -127,6 +134,7 @@ export interface SingleBatchResult {
   resourceId?: string;
   resourceLabel?: string;
   queueRuntimeKey?: string;
+  keySwitchCount?: number;
 }
 
 /**
