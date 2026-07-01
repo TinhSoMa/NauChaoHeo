@@ -14,6 +14,7 @@ import { Input } from '../common/Input';
 import sharedStyles from './Settings.module.css';
 import styles from './QueueMonitorSettings.module.css';
 import { useQueueMonitor } from './hooks/useQueueMonitor';
+import type { RotationQueueViewOptions } from '@shared/types/rotationQueue';
 
 type UnknownRecord = Record<string, unknown>;
 type JobStateFilter = 'all' | 'queued' | 'retry_wait' | 'running';
@@ -640,19 +641,19 @@ export function QueueMonitorSettings() {
                     <Input
                       label="poolId"
                       value={asString(viewOptions.poolId, '')}
-                      onChange={(e) => setViewOptions((prev) => ({ ...prev, poolId: e.target.value || undefined }))}
+                      onChange={(e) => setViewOptions((prev: RotationQueueViewOptions) => ({ ...prev, poolId: e.target.value || undefined }))}
                       placeholder="story-geminiweb-accounts"
                     />
                     <Input
                       label="serviceId"
                       value={asString(viewOptions.serviceId, '')}
-                      onChange={(e) => setViewOptions((prev) => ({ ...prev, serviceId: e.target.value || undefined }))}
+                      onChange={(e) => setViewOptions((prev: RotationQueueViewOptions) => ({ ...prev, serviceId: e.target.value || undefined }))}
                       placeholder="story-translator-ui"
                     />
                     <Input
                       label="feature"
                       value={asString(viewOptions.feature, '')}
-                      onChange={(e) => setViewOptions((prev) => ({ ...prev, feature: e.target.value || undefined }))}
+                      onChange={(e) => setViewOptions((prev: RotationQueueViewOptions) => ({ ...prev, feature: e.target.value || undefined }))}
                       placeholder="story.translate.geminiWeb"
                     />
                     <div className={styles.inlineFieldRow}>
@@ -662,7 +663,7 @@ export function QueueMonitorSettings() {
                           className={styles.runtimeSelect}
                           value={normalizeState(viewOptions.state)}
                           onChange={(e) =>
-                            setViewOptions((prev) => ({
+                            setViewOptions((prev: RotationQueueViewOptions) => ({
                               ...prev,
                               state: normalizeState(e.target.value)
                             }))
@@ -682,7 +683,7 @@ export function QueueMonitorSettings() {
                           min={1}
                           max={1000}
                           onChange={(e) =>
-                            setViewOptions((prev) => ({ ...prev, limit: Math.max(1, Number(e.target.value || 200)) }))
+                            setViewOptions((prev: RotationQueueViewOptions) => ({ ...prev, limit: Math.max(1, Number(e.target.value || 200)) }))
                           }
                         />
                       </div>
@@ -693,7 +694,7 @@ export function QueueMonitorSettings() {
                         checked={viewOptions.includePayload === true}
                         disabled={!status?.payloadDebugEnabled}
                         onChange={(e) =>
-                          setViewOptions((prev) => ({
+                          setViewOptions((prev: RotationQueueViewOptions) => ({
                             ...prev,
                             includePayload: e.target.checked
                           }))

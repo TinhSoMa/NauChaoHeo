@@ -17,7 +17,6 @@ import {
   CoverQuad,
   RenderAudioPreviewProgress,
   SingleBatchOptions,
-  SingleBatchResult,
   TranslationBatchReport as SharedTranslationBatchReport,
   VideoCropSettings,
 } from '@shared/types/caption';
@@ -4313,14 +4312,14 @@ export function useCaptionProcessing({
           try {
             sbResult = await window.electronAPI.caption.translateBatch(sbOpts);
             if (!sbResult?.success) {
-              const errorStr = sbResult?.error || '';
+              const errorStr = sbResult?.error || sbResult?.data?.error || '';
               if (typeof errorStr === 'string' && errorStr.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
                 abortRef.current = true;
                 break;
               }
               batchError = errorStr || 'TRANSLATE_BATCH_FAILED';
               backendCallSucceeded = false;
-              backendErrorRaw = batchError;
+              backendErrorRaw = batchError || '';
             }
           } catch (error) {
             const stopSignal = isProcessStopSignal(error)
@@ -4332,7 +4331,7 @@ export function useCaptionProcessing({
             }
             batchError = String(error);
             backendCallSucceeded = false;
-            backendErrorRaw = batchError;
+            backendErrorRaw = batchError || '';
           }
 
           const report: SharedTranslationBatchReport = buildBatchReportFromResult(
@@ -4399,6 +4398,9 @@ export function useCaptionProcessing({
           const report = batchReportsMap.get(batchPlan.batchIndex);
           const isPlaceholder = placeholderBatchIndexes.has(batchPlan.batchIndex);
           if (isStoppedByUser && isPlaceholder) {
+            finalBatchReports.push(
+              buildFailedBatchReportFromEntries(batchPlan, postTranslateEntries, 'STOPPED_BY_USER')
+            );
             continue;
           }
           const missingInfo = collectBatchMissingInfo(postTranslateEntries, batchPlan);
@@ -4441,8 +4443,8 @@ export function useCaptionProcessing({
         const finalMissingBatchIndexes = generatedStep3BatchState.missingBatchIndexes.length > 0
           ? generatedStep3BatchState.missingBatchIndexes
           : (!backendCallSucceeded && !isStoppedByUser ? batchesToProcess : []);
-        const finalReportIndexSet = new Set<number>(finalBatchReports.map((r) => r.batchIndex));
-        const reportedButMissing = finalMissingBatchIndexes.filter((idx) => idx >= 1 && idx <= totalBatches);
+        const finalReportIndexSet = new Set<number>(finalBatchReports.map((r: any) => r.batchIndex));
+        const reportedButMissing = finalMissingBatchIndexes.filter((idx: number) => idx >= 1 && idx <= totalBatches);
         const unreportedIndexes: number[] = [];
         const hasMissingReports = finalBatchReports.length < totalBatches;
         if (hasMissingReports) {
@@ -4599,7 +4601,7 @@ export function useCaptionProcessing({
                   : msgCtx(
                     backendCallSucceeded
                       ? `Bước 3: Thiếu batch ${missingBatchIndexes.map((idx) => `#${idx}`).join(', ')}`
-                      : `Bước 3: Backend lỗi (${backendErrorMessage})`
+                      : `Bước 3: Backend lỗi (${backendErrorRaw})`
                   ),
             },
             steps: {
@@ -6459,7 +6461,6 @@ export function useCaptionProcessing({
       }
     }
 
-    translateBatchProgressHandlerRef.current = null;
     setCurrentStep(null);
     setCurrentFolder(null);
     runIdRef.current = null;

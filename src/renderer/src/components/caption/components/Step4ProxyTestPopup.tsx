@@ -107,7 +107,7 @@ export function Step4ProxyTestPopup(props: Step4ProxyTestPopupProps) {
                     <td colSpan={6} className={styles.muted}>Chua co ket qua. Bam "Test tat ca proxy" de bat dau.</td>
                   </tr>
                 )}
-                {props.result?.results.map((row, index) => (
+                {props.result?.results.map((row: any, index: number) => (
                   <tr key={`${row.proxyId}_${index}`}>
                     <td>{index + 1}</td>
                     <td title={`${row.proxyLabel} (${row.proxyType})`}>

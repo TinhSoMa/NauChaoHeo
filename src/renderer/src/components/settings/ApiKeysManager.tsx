@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { RotateCcw, Upload, Download, RefreshCw, AlertCircle, CheckCircle, XCircle, Clock, ChevronRight, Plus, Edit3, Trash2, Save, FileText } from 'lucide-react';
+import { Upload, Download, RefreshCw, ChevronRight, Plus, Edit3, Trash2, Save, FileText } from 'lucide-react';
 import styles from './ApiKeysManager.module.css';
 
 const API_WORKER_MIN = 1;

@@ -13,8 +13,6 @@ import {
   normalizeEdgeWorkerItemConcurrency,
   DEFAULT_RENDER_FPS,
   DEFAULT_TRIM_AUDIO_WORKERS,
-  MIN_TRIM_AUDIO_WORKERS,
-  MAX_TRIM_AUDIO_WORKERS,
   normalizeTrimAudioWorkers,
   DEFAULT_FIT_AUDIO_WORKERS,
   MIN_FIT_AUDIO_WORKERS,

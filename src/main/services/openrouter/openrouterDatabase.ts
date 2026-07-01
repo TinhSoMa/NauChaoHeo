@@ -178,6 +178,7 @@ export function addProject(
       errorCount: row.error_count,
       lastErrorMessage: row.last_error_message,
       lastUsedTimestamp: row.last_used_timestamp,
+      rateLimitResetAt: row.rate_limit_reset_at,
     }
   } catch (error) {
     console.error('[OpenRouterDatabase] Lỗi thêm project:', error)

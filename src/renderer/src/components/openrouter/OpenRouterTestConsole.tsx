@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Send, Trash2 } from 'lucide-react'
 import { ModelPicker, isFree, formatPrice, formatContext } from './ModelPicker'
+import type { OpenRouterModelCapability } from '@shared/types/openrouter'
 import { getModelCapabilities, CAPABILITY_LABELS, CAPABILITY_COLORS } from '@shared/types/openrouter'
 
 interface Message {
@@ -101,7 +102,7 @@ export function OpenRouterTestConsole() {
               {selected.context_length && (
                 <span className="text-2xs px-1.5 py-0.5 rounded bg-surface border border-border text-text-muted">{formatContext(selected.context_length)} context</span>
               )}
-              {getModelCapabilities(selected).filter(c => c !== 'text').map(c => (
+              {getModelCapabilities(selected).filter((c: OpenRouterModelCapability) => c !== 'text').map((c: OpenRouterModelCapability) => (
                 <span key={c} className={`text-[10px] px-1.5 py-0.5 rounded border ${CAPABILITY_COLORS[c]}`}>{CAPABILITY_LABELS[c]}</span>
               ))}
               <span className="text-2xs px-1.5 py-0.5 rounded bg-surface border border-border text-text-muted font-mono">{selected.id}</span>

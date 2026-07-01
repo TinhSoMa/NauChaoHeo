@@ -53,7 +53,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getCaptionOutputDirFromInput } from '../../../shared/utils/captionSession';
 
-import { TranslationTransport } from '../../../shared/types/caption';
+import type { TranslationTransport } from './aiProvider';
 
 function createProviderForMethod(
   method: string,
@@ -1361,7 +1361,7 @@ export async function translateAll(
           ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext)
           : useGrokUi
             ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, grokUiTimeoutMs, localMemoryContext)
-            : translateBatch(
+            : await translateBatch(
                 batch,
                 provider!,
                 model,
@@ -1867,7 +1867,7 @@ export async function translateSingleBatch(
     console.log(`[CaptionTranslator] Batch #${batchIndex + 1}: gán key [${assignedKey?.keyInfo.name ?? 'rotation'}]`);
   }
 
-  const provider = useProvider ? createProviderForMethod(translateMethod, assignedKey) : null;
+  const provider = useProvider ? createProviderForMethod(translateMethod || '', assignedKey) : null;
 
   // Gemini Web Queue setup
   let geminiWebQueueContext: CaptionGeminiWebQueueRuntimeContext | null = null;
@@ -1952,7 +1952,7 @@ export async function translateSingleBatch(
         ? await translateBatchImpit(batch, targetLanguage, promptTemplate, localMemoryContext, debugSaveDir)
         : useGrokUi
           ? await translateBatchGrokUi(batch, targetLanguage, promptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
-          : translateBatch(
+          : await translateBatch(
               batch,
               provider!,
               model,
@@ -2006,6 +2006,7 @@ export async function translateSingleBatch(
         console.warn(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: store exception:`, error);
       }
 
+      throwIfTranslationStopped(runId);
       return {
         success: true,
         translatedTexts: bestTexts,
@@ -2050,6 +2051,7 @@ export async function translateSingleBatch(
     }
   }
 
+  throwIfTranslationStopped(runId);
   return {
     success: lastResult?.success ?? false,
     translatedTexts: bestTexts,

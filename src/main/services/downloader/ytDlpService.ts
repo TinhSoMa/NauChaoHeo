@@ -691,10 +691,10 @@ class YtDlpService {
                 if (cleaned.removed > 0) {
                   onLog(`[Downloader] Đã xóa ${cleaned.removed} file video gốc sau ghép. Giữ lại audio gốc.`)
                 }
-              }
-              if (cleaned.errors.length > 0) {
-                for (const err of cleaned.errors.slice(0, 5)) {
-                  onLog(`[Downloader] WARN cleanup: ${err}`)
+                if (cleaned.errors.length > 0) {
+                  for (const err of cleaned.errors.slice(0, 5)) {
+                    onLog(`[Downloader] WARN cleanup: ${err}`)
+                  }
                 }
               }
             }

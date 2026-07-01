@@ -164,7 +164,7 @@ interface SingleBatchOptions {
   targetLanguage: string;
   model: string;
   promptTemplate?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
   projectId?: string;
   sourcePath?: string;
   runId?: string;
@@ -830,6 +830,8 @@ interface AppSettings {
   captionStandaloneSettings: string | null;
   autoShutdownEnabled: boolean;
   autoShutdownDelayMinutes: number;
+  uiFontFamily: string;
+  uiFontSize: number;
   capcutTtsSecrets: {
     appKey: string | null;
     token: string | null;
@@ -879,6 +881,8 @@ interface CaptionTypographyLayoutDefaults {
   thumbnailLineHeightRatio: number;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
+  uiFontFamily?: string;
+  uiFontSize?: number;
 }
 
 interface CaptionTypographyDefaults {

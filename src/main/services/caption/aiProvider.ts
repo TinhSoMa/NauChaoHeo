@@ -1,4 +1,4 @@
-import type { TranslationTransport } from '../../../shared/types/caption'
+export type TranslationTransport = 'api' | 'impit' | 'grok_ui' | 'gemini_webapi_queue' | 'openrouter';
 
 export interface AIProviderResult {
   success: boolean

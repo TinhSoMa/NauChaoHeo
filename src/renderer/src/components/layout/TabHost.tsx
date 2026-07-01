@@ -1,4 +1,4 @@
-import React, { Component, Suspense, lazy, type ReactNode } from 'react'
+import { Component, Suspense, lazy, type ReactNode } from 'react'
 import { useTabManager, TabId } from '../../context/TabContext'
 
 interface TabEntry {

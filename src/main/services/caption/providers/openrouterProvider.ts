@@ -20,13 +20,20 @@ export function createOpenRouterProvider(): AIProvider {
         signal,
       })
 
-      if (response.success && response.data?.choices?.[0]?.message?.content) {
+      if (!response.success) {
+        return {
+          success: false,
+          error: response.error || 'OpenRouter API error',
+        }
+      }
+
+      if (response.data?.choices?.[0]?.message?.content) {
         return { success: true, data: response.data.choices[0].message.content }
       }
 
       return {
         success: false,
-        error: response.error || 'OpenRouter API error',
+        error: 'OpenRouter API error',
       }
     },
   }

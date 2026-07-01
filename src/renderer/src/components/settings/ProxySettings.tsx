@@ -462,24 +462,6 @@ export function ProxySettings() {
     }
   };
 
-  const handleResetAll = async () => {
-    if (!confirm('Bạn có chắc muốn reset tất cả proxies?\n\nĐiều này sẽ:\n- Reset failed count về 0\n- Re-enable tất cả proxies')) return;
-
-    try {
-      const result = await window.electronAPI.proxy.reset();
-      if (result.success) {
-        alert('✅ Đã reset tất cả proxies thành công!');
-        loadProxies();
-        loadStats();
-      } else {
-        alert(`❌ Lỗi: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Lỗi reset:', error);
-      alert('Lỗi reset proxies!');
-    }
-  };
-
   const handleCheckAll = async () => {
     if (proxies.length === 0) return;
     try {

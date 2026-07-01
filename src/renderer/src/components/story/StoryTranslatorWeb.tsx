@@ -167,7 +167,13 @@ export function StoryTranslatorWeb() {
   const handleToggleUseProxy = async (enabled: boolean) => {
     try {
       const current = await window.electronAPI.appSettings.getAll();
-      const currentScopes = current.success && current.data?.proxyScopes
+      const currentScopes: {
+        caption: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+        story: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+        chat: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+        tts: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+        other: { mode: 'off' | 'direct-list' | 'rotating-endpoint'; typePreference: 'any' | 'http' | 'https' | 'socks5' };
+      } = current.success && current.data?.proxyScopes
         ? current.data.proxyScopes
         : {
             caption: { mode: 'direct-list', typePreference: 'any' },

@@ -382,7 +382,7 @@ function migrateLegacyGeminiTables(dbRef: Database.Database): void {
               `UPDATE gemini_accounts SET account_status = ? WHERE account_id = ?`
             );
             const updateProjectStatus = dbRef.prepare(
-              `UPDATE gemini_projects SET status = ?, success_count = ?, error_count = ?, last_used_timestamp = ?, updated_at = ? WHERE account_id = ? AND project_index = ?`
+              `UPDATE gemini_projects SET status = ?, success_count = ?, error_count = ?, last_error_message = ?, last_used_timestamp = ?, updated_at = ? WHERE account_id = ? AND project_index = ?`
             );
             state.accounts.forEach((acc: any) => {
               updateAccountStatus.run(acc.accountStatus || 'active', acc.accountId);
@@ -391,6 +391,7 @@ function migrateLegacyGeminiTables(dbRef: Database.Database): void {
                   proj.status || 'available',
                   proj.stats?.successCount || 0,
                   proj.stats?.errorCount || 0,
+                  proj.stats?.lastErrorMessage || null,
                   proj.limitTracking?.lastUsedTimestamp || null,
                   now,
                   acc.accountId,
@@ -1281,16 +1282,18 @@ export function initDatabase(): void {
 
   // Migration: từ capcut_tts_configs (cũ) hoặc capcut_tts_secrets (cũ hơn) sang 2 bảng mới
   const migrateToNewSchema = (): void => {
-    const targetEmpty = !db.prepare('SELECT version FROM capcut_tts_tokens LIMIT 1').get();
+    const _db = db;
+    if (!_db) return;
+    const targetEmpty = !_db.prepare('SELECT version FROM capcut_tts_tokens LIMIT 1').get();
     if (!targetEmpty) return;
 
     const now = Date.now();
 
     // Helper: upsert shared config singleton
     const upsertSharedConfig = (row: { app_key?: string | null; ws_url?: string | null; user_agent?: string | null; x_ss_dp?: string | null; extra_headers?: string | null }): void => {
-      const existing = db.prepare('SELECT id FROM capcut_tts_shared_config WHERE id = 1').get();
+      const existing = _db.prepare('SELECT id FROM capcut_tts_shared_config WHERE id = 1').get();
       if (existing) {
-        db.prepare(`
+        _db.prepare(`
           UPDATE capcut_tts_shared_config
           SET app_key = COALESCE(?, app_key),
               ws_url = COALESCE(?, ws_url),
@@ -1304,7 +1307,7 @@ export function initDatabase(): void {
           row.x_ss_dp ?? null, row.extra_headers ?? null, now
         );
       } else {
-        db.prepare(`
+        _db.prepare(`
           INSERT INTO capcut_tts_shared_config (id, app_key, ws_url, user_agent, x_ss_dp, extra_headers, updated_at)
           VALUES (1, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -1317,9 +1320,10 @@ export function initDatabase(): void {
 
     try {
       // Case 1: migrate từ capcut_tts_configs (multi-row)
-      const configsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_configs'").get() as any;
+      const _db2 = _db;
+      const configsTable = _db2.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_configs'").get() as any;
       if (configsTable) {
-        const rows = db.prepare('SELECT * FROM capcut_tts_configs ORDER BY is_active DESC, created_at ASC').all() as any[];
+        const rows = _db2.prepare('SELECT * FROM capcut_tts_configs ORDER BY is_active DESC, created_at ASC').all() as any[];
         if (rows.length > 0) {
           // Shared config: lấy từ active row, fallback row đầu tiên
           const activeRow = rows.find((r: any) => r.is_active === 1) || rows[0];
@@ -1333,9 +1337,9 @@ export function initDatabase(): void {
 
           // Per-version tokens
           for (const row of rows) {
-            const existing = db.prepare('SELECT version FROM capcut_tts_tokens WHERE version = ?').get(row.version);
+            const existing = _db2.prepare('SELECT version FROM capcut_tts_tokens WHERE version = ?').get(row.version);
             if (!existing) {
-              db.prepare(`
+              _db2.prepare(`
                 INSERT INTO capcut_tts_tokens (version, label, token, is_active, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
               `).run(row.version, row.label, row.token, row.is_active, row.created_at || now, row.updated_at || now);
@@ -1346,14 +1350,14 @@ export function initDatabase(): void {
         }
 
         // Drop old table
-        try { db.exec('DROP TABLE IF EXISTS capcut_tts_configs'); console.log('[Database] Dropped legacy table capcut_tts_configs'); } catch (e) { console.error('[Database] Drop capcut_tts_configs failed:', e); }
+        try { _db2.exec('DROP TABLE IF EXISTS capcut_tts_configs'); console.log('[Database] Dropped legacy table capcut_tts_configs'); } catch (e) { console.error('[Database] Drop capcut_tts_configs failed:', e); }
         return;
       }
 
       // Case 2: migrate từ capcut_tts_secrets cũ (single-row, pre-capcut_tts_configs era)
-      const secretsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_secrets'").get() as any;
+      const secretsTable = _db2.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='capcut_tts_secrets'").get() as any;
       if (secretsTable) {
-        const oldRow = db.prepare('SELECT * FROM capcut_tts_secrets WHERE id = 1').get() as any;
+        const oldRow = _db2.prepare('SELECT * FROM capcut_tts_secrets WHERE id = 1').get() as any;
         if (oldRow && (oldRow.app_key || oldRow.token)) {
           upsertSharedConfig({
             app_key: oldRow.app_key,
@@ -1363,7 +1367,7 @@ export function initDatabase(): void {
             extra_headers: oldRow.extra_headers,
           });
 
-          db.prepare(`
+          _db2.prepare(`
             INSERT INTO capcut_tts_tokens (version, label, token, is_active, created_at, updated_at)
             VALUES (?, ?, ?, 1, ?, ?)
           `).run('1.5.0', 'Mặc định', oldRow.token, now, now);
@@ -1371,7 +1375,7 @@ export function initDatabase(): void {
           console.log('[Database] Migration: migrated from capcut_tts_secrets');
         }
 
-        try { db.exec('DROP TABLE IF EXISTS capcut_tts_secrets'); console.log('[Database] Dropped legacy table capcut_tts_secrets'); } catch (e) { console.error('[Database] Drop capcut_tts_secrets failed:', e); }
+        try { _db2.exec('DROP TABLE IF EXISTS capcut_tts_secrets'); console.log('[Database] Dropped legacy table capcut_tts_secrets'); } catch (e) { console.error('[Database] Drop capcut_tts_secrets failed:', e); }
       }
     } catch (e) {
       console.error('[Database] Migration to new schema failed:', e);

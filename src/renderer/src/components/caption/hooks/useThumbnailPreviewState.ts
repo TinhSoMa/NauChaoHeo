@@ -522,7 +522,6 @@ export function useThumbnailPreviewState(
       thumbnailTextConstrainTo34,
       thumbnailTextPrimaryPosition,
       thumbnailTextSecondaryPosition,
-      crop,
     });
   }, [
     committedFrameTimeSec,

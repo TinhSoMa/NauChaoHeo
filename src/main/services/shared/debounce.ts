@@ -15,7 +15,7 @@ export function debounce<T extends (...args: unknown[]) => Promise<unknown>>(
         timer = null;
         pending = null;
         try {
-          const result = await fn(...args);
+          const result: Awaited<ReturnType<T>> = await fn(...args) as Awaited<ReturnType<T>>;
           resolve(result);
         } catch (err) {
           reject(err);

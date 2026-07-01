@@ -21,6 +21,7 @@ import type {
   LimitTracking,
   EmbeddedAccount,
   EmbeddedProject,
+  AccountStatus,
 } from '../../../shared/types/gemini';
 
 const LEGACY_KEYS_FILE_NAME = 'api-keys.encrypted';
@@ -443,7 +444,7 @@ export function importFromTextToDb(text: string): { success: boolean; count: num
         currentProjects.push({
           projectName: `Key-${keyCounter}`,
           apiKey: line,
-          notes: null,
+          notes: undefined,
         });
       }
     }
@@ -604,7 +605,7 @@ export function saveProjectStatesFromConfig(config: ApiConfig): void {
       );
       const updateProject = db.prepare(
         `UPDATE gemini_projects
-         SET status = ?, success_count = ?, error_count = ?, total_requests_today = ?, last_used_timestamp = ?, updated_at = ?
+         SET status = ?, success_count = ?, error_count = ?, total_requests_today = ?, last_error_message = ?, last_success_timestamp = ?, last_used_timestamp = ?, updated_at = ?
          WHERE account_id = ? AND project_index = ?`
       );
 
@@ -616,6 +617,8 @@ export function saveProjectStatesFromConfig(config: ApiConfig): void {
             proj.stats?.successCount || 0,
             proj.stats?.errorCount || 0,
             proj.stats?.totalRequestsToday || 0,
+            proj.stats?.lastErrorMessage || null,
+            proj.stats?.lastSuccessTimestamp || null,
             proj.limitTracking?.lastUsedTimestamp || null,
             now,
             acc.accountId,

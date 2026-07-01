@@ -270,7 +270,7 @@ export function useStoryGeminiWebQueueTranslation(
         }
         const filteredSnapshot: StoryGeminiWebQueueSnapshot = {
           ...snapshot,
-          jobs: snapshot.jobs.filter((job) => job.batchId === activeBatchId)
+          jobs: snapshot.jobs.filter((job: any) => job.batchId === activeBatchId)
         };
         setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, filteredSnapshot));
       }
@@ -283,7 +283,7 @@ export function useStoryGeminiWebQueueTranslation(
       if (snapshotResult?.success && snapshotResult.data && activeBatchId) {
         const filteredSnapshot: StoryGeminiWebQueueSnapshot = {
           ...snapshotResult.data,
-          jobs: snapshotResult.data.jobs.filter((job) => job.batchId === activeBatchId)
+          jobs: snapshotResult.data.jobs.filter((job: any) => job.batchId === activeBatchId)
         };
         setProcessingChapters((prev) => applyStoryQueueSnapshotToProcessingMap(prev, filteredSnapshot));
       }

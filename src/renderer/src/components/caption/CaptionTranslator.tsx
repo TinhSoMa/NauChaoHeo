@@ -5131,18 +5131,19 @@ export function CaptionTranslator() {
       sessionEntryCounts.extracted
     );
     const maxExpectedFromReports = stateReports
-      .map((report) => (typeof report?.expectedLines === 'number' && Number.isFinite(report.expectedLines) ? Math.floor(report.expectedLines) : 0))
-      .reduce((max, current) => Math.max(max, current), 0);
+      .map((report: any) => (typeof report?.expectedLines === 'number' && Number.isFinite(report.expectedLines) ? Math.floor(report.expectedLines) : 0))
+      .reduce((max: number, current: number) => Math.max(max, current), 0);
     const step3BatchSize = Math.max(1, maxExpectedFromReports || STEP3_DEFAULT_LINES_PER_BATCH);
 
-    const missingBatchIndexes = Array.isArray(safeState?.missingBatchIndexes)
+    const missingBatchIndexes: number[] = Array.isArray(safeState?.missingBatchIndexes)
       ? safeState.missingBatchIndexes
         .filter((value): value is number => Number.isFinite(value))
-        .map((value) => Math.max(1, Math.floor(value)))
-        .sort((a, b) => a - b)
+        .map((value: number) => Math.max(1, Math.floor(value)))
+        .sort((a: number, b: number) => a - b)
       : [];
+
     const filteredMissingBatchIndexes = step3Stopped
-      ? missingBatchIndexes.filter((value) => reportMap.has(value))
+      ? missingBatchIndexes.filter((value: number) => reportMap.has(value))
       : missingBatchIndexes;
 
     const rows: Step3BatchViewRow[] = [];

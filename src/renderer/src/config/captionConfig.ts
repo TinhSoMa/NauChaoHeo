@@ -17,7 +17,7 @@ import {
 export { GEMINI_MODEL_LIST, type GeminiModelInfo };
 
 // Alias cho compatibility
-export const GEMINI_MODELS = GEMINI_MODEL_LIST.map(m => ({ value: m.id, label: m.label }));
+export const GEMINI_MODELS = GEMINI_MODEL_LIST.map((m: GeminiModelInfo) => ({ value: m.id, label: m.label }));
 export const DEFAULT_GEMINI_MODEL = SHARED_DEFAULT_MODEL;
 
 // ============================================

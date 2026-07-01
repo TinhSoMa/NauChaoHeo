@@ -31,11 +31,7 @@ function createProfileId(seed = 'grok'): string {
 }
 
 function toProfileDraft(profile: Partial<GrokUiProfileConfig>): GrokUiProfileDraft {
-  const enabled = profile.enabled === false
-    || (typeof profile.enabled === 'string' && profile.enabled.trim().toLowerCase() === 'false')
-    || (typeof profile.enabled === 'number' && profile.enabled === 0)
-    ? false
-    : true;
+  const enabled = profile.enabled === false ? false : true;
   return {
     id: typeof profile.id === 'string' && profile.id.trim().length > 0 ? profile.id.trim() : createProfileId(),
     profileDir: profile.profileDir ?? '',

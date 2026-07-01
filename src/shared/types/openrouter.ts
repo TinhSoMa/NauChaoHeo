@@ -248,12 +248,13 @@ export interface OpenRouterProjectItem {
   projectName: string
   apiKey: string
   notes: string | null
-  status: 'available' | 'error' | 'disabled'
+  status: 'available' | 'rate_limited' | 'error' | 'disabled'
   totalRequestsToday: number
   successCount: number
   errorCount: number
   lastErrorMessage: string | null
   lastUsedTimestamp: string | null
+  rateLimitResetAt?: string | null
 }
 
 export interface OpenRouterKeyStatsResult {

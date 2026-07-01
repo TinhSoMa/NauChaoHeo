@@ -30,7 +30,6 @@ interface ThumbnailPreviewPanelProps {
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextConstrainTo34?: boolean;
-  crop?: VideoCropSettings;
   thumbnailTextPrimaryPosition: { x: number; y: number };
   thumbnailTextSecondaryPosition: { x: number; y: number };
   onThumbnailTextPrimaryPositionChange: (pos: { x: number; y: number }) => void;

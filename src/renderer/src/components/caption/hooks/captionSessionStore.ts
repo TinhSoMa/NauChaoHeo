@@ -455,14 +455,14 @@ const STEP_DEPENDENCIES: Record<CaptionStepNumber, CaptionStepNumber[]> = {
   7: [3, 6],
 };
 
-function getDependenciesForStep(step: CaptionStepNumber, enabledSteps?: CaptionStepNumber[]): CaptionStepNumber[] {
+function getDependenciesForStep(step: CaptionStepNumber, _enabledSteps?: CaptionStepNumber[]): CaptionStepNumber[] {
   const base = [...STEP_DEPENDENCIES[step]];
   return base;
 }
 
 function collectDependentSteps(
   changedStep: CaptionStepNumber,
-  enabledSteps?: CaptionStepNumber[]
+  _enabledSteps?: CaptionStepNumber[]
 ): CaptionStepNumber[] {
   const queue: CaptionStepNumber[] = [changedStep];
   const visited = new Set<CaptionStepNumber>([changedStep]);
@@ -473,7 +473,7 @@ function collectDependentSteps(
     const allSteps: CaptionStepNumber[] = [1, 2, 3, 4, 5, 6, 7];
     for (const candidate of allSteps) {
       if (candidate === cur || visited.has(candidate)) continue;
-      const deps = getDependenciesForStep(candidate, enabledSteps);
+      const deps = getDependenciesForStep(candidate, _enabledSteps);
       if (deps.includes(cur)) {
         visited.add(candidate);
         result.push(candidate);

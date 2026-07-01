@@ -169,7 +169,7 @@ export function FitAudioAuditPopup(props: FitAudioAuditPopupProps) {
                     <td colSpan={6} className={styles.muted}>Khong co file fit de hien thi.</td>
                   </tr>
                 )}
-                {topFastest.map((row, index) => (
+                {topFastest.map((row: any, index: number) => (
                   <tr key={`${row.originalPath}__${row.outputPath}__${index}`}>
                     <td>{index + 1}</td>
                     <td>{row.folderLabel || '--'}</td>

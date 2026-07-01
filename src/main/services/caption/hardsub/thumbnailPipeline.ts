@@ -15,7 +15,6 @@ import { resolveVideoCrop, ResolvedVideoCrop } from './cropFilterBuilder';
 import { estimateTextWidthPx, layoutThumbnailText, ThumbnailTextLayoutResult } from '../../../../shared/utils/thumbnailTextLayout';
 import { getFFmpegPath } from '../../../utils/ffmpegPath';
 import { getVideoMetadata } from './mediaProbe';
-import { resolveVideoCrop } from './cropFilterBuilder';
 import { summarizeThumbnailTextForLog } from './timingDebugWriter';
 import {
   InlineThumbnailSilentAudioBuildInput,
@@ -1240,8 +1239,8 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
   const drawTextFilter = drawTextContext.drawTextFilter;
 
   const layoutResult = isPortraitMode
-    ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextFilter, resolvedCrop)
-    : buildLandscapeThumbnailFilter(safeW, safeH, drawTextFilter, resolvedCrop);
+    ? buildPortraitThumbnailFilter(safeW, safeH, sourceWidth, sourceHeight, drawTextFilter, undefined, resolvedCrop)
+    : buildLandscapeThumbnailFilter(safeW, safeH, drawTextFilter, undefined, resolvedCrop);
 
   const thumbTextLog = summarizeThumbnailTextForLog(opts.thumbnailText);
   const thumbText2Log = summarizeThumbnailTextForLog(opts.thumbnailTextSecondary);

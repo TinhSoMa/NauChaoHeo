@@ -576,8 +576,8 @@ export const DownloaderPage = () => {
       }
     }
 
-    setPlaylistPickerEntries((prev) => prev.map(mergeEntry))
-    setPlaylistInfo((prev) => {
+    setPlaylistPickerEntries((prev: PlaylistEntry[]) => prev.map(mergeEntry))
+    setPlaylistInfo((prev: PlaylistInfo | null) => {
       if (!prev) return prev
       return {
         ...prev,
@@ -699,7 +699,7 @@ export const DownloaderPage = () => {
 
   const availableFormats = useMemo(() => {
     if (!videoInfo) return []
-    return videoInfo.formats.filter((format) => {
+    return videoInfo.formats.filter((format: VideoFormat) => {
       if (!format.vcodec || format.vcodec === 'none') return false
       return true
     })
@@ -708,14 +708,14 @@ export const DownloaderPage = () => {
   const availableAudioFormats = useMemo(() => {
     if (!videoInfo) return []
     return videoInfo.formats
-      .filter((format) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
-      .sort((a, b) => (b.tbr || 0) - (a.tbr || 0))
+      .filter((format: VideoFormat) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
+      .sort((a: VideoFormat, b: VideoFormat) => (b.tbr || 0) - (a.tbr || 0))
   }, [videoInfo])
 
   useEffect(() => {
     if (!downloadVideo) return
     if (!selectedFormatId) return
-    const stillValid = availableFormats.some((format) => format.id === selectedFormatId)
+      const stillValid = availableFormats.some((format: VideoFormat) => format.id === selectedFormatId)
     if (!stillValid) {
       setSelectedFormatId('')
     }
@@ -729,7 +729,7 @@ export const DownloaderPage = () => {
       return
     }
     if (!selectedAudioFormatId) return
-    const stillValid = availableAudioFormats.some((format) => format.id === selectedAudioFormatId)
+    const stillValid = availableAudioFormats.some((format: VideoFormat) => format.id === selectedAudioFormatId)
     if (!stillValid) {
       setSelectedAudioFormatId('')
     }
@@ -1046,7 +1046,7 @@ export const DownloaderPage = () => {
       }
       if (resolvedIntent.options.downloadVideo && (resolvedIntent.options.mergeAudio || resolvedIntent.options.downloadSeparateAudio)) {
         if (resolvedIntent.options.audioFormatId) {
-          const audioFormat = availableAudioFormats.find((format) => format.id === resolvedIntent.options.audioFormatId)
+          const audioFormat = availableAudioFormats.find((format: VideoFormat) => format.id === resolvedIntent.options.audioFormatId)
           const tag = getAudioCodecTag(audioFormat?.acodec)
           const bitrate = audioFormat?.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
           setLogs(prev => [
@@ -1132,10 +1132,10 @@ export const DownloaderPage = () => {
       }
 
       const itemVideoFormats = info
-        ? info.formats.filter((format) => format.vcodec && format.vcodec !== 'none')
+        ? info.formats.filter((format: VideoFormat) => format.vcodec && format.vcodec !== 'none')
         : undefined
       const itemAudioFormats = info
-        ? info.formats.filter((format) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
+        ? info.formats.filter((format: VideoFormat) => format.vcodec === 'none' && format.acodec && format.acodec !== 'none')
         : undefined
       const resolvedIntent = resolveDownloadIntent({
         downloadVideo,
@@ -1156,19 +1156,19 @@ export const DownloaderPage = () => {
         selectedPlaylistIndexes: null,
       })
       if (resolvedIntent.warnings.length > 0) {
-        setLogs(prev => [...prev, ...resolvedIntent.warnings.map((line: string) => `${line} cho link ${item.url}`)])
+        setLogs((prev: string[]) => [...prev, ...resolvedIntent.warnings.map((line: string) => `${line} cho link ${item.url}`)])
       }
       if (resolvedIntent.options.downloadVideo && (resolvedIntent.options.mergeAudio || resolvedIntent.options.downloadSeparateAudio)) {
         if (resolvedIntent.options.audioFormatId) {
-          const audioFormat = itemAudioFormats?.find((format) => format.id === resolvedIntent.options.audioFormatId)
+          const audioFormat = itemAudioFormats?.find((format: VideoFormat) => format.id === resolvedIntent.options.audioFormatId)
           const tag = getAudioCodecTag(audioFormat?.acodec)
           const bitrate = audioFormat?.tbr ? `${Math.round(audioFormat.tbr)} kbps` : ''
-          setLogs(prev => [
+          setLogs((prev: string[]) => [
             ...prev,
             `[Downloader] Audio: ${resolvedIntent.options.audioFormatId}${tag ? ` · ${tag}` : ''}${bitrate ? ` · ${bitrate}` : ''}`,
           ])
         } else {
-          setLogs(prev => [...prev, '[Downloader] Audio: best'])
+          setLogs((prev: string[]) => [...prev, '[Downloader] Audio: best'])
         }
       }
 
