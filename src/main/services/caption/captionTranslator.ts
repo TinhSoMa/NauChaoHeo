@@ -1890,8 +1890,9 @@ export async function translateSingleBatch(
     try {
       const rawSourcePath = (sourcePath || '').trim();
       if (!rawSourcePath) return undefined;
-      const inputType = rawSourcePath.toLowerCase().endsWith('.srt') ? 'srt' : 'draft';
-      const outputDir = getCaptionOutputDirFromInput(inputType as 'srt' | 'draft', rawSourcePath);
+      const isSrt = rawSourcePath.toLowerCase().endsWith('.srt');
+      const inputDir = isSrt ? path.dirname(rawSourcePath) : rawSourcePath;
+      const outputDir = getCaptionOutputDirFromInput(isSrt ? 'srt' : 'draft', inputDir);
       if (!outputDir) return undefined;
       const debugDir = path.join(outputDir, 'debug_prompts');
       fs.mkdirSync(debugDir, { recursive: true });
