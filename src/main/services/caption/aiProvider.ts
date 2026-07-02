@@ -6,6 +6,7 @@ export interface AIProviderResult {
   error?: string
   errorCode?: string
   keySwitchCount?: number
+  accountLabel?: string
 }
 
 export interface AIProviderParams {

@@ -53,6 +53,7 @@ export interface GeminiAPI {
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>; // Sử dụng any[] hoặc EmbeddedAccount[] nếu import được
   getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>; // Lấy tất cả keys với status chi tiết
+  getRotationState: () => Promise<IpcApiResponse<{ currentAccountIndex: number; currentProjectIndex: number; totalRequestsSent: number; rotationRound: number; lastDailyReset: string | null }>>;
   updateProject: (accountId: string, projectIndex: number, patch: { projectName?: string; notes?: string }) => Promise<IpcApiResponse<any>>;
   addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) => Promise<IpcApiResponse<any>>;
   onGeminiKeysReloaded: (callback: () => void) => void;
@@ -123,6 +124,7 @@ export function createGeminiAPI(): GeminiAPI {
     getKeysLocation: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_LOCATION),
     getAllKeys: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL),
     getAllKeysWithStatus: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_GET_ALL_WITH_STATUS),
+    getRotationState: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.GET_ROTATION_STATE),
     updateProject: (accountId: string, projectIndex: number, patch: { projectName?: string; notes?: string }) =>
       ipcRenderer.invoke(GEMINI_IPC_CHANNELS.KEYS_UPDATE_PROJECT, accountId, projectIndex, patch),
     addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) =>

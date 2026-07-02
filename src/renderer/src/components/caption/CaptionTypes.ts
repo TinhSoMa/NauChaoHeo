@@ -23,6 +23,12 @@ export interface TranslationBatchReport {
   error?: string;
   startedAt?: number;
   endedAt?: number;
+  durationMs?: number;
+  transport?: string;
+  resourceId?: string;
+  resourceLabel?: string;
+  keySwitchCount?: number;
+  assignedAccountLabel?: string;
 }
 
 export interface TTSProgress {

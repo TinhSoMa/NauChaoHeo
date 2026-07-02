@@ -533,6 +533,11 @@
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 35%, transparent);
 }
 
+.apiAccountItemRotating {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 35%, transparent);
+}
+
 .apiAccountMain {
   min-width: 0;
 }

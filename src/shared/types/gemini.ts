@@ -299,6 +299,7 @@ export const GEMINI_IPC_CHANNELS = {
   KEYS_UPDATE_PROJECT: 'gemini:keys:updateProject',
   KEYS_ADD_PROJECT: 'gemini:keys:addProject',
   KEYS_RELOADED: 'gemini:keys:reloaded',
+  GET_ROTATION_STATE: 'gemini:getRotationState',
 
   // Model Catalog Management
   MODELS_GET_ALL: 'gemini:models:getAll',

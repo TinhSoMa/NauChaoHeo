@@ -148,12 +148,15 @@ export class ApiKeyManager {
 
     const flat: FlatEntry[] = [];
     const accounts = this.config.accounts;
-    for (let accIdx = 0; accIdx < accounts.length; accIdx++) {
-      const account = accounts[accIdx];
-      if (account.accountStatus !== 'active') continue;
-      for (let projIdx = 0; projIdx < account.projects.length; projIdx++) {
+    // Horizontal Sweep: quét ngang qua tất cả account ở cùng project index trước,
+    // rồi xuống project kế tiếp (acc1/P1 → acc2/P1 → ... → acc1/P2 → acc2/P2 → ...)
+    const maxProjects = Math.max(0, ...accounts.map((a) => a.projects.length));
+    for (let projIdx = 0; projIdx < maxProjects; projIdx++) {
+      for (let accIdx = 0; accIdx < accounts.length; accIdx++) {
+        const account = accounts[accIdx];
+        if (account.accountStatus !== 'active') continue;
         const project = account.projects[projIdx];
-        if (this.isProjectAvailable(project)) {
+        if (project && this.isProjectAvailable(project)) {
           flat.push({ project, account, accIdx, projIdx });
         }
       }

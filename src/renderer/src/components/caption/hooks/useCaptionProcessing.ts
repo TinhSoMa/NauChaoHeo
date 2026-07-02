@@ -1980,6 +1980,7 @@ function buildBatchReportFromResult(
       resourceLabel: sbResult.data?.resourceLabel,
       queueRuntimeKey: sbResult.data?.queueRuntimeKey,
       keySwitchCount: sbResult.data?.keySwitchCount,
+      assignedAccountLabel: sbResult.data?.assignedAccountLabel,
     };
   }
 

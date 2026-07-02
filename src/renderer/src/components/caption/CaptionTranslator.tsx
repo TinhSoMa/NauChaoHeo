@@ -118,6 +118,7 @@ type Step3BatchViewRow = {
   error?: string;
   transportLabel: string;
   keySwitchCount?: number;
+  assignedAccountLabel?: string;
 };
 type Step3BatchViewModel = {
   totalBatches: number;
@@ -5183,7 +5184,7 @@ export function CaptionTranslator() {
         }
         return '--';
       })();
-      const transportLabel = report?.resourceLabel || report?.resourceId || report?.transport || '--';
+      const transportLabel = report?.assignedAccountLabel || report?.resourceLabel || report?.resourceId || report?.transport || '--';
       const durationLabel = typeof report?.durationMs === 'number'
         ? formatElapsedMs(report.durationMs)
         : timeLabel;
@@ -5218,7 +5219,8 @@ export function CaptionTranslator() {
         missingLabel: missingLines > 0 ? formatNumberList(report?.missingGlobalLineIndexes || [], 16) : '--',
         error: report?.error || runtimeEntry?.error,
         transportLabel,
-        keySwitchCount: (report as any)?.keySwitchCount,
+        keySwitchCount: report?.keySwitchCount,
+        assignedAccountLabel: report?.assignedAccountLabel,
       });
     }
 

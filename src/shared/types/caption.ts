@@ -74,6 +74,7 @@ export interface TranslationBatchReport {
   queueGapMs?: number;
   nextAllowedAt?: number;
   keySwitchCount?: number;
+  assignedAccountLabel?: string;
 }
 
 export interface TranslationQueuePacingMetadata {
@@ -135,6 +136,7 @@ export interface SingleBatchResult {
   resourceLabel?: string;
   queueRuntimeKey?: string;
   keySwitchCount?: number;
+  assignedAccountLabel?: string;
 }
 
 /**

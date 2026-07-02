@@ -116,6 +116,7 @@ interface GeminiAPI {
   getKeysLocation: () => Promise<IpcApiResponse<string>>;
   getAllKeys: () => Promise<IpcApiResponse<any[]>>;
   getAllKeysWithStatus: () => Promise<IpcApiResponse<any[]>>;
+  getRotationState: () => Promise<IpcApiResponse<{ currentAccountIndex: number; currentProjectIndex: number; totalRequestsSent: number; rotationRound: number; lastDailyReset: string | null }>>;
   updateProject: (accountId: string, projectIndex: number, patch: { projectName?: string; notes?: string }) => Promise<IpcApiResponse<any>>;
   addProject: (accountId: string, project: { projectName: string; apiKey: string; notes?: string }) => Promise<IpcApiResponse<any>>;
   removeProject: (accountId: string, projectIndex: number) => Promise<IpcApiResponse<boolean>>;

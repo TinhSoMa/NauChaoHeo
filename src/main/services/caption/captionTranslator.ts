@@ -183,6 +183,7 @@ interface BatchTranslationResult {
   endedAt?: number;
   nextAllowedAt?: number;
   keySwitchCount?: number;
+  accountLabel?: string;
 }
 
 interface DispatchTimingMetadata {
@@ -333,6 +334,8 @@ async function translateBatch(
       throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
     }
 
+    const accountLabel = response.accountLabel;
+
     if (!response.success || typeof response.data !== 'string') {
       return {
         success: false,
@@ -340,6 +343,7 @@ async function translateBatch(
         error: response.error || 'Không có response',
         transport: provider.transport,
         keySwitchCount: response.keySwitchCount,
+        accountLabel,
       };
     }
 
@@ -352,6 +356,7 @@ async function translateBatch(
         error: `${parsed.errorCode || 'ERROR_PROCESSING_FAILED'}: ${parsed.errorMessage || 'JSON response không hợp lệ'}`,
         transport: provider.transport,
         keySwitchCount: response.keySwitchCount,
+        accountLabel,
       };
     }
 
@@ -360,10 +365,10 @@ async function translateBatch(
       console.warn(
         `[CaptionTranslator] Batch ${batch.batchIndex + 1}: Thiếu dòng ${validCount}/${batch.texts.length} — sẽ retry`
       );
-      return { success: false, translatedTexts, error: `Thiếu ${batch.texts.length - validCount} dòng`, transport: provider.transport, keySwitchCount: response.keySwitchCount };
+      return { success: false, translatedTexts, error: `Thiếu ${batch.texts.length - validCount} dòng`, transport: provider.transport, keySwitchCount: response.keySwitchCount, accountLabel };
     }
 
-    return { success: true, translatedTexts, transport: provider.transport, keySwitchCount: response.keySwitchCount };
+    return { success: true, translatedTexts, transport: provider.transport, keySwitchCount: response.keySwitchCount, accountLabel };
   } catch (error) {
     if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
       throw error;
@@ -1932,6 +1937,7 @@ export async function translateSingleBatch(
         resourceLabel: batchResult.resourceLabel,
         queueRuntimeKey: batchResult.queueRuntimeKey,
         keySwitchCount: batchResult.keySwitchCount,
+        assignedAccountLabel: batchResult.accountLabel,
       };
     }
 
@@ -1979,6 +1985,7 @@ export async function translateSingleBatch(
     resourceLabel: lastResult?.resourceLabel,
     queueRuntimeKey: lastResult?.queueRuntimeKey,
     keySwitchCount: lastResult?.keySwitchCount,
+    assignedAccountLabel: lastResult?.accountLabel,
   };
 }
 

@@ -66,6 +66,21 @@ export function ApiKeysSettings() {
   const [addAccountEmail, setAddAccountEmail] = useState('');
   const [addAccountKeys, setAddAccountKeys] = useState('');
 
+  // Rotation state
+  const [rotationState, setRotationState] = useState<{ currentAccountIndex: number; currentProjectIndex: number; totalRequestsSent: number; rotationRound: number; lastDailyReset: string | null } | null>(null);
+
+  // Load rotation state
+  const loadRotationState = useCallback(async () => {
+    try {
+      const res = await window.electronAPI.gemini.getRotationState();
+      if (res.success && res.data) {
+        setRotationState(res.data);
+      }
+    } catch (err) {
+      // silent
+    }
+  }, []);
+
   // Load API keys info
   const loadApiKeysInfo = useCallback(async () => {
     try {
@@ -93,6 +108,7 @@ export function ApiKeysSettings() {
         setApiDelayInput(String(delaySec));
         setSavedApiDelaySec(delaySec);
       }
+      await loadRotationState();
     } catch (err) {
       console.error('[ApiKeysSettings] Loi load API keys:', err);
     } finally {
@@ -109,6 +125,14 @@ export function ApiKeysSettings() {
     const unsubscribe = window.electronAPI.gemini.onGeminiKeysReloaded(handler);
     return unsubscribe;
   }, [loadApiKeysInfo]);
+
+  // Auto-refresh rotation state every 3s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadRotationState();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [loadRotationState]);
 
   const startEditProject = (accountId: string, projectIndex: number, name: string, notes: string) => {
     setEditingProject({ accountId, projectIndex, name, notes });
@@ -651,6 +675,23 @@ export function ApiKeysSettings() {
             <div className={styles.apiKpiLabel}>Tổng lỗi</div>
             <div className={styles.apiKpiValue}>{totalErrors.toLocaleString()}</div>
           </div>
+          {rotationState && (() => {
+            const activeAccount = apiAccounts[rotationState.currentAccountIndex];
+            const activeProject = activeAccount?.projects[rotationState.currentProjectIndex];
+            const accountName = activeAccount?.email || `acc_${String(rotationState.currentAccountIndex + 1).padStart(2, '0')}`;
+            const projectName = activeProject?.projectName || `P${rotationState.currentProjectIndex + 1}`;
+            return (
+              <div className={styles.apiKpiCard} style={{ borderColor: '#f59e0b' }}>
+                <div className={styles.apiKpiLabel} style={{ color: '#f59e0b' }}>Đang dùng</div>
+                <div className={styles.apiKpiValue} style={{ fontSize: '0.85rem', lineHeight: 1.3 }}>
+                  {accountName}
+                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', display: 'block' }}>
+                    {projectName} · {rotationState.totalRequestsSent.toLocaleString()} req
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <div className={styles.apiGrid}>
@@ -726,14 +767,15 @@ export function ApiKeysSettings() {
                   filteredAccounts.map((acc) => {
                     const statusCfg = getAccountStatusConfig(acc.accountStatus)
                     const isActive = acc.accountId === selectedAccountId
+                    const isRotating = rotationState && apiAccounts.indexOf(acc) === rotationState.currentAccountIndex
                     return (
                       <button
                         key={acc.accountId}
-                        className={`${styles.apiAccountItem} ${isActive ? styles.apiAccountItemActive : ''}`}
+                        className={`${styles.apiAccountItem} ${isActive ? styles.apiAccountItemActive : ''} ${isRotating ? styles.apiAccountItemRotating : ''}`}
                         onClick={() => setSelectedAccountId(acc.accountId)}
                       >
                         <div className={styles.apiAccountMain}>
-                          <div className={styles.apiAccountName}>{acc.email}</div>
+                          <div className={styles.apiAccountName}>{acc.email} {isRotating && <span style={{ fontSize: '0.65rem', color: '#f59e0b', marginLeft: 4 }}>●</span>}</div>
                           <div className={styles.apiAccountMeta}>{acc.projects.length} projects</div>
                         </div>
                         <span
@@ -799,6 +841,9 @@ export function ApiKeysSettings() {
                               <StatusIcon size={11} /> {statusConfig.label}
                             </span>
                             <span className={styles.apiProjectName}>{p.projectName}</span>
+                            {rotationState && selectedAccount.accountId === apiAccounts[rotationState.currentAccountIndex]?.accountId && p.projectIndex === rotationState.currentProjectIndex && (
+                              <span style={{ fontSize: '0.6rem', background: '#f59e0b22', color: '#f59e0b', padding: '1px 6px', borderRadius: 8, marginLeft: 6 }}>current</span>
+                            )}
                           </div>
                           <div className={styles.apiProjectActions}>
                             <Button

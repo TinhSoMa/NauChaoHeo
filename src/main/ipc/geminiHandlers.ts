@@ -713,5 +713,25 @@ export function registerGeminiHandlers(): void {
     }
   );
 
+  // Lấy rotation state hiện tại
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.GET_ROTATION_STATE,
+    async (): Promise<IpcApiResponse<{ currentAccountIndex: number; currentProjectIndex: number; totalRequestsSent: number; rotationRound: number; lastDailyReset: string | null }>> => {
+      try {
+        const manager = Gemini.getApiManager();
+        const config = (manager as any).config;
+        const state = config?.rotationState;
+        const hasData = state && typeof state.currentAccountIndex === 'number';
+        return {
+          success: true,
+          data: hasData ? state : { currentAccountIndex: 0, currentProjectIndex: 0, totalRequestsSent: 0, rotationRound: 0, lastDailyReset: null },
+        };
+      } catch (error) {
+        console.error('[IPC] Lỗi lấy rotation state:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   console.log('[IPC] Đã đăng ký xong Gemini handlers');
 }

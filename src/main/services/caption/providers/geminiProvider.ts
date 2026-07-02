@@ -21,7 +21,7 @@ export function createGeminiProvider(assignedKey?: GeminiAssignedKey): AIProvide
       }
 
       if (response.success && typeof response.data === 'string') {
-        return { success: true, data: response.data, keySwitchCount: response.keySwitchCount }
+        return { success: true, data: response.data, keySwitchCount: response.keySwitchCount, accountLabel: assignedKey?.keyInfo.name }
       }
 
       return {
@@ -29,6 +29,7 @@ export function createGeminiProvider(assignedKey?: GeminiAssignedKey): AIProvide
         error: response.error || 'Gemini API error',
         errorCode: response.errorCode,
         keySwitchCount: response.keySwitchCount,
+        accountLabel: assignedKey?.keyInfo.name,
       }
     },
   }
