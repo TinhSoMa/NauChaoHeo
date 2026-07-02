@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "caption-workspace.html",
+  "entry": "caption-workspace.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-07-01T16:48:29.681Z",
+  "updatedAt": "2026-07-01T16:48:29.681Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

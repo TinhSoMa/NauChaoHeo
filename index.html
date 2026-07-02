@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NauChaoHeo — Caption Workspace</title>
+<style>
+/* ===== Application Design System Tokens ===== */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-warm: #eef4ff;
+  --fg: #172033;
+  --fg-2: #3b4658;
+  --muted: #6b7689;
+  --meta: #2563eb;
+  --border: #d8dee8;
+  --border-soft: #edf1f6;
+  --accent: #2563eb;
+  --accent-on: #ffffff;
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --accent-active: color-mix(in oklab, var(--accent), black 14%);
+  --success: #16a34a;
+  --warn: #f59e0b;
+  --danger: #dc2626;
+  --font-display: Inter, system-ui, sans-serif;
+  --font-body: Inter, system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
+  --text-3xl: 42px;
+  --text-4xl: 58px;
+  --leading-body: 1.5;
+  --leading-tight: 1.12;
+  --tracking-display: -0.015em;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --section-y-desktop: 88px;
+  --section-y-tablet: 64px;
+  --section-y-phone: 44px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 9999px;
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 16px 40px rgba(23, 32, 51, 0.10);
+  --focus-ring: 0 0 0 4px rgba(37, 99, 235, 0.22);
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --container-max: 1200px;
+  --container-gutter-desktop: 36px;
+  --container-gutter-tablet: 24px;
+  --container-gutter-phone: 16px;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--font-body);
+  font-size:var(--text-sm);
+  color:var(--fg);
+  background:var(--bg);
+  -webkit-font-smoothing:antialiased;
+  line-height:var(--leading-body);
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ===== App Shell ===== */
+.app-shell{
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+  background:var(--bg);
+}
+
+/* ===== Top Bar ===== */
+.topbar{
+  display:flex;
+  align-items:center;
+  gap:var(--space-4);
+  height:52px;
+  padding:0 var(--space-6);
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.topbar-brand{
+  font-weight:700;
+  font-size:var(--text-lg);
+  color:var(--fg);
+  display:flex;
+  align-items:center;
+  gap:var(--space-2);
+}
+.topbar-brand span{color:var(--accent)}
+.topbar-nav{
+  display:flex;
+  gap:var(--space-1);
+  margin-left:var(--space-6);
+}
+.topbar-nav a{
+  padding:var(--space-1) var(--space-3);
+  border-radius:var(--radius-sm);
+  font-size:var(--text-sm);
+  font-weight:500;
+  color:var(--fg-2);
+  transition:background var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard);
+}
+.topbar-nav a:hover,.topbar-nav a.active{
+  background:var(--surface-warm);
+  color:var(--accent);
+  text-decoration:none;
+}
+.topbar-nav a.active{font-weight:600}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:var(--space-3)}
+.topbar-badge{
+  font-size:var(--text-2xs);
+  font-weight:600;
+  padding:2px 8px;
+  border-radius:var(--radius-pill);
+  background:var(--surface-warm);
+  color:var(--accent);
+  border:1px solid var(--border-soft);
+}
+
+/* ===== Main Layout ===== */
+.main-layout{
+  display:flex;
+  flex:1;
+  overflow:hidden;
+}
+.sidebar{
+  width:220px;
+  flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  padding:var(--space-4) 0;
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-1);
+}
+.sidebar-item{
+  display:flex;
+  align-items:center;
+  gap:var(--space-3);
+  padding:var(--space-2) var(--space-4);
+  font-size:var(--text-sm);
+  font-weight:500;
+  color:var(--fg-2);
+  cursor:pointer;
+  border:none;
+  background:none;
+  text-align:left;
+  width:100%;
+  transition:background var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard);
+  position:relative;
+}
+.sidebar-item:hover{background:var(--surface-warm);color:var(--accent);text-decoration:none}
+.sidebar-item.active{background:var(--surface-warm);color:var(--accent);font-weight:600}
+.sidebar-item.active::before{
+  content:'';
+  position:absolute;
+  left:0;
+  top:50%;
+  transform:translateY(-50%);
+  width:3px;
+  height:20px;
+  background:var(--accent);
+  border-radius:0 2px 2px 0;
+}
+.sidebar-item svg{width:18px;height:18px;flex-shrink:0;opacity:.7}
+.sidebar-item.active svg{opacity:1}
+.sidebar-label{
+  font-size:var(--text-2xs);
+  font-weight:600;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  padding:var(--space-4) var(--space-4) var(--space-1);
+}
+.sidebar-spacer{flex:1}
+.sidebar-bottom{padding:var(--space-3) var(--space-4);border-top:1px solid var(--border-soft);margin-top:auto}
+.sidebar-bottom .sidebar-item{font-size:var(--text-xs);color:var(--muted)}
+
+/* ===== Content Area ===== */
+.content{
+  flex:1;
+  overflow-y:auto;
+  padding:var(--space-6);
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-6);
+}
+
+/* ===== Overview Page ===== */
+.page-header{margin-bottom:var(--space-2)}
+.page-header h1{font-size:var(--text-2xl);font-weight:700;color:var(--fg);letter-spacing:var(--tracking-display)}
+.page-header p{font-size:var(--text-base);color:var(--fg-2);margin-top:var(--space-1)}
+.cards-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:var(--space-4);
+}
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius-md);
+  padding:var(--space-5);
+  transition:box-shadow var(--motion-base) var(--ease-standard),border-color var(--motion-base) var(--ease-standard);
+  cursor:pointer;
+}
+.card:hover{border-color:var(--accent);box-shadow:var(--elev-raised)}
+.card-icon{
+  width:40px;height:40px;
+  border-radius:var(--radius-sm);
+  background:var(--surface-warm);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:var(--space-3);
+  color:var(--accent);
+}
+.card h3{font-size:var(--text-base);font-weight:600;color:var(--fg);margin-bottom:var(--space-1)}
+.card p{font-size:var(--text-xs);color:var(--fg-2);line-height:1.5}
+.card-meta{display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-3)}
+.card-tag{
+  font-size:var(--text-2xs);
+  font-weight:500;
+  padding:2px 8px;
+  border-radius:var(--radius-pill);
+  background:var(--bg);
+  color:var(--muted);
+  border:1px solid var(--border-soft);
+}
+.card-tag.accent{background:var(--surface-warm);color:var(--accent);border-color:var(--border-soft)}
+
+/* ===== Stats Row ===== */
+.stats-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:var(--space-4);
+}
+.stat-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius-md);
+  padding:var(--space-4);
+}
+.stat-value{font-size:var(--text-xl);font-weight:700;color:var(--fg)}
+.stat-label{font-size:var(--text-xs);color:var(--muted);margin-top:2px}
+.stat-trend{font-size:var(--text-2xs);font-weight:600;margin-top:var(--space-1)}
+
+/* ===== Recent Activity ===== */
+.activity-list{display:flex;flex-direction:column;gap:var(--space-2)}
+.activity-item{
+  display:flex;align-items:center;gap:var(--space-3);
+  padding:var(--space-3) var(--space-4);
+  background:var(--surface);
+  border:1px solid var(--border-soft);
+  border-radius:var(--radius-sm);
+}
+.activity-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.activity-dot.success{background:var(--success)}
+.activity-dot.warn{background:var(--warn)}
+.activity-dot.accent{background:var(--accent)}
+.activity-text{flex:1;font-size:var(--text-sm);color:var(--fg)}
+.activity-time{font-size:var(--text-2xs);color:var(--muted);font-family:var(--font-mono)}
+
+/* ===== Quick Actions ===== */
+.quick-actions{display:flex;gap:var(--space-3);flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:var(--space-2);
+  padding:var(--space-2) var(--space-4);
+  border-radius:var(--radius-sm);
+  font-size:var(--text-sm);
+  font-weight:500;
+  font-family:var(--font-body);
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--fg);
+  cursor:pointer;
+  transition:background var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard),box-shadow var(--motion-fast) var(--ease-standard);
+}
+.btn:hover{background:var(--bg);border-color:var(--border-hover,var(--border))}
+.btn-primary{background:var(--accent);color:var(--accent-on);border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-success{background:var(--success);color:white;border-color:var(--success)}
+.btn-success:hover{background:color-mix(in oklab,var(--success),black 8%)}
+.btn-sm{padding:var(--space-1) var(--space-3);font-size:var(--text-xs)}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--fg-2)}
+.btn-ghost:hover{background:var(--bg);color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      Nau<span>ChaoHeo</span>
+    </div>
+    <nav class="topbar-nav">
+      <a href="index.html" class="active">Workspace</a>
+      <a href="caption-workspace.html">Caption</a>
+      <a href="settings.html">Cài đặt</a>
+    </nav>
+    <div class="topbar-right">
+      <span class="topbar-badge">v1.7.0</span>
+      <span class="topbar-badge" style="background:#dcfce7;color:#16a34a;border-color:#bbf7d0">Ocean Breeze</span>
+    </div>
+  </header>
+  <div class="main-layout">
+    <aside class="sidebar">
+      <div class="sidebar-label">Caption</div>
+      <a class="sidebar-item active" href="caption-workspace.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Caption Workspace
+      </a>
+      <div class="sidebar-label">Management</div>
+      <a class="sidebar-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Batch Monitor
+      </a>
+      <a class="sidebar-item" href="#">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </a>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-bottom">
+        <a class="sidebar-item" href="#" style="font-size:var(--text-xs)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          NauChaoHeo v1.7.0
+        </a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="page-header">
+        <h1>Caption Workspace</h1>
+        <p>Quản lý & xử lý phụ đề thông minh — 7 bước từ nhập liệu đến xuất video</p>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value">12</div>
+          <div class="stat-label">Dự án đang xử lý</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">7</div>
+          <div class="stat-label">Step pipeline</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">1,847</div>
+          <div class="stat-label">Subtitle entries</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">32</div>
+          <div class="stat-label">API keys</div>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:var(--text-lg);font-weight:600;margin-bottom:var(--space-3)">Quick Actions</h2>
+        <div class="quick-actions">
+          <a href="caption-workspace.html" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Mở Caption Workspace
+          </a>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:var(--text-lg);font-weight:600;margin-bottom:var(--space-3)">Caption Pipeline</h2>
+        <div class="cards-grid">
+          <div class="card" onclick="location.href='caption-workspace.html#step1'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+            <h3>Step 1 — Nhập liệu</h3>
+            <p>Chọn nguồn video, SRT, Draft hoặc Folder. Hỗ trợ đa định dạng đầu vào.</p>
+            <div class="card-meta"><span class="card-tag">Input</span><span class="card-tag accent">Video / SRT / Draft</span></div>
+          </div>
+          <div class="card" onclick="location.href='caption-workspace.html#step2'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+            <h3>Step 2 — Subtitle Editor</h3>
+            <p>Xem, sửa, xóa subtitle entries. Hỗ trợ bulk select, range chương, sắp xếp.</p>
+            <div class="card-meta"><span class="card-tag">Editor</span><span class="card-tag accent">Bulk</span></div>
+          </div>
+          <div class="card" onclick="location.href='caption-workspace.html#step3'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+            <h3>Step 3 — Dịch thuật AI</h3>
+            <p>Dịch hàng loạt qua Gemini/OpenRouter. Batch control, proxy test, bulk multi-folder.</p>
+            <div class="card-meta"><span class="card-tag">Translation</span><span class="card-tag accent">AI</span></div>
+          </div>
+          <div class="card" onclick="location.href='caption-workspace.html#step4'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
+            <h3>Step 4 — TTS Voice</h3>
+            <p>Chọn giọng đọc Edge TTS / CapCut. Test proxy, tùy chỉnh tốc độ, âm lượng.</p>
+            <div class="card-meta"><span class="card-tag">TTS</span><span class="card-tag accent">Edge / CapCut</span></div>
+          </div>
+          <div class="card" onclick="location.href='caption-workspace.html#step5'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <h3>Step 5 — Căn chỉnh thời gian</h3>
+            <p>Auto-fit audio, speed scaling, SRT time scale. Đồng bộ audio-video.</p>
+            <div class="card-meta"><span class="card-tag">Sync</span><span class="card-tag accent">Auto-fit</span></div>
+          </div>
+          <div class="card" onclick="location.href='caption-workspace.html#step6'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+            <h3>Step 6 — Preview & Audio Fit</h3>
+            <p>Preview subtitle, fit audio audit, auto-fit cấu hình, trim audio workers.</p>
+            <div class="card-meta"><span class="card-tag">Preview</span><span class="card-tag accent">Audit</span></div>
+          </div>
+          <div class="card" onclick="location.href='caption-workspace.html#step7'">
+            <div class="card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></div>
+            <h3>Step 7 — Render / Xuất</h3>
+            <p>Render video thành phẩm với hardsub. Tùy chọn codec, resolution, hardware acceleration.</p>
+            <div class="card-meta"><span class="card-tag">Render</span><span class="card-tag accent">Hardsub</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:var(--text-lg);font-weight:600;margin-bottom:var(--space-3)">Hoạt động gần đây</h2>
+        <div class="activity-list">
+          <div class="activity-item">
+            <span class="activity-dot success"></span>
+            <span class="activity-text">Step 3 — Dịch hoàn tất: <strong>Naruto Chap 720</strong> (48 batches)</span>
+            <span class="activity-time">2 phút trước</span>
+          </div>
+          <div class="activity-item">
+            <span class="activity-dot accent"></span>
+            <span class="activity-text">Step 4 — TTS đang chạy: <strong>One Piece Chap 1100</strong> (23/156 files)</span>
+            <span class="activity-time">8 phút trước</span>
+          </div>
+          <div class="activity-item">
+            <span class="activity-dot warn"></span>
+            <span class="activity-text">Step 7 — Render lỗi: <strong>Solo Leveling Chap 200</strong> — codec mismatch</span>
+            <span class="activity-time">15 phút trước</span>
+          </div>
+          <div class="activity-item">
+            <span class="activity-dot success"></span>
+            <span class="activity-text">Step 6 — Auto-fit audio hoàn tất: <strong>20 folders</strong></span>
+            <span class="activity-time">32 phút trước</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>
