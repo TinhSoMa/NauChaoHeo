@@ -298,6 +298,7 @@ interface UseCaptionProcessingProps {
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
     translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
+    captionContextBatchCount?: number;
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
     thumbnailPrependEnabled?: boolean;
@@ -4281,6 +4282,27 @@ export function useCaptionProcessing({
         }));
 
         const previousBatches: import('@shared/types/caption').PreviousBatchTranslations[] = [];
+        const batchesToProcessSet = new Set(batchesToProcess);
+        for (const batchPlan of step3BatchPlan) {
+          const batchIdx = batchPlan.batchIndex;
+          if (batchesToProcessSet.has(batchIdx)) continue;
+          const batchEntries = currentEntries.slice(batchPlan.startIndex, batchPlan.endIndex + 1);
+          const translatedTexts: string[] = [];
+          let allTranslated = true;
+          for (let i = batchPlan.startIndex; i <= batchPlan.endIndex; i++) {
+            const entry = liveTranslatedEntries[i];
+            const t = entry?.translatedText;
+            if (typeof t === 'string' && t.trim().length > 0) {
+              translatedTexts.push(t);
+            } else {
+              allTranslated = false;
+              break;
+            }
+          }
+          if (allTranslated) {
+            previousBatches.push({ entries: batchEntries, translatedTexts });
+          }
+        }
 
         for (const batchIdx of batchesToProcess) {
           if (abortRef.current) break;
@@ -4305,7 +4327,9 @@ export function useCaptionProcessing({
             projectId: projectId || undefined,
             sourcePath: resolveSourcePath(currentPath),
             runId,
-            previousBatches: previousBatches.length > 0 ? [...previousBatches] : undefined,
+            previousBatches: previousBatches.length > 0
+              ? previousBatches.slice(-Math.max(1, Math.floor(Number(cfg.captionContextBatchCount) || 3)))
+              : undefined,
           };
 
           let sbResult: any;

@@ -1339,6 +1339,10 @@ export function useCaptionSettings() {
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 6, 7]));
   const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter'>('api');
+  const [captionContextBatchCount, setCaptionContextBatchCountState] = useState<number>(3);
+  const setCaptionContextBatchCount = useCallback((value: number) => {
+    setCaptionContextBatchCountState(Number.isFinite(value) ? clamp(Math.round(value), 1, 20) : 3);
+  }, []);
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('folder-first');
 
   const [settingsRevision, setSettingsRevision] = useState<number>(0);
@@ -1980,6 +1984,7 @@ export function useCaptionSettings() {
       geminiModel,
       openrouterModel,
       translateMethod,
+      captionContextBatchCount,
       voice,
       rate,
       volume,
@@ -2084,6 +2089,7 @@ export function useCaptionSettings() {
       geminiModel,
       openrouterModel,
       translateMethod,
+      captionContextBatchCount,
       voice,
       rate,
       volume,
@@ -2125,6 +2131,7 @@ export function useCaptionSettings() {
     if (saved.translateMethod) {
       setTranslateMethod(saved.translateMethod as 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter');
     }
+    if (typeof saved.captionContextBatchCount === 'number') setCaptionContextBatchCount(saved.captionContextBatchCount);
     if (saved.voice) setVoice(saved.voice);
     if (saved.rate) setRate(String(saved.rate));
     if (saved.volume) setVolume(String(saved.volume));
@@ -2499,6 +2506,7 @@ export function useCaptionSettings() {
     geminiModel, setGeminiModel,
     openrouterModel, setOpenrouterModel,
     translateMethod, setTranslateMethod,
+    captionContextBatchCount, setCaptionContextBatchCount,
     voice, setVoice,
     rate, setRate,
     volume, setVolume,
