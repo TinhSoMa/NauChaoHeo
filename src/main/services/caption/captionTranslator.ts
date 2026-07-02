@@ -1793,8 +1793,8 @@ export async function translateSingleBatch(
         translated: pb.translatedTexts[i] || '',
       }));
       const batchLines = pairs.map(
-        (p) => `  Source: ${p.source}\n  Translated: ${p.translated}`
-      ).join('\n\n');
+        (p) => `${p.source} → ${p.translated}`
+      ).join('\n');
       ctxParts.push(batchLines);
     }
     localMemoryContext = ctxParts.join('\n\n');
