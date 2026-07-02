@@ -7806,6 +7806,14 @@ export function CaptionTranslator() {
                 </>
               )}
             </div>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Context batches</label>
+              <input type="number" min={1} max={20} value={settings.captionContextBatchCount}
+                onChange={(e) => settings.setCaptionContextBatchCount(Number(e.target.value))}
+                className={styles.select}
+                style={{ width: 80 }}
+              />
+            </div>
             <div
               className={styles.stepCardHint}
               title={settings.translateMethod === 'impit'

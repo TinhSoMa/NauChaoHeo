@@ -1152,6 +1152,7 @@ export interface CaptionProjectSettingsValues {
   geminiModel?: string;
   openrouterModel?: string;
   translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
+  captionContextBatchCount?: number;
   voice?: string;
   rate?: string;
   volume?: string;
