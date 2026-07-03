@@ -14,6 +14,7 @@ export async function callDeepSeekChat(
     signal?: AbortSignal;
     debugSaveDir?: string;
     batchIndex?: number;
+    saveCacheDebugFile?: boolean;
   }
 ): Promise<{ success: true; data: string } | { success: false; error: string }> {
   try {
@@ -64,19 +65,21 @@ export async function callDeepSeekChat(
     const cacheHitTokens = usage?.prompt_cache_hit_tokens;
     const cacheMissTokens = usage?.prompt_cache_miss_tokens;
     if (typeof cacheHitTokens === 'number' || typeof cacheMissTokens === 'number') {
-      const cacheDir = options?.debugSaveDir;
-      const idx = typeof options?.batchIndex === 'number' ? options.batchIndex + 1 : Date.now();
-      if (cacheDir) {
-        try {
-          const cacheFile = path.join(cacheDir, `step3_deepseek_cache_batch_${idx}.json`);
-          fs.writeFileSync(cacheFile, JSON.stringify({
-            promptCacheHitTokens: cacheHitTokens,
-            promptCacheMissTokens: cacheMissTokens,
-            model: options?.model ?? config.defaultModel,
-            timestamp: new Date().toISOString(),
-          }, null, 2), 'utf-8');
-        } catch {
-          // ignore debug write error
+      if (options?.saveCacheDebugFile) {
+        const cacheDir = options?.debugSaveDir;
+        const idx = typeof options?.batchIndex === 'number' ? options.batchIndex + 1 : Date.now();
+        if (cacheDir) {
+          try {
+            const cacheFile = path.join(cacheDir, `step3_deepseek_cache_batch_${idx}.json`);
+            fs.writeFileSync(cacheFile, JSON.stringify({
+              promptCacheHitTokens: cacheHitTokens,
+              promptCacheMissTokens: cacheMissTokens,
+              model: options?.model ?? config.defaultModel,
+              timestamp: new Date().toISOString(),
+            }, null, 2), 'utf-8');
+          } catch {
+            // ignore debug write error
+          }
         }
       }
       console.log(`[DeepSeek] Cache: hit=${cacheHitTokens ?? 0} miss=${cacheMissTokens ?? 0}`);

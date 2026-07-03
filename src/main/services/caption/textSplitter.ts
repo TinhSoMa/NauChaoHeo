@@ -165,6 +165,53 @@ ${JSON.stringify(sourcePayload, null, 2)}
 }
 
 /**
+ * System prompt cố định cho DeepSeek, tối ưu cho context caching.
+ * KHÔNG chứa targetLanguage, KHÔNG chứa {count} — đảm bảo cache prefix giống nhau giữa các batch.
+ */
+function buildDeepSeekSystemPrompt(): string {
+  return `# Subtitle Translation Prompt
+
+## Task
+Dịch các dòng subtitle sau. Output là JSON thuần, KHÔNG markdown, KHÔNG code block.
+
+## Success Response Schema
+{
+  "status": "success",
+  "data": {
+    "translations": [
+      { "index": 1, "translated": "..." }
+    ],
+    "summary": {
+      "total_sentences": <số_lượng>,
+      "input_count": <số_lượng>,
+      "output_count": <số_lượng>,
+      "match": true,
+      "language_style": "casual"
+    }
+  }
+}
+
+## Error Response Schema
+{
+  "status": "error",
+  "error": {
+    "code": "ERROR_PROCESSING_FAILED",
+    "message": "..."
+  }
+}
+
+## Critical Rules
+1. Mỗi câu input = 1 object output. Index phải khớp chính xác (bắt đầu từ 1).
+2. KHÔNG gộp câu — mỗi câu input tương ứng đúng 1 câu translated.
+3. KHÔNG có markdown hay text thừa — CHỈ trả về JSON thuần.
+
+## Terminology
+- Tên nhân vật: Giữ nguyên, không dịch.
+- Địa danh: Dịch âm Hán Việt nếu có.
+- Đại từ: Phù hợp văn hóa Việt.`;
+}
+
+/**
  * Tạo prompt cho DeepSeek với Context Caching optimization.
  * System prompt = stable (task, rules, schemas — không có {count}).
  * User prompt = variable (source text, memory context).
@@ -188,15 +235,16 @@ export function createDeepSeekPrompt(
       .replace(/\{\{COUNT\}\}/g, String(count))
       .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
 
-    let prompt = `## User Translation Rules\n${content}\n`;
+    const systemPrompt = buildDeepSeekSystemPrompt();
+    let userPrompt = `## User Translation Rules\n${content}\n`;
 
     if (memoryContext) {
-      prompt += formatMemoryContextMarkdown(memoryContext);
+      userPrompt += formatMemoryContextMarkdown(memoryContext);
     }
 
-    console.log('[TextSplitter] DeepSeek custom prompt (single message), format: json');
-    savePromptDebug(debugSaveDir, batchIndex, prompt);
-    return { prompt, responseFormat: 'json' };
+    console.log('[TextSplitter] DeepSeek custom prompt (system+user), format: json');
+    savePromptDebug(debugSaveDir, batchIndex, `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userPrompt}`);
+    return { prompt: userPrompt, systemPrompt, responseFormat: 'json' };
   }
 
   const systemPrompt = `# Subtitle Translation Prompt

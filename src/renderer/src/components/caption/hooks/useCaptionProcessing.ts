@@ -4332,7 +4332,7 @@ export function useCaptionProcessing({
             sourcePath: resolveSourcePath(currentPath),
             runId,
             previousBatches: previousBatches.length > 0
-              ? previousBatches.slice(-Math.max(1, Math.floor(Number(cfg.captionContextBatchCount) || 3)))
+              ? previousBatches.slice(-Math.min(Math.max(1, Math.floor(Number(cfg.captionContextBatchCount) || 3)), 3))
               : undefined,
           };
 
