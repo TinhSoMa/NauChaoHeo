@@ -18,6 +18,7 @@ import { callGeminiWithRotation, GEMINI_MODELS, type GeminiModel } from '../gemi
 import { type AIProvider } from './aiProvider';
 import { createGeminiProvider } from './providers/geminiProvider';
 import { createOpenRouterProvider } from './providers/openrouterProvider';
+import { createDeepSeekProvider } from './providers/deepseekProvider';
 import { AppSettingsService } from '../appSettings';
 import { PromptService } from '../promptService';
 import { type KeyInfo } from '../../../shared/types/gemini';
@@ -45,6 +46,7 @@ import {
 import {
   mergeTranslatedTexts,
   createTranslationPrompt,
+  createDeepSeekPrompt,
   parseJsonTranslationResponse,
   TextBatch,
 } from './textSplitter';
@@ -60,6 +62,7 @@ function createProviderForMethod(
 ): AIProvider | null {
   if (method === 'api') return createGeminiProvider(assignedKey)
   if (method === 'openrouter') return createOpenRouterProvider()
+  if (method === 'deepseek') return createDeepSeekProvider()
   return null
 }
 
@@ -325,10 +328,13 @@ async function translateBatch(
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [transport: ${provider.transport}]`);
 
-  const { prompt } = createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
+  const promptResult = provider.transport === 'deepseek'
+    ? createDeepSeekPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex)
+    : createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
+  const { prompt, systemPrompt } = promptResult;
 
   try {
-    const response = await provider.call({ prompt, model, signal: stopSignal });
+    const response = await provider.call({ prompt, systemPrompt, model, signal: stopSignal, debugSaveDir, batchIndex: batch.batchIndex });
 
     if (!response.success && response.error === 'STOP_REQUESTED') {
       throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
@@ -1153,7 +1159,7 @@ export async function translateAll(
   const registerUnexpectedBatchFailure = async (batch: TextBatch, rawError: unknown): Promise<void> => {
     const methodLabel: TranslationTransport = useGeminiWebQueue
       ? 'gemini_webapi_queue'
-      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
+      : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : (options.translateMethod as TranslationTransport || 'api')));
     const batchNumber = batch.batchIndex + 1;
     if (batchReports.some((report) => report.batchIndex === batchNumber)) {
       return;
@@ -1554,9 +1560,9 @@ export async function translateAll(
       assertNotStopped();
       const batch = getBatchAtIndex(i);
 
-      // Gán key riêng cho batch này (chỉ áp dụng cho API, không phải impit)
+      // Gán key riêng cho batch này (chỉ áp dụng cho API, không phải impit/grok_ui/openrouter/deepseek)
       let assignedKey: { apiKey: string; keyInfo: KeyInfo } | undefined;
-      if (!useImpit && !useGrokUi) {
+      if (options.translateMethod === 'api') {
         const { apiKey, keyInfo } = manager.getNextApiKey();
         assignedKey = apiKey && keyInfo ? { apiKey, keyInfo } : undefined;
         console.log(`[CaptionTranslator] Batch ${i + 1}/${totalBatches}: gán key [${assignedKey?.keyInfo.name ?? 'rotation'}]`);
@@ -1617,7 +1623,7 @@ export async function translateAll(
   // Fallback cho API/Impit/Grok UI: nếu có batch bị skip do break
   if (!useGeminiWebQueue && completedBatches < totalBatches) {
     const reportedBatchIndexes = new Set(batchReports.map((r) => r.batchIndex));
-    const methodLabel: TranslationTransport = useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api');
+    const methodLabel: TranslationTransport = useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : (options.translateMethod as TranslationTransport || 'api'));
     for (let i = 0; i < totalBatches; i += 1) {
       if (retryBatchIndexSet && !retryBatchIndexSet.has(i + 1)) continue;
       const batchNumber = i + 1;
@@ -1657,7 +1663,7 @@ export async function translateAll(
     if (progressCallback && !shouldStopTranslation(runId)) {
       const summaryTransport: TranslationTransport = useGeminiWebQueue
         ? 'gemini_webapi_queue'
-        : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : 'api'));
+        : (useImpit ? 'impit' : (useGrokUi ? 'grok_ui' : (options.translateMethod as TranslationTransport || 'api')));
       const summaryPacingMetadata = mergePacingMetadata(lastDispatchTiming);
       const hasFailures = failedCount > 0;
       progressCallback({
@@ -1806,9 +1812,9 @@ export async function translateSingleBatch(
     console.log(`[CaptionTranslator] [Memory] batch #${batchIndex + 1}: using ${options.previousBatches.length} previous batch(es) as context`);
   }
 
-  // Lấy API key nếu cần
+  // Lấy API key nếu cần (chỉ 'api' transport dùng Gemini key rotation)
   let assignedKey: { apiKey: string; keyInfo: KeyInfo } | undefined;
-  if (useProvider) {
+  if (translateMethod === 'api') {
     const manager = getApiManager();
     const keyResult = manager.getNextApiKey();
     assignedKey = keyResult.apiKey && keyResult.keyInfo ? { apiKey: keyResult.apiKey, keyInfo: keyResult.keyInfo } : undefined;

@@ -165,7 +165,7 @@ interface SingleBatchOptions {
   targetLanguage: string;
   model: string;
   promptTemplate?: string;
-  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
+  translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter' | 'deepseek';
   projectId?: string;
   sourcePath?: string;
   runId?: string;
@@ -1383,6 +1383,12 @@ declare global {
     getKeyStats: () => Promise<any>;
   }
 
+  interface DeepSeekAPI {
+    getConfig: () => Promise<any>;
+    setConfig: (partial: any) => Promise<any>;
+    listModels: (apiKey: string) => Promise<any>;
+  }
+
   interface Window {
     electronAPI: {
       // Cac method co ban
@@ -1445,6 +1451,9 @@ declare global {
 
       // OpenRouter API
       openRouter: OpenRouterAPI;
+
+      // DeepSeek API
+      deepSeek: DeepSeekAPI;
     };
   }
 }

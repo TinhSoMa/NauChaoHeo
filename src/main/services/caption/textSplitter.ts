@@ -45,6 +45,7 @@ export type TranslationResponseFormat = 'json' | 'numbered' | 'pipe';
 
 export interface TranslationPromptResult {
   prompt: string;
+  systemPrompt?: string;
   responseFormat: TranslationResponseFormat;
 }
 
@@ -161,6 +162,104 @@ ${JSON.stringify(sourcePayload, null, 2)}
   console.log('[TextSplitter] Sử dụng default prompt (markdown), format: json');
   savePromptDebug(debugSaveDir, batchIndex, prompt);
   return { prompt, responseFormat: 'json' };
+}
+
+/**
+ * Tạo prompt cho DeepSeek với Context Caching optimization.
+ * System prompt = stable (task, rules, schemas — không có {count}).
+ * User prompt = variable (source text, memory context).
+ */
+export function createDeepSeekPrompt(
+  texts: string[],
+  targetLanguage: string = 'Vietnamese',
+  customTemplate?: string,
+  memoryContext?: string,
+  debugSaveDir?: string,
+  batchIndex?: number,
+): TranslationPromptResult {
+  const count = texts.length;
+
+  if (customTemplate) {
+    const arrayText = JSON.stringify(texts);
+    const rawText = texts.join('\n');
+    const content = customTemplate
+      .replace(/"\{\{TEXT\}\}"/g, arrayText)
+      .replace(/\{\{TEXT\}\}/g, rawText)
+      .replace(/\{\{COUNT\}\}/g, String(count))
+      .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
+
+    let prompt = `## User Translation Rules\n${content}\n`;
+
+    if (memoryContext) {
+      prompt += formatMemoryContextMarkdown(memoryContext);
+    }
+
+    console.log('[TextSplitter] DeepSeek custom prompt (single message), format: json');
+    savePromptDebug(debugSaveDir, batchIndex, prompt);
+    return { prompt, responseFormat: 'json' };
+  }
+
+  const systemPrompt = `# Subtitle Translation Prompt
+
+## Task
+Dịch các dòng subtitle sau sang tiếng **${targetLanguage}**.
+
+## Output Format
+- **Type:** JSON
+- **Encoding:** UTF-8
+- **Strict JSON Only:** KHÔNG markdown, KHÔNG \`\`\`json, KHÔNG text thừa.
+
+## Success Response Schema
+\`\`\`json
+{
+  "status": "success",
+  "data": {
+    "translations": [
+      { "index": 1, "translated": "..." }
+    ],
+    "summary": {
+      "total_sentences": <số_lượng>,
+      "input_count": <số_lượng>,
+      "output_count": <số_lượng>,
+      "match": true,
+      "language_style": "casual"
+    }
+  }
+}
+\`\`\`
+
+## Error Response Schema
+\`\`\`json
+{
+  "status": "error",
+  "error": {
+    "code": "ERROR_PROCESSING_FAILED",
+    "message": "..."
+  }
+}
+\`\`\`
+
+## Critical Rules
+1. translations phải có CHÍNH XÁC số object bằng số dòng input, index từ 1, không thiếu, không trùng.
+2. Mỗi câu input tương ứng đúng 1 câu translated — KHÔNG gộp, KHÔNG tách câu.
+3. MỖI CÂU INPUT = 1 OBJECT OUTPUT. Index phải khớp tuyệt đối.
+`;
+
+  const sourcePayload = texts.map((text, i) => ({ index: i + 1, text }));
+  let userPrompt = `Dịch **${count}** dòng subtitle sau sang tiếng **${targetLanguage}**:
+
+## Source Text
+\`\`\`json
+${JSON.stringify(sourcePayload, null, 2)}
+\`\`\``;
+
+  if (memoryContext) {
+    userPrompt += formatMemoryContextMarkdown(memoryContext);
+  }
+
+  console.log('[TextSplitter] DeepSeek default prompt (system+user), format: json');
+  savePromptDebug(debugSaveDir, batchIndex, `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userPrompt}`);
+  return { prompt: userPrompt, systemPrompt, responseFormat: 'json' };
 }
 
 function savePromptDebug(debugSaveDir?: string, batchIndex?: number, prompt?: string): void {

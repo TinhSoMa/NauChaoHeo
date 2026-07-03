@@ -1080,6 +1080,17 @@ export function initDatabase(): void {
     console.error('[Database] Proxies unique constraint migration failed:', e);
   }
 
+  // Create deepseek_config table - lưu API key và model mặc định cho DeepSeek
+  // Chỉ có 1 dòng duy nhất (id = 1)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deepseek_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      api_key TEXT,
+      default_model TEXT NOT NULL DEFAULT 'deepseek-v4-flash',
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
   // Chỉ có 1 dòng duy nhất (id = 1)
   db.exec(`

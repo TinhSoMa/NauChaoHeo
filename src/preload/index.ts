@@ -13,6 +13,7 @@ import { appLogsApi, AppLogsAPI } from './appLogsApi'
 import { captionDefaultsApi, CaptionDefaultsAPI } from './captionDefaultsApi'
 import { grokUiApi, GrokUiAPI } from './grokUiApi'
 import { downloaderApi, DownloaderAPI } from './downloaderApi'
+import { createDeepSeekAPI, DeepSeekAPI } from './deepseekApi'
 import { shutdownApi, ShutdownAPI } from './shutdownApi'
 import { capcutTtsSecretsApi, CapcutTtsSecretsAPI } from './capcutTtsSecretsApi'
 import { createOpenRouterAPI, OpenRouterAPI } from './openrouterApi'
@@ -93,6 +94,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // OpenRouter API
   openRouter: createOpenRouterAPI(),
+
+  // DeepSeek API
+  deepSeek: createDeepSeekAPI(),
 })
 
 // Declare types for the exposed API
@@ -124,6 +128,7 @@ declare global {
       shutdown: ShutdownAPI
       capcutTtsSecrets: CapcutTtsSecretsAPI
       openRouter: OpenRouterAPI
+      deepSeek: DeepSeekAPI
     }
   }
 }

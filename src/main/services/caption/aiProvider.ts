@@ -1,4 +1,4 @@
-export type TranslationTransport = 'api' | 'impit' | 'grok_ui' | 'gemini_webapi_queue' | 'openrouter';
+export type TranslationTransport = 'api' | 'impit' | 'grok_ui' | 'gemini_webapi_queue' | 'openrouter' | 'deepseek';
 
 export interface AIProviderResult {
   success: boolean
@@ -11,8 +11,11 @@ export interface AIProviderResult {
 
 export interface AIProviderParams {
   prompt: string
+  systemPrompt?: string
   model: string
   signal?: AbortSignal
+  debugSaveDir?: string
+  batchIndex?: number
 }
 
 export interface AIProvider {

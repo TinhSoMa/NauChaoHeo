@@ -881,6 +881,7 @@ export function buildProjectSettingsMirror(settings: CaptionProjectSettingsValue
     step3Translate: {
       geminiModel: settings.geminiModel,
       openrouterModel: settings.openrouterModel,
+      deepseekModel: settings.deepseekModel,
       translateMethod: settings.translateMethod,
     },
     step4Tts: {

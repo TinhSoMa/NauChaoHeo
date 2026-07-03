@@ -1254,6 +1254,7 @@ export function useCaptionSettings() {
   const [inputType, setInputType] = useState<InputType>(DEFAULT_INPUT_TYPE);
   const [geminiModel, setGeminiModel] = useState<string>(DEFAULT_GEMINI_MODEL);
   const [openrouterModel, setOpenrouterModel] = useState<string>('');
+  const [deepseekModel, setDeepseekModel] = useState<string>('');
   const [voice, setVoiceState] = useState(DEFAULT_VOICE);
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
@@ -1338,7 +1339,7 @@ export function useCaptionSettings() {
   }, []);
 
   const [enabledSteps, setEnabledSteps] = useState<Set<Step>>(new Set([1, 2, 3, 4, 6, 7]));
-  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter'>('api');
+  const [translateMethod, setTranslateMethod] = useState<'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter' | 'deepseek'>('api');
   const [captionContextBatchCount, setCaptionContextBatchCountState] = useState<number>(3);
   const setCaptionContextBatchCount = useCallback((value: number) => {
     setCaptionContextBatchCountState(Number.isFinite(value) ? clamp(Math.round(value), 1, 20) : 3);
@@ -1983,6 +1984,7 @@ export function useCaptionSettings() {
       inputType,
       geminiModel,
       openrouterModel,
+      deepseekModel,
       translateMethod,
       captionContextBatchCount,
       voice,
@@ -2088,6 +2090,7 @@ export function useCaptionSettings() {
       inputType,
       geminiModel,
       openrouterModel,
+      deepseekModel,
       translateMethod,
       captionContextBatchCount,
       voice,
@@ -2128,8 +2131,9 @@ export function useCaptionSettings() {
     if (saved.inputType) setInputType(saved.inputType);
     if (saved.geminiModel) setGeminiModel(saved.geminiModel);
     if (saved.openrouterModel) setOpenrouterModel(saved.openrouterModel);
+    if (saved.deepseekModel) setDeepseekModel(saved.deepseekModel);
     if (saved.translateMethod) {
-      setTranslateMethod(saved.translateMethod as 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter');
+      setTranslateMethod(saved.translateMethod as 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter' | 'deepseek');
     }
     if (typeof saved.captionContextBatchCount === 'number') setCaptionContextBatchCount(saved.captionContextBatchCount);
     if (saved.voice) setVoice(saved.voice);
@@ -2505,6 +2509,7 @@ export function useCaptionSettings() {
     inputType, setInputType,
     geminiModel, setGeminiModel,
     openrouterModel, setOpenrouterModel,
+    deepseekModel, setDeepseekModel,
     translateMethod, setTranslateMethod,
     captionContextBatchCount, setCaptionContextBatchCount,
     voice, setVoice,

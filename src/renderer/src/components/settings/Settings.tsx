@@ -37,6 +37,7 @@ import { QueueMonitorSettings } from './QueueMonitorSettings';
 import { DebugLogsSettings } from './DebugLogsSettings';
 import { AutoShutdownSettings } from './AutoShutdownSettings';
 import { OpenRouterDetail } from './OpenRouterDetail';
+import { DeepSeekDetail } from './DeepSeekDetail';
 import { BackButton } from './BackButton';
 
 // Menu items configuration
@@ -119,6 +120,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Quản lý API keys, models và cấu hình OpenRouter',
     icon: Globe
   },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    desc: 'Cấu hình API key và models cho DeepSeek',
+    icon: Globe
+  },
 ];
 
 export function Settings() {
@@ -157,6 +164,7 @@ export function Settings() {
       {activeTab === 'debugLogs' && <DebugLogsSettings />}
       {activeTab === 'autoShutdown' && <AutoShutdownSettings />}
       {activeTab === 'openrouter' && <OpenRouterDetail />}
+      {activeTab === 'deepseek' && <DeepSeekDetail />}
     </div>
   );
 }

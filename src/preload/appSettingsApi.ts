@@ -86,6 +86,8 @@ export interface AppSettings {
     xSsDp: string | null;
     extraHeaders: Record<string, string> | null;
   };
+  deepseekApiKey: string | null;
+  deepseekDefaultModel: string;
 }
 
 export interface GrokUiProfileConfig {

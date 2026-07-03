@@ -1031,6 +1031,7 @@ export function CaptionTranslator() {
     FALLBACK_GEMINI_MODELS
   );
   const [openrouterModels, setOpenrouterModels] = useState<OpenRouterModel[]>([]);
+  const [deepseekModels, setDeepseekModels] = useState<{ id: string }[]>([]);
 
   useEffect(() => {
     let active = true
@@ -1053,12 +1054,40 @@ export function CaptionTranslator() {
     return () => { active = false }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const cfgRes = await window.electronAPI.deepSeek.getConfig()
+        if (!active || !cfgRes.success || !cfgRes.data) return
+        const apiKey = cfgRes.data.apiKey
+        if (!apiKey) return
+        const modelsRes = await window.electronAPI.deepSeek.listModels(apiKey)
+        if (!active) return
+        const models = (modelsRes.success && Array.isArray(modelsRes.data)) ? modelsRes.data : []
+        setDeepseekModels(models)
+        if (!settings.deepseekModel && models.length > 0) {
+          settings.setDeepseekModel(cfgRes.data.defaultModel || models[0].id)
+        }
+      } catch { /* silent */ }
+    }
+    void load()
+    return () => { active = false }
+  }, [])
+
   // Auto-select OpenRouter default when switching method and none selected
   useEffect(() => {
     if (settings.translateMethod === 'openrouter' && !settings.openrouterModel && openrouterModels.length > 0) {
       settings.setOpenrouterModel(openrouterModels[0].id)
     }
   }, [settings.translateMethod, openrouterModels])
+
+  // Auto-select DeepSeek default when switching method and none selected
+  useEffect(() => {
+    if (settings.translateMethod === 'deepseek' && !settings.deepseekModel && deepseekModels.length > 0) {
+      settings.setDeepseekModel(deepseekModels[0].id)
+    }
+  }, [settings.translateMethod, deepseekModels])
 
   const [ttsVoiceOptions, setTtsVoiceOptions] = useState<TtsUiVoiceOption[]>(() =>
     ensureVoiceOptionExists(FALLBACK_TTS_VOICES, settings.voice)
@@ -5334,7 +5363,9 @@ export function CaptionTranslator() {
       { key: 'Input', value: settings.inputType === 'draft' ? 'Draft' : 'SRT' },
       { key: 'Dịch', value: settings.translateMethod === 'api'
         ? `${settings.translateMethod?.toUpperCase() || 'API'} / ${settings.geminiModel}`
-        : `${(settings.translateMethod || 'api').toUpperCase()}` },
+        : settings.translateMethod === 'deepseek'
+          ? `DEEPSEEK / ${settings.deepseekModel || settings.geminiModel}`
+          : `${(settings.translateMethod || 'api').toUpperCase()}` },
       {
         key: 'TTS',
         value: isCapCutVoiceSelected
@@ -7777,6 +7808,12 @@ export function CaptionTranslator() {
                 onChange={() => settings.setTranslateMethod('openrouter')}
                 name="translateMethod"
               />
+              <RadioButton
+                label="DeepSeek"
+                checked={settings.translateMethod === 'deepseek'}
+                onChange={() => settings.setTranslateMethod('deepseek')}
+                name="translateMethod"
+              />
             </div>
             <div className={styles.inputGroup}>
               {settings.translateMethod === 'openrouter' ? (
@@ -7788,6 +7825,27 @@ export function CaptionTranslator() {
                     onChange={(id) => settings.setOpenrouterModel(id)}
                     placeholder="Chọn OpenRouter model..."
                   />
+                </>
+              ) : settings.translateMethod === 'deepseek' ? (
+                <>
+                  <label className={styles.label}>DeepSeek model</label>
+                  <select
+                    value={settings.deepseekModel}
+                    onChange={(e) => settings.setDeepseekModel(e.target.value)}
+                    className={styles.select}
+                    disabled={deepseekModels.length === 0}
+                    style={deepseekModels.length === 0 ? { opacity: 0.4 } : undefined}
+                  >
+                    {deepseekModels.length > 0 ? (
+                      deepseekModels.map((m: { id: string }) => (
+                        <option key={m.id} value={m.id}>
+                          {m.id}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Chưa có model — nhập API key ở cài đặt DeepSeek</option>
+                    )}
+                  </select>
                 </>
               ) : (
                 <>
@@ -7826,7 +7884,9 @@ export function CaptionTranslator() {
                     ? 'Grok UI dùng Grok3API qua trình duyệt, không phụ thuộc Gemini model.'
                     : settings.translateMethod === 'openrouter'
                       ? 'OpenRouter dùng model mặc định từ cài đặt OpenRouter. Tự động xoay API key khi có nhiều key.'
-                      : 'API sẽ dùng model đã chọn để dịch batch.'}
+                      : settings.translateMethod === 'deepseek'
+                        ? 'DeepSeek dùng model từ danh sách API, hỗ trợ context caching.'
+                        : 'API sẽ dùng model đã chọn để dịch batch.'}
             >
               {settings.translateMethod === 'impit'
                 ? 'Impit: bỏ qua model'
@@ -7836,7 +7896,9 @@ export function CaptionTranslator() {
                     ? 'Grok UI: qua browser'
                     : settings.translateMethod === 'openrouter'
                       ? 'OpenRouter: model từ cài đặt'
-                      : 'API: dùng model đã chọn'}
+                      : settings.translateMethod === 'deepseek'
+                        ? 'DeepSeek: cache + model từ API'
+                        : 'API: dùng model đã chọn'}
             </div>
           </div>
           <div className={styles.stepCard}>
@@ -7857,6 +7919,8 @@ export function CaptionTranslator() {
                         ? 'gemini_webapi_queue'
                         : settings.translateMethod === 'grok_ui'
                           ? 'grok_ui'
+                          : settings.translateMethod === 'deepseek'
+                            ? 'deepseek'
                         : 'api'
                   )).toUpperCase()}
                 </span>
@@ -7872,6 +7936,8 @@ export function CaptionTranslator() {
                         ? 'queue_rr'
                         : settings.translateMethod === 'grok_ui'
                           ? 'grok_ui'
+                          : settings.translateMethod === 'deepseek'
+                            ? 'deepseek_cache'
                         : 'rotation'
                   )}
                 </span>

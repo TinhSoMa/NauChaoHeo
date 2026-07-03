@@ -297,7 +297,8 @@ interface UseCaptionProcessingProps {
     crop?: VideoCropSettings;
     portraitForegroundCropPercent?: number;
     processingMode?: ProcessingMode;
-    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter';
+    translateMethod?: 'api' | 'impit' | 'gemini_webapi_queue' | 'grok_ui' | 'openrouter' | 'deepseek';
+    deepseekModel?: string;
     captionContextBatchCount?: number;
     thumbnailFrameTimeSec?: number | null;
     thumbnailDurationSec?: number;
@@ -3579,6 +3580,7 @@ export function useCaptionProcessing({
       },
       step3Translate: {
         geminiModel: cfg.geminiModel,
+        deepseekModel: cfg.deepseekModel,
         translateMethod: cfg.translateMethod || 'api',
       },
       step4Tts: {
@@ -3693,6 +3695,7 @@ export function useCaptionProcessing({
       subtitleFontSizeRel: cfg.subtitleFontSizeRel,
       inputType: inputType as 'srt' | 'draft',
       geminiModel: cfg.geminiModel,
+      deepseekModel: cfg.deepseekModel,
       translateMethod: cfg.translateMethod,
       voice: cfg.voice,
       rate: cfg.rate,
@@ -4323,7 +4326,7 @@ export function useCaptionProcessing({
             totalBatches,
             linesPerBatch,
             targetLanguage: 'Vietnamese',
-            model: cfg.geminiModel,
+            model: cfg.translateMethod === 'deepseek' ? (cfg.deepseekModel || cfg.geminiModel) : cfg.geminiModel,
             translateMethod: cfg.translateMethod,
             projectId: projectId || undefined,
             sourcePath: resolveSourcePath(currentPath),

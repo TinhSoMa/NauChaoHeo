@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ASSStyleConfig } from '../../shared/types/caption';
 import type { GrokUiProfileConfig } from '../../shared/types/grokUi';
+import { DEEPSEEK_DEFAULT_MODEL } from '../../shared/types/deepseek';
 
 // ============================================
 // TYPES
@@ -68,6 +69,10 @@ export interface AppSettings {
   openrouterDefaultModel: string;
   openrouterSiteUrl: string | null;
   openrouterAppTitle: string | null;
+
+  // DeepSeek
+  deepseekApiKey: string | null;
+  deepseekDefaultModel: string;
 }
 
 export interface CapcutTtsSecrets {
@@ -677,6 +682,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   openrouterDefaultModel: 'openai/gpt-4o-mini',
   openrouterSiteUrl: null,
   openrouterAppTitle: null,
+
+  deepseekApiKey: null,
+  deepseekDefaultModel: DEEPSEEK_DEFAULT_MODEL,
 };
 
 // ============================================
