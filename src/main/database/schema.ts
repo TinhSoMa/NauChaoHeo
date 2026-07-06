@@ -1446,5 +1446,24 @@ export function initDatabase(): void {
     console.error('[Database] Ensure shared config failed:', e);
   }
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens)');
+  // Thumbnail generator history
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS thumbnail_generation_history (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL CHECK(type IN ('text-to-image','image-to-image')),
+      original_prompt TEXT NOT NULL,
+      final_prompt TEXT,
+      enhanced_prompt INTEGER DEFAULT 0,
+      category TEXT, mood TEXT, theme TEXT, primary_color TEXT,
+      include_text INTEGER DEFAULT 0,
+      text_style TEXT, thumbnail_style TEXT, custom_prompt TEXT,
+      input_image_path TEXT,
+      input_image_info TEXT,
+      images_generated INTEGER DEFAULT 0,
+      image_paths TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens, thumbnail_generation_history)');
 }

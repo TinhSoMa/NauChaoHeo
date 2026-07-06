@@ -17,6 +17,7 @@ import { createDeepSeekAPI, DeepSeekAPI } from './deepseekApi'
 import { shutdownApi, ShutdownAPI } from './shutdownApi'
 import { capcutTtsSecretsApi, CapcutTtsSecretsAPI } from './capcutTtsSecretsApi'
 import { createOpenRouterAPI, OpenRouterAPI } from './openrouterApi'
+import { createThumbnailGeneratorAPI, ThumbnailGeneratorAPI } from './thumbnailGeneratorApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -97,6 +98,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // DeepSeek API
   deepSeek: createDeepSeekAPI(),
+
+  // Thumbnail Generator API
+  thumbnailGenerator: createThumbnailGeneratorAPI(),
 })
 
 // Declare types for the exposed API
@@ -129,6 +133,7 @@ declare global {
       capcutTtsSecrets: CapcutTtsSecretsAPI
       openRouter: OpenRouterAPI
       deepSeek: DeepSeekAPI
+      thumbnailGenerator: ThumbnailGeneratorAPI
     }
   }
 }

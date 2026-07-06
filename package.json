@@ -63,6 +63,7 @@
     "lucide-react": "^0.562.0",
     "node-fetch": "^2.7.0",
     "nodepub": "^3.2.1",
+    "openai": "^6.45.0",
     "process-nextick-args": "^2.0.1",
     "proxifly": "^2.0.4",
     "react": "^19.2.3",
