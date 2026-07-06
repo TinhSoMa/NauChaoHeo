@@ -1402,6 +1402,7 @@ declare global {
       
       dialog: {
         showOpenDialog: (options: any) => Promise<string[] | undefined>;
+        getImageDataUrl: (filePath: string) => Promise<string>;
       };
 
       // Gemini API

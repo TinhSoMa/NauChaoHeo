@@ -17,7 +17,7 @@ export function ThumbnailGeneratorPage() {
 
   if (isHistoryView) {
     return (
-      <div className="min-h-full p-8">
+      <div className="min-h-full p-4">
         <ThumbnailHistory />
       </div>
     )
@@ -35,7 +35,7 @@ export function ThumbnailGeneratorPage() {
   }
 
   return (
-    <div className="min-h-full p-8">
+    <div className="min-h-full p-4">
       {renderStep()}
     </div>
   )

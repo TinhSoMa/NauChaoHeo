@@ -38,7 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   dialog: {
-    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options)
+    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options),
+    getImageDataUrl: (filePath: string) => ipcRenderer.invoke('image:getDataUrl', filePath)
   },
 
   // Gemini API
@@ -111,7 +112,8 @@ declare global {
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void
       invoke: (channel: string, data?: unknown) => Promise<unknown>
       dialog: {
-        showOpenDialog: (options: any) => Promise<string[] | undefined>
+        showOpenDialog: (options: any) => Promise<string[] | undefined>,
+        getImageDataUrl: (filePath: string) => Promise<string>
       }
       gemini: GeminiAPI
       caption: CaptionAPI

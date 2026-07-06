@@ -39,6 +39,11 @@ export interface ThumbnailStore {
   totalHistory: number
   hasMoreHistory: boolean
   historyPage: number
+  itemsPerPage: number
+  sortBy: 'newest' | 'oldest'
+  selectedIds: Set<string>
+  isSelectMode: boolean
+  isDownloadingZip: boolean
 
   // Settings
   outputDir: string
@@ -66,6 +71,15 @@ export interface ThumbnailStore {
   clearHistory: () => Promise<void>
   loadSettings: () => Promise<void>
   updateSettings: (outputDir: string) => Promise<void>
+
+  // History selection
+  toggleSelectId: (id: string) => void
+  toggleSelectAll: () => void
+  clearSelection: () => void
+  setSortBy: (sort: 'newest' | 'oldest') => void
+  setItemsPerPage: (n: number) => void
+  setHistoryPage: (page: number) => void
+  bulkExportSelected: () => Promise<void>
 }
 
 interface QuestionDef {
@@ -89,15 +103,15 @@ const DEFAULT_ANSWERS: ThumbnailAnswers = {
 }
 
 const DEFAULT_QUESTIONS: QuestionDef[] = [
-  { key: 'category', title: 'What category is your content?', options: ['Tech', 'Gaming', 'Vlog', 'Tutorial', 'Entertainment', 'News'] },
-  { key: 'mood', title: 'What mood do you want to convey?', options: ['Excited', 'Serious', 'Fun', 'Professional', 'Mysterious', 'Energetic'] },
-  { key: 'theme', title: 'What theme do you prefer?', options: ['Bright', 'Dark', 'Colorful', 'Minimalist', 'Gradient', 'Neon'] },
-  { key: 'primaryColor', title: 'Choose a primary color', options: ['Red', 'Blue', 'Green', 'Purple', 'Orange', 'Yellow', 'Pink', 'Cyan'] },
-  { key: 'includeText', title: 'Include text in thumbnail?', options: ['Yes', 'No'] },
-  { key: 'textStyle', title: 'What text style do you prefer?', options: ['Bold', 'Minimal', 'Fancy', 'Outlined', 'Shadow', 'Gradient'] },
-  { key: 'thumbnailStyle', title: 'What thumbnail style do you want?', options: ['Photo-realistic', 'Cartoonish', 'Minimalistic', 'Artistic', 'Modern', 'Vintage'] },
-  { key: 'customPrompt', title: 'Any additional requirements?', isTextInput: true, placeholder: 'Optional: Add any specific details or requirements...' },
-  { key: 'imageCount', title: 'How many thumbnails do you want?', options: ['1', '2'] },
+  { key: 'category', title: 'Thể loại nội dung của bạn là gì?', options: ['Công Nghệ', 'Game', 'Vlog', 'Hướng Dẫn', 'Giải Trí', 'Tin Tức'] },
+  { key: 'mood', title: 'Bạn muốn truyền tải tâm trạng gì?', options: ['Phấn Khích', 'Nghiêm Túc', 'Vui Vẻ', 'Chuyên Nghiệp', 'Bí Ẩn', 'Năng Động'] },
+  { key: 'theme', title: 'Bạn thích chủ đề nào?', options: ['Sáng Sủa', 'Tối', 'Nhiều Màu', 'Tối Giản', 'Chuyển Màu', 'Neon'] },
+  { key: 'primaryColor', title: 'Chọn màu chủ đạo', options: ['Đỏ', 'Xanh Dương', 'Xanh Lá', 'Tím', 'Cam', 'Vàng', 'Hồng', 'Xanh Cyan'] },
+  { key: 'includeText', title: 'Có chữ trong thumbnail không?', options: ['Có', 'Không'] },
+  { key: 'textStyle', title: 'Bạn thích kiểu chữ nào?', options: ['Đậm', 'Tối Giản', 'Cầu Kỳ', 'Viền', 'Đổ Bóng', 'Chuyển Màu'] },
+  { key: 'thumbnailStyle', title: 'Bạn muốn phong cách thumbnail nào?', options: ['Siêu Thực', 'Hoạt Hình', 'Tối Giản', 'Nghệ Thuật', 'Hiện Đại', 'Cổ Điển'] },
+  { key: 'customPrompt', title: 'Có yêu cầu bổ sung nào không?', isTextInput: true, placeholder: 'Tùy chọn: Thêm chi tiết hoặc yêu cầu cụ thể...' },
+  { key: 'imageCount', title: 'Bạn muốn tạo bao nhiêu thumbnail?', options: ['1', '2'] },
 ]
 
 export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
@@ -122,6 +136,11 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
   totalHistory: 0,
   hasMoreHistory: false,
   historyPage: 0,
+  itemsPerPage: 12,
+  sortBy: 'newest',
+  selectedIds: new Set<string>(),
+  isSelectMode: false,
+  isDownloadingZip: false,
 
   outputDir: '',
 
@@ -218,10 +237,10 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
           currentStep: 'results',
         })
       } else {
-        set({ isGenerating: false, error: result.error || 'Generation failed', currentStep: 'results' })
+        set({ isGenerating: false, error: result.error || 'Tạo thất bại', currentStep: 'results' })
       }
     } catch (err: any) {
-      set({ isGenerating: false, error: err.message || 'Generation failed', currentStep: 'results' })
+      set({ isGenerating: false, error: err.message || 'Tạo thất bại', currentStep: 'results' })
     }
   },
 
@@ -242,7 +261,7 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
 
   fetchHistory: async (page = 0) => {
     try {
-      const limit = 20
+      const limit = get().itemsPerPage
       const offset = page * limit
       const result = await window.electronAPI.thumbnailGenerator.getHistory(limit, offset)
       if (result.success && result.data) {
@@ -270,9 +289,59 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
   clearHistory: async () => {
     try {
       await window.electronAPI.thumbnailGenerator.clearHistory()
-      set({ history: [], totalHistory: 0, hasMoreHistory: false, historyPage: 0 })
+      set({ history: [], totalHistory: 0, hasMoreHistory: false, historyPage: 0, selectedIds: new Set() })
     } catch (err) {
       console.error('Clear history failed:', err)
+    }
+  },
+
+  toggleSelectId: (id) => set((state) => {
+    const next = new Set(state.selectedIds)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return { selectedIds: next, isSelectMode: next.size > 0 }
+  }),
+
+  toggleSelectAll: () => set((state) => {
+    const allSelected = state.history.length > 0 && state.history.every((e: any) => state.selectedIds.has(e.id))
+    if (allSelected) return { selectedIds: new Set(), isSelectMode: false }
+    return { selectedIds: new Set(state.history.map((e: any) => e.id)), isSelectMode: true }
+  }),
+
+  clearSelection: () => set({ selectedIds: new Set(), isSelectMode: false }),
+
+  setSortBy: (sort) => set({ sortBy: sort }),
+  setItemsPerPage: (n) => { set({ itemsPerPage: n, historyPage: 0 }); get().fetchHistory(0) },
+  setHistoryPage: (page) => { set({ historyPage: page }); get().fetchHistory(page) },
+
+  bulkExportSelected: async () => {
+    const { selectedIds, history } = get()
+    const selectedEntries = history.filter((e: any) => selectedIds.has(e.id))
+    const allPaths = selectedEntries.flatMap((e: any) => e.imagePaths || [])
+    if (allPaths.length === 0) return
+
+    set({ isDownloadingZip: true })
+    try {
+      const JSZip = (await import('jszip')).default
+      const zip = new JSZip()
+      await Promise.all(allPaths.map(async (path: string) => {
+        try {
+          const resp = await fetch(path.startsWith('file://') ? path : `file://${path}`)
+          const blob = await resp.blob()
+          zip.file(path.split(/[\\/]/).pop() || `thumb-${Date.now()}.png`, blob)
+        } catch { /* skip failed */ }
+      }))
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `selected-thumbnails-${Date.now()}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+    } catch (err) {
+      console.error('Bulk export failed:', err)
+    } finally {
+      set({ isDownloadingZip: false })
     }
   },
 
