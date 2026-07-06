@@ -21,6 +21,10 @@ export function registerPromptHandlers(): void {
     return PromptService.update(id, data);
   });
 
+  ipcMain.handle(PROMPT_IPC_CHANNELS.UPDATE_IN_PLACE, async (_event, { id, ...data }) => {
+    return PromptService.updateInPlace(id, data);
+  });
+
   ipcMain.handle(PROMPT_IPC_CHANNELS.DELETE, async (_event, id: string) => {
     return PromptService.delete(id);
   });

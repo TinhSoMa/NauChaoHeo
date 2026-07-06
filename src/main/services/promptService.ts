@@ -178,6 +178,50 @@ export class PromptService {
       });
   }
 
+  static updateInPlace(id: string, data: Partial<CreatePromptDTO>): TranslationPrompt {
+    const existing = this.getById(id);
+    if (!existing) throw new Error(`Prompt with id ${id} not found`);
+
+    const now = Date.now();
+    const promptType = normalizePromptType(data.promptType, data.name ?? existing.name);
+    const languageBucket = toLanguageBucket(
+      data.sourceLang ?? existing.sourceLang,
+      data.targetLang ?? existing.targetLang
+    );
+
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE prompts SET
+        name = ?,
+        description = ?,
+        source_lang = ?,
+        target_lang = ?,
+        content = ?,
+        prompt_type = ?,
+        language_bucket = ?,
+        group_id = ?,
+        updated_at = ?
+      WHERE id = ?
+    `).run(
+      data.name ?? existing.name,
+      Object.prototype.hasOwnProperty.call(data, 'description')
+        ? (data.description ?? null)
+        : existing.description,
+      data.sourceLang ?? existing.sourceLang,
+      data.targetLang ?? existing.targetLang,
+      data.content ?? existing.content,
+      promptType,
+      languageBucket,
+      Object.prototype.hasOwnProperty.call(data, 'groupId')
+        ? (data.groupId ?? null)
+        : existing.groupId,
+      now,
+      id
+    );
+
+    return this.getById(id)!;
+  }
+
   static delete(id: string): boolean {
     const db = getDatabase();
     const existing = this.getById(id);

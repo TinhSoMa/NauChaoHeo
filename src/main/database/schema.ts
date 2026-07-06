@@ -209,7 +209,32 @@ function ensurePromptHierarchySchema(dbRef: Database.Database): void {
   dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompts_language_bucket ON prompts(language_bucket);');
   dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompts_family_id ON prompts(family_id);');
   dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompts_group_id ON prompts(group_id);');
-  dbRef.exec('CREATE INDEX IF NOT EXISTS idx_prompt_groups_bucket ON prompt_groups(language_bucket, normalized_name);');
+
+  // Deduplicate prompt_groups before creating unique index
+  const dedupGroups = dbRef.prepare(`
+    SELECT language_bucket, normalized_name, COUNT(*) AS cnt
+    FROM prompt_groups
+    GROUP BY language_bucket, normalized_name
+    HAVING cnt > 1
+  `).all() as Array<{ language_bucket: string; normalized_name: string; cnt: number }>;
+
+  for (const dup of dedupGroups) {
+    const dups = dbRef.prepare(
+      'SELECT id FROM prompt_groups WHERE language_bucket = ? AND normalized_name = ? ORDER BY rowid ASC'
+    ).all(dup.language_bucket, dup.normalized_name) as Array<{ id: string }>;
+
+    if (dups.length <= 1) continue;
+    const keepId = dups[0].id;
+    const removeIds = dups.slice(1).map((r) => r.id);
+
+    for (const removeId of removeIds) {
+      dbRef.prepare('UPDATE prompts SET group_id = ? WHERE group_id = ?').run(keepId, removeId);
+      dbRef.prepare('DELETE FROM prompt_groups WHERE id = ?').run(removeId);
+    }
+  }
+
+  dbRef.exec('DROP INDEX IF EXISTS idx_prompt_groups_bucket');
+  dbRef.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_groups_unique ON prompt_groups(language_bucket, normalized_name);');
 }
 
 function backfillPromptHierarchy(dbRef: Database.Database): void {
@@ -1080,16 +1105,28 @@ export function initDatabase(): void {
     console.error('[Database] Proxies unique constraint migration failed:', e);
   }
 
-  // Create deepseek_config table - lưu API key và model mặc định cho DeepSeek
+  // Create deepseek_config table - lưu API key, model mặc định, system prompt cho DeepSeek
   // Chỉ có 1 dòng duy nhất (id = 1)
   db.exec(`
     CREATE TABLE IF NOT EXISTS deepseek_config (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       api_key TEXT,
       default_model TEXT NOT NULL DEFAULT 'deepseek-v4-flash',
+      system_prompt TEXT,
       updated_at INTEGER NOT NULL
     );
   `);
+
+  // Migration: add system_prompt column if missing (existing DB before v1.7.1)
+  try {
+    const colInfo = db.prepare(`PRAGMA table_info(deepseek_config)`).all() as Array<{ name: string }>;
+    if (!colInfo.some((col) => col.name === 'system_prompt')) {
+      db.exec(`ALTER TABLE deepseek_config ADD COLUMN system_prompt TEXT`);
+      console.log('[Database] Migration: added system_prompt column to deepseek_config');
+    }
+  } catch (e) {
+    console.error('[Database] Migration: failed to add system_prompt column:', e);
+  }
 
   // Create gemini_cookie table - CHỈ lưu cookie và các thông số cố định (KHÔNG lưu convId/respId/candId)
   // Chỉ có 1 dòng duy nhất (id = 1)

@@ -16,6 +16,7 @@ export interface PromptAPI {
   getById: (id: string) => Promise<TranslationPrompt | null>;
   create: (data: CreatePromptDTO) => Promise<TranslationPrompt>;
   update: (id: string, data: Partial<CreatePromptDTO>) => Promise<TranslationPrompt>;
+  updateInPlace: (id: string, data: Partial<CreatePromptDTO>) => Promise<TranslationPrompt>;
   delete: (id: string) => Promise<boolean>;
   setDefault: (id: string) => Promise<boolean>;
   getGroups: (languageBucket?: string) => Promise<PromptGroup[]>;
@@ -35,6 +36,8 @@ export const promptApi: PromptAPI = {
   create: (data: CreatePromptDTO) => ipcRenderer.invoke(PROMPT_IPC_CHANNELS.CREATE, data),
   update: (id: string, data: Partial<CreatePromptDTO>) => 
     ipcRenderer.invoke(PROMPT_IPC_CHANNELS.UPDATE, { id, ...data }),
+  updateInPlace: (id: string, data: Partial<CreatePromptDTO>) =>
+    ipcRenderer.invoke(PROMPT_IPC_CHANNELS.UPDATE_IN_PLACE, { id, ...data }),
   delete: (id: string) => ipcRenderer.invoke(PROMPT_IPC_CHANNELS.DELETE, id),
   setDefault: (id: string) => ipcRenderer.invoke(PROMPT_IPC_CHANNELS.SET_DEFAULT, id),
   getGroups: (languageBucket?: string) => ipcRenderer.invoke(PROMPT_IPC_CHANNELS.GET_GROUPS, { languageBucket }),

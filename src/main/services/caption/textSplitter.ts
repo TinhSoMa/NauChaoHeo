@@ -223,6 +223,7 @@ export function createDeepSeekPrompt(
   memoryContext?: string,
   debugSaveDir?: string,
   batchIndex?: number,
+  systemPromptOverride?: string,
 ): TranslationPromptResult {
   const count = texts.length;
 
@@ -235,7 +236,9 @@ export function createDeepSeekPrompt(
       .replace(/\{\{COUNT\}\}/g, String(count))
       .replace(/\{\{FILE_NAME\}\}/g, 'subtitle');
 
-    const systemPrompt = buildDeepSeekSystemPrompt();
+    const systemPrompt = systemPromptOverride
+      ? `${systemPromptOverride}\n\n## Target Language\nDịch sang tiếng **${targetLanguage}**.`
+      : buildDeepSeekSystemPrompt();
     let userPrompt = `## User Translation Rules\n${content}\n`;
 
     if (memoryContext) {
@@ -247,7 +250,9 @@ export function createDeepSeekPrompt(
     return { prompt: userPrompt, systemPrompt, responseFormat: 'json' };
   }
 
-  const systemPrompt = `# Subtitle Translation Prompt
+  const systemPrompt = systemPromptOverride
+    ? `${systemPromptOverride}\n\n## Target Language\nDịch sang tiếng **${targetLanguage}**.`
+    : `# Subtitle Translation Prompt
 
 ## Task
 Dịch các dòng subtitle sau sang tiếng **${targetLanguage}**.

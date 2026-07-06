@@ -1120,6 +1120,7 @@ interface PromptAPI {
   getById: (id: string) => Promise<any>;
   create: (data: CreatePromptDTO) => Promise<any>;
   update: (id: string, data: Partial<CreatePromptDTO>) => Promise<any>;
+  updateInPlace: (id: string, data: Partial<CreatePromptDTO>) => Promise<any>;
   delete: (id: string) => Promise<any>;
   setDefault: (id: string) => Promise<any>;
   getGroups: (languageBucket?: string) => Promise<PromptGroup[]>;
@@ -1387,6 +1388,9 @@ declare global {
     getConfig: () => Promise<any>;
     setConfig: (partial: any) => Promise<any>;
     listModels: (apiKey: string) => Promise<any>;
+    getSystemPrompt: () => Promise<{ success: boolean; data?: string; error?: string }>;
+    setSystemPrompt: (value: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+    resetSystemPrompt: () => Promise<{ success: boolean; data?: string; error?: string }>;
   }
 
   interface Window {

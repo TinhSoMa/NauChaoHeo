@@ -126,7 +126,7 @@ export async function listDeepSeekModels(
 export function getConfig(): DeepSeekConfig {
   const row = DeepSeekDatabase.get();
   if (row) {
-    return { apiKey: row.apiKey, defaultModel: row.defaultModel };
+    return { apiKey: row.apiKey, defaultModel: row.defaultModel, systemPrompt: row.systemPrompt };
   }
 
   // Migrate từ AppSettings nếu DB chưa có dữ liệu
@@ -134,8 +134,9 @@ export function getConfig(): DeepSeekConfig {
   const config: DeepSeekConfig = {
     apiKey: settings.deepseekApiKey ?? null,
     defaultModel: settings.deepseekDefaultModel || DEEPSEEK_DEFAULT_MODEL,
+    systemPrompt: DeepSeekDatabase.getDefaultSystemPrompt(),
   };
-  DeepSeekDatabase.upsert(config.apiKey, config.defaultModel);
+  DeepSeekDatabase.upsert(config.apiKey, config.defaultModel, config.systemPrompt);
   return config;
 }
 
@@ -144,5 +145,24 @@ export function setConfig(partial: Partial<DeepSeekConfig>): void {
   DeepSeekDatabase.upsert(
     partial.apiKey !== undefined ? partial.apiKey : current.apiKey,
     partial.defaultModel !== undefined ? partial.defaultModel : current.defaultModel,
+    partial.systemPrompt !== undefined ? partial.systemPrompt : current.systemPrompt,
   );
+}
+
+export function getSystemPrompt(): string {
+  const row = DeepSeekDatabase.get();
+  if (row?.systemPrompt) return row.systemPrompt;
+  return DeepSeekDatabase.getDefaultSystemPrompt();
+}
+
+export function setSystemPrompt(value: string): void {
+  const current = getConfig();
+  DeepSeekDatabase.upsert(current.apiKey, current.defaultModel, value);
+}
+
+export function resetSystemPrompt(): string {
+  const defaultPrompt = DeepSeekDatabase.getDefaultSystemPrompt();
+  const current = getConfig();
+  DeepSeekDatabase.upsert(current.apiKey, current.defaultModel, defaultPrompt);
+  return defaultPrompt;
 }

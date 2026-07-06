@@ -5,6 +5,9 @@ export interface DeepSeekAPI {
   getConfig: () => Promise<any>;
   setConfig: (partial: any) => Promise<any>;
   listModels: (apiKey: string) => Promise<any>;
+  getSystemPrompt: () => Promise<{ success: boolean; data?: string; error?: string }>;
+  setSystemPrompt: (value: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+  resetSystemPrompt: () => Promise<{ success: boolean; data?: string; error?: string }>;
 }
 
 export function createDeepSeekAPI(): DeepSeekAPI {
@@ -17,5 +20,14 @@ export function createDeepSeekAPI(): DeepSeekAPI {
 
     listModels: (apiKey: string) =>
       ipcRenderer.invoke(DEEPSEEK_IPC_CHANNELS.LIST_MODELS, apiKey),
+
+    getSystemPrompt: () =>
+      ipcRenderer.invoke(DEEPSEEK_IPC_CHANNELS.GET_SYSTEM_PROMPT),
+
+    setSystemPrompt: (value: string) =>
+      ipcRenderer.invoke(DEEPSEEK_IPC_CHANNELS.SET_SYSTEM_PROMPT, value),
+
+    resetSystemPrompt: () =>
+      ipcRenderer.invoke(DEEPSEEK_IPC_CHANNELS.RESET_SYSTEM_PROMPT),
   };
 }

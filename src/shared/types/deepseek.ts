@@ -5,11 +5,15 @@ export const DEEPSEEK_IPC_CHANNELS = {
   GET_CONFIG: 'deepseek:getConfig',
   SET_CONFIG: 'deepseek:setConfig',
   LIST_MODELS: 'deepseek:listModels',
+  GET_SYSTEM_PROMPT: 'deepseek:getSystemPrompt',
+  SET_SYSTEM_PROMPT: 'deepseek:setSystemPrompt',
+  RESET_SYSTEM_PROMPT: 'deepseek:resetSystemPrompt',
 };
 
 export interface DeepSeekConfig {
   apiKey: string | null;
   defaultModel: string;
+  systemPrompt: string;
 }
 
 export interface DeepSeekModelInfo {

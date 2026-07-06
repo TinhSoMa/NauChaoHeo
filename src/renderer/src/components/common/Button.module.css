@@ -75,6 +75,13 @@
   transform: translateY(-1px);
 }
 
+/* Sizes */
+.sm {
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+  gap: 4px;
+}
+
 /* Utilities */
 .fullWidth {
   width: 100%;

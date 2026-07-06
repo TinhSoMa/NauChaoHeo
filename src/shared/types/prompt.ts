@@ -90,6 +90,7 @@ export const PROMPT_IPC_CHANNELS = {
   GET_BY_ID: 'prompt:getById',
   CREATE: 'prompt:create',
   UPDATE: 'prompt:update',
+  UPDATE_IN_PLACE: 'prompt:updateInPlace',
   DELETE: 'prompt:delete',
   SET_DEFAULT: 'prompt:setDefault',
   GET_GROUPS: 'prompt:getGroups',

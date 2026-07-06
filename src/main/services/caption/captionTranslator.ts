@@ -19,6 +19,7 @@ import { type AIProvider } from './aiProvider';
 import { createGeminiProvider } from './providers/geminiProvider';
 import { createOpenRouterProvider } from './providers/openrouterProvider';
 import { createDeepSeekProvider } from './providers/deepseekProvider';
+import { getSystemPrompt } from '../deepseek/deepseekService.js';
 import { AppSettingsService } from '../appSettings';
 import { PromptService } from '../promptService';
 import { type KeyInfo } from '../../../shared/types/gemini';
@@ -325,11 +326,11 @@ async function translateBatch(
   stopSignal?: AbortSignal,
   memoryContext?: string,
   debugSaveDir?: string,
+  deepseekSystemPrompt?: string,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] Dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [transport: ${provider.transport}]`);
-
   const promptResult = provider.transport === 'deepseek'
-    ? createDeepSeekPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex)
+    ? createDeepSeekPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex, deepseekSystemPrompt)
     : createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
   const { prompt, systemPrompt } = promptResult;
 
@@ -1214,6 +1215,8 @@ export async function translateAll(
     await awaitProgressAckIfNeeded('batch_failed', report.batchIndex);
   };
 
+  const deepseekSystemPromptSnapshot = getSystemPrompt();
+
   // Dịch tuần tự từng batch (batch trước xong mới đến batch sau)
   const processBatch = async (batch: TextBatch, i: number, assignedKey?: { apiKey: string; keyInfo: KeyInfo }): Promise<void> => {
     assertNotStopped();
@@ -1354,6 +1357,7 @@ export async function translateAll(
                 () => shouldStopTranslation(runId),
                 stopAbortController.signal,
                 localMemoryContext,
+                deepseekSystemPromptSnapshot,
               );
 
       assertNotStopped();

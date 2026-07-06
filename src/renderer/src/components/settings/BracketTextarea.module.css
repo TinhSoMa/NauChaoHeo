@@ -1,0 +1,47 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+
+  --cm-string: #059669;
+  --cm-number: #2563eb;
+  --cm-keyword: #7c3aed;
+  --cm-property: #64748b;
+  --cm-bracket: var(--color-text-primary);
+  --cm-separator: var(--color-text-secondary);
+  --cm-comment: var(--color-text-secondary);
+  --cm-operator: var(--color-text-primary);
+}
+
+:global(html.dark) .container {
+  --cm-string: #34d399;
+  --cm-number: #60a5fa;
+  --cm-keyword: #a78bfa;
+  --cm-property: #94a3b8;
+}
+
+.container:focus-within {
+  border-color: var(--color-primary);
+}
+
+.container :global(.cm-editor) {
+  height: 100%;
+  min-height: 0;
+  background: transparent !important;
+}
+
+.container :global(.cm-scroller),
+.container :global(.cm-content) {
+  background: transparent !important;
+}
+
+.container :global(.cm-scroller) {
+  overscroll-behavior: contain;
+}

@@ -41,8 +41,10 @@
   },
   "homepage": "https://github.com/TinhSoMa/NauChaoHeo#readme",
   "dependencies": {
+    "@codemirror/lang-json": "^6.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@google/genai": "^1.49.0",
+    "@uiw/react-codemirror": "^4.25.10",
     "adm-zip": "^0.5.17",
     "axios": "^1.13.3",
     "better-sqlite3": "^12.6.2",

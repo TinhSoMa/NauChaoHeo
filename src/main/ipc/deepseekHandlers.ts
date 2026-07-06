@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { DEEPSEEK_IPC_CHANNELS } from '../../shared/types/deepseek';
 import type { DeepSeekConfig } from '../../shared/types/deepseek';
-import { getConfig, setConfig, listDeepSeekModels } from '../services/deepseek/deepseekService.js';
+import { getConfig, setConfig, listDeepSeekModels, getSystemPrompt, setSystemPrompt, resetSystemPrompt } from '../services/deepseek/deepseekService.js';
 
 interface IpcApiResponse<T = unknown> {
   success: boolean;
@@ -48,6 +48,45 @@ export function registerDeepSeekHandlers(): void {
         return { success: true, data: models };
       } catch (error) {
         console.error('[IPC] Lỗi deepseek:listModels:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    DEEPSEEK_IPC_CHANNELS.GET_SYSTEM_PROMPT,
+    async (): Promise<IpcApiResponse<string>> => {
+      try {
+        const prompt = getSystemPrompt();
+        return { success: true, data: prompt };
+      } catch (error) {
+        console.error('[IPC] Lỗi deepseek:getSystemPrompt:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    DEEPSEEK_IPC_CHANNELS.SET_SYSTEM_PROMPT,
+    async (_event, value: string): Promise<IpcApiResponse<string>> => {
+      try {
+        setSystemPrompt(value);
+        return { success: true, data: value };
+      } catch (error) {
+        console.error('[IPC] Lỗi deepseek:setSystemPrompt:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    DEEPSEEK_IPC_CHANNELS.RESET_SYSTEM_PROMPT,
+    async (): Promise<IpcApiResponse<string>> => {
+      try {
+        const prompt = resetSystemPrompt();
+        return { success: true, data: prompt };
+      } catch (error) {
+        console.error('[IPC] Lỗi deepseek:resetSystemPrompt:', error);
         return { success: false, error: String(error) };
       }
     }
