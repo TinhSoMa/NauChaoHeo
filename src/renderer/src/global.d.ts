@@ -507,7 +507,8 @@ interface CaptionAPI {
     model: string;
     translateMethod: 'api' | 'deepseek' | 'openrouter';
     projectName?: string;
-  }) => Promise<IpcApiResponse<{ prompt: string }>>;
+    imageBase64?: string;
+  }) => Promise<IpcApiResponse<{ prompt: string; inputPrompt?: string; imageBase64?: string }>>;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
   stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   readSession: (sessionPath: string) => Promise<IpcApiResponse<any | null>>;

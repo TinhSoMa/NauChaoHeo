@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Clipboard, ClipboardCheck, RefreshCw, Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Clipboard, ClipboardCheck, RefreshCw, Loader2, Sparkles, Trash2, Image, Bug } from 'lucide-react';
 import { readCaptionSession, updateCaptionSession } from '../hooks/captionSessionStore';
-import type { SubtitleEntry } from '@shared/types/caption';
+import { getVideoMetadataCached } from '../hooks/videoMetadataClientCache';
+import type { SubtitleEntry, VideoCropSettings } from '@shared/types/caption';
 import styles from '../CaptionTranslator.module.css';
 
 interface AutoThumbnailPromptPanelProps {
@@ -11,6 +12,9 @@ interface AutoThumbnailPromptPanelProps {
   geminiModel: string;
   deepseekModel?: string;
   projectId?: string;
+  videoPath?: string | null;
+  thumbnailFrameTimeSec?: number | null;
+  crop?: VideoCropSettings | null;
 }
 
 export function AutoThumbnailPromptPanel({
@@ -20,6 +24,9 @@ export function AutoThumbnailPromptPanel({
   geminiModel,
   deepseekModel,
   projectId,
+  videoPath,
+  thumbnailFrameTimeSec,
+  crop,
 }: AutoThumbnailPromptPanelProps) {
   const [prompt, setPrompt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -28,6 +35,11 @@ export function AutoThumbnailPromptPanel({
   const [error, setError] = useState<string | null>(null);
   const [hasTranslated, setHasTranslated] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
+  const [hasVision, setHasVision] = useState(false);
+  const fpsRef = useRef(30);
+  const lastInputPromptRef = useRef<string>('');
+  const lastImageBase64Ref = useRef<string | undefined>(undefined);
+  const [debugSaved, setDebugSaved] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -47,6 +59,25 @@ export function AutoThumbnailPromptPanel({
       }
     })();
   }, [sessionPath, projectId, sourcePath]);
+
+  useEffect(() => {
+    if (!videoPath) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const metaRes = await getVideoMetadataCached(videoPath);
+        if (cancelled) return;
+        if (metaRes?.success && metaRes.data) {
+          fpsRef.current = metaRes.data.fps && metaRes.data.fps > 0 ? metaRes.data.fps : 30;
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [videoPath]);
+
+  useEffect(() => {
+    setHasVision(!!videoPath && !!thumbnailFrameTimeSec);
+  }, [videoPath, thumbnailFrameTimeSec]);
 
   const saveTitleToSession = useCallback(async (title: string) => {
     try {
@@ -84,16 +115,34 @@ export function AutoThumbnailPromptPanel({
         return;
       }
 
+      let imageBase64: string | undefined;
+      if (videoPath && thumbnailFrameTimeSec != null) {
+        try {
+          const frameIndex = Math.round(thumbnailFrameTimeSec * fpsRef.current);
+          const videoApi = (window.electronAPI as any).captionVideo;
+          const frameRes = await videoApi.extractFrame(videoPath, frameIndex, crop || undefined);
+          if (frameRes?.success && frameRes.data?.frameData) {
+            imageBase64 = frameRes.data.frameData;
+          }
+        } catch (e) {
+          console.warn('[ThumbnailPrompt] extractFrame failed, continuing without image:', e);
+        }
+      }
+
       const result = await window.electronAPI.caption.generateThumbnailPrompt({
         entries,
         model: translateMethod === 'deepseek' ? (deepseekModel || geminiModel) : geminiModel,
         translateMethod: translateMethod as 'api' | 'deepseek' | 'openrouter',
         projectName: customTitle || projectId || undefined,
+        imageBase64,
       });
 
       if (result?.success && result?.data?.prompt) {
         const newPrompt = result.data.prompt;
         setPrompt(newPrompt);
+        lastInputPromptRef.current = result.data.inputPrompt || '';
+        lastImageBase64Ref.current = imageBase64;
+        setDebugSaved(false);
         setSaving(true);
         try {
           await updateCaptionSession(sessionPath, (s) => ({
@@ -114,7 +163,7 @@ export function AutoThumbnailPromptPanel({
     } finally {
       setLoading(false);
     }
-  }, [sessionPath, sourcePath, translateMethod, geminiModel, deepseekModel, projectId, customTitle]);
+  }, [sessionPath, sourcePath, translateMethod, geminiModel, deepseekModel, projectId, customTitle, videoPath, thumbnailFrameTimeSec, crop]);
 
   const handleCopy = useCallback(async () => {
     if (!prompt) return;
@@ -143,6 +192,25 @@ export function AutoThumbnailPromptPanel({
 
   const canGenerate = hasTranslated;
   const isDisabled = loading || saving || !canGenerate;
+
+  const handleDebugSave = useCallback(async () => {
+    if (!lastInputPromptRef.current) return;
+    setDebugSaved(false);
+    try {
+      const api = window.electronAPI as any;
+      const res = await api.invoke('debug:saveThumbnailPromptDebug', {
+        prompt: lastInputPromptRef.current,
+        imageBase64: lastImageBase64Ref.current,
+        videoPath: videoPath || undefined,
+      });
+      if (res?.success) {
+        setDebugSaved(true);
+        setTimeout(() => setDebugSaved(false), 3000);
+      }
+    } catch (err) {
+      console.warn('[ThumbnailPrompt] Debug save failed:', err);
+    }
+  }, [videoPath]);
 
   return (
     <div className={styles.panelSection}>
@@ -179,6 +247,13 @@ export function AutoThumbnailPromptPanel({
           }}
         />
       </div>
+
+      {hasVision && (
+        <div style={{ marginBottom: 4, fontSize: 11, color: 'var(--color-text-secondary)' }}>
+          <Image size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+          Frame preview sẽ được gửi kèm để AI thấy cảnh quay
+        </div>
+      )}
 
       {error && (
         <div className={styles.step3BatchErrorRow} style={{ marginBottom: 6 }}>
@@ -222,6 +297,18 @@ export function AutoThumbnailPromptPanel({
               <Trash2 size={14} />
               <span style={{ marginLeft: 4 }}>Xoá</span>
             </button>
+            {lastInputPromptRef.current && (
+              <button
+                type="button"
+                className={styles.resetBtnLike}
+                onClick={handleDebugSave}
+                title="Lưu prompt + ảnh đã gửi cho AI"
+                style={{ color: debugSaved ? 'var(--color-success, #4caf50)' : 'var(--color-text-secondary)' }}
+              >
+                <Bug size={14} />
+                <span style={{ marginLeft: 4 }}>{debugSaved ? 'Đã lưu' : 'Debug'}</span>
+              </button>
+            )}
           </div>
         </div>
       )}

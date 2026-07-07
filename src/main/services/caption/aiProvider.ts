@@ -16,6 +16,7 @@ export interface AIProviderParams {
   signal?: AbortSignal
   debugSaveDir?: string
   batchIndex?: number
+  imageBase64?: string
 }
 
 export interface AIProvider {

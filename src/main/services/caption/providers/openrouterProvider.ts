@@ -7,12 +7,19 @@ import { OPENROUTER_DEFAULT_MODEL } from '../../../../shared/types/openrouter'
 export function createOpenRouterProvider(): AIProvider {
   return {
     transport: 'openrouter',
-    async call({ prompt, model, signal }): Promise<AIProviderResult> {
+    async call({ prompt, model, signal, imageBase64 }): Promise<AIProviderResult> {
       const config = AppSettingsService.getAll()
       const resolvedModel = model || config.openrouterDefaultModel || OPENROUTER_DEFAULT_MODEL
 
+      const content: OpenRouterMessage['content'] = imageBase64
+        ? [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } },
+          ]
+        : prompt;
+
       const messages: OpenRouterMessage[] = [
-        { role: 'user', content: prompt },
+        { role: 'user', content },
       ]
 
       const response = await callChatCompletionWithRotation(messages, {

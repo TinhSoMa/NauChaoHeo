@@ -4205,6 +4205,8 @@ export function CaptionTranslator() {
     fps: 30,
   });
 
+  const [thumbnailStepCount, setThumbnailStepCount] = useState(1);
+
   useEffect(() => {
     if (!thumbnailPreviewVideoPath) {
       setThumbnailPreviewVideoMeta({ duration: 5, fps: 30 });
@@ -4269,6 +4271,24 @@ export function CaptionTranslator() {
     thumbnailFrameMaxSec,
     thumbnailFrameValueIndex,
   ]);
+
+  // Sync 2 chiều giữa preview frame và thumbnail frame
+  const skipFrameSyncRef = useRef(false);
+  useEffect(() => {
+    const t = previewHook.frameTimeSec;
+    if (skipFrameSyncRef.current) return;
+    skipFrameSyncRef.current = true;
+    setThumbnailFrameSecClamped(t);
+    setTimeout(() => { skipFrameSyncRef.current = false; }, 0);
+  }, [previewHook.frameTimeSec, setThumbnailFrameSecClamped]);
+
+  useEffect(() => {
+    const t = settings.thumbnailFrameTimeSec;
+    if (t == null || skipFrameSyncRef.current) return;
+    skipFrameSyncRef.current = true;
+    previewHook.setFrameTimeSec(t);
+    setTimeout(() => { skipFrameSyncRef.current = false; }, 0);
+  }, [settings.thumbnailFrameTimeSec, previewHook.setFrameTimeSec]);
 
   const setThumbnailPrimaryPositionAxis = useCallback((axis: 'x' | 'y', value: number) => {
     if (!Number.isFinite(value)) {
@@ -7095,21 +7115,30 @@ export function CaptionTranslator() {
             disabled={!thumbnailPreviewVideoPath}
           />
           <div className={styles.commonInlineActions}>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              step={1}
+              value={thumbnailStepCount}
+              onChange={(e) => setThumbnailStepCount(Math.max(1, Math.round(Number(e.target.value)) || 1))}
+              style={{ width: 50, textAlign: 'center' }}
+            />
             <button
               type="button"
               className={styles.resetBtnLike}
-              onClick={() => stepThumbnailFrame(-1)}
+              onClick={() => stepThumbnailFrame(-thumbnailStepCount)}
               disabled={!thumbnailPreviewVideoPath}
             >
-              -1f
+              -{thumbnailStepCount}f
             </button>
             <button
               type="button"
               className={styles.resetBtnLike}
-              onClick={() => stepThumbnailFrame(1)}
+              onClick={() => stepThumbnailFrame(thumbnailStepCount)}
               disabled={!thumbnailPreviewVideoPath}
             >
-              +1f
+              +{thumbnailStepCount}f
             </button>
           </div>
         </div>
@@ -8689,6 +8718,9 @@ export function CaptionTranslator() {
                   geminiModel={settings.geminiModel}
                   deepseekModel={settings.deepseekModel}
                   projectId={projectId || undefined}
+                  videoPath={thumbnailPreviewVideoPath}
+                  thumbnailFrameTimeSec={settings.thumbnailFrameTimeSec}
+                  crop={settings.crop}
                 />
               </>
             )}

@@ -2,7 +2,7 @@
  * Caption IPC Handlers - Xử lý các IPC request liên quan đến Caption
  */
 
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog } from 'electron';
+import { ipcMain, IpcMainInvokeEvent, BrowserWindow, dialog, app } from 'electron';
 import {
   CAPTION_IPC_CHANNELS,
   CAPTION_PROCESS_STOP_SIGNAL,
@@ -498,16 +498,48 @@ export function registerCaptionHandlers(): void {
     CAPTION_IPC_CHANNELS.GENERATE_THUMBNAIL_PROMPT,
     async (
       _event: IpcMainInvokeEvent,
-      options: { entries: SubtitleEntry[]; model: string; translateMethod: 'api' | 'deepseek' | 'openrouter'; projectName?: string },
-    ): Promise<IpcResponse<{ prompt: string }>> => {
+      options: { entries: SubtitleEntry[]; model: string; translateMethod: 'api' | 'deepseek' | 'openrouter'; projectName?: string; imageBase64?: string },
+    ): Promise<IpcResponse<{ prompt: string; inputPrompt?: string; imageBase64?: string }>> => {
       try {
         const result = await CaptionService.generateThumbnailPrompt(options);
         if (result.success && result.prompt) {
-          return { success: true, data: { prompt: result.prompt } };
+          return { success: true, data: { prompt: result.prompt, inputPrompt: result.inputPrompt, imageBase64: result.imageBase64 } };
         }
         return { success: false, error: result.error || 'Không thể tạo thumbnail prompt' };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi generate thumbnail prompt:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
+  // DEBUG: SAVE THUMBNAIL PROMPT INPUT
+  // ============================================
+  ipcMain.handle(
+    'debug:saveThumbnailPromptDebug',
+    async (
+      _event: IpcMainInvokeEvent,
+      data: { prompt: string; imageBase64?: string; videoPath?: string }
+    ): Promise<IpcResponse<{ savePath: string }>> => {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const dateStr = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '_');
+        const baseDir = data.videoPath
+          ? path.dirname(data.videoPath)
+          : app.getPath('userData');
+        const dir = path.join(baseDir, 'debug', `thumbnail_prompt_${dateStr}`);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'prompt.txt'), data.prompt, 'utf-8');
+        if (data.imageBase64) {
+          const buffer = Buffer.from(data.imageBase64, 'base64');
+          fs.writeFileSync(path.join(dir, 'frame.png'), buffer);
+        }
+        console.log(`[CaptionHandlers] Saved thumbnail prompt debug → ${dir}`);
+        return { success: true, data: { savePath: dir } };
+      } catch (error) {
+        console.error('[CaptionHandlers] debug:saveThumbnailPromptDebug error:', error);
         return { success: false, error: String(error) };
       }
     }

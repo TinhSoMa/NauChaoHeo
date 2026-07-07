@@ -15,6 +15,7 @@ export async function callDeepSeekChat(
     debugSaveDir?: string;
     batchIndex?: number;
     saveCacheDebugFile?: boolean;
+    imageBase64?: string;
   }
 ): Promise<{ success: true; data: string } | { success: false; error: string }> {
   try {
@@ -24,13 +25,21 @@ export async function callDeepSeekChat(
     }
 
     const url = `${DEEPSEEK_API_BASE}/chat/completions`;
+
+    const userContent = options?.imageBase64
+      ? [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${options.imageBase64}` } },
+        ]
+      : prompt;
+
     const messages = options?.systemPrompt
       ? [
           { role: 'system', content: options.systemPrompt },
-          { role: 'user', content: prompt },
+          { role: 'user', content: userContent },
         ]
       : [
-          { role: 'user', content: prompt },
+          { role: 'user', content: userContent },
         ];
 
     const body = {

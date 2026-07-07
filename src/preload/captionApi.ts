@@ -60,7 +60,8 @@ export interface CaptionAPI {
     model: string;
     translateMethod: 'api' | 'deepseek' | 'openrouter';
     projectName?: string;
-  }) => Promise<IpcApiResponse<{ prompt: string }>>;
+    imageBase64?: string;
+  }) => Promise<IpcApiResponse<{ prompt: string; inputPrompt?: string; imageBase64?: string }>>;
 
   // Split text files
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
@@ -363,7 +364,7 @@ export interface CaptionVideoAPI {
   getVideoMetadata: (videoPath: string) => Promise<IpcApiResponse<VideoMetadata>>;
 
   // Extract frame from video
-  extractFrame: (videoPath: string, frameNumber?: number) => Promise<IpcApiResponse<{
+  extractFrame: (videoPath: string, frameNumber?: number, crop?: VideoCropSettings) => Promise<IpcApiResponse<{
     frameData: string;
     width: number;
     height: number;

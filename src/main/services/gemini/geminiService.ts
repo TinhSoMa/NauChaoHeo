@@ -162,6 +162,7 @@ export async function callGeminiApi(
   useProxy: boolean = true,
   abortSignal?: AbortSignal,
   timeoutMs: number = getApiRequestTimeoutMs(),
+  imageBase64?: string,
 ): Promise<GeminiResponse> {
   try {
     const resolvedModel = resolveModelForRuntime(model);
@@ -170,12 +171,13 @@ export async function callGeminiApi(
     // Convert prompt thành text nếu là object
     const promptText = typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2);
 
+    const parts: Array<Record<string, unknown>> = [{ text: promptText }];
+    if (imageBase64) {
+      parts.push({ inlineData: { mimeType: 'image/png', data: imageBase64 } });
+    }
+
     const payload: Record<string, unknown> = {
-      contents: [
-        {
-          parts: [{ text: promptText }],
-        },
-      ],
+      contents: [{ parts }],
     };
 
     const thinkingLevel = GeminiModelsDatabase.getThinkingLevel();
@@ -290,6 +292,7 @@ export async function callGeminiWithRotation(
   model?: string,
   maxRetries: number = 10,
   control?: GeminiCallControlOptions,
+  imageBase64?: string,
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
   const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
@@ -351,6 +354,7 @@ export async function callGeminiWithRotation(
       useProxySetting,
       requestAbortController.signal,
       getApiRequestTimeoutMs(),
+      imageBase64,
     );
     detachAbortForwarding();
 
@@ -423,6 +427,7 @@ export async function callGeminiWithAssignedKey(
   assignedKey: { apiKey: string; keyInfo: KeyInfo },
   model?: string,
   control?: GeminiCallControlOptions,
+  imageBase64?: string,
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
   const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
@@ -442,6 +447,7 @@ export async function callGeminiWithAssignedKey(
     false,
     requestAbortController.signal,
     getApiRequestTimeoutMs(),
+    imageBase64,
   );
   detachAbortForwarding();
 
@@ -471,7 +477,7 @@ export async function callGeminiWithAssignedKey(
   }
 
   console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name}`);
-  return callGeminiWithRotation(prompt, resolvedModel, 10, control);
+  return callGeminiWithRotation(prompt, resolvedModel, 10, control, imageBase64);
 }
 
 /**

@@ -2073,9 +2073,9 @@ Analyze the following translated subtitle content (first 2 batches) and extract 
   "textStyle": "Text overlay style: Đậm / Tối Giản / Cầu Kỳ / Viền / Đổ Bóng / Chuyển Màu"
 }
 
-Return ONLY valid JSON, no other text.`;
+IMPORTANT: Your response must be ONLY the raw JSON object. DO NOT include markdown code blocks, DO NOT include \`\`\`json or \`\`\` markers, DO NOT include any explanations, greetings, or conversational text. Start directly with { and end with }. No backticks, no extra whitespace before or after.`;
 
-const THUMBNAIL_TEXT_OVERLAY_TEMPLATE = 'Create a YouTube thumbnail in STRICT 16:9 aspect ratio (1920x1080 dimensions). \nMain subject: {{mainSubject}}. \nStyle requirements: {{category}} style, {{thumbnailStyle}} thumbnail, with {{theme}} theme, {{mood}} mood, dominant {{primaryColor}} color palette, featuring {{textStyle}} text overlay "{{textOverlay}}".\nCRITICAL: Must be exactly 16:9 aspect ratio, widescreen format, horizontal layout, YouTube thumbnail proportions (1920x1080). High quality, professional, eye-catching, clean composition optimized for YouTube thumbnail viewing.';
+const THUMBNAIL_TEXT_OVERLAY_TEMPLATE = 'Create a YouTube thumbnail in STRICT 16:9 aspect ratio (1920x1080 dimensions). \nMain subject: {{mainSubject}}. \nStyle requirements: {{category}} style, {{thumbnailStyle}} thumbnail, with {{theme}} theme, {{mood}} mood, dominant {{primaryColor}} color palette{{textOverlayPart}}.\nCRITICAL: Must be exactly 16:9 aspect ratio, widescreen format, horizontal layout, YouTube thumbnail proportions (1920x1080). High quality, professional, eye-catching, clean composition optimized for YouTube thumbnail viewing.';
 
 function fillThumbnailTemplate(vars: Record<string, string>): string {
   let result = THUMBNAIL_TEXT_OVERLAY_TEMPLATE;
@@ -2090,41 +2090,56 @@ export interface GenerateThumbnailPromptOptions {
   model: string;
   translateMethod: 'api' | 'deepseek' | 'openrouter';
   projectName?: string;
+  imageBase64?: string;
 }
 
 export async function generateThumbnailPrompt(
   options: GenerateThumbnailPromptOptions,
-): Promise<{ success: boolean; prompt?: string; error?: string }> {
-  const { entries, model, translateMethod, projectName } = options;
+): Promise<{ success: boolean; prompt?: string; inputPrompt?: string; error?: string; imageBase64?: string }> {
+  const { entries, model, translateMethod, projectName, imageBase64 } = options;
   if (entries.length === 0) {
     return { success: false, error: 'Không có subtitle entries.' };
   }
 
   const contextEntries = entries.slice(0, THUMBNAIL_CONTEXT_MAX_ENTRIES);
   const allText = contextEntries.map(e => e.translatedText ?? e.text).join('\n');
-  const extractPrompt = `${THUMBNAIL_EXTRACT_TEMPLATE}\n\n## Translated subtitles (first 2 batches)\n${allText}`;
+  const imageHint = imageBase64
+    ? '\n\nA video frame image from this content has been attached to this request. Use the visual information from the image together with the subtitles to determine the correct movie/series name and visual elements.'
+    : '';
+  const extractPrompt = `${THUMBNAIL_EXTRACT_TEMPLATE}${imageHint}\n\n## Translated subtitles (first 2 batches)\n${allText}`;
   const provider = createProviderForMethod(translateMethod);
   if (!provider) {
     return { success: false, error: `Unsupported translate method: ${translateMethod}` };
   }
 
   try {
-    const response = await provider.call({ prompt: extractPrompt, model });
+    const response = await provider.call({ prompt: extractPrompt, model, imageBase64 });
     if (!response.success || typeof response.data !== 'string') {
       return { success: false, error: response.error || 'AI không trả về kết quả' };
     }
 
+    let raw = response.data.trim();
+    // Strip markdown code fences if AI still wraps JSON
+    raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    // Fallback: extract first {…} if surrounded by commentary
+    const braceStart = raw.indexOf('{');
+    const braceEnd = raw.lastIndexOf('}');
+    if (braceStart >= 0 && braceEnd > braceStart) {
+      raw = raw.slice(braceStart, braceEnd + 1);
+    }
     let fields: Record<string, string>;
     try {
-      fields = JSON.parse(response.data.trim());
+      fields = JSON.parse(raw);
     } catch {
       return { success: false, error: 'AI không trả về JSON hợp lệ' };
     }
 
     const textOverlay = projectName
       ? projectName
-      : (fields.textOverlay || fields.mainSubject || '');
-    const textStyle = fields.textStyle || 'Đậm';
+      : (fields.textOverlay || '');
+    const textOverlayPart = textOverlay
+      ? `, featuring ${fields.textStyle || 'Đậm'} text overlay "${textOverlay}"`
+      : '';
 
     const finalPrompt = fillThumbnailTemplate({
       mainSubject: fields.mainSubject || 'Main scene from content',
@@ -2133,11 +2148,10 @@ export async function generateThumbnailPrompt(
       theme: fields.theme || 'Sáng Sủa',
       mood: fields.mood || 'Vui Vẻ',
       primaryColor: fields.primaryColor || 'Đỏ',
-      textStyle,
-      textOverlay,
+      textOverlayPart,
     });
 
-    return { success: true, prompt: finalPrompt };
+    return { success: true, prompt: finalPrompt, inputPrompt: extractPrompt, imageBase64 };
   } catch (error) {
     return { success: false, error: String(error) };
   }
