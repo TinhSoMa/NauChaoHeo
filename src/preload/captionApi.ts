@@ -59,6 +59,7 @@ export interface CaptionAPI {
     entries: SubtitleEntry[];
     model: string;
     translateMethod: 'api' | 'deepseek' | 'openrouter';
+    projectName?: string;
   }) => Promise<IpcApiResponse<{ prompt: string }>>;
 
   // Split text files

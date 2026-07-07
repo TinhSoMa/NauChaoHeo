@@ -506,6 +506,7 @@ interface CaptionAPI {
     entries: SubtitleEntry[];
     model: string;
     translateMethod: 'api' | 'deepseek' | 'openrouter';
+    projectName?: string;
   }) => Promise<IpcApiResponse<{ prompt: string }>>;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
   stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;

@@ -498,7 +498,7 @@ export function registerCaptionHandlers(): void {
     CAPTION_IPC_CHANNELS.GENERATE_THUMBNAIL_PROMPT,
     async (
       _event: IpcMainInvokeEvent,
-      options: { entries: SubtitleEntry[]; model: string; translateMethod: 'api' | 'deepseek' | 'openrouter' },
+      options: { entries: SubtitleEntry[]; model: string; translateMethod: 'api' | 'deepseek' | 'openrouter'; projectName?: string },
     ): Promise<IpcResponse<{ prompt: string }>> => {
       try {
         const result = await CaptionService.generateThumbnailPrompt(options);

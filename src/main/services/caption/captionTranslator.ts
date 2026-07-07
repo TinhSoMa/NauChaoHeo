@@ -2056,46 +2056,88 @@ ${text}`;
   }
 }
 
-const THUMBNAIL_PROMPT_TEMPLATE = `You are an expert YouTube thumbnail prompt engineer for AI image generation.
+const THUMBNAIL_CONTEXT_MAX_ENTRIES = 100; // 2 batches x 50 lines
 
-Based on the following video subtitle content, generate a COMPLETE, PRODUCTION-READY prompt for creating a YouTube thumbnail. The prompt must be self-contained and ready to use directly in an AI image generator.
+const THUMBNAIL_EXTRACT_TEMPLATE = `You are a structured data extractor for YouTube thumbnail creation.
 
-Your output MUST include all of the following elements:
-1. Main subject: Describe the key visual based on the video content
-2. Style requirements: Include visual style, mood/atmosphere, color palette, composition, lighting, and art direction
-3. Text overlay suggestions: If relevant, propose short overlay text and its style (bold, minimal, etc.)
-4. Technical constraints: MUST specify STRICT 16:9 aspect ratio (1920x1080), widescreen, horizontal layout, YouTube thumbnail proportions
-5. Quality descriptors: High quality, professional, eye-catching, clean composition, optimized for YouTube thumbnail viewing
+Analyze the following translated subtitle content (first 2 batches) and extract these fields as a JSON object:
 
-Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
+{
+  "mainSubject": "Describe the key visual scene in 5-10 words",
+  "category": "Content category: Công Nghệ / Game / Vlog / Hướng Dẫn / Giải Trí / Tin Tức",
+  "mood": "Mood: Phấn Khích / Nghiêm Túc / Vui Vẻ / Chuyên Nghiệp / Bí Ẩn / Năng Động",
+  "theme": "Visual theme: Sáng Sủa / Tối / Nhiều Màu / Tối Giản / Chuyển Màu / Neon",
+  "primaryColor": "Dominant color: Đỏ / Xanh Dương / Xanh Lá / Tím / Cam / Vàng / Hồng / Xanh Cyan",
+  "thumbnailStyle": "Art style: Siêu Thực / Hoạt Hình / Tối Giản / Nghệ Thuật / Hiện Đại / Cổ Điển",
+  "textOverlay": "The name of this movie/series in Vietnamese (max 3 words)",
+  "textStyle": "Text overlay style: Đậm / Tối Giản / Cầu Kỳ / Viền / Đổ Bóng / Chuyển Màu"
+}
+
+Return ONLY valid JSON, no other text.`;
+
+const THUMBNAIL_TEXT_OVERLAY_TEMPLATE = 'Create a YouTube thumbnail in STRICT 16:9 aspect ratio (1920x1080 dimensions). \nMain subject: {{mainSubject}}. \nStyle requirements: {{category}} style, {{thumbnailStyle}} thumbnail, with {{theme}} theme, {{mood}} mood, dominant {{primaryColor}} color palette, featuring {{textStyle}} text overlay "{{textOverlay}}".\nCRITICAL: Must be exactly 16:9 aspect ratio, widescreen format, horizontal layout, YouTube thumbnail proportions (1920x1080). High quality, professional, eye-catching, clean composition optimized for YouTube thumbnail viewing.';
+
+function fillThumbnailTemplate(vars: Record<string, string>): string {
+  let result = THUMBNAIL_TEXT_OVERLAY_TEMPLATE;
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.replace(`{{${key}}}`, value);
+  }
+  return result;
+}
 
 export interface GenerateThumbnailPromptOptions {
   entries: SubtitleEntry[];
   model: string;
   translateMethod: 'api' | 'deepseek' | 'openrouter';
+  projectName?: string;
 }
 
 export async function generateThumbnailPrompt(
   options: GenerateThumbnailPromptOptions,
 ): Promise<{ success: boolean; prompt?: string; error?: string }> {
-  const { entries, model, translateMethod } = options;
+  const { entries, model, translateMethod, projectName } = options;
   if (entries.length === 0) {
     return { success: false, error: 'Không có subtitle entries.' };
   }
 
-  const allText = entries.map(e => e.text).join('\n');
-  const userPrompt = `${THUMBNAIL_PROMPT_TEMPLATE}\n\n## Nội dung subtitle\n${allText}`;
+  const contextEntries = entries.slice(0, THUMBNAIL_CONTEXT_MAX_ENTRIES);
+  const allText = contextEntries.map(e => e.translatedText ?? e.text).join('\n');
+  const extractPrompt = `${THUMBNAIL_EXTRACT_TEMPLATE}\n\n## Translated subtitles (first 2 batches)\n${allText}`;
   const provider = createProviderForMethod(translateMethod);
   if (!provider) {
     return { success: false, error: `Unsupported translate method: ${translateMethod}` };
   }
 
   try {
-    const response = await provider.call({ prompt: userPrompt, model });
+    const response = await provider.call({ prompt: extractPrompt, model });
     if (!response.success || typeof response.data !== 'string') {
       return { success: false, error: response.error || 'AI không trả về kết quả' };
     }
-    return { success: true, prompt: response.data.trim() };
+
+    let fields: Record<string, string>;
+    try {
+      fields = JSON.parse(response.data.trim());
+    } catch {
+      return { success: false, error: 'AI không trả về JSON hợp lệ' };
+    }
+
+    const textOverlay = projectName
+      ? projectName
+      : (fields.textOverlay || fields.mainSubject || '');
+    const textStyle = fields.textStyle || 'Đậm';
+
+    const finalPrompt = fillThumbnailTemplate({
+      mainSubject: fields.mainSubject || 'Main scene from content',
+      category: fields.category || 'Giải Trí',
+      thumbnailStyle: fields.thumbnailStyle || 'Hiện Đại',
+      theme: fields.theme || 'Sáng Sủa',
+      mood: fields.mood || 'Vui Vẻ',
+      primaryColor: fields.primaryColor || 'Đỏ',
+      textStyle,
+      textOverlay,
+    });
+
+    return { success: true, prompt: finalPrompt };
   } catch (error) {
     return { success: false, error: String(error) };
   }

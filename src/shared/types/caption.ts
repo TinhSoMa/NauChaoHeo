@@ -1063,6 +1063,7 @@ export interface CaptionSessionData {
   step7AudioSource?: 'session_merged_audio';
   stepArtifacts?: CaptionStepArtifactsMap;
   autoThumbnailPrompt?: string;
+  customThumbnailTitle?: string;
 }
 
 export interface CaptionArtifactFile {

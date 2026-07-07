@@ -27,6 +27,7 @@ export function AutoThumbnailPromptPanel({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasTranslated, setHasTranslated] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -36,6 +37,9 @@ export function AutoThumbnailPromptPanel({
         if (session.data.autoThumbnailPrompt) {
           setPrompt(session.data.autoThumbnailPrompt);
         }
+        if (session.data.customThumbnailTitle) {
+          setCustomTitle(session.data.customThumbnailTitle);
+        }
         const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
         setHasTranslated(translated.length > 0);
       } catch {
@@ -44,13 +48,36 @@ export function AutoThumbnailPromptPanel({
     })();
   }, [sessionPath, projectId, sourcePath]);
 
+  const saveTitleToSession = useCallback(async (title: string) => {
+    try {
+      const fallback = { projectId, inputType: 'draft' as const, sourcePath };
+      await updateCaptionSession(sessionPath, (s) => ({
+        ...s,
+        data: {
+          ...s.data,
+          customThumbnailTitle: title || undefined,
+        },
+      }), fallback);
+    } catch {
+      // ignore
+    }
+  }, [sessionPath, projectId, sourcePath]);
+
+  const handleTitleChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setCustomTitle(val);
+    await saveTitleToSession(val);
+  }, [saveTitleToSession]);
+
   const handleRegenerate = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const fallback = { projectId, inputType: 'draft' as const, sourcePath };
       const session = await readCaptionSession(sessionPath, fallback);
-      const entries: SubtitleEntry[] = (session.data.extractedEntries || []) as SubtitleEntry[];
+      const translated = (session.data.translatedEntries || []) as SubtitleEntry[];
+      const extracted = (session.data.extractedEntries || []) as SubtitleEntry[];
+      const entries: SubtitleEntry[] = translated.length > 0 ? translated : extracted;
       if (entries.length === 0) {
         setError('Không tìm thấy subtitle entries trong session.');
         setLoading(false);
@@ -61,6 +88,7 @@ export function AutoThumbnailPromptPanel({
         entries,
         model: translateMethod === 'deepseek' ? (deepseekModel || geminiModel) : geminiModel,
         translateMethod: translateMethod as 'api' | 'deepseek' | 'openrouter',
+        projectName: customTitle || projectId || undefined,
       });
 
       if (result?.success && result?.data?.prompt) {
@@ -86,7 +114,7 @@ export function AutoThumbnailPromptPanel({
     } finally {
       setLoading(false);
     }
-  }, [sessionPath, sourcePath, translateMethod, geminiModel, deepseekModel, projectId]);
+  }, [sessionPath, sourcePath, translateMethod, geminiModel, deepseekModel, projectId, customTitle]);
 
   const handleCopy = useCallback(async () => {
     if (!prompt) return;
@@ -131,6 +159,27 @@ export function AutoThumbnailPromptPanel({
         </div>
       )}
 
+      <div style={{ marginTop: 6, marginBottom: 6 }}>
+        <input
+          type="text"
+          placeholder="Tên phim / nội dung (tuỳ chọn, để trống AI tự suy luận)"
+          value={customTitle}
+          onChange={handleTitleChange}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '4px 8px',
+            fontSize: 12,
+            fontFamily: 'var(--font-mono, monospace)',
+            background: 'var(--color-surface)',
+            color: 'var(--color-text)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            outline: 'none',
+          }}
+        />
+      </div>
+
       {error && (
         <div className={styles.step3BatchErrorRow} style={{ marginBottom: 6 }}>
           <span>{error}</span>
@@ -145,6 +194,8 @@ export function AutoThumbnailPromptPanel({
             value={prompt}
             readOnly
             style={{
+              width: '100%',
+              boxSizing: 'border-box',
               fontSize: 12,
               lineHeight: 1.5,
               resize: 'vertical',

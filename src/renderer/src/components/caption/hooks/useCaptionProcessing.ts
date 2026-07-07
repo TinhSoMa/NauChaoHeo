@@ -4684,6 +4684,7 @@ export function useCaptionProcessing({
               entries: currentEntries,
               model: cfg.translateMethod === 'deepseek' ? (cfg.deepseekModel || cfg.geminiModel) : cfg.geminiModel,
               translateMethod: cfg.translateMethod as 'api' | 'deepseek' | 'openrouter',
+              projectName: projectId || undefined,
             });
             if (thumbnailResult?.success && thumbnailResult?.data?.prompt) {
               const autoThumbnailPrompt = thumbnailResult.data.prompt;
