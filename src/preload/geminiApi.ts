@@ -12,6 +12,7 @@ import {
   GeminiCatalogModelInput,
   GeminiCatalogModelUpdate,
   GeminiSyncModelsResult,
+  type ThinkingLevel,
 } from '../shared/types/gemini';
 
 // Response type từ IPC
@@ -68,6 +69,10 @@ export interface GeminiAPI {
   getDefaultModel: () => Promise<IpcApiResponse<string | null>>;
   setDefaultModel: (modelId: string) => Promise<IpcApiResponse<string>>;
   syncModelsFromGoogle: () => Promise<IpcApiResponse<GeminiSyncModelsResult>>;
+
+  // Thinking Level
+  getThinkingLevel: () => Promise<IpcApiResponse<ThinkingLevel>>;
+  setThinkingLevel: (level: ThinkingLevel) => Promise<IpcApiResponse<boolean>>;
 }
 
 /**
@@ -149,5 +154,9 @@ export function createGeminiAPI(): GeminiAPI {
     getDefaultModel: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_GET_DEFAULT),
     setDefaultModel: (modelId: string) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_SET_DEFAULT, modelId),
     syncModelsFromGoogle: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.MODELS_SYNC_GOOGLE),
+
+    // Thinking Level
+    getThinkingLevel: () => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.GET_THINKING_LEVEL),
+    setThinkingLevel: (level: ThinkingLevel) => ipcRenderer.invoke(GEMINI_IPC_CHANNELS.SET_THINKING_LEVEL, level),
   };
 }

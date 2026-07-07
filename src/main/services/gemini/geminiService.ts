@@ -6,16 +6,47 @@
 import { getApiManager } from './apiManager';
 import { classifyGeminiError, GeminiErrorResult, GeminiErrorCode } from './geminiError';
 import { GeminiHttpError } from '../apiClient';
-import { 
-  GeminiResponse, 
+import { getApiRequestTimeoutMs } from '../appSettings.js';
+import {
+  GeminiResponse,
   KeyInfo,
   GEMINI_API_BASE,
   GEMINI_MODELS,
   getGeminiModelInfo,
 } from '../../../shared/types/gemini';
 import { getGeminiModelsService } from './geminiModelsService';
+import { GeminiModelsDatabase } from '../../database/geminiModelsDatabase';
+import type { ThinkingLevel } from '../../../shared/types/gemini';
 
-import { getApiRequestTimeoutMs } from '../appSettings.js';
+function isProModel(modelId: string): boolean {
+  return modelId.toLowerCase().includes('pro');
+}
+
+/** Chỉ Flash/Lite của Gemini 3.x hỗ trợ minimal */
+function supportsMinimal(modelId: string): boolean {
+  return /^gemini-3/i.test(modelId) && !isProModel(modelId);
+}
+
+function resolveThinkingLevel(modelId: string, level: ThinkingLevel): ThinkingLevel | 'disabled' {
+  if (level === 'disabled') return 'disabled';
+  if (level === 'minimal' && !supportsMinimal(modelId)) {
+    console.log(`[GeminiService] Model không hỗ trợ minimal, fallback → low`);
+    return 'low';
+  }
+  return level;
+}
+
+function addThinkingConfig(payload: Record<string, unknown>, modelId: string, thinkingLevel: ThinkingLevel): void {
+  const effectiveLevel = resolveThinkingLevel(modelId, thinkingLevel);
+  if (effectiveLevel === 'disabled') return;
+
+  payload.generationConfig = {
+    ...(payload.generationConfig as object | undefined),
+    thinkingConfig: {
+      thinkingLevel: effectiveLevel,
+    },
+  };
+}
 
 // Re-export để các module khác có thể import từ đây
 export { GEMINI_MODELS, getGeminiModelInfo };
@@ -139,13 +170,16 @@ export async function callGeminiApi(
     // Convert prompt thành text nếu là object
     const promptText = typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2);
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       contents: [
         {
           parts: [{ text: promptText }],
         },
       ],
     };
+
+    const thinkingLevel = GeminiModelsDatabase.getThinkingLevel();
+    addThinkingConfig(payload, resolvedModel, thinkingLevel);
 
     console.log(`[GeminiService] Gọi Gemini API với model: ${resolvedModel}${useProxy ? ' (via proxy)' : ''}`);
 

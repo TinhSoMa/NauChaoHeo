@@ -132,6 +132,10 @@ interface GeminiAPI {
   getDefaultModel: () => Promise<IpcApiResponse<string | null>>;
   setDefaultModel: (modelId: string) => Promise<IpcApiResponse<string>>;
   syncModelsFromGoogle: () => Promise<IpcApiResponse<GeminiSyncModelsResult>>;
+
+  // Thinking Level
+  getThinkingLevel: () => Promise<IpcApiResponse<'disabled' | 'minimal' | 'low' | 'medium' | 'high'>>;
+  setThinkingLevel: (level: 'disabled' | 'minimal' | 'low' | 'medium' | 'high') => Promise<IpcApiResponse<boolean>>;
 }
 
 // ============================================
@@ -498,6 +502,11 @@ interface CaptionAPI {
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
   translateBatch: (options: SingleBatchOptions) => Promise<IpcApiResponse<SingleBatchResult>>;
+  generateThumbnailPrompt: (options: {
+    entries: SubtitleEntry[];
+    model: string;
+    translateMethod: 'api' | 'deepseek' | 'openrouter';
+  }) => Promise<IpcApiResponse<{ prompt: string }>>;
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
   stopAll: (payload?: { runId?: string }) => Promise<IpcApiResponse<{ stopped: boolean; message?: string }>>;
   readSession: (sessionPath: string) => Promise<IpcApiResponse<any | null>>;

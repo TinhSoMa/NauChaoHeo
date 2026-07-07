@@ -10,6 +10,7 @@ import {
   type GeminiCatalogModelInput,
   type GeminiCatalogModelUpdate,
   type GeminiSyncModelsResult,
+  type ThinkingLevel,
 } from '../../../shared/types/gemini';
 import { GeminiModelsDatabase } from '../../database/geminiModelsDatabase';
 import { getEmbeddedKeys } from './apiKeys';
@@ -200,6 +201,14 @@ export class GeminiModelsService {
 
   getLastSyncedAt(): number | null {
     return GeminiModelsDatabase.getLastSyncedAt();
+  }
+
+  getThinkingLevel(): ThinkingLevel {
+    return GeminiModelsDatabase.getThinkingLevel();
+  }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    GeminiModelsDatabase.setThinkingLevel(level);
   }
 
   async syncFromGoogle(): Promise<{ success: boolean; data?: GeminiSyncModelsResult; error?: string }> {

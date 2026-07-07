@@ -27,6 +27,7 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
   const [missingSrtFolders, setMissingSrtFolders] = useState<Set<string>>(new Set());
   const srtFilesByFolderRef = useRef<Record<string, string>>({});
   const storageKey = `caption:lastInput:${projectId || 'global'}:${inputType}`;
+  const globalStorageKey = `caption:lastInput:global:${inputType}`;
 
   useEffect(() => {
     srtFilesByFolderRef.current = srtFilesByFolder;
@@ -35,30 +36,44 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
   useEffect(() => {
     if (filePath) return;
     try {
-      const saved = window.localStorage.getItem(storageKey);
+      let saved = window.localStorage.getItem(storageKey);
+      if (!saved || !saved.trim()) {
+        saved = window.localStorage.getItem(globalStorageKey);
+      }
       if (saved && saved.trim()) {
         setFilePath(saved);
-        if (import.meta?.env?.DEV) {
-          console.log('[CaptionFileManagement] Restore last input', {
-            inputType,
-            filePath: saved,
-            storageKey,
-          });
-        }
+        console.log('[Debug][FileMgmt] RESTORE last input', {
+          inputType,
+          filePath: saved,
+          storageKey,
+          globalStorageKey,
+          projectId,
+        });
+      } else {
+        console.log('[Debug][FileMgmt] No saved path found', { storageKey, globalStorageKey });
       }
     } catch (error) {
       console.warn('[CaptionFileManagement] Không đọc được localStorage last input', error);
     }
-  }, [filePath, storageKey]);
+  }, [filePath, storageKey, globalStorageKey]);
 
   useEffect(() => {
     if (!filePath) return;
     try {
       window.localStorage.setItem(storageKey, filePath);
+      if (globalStorageKey !== storageKey) {
+        window.localStorage.setItem(globalStorageKey, filePath);
+      }
+      console.log('[Debug][FileMgmt] SAVED last input', {
+        filePath,
+        storageKey,
+        globalStorageKey,
+        projectId,
+      });
     } catch (error) {
       console.warn('[CaptionFileManagement] Không lưu được localStorage last input', error);
     }
-  }, [filePath, storageKey]);
+  }, [filePath, storageKey, globalStorageKey]);
 
   const normalizeFolderPath = useCallback((value: string): string => {
     return (value || '').trim().replace(/[\\/]+$/, '');
@@ -166,7 +181,15 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
 
       if (inputType === 'draft') {
         const selectedPaths = result.filePaths;
-        setFilePath(selectedPaths.join('; '));
+        const newFilePath = selectedPaths.join('; ');
+        setFilePath(newFilePath);
+        try {
+          window.localStorage.setItem(storageKey, newFilePath);
+          window.localStorage.setItem(globalStorageKey, newFilePath);
+          console.log('[Debug][FileMgmt][handleBrowseFile] SAVED draft', { newFilePath, storageKey, projectId });
+        } catch (error) {
+          console.warn('[CaptionFileManagement] Không lưu được last input', error);
+        }
         setEntries([]);
         for (const selectedPath of selectedPaths) {
           const sessionPath = getSessionPathForInputPath('draft', selectedPath);
@@ -199,7 +222,15 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
         const selectedPaths = result.filePaths
           .map((p) => p.trim())
           .filter(Boolean);
-        setFilePath(selectedPaths.join('; '));
+        const newFilePath = selectedPaths.join('; ');
+        setFilePath(newFilePath);
+        try {
+          window.localStorage.setItem(storageKey, newFilePath);
+          window.localStorage.setItem(globalStorageKey, newFilePath);
+          console.log('[Debug][FileMgmt][handleBrowseFile] SAVED srt', { newFilePath, storageKey, projectId });
+        } catch (error) {
+          console.warn('[CaptionFileManagement] Không lưu được last input', error);
+        }
         setEntries([]);
         if (onProgress) {
           onProgress({
@@ -213,6 +244,13 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
 
       const selectedPath = result.filePaths[0];
       setFilePath(selectedPath);
+      try {
+        window.localStorage.setItem(storageKey, selectedPath);
+        window.localStorage.setItem(globalStorageKey, selectedPath);
+        console.log('[Debug][FileMgmt][handleBrowseFile] SAVED single', { selectedPath, storageKey, projectId });
+      } catch (error) {
+        console.warn('[CaptionFileManagement] Không lưu được last input', error);
+      }
 
       // Parse depending on file type
       // @ts-ignore

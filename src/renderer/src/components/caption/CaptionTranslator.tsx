@@ -83,6 +83,7 @@ import {
   VoiceInfo,
   TTSTestProxyResponse,
 } from '@shared/types/caption';
+import type { ThinkingLevel } from '@shared/types/gemini';
 
 type TtsVoiceProvider = 'edge' | 'capcut';
 type TtsVoiceTier = 'free' | 'pro';
@@ -1033,6 +1034,14 @@ export function CaptionTranslator() {
   );
   const [openrouterModels, setOpenrouterModels] = useState<OpenRouterModel[]>([]);
   const [deepseekModels, setDeepseekModels] = useState<{ id: string }[]>([]);
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.electronAPI.gemini.getThinkingLevel().then((res) => {
+      if (res?.success && res.data) setThinkingLevel(res.data);
+      else setThinkingLevel('medium');
+    }).catch(() => setThinkingLevel('medium'));
+  }, []);
 
   useEffect(() => {
     let active = true
@@ -7168,14 +7177,6 @@ export function CaptionTranslator() {
           </div>
         </div>
       </div>
-      <AutoThumbnailPromptPanel
-        sessionPath={getSessionPathForInputPath(settings.inputType, thumbnailPreviewInputPath)}
-        sourcePath={thumbnailPreviewInputPath}
-        translateMethod={settings.translateMethod}
-        geminiModel={settings.geminiModel}
-        deepseekModel={settings.deepseekModel}
-        projectId={projectId || undefined}
-      />
     </div>
   );
 
@@ -7871,6 +7872,23 @@ export function CaptionTranslator() {
                         {m.label}
                       </option>
                     ))}
+                  </select>
+                  <label className={styles.label} style={{ marginLeft: 8 }}>Suy luận</label>
+                  <select
+                    value={thinkingLevel ?? 'medium'}
+                    onChange={(e) => {
+                      const level = e.target.value;
+                      setThinkingLevel(level);
+                      window.electronAPI.gemini.setThinkingLevel(level as ThinkingLevel).catch((err) => console.error('[Caption] setThinkingLevel failed:', err));
+                    }}
+                    className={styles.select}
+                    style={{ width: 110, marginLeft: 4 }}
+                  >
+                    <option value="disabled">Tắt</option>
+                    <option value="minimal">Tối thiểu</option>
+                    <option value="low">Thấp</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="high">Cao</option>
                   </select>
                 </>
               )}
@@ -8661,7 +8679,19 @@ export function CaptionTranslator() {
               </div>
             )}
             {inspectorPane === 'batch3' && step3BatchInspectorPane}
-            {inspectorPane === 'thumbnail' && thumbnailConfigBar}
+            {inspectorPane === 'thumbnail' && (
+              <>
+                {thumbnailConfigBar}
+                <AutoThumbnailPromptPanel
+                  sessionPath={getSessionPathForInputPath(settings.inputType, thumbnailPreviewInputPath)}
+                  sourcePath={thumbnailPreviewInputPath}
+                  translateMethod={settings.translateMethod}
+                  geminiModel={settings.geminiModel}
+                  deepseekModel={settings.deepseekModel}
+                  projectId={projectId || undefined}
+                />
+              </>
+            )}
             {inspectorPane === 'preview' && previewControlsBar}
             <div className={styles.commonHint} style={{ marginTop: 8 }} title={fileManager.filePath || undefined}>
               {inspectorPane === 'step'

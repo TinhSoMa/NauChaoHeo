@@ -54,6 +54,13 @@ export interface CaptionAPI {
   // Translation (1 batch/lần)
   translateBatch: (options: SingleBatchOptions) => Promise<IpcApiResponse<SingleBatchResult>>;
 
+  // Thumbnail Prompt
+  generateThumbnailPrompt: (options: {
+    entries: SubtitleEntry[];
+    model: string;
+    translateMethod: 'api' | 'deepseek' | 'openrouter';
+  }) => Promise<IpcApiResponse<{ prompt: string }>>;
+
   // Split text files
   split: (options: SplitOptions) => Promise<IpcApiResponse<SplitResult>>;
 
@@ -145,6 +152,9 @@ export function createCaptionAPI(): CaptionAPI {
 
     translateBatch: (options: SingleBatchOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE_BATCH, options),
+
+    generateThumbnailPrompt: (options) =>
+      ipcRenderer.invoke(CAPTION_IPC_CHANNELS.GENERATE_THUMBNAIL_PROMPT, options),
 
     split: (options: SplitOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.SPLIT, options),

@@ -9,6 +9,7 @@ import type {
   GeminiCatalogModelInput,
   GeminiCatalogModelUpdate,
   GeminiModelSource,
+  ThinkingLevel,
 } from '../../shared/types/gemini';
 
 type GeminiModelRow = {
@@ -242,11 +243,12 @@ export class GeminiModelsDatabase {
     const now = Date.now();
 
     db.prepare(`
-      INSERT OR REPLACE INTO gemini_model_settings (id, default_model_id, last_synced_at, updated_at)
+      INSERT OR REPLACE INTO gemini_model_settings (id, default_model_id, last_synced_at, thinking_level, updated_at)
       VALUES (
         1,
         ?,
         COALESCE((SELECT last_synced_at FROM gemini_model_settings WHERE id = 1), NULL),
+        COALESCE((SELECT thinking_level FROM gemini_model_settings WHERE id = 1), 'medium'),
         ?
       )
     `).run(nextValue, now);
@@ -256,11 +258,12 @@ export class GeminiModelsDatabase {
     const db = getDatabase();
     const safeTimestamp = Number.isFinite(timestamp) ? Math.floor(timestamp) : Date.now();
     db.prepare(`
-      INSERT OR REPLACE INTO gemini_model_settings (id, default_model_id, last_synced_at, updated_at)
+      INSERT OR REPLACE INTO gemini_model_settings (id, default_model_id, last_synced_at, thinking_level, updated_at)
       VALUES (
         1,
         COALESCE((SELECT default_model_id FROM gemini_model_settings WHERE id = 1), NULL),
         ?,
+        COALESCE((SELECT thinking_level FROM gemini_model_settings WHERE id = 1), 'medium'),
         ?
       )
     `).run(safeTimestamp, Date.now());
@@ -276,5 +279,34 @@ export class GeminiModelsDatabase {
     `).get() as { last_synced_at?: number | null } | undefined;
     const value = Number(row?.last_synced_at);
     return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  static getThinkingLevel(): ThinkingLevel {
+    const db = getDatabase();
+    const row = db.prepare(`
+      SELECT thinking_level
+      FROM gemini_model_settings
+      WHERE id = 1
+      LIMIT 1
+    `).get() as { thinking_level?: string } | undefined;
+    const value = (row?.thinking_level || 'medium').trim().toLowerCase() as ThinkingLevel;
+    const valid: ThinkingLevel[] = ['disabled', 'minimal', 'low', 'medium', 'high'];
+    return valid.includes(value) ? value : 'medium';
+  }
+
+  static setThinkingLevel(level: ThinkingLevel): void {
+    const valid: ThinkingLevel[] = ['disabled', 'minimal', 'low', 'medium', 'high'];
+    const safeLevel = valid.includes(level) ? level : 'medium';
+    const db = getDatabase();
+    db.prepare(`
+      INSERT OR REPLACE INTO gemini_model_settings (id, default_model_id, last_synced_at, thinking_level, updated_at)
+      VALUES (
+        1,
+        COALESCE((SELECT default_model_id FROM gemini_model_settings WHERE id = 1), NULL),
+        COALESCE((SELECT last_synced_at FROM gemini_model_settings WHERE id = 1), NULL),
+        ?,
+        ?
+      )
+    `).run(safeLevel, Date.now());
   }
 }

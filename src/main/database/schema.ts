@@ -898,6 +898,17 @@ export function initDatabase(): void {
     );
   `);
 
+  // Migration: add thinking_level column (schema version 1)
+  const userVersion = db.pragma('user_version', { simple: true }) as number;
+  if (userVersion < 1) {
+    try {
+      db.exec(`ALTER TABLE gemini_model_settings ADD COLUMN thinking_level TEXT NOT NULL DEFAULT 'medium'`);
+    } catch {
+      // column may already exist
+    }
+    db.pragma('user_version = 1');
+  }
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_gemini_models_enabled_sort
     ON gemini_models(enabled, sort_order);

@@ -2055,3 +2055,48 @@ ${text}`;
     return { success: false, translatedText: '', error: String(error) };
   }
 }
+
+const THUMBNAIL_PROMPT_TEMPLATE = `You are an expert YouTube thumbnail prompt engineer for AI image generation.
+
+Based on the following video subtitle content, generate a COMPLETE, PRODUCTION-READY prompt for creating a YouTube thumbnail. The prompt must be self-contained and ready to use directly in an AI image generator.
+
+Your output MUST include all of the following elements:
+1. Main subject: Describe the key visual based on the video content
+2. Style requirements: Include visual style, mood/atmosphere, color palette, composition, lighting, and art direction
+3. Text overlay suggestions: If relevant, propose short overlay text and its style (bold, minimal, etc.)
+4. Technical constraints: MUST specify STRICT 16:9 aspect ratio (1920x1080), widescreen, horizontal layout, YouTube thumbnail proportions
+5. Quality descriptors: High quality, professional, eye-catching, clean composition, optimized for YouTube thumbnail viewing
+
+Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
+
+export interface GenerateThumbnailPromptOptions {
+  entries: SubtitleEntry[];
+  model: string;
+  translateMethod: 'api' | 'deepseek' | 'openrouter';
+}
+
+export async function generateThumbnailPrompt(
+  options: GenerateThumbnailPromptOptions,
+): Promise<{ success: boolean; prompt?: string; error?: string }> {
+  const { entries, model, translateMethod } = options;
+  if (entries.length === 0) {
+    return { success: false, error: 'Không có subtitle entries.' };
+  }
+
+  const allText = entries.map(e => e.text).join('\n');
+  const userPrompt = `${THUMBNAIL_PROMPT_TEMPLATE}\n\n## Nội dung subtitle\n${allText}`;
+  const provider = createProviderForMethod(translateMethod);
+  if (!provider) {
+    return { success: false, error: `Unsupported translate method: ${translateMethod}` };
+  }
+
+  try {
+    const response = await provider.call({ prompt: userPrompt, model });
+    if (!response.success || typeof response.data !== 'string') {
+      return { success: false, error: response.error || 'AI không trả về kết quả' };
+    }
+    return { success: true, prompt: response.data.trim() };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}

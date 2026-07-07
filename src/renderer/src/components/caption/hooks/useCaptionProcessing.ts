@@ -4680,22 +4680,13 @@ export function useCaptionProcessing({
         // Auto-generate thumbnail prompt from subtitle content
         if (isStep3Complete && currentEntries.length > 0) {
           try {
-            const thumbnailSbOpts: SingleBatchOptions = {
+            const thumbnailResult = await window.electronAPI.caption.generateThumbnailPrompt({
               entries: currentEntries,
-              batchIndex: 0,
-              totalBatches: 1,
-              linesPerBatch: currentEntries.length,
-              targetLanguage: 'Vietnamese',
               model: cfg.translateMethod === 'deepseek' ? (cfg.deepseekModel || cfg.geminiModel) : cfg.geminiModel,
-              translateMethod: cfg.translateMethod,
-              projectId: projectId || undefined,
-              sourcePath: resolveSourcePath(currentPath),
-              runId: runIdRef.current || undefined,
-              isThumbnailPrompt: true,
-            };
-            const result = await window.electronAPI.caption.translateBatch(thumbnailSbOpts);
-            if (result?.success && result?.data?.translatedTexts?.[0]) {
-              const autoThumbnailPrompt = result.data.translatedTexts[0];
+              translateMethod: cfg.translateMethod as 'api' | 'deepseek' | 'openrouter',
+            });
+            if (thumbnailResult?.success && thumbnailResult?.data?.prompt) {
+              const autoThumbnailPrompt = thumbnailResult.data.prompt;
               console.log(`[CaptionProcessing] Auto thumbnail prompt generated (${autoThumbnailPrompt.length} chars)`);
               await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
                 ...session,
@@ -4705,7 +4696,7 @@ export function useCaptionProcessing({
                 },
               }));
             } else {
-              console.warn('[CaptionProcessing] Auto thumbnail prompt failed:', result?.error || result?.data?.error || 'unknown');
+              console.warn('[CaptionProcessing] Auto thumbnail prompt failed:', thumbnailResult?.error || 'unknown');
             }
           } catch (error) {
             console.warn('[CaptionProcessing] Auto thumbnail prompt error:', error);

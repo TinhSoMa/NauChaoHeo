@@ -233,8 +233,8 @@ function mergeCaptionSessionWithDefaults(
     ...base,
     ...parsedSession,
     projectContext: {
-      ...base.projectContext,
       ...(parsedSession.projectContext || {}),
+      ...base.projectContext,
     },
     settings: {
       ...(parsedSession.settings || {}),

@@ -10,6 +10,8 @@
 /**
  * Base URL của Gemini API
  */
+export type ThinkingLevel = 'disabled' | 'minimal' | 'low' | 'medium' | 'high';
+
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
@@ -310,5 +312,9 @@ export const GEMINI_IPC_CHANNELS = {
   MODELS_GET_DEFAULT: 'gemini:models:getDefault',
   MODELS_SET_DEFAULT: 'gemini:models:setDefault',
   MODELS_SYNC_GOOGLE: 'gemini:models:syncGoogle',
+
+  // Thinking Level
+  GET_THINKING_LEVEL: 'gemini:thinking:get',
+  SET_THINKING_LEVEL: 'gemini:thinking:set',
 } as const;
 

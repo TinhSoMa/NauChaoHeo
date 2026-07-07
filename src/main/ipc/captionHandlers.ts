@@ -492,6 +492,28 @@ export function registerCaptionHandlers(): void {
   );
 
   // ============================================
+  // GENERATE THUMBNAIL PROMPT
+  // ============================================
+  ipcMain.handle(
+    CAPTION_IPC_CHANNELS.GENERATE_THUMBNAIL_PROMPT,
+    async (
+      _event: IpcMainInvokeEvent,
+      options: { entries: SubtitleEntry[]; model: string; translateMethod: 'api' | 'deepseek' | 'openrouter' },
+    ): Promise<IpcResponse<{ prompt: string }>> => {
+      try {
+        const result = await CaptionService.generateThumbnailPrompt(options);
+        if (result.success && result.prompt) {
+          return { success: true, data: { prompt: result.prompt } };
+        }
+        return { success: false, error: result.error || 'Không thể tạo thumbnail prompt' };
+      } catch (error) {
+        console.error('[CaptionHandlers] Lỗi generate thumbnail prompt:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ============================================
   // STOP ALL CAPTION PROCESSES
   // ============================================
   ipcMain.handle(

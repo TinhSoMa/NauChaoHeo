@@ -15,6 +15,7 @@ import {
   GeminiCatalogModelInput,
   GeminiCatalogModelUpdate,
   GeminiSyncModelsResult,
+  type ThinkingLevel,
 } from '../../shared/types/gemini';
 import * as Gemini from '../services/gemini';
 
@@ -728,6 +729,37 @@ export function registerGeminiHandlers(): void {
         };
       } catch (error) {
         console.error('[IPC] Lỗi lấy rotation state:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // ==========================================
+  // THINKING LEVEL HANDLERS
+  // ==========================================
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.GET_THINKING_LEVEL,
+    async (): Promise<IpcApiResponse<ThinkingLevel>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        return { success: true, data: service.getThinkingLevel() };
+      } catch (error) {
+        console.error('[IPC] Lỗi thinking:get:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    GEMINI_IPC_CHANNELS.SET_THINKING_LEVEL,
+    async (_event: IpcMainInvokeEvent, level: ThinkingLevel): Promise<IpcApiResponse<boolean>> => {
+      try {
+        const service = Gemini.getGeminiModelsService();
+        service.setThinkingLevel(level);
+        return { success: true, data: true };
+      } catch (error) {
+        console.error('[IPC] Lỗi thinking:set:', error);
         return { success: false, error: String(error) };
       }
     }

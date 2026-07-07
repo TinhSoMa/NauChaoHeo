@@ -30,6 +30,8 @@ export {
 
 // Caption Translator
 export {
+  generateThumbnailPrompt,
+  type GenerateThumbnailPromptOptions,
   translateAll,
   translateSingleBatch,
   translateSingleText,

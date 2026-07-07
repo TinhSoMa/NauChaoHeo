@@ -476,6 +476,7 @@ export const CAPTION_IPC_CHANNELS = {
   TRANSLATE_BATCH: 'caption:translateBatch',
   EXPORT_SRT: 'caption:exportSrt',
   EXPORT_PLAIN_TEXT: 'caption:exportPlainText',
+  GENERATE_THUMBNAIL_PROMPT: 'caption:generateThumbnailPrompt',
   SPLIT: 'caption:split',
   STOP_ALL: 'caption:stopAll',
   
@@ -1214,6 +1215,7 @@ export interface CaptionProjectSettingsValues {
   thumbnailTextSecondaryColor?: string;
   thumbnailLineHeightRatio?: number;
   thumbnailTextSecondary?: string;
+  lastInputPath?: string;
   thumbnailTextPrimaryPosition?: { x: number; y: number };
   thumbnailTextSecondaryPosition?: { x: number; y: number };
   hardsubTextPrimary?: string;

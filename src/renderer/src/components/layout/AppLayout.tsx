@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { TabHost } from './TabHost'
 import { useTabManager, TabId } from '../../context/TabContext'
@@ -21,6 +21,7 @@ const TAB_BY_PATH: Record<string, TabId> = {
 
 export const AppLayout = () => {
   const location = useLocation()
+  const navigate = useNavigate()
   const { setActiveTab } = useTabManager()
   const searchParams = new URLSearchParams(location.search)
   const projectId = searchParams.get('projectId')
@@ -30,6 +31,21 @@ export const AppLayout = () => {
     const nextTab = TAB_BY_PATH[location.pathname] ?? 'home'
     setActiveTab(nextTab)
   }, [location.pathname, setActiveTab])
+
+  // Tự động mở project cuối cùng nếu chưa có projectId
+  useEffect(() => {
+    if (projectId) return;
+    (async () => {
+      try {
+        const res = await window.electronAPI.appSettings.getLastActiveProjectId()
+        if (res?.success && res.data) {
+          navigate(`${location.pathname}?projectId=${encodeURIComponent(res.data)}`, { replace: true })
+        }
+      } catch {
+        // ignore
+      }
+    })()
+  }, []) // chỉ chạy 1 lần lúc mount
 
   return (
     <ProjectProvider projectId={projectId}>
