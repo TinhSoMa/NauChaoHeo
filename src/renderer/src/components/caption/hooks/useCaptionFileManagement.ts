@@ -34,14 +34,15 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
   }, [srtFilesByFolder]);
 
   useEffect(() => {
-    if (filePath) return;
     try {
       let saved = window.localStorage.getItem(storageKey);
       if (!saved || !saved.trim()) {
         saved = window.localStorage.getItem(globalStorageKey);
       }
       if (saved && saved.trim()) {
-        setFilePath(saved);
+        if (saved !== filePath) {
+          setFilePath(saved);
+        }
         console.log('[Debug][FileMgmt] RESTORE last input', {
           inputType,
           filePath: saved,
@@ -50,13 +51,15 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
           projectId,
         });
       } else {
-        console.log('[Debug][FileMgmt] No saved path found', { storageKey, globalStorageKey });
+        console.log('[Debug][FileMgmt] No saved path found', { storageKey, globalStorageKey, filePath });
       }
     } catch (error) {
       console.warn('[CaptionFileManagement] Không đọc được localStorage last input', error);
     }
   }, [filePath, storageKey, globalStorageKey]);
 
+  // Chỉ save khi filePath thay đổi (user chủ động chọn folder), KHÔNG chạy khi storageKey đổi
+  // tránh ghi đè key của inputType khác (vd draft→srt)
   useEffect(() => {
     if (!filePath) return;
     try {
@@ -73,7 +76,7 @@ export function useCaptionFileManagement({ inputType, videoSelectionAudioMode = 
     } catch (error) {
       console.warn('[CaptionFileManagement] Không lưu được localStorage last input', error);
     }
-  }, [filePath, storageKey, globalStorageKey]);
+  }, [filePath]);
 
   const normalizeFolderPath = useCallback((value: string): string => {
     return (value || '').trim().replace(/[\\/]+$/, '');
