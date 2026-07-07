@@ -121,6 +121,7 @@ export interface SingleBatchOptions {
   sourcePath?: string;
   runId?: string;
   previousBatches?: PreviousBatchTranslations[];
+  isThumbnailPrompt?: boolean;
 }
 
 /**
@@ -1060,6 +1061,7 @@ export interface CaptionSessionData {
   step7SubtitleSource?: 'session_translated_entries';
   step7AudioSource?: 'session_merged_audio';
   stepArtifacts?: CaptionStepArtifactsMap;
+  autoThumbnailPrompt?: string;
 }
 
 export interface CaptionArtifactFile {

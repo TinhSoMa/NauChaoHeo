@@ -169,6 +169,7 @@ interface SingleBatchOptions {
   projectId?: string;
   sourcePath?: string;
   runId?: string;
+  isThumbnailPrompt?: boolean;
 }
 
 interface SingleBatchResult {

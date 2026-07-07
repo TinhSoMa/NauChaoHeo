@@ -59,6 +59,7 @@ import {
 import { HardsubSettingsPanel } from './components/HardsubSettingsPanel';
 import { BulkApplyResult, ThumbnailListPanel } from './components/ThumbnailListPanel';
 import { ThumbnailPreviewPanel } from './components/ThumbnailPreviewPanel';
+import { AutoThumbnailPromptPanel } from './components/AutoThumbnailPromptPanel';
 import {
   Step3BulkFileItem,
   Step3BulkMultiFolderModal,
@@ -7167,6 +7168,14 @@ export function CaptionTranslator() {
           </div>
         </div>
       </div>
+      <AutoThumbnailPromptPanel
+        sessionPath={getSessionPathForInputPath(settings.inputType, thumbnailPreviewInputPath)}
+        sourcePath={thumbnailPreviewInputPath}
+        translateMethod={settings.translateMethod}
+        geminiModel={settings.geminiModel}
+        deepseekModel={settings.deepseekModel}
+        projectId={projectId || undefined}
+      />
     </div>
   );
 

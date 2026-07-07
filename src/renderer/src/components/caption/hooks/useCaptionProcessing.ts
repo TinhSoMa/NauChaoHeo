@@ -4676,6 +4676,41 @@ export function useCaptionProcessing({
           }
           throw new Error(missingMessage);
         }
+
+        // Auto-generate thumbnail prompt from subtitle content
+        if (isStep3Complete && currentEntries.length > 0) {
+          try {
+            const thumbnailSbOpts: SingleBatchOptions = {
+              entries: currentEntries,
+              batchIndex: 0,
+              totalBatches: 1,
+              linesPerBatch: currentEntries.length,
+              targetLanguage: 'Vietnamese',
+              model: cfg.translateMethod === 'deepseek' ? (cfg.deepseekModel || cfg.geminiModel) : cfg.geminiModel,
+              translateMethod: cfg.translateMethod,
+              projectId: projectId || undefined,
+              sourcePath: resolveSourcePath(currentPath),
+              runId: runIdRef.current || undefined,
+              isThumbnailPrompt: true,
+            };
+            const result = await window.electronAPI.caption.translateBatch(thumbnailSbOpts);
+            if (result?.success && result?.data?.translatedTexts?.[0]) {
+              const autoThumbnailPrompt = result.data.translatedTexts[0];
+              console.log(`[CaptionProcessing] Auto thumbnail prompt generated (${autoThumbnailPrompt.length} chars)`);
+              await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
+                ...session,
+                data: {
+                  ...session.data,
+                  autoThumbnailPrompt,
+                },
+              }));
+            } else {
+              console.warn('[CaptionProcessing] Auto thumbnail prompt failed:', result?.error || result?.data?.error || 'unknown');
+            }
+          } catch (error) {
+            console.warn('[CaptionProcessing] Auto thumbnail prompt error:', error);
+          }
+        }
       }
 
       // ========== STEP 4: TTS ==========

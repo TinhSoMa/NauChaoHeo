@@ -1759,6 +1759,7 @@ export async function translateSingleBatch(
     projectId,
     sourcePath,
     runId,
+    isThumbnailPrompt,
   } = options;
 
   throwIfTranslationStopped(runId);
@@ -1785,13 +1786,40 @@ export async function translateSingleBatch(
   }
 
   // Build TextBatch từ entries
-  const batch: TextBatch = {
+  let batch: TextBatch = {
     batchIndex,
     startIndex: 0,
     endIndex: Math.max(0, entries.length - 1),
     entries,
     texts: entries.map((e) => e.text),
   };
+
+  if (isThumbnailPrompt) {
+    if (entries.length === 0) {
+      throw new Error('[CaptionTranslator] isThumbnailPrompt requires at least one entry');
+    }
+    const allText = entries.map(e => e.text).join('\n');
+    const firstEntry = entries[0];
+    batch = {
+      batchIndex,
+      startIndex: 0,
+      endIndex: 0,
+      entries: [{ ...firstEntry, text: allText }],
+      texts: [allText],
+    };
+    resolvedPromptTemplate = `You are an expert YouTube thumbnail prompt engineer for AI image generation.
+
+Based on the following video subtitle content, generate a COMPLETE, PRODUCTION-READY prompt for creating a YouTube thumbnail. The prompt must be self-contained and ready to use directly in an AI image generator.
+
+Your output MUST include all of the following elements:
+1. Main subject: Describe the key visual based on the video content
+2. Style requirements: Include visual style, mood/atmosphere, color palette, composition, lighting, and art direction
+3. Text overlay suggestions: If relevant, propose short overlay text and its style (bold, minimal, etc.)
+4. Technical constraints: MUST specify STRICT 16:9 aspect ratio (1920x1080), widescreen, horizontal layout, YouTube thumbnail proportions
+5. Quality descriptors: High quality, professional, eye-catching, clean composition, optimized for YouTube thumbnail viewing
+
+Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
+  }
 
   const useGeminiWebQueue = translateMethod === 'gemini_webapi_queue';
   const useImpit = translateMethod === 'impit';
