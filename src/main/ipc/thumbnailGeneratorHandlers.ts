@@ -2,7 +2,8 @@ import { ipcMain, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { THUMBNAIL_IPC_CHANNELS } from '../../shared/types/thumbnailGenerator';
-import type { ThumbnailGenerationOptions } from '../../shared/types/thumbnailGenerator';
+import type { ThumbnailGenerationOptions, ThumbnailGeneratorConfig } from '../../shared/types/thumbnailGenerator';
+import { ThumbnailGeneratorDatabase } from '../database/thumbnailGeneratorDatabase';
 import { ThumbnailGeneratorService } from '../services/thumbnailGenerator';
 import { AppSettingsService } from '../services/appSettings';
 
@@ -29,10 +30,9 @@ export function registerThumbnailGeneratorHandlers(): void {
     async (_event, options: ThumbnailGenerationOptions): Promise<IpcApiResponse<{ imagePaths: string[]; finalPrompt: string; enhanced: boolean }>> => {
       try {
         const result = await getService().generate(options);
-        if (!result.success) return { success: false, error: result.error };
-        return { success: true, data: { imagePaths: result.imagePaths, finalPrompt: result.finalPrompt, enhanced: result.enhanced } };
+        return { success: result.success, data: { imagePaths: result.imagePaths, finalPrompt: result.finalPrompt, enhanced: result.enhanced }, error: result.success ? undefined : result.error };
       } catch (error) {
-        return { success: false, error: String(error) };
+        return { success: false, data: { imagePaths: [], finalPrompt: '', enhanced: false }, error: String(error) };
       }
     }
   );
@@ -50,10 +50,9 @@ export function registerThumbnailGeneratorHandlers(): void {
           mimeType,
         };
         const result = await getService().generate({ ...options, imagePath, inputImageInfo });
-        if (!result.success) return { success: false, error: result.error };
-        return { success: true, data: { imagePaths: result.imagePaths, finalPrompt: result.finalPrompt, enhanced: result.enhanced } };
+        return { success: result.success, data: { imagePaths: result.imagePaths, finalPrompt: result.finalPrompt, enhanced: result.enhanced }, error: result.success ? undefined : result.error };
       } catch (error) {
-        return { success: false, error: String(error) };
+        return { success: false, data: { imagePaths: [], finalPrompt: '', enhanced: false }, error: String(error) };
       }
     }
   );
@@ -115,6 +114,30 @@ export function registerThumbnailGeneratorHandlers(): void {
         AppSettingsService.update({ thumbnailOutputDir: settings.outputDir });
         if (service) service.setOutputDir(settings.outputDir);
         return { success: true, data: { outputDir: settings.outputDir } };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    THUMBNAIL_IPC_CHANNELS.GET_CONFIG,
+    async (): Promise<IpcApiResponse<ThumbnailGeneratorConfig>> => {
+      try {
+        const config = ThumbnailGeneratorDatabase.getConfig();
+        return { success: true, data: config };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    THUMBNAIL_IPC_CHANNELS.UPDATE_CONFIG,
+    async (_event, config: ThumbnailGeneratorConfig): Promise<IpcApiResponse<void>> => {
+      try {
+        ThumbnailGeneratorDatabase.upsertConfig(config);
+        return { success: true };
       } catch (error) {
         return { success: false, error: String(error) };
       }

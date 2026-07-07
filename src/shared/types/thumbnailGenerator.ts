@@ -6,6 +6,8 @@ export const THUMBNAIL_IPC_CHANNELS = {
   CLEAR_HISTORY: 'thumbnail:clearHistory',
   GET_SETTINGS: 'thumbnail:getSettings',
   UPDATE_SETTINGS: 'thumbnail:updateSettings',
+  GET_CONFIG: 'thumbnail:getConfig',
+  UPDATE_CONFIG: 'thumbnail:updateConfig',
 } as const
 
 export interface ThumbnailGenerationOptions {
@@ -60,4 +62,9 @@ export interface ThumbnailHistoryResult {
 
 export interface ThumbnailSettings {
   outputDir: string
+}
+
+export interface ThumbnailGeneratorConfig {
+  geminiApiKey: string
+  openaiApiKey: string
 }

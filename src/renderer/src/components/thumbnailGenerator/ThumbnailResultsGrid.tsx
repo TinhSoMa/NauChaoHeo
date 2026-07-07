@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useThumbnailStore } from '../../stores/thumbnailStore'
-import { CheckCircle, Download, Plus, Eye, Loader2 } from 'lucide-react'
+import { CheckCircle, Download, Plus, Eye, Loader2, Clipboard, ClipboardCheck, AlertTriangle } from 'lucide-react'
 import { ThumbnailImagePreviewModal } from './ThumbnailImagePreviewModal'
 
 export function ThumbnailResultsGrid() {
-  const { generatedImages, downloadImage } = useThumbnailStore()
+  const { generatedImages, downloadImage, error, finalPrompt, isEnhanced } = useThumbnailStore()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [previewModal, setPreviewModal] = useState({ isOpen: false, imageUrl: '', imageIndex: 0 })
   const [isDownloadingZip, setIsDownloadingZip] = useState(false)
   const [imageDataUrls, setImageDataUrls] = useState<Record<number, string>>({})
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     generatedImages.forEach(async (path, i) => {
@@ -18,6 +19,14 @@ export function ThumbnailResultsGrid() {
       } catch { /* skip */ }
     })
   }, [generatedImages])
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(finalPrompt)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* fallback */ }
+  }
 
   const handleDownload = (imageUrl: string) => {
     downloadImage(imageUrl)
@@ -135,6 +144,38 @@ export function ThumbnailResultsGrid() {
           })
         )}
       </div>
+
+      {error && (
+        <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-sm text-red-900 dark:text-red-200">Tạo Thumbnail Thất Bại</h3>
+            <p className="text-xs text-red-700 dark:text-red-300 mt-1">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {finalPrompt && (
+        <details open className="mt-6 bg-card rounded-lg shadow-sm border border-border overflow-hidden group">
+          <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-surface/50 transition-colors select-none">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-primary" />
+              <span className="font-semibold text-sm text-text-primary">Prompt Đã Sử Dụng</span>
+              {isEnhanced && (
+                <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full">Đã nâng cao bởi AI</span>
+              )}
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); handleCopyPrompt() }}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+              {copied ? <ClipboardCheck className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+              {copied ? 'Đã sao chép!' : 'Sao chép'}
+            </button>
+          </summary>
+          <div className="px-4 pb-4">
+            <pre className="text-xs text-text-primary whitespace-pre-wrap break-words bg-surface rounded-lg p-3 border border-border leading-relaxed max-h-60 overflow-y-auto">{finalPrompt}</pre>
+          </div>
+        </details>
+      )}
 
       <div className="mt-6 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
         <h3 className="font-semibold text-sm text-yellow-900 dark:text-yellow-200 mb-2">Mẹo Cho Thumbnail Của Bạn</h3>

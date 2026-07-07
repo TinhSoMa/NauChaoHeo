@@ -7,10 +7,9 @@ interface GenerateResult {
 export class ImageGenerator {
   private model = 'gemini-2.5-flash-image-preview';
 
-  async generateImages(prompt: string, count = 4): Promise<GenerateResult> {
-    const { GoogleGenAI } = await import('@google/genai');
-    const apiKey = this.getApiKey();
+  async generateImages(prompt: string, count = 4, apiKey?: string): Promise<GenerateResult> {
     if (!apiKey) throw new Error('No Gemini API key configured');
+    const { GoogleGenAI } = await import('@google/genai');
 
     const ai = new GoogleGenAI({ apiKey });
     const config: { responseModalities: string[] } = { responseModalities: ['IMAGE', 'TEXT'] };
@@ -47,11 +46,11 @@ export class ImageGenerator {
     imagePath: string,
     prompt: string,
     count = 4,
+    apiKey?: string,
     onImageComplete?: (buffer: Buffer, index: number) => Promise<void>
   ): Promise<GenerateResult> {
-    const { GoogleGenAI } = await import('@google/genai');
-    const apiKey = this.getApiKey();
     if (!apiKey) throw new Error('No Gemini API key configured');
+    const { GoogleGenAI } = await import('@google/genai');
 
     const imageBuffer = fs.readFileSync(imagePath);
     const base64Image = imageBuffer.toString('base64');
@@ -120,10 +119,6 @@ export class ImageGenerator {
     return { buffers: imageBuffers };
   }
 
-  isConfigured(): boolean {
-    return !!process.env.GEMINI_API_KEY;
-  }
-
   private detectMimeType(buffer: Buffer): string {
     const signatures: [string, number[]][] = [
       ['image/jpeg', [0xFF, 0xD8, 0xFF]],
@@ -137,7 +132,4 @@ export class ImageGenerator {
     return 'image/jpeg';
   }
 
-  private getApiKey(): string | null {
-    return process.env.GEMINI_API_KEY || null;
-  }
 }

@@ -77,11 +77,15 @@ export class ThumbnailGeneratorService {
     error?: string
     entry?: ThumbnailHistoryEntry
   }> {
-    try {
-      const isImageToImage = !!options.imagePath;
-      const imageCount = Math.max(1, Math.min(4, options.imageCount || 4));
+    const isImageToImage = !!options.imagePath;
+    const imageCount = Math.max(1, Math.min(4, options.imageCount || 4));
+    const config = ThumbnailGeneratorDatabase.getConfig();
+    const geminiKey = config.geminiApiKey || undefined;
+    const openaiKey = config.openaiApiKey || undefined;
 
-      let structuredPrompt = generateEnhancedPrompt({
+    let structuredPrompt = '';
+    try {
+      structuredPrompt = generateEnhancedPrompt({
         originalPrompt: options.prompt,
         category: options.category,
         mood: options.mood,
@@ -95,7 +99,7 @@ export class ThumbnailGeneratorService {
 
       let enhanced = false;
       if (options.enhancePrompt && structuredPrompt) {
-        const enhancedPrompt = await this.promptEnhancer.enhance(structuredPrompt);
+        const enhancedPrompt = await this.promptEnhancer.enhance(structuredPrompt, openaiKey);
         if (enhancedPrompt !== structuredPrompt) {
           structuredPrompt = enhancedPrompt;
           enhanced = true;
@@ -105,11 +109,11 @@ export class ThumbnailGeneratorService {
       let result: { buffers: Buffer[] };
       if (isImageToImage && options.imagePath) {
         result = await this.imageGenerator.generateImagesFromImage(
-          options.imagePath, structuredPrompt, imageCount,
+          options.imagePath, structuredPrompt, imageCount, geminiKey,
           async (buffer) => { await this.imageStorage.saveImage(buffer); }
         );
       } else {
-        result = await this.imageGenerator.generateImages(structuredPrompt, imageCount);
+        result = await this.imageGenerator.generateImages(structuredPrompt, imageCount, geminiKey);
       }
 
       const imagePaths = await Promise.all(
@@ -141,7 +145,7 @@ export class ThumbnailGeneratorService {
 
       return { success: true, imagePaths, finalPrompt: structuredPrompt, enhanced, entry };
     } catch (error) {
-      return { success: false, imagePaths: [], finalPrompt: '', enhanced: false, error: (error as Error).message };
+      return { success: false, imagePaths: [], finalPrompt: structuredPrompt, enhanced: false, error: (error as Error).message };
     }
   }
 

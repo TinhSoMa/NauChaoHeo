@@ -33,6 +33,8 @@ export interface ThumbnailStore {
   generatedImages: string[]
   isGenerating: boolean
   error: string | null
+  finalPrompt: string
+  isEnhanced: boolean
 
   // History
   history: any[]
@@ -131,6 +133,8 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
   generatedImages: [],
   isGenerating: false,
   error: null,
+  finalPrompt: '',
+  isEnhanced: false,
 
   history: [],
   totalHistory: 0,
@@ -200,6 +204,8 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
     generatedImages: [],
     isGenerating: false,
     error: null,
+    finalPrompt: '',
+    isEnhanced: false,
   }),
 
   setHistoryView: (view) => set({ isHistoryView: view }),
@@ -230,17 +236,28 @@ export const useThumbnailStore = create<ThumbnailStore>((set, get) => ({
         result = await window.electronAPI.thumbnailGenerator.generate(options)
       }
 
+      const finalPrompt = result.data?.finalPrompt || ''
+      const enhanced = result.data?.enhanced || false
+
       if (result.success && result.data) {
         set({
           generatedImages: result.data.imagePaths,
+          finalPrompt,
+          isEnhanced: enhanced,
           isGenerating: false,
           currentStep: 'results',
         })
       } else {
-        set({ isGenerating: false, error: result.error || 'Tạo thất bại', currentStep: 'results' })
+        set({
+          finalPrompt,
+          isEnhanced: enhanced,
+          isGenerating: false,
+          error: result.error || 'Tạo thất bại',
+          currentStep: 'results',
+        })
       }
     } catch (err: any) {
-      set({ isGenerating: false, error: err.message || 'Tạo thất bại', currentStep: 'results' })
+      set({ isGenerating: false, finalPrompt: '', isEnhanced: false, error: err.message || 'Tạo thất bại', currentStep: 'results' })
     }
   },
 

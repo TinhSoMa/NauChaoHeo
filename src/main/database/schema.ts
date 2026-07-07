@@ -1465,5 +1465,24 @@ export function initDatabase(): void {
     );
   `);
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens, thumbnail_generation_history)');
+  // Thumbnail generator config
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS thumbnail_generator_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      gemini_api_key TEXT,
+      openai_api_key TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
+  try {
+    const row = db.prepare('SELECT id FROM thumbnail_generator_config WHERE id = 1').get();
+    if (!row) {
+      db.prepare('INSERT INTO thumbnail_generator_config (id, gemini_api_key, openai_api_key, updated_at) VALUES (1, NULL, NULL, ?)').run(Date.now());
+    }
+  } catch (e) {
+    console.error('[Database] Ensure thumbnail_generator_config failed:', e);
+  }
+
+  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens, thumbnail_generation_history, thumbnail_generator_config)');
 }

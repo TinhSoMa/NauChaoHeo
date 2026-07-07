@@ -4,22 +4,24 @@ import { PromptCache } from './promptCache';
 const cache = new PromptCache(100, 60);
 
 export class PromptEnhancer {
-  private openai: OpenAI;
+  private openai: OpenAI | null = null;
+  private currentApiKey = '';
 
-  constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || '',
-    });
+  private getClient(apiKey: string): OpenAI {
+    if (this.openai && this.currentApiKey === apiKey) return this.openai;
+    this.currentApiKey = apiKey;
+    this.openai = apiKey ? new OpenAI({ apiKey }) : null;
+    return this.openai!;
   }
 
-  async enhance(userPrompt: string): Promise<string> {
-    if (!process.env.OPENAI_API_KEY) return userPrompt;
+  async enhance(userPrompt: string, apiKey?: string): Promise<string> {
+    if (!apiKey) return userPrompt;
 
     const cached = cache.get(userPrompt);
     if (cached) return cached;
 
     try {
-      const response = await this.openai.chat.completions.create({
+      const response = await this.getClient(apiKey).chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
           {
@@ -53,8 +55,8 @@ Guidelines for enhancement:
     }
   }
 
-  isConfigured(): boolean {
-    return !!process.env.OPENAI_API_KEY;
+  isConfigured(apiKey?: string): boolean {
+    return !!apiKey;
   }
 
   getCacheStats() {

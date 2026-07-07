@@ -1469,6 +1469,8 @@ declare global {
         clearHistory: () => Promise<{ success: boolean; error?: string }>;
         getSettings: () => Promise<{ success: boolean; data?: { outputDir: string }; error?: string }>;
         updateSettings: (settings: { outputDir: string }) => Promise<{ success: boolean; data?: { outputDir: string }; error?: string }>;
+        getConfig: () => Promise<{ success: boolean; data?: { geminiApiKey: string; openaiApiKey: string }; error?: string }>;
+        updateConfig: (config: { geminiApiKey: string; openaiApiKey: string }) => Promise<{ success: boolean; error?: string }>;
       };
     };
   }

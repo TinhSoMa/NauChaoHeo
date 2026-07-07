@@ -1,5 +1,5 @@
 import { getDatabase } from './schema';
-import type { ThumbnailHistoryEntry } from '../../shared/types/thumbnailGenerator';
+import type { ThumbnailHistoryEntry, ThumbnailGeneratorConfig } from '../../shared/types/thumbnailGenerator';
 
 interface DbRow {
   id: string
@@ -106,5 +106,20 @@ export class ThumbnailGeneratorDatabase {
   static deleteAll(): void {
     const db = getDatabase();
     db.prepare('DELETE FROM thumbnail_generation_history').run();
+  }
+
+  static getConfig(): ThumbnailGeneratorConfig {
+    const db = getDatabase();
+    const row = db.prepare('SELECT gemini_api_key, openai_api_key FROM thumbnail_generator_config WHERE id = 1').get() as { gemini_api_key: string | null; openai_api_key: string | null } | undefined;
+    return { geminiApiKey: row?.gemini_api_key || '', openaiApiKey: row?.openai_api_key || '' };
+  }
+
+  static upsertConfig(config: ThumbnailGeneratorConfig): void {
+    const db = getDatabase();
+    db.prepare('INSERT OR REPLACE INTO thumbnail_generator_config (id, gemini_api_key, openai_api_key, updated_at) VALUES (1, ?, ?, ?)').run(
+      config.geminiApiKey || null,
+      config.openaiApiKey || null,
+      Date.now(),
+    );
   }
 }

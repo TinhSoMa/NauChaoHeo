@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import { THUMBNAIL_IPC_CHANNELS } from '../shared/types/thumbnailGenerator';
-import type { ThumbnailGenerationOptions, ThumbnailHistoryEntry } from '../shared/types/thumbnailGenerator';
+import type { ThumbnailGenerationOptions, ThumbnailHistoryEntry, ThumbnailGeneratorConfig } from '../shared/types/thumbnailGenerator';
 
 interface IpcApiResponse<T = unknown> {
   success: boolean;
@@ -16,6 +16,8 @@ export interface ThumbnailGeneratorAPI {
   clearHistory: () => Promise<IpcApiResponse<void>>;
   getSettings: () => Promise<IpcApiResponse<{ outputDir: string }>>;
   updateSettings: (settings: { outputDir: string }) => Promise<IpcApiResponse<{ outputDir: string }>>;
+  getConfig: () => Promise<IpcApiResponse<ThumbnailGeneratorConfig>>;
+  updateConfig: (config: ThumbnailGeneratorConfig) => Promise<IpcApiResponse<void>>;
 }
 
 export function createThumbnailGeneratorAPI(): ThumbnailGeneratorAPI {
@@ -27,5 +29,7 @@ export function createThumbnailGeneratorAPI(): ThumbnailGeneratorAPI {
     clearHistory: () => ipcRenderer.invoke(THUMBNAIL_IPC_CHANNELS.CLEAR_HISTORY),
     getSettings: () => ipcRenderer.invoke(THUMBNAIL_IPC_CHANNELS.GET_SETTINGS),
     updateSettings: (settings) => ipcRenderer.invoke(THUMBNAIL_IPC_CHANNELS.UPDATE_SETTINGS, settings),
+    getConfig: () => ipcRenderer.invoke(THUMBNAIL_IPC_CHANNELS.GET_CONFIG),
+    updateConfig: (config) => ipcRenderer.invoke(THUMBNAIL_IPC_CHANNELS.UPDATE_CONFIG, config),
   };
 }
