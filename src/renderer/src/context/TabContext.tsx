@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState } from 'react'
 
-export type TabId = 'home' | 'translator' | 'cutVideo' | 'story' | 'storySummary' | 'storyWeb' | 'gemini' | 'veo3' | 'downloader' | 'settings'
+export type TabId = 'home' | 'translator' | 'cutVideo' | 'story' | 'storySummary' | 'storyWeb' | 'gemini' | 'veo3' | 'downloader' | 'thumbnail' | 'settings'
 
 interface TabContextValue {
   activeTabId: TabId

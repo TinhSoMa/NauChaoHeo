@@ -15,6 +15,7 @@ const TAB_BY_PATH: Record<string, TabId> = {
   '/gemini-chat': 'gemini',
   '/veo3': 'veo3',
   '/downloader': 'downloader',
+  '/thumbnail-generator': 'thumbnail',
   '/settings': 'settings'
 }
 

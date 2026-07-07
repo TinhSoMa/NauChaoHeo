@@ -4,6 +4,7 @@ import {
   BookOpen,
   Download,
   FileText,
+  Image,
   MessageCircle,
   Scissors,
   Settings,
@@ -35,6 +36,7 @@ export function ProjectHome() {
       { id: 'web', label: 'Dịch Truyện (Web)', desc: 'Dịch trực tiếp trên web', path: '/story-web', icon: MessageCircle },
       { id: 'gemini', label: 'Chat Gemini', desc: 'Chat, API tools', path: '/gemini-chat', icon: MessageCircle },
       { id: 'veo3', label: 'Veo3 AI Prompt', desc: 'Xây prompt video', path: '/veo3', icon: Video },
+      { id: 'thumbnail', label: 'Thumbnail AI', desc: 'Tạo thumbnail với AI', path: '/thumbnail-generator', icon: Image },
       { id: 'downloader', label: 'Downloader', desc: 'Tải video/sub/thumbnail', path: '/downloader', icon: Download },
       { id: 'settings', label: 'Settings', desc: 'Cấu hình ứng dụng', path: '/settings', icon: Settings }
     ],

@@ -36,6 +36,9 @@ const Veo3Page = lazy(() =>
 const DownloaderPage = lazy(() =>
   import('../downloader/DownloaderPage').then((m) => ({ default: m.DownloaderPage }))
 )
+const ThumbnailGeneratorPage = lazy(() =>
+  import('../thumbnailGenerator/ThumbnailGeneratorPage').then((m) => ({ default: m.ThumbnailGeneratorPage }))
+)
 
 const TAB_ENTRIES: TabEntry[] = [
   { id: 'home', element: <ProjectHome /> },
@@ -47,6 +50,7 @@ const TAB_ENTRIES: TabEntry[] = [
   { id: 'gemini', element: <GeminiChat /> },
   { id: 'veo3', element: <Veo3Page /> },
   { id: 'downloader', element: <DownloaderPage /> },
+  { id: 'thumbnail', element: <ThumbnailGeneratorPage /> },
   { id: 'settings', element: <Settings /> }
 ]
 

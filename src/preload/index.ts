@@ -17,6 +17,7 @@ import { createDeepSeekAPI, DeepSeekAPI } from './deepseekApi'
 import { shutdownApi, ShutdownAPI } from './shutdownApi'
 import { capcutTtsSecretsApi, CapcutTtsSecretsAPI } from './capcutTtsSecretsApi'
 import { createOpenRouterAPI, OpenRouterAPI } from './openrouterApi'
+import { createThumbnailGeneratorAPI, ThumbnailGeneratorAPI } from './thumbnailGeneratorApi'
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -37,7 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   dialog: {
-    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options)
+    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options),
+    getImageDataUrl: (filePath: string) => ipcRenderer.invoke('image:getDataUrl', filePath)
   },
 
   // Gemini API
@@ -97,6 +99,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // DeepSeek API
   deepSeek: createDeepSeekAPI(),
+
+  // Thumbnail Generator API
+  thumbnailGenerator: createThumbnailGeneratorAPI(),
 })
 
 // Declare types for the exposed API
@@ -107,7 +112,8 @@ declare global {
       onMessage: (channel: string, callback: (...args: unknown[]) => void) => void
       invoke: (channel: string, data?: unknown) => Promise<unknown>
       dialog: {
-        showOpenDialog: (options: any) => Promise<string[] | undefined>
+        showOpenDialog: (options: any) => Promise<string[] | undefined>,
+        getImageDataUrl: (filePath: string) => Promise<string>
       }
       gemini: GeminiAPI
       caption: CaptionAPI
@@ -129,6 +135,7 @@ declare global {
       capcutTtsSecrets: CapcutTtsSecretsAPI
       openRouter: OpenRouterAPI
       deepSeek: DeepSeekAPI
+      thumbnailGenerator: ThumbnailGeneratorAPI
     }
   }
 }

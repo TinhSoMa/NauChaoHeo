@@ -13,10 +13,11 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 | Config | For | Key constraint |
 |---|---|---|
 | `tsconfig.json` | Renderer | `moduleResolution: "bundler"`, `noEmit: true`, imports omit `.js` |
-| `tsconfig.main.json` | Main + Preload + Shared | `composite: true`, `module: "Node16"`, imports **must** include `.js` extension |
+| `tsconfig.main.json` | Main + Preload + Shared | `composite: true`, `module: "Node16"`, imports **must** include `.js` |
+| `tsconfig.node.json` | Vite config (`electron.vite.config.ts`) | `composite: true`, minimal |
 
-- **Two separate tsc checks**: `npx tsc -p tsconfig.main.json --noEmit` for main/preload/shared, `npx tsc --noEmit` for renderer. Both should pass.
-- `composite: true` on `tsconfig.main.json` generates `.d.ts` in `dist/main/`. When editing shared types, rebuild main first: `npx tsc -p tsconfig.main.json`. Otherwise the renderer will resolve to stale `.d.ts`.
+- **Three separate tsc checks**: `npx tsc -p tsconfig.main.json --noEmit` (main/preload/shared), `npx tsc --noEmit` (renderer), and `npx tsc -p tsconfig.node.json --noEmit` (Vite config). All must pass.
+- `composite: true` on `tsconfig.main.json` generates `.d.ts` in `dist/main/`. When editing shared types, rebuild main first: `npx tsc -p tsconfig.main.json`, else the renderer resolves stale `.d.ts`.
 - `noUnusedLocals` / `noUnusedParameters` are on — TS errors on unused imports/vars.
 
 ## Architecture
@@ -58,6 +59,7 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 - better-sqlite3 is in `asarUnpack` (`electron-builder.yml:22`).
 - `electron.builder.yml` extraResources bundle python workers, ffmpeg, fonts, yt-dlp, aria2c, go TTS worker.
 - DeepSeek has its own database table (`deepseek_config`) and IPC handlers (`deepseekHandlers.ts`), separate from Gemini/OpenRouter.
-- `.opencode/` directory exists with plugin dependencies but **no** custom `opencode.json` rules.
+- `extension/` (root) contains 5 Chrome extension projects: EbookExtension, NovelSub, qidian (x2), tiktok — separate from the Electron app.
+- `test/` (root) holds ad-hoc scripts, not the real test suite. Actual tests are in `tests/extension/`.
 - `README (2).md` is a stale Mem0 project file, **not** the app README. Real documentation is in `HUONG_DAN_CAI_DAT.md` (Vietnamese).
 - Proxy architecture: per-scope config (caption, story, chat, tts, other) with Webshare API integration.

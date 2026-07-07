@@ -17,7 +17,8 @@ import {
   Terminal,
   Bot,
   Power,
-  Globe
+  Globe,
+  Image
 } from 'lucide-react';
 import styles from './Settings.module.css';
 import { SettingsTab, SettingsMenuItem } from './types';
@@ -38,6 +39,7 @@ import { DebugLogsSettings } from './DebugLogsSettings';
 import { AutoShutdownSettings } from './AutoShutdownSettings';
 import { OpenRouterDetail } from './OpenRouterDetail';
 import { DeepSeekDetail } from './DeepSeekDetail';
+import { ThumbnailGeneratorDetail } from './ThumbnailGeneratorDetail';
 import { BackButton } from './BackButton';
 
 // Menu items configuration
@@ -126,6 +128,12 @@ const menuItems: SettingsMenuItem[] = [
     desc: 'Cấu hình API key và models cho DeepSeek',
     icon: Globe
   },
+  {
+    id: 'thumbnail-generator',
+    label: 'Thumbnail AI',
+    desc: 'Cấu hình OpenAI API key cho tạo thumbnail',
+    icon: Image
+  },
 ];
 
 export function Settings() {
@@ -165,6 +173,7 @@ export function Settings() {
       {activeTab === 'autoShutdown' && <AutoShutdownSettings />}
       {activeTab === 'openrouter' && <OpenRouterDetail />}
       {activeTab === 'deepseek' && <DeepSeekDetail />}
+      {activeTab === 'thumbnail-generator' && <ThumbnailGeneratorDetail />}
     </div>
   );
 }

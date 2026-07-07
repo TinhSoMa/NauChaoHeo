@@ -23,6 +23,8 @@ import { registerMemoryContextHandlers } from './memoryContextHandlers';
 import { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 import { registerOpenRouterHandlers } from './openrouterHandlers';
 import { registerDeepSeekHandlers } from './deepseekHandlers';
+import { registerThumbnailGeneratorHandlers } from './thumbnailGeneratorHandlers';
+import { registerDialogHandlers } from './dialogHandlers';
 
 /**
  * Đăng ký tất cả IPC handlers
@@ -91,6 +93,12 @@ export function registerAllHandlers(): void {
   // Đăng ký DeepSeek handlers
   registerDeepSeekHandlers();
 
+  // Đăng ký Dialog handlers
+  registerDialogHandlers();
+
+  // Đăng ký Thumbnail Generator handlers
+  registerThumbnailGeneratorHandlers();
+
   console.log('[IPC] Da dang ky xong tat ca handlers');
 }
 
@@ -115,4 +123,6 @@ export { registerMemoryContextHandlers } from './memoryContextHandlers';
 export { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 export { registerOpenRouterHandlers } from './openrouterHandlers';
 export { registerDeepSeekHandlers } from './deepseekHandlers';
+export { registerThumbnailGeneratorHandlers } from './thumbnailGeneratorHandlers';
+export { registerDialogHandlers } from './dialogHandlers';
 

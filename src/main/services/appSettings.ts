@@ -59,6 +59,7 @@ export interface AppSettings {
   autoShutdownDelayMinutes: number;
   capcutTtsSecrets: CapcutTtsSecrets;
   geminiWebApiCookieFallback: GeminiWebApiCookieFallback;
+  thumbnailOutputDir: string | null;
 
   // Font UI
   uiFontFamily: string;
@@ -673,6 +674,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     sourceBrowser: null,
     updatedAt: null,
   },
+  thumbnailOutputDir: null,
 
   // Font UI defaults
   uiFontFamily: 'Inter',

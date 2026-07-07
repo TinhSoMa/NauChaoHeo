@@ -20,7 +20,8 @@ export type SettingsTab =
   | 'debugLogs'
   | 'autoShutdown'
   | 'openrouter'
-  | 'deepseek';
+  | 'deepseek'
+  | 'thumbnail-generator';
 
 // Theme & Language types
 export type ThemeMode = 'light' | 'dark';

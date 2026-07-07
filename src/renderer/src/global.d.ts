@@ -1402,6 +1402,7 @@ declare global {
       
       dialog: {
         showOpenDialog: (options: any) => Promise<string[] | undefined>;
+        getImageDataUrl: (filePath: string) => Promise<string>;
       };
 
       // Gemini API
@@ -1458,6 +1459,19 @@ declare global {
 
       // DeepSeek API
       deepSeek: DeepSeekAPI;
+
+      // Thumbnail Generator API
+      thumbnailGenerator: {
+        generate: (options: any) => Promise<{ success: boolean; data?: { imagePaths: string[]; finalPrompt: string; enhanced: boolean }; error?: string }>;
+        generateFromImage: (imagePath: string, options: any) => Promise<{ success: boolean; data?: { imagePaths: string[]; finalPrompt: string; enhanced: boolean }; error?: string }>;
+        getHistory: (limit?: number, offset?: number) => Promise<{ success: boolean; data?: { entries: any[]; total: number; hasMore: boolean }; error?: string }>;
+        deleteHistoryEntry: (id: string) => Promise<{ success: boolean; data?: { deleted: boolean }; error?: string }>;
+        clearHistory: () => Promise<{ success: boolean; error?: string }>;
+        getSettings: () => Promise<{ success: boolean; data?: { outputDir: string }; error?: string }>;
+        updateSettings: (settings: { outputDir: string }) => Promise<{ success: boolean; data?: { outputDir: string }; error?: string }>;
+        getConfig: () => Promise<{ success: boolean; data?: { geminiApiKey: string; openaiApiKey: string }; error?: string }>;
+        updateConfig: (config: { geminiApiKey: string; openaiApiKey: string }) => Promise<{ success: boolean; error?: string }>;
+      };
     };
   }
 }
