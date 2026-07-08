@@ -6884,7 +6884,7 @@ export function CaptionTranslator() {
                     type="button"
                     className={styles.step3BatchActionBtn}
                     onClick={() => setStreamPopupBatchIndex(row.batchIndex)}
-                    disabled={!processing.streamingChunks[row.batchIndex]}
+                    disabled={row.status !== 'running' && !processing.streamingChunks[row.batchIndex]}
                     title={`Xem stream live của batch #${row.batchIndex}`}
                   >
                     Stream
