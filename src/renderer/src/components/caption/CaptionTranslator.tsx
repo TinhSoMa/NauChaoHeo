@@ -6880,7 +6880,7 @@ export function CaptionTranslator() {
                   >
                     Xem/Sửa
                   </button>
-                {showStreamPreviews && row.status === 'running' && processing.streamingChunks[row.batchIndex] && !processing.streamingChunks[row.batchIndex].done && (
+                {row.status === 'running' && processing.streamingChunks[row.batchIndex] && (
                     <button
                       type="button"
                       className={styles.step3BatchActionBtn}
@@ -6910,7 +6910,7 @@ export function CaptionTranslator() {
                     )}
                   </div>
                 )}
-                {row.status === 'running' && processing.streamingChunks[row.batchIndex] && !processing.streamingChunks[row.batchIndex].done && (
+                {showStreamPreviews && row.status === 'running' && processing.streamingChunks[row.batchIndex] && (
                   <div className={styles.step3BatchStreamRow}>
                     <div className={styles.step3BatchStreamIndicator} />
                     <div className={styles.step3BatchStreamText}>
