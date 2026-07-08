@@ -4288,6 +4288,7 @@ export function useCaptionProcessing({
 
         const previousBatches: import('@shared/types/caption').PreviousBatchTranslations[] = [];
         const geminiStreamingEnabled = (settings as any)?.geminiStreamingEnabled === true;
+        console.log(`[CaptionProcessing] Step3 streaming check: geminiStreamingEnabled=${geminiStreamingEnabled}, translateMethod=${cfg.translateMethod}, willStream=${geminiStreamingEnabled && cfg.translateMethod === 'api'}`);
         let unsubStream: (() => void) | null = null;
         setStreamingChunks({});
         const cleanupStream = () => {

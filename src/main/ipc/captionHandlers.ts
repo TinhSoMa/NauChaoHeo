@@ -484,9 +484,12 @@ export function registerCaptionHandlers(): void {
               accumulated: accumulatedText,
               done: false,
             };
+            console.log(`[CaptionIPC] Sending chunk for batch #${options.batchIndex}: ${accumulatedText.length} chars`);
             event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, chunkData);
           }
           : undefined;
+
+        console.log(`[CaptionIPC] translateBatch: streamingEnabled=${options.streamingEnabled}, hasOnChunk=${!!onChunk}`);
 
         const result = await CaptionService.translateSingleBatch(options, onChunk);
 

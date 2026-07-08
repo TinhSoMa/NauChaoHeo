@@ -1413,7 +1413,7 @@ export async function translateAll(
         `[CaptionTranslator] Dispatch batch #${batchNumber}/${totalBatchCount} attempt ${attempt}/${totalAttempts} at ${new Date(dispatchTiming.startedAt).toISOString()} (next=${new Date(dispatchTiming.nextAllowedAt).toISOString()})`
       );
 
-      const batchResult: BatchTranslationResult = useGeminiWebQueue
+    const batchResult: BatchTranslationResult = useGeminiWebQueue
         ? await translateBatchGeminiWebQueue(
           batch,
           targetLanguage,
@@ -2008,6 +2008,9 @@ Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
       throwIfTranslationStopped(runId);
     }
 
+    const useStream = streamingEnabled && provider?.transport === 'api' && typeof onChunk === 'function';
+    console.log(`[CaptionTranslator] Batch ${batchIndex + 1}: useStream=${useStream}, streamingEnabled=${streamingEnabled}, transport=${provider?.transport}`);
+
     const batchResult: BatchTranslationResult = useGeminiWebQueue
       ? await translateBatchGeminiWebQueue(
           batch,
@@ -2024,7 +2027,7 @@ Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
         ? await translateBatchImpit(batch, targetLanguage, resolvedPromptTemplate, localMemoryContext, debugSaveDir)
         : useGrokUi
           ? await translateBatchGrokUi(batch, targetLanguage, resolvedPromptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
-          : streamingEnabled && provider?.transport === 'api' && typeof onChunk === 'function'
+          : useStream
             ? await translateBatchStream(
                 batch,
                 provider!,
