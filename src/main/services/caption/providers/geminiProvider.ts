@@ -41,12 +41,12 @@ export function createGeminiProvider(assignedKey?: GeminiAssignedKey): AIProvide
       return mapResponse(response, assignedKey?.keyInfo.name)
     },
 
-    async callStream({ prompt, model, signal, imageBase64, onChunk }: AIProviderStreamParams): Promise<AIProviderResult> {
+    async callStream({ prompt, model, signal, imageBase64, onChunk, onStatus }: AIProviderStreamParams): Promise<AIProviderResult> {
       const control = createControl(signal)
 
       const response = assignedKey
-        ? await callGeminiWithAssignedKeyStream(prompt, assignedKey, onChunk, model, control, imageBase64)
-        : await callGeminiWithRotationStream(prompt, onChunk, model, 10, control, imageBase64)
+        ? await callGeminiWithAssignedKeyStream(prompt, assignedKey, onChunk, model, control, imageBase64, onStatus)
+        : await callGeminiWithRotationStream(prompt, onChunk, model, 10, control, imageBase64, onStatus)
 
       return mapResponse(response, assignedKey?.keyInfo.name)
     },

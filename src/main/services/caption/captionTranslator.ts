@@ -406,6 +406,7 @@ async function translateBatchStream(
   memoryContext?: string,
   debugSaveDir?: string,
   deepseekSystemPrompt?: string,
+  onStatus?: (status: string) => void,
 ): Promise<BatchTranslationResult> {
   console.log(`[CaptionTranslator] Stream dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [transport: ${provider.transport}]`);
   const promptResult = provider.transport === 'deepseek'
@@ -418,7 +419,7 @@ async function translateBatchStream(
       return translateBatch(batch, provider, model, targetLanguage, promptTemplate, shouldStop, stopSignal, memoryContext, debugSaveDir, deepseekSystemPrompt);
     }
 
-    const response = await provider.callStream({ prompt, systemPrompt, model, signal: stopSignal, debugSaveDir, batchIndex: batch.batchIndex, onChunk });
+    const response = await provider.callStream({ prompt, systemPrompt, model, signal: stopSignal, debugSaveDir, batchIndex: batch.batchIndex, onChunk, onStatus });
 
     if (!response.success && response.error === 'STOP_REQUESTED') {
       throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
@@ -1831,6 +1832,7 @@ export async function translateAll(
 export async function translateSingleBatch(
   options: SingleBatchOptions,
   onChunk?: (text: string) => void,
+  onStatus?: (status: string) => void,
 ): Promise<SingleBatchResult> {
   const {
     entries,
@@ -2039,6 +2041,8 @@ Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
                 undefined,
                 localMemoryContext,
                 debugSaveDir,
+                undefined,
+                onStatus,
               )
             : await translateBatch(
                 batch,

@@ -18,6 +18,8 @@ import { getGeminiModelsService } from './geminiModelsService';
 import { GeminiModelsDatabase } from '../../database/geminiModelsDatabase';
 import type { ThinkingLevel } from '../../../shared/types/gemini';
 
+const DEBUG_STREAM_TIMING = false;
+
 function isProModel(modelId: string): boolean {
   return modelId.toLowerCase().includes('pro');
 }
@@ -298,6 +300,7 @@ export async function callGeminiApiStream(
   imageBase64?: string,
 ): Promise<GeminiResponse> {
   try {
+    const t0 = Date.now();
     const resolvedModel = resolveModelForRuntime(model);
     const url = `${GEMINI_API_BASE}/${resolvedModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
@@ -314,8 +317,11 @@ export async function callGeminiApiStream(
 
     const thinkingLevel = GeminiModelsDatabase.getThinkingLevel();
     addThinkingConfig(payload, resolvedModel, thinkingLevel);
+    if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] thinkingLevel=${thinkingLevel}, model=${resolvedModel}`);
 
+    const fetchImportStart = Date.now();
     const { default: fetch } = await import('node-fetch');
+    if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] import node-fetch: +${Date.now() - fetchImportStart}ms`);
 
     let agent: any = undefined;
 
@@ -359,8 +365,11 @@ export async function callGeminiApiStream(
     };
     if (agent) fetchOptions.agent = agent;
 
+    if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] Before fetch: +${Date.now() - t0}ms`);
+    const beforeFetch = Date.now();
     const response = await fetch(url, fetchOptions);
     clearTimeout(timeoutId);
+    if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] After fetch (status=${response.status}): +${Date.now() - t0}ms (fetch took ${Date.now() - beforeFetch}ms)`);
 
     if (!response.ok) {
       let errorStatus = '';
@@ -386,8 +395,13 @@ export async function callGeminiApiStream(
     const decoder = new TextDecoder();
     let buffer = '';
     let accumulatedText = '';
+    let firstChunkReceived = false;
 
     for await (const chunk of response.body) {
+      if (!firstChunkReceived) {
+        firstChunkReceived = true;
+        if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] First SSE chunk received: +${Date.now() - t0}ms`);
+      }
       const chunkStr = typeof chunk === 'string' ? chunk : decoder.decode(chunk as Buffer, { stream: true });
       buffer += chunkStr;
       const lines = buffer.split('\n');
@@ -482,31 +496,47 @@ export async function callGeminiWithRotation(
   let rateLimitedCount = 0;
   const triedKeys = new Set<string>();
   let keySwitchCount = 0;
+  let currentKey: { apiKey: string; keyInfo: KeyInfo } | null = null;
+  let serverOverloadRetries = 0;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     if (isControlStopped(control)) {
       return { success: false, error: stopErrorMessage, keySwitchCount };
     }
 
-    const { apiKey, keyInfo } = manager.getNextApiKey();
+    let apiKey: string;
+    let keyInfo: KeyInfo;
 
-    if (!apiKey || !keyInfo) {
-      console.warn(`[GeminiService] Không còn key available sau ${attempt} lần thử`);
-      break;
-    }
+    if (serverOverloadRetries > 0) {
+      apiKey = currentKey!.apiKey;
+      keyInfo = currentKey!.keyInfo;
+      console.log(`[GeminiService] Server overload retry #${serverOverloadRetries} với ${keyInfo.name}`);
+    } else {
+      const result = manager.getNextApiKey();
+      const rawApiKey = result.apiKey;
+      const rawKeyInfo = result.keyInfo;
+      apiKey = rawApiKey!;
+      keyInfo = rawKeyInfo as KeyInfo;
 
-    // Bỏ qua key đã thử
-    if (triedKeys.has(apiKey)) {
-      if (triedKeys.size >= stats.available) {
-        console.log(`[GeminiService] Đã thử hết tất cả keys (${triedKeys.size} keys)`);
+      if (!rawApiKey || !rawKeyInfo) {
+        console.warn(`[GeminiService] Không còn key available sau ${attempt} lần thử`);
         break;
       }
-      continue;
-    }
 
-    triedKeys.add(apiKey);
-    keySwitchCount = triedKeys.size;
-    console.log(`[GeminiService] Thử API key #${keySwitchCount} (${keyInfo.name})`);
+      // Bỏ qua key đã thử
+      if (triedKeys.has(rawApiKey)) {
+        if (triedKeys.size >= stats.available) {
+          console.log(`[GeminiService] Đã thử hết tất cả keys (${triedKeys.size} keys)`);
+          break;
+        }
+        continue;
+      }
+
+      triedKeys.add(rawApiKey);
+      keySwitchCount = triedKeys.size;
+      console.log(`[GeminiService] Thử API key #${keySwitchCount} (${rawKeyInfo.name})`);
+      currentKey = { apiKey: rawApiKey, keyInfo: rawKeyInfo as KeyInfo };
+    }
 
     const requestAbortController = new AbortController();
     const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
@@ -539,6 +569,7 @@ export async function callGeminiWithRotation(
     );
 
     if (isRateLimitCode && !isExhausted) {
+      serverOverloadRetries = 0;
       console.warn(`[GeminiService] Rate limit với ${keyInfo.name}, thử key tiếp theo...`);
       manager.recordRateLimitError(apiKey);
       lastError = 'RATE_LIMIT_ALL_KEYS';
@@ -551,15 +582,21 @@ export async function callGeminiWithRotation(
     }
 
     if (isServerOverload) {
-      console.warn(`[GeminiService] Server Gemini quá tải với ${keyInfo.name}, không đánh dấu key lỗi.`);
-      lastError = response.error || 'SERVER_OVERLOADED';
-      if (await waitWithControl(800, control)) {
+      serverOverloadRetries++;
+      lastError = 'SERVER_OVERLOADED';
+      if (serverOverloadRetries >= 5) {
+        console.warn(`[GeminiService] Server overload kéo dài, bỏ qua sau ${serverOverloadRetries} lần thử`);
+        break;
+      }
+      console.warn(`[GeminiService] Server Gemini quá tải với ${keyInfo.name} — retry lần ${serverOverloadRetries}...`);
+      if (await waitWithControl(1000 * Math.pow(2, serverOverloadRetries), control)) {
         return { success: false, error: stopErrorMessage, keySwitchCount };
       }
       continue;
     }
 
     if (isExhausted || response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+      serverOverloadRetries = 0;
       console.warn(`[GeminiService] Hết quota với ${keyInfo.name}`);
       manager.recordQuotaExhausted(apiKey);
       lastError = response.error || 'QUOTA_EXHAUSTED';
@@ -567,6 +604,7 @@ export async function callGeminiWithRotation(
     }
 
     // Ghi nhận lỗi khác
+    serverOverloadRetries = 0;
     console.error(`[GeminiService] Lỗi với ${keyInfo.name}: ${response.error}`);
     manager.recordError(apiKey, response.error || 'Unknown error', response.errorCode as GeminiErrorCode);
     lastError = response.error || 'Unknown error';
@@ -595,51 +633,78 @@ export async function callGeminiWithAssignedKey(
   const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
   const stopErrorMessage = getStopErrorMessage(control);
+  const maxAssignedRetries = 10;
 
   if (isControlStopped(control)) {
     return { success: false, error: stopErrorMessage };
   }
 
   console.log(`[GeminiService] [assigned] Dùng key: ${assignedKey.keyInfo.name}`);
-  const requestAbortController = new AbortController();
-  const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
-  const response = await callGeminiApi(
-    prompt,
-    assignedKey.apiKey,
-    resolvedModel,
-    false,
-    requestAbortController.signal,
-    getApiRequestTimeoutMs(),
-    imageBase64,
-  );
-  detachAbortForwarding();
 
-  if (isControlStopped(control)) {
-    return { success: false, error: stopErrorMessage };
+  let lastError = '';
+  let serverOverloadRetries = 0;
+
+  for (let attempt = 0; attempt < maxAssignedRetries; attempt++) {
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage };
+    }
+
+    const requestAbortController = new AbortController();
+    const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+    const response = await callGeminiApi(
+      prompt,
+      assignedKey.apiKey,
+      resolvedModel,
+      false,
+      requestAbortController.signal,
+      getApiRequestTimeoutMs(),
+      imageBase64,
+    );
+    detachAbortForwarding();
+
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage };
+    }
+
+    if (response.success) {
+      manager.recordSuccess(assignedKey.apiKey);
+      return { ...response, keyInfo: assignedKey.keyInfo, keySwitchCount: 1 };
+    }
+
+    // Key được chỉ định bị lỗi — ghi nhận và fallback sang rotation
+    const errCode = (response.errorCode || response.error || '') as string;
+    const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT';
+    const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
+
+    if (isServerOverload) {
+      serverOverloadRetries++;
+      lastError = 'SERVER_OVERLOADED';
+      if (serverOverloadRetries >= 5) {
+        console.warn(`[GeminiService] [assigned] Server overload kéo dài, bỏ qua sau ${serverOverloadRetries} lần thử`);
+        break;
+      }
+      console.warn(`[GeminiService] [assigned] Gemini server quá tải — retry lần ${serverOverloadRetries}...`);
+      if (await waitWithControl(1000 * Math.pow(2, serverOverloadRetries), control)) {
+        return { success: false, error: stopErrorMessage };
+      }
+      continue;
+    }
+
+    if (isRateLimitCode) {
+      console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation`);
+      manager.recordRateLimitError(assignedKey.apiKey);
+    } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+      console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} hết quota — fallback rotation`);
+      manager.recordQuotaExhausted(assignedKey.apiKey);
+    } else {
+      console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} lỗi: ${response.error} — fallback rotation`);
+      manager.recordError(assignedKey.apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
+    }
+    lastError = response.error || 'Unknown error';
+    break;
   }
 
-  if (response.success) {
-    manager.recordSuccess(assignedKey.apiKey);
-    return { ...response, keyInfo: assignedKey.keyInfo, keySwitchCount: 1 };
-  }
-
-  // Key được chỉ định bị lỗi — ghi nhận và fallback sang rotation
-  const errCode = (response.errorCode || response.error || '') as string;
-  const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT';
-  const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
-
-  if (isRateLimitCode) {
-    console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation`);
-    manager.recordRateLimitError(assignedKey.apiKey);
-  } else if (isServerOverload) {
-    console.warn(`[GeminiService] [assigned] Gemini server quá tải — không đánh dấu key lỗi`);
-  } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
-    manager.recordQuotaExhausted(assignedKey.apiKey);
-  } else {
-    manager.recordError(assignedKey.apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
-  }
-
-  console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name}`);
+  console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name} (${lastError})`);
   return callGeminiWithRotation(prompt, resolvedModel, 10, control, imageBase64);
 }
 
@@ -653,6 +718,7 @@ export async function callGeminiWithRotationStream(
   maxRetries: number = 10,
   control?: GeminiCallControlOptions,
   imageBase64?: string,
+  onStatus?: (status: string) => void,
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
   const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
@@ -669,33 +735,53 @@ export async function callGeminiWithRotationStream(
   let rateLimitedCount = 0;
   const triedKeys = new Set<string>();
   let keySwitchCount = 0;
+  let currentKey: { apiKey: string; keyInfo: KeyInfo } | null = null;
+  let serverOverloadRetries = 0;
 
+  const streamT0 = Date.now();
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     if (isControlStopped(control)) {
       return { success: false, error: stopErrorMessage, keySwitchCount };
     }
 
-    const { apiKey, keyInfo } = manager.getNextApiKey();
+    let apiKey: string;
+    let keyInfo: KeyInfo;
 
-    if (!apiKey || !keyInfo) {
-      console.warn(`[GeminiService] Không còn key available sau ${attempt} lần thử`);
-      break;
-    }
+    if (serverOverloadRetries > 0) {
+      apiKey = currentKey!.apiKey;
+      keyInfo = currentKey!.keyInfo;
+      console.log(`[GeminiService] Server overload retry #${serverOverloadRetries} với ${keyInfo.name}`);
+    } else {
+      const tKey = Date.now();
+      const result = manager.getNextApiKey();
+      const rawApiKey = result.apiKey;
+      const rawKeyInfo = result.keyInfo;
+      apiKey = rawApiKey!;
+      keyInfo = rawKeyInfo as KeyInfo;
+      if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] getNextApiKey: +${Date.now() - tKey}ms (attempt=${attempt})`);
 
-    if (triedKeys.has(apiKey)) {
-      if (triedKeys.size >= stats.available) {
-        console.log(`[GeminiService] Đã thử hết tất cả keys (${triedKeys.size} keys)`);
+      if (!rawApiKey || !rawKeyInfo) {
+        console.warn(`[GeminiService] Không còn key available sau ${attempt} lần thử`);
         break;
       }
-      continue;
-    }
 
-    triedKeys.add(apiKey);
-    keySwitchCount = triedKeys.size;
-    console.log(`[GeminiService] Thử API key stream #${keySwitchCount} (${keyInfo.name})`);
+      if (triedKeys.has(rawApiKey)) {
+        if (triedKeys.size >= stats.available) {
+          console.log(`[GeminiService] Đã thử hết tất cả keys (${triedKeys.size} keys)`);
+          break;
+        }
+        continue;
+      }
+
+      triedKeys.add(rawApiKey);
+      keySwitchCount = triedKeys.size;
+      console.log(`[GeminiService] Thử API key stream #${keySwitchCount} (${rawKeyInfo.name})`);
+      currentKey = { apiKey: rawApiKey, keyInfo: rawKeyInfo as KeyInfo };
+    }
 
     const requestAbortController = new AbortController();
     const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+    const tApi = Date.now();
     const response = await callGeminiApiStream(
       prompt,
       apiKey,
@@ -706,6 +792,7 @@ export async function callGeminiWithRotationStream(
       getApiRequestTimeoutMs(),
       imageBase64,
     );
+    if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] callGeminiApiStream returned: +${Date.now() - streamT0}ms (call took ${Date.now() - tApi}ms)`);
     detachAbortForwarding();
 
     if (isControlStopped(control)) {
@@ -724,11 +811,24 @@ export async function callGeminiWithRotationStream(
 
     if (isRateLimitCode) {
       rateLimitedCount++;
+      serverOverloadRetries = 0;
       console.warn(`[GeminiService] Key ${keyInfo.name} bị rate limit (lần ${rateLimitedCount}/${maxRetries})`);
       manager.recordRateLimitError(apiKey);
     } else if (isServerOverload) {
-      console.warn(`[GeminiService] Gemini server quá tải — retry...`);
+      serverOverloadRetries++;
+      lastError = 'SERVER_OVERLOADED';
+      if (serverOverloadRetries >= 5) {
+        console.warn(`[GeminiService] Server overload kéo dài, bỏ qua sau ${serverOverloadRetries} lần thử`);
+        break;
+      }
+      console.warn(`[GeminiService] Gemini server quá tải — retry lần ${serverOverloadRetries}...`);
+      onStatus?.(`Server Gemini đang quá tải, thử lại lần ${serverOverloadRetries}...`);
+      if (await waitWithControl(1000 * Math.pow(2, serverOverloadRetries), control)) {
+        return { success: false, error: stopErrorMessage, keySwitchCount };
+      }
+      continue;
     } else {
+      serverOverloadRetries = 0;
       console.warn(`[GeminiService] Key ${keyInfo.name} lỗi:`, response.error);
       manager.recordError(apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
     }
@@ -745,6 +845,12 @@ export async function callGeminiWithRotationStream(
     await waitWithControl(1000 * Math.pow(2, attempt), control);
   }
 
+  // Kiểm tra tất cả keys bị rate limit
+  if (rateLimitedCount > 0 && rateLimitedCount >= triedKeys.size) {
+    console.warn(`[GeminiService] Tất cả ${rateLimitedCount} keys đã thử đều bị rate limit`);
+    return { success: false, error: 'RATE_LIMIT_ALL_KEYS', keySwitchCount };
+  }
+
   return { success: false, error: lastError || 'All keys failed', keySwitchCount };
 }
 
@@ -758,56 +864,86 @@ export async function callGeminiWithAssignedKeyStream(
   model?: string,
   control?: GeminiCallControlOptions,
   imageBase64?: string,
+  onStatus?: (status: string) => void,
 ): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
   const resolvedModel = resolveModelForRuntime(model);
   const manager = getApiManager();
   const stopErrorMessage = getStopErrorMessage(control);
+  const maxAssignedRetries = 10;
 
   if (isControlStopped(control)) {
     return { success: false, error: stopErrorMessage };
   }
 
   console.log(`[GeminiService] [assigned] Dùng key stream: ${assignedKey.keyInfo.name}`);
-  const requestAbortController = new AbortController();
-  const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
-  const response = await callGeminiApiStream(
-    prompt,
-    assignedKey.apiKey,
-    onChunk,
-    resolvedModel,
-    false,
-    requestAbortController.signal,
-    getApiRequestTimeoutMs(),
-    imageBase64,
-  );
-  detachAbortForwarding();
 
-  if (isControlStopped(control)) {
-    return { success: false, error: stopErrorMessage };
+  let lastError = '';
+  let serverOverloadRetries = 0;
+
+  for (let attempt = 0; attempt < maxAssignedRetries; attempt++) {
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage };
+    }
+
+    const requestAbortController = new AbortController();
+    const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+    const response = await callGeminiApiStream(
+      prompt,
+      assignedKey.apiKey,
+      onChunk,
+      resolvedModel,
+      false,
+      requestAbortController.signal,
+      getApiRequestTimeoutMs(),
+      imageBase64,
+    );
+    detachAbortForwarding();
+
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage };
+    }
+
+    if (response.success) {
+      manager.recordSuccess(assignedKey.apiKey);
+      return { ...response, keyInfo: assignedKey.keyInfo, keySwitchCount: 1 };
+    }
+
+    const errCode = (response.errorCode || response.error || '') as string;
+    const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT';
+    const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
+
+    if (isServerOverload) {
+      serverOverloadRetries++;
+      lastError = 'SERVER_OVERLOADED';
+      if (serverOverloadRetries >= 5) {
+        console.warn(`[GeminiService] [assigned] Server overload kéo dài, bỏ qua sau ${serverOverloadRetries} lần thử`);
+        break;
+      }
+      console.warn(`[GeminiService] [assigned] Gemini server quá tải — retry lần ${serverOverloadRetries}...`);
+      onStatus?.(`Server Gemini đang quá tải, thử lại lần ${serverOverloadRetries}...`);
+      if (await waitWithControl(1000 * Math.pow(2, serverOverloadRetries), control)) {
+        return { success: false, error: stopErrorMessage };
+      }
+      continue;
+    }
+
+    // Rate limit / quota / error khác → fallback rotation
+    if (isRateLimitCode) {
+      console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation stream`);
+      manager.recordRateLimitError(assignedKey.apiKey);
+    } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+      console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} hết quota — fallback rotation stream`);
+      manager.recordQuotaExhausted(assignedKey.apiKey);
+    } else {
+      console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} lỗi: ${response.error} — fallback rotation stream`);
+      manager.recordError(assignedKey.apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
+    }
+    lastError = response.error || 'Unknown error';
+    break;
   }
 
-  if (response.success) {
-    manager.recordSuccess(assignedKey.apiKey);
-    return { ...response, keyInfo: assignedKey.keyInfo, keySwitchCount: 1 };
-  }
-
-  const errCode = (response.errorCode || response.error || '') as string;
-  const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT';
-  const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
-
-  if (isRateLimitCode) {
-    console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation stream`);
-    manager.recordRateLimitError(assignedKey.apiKey);
-  } else if (isServerOverload) {
-    console.warn(`[GeminiService] [assigned] Gemini server quá tải — không đánh dấu key lỗi`);
-  } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
-    manager.recordQuotaExhausted(assignedKey.apiKey);
-  } else {
-    manager.recordError(assignedKey.apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
-  }
-
-  console.log(`[GeminiService] [assigned] Fallback sang rotation stream cho ${assignedKey.keyInfo.name}`);
-  return callGeminiWithRotationStream(prompt, onChunk, resolvedModel, 10, control, imageBase64);
+  console.log(`[GeminiService] [assigned] Fallback sang rotation stream cho ${assignedKey.keyInfo.name} (${lastError})`);
+  return callGeminiWithRotationStream(prompt, onChunk, resolvedModel, 10, control, imageBase64, onStatus);
 }
 
 /**

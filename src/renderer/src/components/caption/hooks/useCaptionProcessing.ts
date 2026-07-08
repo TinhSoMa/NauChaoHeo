@@ -370,6 +370,7 @@ interface UseCaptionProcessingProps {
   setEnabledSteps: React.Dispatch<React.SetStateAction<Set<Step>>>;
   onBatchComplete?: (report: SharedTranslationBatchReport, plan: StepBatchPlanItem, batchError: string | null, totalBatches: number) => void;
   onBatchStart?: (batchIndex: number, totalBatches: number) => void;
+  onStreamBatchDone?: (batchIndex: number, error?: string) => void;
 }
 
 type ProcessingSettings = UseCaptionProcessingProps['settings'];
@@ -2062,11 +2063,12 @@ export function useCaptionProcessing({
   setEnabledSteps,
   onBatchComplete,
   onBatchStart,
+  onStreamBatchDone,
 }: UseCaptionProcessingProps) {
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [status, setStatus] = useState<ProcessStatus>('idle');
   const [progress, setProgress] = useState<{ current: number; total: number; message: string }>({ current: 0, total: 0, message: 'Sẵn sàng.' });
-  const [streamingChunks, setStreamingChunks] = useState<Record<number, { accumulated: string; done: boolean }>>({});
+  const [streamingChunks, setStreamingChunks] = useState<Record<number, { accumulated: string; done: boolean; serverError?: string }>>({});
   const [currentFolder, setCurrentFolder] = useState<{ index: number; total: number; name: string; path: string } | null>(null);
   const [stepDependencyIssues, setStepDependencyIssues] = useState<StepDependencyIssue[]>([]);
   
@@ -4352,13 +4354,29 @@ export function useCaptionProcessing({
 
           if (geminiStreamingEnabled && cfg.translateMethod === 'api') {
             unsubStream = window.electronAPI.caption.onTranslateChunk((chunk) => {
-              setStreamingChunks(prev => ({
-                ...prev,
-                [chunk.batchIndex]: {
-                  accumulated: chunk.accumulated,
-                  done: chunk.done,
-                },
-              }));
+              setStreamingChunks(prev => {
+                const existing = prev[chunk.batchIndex];
+                if (chunk.serverError) {
+                  return {
+                    ...prev,
+                    [chunk.batchIndex]: {
+                      accumulated: existing?.accumulated || '',
+                      done: existing?.done || false,
+                      serverError: chunk.serverError,
+                    },
+                  };
+                }
+                return {
+                  ...prev,
+                  [chunk.batchIndex]: {
+                    accumulated: chunk.accumulated,
+                    done: chunk.done,
+                  },
+                };
+              });
+              if (chunk.done) {
+                onStreamBatchDone?.(chunk.batchIndex, chunk.serverError);
+              }
               setProgress({
                 current: plan.batchIndex,
                 total: totalBatches,

@@ -2222,42 +2222,13 @@
   flex-wrap: wrap;
 }
 
-.step3BatchStreamRow {
-  grid-column: 1 / -1;
-  padding-top: 4px;
-  border-top: 1px dashed color-mix(in srgb, var(--color-accent, #4a9eff) 30%, transparent);
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: var(--font-size-2xs);
-  color: var(--color-accent, #4a9eff);
-}
-
-.step3BatchStreamIndicator {
-  flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-accent, #4a9eff);
-  margin-top: 6px;
-  animation: streamPulse 1.2s ease-in-out infinite;
-}
-
-.step3BatchStreamText {
+.step3BatchStreamError {
   flex: 1;
-  min-width: 0;
-  max-height: calc(1.4em * 4);
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.4;
-  font-family: var(--font-mono);
-  color: var(--color-text-secondary);
-}
-
-@keyframes streamPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  color: var(--color-warning, #eab308);
+  font-weight: 600;
+  font-style: italic;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-2xs);
 }
 
 .toggle {

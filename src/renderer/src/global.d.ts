@@ -24,6 +24,7 @@ interface StreamChunk {
   text: string;
   accumulated: string;
   done: boolean;
+  serverError?: string;
 }
 
 // Key Info type

@@ -133,6 +133,7 @@ export interface StreamChunk {
   text: string;               // chunk text mới
   accumulated: string;        // toàn bộ text đã nhận
   done: boolean;              // chunk cuối cùng?
+  serverError?: string;       // thông báo lỗi server (không phải text dịch)
 }
 
 /**

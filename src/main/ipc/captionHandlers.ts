@@ -475,6 +475,8 @@ export function registerCaptionHandlers(): void {
           CaptionService.beginTranslationRun(runId);
         }
 
+        let firstChunkSent = false;
+        const chunkSendStart = Date.now();
         const onChunk = options.streamingEnabled
           ? (chunk: string) => {
               accumulatedText += chunk;
@@ -484,14 +486,28 @@ export function registerCaptionHandlers(): void {
               accumulated: accumulatedText,
               done: false,
             };
-            console.log(`[CaptionIPC] Sending chunk for batch #${options.batchIndex}: ${accumulatedText.length} chars`);
+            if (!firstChunkSent) {
+              firstChunkSent = true;
+              console.log(`[CaptionIPC] FIRST chunk sent: +${Date.now() - chunkSendStart}ms since handler start`);
+            }
             event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, chunkData);
           }
           : undefined;
 
+        const onStatus = (status: string) => {
+          const statusData: StreamChunk = {
+            batchIndex: options.batchIndex + 1,
+            text: '',
+            accumulated: accumulatedText,
+            done: false,
+            serverError: status,
+          };
+          event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, statusData);
+        };
+
         console.log(`[CaptionIPC] translateBatch: streamingEnabled=${options.streamingEnabled}, hasOnChunk=${!!onChunk}`);
 
-        const result = await CaptionService.translateSingleBatch(options, onChunk);
+        const result = await CaptionService.translateSingleBatch(options, onChunk, onStatus);
 
         if (onChunk) {
           const doneData: StreamChunk = {
@@ -499,6 +515,7 @@ export function registerCaptionHandlers(): void {
             text: '',
             accumulated: accumulatedText,
             done: true,
+            ...(result.success ? {} : { serverError: 'Dịch thất bại' }),
           };
           event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, doneData);
         }

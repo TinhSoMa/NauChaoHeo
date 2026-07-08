@@ -1,7 +1,7 @@
 import styles from './Step3StreamingPopup.module.css';
 
 type Step3StreamingPopupProps = {
-  streamingChunks: Record<number, { accumulated: string; done: boolean }>;
+  streamingChunks: Record<number, { accumulated: string; done: boolean; serverError?: string }>;
   currentBatchIndex: number | null;
   onClose: () => void;
 };
@@ -32,7 +32,13 @@ export function Step3StreamingPopup({ streamingChunks, currentBatchIndex, onClos
         </button>
       </div>
       <div className={styles.body}>
-        {chunk ? chunk.accumulated : <span className={styles.emptyText}>Đang chờ dữ liệu stream...</span>}
+        {chunk?.serverError ? (
+          <span className={styles.serverError}>{chunk.serverError}</span>
+        ) : chunk ? (
+          chunk.accumulated
+        ) : (
+          <span className={styles.emptyText}>Đang chờ dữ liệu stream...</span>
+        )}
       </div>
     </div>
   );

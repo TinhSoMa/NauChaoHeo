@@ -21,6 +21,7 @@ export interface AIProviderParams {
 
 export interface AIProviderStreamParams extends AIProviderParams {
   onChunk: (chunk: string) => void
+  onStatus?: (status: string) => void
 }
 
 export interface AIProvider {

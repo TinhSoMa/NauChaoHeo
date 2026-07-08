@@ -2477,6 +2477,7 @@ export function CaptionTranslator() {
     setEnabledSteps: settings.setEnabledSteps,
     onBatchComplete: handleBatchComplete,
     onBatchStart: handleBatchStart,
+    onStreamBatchDone: handleStreamBatchDone,
   });
 
   const handleBulkExportThumbnails = useCallback(() => {
@@ -3141,7 +3142,6 @@ export function CaptionTranslator() {
   const [step3BulkMultiApplyResults, setStep3BulkMultiApplyResults] = useState<Step3BulkMultiFolderApplyResult[]>([]);
   const [step3BulkMultiBusy, setStep3BulkMultiBusy] = useState(false);
   const [streamPopupBatchIndex, setStreamPopupBatchIndex] = useState<number | null>(null);
-  const [showStreamPreviews, setShowStreamPreviews] = useState(true);
   const [fitAudioAuditOpen, setFitAudioAuditOpen] = useState(false);
   const [fitAudioAuditBusy, setFitAudioAuditBusy] = useState(false);
   const [fitAudioAuditError, setFitAudioAuditError] = useState('');
@@ -4976,6 +4976,21 @@ export function CaptionTranslator() {
     setStep3LiveTotalBatches((prev) => (prev == null ? totalBatches : prev));
   }
 
+  function handleStreamBatchDone(batchIndex: number, error?: string) {
+    setStep3BatchRuntimeMap((prev) => {
+      const existing = prev[batchIndex];
+      if (existing?.phase === 'success' || existing?.phase === 'failed') return prev;
+      return {
+        ...prev,
+        [batchIndex]: {
+          ...existing,
+          phase: error ? 'failed' : 'success',
+          completedAtMs: existing?.completedAtMs ?? Date.now(),
+        },
+      };
+    });
+  }
+
   useEffect(() => {
     if (!isStep3Running) {
       setStep3RuntimeTimer((prev) => {
@@ -6785,17 +6800,7 @@ export function CaptionTranslator() {
                 <div className={styles.step3BatchHeaderRow}>
             <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                {Object.keys(processing.streamingChunks).length > 0 && (
                 <button
-                  type="button"
-                  className={styles.step3BatchActionBtn}
-                  onClick={() => setShowStreamPreviews(v => !v)}
-                  title={showStreamPreviews ? 'Ẩn dòng preview stream trong các row' : 'Hiện dòng preview stream'}
-                >
-                  {showStreamPreviews ? 'Ẩn preview' : 'Hiện preview'}
-                </button>
-              )}
-              <button
                 type="button"
                 className={styles.step3BatchActionBtn}
                 onClick={openStep3ManualBulk}
@@ -6899,7 +6904,7 @@ export function CaptionTranslator() {
                     Nhập tay
                   </button>
                 </div>
-                {(row.status === 'failed' && (row.missingLines > 0 || row.error)) && (
+                {((row.status === 'failed' && (row.missingLines > 0 || row.error)) || processing.streamingChunks[row.batchIndex]?.serverError) && (
                   <div className={styles.step3BatchErrorRow}>
                     {row.missingLines > 0 && (
                       <span>Missing: {row.missingLines} ({row.missingLabel})</span>
@@ -6907,20 +6912,12 @@ export function CaptionTranslator() {
                     {row.error && (
                       <span className={styles.step3BatchMetaMono}>Err: {row.error}</span>
                     )}
-                  </div>
-                )}
-                {showStreamPreviews && (
-                  <div className={styles.step3BatchStreamRow}>
-                    {processing.streamingChunks[row.batchIndex] && (
-                      <>
-                        <div className={styles.step3BatchStreamIndicator} />
-                        <div className={styles.step3BatchStreamText}>
-                          {processing.streamingChunks[row.batchIndex].accumulated}
-                        </div>
-                      </>
+                    {processing.streamingChunks[row.batchIndex]?.serverError && (
+                      <span className={styles.step3BatchStreamError}>{processing.streamingChunks[row.batchIndex].serverError}</span>
                     )}
                   </div>
                 )}
+
               </div>
             ))}
           </div>
