@@ -6880,7 +6880,7 @@ export function CaptionTranslator() {
                   >
                     Xem/Sửa
                   </button>
-                {row.status === 'running' && processing.streamingChunks[row.batchIndex] && (
+                {processing.streamingChunks[row.batchIndex] && (
                     <button
                       type="button"
                       className={styles.step3BatchActionBtn}
