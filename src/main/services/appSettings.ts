@@ -74,6 +74,9 @@ export interface AppSettings {
   // DeepSeek
   deepseekApiKey: string | null;
   deepseekDefaultModel: string;
+
+  // Gemini streaming
+  geminiStreamingEnabled: boolean;
 }
 
 export interface CapcutTtsSecrets {
@@ -687,6 +690,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 
   deepseekApiKey: null,
   deepseekDefaultModel: DEEPSEEK_DEFAULT_MODEL,
+
+  geminiStreamingEnabled: true,
 };
 
 // ============================================
@@ -757,6 +762,7 @@ class AppSettingsServiceClass {
           autoShutdownDelayMinutes: normalizeAutoShutdownDelayMinutes(loaded?.autoShutdownDelayMinutes),
           capcutTtsSecrets: normalizeCapcutTtsSecrets(loaded?.capcutTtsSecrets),
           geminiWebApiCookieFallback: normalizeGeminiWebApiCookieFallback(loaded?.geminiWebApiCookieFallback),
+          geminiStreamingEnabled: loaded?.geminiStreamingEnabled !== false,
         };
         applyNativeTheme(this.settings.theme);
         console.log('[AppSettings] Loaded settings successfully');
@@ -823,6 +829,9 @@ class AppSettingsServiceClass {
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiWebApiCookieFallback')) {
       nextPartial.geminiWebApiCookieFallback = normalizeGeminiWebApiCookieFallback(partial.geminiWebApiCookieFallback);
+    }
+    if (Object.prototype.hasOwnProperty.call(partial, 'geminiStreamingEnabled')) {
+      nextPartial.geminiStreamingEnabled = partial.geminiStreamingEnabled === true;
     }
     if (Object.prototype.hasOwnProperty.call(partial, 'geminiMinSendIntervalMs')) {
       nextPartial.geminiMinSendIntervalMs = normalizeGeminiMinSendIntervalMs(partial.geminiMinSendIntervalMs);

@@ -19,6 +19,7 @@ import {
   RenderThumbnailFileResult,
   SingleBatchOptions,
   SingleBatchResult,
+  StreamChunk,
   SubtitleEntry,
   VideoCropSettings,
   VideoMetadata,
@@ -459,13 +460,14 @@ export function registerCaptionHandlers(): void {
   ipcMain.handle(
     CAPTION_IPC_CHANNELS.TRANSLATE_BATCH,
     async (
-      _event: IpcMainInvokeEvent,
+      event: IpcMainInvokeEvent,
       options: SingleBatchOptions
     ): Promise<IpcResponse<SingleBatchResult>> => {
       console.log(`[CaptionHandlers] Translate batch #${options.batchIndex + 1}/${options.totalBatches}: ${options.entries.length} entries`);
 
       const runId = typeof options.runId === 'string' ? options.runId : undefined;
       let isError = false;
+      let accumulatedText = '';
 
       try {
         // First batch → start run
@@ -473,7 +475,31 @@ export function registerCaptionHandlers(): void {
           CaptionService.beginTranslationRun(runId);
         }
 
-        const result = await CaptionService.translateSingleBatch(options);
+        const onChunk = options.streamingEnabled
+          ? (chunk: string) => {
+              accumulatedText += chunk;
+              const chunkData: StreamChunk = {
+              batchIndex: options.batchIndex,
+              text: chunk,
+              accumulated: accumulatedText,
+              done: false,
+            };
+            event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, chunkData);
+          }
+          : undefined;
+
+        const result = await CaptionService.translateSingleBatch(options, onChunk);
+
+        if (onChunk) {
+          const doneData: StreamChunk = {
+            batchIndex: options.batchIndex,
+            text: '',
+            accumulated: accumulatedText,
+            done: true,
+          };
+          event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, doneData);
+        }
+
         return { success: result.success, data: result };
 
       } catch (error) {

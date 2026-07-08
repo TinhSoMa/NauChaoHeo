@@ -60,6 +60,7 @@ export function TranslationSettings() {
   const [defaultModel, setDefaultModel] = useState<string>(DEFAULT_GEMINI_MODEL);
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
   const [retryCount, setRetryCount] = useState(DEFAULT_RETRY_COUNT);
+  const [geminiStreamingEnabled, setGeminiStreamingEnabled] = useState(true);
   const [models, setModels] = useState<ModelDraft[]>([]);
   const [newModelId, setNewModelId] = useState('');
   const [newModelName, setNewModelName] = useState('');
@@ -113,6 +114,7 @@ export function TranslationSettings() {
         const loadedRetry = clamp(Number(settings.translationRetryCount), 0, 10);
         setBatchSize(Number.isFinite(Number(settings.translationBatchSize)) ? loadedBatch : DEFAULT_BATCH_SIZE);
         setRetryCount(Number.isFinite(Number(settings.translationRetryCount)) ? loadedRetry : DEFAULT_RETRY_COUNT);
+        setGeminiStreamingEnabled(settings.geminiStreamingEnabled !== false);
       }
     } catch (loadError) {
       console.error('[TranslationSettings] Lỗi load settings:', loadError);
@@ -144,6 +146,7 @@ export function TranslationSettings() {
         const saveAppSettingsRes = await window.electronAPI.appSettings.update({
           translationBatchSize: normalizedBatchSize,
           translationRetryCount: normalizedRetryCount,
+          geminiStreamingEnabled,
         } as any);
 
         if (!saveAppSettingsRes.success) {
@@ -423,6 +426,20 @@ export function TranslationSettings() {
               max={10}
               variant="small"
             />
+          </div>
+
+          <div className={styles.row}>
+            <div className={styles.label}>
+              <span className={styles.labelText}>Streaming</span>
+              <span className={styles.labelDesc}>Nhận dữ liệu dịch dần (Gemini), thay vì chờ hoàn tất</span>
+            </div>
+            <button
+              type="button"
+              className={`${styles.toggle} ${geminiStreamingEnabled ? styles.toggleActive : ''}`}
+              onClick={() => setGeminiStreamingEnabled(!geminiStreamingEnabled)}
+            >
+              <span className={`${styles.toggleKnob} ${geminiStreamingEnabled ? styles.toggleKnobActive : ''}`} />
+            </button>
           </div>
         </div>
 

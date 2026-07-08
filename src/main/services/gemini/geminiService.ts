@@ -284,6 +284,169 @@ export async function callGeminiApi(
 }
 
 /**
+ * Gọi Gemini API stream với một prompt và API key cụ thể
+ * Dùng endpoint :streamGenerateContent để nhận response dạng SSE
+ */
+export async function callGeminiApiStream(
+  prompt: string | object,
+  apiKey: string,
+  onChunk: (text: string) => void,
+  model?: string,
+  useProxy: boolean = true,
+  abortSignal?: AbortSignal,
+  timeoutMs: number = getApiRequestTimeoutMs(),
+  imageBase64?: string,
+): Promise<GeminiResponse> {
+  try {
+    const resolvedModel = resolveModelForRuntime(model);
+    const url = `${GEMINI_API_BASE}/${resolvedModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    const promptText = typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2);
+
+    const parts: Array<Record<string, unknown>> = [{ text: promptText }];
+    if (imageBase64) {
+      parts.push({ inlineData: { mimeType: 'image/png', data: imageBase64 } });
+    }
+
+    const payload: Record<string, unknown> = {
+      contents: [{ parts }],
+    };
+
+    const thinkingLevel = GeminiModelsDatabase.getThinkingLevel();
+    addThinkingConfig(payload, resolvedModel, thinkingLevel);
+
+    const { default: fetch } = await import('node-fetch');
+
+    let agent: any = undefined;
+
+    if (useProxy) {
+      const { getProxyManager } = await import('../proxy/proxyManager.js');
+      const proxyManager = getProxyManager();
+      const proxyContext = proxyManager.getProxyContext('other');
+      if (proxyContext.mode !== 'off') {
+        const proxy = proxyManager.getNextProxy(undefined, 'other');
+        if (proxy) {
+          const { HttpsProxyAgent } = await import('https-proxy-agent');
+          const { SocksProxyAgent } = await import('socks-proxy-agent');
+          const proxyUrl = proxy.username
+            ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
+            : `${proxy.type}://${proxy.host}:${proxy.port}`;
+          agent = proxy.type === 'socks5'
+            ? new SocksProxyAgent(proxyUrl, { timeout: timeoutMs })
+            : new HttpsProxyAgent(proxyUrl, { timeout: timeoutMs, rejectUnauthorized: false, keepAlive: false });
+        }
+      }
+    }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    if (abortSignal?.aborted) {
+      controller.abort();
+    } else if (abortSignal) {
+      abortSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    const fetchOptions: any = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    };
+    if (agent) fetchOptions.agent = agent;
+
+    const response = await fetch(url, fetchOptions);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      let errorStatus = '';
+      let errorMessage = response.statusText;
+      try {
+        const errorBody = await response.json();
+        errorStatus = errorBody?.error?.status || '';
+        errorMessage = errorBody?.error?.message || response.statusText;
+      } catch { /* ignore */ }
+      const classified = classifyGeminiError(response.status, errorStatus, errorMessage);
+      return {
+        success: false,
+        error: classified.code === GeminiErrorCode.UNKNOWN ? `HTTP ${response.status}` : classified.code,
+        errorCode: classified.code,
+        userMessage: classified.userMessage,
+      };
+    }
+
+    if (!response.body) {
+      return { success: false, error: 'Response body is not readable' };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedText = '';
+
+    for await (const chunk of response.body) {
+      const chunkStr = typeof chunk === 'string' ? chunk : decoder.decode(chunk as Buffer, { stream: true });
+      buffer += chunkStr;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          const data = trimmed.slice(6).trim();
+          if (data === '[DONE]') continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (text) {
+              accumulatedText += text;
+              onChunk(text);
+            }
+          } catch { /* skip malformed JSON */ }
+        }
+      }
+    }
+
+    // Process remaining buffer
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith('data: ')) {
+        const data = trimmed.slice(6).trim();
+        if (data !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(data);
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (text) {
+              accumulatedText += text;
+              onChunk(text);
+            }
+          } catch { /* skip */ }
+        }
+      }
+    }
+
+    if (!accumulatedText.trim()) {
+      return { success: false, error: 'Response không có nội dung' };
+    }
+
+    return { success: true, data: accumulatedText.trim() };
+  } catch (error) {
+    if (abortSignal?.aborted) {
+      return { success: false, error: 'REQUEST_ABORTED' };
+    }
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return { success: false, error: 'REQUEST_TIMEOUT' };
+    }
+    console.error('[GeminiService] Lỗi gọi API stream:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
  * Gọi Gemini API với rotation keys tự động
  * Sẽ thử các keys khác nếu key hiện tại bị rate limit
  */
@@ -478,6 +641,173 @@ export async function callGeminiWithAssignedKey(
 
   console.log(`[GeminiService] [assigned] Fallback sang rotation cho ${assignedKey.keyInfo.name}`);
   return callGeminiWithRotation(prompt, resolvedModel, 10, control, imageBase64);
+}
+
+/**
+ * Gọi Gemini API stream với rotation keys tự động
+ */
+export async function callGeminiWithRotationStream(
+  prompt: string | object,
+  onChunk: (text: string) => void,
+  model?: string,
+  maxRetries: number = 10,
+  control?: GeminiCallControlOptions,
+  imageBase64?: string,
+): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
+  const resolvedModel = resolveModelForRuntime(model);
+  const manager = getApiManager();
+  const stats = manager.getStats();
+  const stopErrorMessage = getStopErrorMessage(control);
+
+  if (stats.totalProjects === 0) {
+    return { success: false, error: 'Không có API key nào trong hệ thống' };
+  }
+
+  const useProxySetting = false;
+
+  let lastError = '';
+  let rateLimitedCount = 0;
+  const triedKeys = new Set<string>();
+  let keySwitchCount = 0;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage, keySwitchCount };
+    }
+
+    const { apiKey, keyInfo } = manager.getNextApiKey();
+
+    if (!apiKey || !keyInfo) {
+      console.warn(`[GeminiService] Không còn key available sau ${attempt} lần thử`);
+      break;
+    }
+
+    if (triedKeys.has(apiKey)) {
+      if (triedKeys.size >= stats.available) {
+        console.log(`[GeminiService] Đã thử hết tất cả keys (${triedKeys.size} keys)`);
+        break;
+      }
+      continue;
+    }
+
+    triedKeys.add(apiKey);
+    keySwitchCount = triedKeys.size;
+    console.log(`[GeminiService] Thử API key stream #${keySwitchCount} (${keyInfo.name})`);
+
+    const requestAbortController = new AbortController();
+    const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+    const response = await callGeminiApiStream(
+      prompt,
+      apiKey,
+      onChunk,
+      resolvedModel,
+      useProxySetting,
+      requestAbortController.signal,
+      getApiRequestTimeoutMs(),
+      imageBase64,
+    );
+    detachAbortForwarding();
+
+    if (isControlStopped(control)) {
+      return { success: false, error: stopErrorMessage, keySwitchCount };
+    }
+
+    if (response.success) {
+      manager.recordSuccess(apiKey);
+      console.log(`[GeminiService] Thành công với ${keyInfo.name}`);
+      return { ...response, keyInfo, keySwitchCount };
+    }
+
+    const errCode = (response.errorCode || response.error || '') as string;
+    const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT' || response.error === 'RATE_LIMIT_ALL_KEYS';
+    const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
+
+    if (isRateLimitCode) {
+      rateLimitedCount++;
+      console.warn(`[GeminiService] Key ${keyInfo.name} bị rate limit (lần ${rateLimitedCount}/${maxRetries})`);
+      manager.recordRateLimitError(apiKey);
+    } else if (isServerOverload) {
+      console.warn(`[GeminiService] Gemini server quá tải — retry...`);
+    } else {
+      console.warn(`[GeminiService] Key ${keyInfo.name} lỗi:`, response.error);
+      manager.recordError(apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
+    }
+
+    lastError = response.error || 'Unknown error';
+
+    if (!isRateLimitCode) {
+      if (rateLimitedCount > 0) {
+        console.log(`[GeminiService] Đã thử rate limited key, chuyển sang key khác...`);
+        continue;
+      }
+    }
+
+    await waitWithControl(1000 * Math.pow(2, attempt), control);
+  }
+
+  return { success: false, error: lastError || 'All keys failed', keySwitchCount };
+}
+
+/**
+ * Gọi Gemini API stream với assigned key, fallback rotation nếu lỗi
+ */
+export async function callGeminiWithAssignedKeyStream(
+  prompt: string | object,
+  assignedKey: { apiKey: string; keyInfo: KeyInfo },
+  onChunk: (text: string) => void,
+  model?: string,
+  control?: GeminiCallControlOptions,
+  imageBase64?: string,
+): Promise<GeminiResponse & { keyInfo?: KeyInfo }> {
+  const resolvedModel = resolveModelForRuntime(model);
+  const manager = getApiManager();
+  const stopErrorMessage = getStopErrorMessage(control);
+
+  if (isControlStopped(control)) {
+    return { success: false, error: stopErrorMessage };
+  }
+
+  console.log(`[GeminiService] [assigned] Dùng key stream: ${assignedKey.keyInfo.name}`);
+  const requestAbortController = new AbortController();
+  const detachAbortForwarding = bindStopToAbortController(requestAbortController, control);
+  const response = await callGeminiApiStream(
+    prompt,
+    assignedKey.apiKey,
+    onChunk,
+    resolvedModel,
+    false,
+    requestAbortController.signal,
+    getApiRequestTimeoutMs(),
+    imageBase64,
+  );
+  detachAbortForwarding();
+
+  if (isControlStopped(control)) {
+    return { success: false, error: stopErrorMessage };
+  }
+
+  if (response.success) {
+    manager.recordSuccess(assignedKey.apiKey);
+    return { ...response, keyInfo: assignedKey.keyInfo, keySwitchCount: 1 };
+  }
+
+  const errCode = (response.errorCode || response.error || '') as string;
+  const isRateLimitCode = errCode === GeminiErrorCode.RESOURCE_EXHAUSTED || response.error === 'RATE_LIMIT';
+  const isServerOverload = errCode === GeminiErrorCode.UNAVAILABLE || errCode === GeminiErrorCode.INTERNAL || errCode === GeminiErrorCode.DEADLINE_EXCEEDED;
+
+  if (isRateLimitCode) {
+    console.warn(`[GeminiService] [assigned] ${assignedKey.keyInfo.name} bị rate limit — fallback rotation stream`);
+    manager.recordRateLimitError(assignedKey.apiKey);
+  } else if (isServerOverload) {
+    console.warn(`[GeminiService] [assigned] Gemini server quá tải — không đánh dấu key lỗi`);
+  } else if (response.error?.toLowerCase().includes('exhausted') || response.error?.toLowerCase().includes('quota')) {
+    manager.recordQuotaExhausted(assignedKey.apiKey);
+  } else {
+    manager.recordError(assignedKey.apiKey, response.error || 'Unknown', response.errorCode as GeminiErrorCode);
+  }
+
+  console.log(`[GeminiService] [assigned] Fallback sang rotation stream cho ${assignedKey.keyInfo.name}`);
+  return callGeminiWithRotationStream(prompt, onChunk, resolvedModel, 10, control, imageBase64);
 }
 
 /**

@@ -88,6 +88,7 @@ export interface AppSettings {
   };
   deepseekApiKey: string | null;
   deepseekDefaultModel: string;
+  geminiStreamingEnabled: boolean;
 }
 
 export interface GrokUiProfileConfig {

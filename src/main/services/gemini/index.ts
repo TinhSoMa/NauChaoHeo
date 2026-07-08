@@ -17,8 +17,11 @@ export { getGeminiModelsService, GeminiModelsService } from './geminiModelsServi
 // Gemini Service
 export {
   callGeminiApi,
+  callGeminiApiStream,
   callGeminiWithRotation,
+  callGeminiWithRotationStream,
   callGeminiWithAssignedKey,
+  callGeminiWithAssignedKeyStream,
   translateText,
   chat,
   getModelInfo,

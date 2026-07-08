@@ -9,6 +9,7 @@ import {
   ParseSrtResult,
   SingleBatchOptions,
   SingleBatchResult,
+  StreamChunk,
   SubtitleEntry,
   TTSOptions,
   TTSResult,
@@ -53,6 +54,9 @@ export interface CaptionAPI {
 
   // Translation (1 batch/lần)
   translateBatch: (options: SingleBatchOptions) => Promise<IpcApiResponse<SingleBatchResult>>;
+
+  // Streaming chunk events
+  onTranslateChunk: (callback: (chunk: StreamChunk) => void) => () => void;
 
   // Thumbnail Prompt
   generateThumbnailPrompt: (options: {
@@ -154,6 +158,16 @@ export function createCaptionAPI(): CaptionAPI {
 
     translateBatch: (options: SingleBatchOptions) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.TRANSLATE_BATCH, options),
+
+    onTranslateChunk: (callback: (chunk: StreamChunk) => void) => {
+      const handler = (_event: any, chunk: StreamChunk) => {
+        callback(chunk);
+      };
+      ipcRenderer.on(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, handler);
+      return () => {
+        ipcRenderer.removeListener(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, handler);
+      };
+    },
 
     generateThumbnailPrompt: (options) =>
       ipcRenderer.invoke(CAPTION_IPC_CHANNELS.GENERATE_THUMBNAIL_PROMPT, options),

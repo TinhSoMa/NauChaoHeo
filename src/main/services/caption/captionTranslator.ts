@@ -391,6 +391,89 @@ async function translateBatch(
   }
 }
 
+/**
+ * Dịch một batch text với streaming
+ */
+async function translateBatchStream(
+  batch: TextBatch,
+  provider: AIProvider,
+  model: string,
+  targetLanguage: string,
+  onChunk: (text: string) => void,
+  promptTemplate?: string,
+  shouldStop?: () => boolean,
+  stopSignal?: AbortSignal,
+  memoryContext?: string,
+  debugSaveDir?: string,
+  deepseekSystemPrompt?: string,
+): Promise<BatchTranslationResult> {
+  console.log(`[CaptionTranslator] Stream dịch batch ${batch.batchIndex + 1} (${batch.texts.length} dòng) [transport: ${provider.transport}]`);
+  const promptResult = provider.transport === 'deepseek'
+    ? createDeepSeekPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex, deepseekSystemPrompt)
+    : createTranslationPrompt(batch.texts, targetLanguage, promptTemplate, memoryContext, debugSaveDir, batch.batchIndex);
+  const { prompt, systemPrompt } = promptResult;
+
+  try {
+    if (!provider.callStream) {
+      return translateBatch(batch, provider, model, targetLanguage, promptTemplate, shouldStop, stopSignal, memoryContext, debugSaveDir, deepseekSystemPrompt);
+    }
+
+    const response = await provider.callStream({ prompt, systemPrompt, model, signal: stopSignal, debugSaveDir, batchIndex: batch.batchIndex, onChunk });
+
+    if (!response.success && response.error === 'STOP_REQUESTED') {
+      throw new Error(CAPTION_PROCESS_STOP_SIGNAL);
+    }
+
+    const accountLabel = response.accountLabel;
+
+    if (!response.success || typeof response.data !== 'string') {
+      return {
+        success: false,
+        translatedTexts: [],
+        error: response.error || 'Không có response',
+        transport: provider.transport,
+        keySwitchCount: response.keySwitchCount,
+        accountLabel,
+      };
+    }
+
+    const parsed = parseJsonTranslationResponse(response.data, batch.texts.length);
+    const translatedTexts = parsed.translatedTexts;
+    if (!parsed.ok) {
+      return {
+        success: false,
+        translatedTexts,
+        error: `${parsed.errorCode || 'ERROR_PROCESSING_FAILED'}: ${parsed.errorMessage || 'JSON response không hợp lệ'}`,
+        transport: provider.transport,
+        keySwitchCount: response.keySwitchCount,
+        accountLabel,
+      };
+    }
+
+    const validCount = translatedTexts.filter((t) => t.trim()).length;
+    if (validCount < batch.texts.length) {
+      console.warn(
+        `[CaptionTranslator] Batch ${batch.batchIndex + 1}: Thiếu dòng ${validCount}/${batch.texts.length} — sẽ retry`
+      );
+      return { success: false, translatedTexts, error: `Thiếu ${batch.texts.length - validCount} dòng`, transport: provider.transport, keySwitchCount: response.keySwitchCount, accountLabel };
+    }
+
+    return { success: true, translatedTexts, transport: provider.transport, keySwitchCount: response.keySwitchCount, accountLabel };
+  } catch (error) {
+    if (error instanceof Error && error.message === CAPTION_PROCESS_STOP_SIGNAL) {
+      throw error;
+    }
+
+    console.error(`[CaptionTranslator] Lỗi dịch stream batch ${batch.batchIndex + 1}:`, error);
+    return {
+      success: false,
+      translatedTexts: [],
+      error: String(error),
+      transport: provider.transport,
+    };
+  }
+}
+
 
 /**
  * Dịch một batch text qua Impit (Gemini Web / cookie)
@@ -1746,7 +1829,8 @@ export async function translateAll(
  * Dịch 1 batch đơn lẻ (dùng cho kiến trúc 1 batch/lần)
  */
 export async function translateSingleBatch(
-  options: SingleBatchOptions
+  options: SingleBatchOptions,
+  onChunk?: (text: string) => void,
 ): Promise<SingleBatchResult> {
   const {
     entries,
@@ -1760,6 +1844,7 @@ export async function translateSingleBatch(
     sourcePath,
     runId,
     isThumbnailPrompt,
+    streamingEnabled,
   } = options;
 
   throwIfTranslationStopped(runId);
@@ -1939,17 +2024,30 @@ Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
         ? await translateBatchImpit(batch, targetLanguage, resolvedPromptTemplate, localMemoryContext, debugSaveDir)
         : useGrokUi
           ? await translateBatchGrokUi(batch, targetLanguage, resolvedPromptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
-          : await translateBatch(
-              batch,
-              provider!,
-              model,
-              targetLanguage,
-              resolvedPromptTemplate,
-              () => shouldStopTranslation(runId),
-              undefined,
-              localMemoryContext,
-              debugSaveDir,
-            );
+          : streamingEnabled && provider?.transport === 'api' && typeof onChunk === 'function'
+            ? await translateBatchStream(
+                batch,
+                provider!,
+                model,
+                targetLanguage,
+                onChunk,
+                resolvedPromptTemplate,
+                () => shouldStopTranslation(runId),
+                undefined,
+                localMemoryContext,
+                debugSaveDir,
+              )
+            : await translateBatch(
+                batch,
+                provider!,
+                model,
+                targetLanguage,
+                resolvedPromptTemplate,
+                () => shouldStopTranslation(runId),
+                undefined,
+                localMemoryContext,
+                debugSaveDir,
+              );
 
     lastResult = batchResult;
 

@@ -19,7 +19,12 @@ export interface AIProviderParams {
   imageBase64?: string
 }
 
+export interface AIProviderStreamParams extends AIProviderParams {
+  onChunk: (chunk: string) => void
+}
+
 export interface AIProvider {
   call(params: AIProviderParams): Promise<AIProviderResult>
+  callStream?(params: AIProviderStreamParams): Promise<AIProviderResult>
   transport: TranslationTransport
 }

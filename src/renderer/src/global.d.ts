@@ -18,6 +18,14 @@ interface IpcApiResponse<T = unknown> {
   error?: string;
 }
 
+// Stream chunk type
+interface StreamChunk {
+  batchIndex: number;
+  text: string;
+  accumulated: string;
+  done: boolean;
+}
+
 // Key Info type
 interface KeyInfo {
   accountId: string;
@@ -502,6 +510,7 @@ interface CaptionAPI {
   exportSrt: (entries: SubtitleEntry[], outputPath: string) => Promise<IpcApiResponse<string>>;
   exportPlainText: (content: string, outputPath: string) => Promise<IpcApiResponse<string>>;
   translateBatch: (options: SingleBatchOptions) => Promise<IpcApiResponse<SingleBatchResult>>;
+  onTranslateChunk: (callback: (chunk: StreamChunk) => void) => () => void;
   generateThumbnailPrompt: (options: {
     entries: SubtitleEntry[];
     model: string;
@@ -842,6 +851,7 @@ interface AppSettings {
   captionLogoScale: number;
   captionTypographyDefaults: CaptionTypographyDefaults | null;
   captionStandaloneSettings: string | null;
+  geminiStreamingEnabled: boolean;
   autoShutdownEnabled: boolean;
   autoShutdownDelayMinutes: number;
   uiFontFamily: string;

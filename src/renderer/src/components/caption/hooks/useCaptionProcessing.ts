@@ -2066,6 +2066,7 @@ export function useCaptionProcessing({
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [status, setStatus] = useState<ProcessStatus>('idle');
   const [progress, setProgress] = useState<{ current: number; total: number; message: string }>({ current: 0, total: 0, message: 'Sẵn sàng.' });
+  const [streamingChunks, setStreamingChunks] = useState<Record<number, { accumulated: string; done: boolean }>>({});
   const [currentFolder, setCurrentFolder] = useState<{ index: number; total: number; name: string; path: string } | null>(null);
   const [stepDependencyIssues, setStepDependencyIssues] = useState<StepDependencyIssue[]>([]);
   
@@ -4286,6 +4287,16 @@ export function useCaptionProcessing({
         }));
 
         const previousBatches: import('@shared/types/caption').PreviousBatchTranslations[] = [];
+        let geminiStreamingEnabled = false;
+        try {
+          const appSettingsRes = await window.electronAPI.appSettings.getAll();
+          geminiStreamingEnabled = (appSettingsRes?.data as any)?.geminiStreamingEnabled === true;
+        } catch { /* fallback */ }
+        let unsubStream: (() => void) | null = null;
+        setStreamingChunks({});
+        const cleanupStream = () => {
+          if (unsubStream) { unsubStream(); unsubStream = null; }
+        };
         const batchesToProcessSet = new Set(batchesToProcess);
         for (const batchPlan of step3BatchPlan) {
           const batchIdx = batchPlan.batchIndex;
@@ -4334,12 +4345,30 @@ export function useCaptionProcessing({
             previousBatches: previousBatches.length > 0
               ? previousBatches.slice(-Math.min(Math.max(1, Math.floor(Number(cfg.captionContextBatchCount) || 3)), 3))
               : undefined,
+            streamingEnabled: geminiStreamingEnabled && cfg.translateMethod === 'api',
           };
 
           let sbResult: any;
           let batchError: string | null = null;
 
           onBatchStart?.(batchIdx, totalBatches);
+
+          if (geminiStreamingEnabled && cfg.translateMethod === 'api') {
+            unsubStream = window.electronAPI.caption.onTranslateChunk((chunk) => {
+              setStreamingChunks(prev => ({
+                ...prev,
+                [chunk.batchIndex]: {
+                  accumulated: chunk.accumulated,
+                  done: chunk.done,
+                },
+              }));
+              setProgress({
+                current: plan.batchIndex,
+                total: totalBatches,
+                message: `${msgCtx('Bước 3: Đang dịch batch')} #${plan.batchIndex}/${totalBatches}... (${(chunk.accumulated.length / 1024).toFixed(1)}KB)`,
+              });
+            });
+          }
 
           try {
             sbResult = await window.electronAPI.caption.translateBatch(sbOpts);
@@ -4703,6 +4732,7 @@ export function useCaptionProcessing({
             console.warn('[CaptionProcessing] Auto thumbnail prompt error:', error);
           }
         }
+        cleanupStream();
       }
 
       // ========== STEP 4: TTS ==========
@@ -6548,6 +6578,7 @@ export function useCaptionProcessing({
     stopStep7AudioPreview,
     status,
     progress,
+    streamingChunks,
     currentStep,
     audioFiles,
     audioPreviewStatus,

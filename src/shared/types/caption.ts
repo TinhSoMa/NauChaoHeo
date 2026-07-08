@@ -122,6 +122,17 @@ export interface SingleBatchOptions {
   runId?: string;
   previousBatches?: PreviousBatchTranslations[];
   isThumbnailPrompt?: boolean;
+  streamingEnabled?: boolean;   // Bật/tắt streaming response
+}
+
+/**
+ * Một chunk streaming từ Gemini API trong quá trình dịch
+ */
+export interface StreamChunk {
+  batchIndex: number;
+  text: string;               // chunk text mới
+  accumulated: string;        // toàn bộ text đã nhận
+  done: boolean;              // chunk cuối cùng?
 }
 
 /**
@@ -479,6 +490,7 @@ export const CAPTION_IPC_CHANNELS = {
   GENERATE_THUMBNAIL_PROMPT: 'caption:generateThumbnailPrompt',
   SPLIT: 'caption:split',
   STOP_ALL: 'caption:stopAll',
+  TRANSLATE_CHUNK: 'caption:translateChunk',
   
   // TTS
   TTS_GENERATE: 'tts:generate',

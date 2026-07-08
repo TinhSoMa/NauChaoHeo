@@ -67,6 +67,7 @@ import {
   type Step3BulkMultiFolderPreviewResult,
 } from './components/Step3BulkMultiFolderModal';
 import { Step3BatchMonitorPopup, type Step3BatchEditableLine } from './components/Step3BatchMonitorPopup';
+import { Step3StreamingPopup } from './components/Step3StreamingPopup';
 import { CaptionRuntimeConsole } from './components/CaptionRuntimeConsole';
 import { FitAudioAuditPopup } from './components/FitAudioAuditPopup';
 import { Step4ProxyTestPopup } from './components/Step4ProxyTestPopup';
@@ -6885,6 +6886,14 @@ export function CaptionTranslator() {
                     )}
                   </div>
                 )}
+                {row.status === 'running' && processing.streamingChunks[row.batchIndex] && !processing.streamingChunks[row.batchIndex].done && (
+                  <div className={styles.step3BatchStreamRow}>
+                    <div className={styles.step3BatchStreamIndicator} />
+                    <div className={styles.step3BatchStreamText}>
+                      {processing.streamingChunks[row.batchIndex].accumulated}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -9159,6 +9168,24 @@ export function CaptionTranslator() {
         onClose={closeStep3BatchEditor}
         onSave={handleSaveStep3BatchEditor}
       />
+
+      {(() => {
+        const currentStreamingBatch = (() => {
+          if (processing.status !== 'running' || activeStep !== 3) return null;
+          const entries = Object.entries(processing.streamingChunks);
+          for (const [batchIdxStr, data] of entries) {
+            const idx = Number(batchIdxStr);
+            if (!data.done) return idx;
+          }
+          return null;
+        })();
+        return (
+          <Step3StreamingPopup
+            streamingChunks={processing.streamingChunks}
+            currentBatchIndex={currentStreamingBatch}
+          />
+        );
+      })()}
 
       {step3ManualModal && (
       <div
