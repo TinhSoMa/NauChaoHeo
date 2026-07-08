@@ -6785,7 +6785,7 @@ export function CaptionTranslator() {
                 <div className={styles.step3BatchHeaderRow}>
             <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {processing.status === 'running' && Object.keys(processing.streamingChunks).length > 0 && (
+              {Object.keys(processing.streamingChunks).length > 0 && (
                 <button
                   type="button"
                   className={styles.step3BatchActionBtn}
@@ -6910,7 +6910,7 @@ export function CaptionTranslator() {
                     )}
                   </div>
                 )}
-                {showStreamPreviews && row.status === 'running' && processing.streamingChunks[row.batchIndex] && (
+                {showStreamPreviews && processing.streamingChunks[row.batchIndex] && (
                   <div className={styles.step3BatchStreamRow}>
                     <div className={styles.step3BatchStreamIndicator} />
                     <div className={styles.step3BatchStreamText}>
