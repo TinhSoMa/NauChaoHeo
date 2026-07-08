@@ -10,13 +10,16 @@ export function Step3StreamingPopup({ streamingChunks, currentBatchIndex, onClos
   if (currentBatchIndex === null) return null;
 
   const chunk = streamingChunks[currentBatchIndex];
-  if (!chunk) return null;
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <span className={styles.title}>
-          <span className={chunk.done ? styles.indicatorDone : styles.indicator} />
+          {chunk ? (
+            <span className={chunk.done ? styles.indicatorDone : styles.indicator} />
+          ) : (
+            <span className={styles.indicatorWaiting} />
+          )}
           Batch #{currentBatchIndex}
         </span>
         <button
@@ -29,7 +32,7 @@ export function Step3StreamingPopup({ streamingChunks, currentBatchIndex, onClos
         </button>
       </div>
       <div className={styles.body}>
-        {chunk.accumulated}
+        {chunk ? chunk.accumulated : <span className={styles.emptyText}>Đang chờ dữ liệu stream...</span>}
       </div>
     </div>
   );
