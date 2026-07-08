@@ -1987,134 +1987,145 @@ Return ONLY the final prompt text — no explanations, no prefixes, no labels.`;
   let bestTexts: string[] = Array.from({ length: batch.texts.length }, () => '');
   let bestTranslatedCount = -1;
 
-  while (attempt < totalAttempts) {
-    throwIfTranslationStopped(runId);
-    attempt++;
-    const isRetryAttempt = attempt > 1;
-
-    if (useGeminiWebQueue && !geminiStickyResourceId) {
-      lastResult = {
-        success: false,
-        translatedTexts: bestTexts,
-        error: `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Không còn account Gemini Web khả dụng.`,
-        transport: 'gemini_webapi_queue' as TranslationTransport,
-      };
-      break;
-    }
-
-    // Pacing giữa các lần retry
-    if (isRetryAttempt) {
-      const cooldown = queueGapMs;
-      console.log(`[CaptionTranslator] Retry cooldown ${cooldown}ms`);
-      await new Promise((resolve) => setTimeout(resolve, cooldown));
+  const stopSignalControl = createTranslationStopSignal(runId);
+  const stopAbortController = new AbortController();
+  const stopAbortSignal = stopAbortController.signal;
+  stopSignalControl.promise.then(() => {
+    if (!stopAbortSignal.aborted) stopAbortController.abort();
+  });
+  try {
+    while (attempt < totalAttempts) {
       throwIfTranslationStopped(runId);
-    }
+      attempt++;
+      const isRetryAttempt = attempt > 1;
 
-    const useStream = streamingEnabled && provider?.transport === 'api' && typeof onChunk === 'function';
-    console.log(`[CaptionTranslator] Batch ${batchIndex + 1}: useStream=${useStream}, streamingEnabled=${streamingEnabled}, transport=${provider?.transport}`);
-
-    const batchResult: BatchTranslationResult = useGeminiWebQueue
-      ? await translateBatchGeminiWebQueue(
-          batch,
-          targetLanguage,
-          resolvedPromptTemplate,
-          (projectId || '').trim() || '__default_project__',
-          (sourcePath || '').trim() || '__unknown_source__',
-          geminiWebQueueContext!,
-          { preferredResourceId: geminiStickyResourceId || undefined, maxAttempts: 1 },
-          localMemoryContext,
-          debugSaveDir,
-        )
-      : useImpit
-        ? await translateBatchImpit(batch, targetLanguage, resolvedPromptTemplate, localMemoryContext, debugSaveDir)
-        : useGrokUi
-          ? await translateBatchGrokUi(batch, targetLanguage, resolvedPromptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
-          : useStream
-            ? await translateBatchStream(
-                batch,
-                provider!,
-                model,
-                targetLanguage,
-                onChunk,
-                resolvedPromptTemplate,
-                () => shouldStopTranslation(runId),
-                undefined,
-                localMemoryContext,
-                debugSaveDir,
-                undefined,
-                onStatus,
-              )
-            : await translateBatch(
-                batch,
-                provider!,
-                model,
-                targetLanguage,
-                resolvedPromptTemplate,
-                () => shouldStopTranslation(runId),
-                undefined,
-                localMemoryContext,
-                debugSaveDir,
-              );
-
-    lastResult = batchResult;
-
-    const normalizedTexts = Array.from(
-      { length: batch.texts.length },
-      (_, idx) => batchResult.translatedTexts?.[idx] ?? '',
-    );
-    const translatedLineCount = normalizedTexts.filter((t) => t.trim()).length;
-    if (translatedLineCount > bestTranslatedCount) {
-      bestTranslatedCount = translatedLineCount;
-      bestTexts = normalizedTexts;
-    }
-
-    if (batchResult.success) {
-      bestTexts = normalizedTexts;
-      throwIfTranslationStopped(runId);
-      return {
-        success: true,
-        translatedTexts: bestTexts,
-        batchIndex,
-        transport: batchResult.transport,
-        resourceId: batchResult.resourceId,
-        resourceLabel: batchResult.resourceLabel,
-        queueRuntimeKey: batchResult.queueRuntimeKey,
-        keySwitchCount: batchResult.keySwitchCount,
-        assignedAccountLabel: batchResult.accountLabel,
-      };
-    }
-
-    // Gemini Web Queue: failover
-    if (useGeminiWebQueue) {
-      const failedResourceId = (batchResult.resourceId || '').trim();
-      if (failedResourceId && geminiWebQueueContext) {
-        geminiWebQueueContext.queue.setResourceEnabled(
-          CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
-          failedResourceId,
-          false,
-        );
-      }
-      if (geminiStickyResourceId === failedResourceId) {
-        geminiStickyResourceId = null;
-      }
-      if (attempt >= totalAttempts) {
+      if (useGeminiWebQueue && !geminiStickyResourceId) {
+        lastResult = {
+          success: false,
+          translatedTexts: bestTexts,
+          error: `${GEMINI_WEB_ACCOUNTS_EXHAUSTED_CODE}: Không còn account Gemini Web khả dụng.`,
+          transport: 'gemini_webapi_queue' as TranslationTransport,
+        };
         break;
       }
-      continue;
-    }
 
-    // API/Impit/Grok UI: kiểm tra retryable
-    let retryable = !batchResult.success;
-    if (retryable && batchResult.error) {
-      const errorText = batchResult.error.toLowerCase();
-      if (!errorText.includes('error_count_mismatch') && !(errorText.includes('thiếu') && errorText.includes('dòng'))) {
-        const translatedCount = normalizedTexts.filter((t) => t.trim()).length;
-        retryable = translatedCount < batch.texts.length;
+      // Pacing giữa các lần retry
+      if (isRetryAttempt) {
+        const cooldown = queueGapMs;
+        console.log(`[CaptionTranslator] Retry cooldown ${cooldown}ms`);
+        await new Promise((resolve) => setTimeout(resolve, cooldown));
+        throwIfTranslationStopped(runId);
       }
-    }
-    if (!retryable || attempt >= totalAttempts) {
-      break;
-    }
+
+      const useStream = streamingEnabled && provider?.transport === 'api' && typeof onChunk === 'function';
+      console.log(`[CaptionTranslator] Batch ${batchIndex + 1}: useStream=${useStream}, streamingEnabled=${streamingEnabled}, transport=${provider?.transport}`);
+
+      const batchResult: BatchTranslationResult = useGeminiWebQueue
+        ? await translateBatchGeminiWebQueue(
+            batch,
+            targetLanguage,
+            resolvedPromptTemplate,
+            (projectId || '').trim() || '__default_project__',
+            (sourcePath || '').trim() || '__unknown_source__',
+            geminiWebQueueContext!,
+            { preferredResourceId: geminiStickyResourceId || undefined, maxAttempts: 1 },
+            localMemoryContext,
+            debugSaveDir,
+          )
+        : useImpit
+          ? await translateBatchImpit(batch, targetLanguage, resolvedPromptTemplate, localMemoryContext, debugSaveDir)
+          : useGrokUi
+            ? await translateBatchGrokUi(batch, targetLanguage, resolvedPromptTemplate, queueGapMs, localMemoryContext, debugSaveDir)
+            : useStream
+              ? await translateBatchStream(
+                  batch,
+                  provider!,
+                  model,
+                  targetLanguage,
+                  onChunk,
+                  resolvedPromptTemplate,
+                  () => shouldStopTranslation(runId),
+                  stopAbortSignal,
+                  localMemoryContext,
+                  debugSaveDir,
+                  undefined,
+                  onStatus,
+                )
+              : await translateBatch(
+                  batch,
+                  provider!,
+                  model,
+                  targetLanguage,
+                  resolvedPromptTemplate,
+                  () => shouldStopTranslation(runId),
+                  stopAbortSignal,
+                  localMemoryContext,
+                  debugSaveDir,
+                );
+
+      lastResult = batchResult;
+
+      const normalizedTexts = Array.from(
+        { length: batch.texts.length },
+        (_, idx) => batchResult.translatedTexts?.[idx] ?? '',
+      );
+      const translatedLineCount = normalizedTexts.filter((t) => t.trim()).length;
+      if (translatedLineCount > bestTranslatedCount) {
+        bestTranslatedCount = translatedLineCount;
+        bestTexts = normalizedTexts;
+      }
+
+      if (batchResult.success) {
+        bestTexts = normalizedTexts;
+        throwIfTranslationStopped(runId);
+        return {
+          success: true,
+          translatedTexts: bestTexts,
+          batchIndex,
+          transport: batchResult.transport,
+          resourceId: batchResult.resourceId,
+          resourceLabel: batchResult.resourceLabel,
+          queueRuntimeKey: batchResult.queueRuntimeKey,
+          keySwitchCount: batchResult.keySwitchCount,
+          assignedAccountLabel: batchResult.accountLabel,
+        };
+      }
+
+      // Gemini Web Queue: failover
+      if (useGeminiWebQueue) {
+        const failedResourceId = (batchResult.resourceId || '').trim();
+        if (failedResourceId && geminiWebQueueContext) {
+          geminiWebQueueContext.queue.setResourceEnabled(
+            CAPTION_GEMINI_WEB_QUEUE_POOL_ID,
+            failedResourceId,
+            false,
+          );
+        }
+        if (geminiStickyResourceId === failedResourceId) {
+          geminiStickyResourceId = null;
+        }
+        if (attempt >= totalAttempts) {
+          break;
+        }
+        continue;
+      }
+
+      // API/Impit/Grok UI: kiểm tra retryable
+      let retryable = !batchResult.success;
+      if (retryable && batchResult.error) {
+        const errorText = batchResult.error.toLowerCase();
+        if (!errorText.includes('error_count_mismatch') && !(errorText.includes('thiếu') && errorText.includes('dòng'))) {
+          const translatedCount = normalizedTexts.filter((t) => t.trim()).length;
+          retryable = translatedCount < batch.texts.length;
+        }
+      }
+      if (!retryable || attempt >= totalAttempts) {
+        break;
+      }
+    } // while
+  } finally {
+    stopSignalControl.dispose();
+    if (!stopAbortSignal.aborted) stopAbortController.abort();
   }
 
   throwIfTranslationStopped(runId);

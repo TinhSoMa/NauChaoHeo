@@ -4391,6 +4391,9 @@ export function useCaptionProcessing({
               const errorStr = sbResult?.error || sbResult?.data?.error || '';
               if (typeof errorStr === 'string' && errorStr.includes(CAPTION_PROCESS_STOP_SIGNAL)) {
                 abortRef.current = true;
+                const stopReport = buildFailedBatchReportFromEntries(plan, liveTranslatedEntries, 'STOPPED_BY_USER');
+                batchReportsMap.set(plan.batchIndex, stopReport);
+                placeholderBatchIndexes.delete(plan.batchIndex);
                 break;
               }
               batchError = errorStr || 'TRANSLATE_BATCH_FAILED';
@@ -4403,6 +4406,9 @@ export function useCaptionProcessing({
               || (error instanceof Error && error.message.includes(CAPTION_PROCESS_STOP_SIGNAL));
             if (stopSignal) {
               abortRef.current = true;
+              const stopReport = buildFailedBatchReportFromEntries(plan, liveTranslatedEntries, 'STOPPED_BY_USER');
+              batchReportsMap.set(plan.batchIndex, stopReport);
+              placeholderBatchIndexes.delete(plan.batchIndex);
               break;
             }
             batchError = String(error);
@@ -4476,13 +4482,6 @@ export function useCaptionProcessing({
         const finalBatchReports: SharedTranslationBatchReport[] = [];
         for (const batchPlan of step3BatchPlan) {
           const report = batchReportsMap.get(batchPlan.batchIndex);
-          const isPlaceholder = placeholderBatchIndexes.has(batchPlan.batchIndex);
-          if (isStoppedByUser && isPlaceholder) {
-            finalBatchReports.push(
-              buildFailedBatchReportFromEntries(batchPlan, postTranslateEntries, 'STOPPED_BY_USER')
-            );
-            continue;
-          }
           const missingInfo = collectBatchMissingInfo(postTranslateEntries, batchPlan);
           const hasMissingText = missingInfo.missingLinesInBatch.length > 0;
 
@@ -4537,10 +4536,17 @@ export function useCaptionProcessing({
         const missingBatchIndexes: number[] = Array.from(
           new Set([...reportedButMissing, ...unreportedIndexes])
         ).sort((a, b) => a - b);
+        // Khi dừng bởi user, không tính các batch chưa từng được xử lý là lỗi
+        const effectiveMissingBatchIndexes = isStoppedByUser
+          ? missingBatchIndexes.filter(idx => !placeholderBatchIndexes.has(idx))
+          : missingBatchIndexes;
         const missingGlobalLineIndexes: number[] = Array.from(
           new Set([
             ...generatedStep3BatchState.missingGlobalLineIndexes,
-            ...unreportedIndexes.flatMap((batchIdx) => {
+            ...(isStoppedByUser
+              ? unreportedIndexes.filter(idx => !placeholderBatchIndexes.has(idx))
+              : unreportedIndexes
+            ).flatMap((batchIdx) => {
               const plan = step3BatchPlan.find((p) => p.batchIndex === batchIdx);
               if (!plan) return [];
               return Array.from({ length: plan.lineCount }, (_, i) => plan.startIndex + i);
@@ -4549,8 +4555,8 @@ export function useCaptionProcessing({
         ).sort((a, b) => a - b);
         const finalStep3BatchState: Step3BatchState = {
           ...generatedStep3BatchState,
-          failedBatches: Math.max(generatedStep3BatchState.failedBatches, missingBatchIndexes.length),
-          missingBatchIndexes,
+          failedBatches: Math.max(generatedStep3BatchState.failedBatches, effectiveMissingBatchIndexes.length),
+          missingBatchIndexes: effectiveMissingBatchIndexes,
           missingGlobalLineIndexes,
           updatedAt: nowIso(),
           planFingerprint,
