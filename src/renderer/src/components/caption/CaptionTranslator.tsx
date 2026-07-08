@@ -6785,7 +6785,7 @@ export function CaptionTranslator() {
                 <div className={styles.step3BatchHeaderRow}>
             <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {Object.keys(processing.streamingChunks).length > 0 && (
+                {Object.keys(processing.streamingChunks).length > 0 && (
                 <button
                   type="button"
                   className={styles.step3BatchActionBtn}
@@ -6880,16 +6880,15 @@ export function CaptionTranslator() {
                   >
                     Xem/Sửa
                   </button>
-                {processing.streamingChunks[row.batchIndex] && (
-                    <button
-                      type="button"
-                      className={styles.step3BatchActionBtn}
-                      onClick={() => setStreamPopupBatchIndex(row.batchIndex)}
-                      title={`Xem stream live của batch #${row.batchIndex}`}
-                    >
-                      Stream
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={styles.step3BatchActionBtn}
+                    onClick={() => setStreamPopupBatchIndex(row.batchIndex)}
+                    disabled={!processing.streamingChunks[row.batchIndex]}
+                    title={`Xem stream live của batch #${row.batchIndex}`}
+                  >
+                    Stream
+                  </button>
                   <button
                     type="button"
                     className={styles.step3BatchActionBtn}
@@ -6910,12 +6909,16 @@ export function CaptionTranslator() {
                     )}
                   </div>
                 )}
-                {showStreamPreviews && processing.streamingChunks[row.batchIndex] && (
+                {showStreamPreviews && (
                   <div className={styles.step3BatchStreamRow}>
-                    <div className={styles.step3BatchStreamIndicator} />
-                    <div className={styles.step3BatchStreamText}>
-                      {processing.streamingChunks[row.batchIndex].accumulated}
-                    </div>
+                    {processing.streamingChunks[row.batchIndex] && (
+                      <>
+                        <div className={styles.step3BatchStreamIndicator} />
+                        <div className={styles.step3BatchStreamText}>
+                          {processing.streamingChunks[row.batchIndex].accumulated}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
