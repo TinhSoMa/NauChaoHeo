@@ -3140,6 +3140,8 @@ export function CaptionTranslator() {
   const [step3BulkMultiMessage, setStep3BulkMultiMessage] = useState('');
   const [step3BulkMultiApplyResults, setStep3BulkMultiApplyResults] = useState<Step3BulkMultiFolderApplyResult[]>([]);
   const [step3BulkMultiBusy, setStep3BulkMultiBusy] = useState(false);
+  const [streamPopupBatchIndex, setStreamPopupBatchIndex] = useState<number | null>(null);
+  const [showStreamPreviews, setShowStreamPreviews] = useState(true);
   const [fitAudioAuditOpen, setFitAudioAuditOpen] = useState(false);
   const [fitAudioAuditBusy, setFitAudioAuditBusy] = useState(false);
   const [fitAudioAuditError, setFitAudioAuditError] = useState('');
@@ -6780,17 +6782,29 @@ export function CaptionTranslator() {
     return (
       <div className={styles.step3BatchPane}>
         <div className={styles.panelSection}>
-          <div className={styles.step3BatchHeaderRow}>
+                <div className={styles.step3BatchHeaderRow}>
             <div className={styles.configSummaryTitle}>Step 3 Batch Monitor</div>
-            <button
-              type="button"
-              className={styles.step3BatchActionBtn}
-              onClick={openStep3ManualBulk}
-              disabled={processing.status === 'running'}
-              title="Nhập JSON cho nhiều batch"
-            >
-              JSON nhiều
-            </button>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {processing.status === 'running' && Object.keys(processing.streamingChunks).length > 0 && (
+                <button
+                  type="button"
+                  className={styles.step3BatchActionBtn}
+                  onClick={() => setShowStreamPreviews(v => !v)}
+                  title={showStreamPreviews ? 'Ẩn dòng preview stream trong các row' : 'Hiện dòng preview stream'}
+                >
+                  {showStreamPreviews ? 'Ẩn preview' : 'Hiện preview'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={styles.step3BatchActionBtn}
+                onClick={openStep3ManualBulk}
+                disabled={processing.status === 'running'}
+                title="Nhập JSON cho nhiều batch"
+              >
+                JSON nhiều
+              </button>
+            </div>
           </div>
           <div className={styles.step3BatchSummaryGrid}>
             <div className={styles.step3BatchStatCard}>
@@ -6866,6 +6880,16 @@ export function CaptionTranslator() {
                   >
                     Xem/Sửa
                   </button>
+                {showStreamPreviews && row.status === 'running' && processing.streamingChunks[row.batchIndex] && !processing.streamingChunks[row.batchIndex].done && (
+                    <button
+                      type="button"
+                      className={styles.step3BatchActionBtn}
+                      onClick={() => setStreamPopupBatchIndex(row.batchIndex)}
+                      title={`Xem stream live của batch #${row.batchIndex}`}
+                    >
+                      Stream
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={styles.step3BatchActionBtn}
@@ -9183,23 +9207,13 @@ export function CaptionTranslator() {
         onSave={handleSaveStep3BatchEditor}
       />
 
-      {(() => {
-        const currentStreamingBatch = (() => {
-          if (processing.status !== 'running' || activeStep !== 3) return null;
-          const entries = Object.entries(processing.streamingChunks);
-          for (const [batchIdxStr, data] of entries) {
-            const idx = Number(batchIdxStr);
-            if (!data.done) return idx;
-          }
-          return null;
-        })();
-        return (
-          <Step3StreamingPopup
-            streamingChunks={processing.streamingChunks}
-            currentBatchIndex={currentStreamingBatch}
-          />
-        );
-      })()}
+      {streamPopupBatchIndex !== null && (
+        <Step3StreamingPopup
+          streamingChunks={processing.streamingChunks}
+          currentBatchIndex={streamPopupBatchIndex}
+          onClose={() => setStreamPopupBatchIndex(null)}
+        />
+      )}
 
       {step3ManualModal && (
       <div
