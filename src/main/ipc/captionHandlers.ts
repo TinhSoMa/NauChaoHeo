@@ -479,7 +479,7 @@ export function registerCaptionHandlers(): void {
           ? (chunk: string) => {
               accumulatedText += chunk;
               const chunkData: StreamChunk = {
-              batchIndex: options.batchIndex,
+              batchIndex: options.batchIndex + 1,
               text: chunk,
               accumulated: accumulatedText,
               done: false,
@@ -495,7 +495,7 @@ export function registerCaptionHandlers(): void {
 
         if (onChunk) {
           const doneData: StreamChunk = {
-            batchIndex: options.batchIndex,
+            batchIndex: options.batchIndex + 1,
             text: '',
             accumulated: accumulatedText,
             done: true,
