@@ -7928,6 +7928,20 @@ export function CaptionTranslator() {
                     <option value="medium">Trung bình</option>
                     <option value="high">Cao</option>
                   </select>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className={`${styles.toggle} ${settings.geminiStreamingEnabled ? styles.toggleActive : ''}`}
+                      onClick={() => settings.setGeminiStreamingEnabled(!settings.geminiStreamingEnabled)}
+                      style={{ flexShrink: 0 }}
+                    >
+                      <span className={`${styles.toggleKnob} ${settings.geminiStreamingEnabled ? styles.toggleKnobActive : ''}`} />
+                    </button>
+                    <span className={styles.label} style={{ margin: 0 }}>Streaming</span>
+                    <span style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-secondary)' }}>
+                      Nhận dữ liệu dịch dần
+                    </span>
+                  </div>
                 </>
               )}
             </div>

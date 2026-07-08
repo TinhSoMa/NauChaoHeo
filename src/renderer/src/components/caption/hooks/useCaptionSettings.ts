@@ -1291,6 +1291,7 @@ export function useCaptionSettings() {
   }, []);
 
   const [splitByLines, setSplitByLines] = useState(DEFAULT_SPLIT_BY_LINES);
+  const [geminiStreamingEnabled, setGeminiStreamingEnabled] = useState(true);
   const [linesPerFile, setLinesPerFile] = useState(DEFAULT_LINES_PER_FILE);
   const [numberOfParts, setNumberOfParts] = useState(DEFAULT_NUMBER_OF_PARTS);
 
@@ -1996,6 +1997,7 @@ export function useCaptionSettings() {
       edgeWorkerItemConcurrency,
       srtSpeed,
       splitByLines,
+      geminiStreamingEnabled,
       linesPerFile,
       numberOfParts,
       enabledSteps: Array.from(enabledSteps.values()),
@@ -2102,6 +2104,7 @@ export function useCaptionSettings() {
       edgeWorkerItemConcurrency,
       srtSpeed,
       splitByLines,
+      geminiStreamingEnabled,
       linesPerFile,
       numberOfParts,
       enabledSteps,
@@ -2145,6 +2148,7 @@ export function useCaptionSettings() {
     if (typeof saved.edgeWorkerItemConcurrency === 'number') setEdgeWorkerItemConcurrency(saved.edgeWorkerItemConcurrency);
     if (typeof saved.srtSpeed === 'number') setSrtSpeed(saved.srtSpeed);
     if (typeof saved.splitByLines === 'boolean') setSplitByLines(saved.splitByLines);
+    if (typeof saved.geminiStreamingEnabled === 'boolean') setGeminiStreamingEnabled(saved.geminiStreamingEnabled);
     if (typeof saved.linesPerFile === 'number') setLinesPerFile(saved.linesPerFile);
     if (typeof saved.numberOfParts === 'number') setNumberOfParts(saved.numberOfParts);
     if (saved.enabledSteps) {
@@ -2521,6 +2525,7 @@ export function useCaptionSettings() {
     edgeWorkerItemConcurrency, setEdgeWorkerItemConcurrency,
     srtSpeed, setSrtSpeed,
     splitByLines, setSplitByLines,
+    geminiStreamingEnabled, setGeminiStreamingEnabled,
     linesPerFile, setLinesPerFile,
     numberOfParts, setNumberOfParts,
     enabledSteps, setEnabledSteps,

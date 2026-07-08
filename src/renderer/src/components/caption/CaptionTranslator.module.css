@@ -2260,6 +2260,37 @@
   50% { opacity: 0.3; }
 }
 
+.toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background-color: var(--color-surface-dim, #e5e5e5);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.toggleActive {
+  background-color: var(--color-accent, #4a9eff);
+}
+
+.toggleKnob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: white;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggleKnobActive {
+  transform: translateX(20px);
+}
+
 .ttsErrorList {
   display: flex;
   flex-direction: column;

@@ -4287,11 +4287,7 @@ export function useCaptionProcessing({
         }));
 
         const previousBatches: import('@shared/types/caption').PreviousBatchTranslations[] = [];
-        let geminiStreamingEnabled = false;
-        try {
-          const appSettingsRes = await window.electronAPI.appSettings.getAll();
-          geminiStreamingEnabled = (appSettingsRes?.data as any)?.geminiStreamingEnabled === true;
-        } catch { /* fallback */ }
+        const geminiStreamingEnabled = (settings as any)?.geminiStreamingEnabled === true;
         let unsubStream: (() => void) | null = null;
         setStreamingChunks({});
         const cleanupStream = () => {
