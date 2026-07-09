@@ -29,6 +29,7 @@ import { useStoryBatchTranslation } from './hooks/useStoryBatchTranslation';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
+import { useStoryExport } from './hooks/useStoryExport';
 import { resolveStoryReadingThemePalette } from './styles/readerThemes';
 import { ReaderPane } from './components/ReaderPane';
 import { useProjectContext } from '../../context/ProjectContext';
@@ -557,6 +558,17 @@ export function StoryTranslator() {
       setActiveOperation
     });
   
+  // Export ebook hook
+  const { exportStatus, handleExportEbook } = useStoryExport({
+    translatedChapters,
+    translatedTitles,
+    chapters,
+    sourceLang,
+    targetLang,
+    filePath,
+    projectId
+  });
+
   // Debug logging
   console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
   console.log('[StoryTranslator] Render - status:', status);
@@ -1191,6 +1203,18 @@ export function StoryTranslator() {
                 Tóm tất cả
               </Button>
             </>
+          )}
+
+          {translatedChapters.size > 0 && (
+            <Button
+              onClick={handleExportEbook}
+              variant="primary"
+              disabled={exportStatus === 'exporting'}
+              className="h-7 px-2 text-2xs shrink-0"
+              title="Export Ebook ra file EPUB"
+            >
+              {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
+            </Button>
           )}
 
           {/* Streaming error */}
