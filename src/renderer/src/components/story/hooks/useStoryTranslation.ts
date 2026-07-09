@@ -120,7 +120,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       summaries,
       translatedChapters,
       mode: promptSaveSettings.previousAssistantOutputMode,
-      chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
+      chapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+      explicitChapterIds: promptSaveSettings.contextChapterIds
     });
     if (activeRunIdRef.current) {
       alert('[Dịch] Đang có tiến trình dịch chương khác. Vui lòng đợi hoàn tất.');

@@ -219,7 +219,8 @@ export function useStorySummaryGeneration({
           chapterIndex,
           translatedChapters: runtimeTranslatedChaptersRef.current,
           mode: previousAssistantOutputMode,
-          chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
+          chapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+          explicitChapterIds: promptSaveSettings.contextChapterIds
         })
       : {
           content: '',
@@ -411,7 +412,8 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
             chapterIndex: actualChapterIndex,
             translatedChapters: runtimeTranslatedChaptersRef.current,
             mode: previousAssistantOutputMode,
-            chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
+            chapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+            explicitChapterIds: promptSaveSettings.contextChapterIds
           })
         : {
             content: '',

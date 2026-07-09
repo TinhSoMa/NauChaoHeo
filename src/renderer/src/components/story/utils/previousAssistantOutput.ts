@@ -127,9 +127,22 @@ export function resolvePreviousTranslatedOutputDebug(params: {
   translatedChapters: Map<string, string>;
   mode?: StoryPreviousAssistantOutputMode;
   chapterCount?: number;
+  explicitChapterIds?: string[] | null;
 }): { content: string; debug: PreviousAssistantOutputDebug } {
-  const { chapters, chapterIndex, translatedChapters, mode = 'sampled', chapterCount = DEFAULT_PREVIOUS_CHAPTER_COUNT } = params;
-  const { requestedChapterCount, previousChapters } = extractChapterIdSequence(chapters, chapterIndex, chapterCount);
+  const { chapters, chapterIndex, translatedChapters, mode = 'sampled', chapterCount = DEFAULT_PREVIOUS_CHAPTER_COUNT, explicitChapterIds } = params;
+
+  let previousChapters: Chapter[];
+  let requestedChapterCount: number;
+
+  if (explicitChapterIds && explicitChapterIds.length > 0) {
+    const idSet = new Set(explicitChapterIds);
+    previousChapters = chapters.filter((c) => idSet.has(c.id) && c.id !== chapters[chapterIndex]?.id);
+    requestedChapterCount = explicitChapterIds.length;
+  } else {
+    const seq = extractChapterIdSequence(chapters, chapterIndex, chapterCount);
+    requestedChapterCount = seq.requestedChapterCount;
+    previousChapters = seq.previousChapters;
+  }
   const resolvedChapterIds: string[] = [];
   const missingChapterIds: string[] = [];
   const finalIncludedChapterIds: string[] = [];
@@ -240,8 +253,21 @@ export function resolvePreviousAssistantOutputDebug(params: {
   translatedChapters: Map<string, string>;
   mode?: StoryPreviousAssistantOutputMode;
   chapterCount?: number;
+  explicitChapterIds?: string[] | null;
 }): { content: string; debug: PreviousAssistantOutputDebug } {
   const mode = params.mode || 'sampled';
+
+  if (params.explicitChapterIds && params.explicitChapterIds.length > 0) {
+    return resolvePreviousTranslatedOutputDebug({
+      chapters: params.chapters,
+      chapterIndex: params.chapterIndex,
+      translatedChapters: params.translatedChapters,
+      mode,
+      chapterCount: params.chapterCount,
+      explicitChapterIds: params.explicitChapterIds
+    });
+  }
+
   const chapterCount = normalizeChapterCount(params.chapterCount);
   if (chapterCount > 1) {
     return resolvePreviousTranslatedOutputDebug({

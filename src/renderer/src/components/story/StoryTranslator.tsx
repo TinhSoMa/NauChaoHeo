@@ -17,7 +17,7 @@ import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, AlertTriangle } from 'lucide-react';
+import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, AlertTriangle, Check } from 'lucide-react';
 import { extractTranslatedTitle } from './utils/chapterUtils';
 import { useChapterSelection } from './hooks/useChapterSelection';
 import { useTokenManagement } from './hooks/useTokenManagement';
@@ -74,14 +74,18 @@ export function StoryTranslator() {
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
   const [previousAssistantOutputChapterCount, setPreviousAssistantOutputChapterCount] = useState(1);
+  const [contextChapterIds, setContextChapterIds] = useState<string[] | null>(null);
+  const [contextPopupOpen, setContextPopupOpen] = useState(false);
+  const contextPopupRef = useRef<HTMLDivElement | null>(null);
   const [geminiStreamingEnabled, setGeminiStreamingEnabled] = useState(true);
   const [streamingContent, setStreamingContent] = useState<ReadonlyMap<string, string>>(new Map());
   const [streamingErrors, setStreamingErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const promptSaveSettings = useMemo<StoryPromptSaveSettings>(() => ({
     autoSaveSentPrompt,
     previousAssistantOutputMode,
-    previousAssistantOutputChapterCount
-  }), [autoSaveSentPrompt, previousAssistantOutputChapterCount, previousAssistantOutputMode]);
+    previousAssistantOutputChapterCount,
+    contextChapterIds
+  }), [autoSaveSentPrompt, previousAssistantOutputChapterCount, previousAssistantOutputMode, contextChapterIds]);
   
   // Token management (using custom hook)
   const {
@@ -259,6 +263,7 @@ export function StoryTranslator() {
       chapterScrollPositions,
       previousAssistantOutputMode,
       previousAssistantOutputChapterCount,
+      contextChapterIds,
       autoSaveSentPrompt
     },
     {
@@ -283,6 +288,7 @@ export function StoryTranslator() {
       setChapters,
       setPreviousAssistantOutputMode,
       setPreviousAssistantOutputChapterCount,
+      setContextChapterIds,
       setAutoSaveSentPrompt
     },
     fileManagement.parseFile
@@ -708,6 +714,59 @@ export function StoryTranslator() {
     };
   }, [setProcessingChapters]);
 
+  // Close context popup on outside click
+  useEffect(() => {
+    if (!contextPopupOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (contextPopupRef.current && !contextPopupRef.current.contains(e.target as Node)) {
+        setContextPopupOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextPopupOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [contextPopupOpen]);
+
+  const computeDefaultContextIds = useCallback((count?: number): string[] => {
+    const effectiveCount = count ?? previousAssistantOutputChapterCount;
+    if (!selectedChapterId || effectiveCount <= 0) return [];
+    const idx = chapters.findIndex((c) => c.id === selectedChapterId);
+    if (idx <= 0) return [];
+    const start = Math.max(0, idx - effectiveCount);
+    return chapters.slice(start, idx).map((c) => c.id);
+  }, [chapters, selectedChapterId, previousAssistantOutputChapterCount]);
+
+  const openContextPopup = useCallback(() => {
+    if (!contextChapterIds) {
+      setContextChapterIds(computeDefaultContextIds());
+    }
+    setContextPopupOpen(true);
+  }, [contextChapterIds, computeDefaultContextIds]);
+
+  const toggleContextChapter = useCallback((chapterId: string) => {
+    setContextChapterIds((prev) => {
+      const current = prev ?? computeDefaultContextIds();
+      if (current.includes(chapterId)) {
+        return current.filter((id) => id !== chapterId);
+      }
+      return [...current, chapterId];
+    });
+  }, [computeDefaultContextIds]);
+
+  const handlePrefillContext = useCallback((count: number) => {
+    setContextChapterIds(computeDefaultContextIds(count));
+  }, [computeDefaultContextIds]);
+
+  const translatedChapterIds = useMemo(() => {
+    return chapters.filter((c) => translatedChapters.has(c.id)).map((c) => c.id);
+  }, [chapters, translatedChapters]);
+
   const handleTranslate = async () => {
     await handleSingleTranslate(selectedChapterId);
   };
@@ -915,21 +974,90 @@ export function StoryTranslator() {
                 <option value="full">Full</option>
               </select>
             </label>
-            <label className="flex items-center gap-1">
-              <span className="text-2xs text-text-secondary">Ch</span>
-              <select
-                value={previousAssistantOutputChapterCount}
-                onChange={(e) => setPreviousAssistantOutputChapterCount(Number(e.target.value) || 1)}
-                className="h-7 rounded border border-border bg-card px-1.5 text-2xs text-text-primary"
+            <div className="relative" ref={contextPopupRef}>
+              <button
+                onClick={openContextPopup}
                 disabled={status === 'running'}
+                className="h-7 rounded border border-border bg-card px-1.5 text-2xs text-text-primary flex items-center gap-1 hover:bg-hover disabled:opacity-50"
+                title="Chọn chương làm context"
               >
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-                <option value={3}>3</option>
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-              </select>
-            </label>
+                <BookOpen size={10} />
+                {(contextChapterIds ?? computeDefaultContextIds()).length}
+              </button>
+
+              {contextPopupOpen && (
+                <div className="absolute top-full right-0 mt-1 z-50 w-72 rounded border border-border bg-card shadow-lg p-2 max-h-80 overflow-y-auto">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-text-primary font-medium">Chương context</span>
+                    <select
+                      value={previousAssistantOutputChapterCount}
+                      onChange={(e) => {
+                        const count = Number(e.target.value) || 1;
+                        setPreviousAssistantOutputChapterCount(count);
+                        handlePrefillContext(count);
+                      }}
+                      className="h-6 rounded border border-border bg-surface px-1 text-2xs text-text-primary"
+                    >
+                      <option value={1}>1 chương</option>
+                      <option value={2}>2 chương</option>
+                      <option value={3}>3 chương</option>
+                      <option value={5}>5 chương</option>
+                      <option value={10}>10 chương</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    {chapters.map((ch) => {
+                      const isTranslated = translatedChapters.has(ch.id);
+                      const isSelected = (contextChapterIds ?? computeDefaultContextIds()).includes(ch.id);
+                      const isCurrent = ch.id === selectedChapterId;
+                      return (
+                        <label
+                          key={ch.id}
+                          className={`flex items-center gap-1.5 px-1 py-0.5 rounded text-2xs cursor-pointer ${
+                            isCurrent ? 'opacity-40' : 'hover:bg-hover'
+                          } ${!isTranslated ? 'opacity-30' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected && isTranslated}
+                            disabled={!isTranslated || isCurrent}
+                            onChange={() => toggleContextChapter(ch.id)}
+                            className="w-3 h-3 rounded border-border cursor-pointer accent-primary"
+                          />
+                          <span className="truncate flex-1">{ch.title || ch.id}</span>
+                          {isCurrent && <span className="text-2xs text-text-tertiary shrink-0">(current)</span>}
+                          {!isTranslated && <span className="text-2xs text-text-tertiary shrink-0">chưa dịch</span>}
+                          {isTranslated && isSelected && <Check size={10} className="text-primary shrink-0" />}
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {translatedChapterIds.length === 0 && (
+                    <div className="text-2xs text-text-tertiary text-center py-2">Chưa có chương nào được dịch</div>
+                  )}
+
+                  <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border">
+                    <button
+                      onClick={() => {
+                        setContextChapterIds(null);
+                        setContextPopupOpen(false);
+                      }}
+                      className="text-2xs text-text-tertiary hover:text-text-primary"
+                    >
+                      Mặc định
+                    </button>
+                    <button
+                      onClick={() => setContextPopupOpen(false)}
+                      className="text-2xs text-text-primary font-medium"
+                    >
+                      Xong
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <label className="flex items-center gap-1 cursor-pointer hover:text-primary">
               <input
                 type="checkbox"

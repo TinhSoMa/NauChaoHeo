@@ -234,7 +234,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
             summaries,
             translatedChapters: runtimeTranslatedChaptersRef.current,
             mode: promptSaveSettings.previousAssistantOutputMode,
-            chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
+            chapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+            explicitChapterIds: promptSaveSettings.contextChapterIds
           })
         : {
             content: '',

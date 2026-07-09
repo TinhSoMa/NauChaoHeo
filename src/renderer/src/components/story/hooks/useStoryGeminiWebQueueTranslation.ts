@@ -333,7 +333,8 @@ export function useStoryGeminiWebQueueTranslation(
       summaries,
       translatedChapters: runtimeTranslatedChaptersRef.current,
       mode: promptSaveSettings.previousAssistantOutputMode,
-      chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
+      chapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
+      explicitChapterIds: promptSaveSettings.contextChapterIds
     });
     const runId = options?.runId;
     if (!runId || currentRunIdRef.current !== runId || shouldStopRef.current) {

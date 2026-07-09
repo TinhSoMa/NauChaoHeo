@@ -60,6 +60,7 @@ interface StoryTranslatorStateSetters {
   setChapters: (chapters: Chapter[]) => void;
   setPreviousAssistantOutputMode: (mode: StoryPreviousAssistantOutputMode) => void;
   setPreviousAssistantOutputChapterCount: (count: number) => void;
+  setContextChapterIds: (ids: string[] | null) => void;
   setAutoSaveSentPrompt: (enabled: boolean) => void;
 }
 
@@ -85,6 +86,7 @@ interface StoryTranslatorStateValues {
   chapterScrollPositions: Map<string, number>;
   previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
   previousAssistantOutputChapterCount: number;
+  contextChapterIds: string[] | null;
   autoSaveSentPrompt: boolean;
 }
 
@@ -118,6 +120,7 @@ export function useStoryTranslatorPersistence(
     chapterScrollPositions?: Array<[string, number]>;
     previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
     previousAssistantOutputChapterCount?: number;
+    contextChapterIds?: string[];
     autoSaveSentPrompt?: boolean;
   }>({
     feature: 'story',
@@ -170,6 +173,7 @@ export function useStoryTranslatorPersistence(
         chapterScrollPositions: Array.from(values.chapterScrollPositions.entries()),
         previousAssistantOutputMode: values.previousAssistantOutputMode,
         previousAssistantOutputChapterCount: values.previousAssistantOutputChapterCount,
+        contextChapterIds: values.contextChapterIds ?? undefined,
         autoSaveSentPrompt: values.autoSaveSentPrompt
       };
     },
@@ -226,6 +230,9 @@ export function useStoryTranslatorPersistence(
       if (typeof saved.previousAssistantOutputChapterCount === 'number') {
         setters.setPreviousAssistantOutputChapterCount(Math.max(1, Math.min(10, Math.floor(saved.previousAssistantOutputChapterCount))));
       }
+      if (Array.isArray(saved.contextChapterIds)) {
+        setters.setContextChapterIds(saved.contextChapterIds.filter((id: unknown) => typeof id === 'string'));
+      }
       if (typeof saved.autoSaveSentPrompt === 'boolean') setters.setAutoSaveSentPrompt(saved.autoSaveSentPrompt);
     },
     deps: [
@@ -248,6 +255,7 @@ export function useStoryTranslatorPersistence(
       values.chapterScrollPositions,
       values.previousAssistantOutputMode,
       values.previousAssistantOutputChapterCount,
+      values.contextChapterIds,
       values.autoSaveSentPrompt
     ],
   });

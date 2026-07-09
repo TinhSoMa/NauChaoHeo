@@ -582,12 +582,26 @@ export class StoryService {
             memoryPayload && typeof memoryPayload === 'object'
               ? Object.fromEntries(Object.entries(memoryPayload).filter(([key]) => key !== 'current_input'))
               : null;
-          const mergedPrompt = {
+          const previousAssistantOutput = normalizedMemoryPayload && typeof normalizedMemoryPayload === 'object'
+            ? (normalizedMemoryPayload as Record<string, any>).previous_assistant_output
+            : undefined;
+          const hasContext = typeof previousAssistantOutput === 'string' && previousAssistantOutput.trim().length > 0;
+
+          const jsonPrompt = {
             ...promptWithoutLegacyInput,
-            ...(normalizedMemoryPayload || {}),
             current_input: normalizedCurrentInput,
           };
-          return { success: true, prompt: mergedPrompt };
+
+          if (hasContext) {
+            // Prepend context as plain text OUTSIDE the JSON
+            const result = '===== BỐI CẢNH HỆ THỐNG (CHƯƠNG TRƯỚC) =====\n' +
+              previousAssistantOutput.trimEnd() + '\n\n' +
+              '===== PROMPT NGƯỜI DÙNG =====\n' +
+              JSON.stringify(jsonPrompt);
+            return { success: true, prompt: result };
+          }
+
+          return { success: true, prompt: jsonPrompt };
       }
 
       return { success: false, error: 'Prompt content must be a JSON array or object' };

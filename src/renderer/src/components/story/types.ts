@@ -57,6 +57,7 @@ export interface StoryPromptSaveSettings {
   autoSaveSentPrompt: boolean;
   previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
   previousAssistantOutputChapterCount: number;
+  contextChapterIds?: string[] | null;
 }
 
 
