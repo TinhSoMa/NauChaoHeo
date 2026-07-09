@@ -97,6 +97,15 @@ export interface StoryTranslateChapterPayload {
   onRetry?: (attempt: number, maxRetries: number) => void;
   memory?: StoryTranslationMemoryPayload | null;
   summaryMemory?: StorySummaryMemoryPayload | null;
+  streamingEnabled?: boolean;
+}
+
+export interface StoryStreamChunk {
+  chapterId: string;
+  text: string;
+  accumulated: string;
+  done: boolean;
+  serverError?: string;
 }
 
 export interface StoryTranslateGeminiWebQueuePayload {
@@ -224,5 +233,6 @@ export const STORY_IPC_CHANNELS = {
   TRANSLATE_CHAPTER_RESULT: 'story:translate-chapter-result',
   TRANSLATION_PROGRESS: 'story:translation-progress',
   TRANSLATE_CHAPTER_STREAM_REPLY: 'story:translateChapterStreamReply',
+  STOP_STORY_TRANSLATION: 'story:stopStoryTranslation',
   CREATE_EBOOK: 'story:createEbook'
 } as const;

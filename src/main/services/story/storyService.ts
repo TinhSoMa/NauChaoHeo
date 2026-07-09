@@ -86,7 +86,17 @@ export class StoryService {
    * Translates a chapter using prepared prompt and Gemini API
    * Method: 'API' (Google Gemini API) hoặc 'IMPIT' (Web scraping qua impit)
    */
-  static async translateChapter(options: StoryTranslateChapterPayload): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
+  static async translateChapter(
+    options: StoryTranslateChapterPayload,
+    extra?: {
+      onChunk?: (text: string) => void;
+      onStatus?: (status: string) => void;
+      signal?: AbortSignal;
+    }
+  ): Promise<{ success: boolean; data?: string; error?: string; context?: any; configId?: string; metadata?: any; retryable?: boolean }> {
+    const control = extra?.signal
+      ? { stopSignal: extra.signal, stopErrorMessage: 'STOP_REQUESTED' as const }
+      : undefined;
     try {
       console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
       
@@ -139,9 +149,9 @@ export class StoryService {
                  configId: result.configId,
                  metadata: result.metadata
              };
-           } else {
-             return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId, metadata: result.metadata, retryable: result.retryable };
-           }
+            } else {
+              return { success: false, error: result.error || 'Gemini Web Error', configId: result.configId, metadata: result.metadata, retryable: result.retryable };
+            }
 
       } else {
           // API METHOD (Default)
@@ -149,31 +159,49 @@ export class StoryService {
             ? options.model.trim()
             : undefined;
           
-           const result = await GeminiService.callGeminiWithRotation(
-             options.prompt, 
-             modelToUse
-           );
+          const useStream = options.streamingEnabled === true && typeof extra?.onChunk === 'function';
+
+          let result;
+          if (useStream) {
+            result = await GeminiService.callGeminiWithRotationStream(
+              options.prompt,
+              extra!.onChunk!,
+              modelToUse,
+              10,
+              control,
+              undefined,
+              extra?.onStatus
+            );
+          } else {
+            result = await GeminiService.callGeminiWithRotation(
+              options.prompt,
+              modelToUse,
+              10,
+              control
+            );
+          }
            
            if (result.success) {
+             const text = String(result.data || '');
              await this.addStoryTranslationMemory(
                options.memory,
-               String(result.data || ''),
+               text,
                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
                String(options.metadata?.sourceText || '')
              );
              await this.addStoryTranslationNounMemory(
                options.memory,
-               String(result.data || ''),
+               text,
                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
                String(options.metadata?.sourceText || '')
              );
              await this.addStorySummaryMemory(
                options.summaryMemory,
-               String(result.data || ''),
+               text,
                String(options.metadata?.chapterTitle || options.summaryMemory?.chapterTitle || ''),
                String(options.metadata?.sourceText || '')
              );
-             return { success: true, data: result.data, metadata: options.metadata };
+             return { success: true, data: text, metadata: options.metadata };
            } else {
             return { success: false, error: result.error, metadata: options.metadata };
           }

@@ -7,7 +7,14 @@ import type {
   QueueJobRuntimeSnapshot
 } from '../services/shared/universalRotationQueue/rotationTypes';
 import {
+  createStopSignal,
+  stopFeatureTranslation,
+  beginFeatureRun,
+  endFeatureRun,
+} from '../services/shared/translationStopSignal';
+import {
   STORY_IPC_CHANNELS,
+  type StoryStreamChunk,
   StoryPreparePromptPayload,
   StoryPrepareSummaryPromptPayload,
   StoryTranslateChapterPayload,
@@ -287,16 +294,9 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
     async (_event: IpcMainInvokeEvent, payload: StoryTranslateChapterPayload) => {
-      // console.log('[StoryHandlers] Translate chapter params:', payload);
-      // Support legacy call (just prompt) or new call (options object)
-      // If payload is the prompt directly (array or object check), treat as legacy API method.
-      // But typically we should standardize.
-      // Let's assume payload is the Options object if it has 'prompt' key.
-      
       const rawPayload = payload as StoryTranslateChapterPayload & { role?: string };
       let options = rawPayload;
       if (!rawPayload.prompt && (Array.isArray(rawPayload) || rawPayload.role)) {
-          // It's just the prompt structure
           options = { prompt: rawPayload, method: 'API' };
       }
       
@@ -304,6 +304,9 @@ export function registerStoryHandlers(): void {
           const { chapterTitle, tokenInfo, chapterId } = options.metadata;
           console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || 'Unknown'})`);
       }
+      
+      const runId = toOptionalString(options.metadata?.runId);
+      const chapterId = toOptionalString(options.metadata?.chapterId);
       
       options.onRetry = (attempt: number, maxRetries: number) => {
         if (options.metadata?.chapterId) {
@@ -314,26 +317,87 @@ export function registerStoryHandlers(): void {
             });
         }
       };
-      
-      const result = await StoryService.StoryService.translateChapter(options);
-      const requestMetadata = toMetadataObject(options?.metadata);
-      const responseMetadata = toMetadataObject(result?.metadata);
 
-      if (result?.success) {
-        const validation = validateStoryResponseMetadata(requestMetadata, responseMetadata);
-        if (!validation.ok) {
-          console.error(`[StoryHandlers] Drop stale TRANSLATE_CHAPTER response: ${validation.message}`);
-          return {
-            success: false,
-            error: validation.message,
-            errorCode: 'STALE_RESPONSE',
-            retryable: true,
-            metadata: responseMetadata
-          };
-        }
+      const useStream = options.streamingEnabled === true && options.method === 'API';
+      let stopSignal: { promise: Promise<void>; dispose: () => void } | null = null;
+      const stopAbortController = new AbortController();
+      let accumulatedText = '';
+
+      if (runId) {
+        beginFeatureRun('story', runId);
+        stopSignal = createStopSignal('story', runId);
+        stopSignal.promise.then(() => {
+          if (!stopAbortController.signal.aborted) {
+            stopAbortController.abort();
+          }
+        });
       }
 
-      return result;
+      try {
+        const extra = useStream
+          ? {
+              signal: stopAbortController.signal,
+              onChunk: (text: string) => {
+                accumulatedText += text;
+                const chunk: StoryStreamChunk = {
+                  chapterId: chapterId || '',
+                  text,
+                  accumulated: accumulatedText,
+                  done: false,
+                };
+                _event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, chunk);
+              },
+              onStatus: (status: string) => {
+                const chunk: StoryStreamChunk = {
+                  chapterId: chapterId || '',
+                  text: '',
+                  accumulated: accumulatedText,
+                  done: false,
+                  serverError: status,
+                };
+                _event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, chunk);
+              },
+            }
+          : {
+              signal: stopAbortController.signal,
+            };
+
+        const result = await StoryService.StoryService.translateChapter(options, extra);
+        const requestMetadata = toMetadataObject(options?.metadata);
+        const responseMetadata = toMetadataObject(result?.metadata);
+
+        if (result?.success) {
+          const validation = validateStoryResponseMetadata(requestMetadata, responseMetadata);
+          if (!validation.ok) {
+            console.error(`[StoryHandlers] Drop stale TRANSLATE_CHAPTER response: ${validation.message}`);
+            return {
+              success: false,
+              error: validation.message,
+              errorCode: 'STALE_RESPONSE',
+              retryable: true,
+              metadata: responseMetadata
+            };
+          }
+        }
+
+        if (useStream) {
+          const doneChunk: StoryStreamChunk = {
+            chapterId: chapterId || '',
+            text: '',
+            accumulated: accumulatedText,
+            done: true,
+            ...(result.success ? {} : { serverError: result.error === 'SERVER_OVERLOADED' ? 'Server Gemini quá tải, vui lòng thử lại sau.' : (result.error || 'Dịch thất bại') }),
+          };
+          _event.sender.send(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY, doneChunk);
+        }
+
+        return result;
+      } finally {
+        if (runId) {
+          endFeatureRun('story', runId);
+        }
+        stopSignal?.dispose();
+      }
     }
   );
 
@@ -426,6 +490,14 @@ export function registerStoryHandlers(): void {
     async (_event: IpcMainInvokeEvent, options: CreateEbookPayload) => {
         console.log('[StoryHandlers] Create ebook:', options.title);
         return await StoryService.StoryService.createEbook(options);
+    }
+  );
+
+  ipcMain.handle(
+    STORY_IPC_CHANNELS.STOP_STORY_TRANSLATION,
+    async (_event: IpcMainInvokeEvent, runId?: string | null): Promise<{ success: boolean; message: string }> => {
+      const result = stopFeatureTranslation('story', runId);
+      return { success: result.stopped, message: result.message };
     }
   );
 

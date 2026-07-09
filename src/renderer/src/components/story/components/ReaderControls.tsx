@@ -8,8 +8,6 @@ interface ReaderControlsProps {
   isReaderMode?: boolean;
   viewMode: 'original' | 'translated' | 'summary';
   onViewModeChange: (mode: 'original' | 'translated' | 'summary') => void;
-  canViewTranslated: boolean;
-  canViewSummary: boolean;
   fontSize: number;
   lineHeight: number;
   onDecreaseFontSize: () => void;
@@ -30,8 +28,6 @@ export function ReaderControls(props: ReaderControlsProps) {
     isReaderMode = false,
     viewMode,
     onViewModeChange,
-    canViewTranslated,
-    canViewSummary,
     fontSize,
     lineHeight,
     onDecreaseFontSize,
@@ -72,16 +68,14 @@ export function ReaderControls(props: ReaderControlsProps) {
             </button>
             <button
               onClick={() => onViewModeChange('translated')}
-              disabled={!canViewTranslated}
-              className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'translated' ? 'bg-primary text-white shadow' : 'disabled:opacity-50'}`}
+              className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'translated' ? 'bg-primary text-white shadow' : ''}`}
               style={viewMode === 'translated' ? undefined : { color: palette.textSecondary }}
             >
               Bản dịch
             </button>
             <button
               onClick={() => onViewModeChange('summary')}
-              disabled={!canViewSummary}
-              className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : 'disabled:opacity-50'}`}
+              className={`px-3 py-1 text-xs rounded transition-all ${viewMode === 'summary' ? 'bg-primary text-white shadow' : ''}`}
               style={viewMode === 'summary' ? undefined : { color: palette.textSecondary }}
             >
               Tóm tắt

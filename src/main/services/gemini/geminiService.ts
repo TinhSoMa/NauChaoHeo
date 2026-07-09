@@ -5,7 +5,6 @@
 
 import { getApiManager } from './apiManager';
 import { classifyGeminiError, GeminiErrorResult, GeminiErrorCode } from './geminiError';
-import { GeminiHttpError } from '../apiClient';
 import { getApiRequestTimeoutMs } from '../appSettings.js';
 import {
   GeminiResponse,
@@ -161,7 +160,6 @@ export async function callGeminiApi(
   prompt: string | object,
   apiKey: string,
   model?: string,
-  useProxy: boolean = true,
   abortSignal?: AbortSignal,
   timeoutMs: number = getApiRequestTimeoutMs(),
   imageBase64?: string,
@@ -185,94 +183,53 @@ export async function callGeminiApi(
     const thinkingLevel = GeminiModelsDatabase.getThinkingLevel();
     addThinkingConfig(payload, resolvedModel, thinkingLevel);
 
-    console.log(`[GeminiService] Gọi Gemini API với model: ${resolvedModel}${useProxy ? ' (via proxy)' : ''}`);
+    console.log(`[GeminiService] Gọi Gemini API với model: ${resolvedModel}`);
 
-    // Sử dụng proxy client nếu enabled
-    if (useProxy) {
-      const { makeRequestWithProxy } = await import('../apiClient.js');
-      
-      const result = await makeRequestWithProxy(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: payload,
-        timeout: timeoutMs,
-        useProxy: true,
-        proxyScope: 'other',
-        signal: abortSignal,
-      });
+    // Fetch trực tiếp (không dùng proxy)
+    const fetchSignal = abortSignal
+      ? AbortSignal.any ? AbortSignal.any([abortSignal, AbortSignal.timeout(timeoutMs)]) : abortSignal
+      : AbortSignal.timeout(timeoutMs);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: fetchSignal,
+    });
 
-      if (!result.success) {
-        const classified = classifyGeminiError(result.statusCode || 0, '', result.error || '');
-        return {
-          success: false,
-          error: classified.code === GeminiErrorCode.UNKNOWN ? result.error : classified.code,
-          errorCode: classified.code,
-          userMessage: classified.userMessage,
-        };
+    // Xử lý lỗi HTTP
+    if (!response.ok) {
+      let errorStatus = '';
+      let errorMessage = response.statusText;
+      try {
+        const errorBody = await response.json();
+        errorStatus = errorBody?.error?.status || '';
+        errorMessage = errorBody?.error?.message || response.statusText;
+      } catch {
+        // use defaults
       }
-
-      // Parse response
-      const responseData = result.data;
-      
-      // Trích xuất text từ response
-      if (responseData.candidates && responseData.candidates.length > 0) {
-        const candidate = responseData.candidates[0];
-        if (candidate.content && candidate.content.parts) {
-          const text = candidate.content.parts[0]?.text || '';
-          return { success: true, data: text.trim() };
-        }
-      }
-
-      return { success: false, error: 'Response không có nội dung' };
-    } else {
-      // Fallback về fetch trực tiếp (không dùng proxy)
-      const fetchSignal = abortSignal
-        ? AbortSignal.any ? AbortSignal.any([abortSignal, AbortSignal.timeout(timeoutMs)]) : abortSignal
-        : AbortSignal.timeout(timeoutMs);
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-        signal: fetchSignal,
-      });
-
-      // Xử lý lỗi HTTP
-      if (!response.ok) {
-        let errorStatus = '';
-        let errorMessage = response.statusText;
-        try {
-          const errorBody = await response.json();
-          errorStatus = errorBody?.error?.status || '';
-          errorMessage = errorBody?.error?.message || response.statusText;
-        } catch {
-          // use defaults
-        }
-        const classified = classifyGeminiError(response.status, errorStatus, errorMessage);
-        return {
-          success: false,
-          error: classified.code === GeminiErrorCode.UNKNOWN ? `HTTP ${response.status}` : classified.code,
-          errorCode: classified.code,
-          userMessage: classified.userMessage,
-        };
-      }
-
-      const result = await response.json();
-
-      // Trích xuất text từ response
-      if (result.candidates && result.candidates.length > 0) {
-        const candidate = result.candidates[0];
-        if (candidate.content && candidate.content.parts) {
-          const text = candidate.content.parts[0]?.text || '';
-          return { success: true, data: text.trim() };
-        }
-      }
-
-      return { success: false, error: 'Response không có nội dung' };
+      const classified = classifyGeminiError(response.status, errorStatus, errorMessage);
+      return {
+        success: false,
+        error: classified.code === GeminiErrorCode.UNKNOWN ? `HTTP ${response.status}` : classified.code,
+        errorCode: classified.code,
+        userMessage: classified.userMessage,
+      };
     }
+
+    const result = await response.json();
+
+    // Trích xuất text từ response
+    if (result.candidates && result.candidates.length > 0) {
+      const candidate = result.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        const text = candidate.content.parts[0]?.text || '';
+        return { success: true, data: text.trim() };
+      }
+    }
+
+    return { success: false, error: 'Response không có nội dung' };
   } catch (error) {
     if (abortSignal?.aborted) {
       return { success: false, error: 'REQUEST_ABORTED' };
@@ -294,7 +251,6 @@ export async function callGeminiApiStream(
   apiKey: string,
   onChunk: (text: string) => void,
   model?: string,
-  useProxy: boolean = true,
   abortSignal?: AbortSignal,
   timeoutMs: number = getApiRequestTimeoutMs(),
   imageBase64?: string,
@@ -323,27 +279,6 @@ export async function callGeminiApiStream(
     const { default: fetch } = await import('node-fetch');
     if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] import node-fetch: +${Date.now() - fetchImportStart}ms`);
 
-    let agent: any = undefined;
-
-    if (useProxy) {
-      const { getProxyManager } = await import('../proxy/proxyManager.js');
-      const proxyManager = getProxyManager();
-      const proxyContext = proxyManager.getProxyContext('other');
-      if (proxyContext.mode !== 'off') {
-        const proxy = proxyManager.getNextProxy(undefined, 'other');
-        if (proxy) {
-          const { HttpsProxyAgent } = await import('https-proxy-agent');
-          const { SocksProxyAgent } = await import('socks-proxy-agent');
-          const proxyUrl = proxy.username
-            ? `${proxy.type}://${proxy.username}:${proxy.password}@${proxy.host}:${proxy.port}`
-            : `${proxy.type}://${proxy.host}:${proxy.port}`;
-          agent = proxy.type === 'socks5'
-            ? new SocksProxyAgent(proxyUrl, { timeout: timeoutMs })
-            : new HttpsProxyAgent(proxyUrl, { timeout: timeoutMs, rejectUnauthorized: false, keepAlive: false });
-        }
-      }
-    }
-
     const controller = new AbortController();
     let timedOut = false;
     const timeoutId = setTimeout(() => {
@@ -363,7 +298,6 @@ export async function callGeminiApiStream(
       body: JSON.stringify(payload),
       signal: controller.signal,
     };
-    if (agent) fetchOptions.agent = agent;
 
     if (DEBUG_STREAM_TIMING) console.log(`[GeminiStream] Before fetch: +${Date.now() - t0}ms`);
     const beforeFetch = Date.now();
@@ -480,18 +414,6 @@ export async function callGeminiWithRotation(
     return { success: false, error: 'Không có API key nào trong hệ thống' };
   }
 
-  // Load proxy setting from AppSettings
-  const useProxySetting = false; // Modified: Force disable proxy for API calls
-  /*
-  try {
-    const settings = AppSettingsService.getAll();
-    useProxySetting = settings.useProxy;
-    console.log(`[GeminiService] Proxy setting: ${useProxySetting ? 'enabled' : 'disabled'}`);
-  } catch (error) {
-    console.warn('[GeminiService] Could not load proxy setting, using default (enabled)');
-  }
-  */
-
   let lastError = '';
   let rateLimitedCount = 0;
   const triedKeys = new Set<string>();
@@ -544,7 +466,6 @@ export async function callGeminiWithRotation(
       prompt,
       apiKey,
       resolvedModel,
-      useProxySetting,
       requestAbortController.signal,
       getApiRequestTimeoutMs(),
       imageBase64,
@@ -655,7 +576,6 @@ export async function callGeminiWithAssignedKey(
       prompt,
       assignedKey.apiKey,
       resolvedModel,
-      false,
       requestAbortController.signal,
       getApiRequestTimeoutMs(),
       imageBase64,
@@ -729,8 +649,6 @@ export async function callGeminiWithRotationStream(
     return { success: false, error: 'Không có API key nào trong hệ thống' };
   }
 
-  const useProxySetting = false;
-
   let lastError = '';
   let rateLimitedCount = 0;
   const triedKeys = new Set<string>();
@@ -787,7 +705,6 @@ export async function callGeminiWithRotationStream(
       apiKey,
       onChunk,
       resolvedModel,
-      useProxySetting,
       requestAbortController.signal,
       getApiRequestTimeoutMs(),
       imageBase64,
@@ -892,7 +809,6 @@ export async function callGeminiWithAssignedKeyStream(
       assignedKey.apiKey,
       onChunk,
       resolvedModel,
-      false,
       requestAbortController.signal,
       getApiRequestTimeoutMs(),
       imageBase64,

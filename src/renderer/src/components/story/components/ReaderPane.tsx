@@ -24,6 +24,8 @@ interface ReaderPaneProps {
   palette: StoryReadingThemePalette;
   contentScrollRef: RefObject<HTMLDivElement | null>;
   onContentScroll: () => void;
+  streamingContent?: ReadonlyMap<string, string>;
+  streamingErrors?: ReadonlyMap<string, string>;
 }
 
 export function ReaderPane(props: ReaderPaneProps) {
@@ -45,7 +47,9 @@ export function ReaderPane(props: ReaderPaneProps) {
     setReadingTheme,
     palette,
     contentScrollRef,
-    onContentScroll
+    onContentScroll,
+    streamingContent,
+    streamingErrors,
   } = props;
 
   const selectedChapter = selectedChapterId
@@ -90,8 +94,6 @@ export function ReaderPane(props: ReaderPaneProps) {
           isReaderMode={isReaderMode}
           viewMode={viewMode}
           onViewModeChange={onViewModeChange}
-          canViewTranslated={Boolean(selectedChapterId && translatedChapters.has(selectedChapterId))}
-          canViewSummary={Boolean(selectedChapterId && summaries.has(selectedChapterId))}
           fontSize={fontSize}
           lineHeight={lineHeight}
           onDecreaseFontSize={() => setFontSize((prev) => Math.max(12, prev - 2))}
@@ -119,6 +121,8 @@ export function ReaderPane(props: ReaderPaneProps) {
         onContentScroll={onContentScroll}
         onSurfaceInteract={handleSurfaceInteract}
         palette={palette}
+        streamingContent={streamingContent}
+        streamingErrors={streamingErrors}
       />
     </div>
   );

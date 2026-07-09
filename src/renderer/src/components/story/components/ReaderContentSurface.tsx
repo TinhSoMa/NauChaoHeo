@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { FileText, BookOpen } from 'lucide-react';
+import { FileText, BookOpen, AlertTriangle } from 'lucide-react';
 import type { Chapter } from '@shared/types';
 import type { StoryReadingThemePalette } from '../types';
 
@@ -17,6 +17,8 @@ interface ReaderContentSurfaceProps {
   onContentScroll: () => void;
   onSurfaceInteract?: () => void;
   palette: StoryReadingThemePalette;
+  streamingContent?: ReadonlyMap<string, string>;
+  streamingErrors?: ReadonlyMap<string, string>;
 }
 
 export function ReaderContentSurface(props: ReaderContentSurfaceProps) {
@@ -33,7 +35,9 @@ export function ReaderContentSurface(props: ReaderContentSurfaceProps) {
     contentScrollRef,
     onContentScroll,
     onSurfaceInteract,
-    palette
+    palette,
+    streamingContent,
+    streamingErrors
   } = props;
 
   const selectedChapter = selectedChapterId
@@ -61,14 +65,43 @@ export function ReaderContentSurface(props: ReaderContentSurfaceProps) {
           viewMode === 'original' ? (
             <div className="whitespace-pre-wrap wrap-break-word">{selectedChapter?.content}</div>
           ) : viewMode === 'translated' ? (
-            translatedChapters.get(selectedChapterId) ? (
-              <div className="whitespace-pre-wrap wrap-break-word">{translatedChapters.get(selectedChapterId) || ''}</div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center opacity-70" style={{ color: palette.textSecondary }}>
-                <BookOpen size={48} className="mb-4" />
-                <p className="text-base">Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.</p>
-              </div>
-            )
+            (() => {
+              const hasTranslated = translatedChapters.has(selectedChapterId);
+              const hasStreaming = streamingContent?.has(selectedChapterId);
+              const content = hasTranslated
+                ? translatedChapters.get(selectedChapterId) || ''
+                : hasStreaming
+                  ? streamingContent!.get(selectedChapterId) || ''
+                  : null;
+              const errorMessage = selectedChapterId ? streamingErrors?.get(selectedChapterId) : undefined;
+              return (
+                <>
+                  {errorMessage && (
+                    <div className="flex items-center gap-2 px-4 py-2 mb-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-sm">
+                      <AlertTriangle size={16} className="shrink-0" />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+                  {content !== null ? (
+                    <div className="whitespace-pre-wrap wrap-break-word">{content}</div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center opacity-70" style={{ color: palette.textSecondary }}>
+                      {errorMessage ? (
+                        <>
+                          <AlertTriangle size={48} className="mb-4" />
+                          <p className="text-base">Dịch thất bại do lỗi server.</p>
+                        </>
+                      ) : (
+                        <>
+                          <BookOpen size={48} className="mb-4" />
+                          <p className="text-base">Chưa có bản dịch. Nhấn "Dịch 1" hoặc "Dịch All" để bắt đầu.</p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()
           ) : summaries.get(selectedChapterId) ? (
             <div className="whitespace-pre-wrap wrap-break-word">
               {summaryTitles.get(selectedChapterId) && (

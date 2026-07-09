@@ -42,6 +42,7 @@ interface UseStoryBatchTranslationParams {
   memorySettings: StoryMemoryRuntimeState;
   forceSequential?: boolean;
   promptSaveSettings: StoryPromptSaveSettings;
+  streamingEnabled?: boolean;
 }
 
 interface BatchState {
@@ -88,7 +89,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     filePath,
     memorySettings,
     forceSequential = false,
-    promptSaveSettings
+    promptSaveSettings,
+    streamingEnabled = false,
   } = params;
 
   // Progress tracking
@@ -161,6 +163,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
   const handleStopTranslation = () => {
     console.log('[useStoryBatchTranslation] Dừng dịch thủ công...');
+    const runId = currentBatchRunIdRef.current;
     shouldStopRef.current = true;
     currentBatchRunIdRef.current = null;
     setShouldStop(true);
@@ -170,6 +173,11 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       clearTimeout(timeout);
     }
     spawnTimeoutsRef.current = [];
+
+    // Send stop signal to main process to abort in-flight requests
+    if (runId) {
+      window.electronAPI.invoke(STORY_IPC_CHANNELS.STOP_STORY_TRANSLATION, runId).catch(() => {});
+    }
 
     // Hard-stop UI immediately. In-flight requests may still resolve, but commit paths are run-guarded.
     setBatchProgress(null);
@@ -284,6 +292,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
       // 2. Send to Gemini
+      const streamEnabled = streamingEnabled && method === 'API';
       const translateResult = await window.electronAPI.invoke(
         STORY_IPC_CHANNELS.TRANSLATE_CHAPTER,
         {
@@ -301,7 +310,8 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
               tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
           },
-          memory: memoryPayload
+          memory: memoryPayload,
+          streamingEnabled: streamEnabled || undefined,
         }
       ) as {
         success: boolean;

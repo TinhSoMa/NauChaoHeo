@@ -45,6 +45,7 @@ interface UseStoryTranslationParams {
   filePath: string;
   memorySettings: StoryMemoryRuntimeState;
   promptSaveSettings: StoryPromptSaveSettings;
+  streamingEnabled?: boolean;
 }
 
 /**
@@ -76,7 +77,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     projectId,
     filePath,
     memorySettings,
-    promptSaveSettings
+    promptSaveSettings,
+    streamingEnabled = false,
   } = params;
   const activeRunIdRef = useRef<string | null>(null);
 
@@ -144,6 +146,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       return next;
     });
     
+    let wasTranslated = false;
+
     try {
       console.log('[useStoryTranslation] Dang chuan bi prompt...');
       // 1. Prepare Prompt
@@ -215,6 +219,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
 
         const methodKey: StoryChapterMethod = method === 'IMPIT' ? 'token' : 'api';
 
+        const streamEnabled = streamingEnabled && method === 'API';
         const translateResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.TRANSLATE_CHAPTER, {
           prompt: prepareResult.prompt,
           model,
@@ -229,7 +234,8 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
             sourceText: chapter.content,
             validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
           },
-          memory: memoryPayload
+          memory: memoryPayload,
+          streamingEnabled: streamEnabled || undefined,
         }) as {
           success: boolean;
           data?: string;
@@ -262,8 +268,6 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
           methodKey
         };
       };
-
-      let wasTranslated = false;
 
       if (translationMethod === 'gemini_webapi_queue' || translationMethod === 'api_gemini_webapi_queue') {
         const queueResult = await window.electronAPI.invoke(
@@ -393,8 +397,15 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
 
     } catch (error) {
       console.error('[useStoryTranslation] Loi trong qua trinh dich:', error);
-      alert(`Loi dich thuat: ${error}`);
+      if (!streamingEnabled) {
+        const rawMsg = error instanceof Error ? error.message : String(error);
+        const friendlyMsg = rawMsg === 'SERVER_OVERLOADED' ? 'Server Gemini quá tải, vui lòng thử lại sau.' : rawMsg;
+        alert(`Loi dich thuat: ${friendlyMsg}`);
+      }
     } finally {
+      if (!wasTranslated && streamingEnabled) {
+        window.electronAPI.invoke(STORY_IPC_CHANNELS.STOP_STORY_TRANSLATION, runId).catch(() => {});
+      }
       setProcessingChapters(prev => {
         const next = new Map(prev);
         next.delete(chapter.id);

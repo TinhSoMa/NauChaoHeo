@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Chapter,
   STORY_IPC_CHANNELS,
+  type StoryStreamChunk,
 } from '@shared/types';
 import {
   MEMORY_CONTEXT_IPC_CHANNELS,
@@ -22,7 +23,7 @@ import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, Download } from 'lucide-react';
+import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, Download, AlertTriangle } from 'lucide-react';
 import { extractTranslatedTitle } from './utils/chapterUtils';
 import { useChapterSelection } from './hooks/useChapterSelection';
 import { useTokenManagement } from './hooks/useTokenManagement';
@@ -111,6 +112,9 @@ export function StoryTranslator() {
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
   const [previousAssistantOutputChapterCount, setPreviousAssistantOutputChapterCount] = useState(1);
+  const [geminiStreamingEnabled, setGeminiStreamingEnabled] = useState(true);
+  const [streamingContent, setStreamingContent] = useState<ReadonlyMap<string, string>>(new Map());
+  const [streamingErrors, setStreamingErrors] = useState<ReadonlyMap<string, string>>(new Map());
   void memoryStats;
   const isMemoryFeatureEnabled = Boolean(projectId && memoryEnabled);
   const isSummaryMemoryFeatureEnabled = isMemoryFeatureEnabled;
@@ -225,7 +229,8 @@ export function StoryTranslator() {
     filePath,
     memorySettings: memoryRuntimeSettings,
     forceSequential: isMemoryFeatureEnabled,
-    promptSaveSettings
+    promptSaveSettings,
+    streamingEnabled: geminiStreamingEnabled
   });
 
   const {
@@ -283,7 +288,8 @@ export function StoryTranslator() {
     projectId,
     filePath,
     memorySettings: memoryRuntimeSettings,
-    promptSaveSettings
+    promptSaveSettings,
+    streamingEnabled: geminiStreamingEnabled
   });
 
   // Project state persistence
@@ -510,27 +516,12 @@ export function StoryTranslator() {
 
   const resolveViewModeForChapter = useCallback(
     (
-      chapterId: string,
+      _chapterId: string,
       preferredMode: 'original' | 'translated' | 'summary'
     ): 'original' | 'translated' | 'summary' => {
-      const hasTranslated = translatedChapters.has(chapterId);
-      const hasSummary = summaries.has(chapterId);
-
-      if (preferredMode === 'translated') {
-        if (hasTranslated) return 'translated';
-        if (hasSummary) return 'summary';
-        return 'original';
-      }
-
-      if (preferredMode === 'summary') {
-        if (hasSummary) return 'summary';
-        if (hasTranslated) return 'translated';
-        return 'original';
-      }
-
-      return 'original';
+      return preferredMode;
     },
-    [summaries, translatedChapters]
+    []
   );
 
   const handleViewModeChange = useCallback(
@@ -826,6 +817,59 @@ export function StoryTranslator() {
       setTranslationMethod('api');
     }
   }, [isGeminiWebQueueEnabled, isQueueMethodSelected]);
+
+  // Load streaming setting from app settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await window.electronAPI.appSettings.getAll();
+        if (result.success && result.data) {
+          const data = result.data as unknown as Record<string, unknown>;
+          if (typeof data.geminiStreamingEnabled === 'boolean') {
+            setGeminiStreamingEnabled(data.geminiStreamingEnabled);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  // Listen for streaming chunks
+  useEffect(() => {
+    const removeListener = (window.electronAPI as any).onMessage(
+      STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_STREAM_REPLY,
+      (chunk: StoryStreamChunk) => {
+        setStreamingContent(prev => {
+          const next = new Map(prev);
+          if (chunk.done) {
+            if (!chunk.serverError) {
+              next.delete(chunk.chapterId);
+            }
+            return next;
+          }
+          if (chunk.accumulated) {
+            next.set(chunk.chapterId, chunk.accumulated);
+          }
+          return next;
+        });
+        setStreamingErrors(prev => {
+          const next = new Map(prev);
+          if (chunk.done && !chunk.serverError) {
+            next.delete(chunk.chapterId);
+          } else if (chunk.serverError) {
+            next.set(chunk.chapterId, chunk.serverError);
+          }
+          return next;
+        });
+      }
+    );
+    return () => {
+      if (typeof removeListener === 'function') {
+        removeListener();
+      }
+    };
+  }, []);
 
   // Listen for progress/retry events
   useEffect(() => {
@@ -1312,8 +1356,35 @@ export function StoryTranslator() {
                 className="w-4 h-4 rounded border-border cursor-pointer"
                 disabled={!projectId || status === 'running'}
               />
-              <span>Tự động lưu prompt đã gửi vào thư mục project</span>
+              <span>Tự động lưu prompt</span>
             </label>
+            {translationMethod === 'api' && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !geminiStreamingEnabled;
+                    setGeminiStreamingEnabled(next);
+                    window.electronAPI.appSettings.update({ geminiStreamingEnabled: next } as any).catch(() => {});
+                  }}
+                  disabled={status === 'running'}
+                  className={`w-11 h-6 rounded-full transition-colors duration-300 relative shrink-0 ${
+                    geminiStreamingEnabled ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+                  } ${status === 'running' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-300 ${
+                    geminiStreamingEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+                <span className="text-xs text-text-primary">Streaming</span>
+              </label>
+            )}
+            {selectedChapterId && streamingErrors.has(selectedChapterId) && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-red-500/10 border border-red-500/30 text-red-400">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span className="whitespace-nowrap">{streamingErrors.get(selectedChapterId)}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1480,6 +1551,11 @@ export function StoryTranslator() {
                             : `retry #${processingInfo.retryCount}`}
                         </span>
                     )}
+                    {processingInfo.lastError && (
+                      <span className="text-red-400 text-xs ml-1 max-w-[200px] truncate" title={processingInfo.lastError}>
+                        {processingInfo.lastError}
+                      </span>
+                    )}
                   </span>
                 )}
               </div>
@@ -1520,6 +1596,8 @@ export function StoryTranslator() {
             palette={readerPalette}
             contentScrollRef={contentScrollRef}
             onContentScroll={handleContentScroll}
+            streamingContent={streamingContent}
+            streamingErrors={streamingErrors}
           />
         </div>
       </div>
