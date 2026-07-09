@@ -30,17 +30,12 @@ $cacheDir = Join-Path $pythonBaseDir "cache"
 $runtimeDir = Join-Path $pythonBaseDir "win32-x64\runtime"
 $licensesDir = Join-Path $resourcesDir "licenses\python"
 $requirementsPath = Join-Path $projectRoot "requirements-pycapcut-lock.txt"
-$memoryWorkerSourcePath = Join-Path $projectRoot "src\main\services\memoryContext\python\mem0_context_worker.py"
-
 Ensure-Directory -PathValue $resourcesDir
 Ensure-Directory -PathValue $pythonBaseDir
 Ensure-Directory -PathValue $cacheDir
 
 if (-not (Test-Path -LiteralPath $requirementsPath)) {
   throw "Missing requirements file: $requirementsPath"
-}
-if (-not (Test-Path -LiteralPath $memoryWorkerSourcePath)) {
-  throw "Missing memory context worker source: $memoryWorkerSourcePath"
 }
 
 $embedZipName = "python-$PythonVersion-embed-amd64.zip"
@@ -124,10 +119,7 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Installing Gemini Web API + TTS dependencies..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "gemini-webapi", "browser-cookie3", "edge-tts", "aiohttp", "--disable-pip-version-check", "--no-warn-script-location")
 
-Write-Host "[Python Runtime] Installing memory context dependencies (mem0ai[nlp], underthesea, spaCy model)..."
-Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "mem0ai[nlp]", "--disable-pip-version-check", "--no-warn-script-location")
-Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "install", "underthesea", "--disable-pip-version-check", "--no-warn-script-location")
-Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "spacy", "download", "xx_ent_wiki_sm")
+# Memory context dependencies removed (mem0ai, underthesea, spaCy)
 
 Write-Host "[Python Runtime] Removing unused heavy packages (torch, transformers, scipy, onnxruntime) to reduce runtime size..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated", "uninstall", "-y", "torch", "torchvision", "torchaudio", "transformers", "scipy", "onnxruntime", "onnxruntime-directml", "funasr-onnx", "--disable-pip-version-check")
@@ -135,33 +127,10 @@ Invoke-CommandChecked -Command $pythonExe -Arguments @("-m", "pip", "--isolated"
 Write-Host "[Python Runtime] Running smoke test..."
 Invoke-CommandChecked -Command $pythonExe -Arguments @(
   "-c",
-  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,mem0,spacy,underthesea,edge_tts,gemini_webapi; nlp=spacy.load('xx_ent_wiki_sm'); print('OK runtime=' + sys.version + ' spacy=' + nlp.meta.get('name', 'xx_ent_wiki_sm') + ' underthesea=' + getattr(underthesea, '__version__', 'unknown'))"
+  "import sys,pycapcut,ebooklib,numpy,pymediainfo,uiautomation,edge_tts,gemini_webapi; print('OK runtime=' + sys.version)"
 )
 
-Write-Host "[Python Runtime] Writing memory runtime build stamp..."
-$memoryBuildStampJson = & $pythonExe -c @"
-import json, platform
-import mem0, spacy, underthesea
-nlp = spacy.load('xx_ent_wiki_sm')
-print(json.dumps({
-  'generatedAt': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
-  'pythonVersion': platform.python_version(),
-  'mem0Version': getattr(mem0, '__version__', 'unknown'),
-  'spacyVersion': getattr(spacy, '__version__', 'unknown'),
-  'spacyModelName': nlp.meta.get('name', 'xx_ent_wiki_sm'),
-  'undertheseaVersion': getattr(underthesea, '__version__', 'unknown'),
-  'runtimeDir': r'$runtimeDir'
-}, ensure_ascii=False))
-"@
-if ($LASTEXITCODE -ne 0) {
-  throw "Failed to generate memory runtime build stamp."
-}
-$memoryBuildStampPath = Join-Path $runtimeDir "memory-context-build.json"
-Set-Content -LiteralPath $memoryBuildStampPath -Value $memoryBuildStampJson -Encoding UTF8
-
-if (-not (Test-Path -LiteralPath $memoryBuildStampPath)) {
-  throw "Memory runtime build stamp was not created: $memoryBuildStampPath"
-}
+# Memory context build stamp removed (mem0ai no longer used)
 
 if (Test-Path -LiteralPath $licensesDir) {
   Remove-Item -LiteralPath $licensesDir -Recurse -Force
@@ -173,7 +142,7 @@ if (Test-Path -LiteralPath $pythonLicensePath) {
   Copy-Item -LiteralPath $pythonLicensePath -Destination (Join-Path $licensesDir "PYTHON_LICENSE.txt") -Force
 }
 
-$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow", "mem0ai", "spacy", "underthesea")
+$packages = @("pycapcut", "ebooklib", "imageio", "pymediainfo", "uiautomation", "comtypes", "numpy", "pillow")
 foreach ($pkg in $packages) {
   $pkgDir = Join-Path $licensesDir $pkg
   Ensure-Directory -PathValue $pkgDir
