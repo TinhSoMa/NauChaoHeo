@@ -5,14 +5,13 @@ import { extractTranslatedTitle } from '../utils/chapterUtils';
 import { getRandomInt } from '@shared/utils/delayUtils';
 import type {
   GeminiChatConfigLite,
+  OperationType,
   ProcessingChapterInfo,
   StoryChapterMethod,
-  StoryMemoryRuntimeState,
   StoryPromptSaveSettings,
   StoryStatus,
   StoryTranslationMethod
 } from '../types';
-import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 import { resolvePreviousAssistantOutputDebug } from '../utils/previousAssistantOutput';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
@@ -39,10 +38,10 @@ interface UseStoryBatchTranslationParams {
   setTokenContexts: Dispatch<SetStateAction<Map<string, { conversationId: string; responseId: string; choiceId: string }>>>;
   projectId: string | null;
   filePath: string;
-  memorySettings: StoryMemoryRuntimeState;
   forceSequential?: boolean;
   promptSaveSettings: StoryPromptSaveSettings;
   streamingEnabled?: boolean;
+  setActiveOperation?: Dispatch<SetStateAction<OperationType>>;
 }
 
 interface BatchState {
@@ -87,10 +86,10 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     setTokenContexts,
     projectId,
     filePath,
-    memorySettings,
     forceSequential = false,
     promptSaveSettings,
     streamingEnabled = false,
+    setActiveOperation,
   } = params;
 
   // Progress tracking
@@ -182,6 +181,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     // Hard-stop UI immediately. In-flight requests may still resolve, but commit paths are run-guarded.
     setBatchProgress(null);
     setStatus('idle');
+    setActiveOperation?.('idle');
     setProcessingChapters((prev) => {
       const next = new Map(prev);
       for (const [chapterId, info] of next.entries()) {
@@ -245,26 +245,15 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
               finalIncludedChapterIds: []
             }
           };
-      const previousAssistantOutput = previousAssistantOutputResult.content;
-      const memoryPayload = buildStoryMemoryPayload({
-        projectId,
-        filePath,
-        chapter,
-        chapterIndex: actualChapterIndex >= 0 ? actualChapterIndex + 1 : index + 1,
-        totalChapters: chapters.length,
-        previousAssistantOutput,
-        previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
-        previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
-        settings: memorySettings
-      });
-
       // 1. Prepare Prompt
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
         chapterContent: chapter.content,
         sourceLang,
         targetLang,
         model,
-        memory: memoryPayload
+        previousAssistantOutput: previousAssistantOutputResult.content,
+        previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+        previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -310,7 +299,6 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
               tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
           },
-          memory: memoryPayload,
           streamingEnabled: streamEnabled || undefined,
         }
       ) as {
@@ -331,7 +319,6 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
           method: storyMethod,
           model,
           preparedPrompt: prepareResult.prompt,
-          prepareResult,
           storyFilePath: filePath,
           previousAssistantOutputDebug: previousAssistantOutputResult.debug,
           previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
@@ -520,6 +507,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
           currentBatchRunIdRef.current = null;
           setIsStopping(false);
           setStatus('idle');
+          setActiveOperation?.('idle');
           setBatchProgress(null);
         }
     }
@@ -619,6 +607,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     const runId = `story-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     currentBatchRunIdRef.current = runId;
     setStatus('running');
+    setActiveOperation?.('translating');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     shouldStopRef.current = false;
     setShouldStop(false);

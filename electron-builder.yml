@@ -64,10 +64,6 @@ extraResources:
     to: story/python
     filter:
       - "ebooklib_story_worker.py"
-  - from: src/main/services/memoryContext/python
-    to: memoryContext/python
-    filter:
-      - "mem0_context_worker.py"
   - from: src/main/services/audioMerge/python
     to: audioMerge/python
     filter:

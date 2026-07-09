@@ -19,7 +19,6 @@ import { registerAppLogHandlers } from './appLogHandlers';
 import { registerGrokUiHandlers } from './grokUiHandlers';
 import { registerDownloaderHandlers } from './downloaderHandlers';
 import { registerShutdownHandlers } from './shutdownHandlers';
-import { registerMemoryContextHandlers } from './memoryContextHandlers';
 import { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 import { registerOpenRouterHandlers } from './openrouterHandlers';
 import { registerDeepSeekHandlers } from './deepseekHandlers';
@@ -47,9 +46,6 @@ export function registerAllHandlers(): void {
 
   // Đăng ký Story handlers
   registerStoryHandlers();
-
-  // Đăng ký Memory Context handlers
-  registerMemoryContextHandlers();
 
   // Đăng ký Prompt handlers
   registerPromptHandlers();
@@ -119,7 +115,6 @@ export { registerProxyHandlers } from './proxyHandlers';
 export { registerCutVideoHandlers } from './cutVideoHandlers';
 export { registerRotationQueueHandlers } from './rotationQueueHandlers';
 export { registerShutdownHandlers } from './shutdownHandlers';
-export { registerMemoryContextHandlers } from './memoryContextHandlers';
 export { registerCapcutTtsSecretsHandlers } from './capcutTtsSecretsHandlers';
 export { registerOpenRouterHandlers } from './openrouterHandlers';
 export { registerDeepSeekHandlers } from './deepseekHandlers';

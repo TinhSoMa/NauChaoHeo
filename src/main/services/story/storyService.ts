@@ -1,8 +1,6 @@
-import { createHash } from 'crypto';
 import * as GeminiService from '../gemini/geminiService';
 import { PromptService } from '../promptService';
 import { GeminiChatService } from '../chatGemini/geminiChatService';
-import { getMemoryContextService } from '../memoryContext';
 import {
   AppSettingsService,
   normalizeGeminiMinSendIntervalMs,
@@ -17,17 +15,10 @@ import {
   type RotationJobErrorCode
 } from '../shared/universalRotationQueue';
 import type {
-  MemoryContextHealthResult,
-  MemoryContextAddRequest,
-  MemoryContextSearchRequest,
   StoryCancelGeminiWebQueueBatchResult,
   StoryGeminiWebQueueCapacity,
-  StoryMemorySettings,
   StoryPreviousAssistantOutputMode,
-  StorySummaryMemoryPayload,
-  StorySummaryMemorySettings,
-  StoryTranslateChapterPayload,
-  StoryTranslationMemoryPayload
+  StoryTranslateChapterPayload
 } from '../../../shared/types';
 
 const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
@@ -47,7 +38,6 @@ interface StoryTranslateChapterWithGeminiWebQueueOptions {
   priority?: 'high' | 'normal' | 'low';
   conversationKey?: string;
   resetConversation?: boolean;
-  memory?: StoryTranslationMemoryPayload | null;
 }
 
 interface StoryTranslateChapterWithGeminiWebQueueResult {
@@ -123,25 +113,6 @@ export class StoryService {
                  console.warn('[StoryService] ⚠️ Response context is empty - context may not be updated properly');
              }
              
-              await this.addStoryTranslationMemory(
-                options.memory,
-                String(result.data.text || ''),
-                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
-                String(options.metadata?.sourceText || '')
-              );
-              await this.addStoryTranslationNounMemory(
-                options.memory,
-                String(result.data.text || ''),
-                String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
-                String(options.metadata?.sourceText || '')
-              );
-              await this.addStorySummaryMemory(
-                options.summaryMemory,
-                String(result.data.text || ''),
-                String(options.metadata?.chapterTitle || options.summaryMemory?.chapterTitle || ''),
-                String(options.metadata?.sourceText || '')
-              );
-
               return { 
                   success: true, 
                   data: result.data.text,
@@ -181,27 +152,9 @@ export class StoryService {
             );
           }
            
-           if (result.success) {
-             const text = String(result.data || '');
-             await this.addStoryTranslationMemory(
-               options.memory,
-               text,
-               String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
-               String(options.metadata?.sourceText || '')
-             );
-             await this.addStoryTranslationNounMemory(
-               options.memory,
-               text,
-               String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
-               String(options.metadata?.sourceText || '')
-             );
-             await this.addStorySummaryMemory(
-               options.summaryMemory,
-               text,
-               String(options.metadata?.chapterTitle || options.summaryMemory?.chapterTitle || ''),
-               String(options.metadata?.sourceText || '')
-             );
-             return { success: true, data: text, metadata: options.metadata };
+            if (result.success) {
+              const text = String(result.data || '');
+              return { success: true, data: text, metadata: options.metadata };
            } else {
             return { success: false, error: result.error, metadata: options.metadata };
           }
@@ -327,18 +280,6 @@ export class StoryService {
 
         if (queued.success) {
           this.touchStoryBatchStickyState(stickyState);
-          await this.addStoryTranslationMemory(
-            options.memory,
-            queued.result || '',
-            String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
-            String(options.metadata?.sourceText || '')
-          );
-          await this.addStoryTranslationNounMemory(
-            options.memory,
-            queued.result || '',
-            String(options.metadata?.chapterTitle || options.memory?.chapterTitle || ''),
-            String(options.metadata?.sourceText || '')
-          );
           return {
             success: true,
             data: queued.result || '',
@@ -418,12 +359,13 @@ export class StoryService {
     chapterContent: string,
     sourceLang: string,
     targetLang: string,
-    memory?: StoryTranslationMemoryPayload | null
-  ): Promise<{ success: boolean; prompt?: any; error?: string; memoryContext?: { namespace?: string; promptContext?: string; memories?: string[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' } }> {
+    previousAssistantOutput?: string | null,
+    previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null,
+    previousAssistantOutputChapterCount?: number | null,
+  ): Promise<{ success: boolean; prompt?: any; error?: string }> {
     try {
       let matchingPrompt;
       
-      // 1. Check if user has configured a specific prompt in settings
       const appSettings = AppSettingsService.getAll();
       if (appSettings.translationPromptFamilyId) {
         const familyPrompt = PromptService.resolveLatestByFamily(appSettings.translationPromptFamilyId);
@@ -444,7 +386,6 @@ export class StoryService {
         }
       }
       
-      // 2. Fallback: Auto-detect prompt based on language
       if (!matchingPrompt) {
         const prompts = PromptService.getAll();
         matchingPrompt = prompts.find(p => 
@@ -464,22 +405,20 @@ export class StoryService {
         };
       }
 
-      const memoryContext = await this.resolveStoryMemoryContext(memory, chapterContent);
-      const memoryPayload = this.buildTranslationMemoryPayload(
-        memoryContext,
-        typeof memory?.previousAssistantOutput === 'string' ? memory.previousAssistantOutput : '',
+      const truncatedAssistantOutput = this.extractPreviousAssistantWindow(
+        typeof previousAssistantOutput === 'string' ? previousAssistantOutput : '',
         {
-          mode: memory?.previousAssistantOutputMode || undefined,
-          requestedChapterCount: memory?.previousAssistantOutputChapterCount ?? undefined,
+          mode: previousAssistantOutputMode || undefined,
+          requestedChapterCount: previousAssistantOutputChapterCount ?? undefined,
         }
       );
-
-      // 3. Parse and inject content
-      const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterContent, memoryPayload);
-      return {
-        ...prepared,
-        memoryContext
+      const memoryPayload = {
+        previous_assistant_output: truncatedAssistantOutput,
+        current_input: [] as string[],
       };
+
+      const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterContent, memoryPayload);
+      return prepared;
 
     } catch (error) {
       console.error('Error preparing translation prompt:', error);
@@ -495,12 +434,14 @@ export class StoryService {
     chapterContent: string,
     sourceLang: string,
     targetLang: string,
-    memory?: StorySummaryMemoryPayload | null
-  ): Promise<{ success: boolean; prompt?: any; error?: string; memoryContext?: { namespace?: string; promptContext?: string; memories?: string[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' } }> {
+    previousSummaryOutput?: string | null,
+    previousTranslatedOutput?: string | null,
+    previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null,
+    previousAssistantOutputChapterCount?: number | null,
+  ): Promise<{ success: boolean; prompt?: any; error?: string }> {
     try {
       let matchingPrompt;
       
-      // 1. Check if user has configured a specific prompt in settings
       const appSettings = AppSettingsService.getAll();
       if (appSettings.summaryPromptFamilyId) {
         const familyPrompt = PromptService.resolveLatestByFamily(appSettings.summaryPromptFamilyId);
@@ -521,7 +462,6 @@ export class StoryService {
         }
       }
       
-      // 2. Fallback: Auto-detect prompt (name contains [SUMMARY] or tóm tắt)
       if (!matchingPrompt) {
         const prompts = PromptService.getAll();
         matchingPrompt = prompts.find(p => 
@@ -538,22 +478,13 @@ export class StoryService {
         };
       }
 
-      const memoryContext = await this.resolveStorySummaryMemoryContext(memory, chapterContent);
-      const memoryPayload = this.buildSummaryMemoryPayload(
-        memoryContext,
-        typeof memory?.previousSummaryOutput === 'string' ? memory.previousSummaryOutput : '',
-        typeof memory?.previousTranslatedOutput === 'string' ? memory.previousTranslatedOutput : '',
-        {
-          mode: memory?.previousAssistantOutputMode || undefined,
-          requestedChapterCount: memory?.previousAssistantOutputChapterCount ?? undefined,
-        }
-      );
+      const memoryPayload = {
+        previous_assistant_output: typeof previousSummaryOutput === 'string' ? previousSummaryOutput : '',
+        current_input: [] as string[],
+      };
 
       const prepared = this.injectContentIntoPrompt(matchingPrompt.content, chapterContent, memoryPayload);
-      return {
-        ...prepared,
-        memoryContext
-      };
+      return prepared;
 
     } catch (error) {
       console.error('Error preparing summary prompt:', error);
@@ -667,276 +598,7 @@ export class StoryService {
     }
   }
 
-  private static normalizeStoryMemorySettings(memory?: StoryTranslationMemoryPayload | null): StoryMemorySettings | null {
-    if (!memory?.settings) {
-      return null;
-    }
-    return {
-      enabled: Boolean(memory.settings.enabled),
-      topK: Math.max(1, Math.min(20, Math.floor(memory.settings.topK || 5))),
-      namespace: typeof memory.settings.namespace === 'string' ? memory.settings.namespace.trim() : undefined,
-      status: memory.settings.status
-    };
-  }
 
-  private static normalizeStorySummaryMemorySettings(memory?: StorySummaryMemoryPayload | null): StorySummaryMemorySettings | null {
-    if (!memory?.settings) {
-      return null;
-    }
-    return {
-      enabled: Boolean(memory.settings.enabled),
-      topK: Math.max(1, Math.min(20, Math.floor(memory.settings.topK || 5))),
-      namespace: typeof memory.settings.namespace === 'string' ? memory.settings.namespace.trim() : undefined,
-      status: memory.settings.status,
-      readFromTranslationMemory: memory.settings.readFromTranslationMemory !== false,
-      translationNamespace:
-        typeof memory.settings.translationNamespace === 'string'
-          ? memory.settings.translationNamespace.trim()
-          : undefined
-    };
-  }
-
-  private static buildStoryScopedNamespace(prefix: 'story' | 'story-summary' | 'story-nouns', projectId: string, storyFilePath?: string | null): string {
-    const fingerprintSource = (storyFilePath || '').trim() || '__default_story__';
-    const fingerprint = createHash('sha1').update(fingerprintSource).digest('hex').slice(0, 12);
-    return `${prefix}:${projectId}:${fingerprint}`;
-  }
-
-  private static getStoryMemoryNamespace(memory?: StoryTranslationMemoryPayload | null): string | null {
-    const projectId = (memory?.projectId || '').trim();
-    if (!projectId) {
-      return null;
-    }
-    const settings = this.normalizeStoryMemorySettings(memory);
-    if (settings?.namespace) {
-      return settings.namespace;
-    }
-    return this.buildStoryScopedNamespace('story', projectId, memory?.storyFilePath || null);
-  }
-
-  private static getStorySummaryMemoryNamespace(memory?: StorySummaryMemoryPayload | null): string | null {
-    const projectId = (memory?.projectId || '').trim();
-    if (!projectId) {
-      return null;
-    }
-    const settings = this.normalizeStorySummaryMemorySettings(memory);
-    if (settings?.namespace) {
-      return settings.namespace;
-    }
-    return this.buildStoryScopedNamespace('story-summary', projectId, memory?.storyFilePath || null);
-  }
-
-  private static getStoryTranslationNamespaceForSummary(memory?: StorySummaryMemoryPayload | null): string | null {
-    const projectId = (memory?.projectId || '').trim();
-    if (!projectId) {
-      return null;
-    }
-    const settings = this.normalizeStorySummaryMemorySettings(memory);
-    if (settings?.translationNamespace) {
-      return settings.translationNamespace;
-    }
-    return this.buildStoryScopedNamespace('story', projectId, memory?.storyFilePath || null);
-  }
-
-  private static getStoryNounMemoryNamespace(memory?: StoryTranslationMemoryPayload | null): string | null {
-    const projectId = (memory?.projectId || '').trim();
-    if (!projectId) {
-      return null;
-    }
-    return `story-nouns:${projectId}`;
-  }
-
-  private static buildTranslationMemoryPayload(memoryContext: {
-    memories?: string[];
-    facts?: Array<{ text?: string; kind?: string; aliases?: string[] }>;
-    glossary?: Array<{ sourceTerm?: string; targetTerm?: string }>;
-    entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
-    nouns?: Array<{ value?: string; count?: number }>;
-  }, previousAssistantOutput: string, options?: {
-    mode?: StoryPreviousAssistantOutputMode | null;
-    requestedChapterCount?: number | null;
-  }): {
-    translation_memory: {
-      confirmed_terms: Record<string, string>;
-      style_rules: Record<string, string>;
-      known_nouns: string[];
-    };
-    continuity_context: {
-      last_translated_excerpt: string[];
-      active_entities: string[];
-      continuity_notes: string[];
-    };
-    previous_assistant_output: string;
-    current_input: string[];
-  } {
-    const glossary = Array.isArray(memoryContext.glossary) ? memoryContext.glossary : [];
-    const facts = Array.isArray(memoryContext.facts) ? memoryContext.facts : [];
-    const entities = Array.isArray(memoryContext.entities) ? memoryContext.entities : [];
-
-    const confirmedTerms: Record<string, string> = {};
-    for (const entry of glossary) {
-      const source = String(entry.sourceTerm || '').trim();
-      const target = String(entry.targetTerm || '').trim();
-      if (source && target && !confirmedTerms[source]) {
-        confirmedTerms[source] = target;
-      }
-      if (Object.keys(confirmedTerms).length >= 24) {
-        break;
-      }
-    }
-
-    const styleRules: Record<string, string> = {
-      narration: 'van phong tu tien on dinh, uu tien tu nhien',
-      dialogue: 'giu xung ho tien hiep nhat quan',
-      translation_bias: 'uu tien muot va nhat quan thuat ngu',
-    };
-
-    const lastTranslatedExcerpt = facts
-      .filter((fact) => fact && typeof fact.text === 'string' && fact.text.trim().length > 0)
-      .filter((fact) => fact.kind === 'plot_fact' || fact.kind === 'style_rule')
-      .map((fact) => String(fact.text || '').trim())
-      .slice(0, 10);
-
-    const activeEntityValues = new Set<string>();
-    for (const entity of entities) {
-      const value = String(entity.canonicalValue || '').trim();
-      if (value) {
-        activeEntityValues.add(value);
-      }
-      for (const alias of entity.aliases || []) {
-        const normalized = String(alias || '').trim();
-        if (normalized) {
-          activeEntityValues.add(normalized);
-        }
-      }
-      if (activeEntityValues.size >= 24) {
-        break;
-      }
-    }
-
-    const continuityNotes = (memoryContext.memories || [])
-      .map((item) => String(item || '').trim())
-      .filter((item) => item.length > 0)
-      .slice(0, 8);
-    const knownNouns = Array.isArray(memoryContext.nouns)
-      ? memoryContext.nouns
-          .map((noun: { value?: string; count?: number }) => String(noun?.value || '').trim())
-          .filter((value: string) => value.length > 0)
-          .slice(0, 20)
-      : [];
-
-    const previousAssistantWindow = this.extractPreviousAssistantWindow(previousAssistantOutput, {
-      mode: options?.mode || undefined,
-      requestedChapterCount: options?.requestedChapterCount ?? undefined,
-    });
-
-    return {
-      translation_memory: {
-        confirmed_terms: confirmedTerms,
-        style_rules: styleRules,
-        known_nouns: knownNouns,
-      },
-      continuity_context: {
-        last_translated_excerpt: lastTranslatedExcerpt,
-        active_entities: Array.from(activeEntityValues).slice(0, 24),
-        continuity_notes: continuityNotes,
-      },
-      previous_assistant_output: previousAssistantWindow,
-      current_input: [],
-    };
-  }
-
-  private static buildSummaryMemoryPayload(
-    memoryContext: {
-      memories?: string[];
-      facts?: Array<{ text?: string; kind?: string }>;
-      glossary?: Array<{ sourceTerm?: string; targetTerm?: string }>;
-      entities?: Array<{ canonicalValue?: string; aliases?: string[] }>;
-    },
-    previousSummaryOutput: string,
-    previousTranslatedOutput: string,
-    options?: {
-      mode?: StoryPreviousAssistantOutputMode | null;
-      requestedChapterCount?: number | null;
-    }
-  ): {
-    summary_memory: {
-      confirmed_terms: Record<string, string>;
-      known_facts: string[];
-      active_entities: string[];
-    };
-    continuity_context: {
-      continuity_notes: string[];
-    };
-    previous_summary_output: string;
-    previous_translation_context: string;
-    current_input: string[];
-  } {
-    const glossary = Array.isArray(memoryContext.glossary) ? memoryContext.glossary : [];
-    const facts = Array.isArray(memoryContext.facts) ? memoryContext.facts : [];
-    const entities = Array.isArray(memoryContext.entities) ? memoryContext.entities : [];
-
-    const confirmedTerms: Record<string, string> = {};
-    for (const entry of glossary) {
-      const source = String(entry.sourceTerm || '').trim();
-      const target = String(entry.targetTerm || '').trim();
-      if (source && target && !confirmedTerms[source]) {
-        confirmedTerms[source] = target;
-      }
-      if (Object.keys(confirmedTerms).length >= 20) {
-        break;
-      }
-    }
-
-    const knownFacts = facts
-      .map((fact) => String(fact?.text || '').trim())
-      .filter((fact) => fact.length > 0)
-      .slice(0, 10);
-
-    const activeEntities: string[] = [];
-    const entitySeen = new Set<string>();
-    for (const entity of entities) {
-      const values = [
-        String(entity?.canonicalValue || '').trim(),
-        ...((entity?.aliases || []).map((alias) => String(alias || '').trim()))
-      ].filter((value) => value.length > 0);
-      for (const value of values) {
-        if (entitySeen.has(value)) {
-          continue;
-        }
-        entitySeen.add(value);
-        activeEntities.push(value);
-        if (activeEntities.length >= 20) {
-          break;
-        }
-      }
-      if (activeEntities.length >= 20) {
-        break;
-      }
-    }
-
-    const continuityNotes = (memoryContext.memories || [])
-      .map((item) => String(item || '').trim())
-      .filter((item) => item.length > 0)
-      .slice(0, 8);
-
-    return {
-      summary_memory: {
-        confirmed_terms: confirmedTerms,
-        known_facts: knownFacts,
-        active_entities: activeEntities
-      },
-      continuity_context: {
-        continuity_notes: continuityNotes
-      },
-      previous_summary_output: this.extractPreviousAssistantWindow(previousSummaryOutput),
-      previous_translation_context: this.extractPreviousAssistantWindow(previousTranslatedOutput, {
-        mode: options?.mode || undefined,
-        requestedChapterCount: options?.requestedChapterCount ?? undefined,
-      }),
-      current_input: []
-    };
-  }
 
   private static extractPreviousAssistantWindow(
     previousAssistantOutput: string,
@@ -1153,412 +815,7 @@ export class StoryService {
     return workingBody.slice(0, maxChars).trim();
   }
 
-  private static getStoryMemoryStatusFromHealth(health: MemoryContextHealthResult): 'ready' | 'missing_runtime' | 'missing_provider' | 'error' {
-    if (!health.success || !health.pythonOk || !health.mem0Ok || !health.spacyOk || !health.spacyModelOk || health.undertheseaOk === false) {
-      return 'missing_runtime';
-    }
-    if (!health.providerConfigured) {
-      return 'missing_provider';
-    }
-    return 'ready';
-  }
 
-  private static async resolveStoryMemoryContext(
-    memory: StoryTranslationMemoryPayload | null | undefined,
-    chapterContent: string
-  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; facts?: any[]; glossary?: any[]; entities?: any[]; nouns?: any[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
-    const settings = this.normalizeStoryMemorySettings(memory);
-    const namespace = this.getStoryMemoryNamespace(memory);
-    const nounNamespace = this.getStoryNounMemoryNamespace(memory);
-    if (!settings?.enabled || !namespace) {
-      return {
-        namespace: namespace || undefined,
-        promptContext: '',
-        memories: [],
-        facts: [],
-        glossary: [],
-        entities: [],
-        nouns: [],
-        debug: [],
-        status: memory?.settings?.status || 'error'
-      };
-    }
-
-    const projectId = (memory?.projectId || '').trim();
-    const chapterIndex =
-      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
-        ? memory.chapterIndex
-        : null;
-    if (!projectId || chapterIndex === null) {
-      return {
-        namespace,
-        promptContext: '',
-        memories: [],
-        facts: [],
-        glossary: [],
-        entities: [],
-        nouns: [],
-        debug: [],
-        status: 'error',
-        warning: 'Memory mode cần projectId và chapterIndex hợp lệ.'
-      };
-    }
-
-    const health = await getMemoryContextService().getHealth();
-    const status = this.getStoryMemoryStatusFromHealth(health);
-
-    const searchRequest: MemoryContextSearchRequest = {
-      projectId,
-      feature: 'story.translation',
-      namespace,
-      queryText: chapterContent,
-      topK: settings.topK,
-      metadata: {
-        chapterId: memory?.chapterId || undefined,
-        chapterIndex,
-        chapterTitle: memory?.chapterTitle || undefined,
-        totalChapters: memory?.totalChapters || undefined
-      }
-    };
-
-    const searchResult = await getMemoryContextService().searchContext(searchRequest);
-    const nounSearchResult = nounNamespace
-      ? await getMemoryContextService().searchContext({
-          projectId,
-          feature: 'story.translation.nouns',
-          namespace: nounNamespace,
-          queryText: chapterContent,
-          topK: 20,
-          metadata: {
-            chapterId: memory?.chapterId || undefined,
-            chapterIndex,
-            chapterTitle: memory?.chapterTitle || undefined,
-            totalChapters: memory?.totalChapters || undefined,
-            memoryKind: 'translation_nouns'
-          }
-        })
-      : null;
-    const extended = searchResult as any;
-    const nounExtended = nounSearchResult as any;
-    const promptParts = [searchResult.promptContext || '', nounSearchResult?.promptContext || ''].filter(Boolean);
-    const mergedMemories = [...(searchResult.memories || []), ...(nounSearchResult?.memories || [])].slice(0, 24);
-    const mergedDebug = [...(searchResult.debug || []), ...(nounSearchResult?.debug || [])].slice(0, 48);
-    return {
-      namespace,
-      promptContext: promptParts.join('\n\n'),
-      memories: mergedMemories,
-      facts: Array.isArray(extended.facts) ? extended.facts : [],
-      glossary: Array.isArray(extended.glossary) ? extended.glossary : [],
-      entities: Array.isArray(extended.entities) ? extended.entities : [],
-      nouns: Array.isArray(nounExtended?.nouns) ? nounExtended.nouns : [],
-      debug: mergedDebug,
-      warning: nounSearchResult?.warning || searchResult.warning || health.warning,
-      status
-    };
-  }
-
-  private static mergeSummaryMemoryResults(results: Array<{
-    namespace?: string;
-    promptContext?: string;
-    memories?: string[];
-    facts?: any[];
-    glossary?: any[];
-    entities?: any[];
-    debug?: any[];
-    warning?: string;
-  }>): { promptContext: string; memories: string[]; facts: any[]; glossary: any[]; entities: any[]; debug: any[]; warning?: string } {
-    const promptParts: string[] = [];
-    const memories: string[] = [];
-    const facts: any[] = [];
-    const glossary: any[] = [];
-    const entities: any[] = [];
-    const debug: any[] = [];
-    const warnings: string[] = [];
-
-    for (const result of results) {
-      if (result.promptContext) {
-        promptParts.push(result.promptContext);
-      }
-      if (Array.isArray(result.memories)) {
-        memories.push(...result.memories);
-      }
-      if (Array.isArray(result.facts)) {
-        facts.push(...result.facts);
-      }
-      if (Array.isArray(result.glossary)) {
-        glossary.push(...result.glossary);
-      }
-      if (Array.isArray(result.entities)) {
-        entities.push(...result.entities);
-      }
-      if (Array.isArray(result.debug)) {
-        debug.push(...result.debug);
-      }
-      if (result.warning) {
-        warnings.push(result.warning);
-      }
-    }
-
-    return {
-      promptContext: promptParts.filter(Boolean).join('\n\n'),
-      memories: memories.slice(0, 20),
-      facts: facts.slice(0, 20),
-      glossary: glossary.slice(0, 24),
-      entities: entities.slice(0, 24),
-      debug: debug.slice(0, 40),
-      warning: warnings.length > 0 ? warnings[0] : undefined
-    };
-  }
-
-  private static async resolveStorySummaryMemoryContext(
-    memory: StorySummaryMemoryPayload | null | undefined,
-    chapterContent: string
-  ): Promise<{ namespace?: string; promptContext?: string; memories?: string[]; facts?: any[]; glossary?: any[]; entities?: any[]; debug?: any[]; warning?: string; status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error' }> {
-    const settings = this.normalizeStorySummaryMemorySettings(memory);
-    const namespace = this.getStorySummaryMemoryNamespace(memory);
-    if (!settings?.enabled || !namespace) {
-      return {
-        namespace: namespace || undefined,
-        promptContext: '',
-        memories: [],
-        facts: [],
-        glossary: [],
-        entities: [],
-        debug: [],
-        status: memory?.settings?.status || 'error'
-      };
-    }
-
-    const projectId = (memory?.projectId || '').trim();
-    const chapterIndex =
-      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
-        ? memory.chapterIndex
-        : null;
-    if (!projectId || chapterIndex === null) {
-      return {
-        namespace,
-        promptContext: '',
-        memories: [],
-        facts: [],
-        glossary: [],
-        entities: [],
-        debug: [],
-        status: 'error',
-        warning: 'Summary memory cần projectId và chapterIndex hợp lệ.'
-      };
-    }
-
-    const health = await getMemoryContextService().getHealth();
-    const status = this.getStoryMemoryStatusFromHealth(health);
-
-    const summaryRequest: MemoryContextSearchRequest = {
-      projectId,
-      feature: 'story.summary',
-      namespace,
-      queryText: chapterContent,
-      topK: settings.topK,
-      metadata: {
-        chapterId: memory?.chapterId || undefined,
-        chapterIndex,
-        chapterTitle: memory?.chapterTitle || undefined,
-        totalChapters: memory?.totalChapters || undefined
-      }
-    };
-
-    const summaryResult = await getMemoryContextService().searchContext(summaryRequest);
-    const summaryExtended = summaryResult as any;
-    const mergeTargets: Array<{
-      namespace?: string;
-      promptContext?: string;
-      memories?: string[];
-      facts?: any[];
-      glossary?: any[];
-      entities?: any[];
-      debug?: any[];
-      warning?: string;
-    }> = [];
-
-    if (settings.readFromTranslationMemory) {
-      const translationNamespace = this.getStoryTranslationNamespaceForSummary(memory);
-      if (translationNamespace) {
-        const translationResult = await getMemoryContextService().searchContext({
-          ...summaryRequest,
-          feature: 'story.translation',
-          namespace: translationNamespace
-        });
-        const translationExtended = translationResult as any;
-        mergeTargets.push({
-          namespace: translationNamespace,
-          promptContext: translationResult.promptContext || '',
-          memories: translationResult.memories || [],
-          facts: Array.isArray(translationExtended.facts) ? translationExtended.facts : [],
-          glossary: Array.isArray(translationExtended.glossary) ? translationExtended.glossary : [],
-          entities: Array.isArray(translationExtended.entities) ? translationExtended.entities : [],
-          debug: translationResult.debug || [],
-          warning: translationResult.warning
-        });
-      }
-    }
-
-    mergeTargets.push({
-      namespace,
-      promptContext: summaryResult.promptContext || '',
-      memories: summaryResult.memories || [],
-      facts: Array.isArray(summaryExtended.facts) ? summaryExtended.facts : [],
-      glossary: Array.isArray(summaryExtended.glossary) ? summaryExtended.glossary : [],
-      entities: Array.isArray(summaryExtended.entities) ? summaryExtended.entities : [],
-      debug: summaryResult.debug || [],
-      warning: summaryResult.warning
-    });
-
-    const merged = this.mergeSummaryMemoryResults(mergeTargets);
-
-    return {
-      namespace,
-      promptContext: merged.promptContext,
-      memories: merged.memories,
-      facts: merged.facts,
-      glossary: merged.glossary,
-      entities: merged.entities,
-      debug: merged.debug,
-      warning: merged.warning || health.warning,
-      status
-    };
-  }
-
-  private static async addStoryTranslationMemory(
-    memory: StoryTranslationMemoryPayload | null | undefined,
-    translatedText: string,
-    chapterTitle: string,
-    sourceText: string
-  ): Promise<void> {
-    const settings = this.normalizeStoryMemorySettings(memory);
-    const namespace = this.getStoryMemoryNamespace(memory);
-    if (!settings?.enabled || !namespace) {
-      return;
-    }
-
-    const projectId = (memory?.projectId || '').trim();
-    const chapterIndex =
-      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
-        ? memory.chapterIndex
-        : null;
-
-    if (!projectId || !sourceText.trim() || !translatedText.trim() || chapterIndex === null) {
-      return;
-    }
-
-    const request: MemoryContextAddRequest = {
-      projectId,
-      feature: 'story.translation',
-      namespace,
-      sourceText,
-      translatedText,
-      metadata: {
-        chapterId: memory?.chapterId || undefined,
-        chapterIndex,
-        chapterTitle: chapterTitle || memory?.chapterTitle || undefined,
-        totalChapters: memory?.totalChapters || undefined,
-        storyFilePath: memory?.storyFilePath || undefined
-      }
-    };
-
-    const result = await getMemoryContextService().addMemory(request);
-    if (!result.success) {
-      console.warn('[StoryService] Failed to add story translation memory:', result.error);
-    }
-  }
-
-  private static async addStoryTranslationNounMemory(
-    memory: StoryTranslationMemoryPayload | null | undefined,
-    translatedText: string,
-    chapterTitle: string,
-    sourceText: string
-  ): Promise<void> {
-    const settings = this.normalizeStoryMemorySettings(memory);
-    const namespace = this.getStoryNounMemoryNamespace(memory);
-    if (!settings?.enabled || !namespace) {
-      return;
-    }
-
-    const projectId = (memory?.projectId || '').trim();
-    const chapterIndex =
-      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
-        ? memory.chapterIndex
-        : null;
-
-    if (!projectId || !translatedText.trim() || chapterIndex === null) {
-      return;
-    }
-
-    const request: MemoryContextAddRequest = {
-      projectId,
-      feature: 'story.translation.nouns',
-      namespace,
-      sourceText,
-      translatedText,
-      metadata: {
-        chapterId: memory?.chapterId || undefined,
-        chapterIndex,
-        chapterTitle: chapterTitle || memory?.chapterTitle || undefined,
-        totalChapters: memory?.totalChapters || undefined,
-        storyFilePath: memory?.storyFilePath || undefined,
-        memoryKind: 'translation_nouns'
-      }
-    };
-
-    const result = await getMemoryContextService().addMemory(request);
-    if (!result.success) {
-      console.warn('[StoryService] Failed to add story noun memory:', result.error);
-    }
-  }
-
-  private static async addStorySummaryMemory(
-    memory: StorySummaryMemoryPayload | null | undefined,
-    summaryText: string,
-    chapterTitle: string,
-    sourceText: string
-  ): Promise<void> {
-    const settings = this.normalizeStorySummaryMemorySettings(memory);
-    const namespace = this.getStorySummaryMemoryNamespace(memory);
-    if (!settings?.enabled || !namespace) {
-      return;
-    }
-
-    const projectId = (memory?.projectId || '').trim();
-    const chapterIndex =
-      typeof memory?.chapterIndex === 'number' && Number.isFinite(memory.chapterIndex)
-        ? memory.chapterIndex
-        : null;
-
-    if (!projectId || !sourceText.trim() || !summaryText.trim() || chapterIndex === null) {
-      return;
-    }
-
-    const request: MemoryContextAddRequest = {
-      projectId,
-      feature: 'story.summary',
-      namespace,
-      sourceText,
-      translatedText: summaryText,
-      metadata: {
-        chapterId: memory?.chapterId || undefined,
-        chapterIndex,
-        chapterTitle: chapterTitle || memory?.chapterTitle || undefined,
-        totalChapters: memory?.totalChapters || undefined,
-        storyFilePath: memory?.storyFilePath || undefined,
-        previousSummaryOutput: memory?.previousSummaryOutput || undefined,
-        previousTranslatedOutput: memory?.previousTranslatedOutput || undefined,
-        memoryKind: 'chapter_summary',
-        summaryText
-      }
-    };
-
-    const result = await getMemoryContextService().addMemory(request);
-    if (!result.success) {
-      console.warn('[StoryService] Failed to add story summary memory:', result.error);
-    }
-  }
 
   static isStoryGeminiWebQueueEnabled(): boolean {
     return process.env.ENABLE_STORY_GEMINI_WEB_QUEUE !== '0';

@@ -5,8 +5,10 @@ import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { FileText, CheckSquare, Square, Check, MessageSquare, Ban, Clock, Loader2, Monitor, Settings } from 'lucide-react';
 import { useProjectContext } from '../../context/ProjectContext';
-import { buildStoryMemoryPayload, type StoryMemoryRuntimeState } from './types';
 import { resolvePreviousAssistantOutput } from './utils/previousAssistantOutput';
+import type { StoryPreviousAssistantOutputMode } from './types';
+
+
 
 // Browser config interface
 interface BrowserConfig {
@@ -28,7 +30,7 @@ export function StoryTranslatorWeb() {
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [translatedChapters, setTranslatedChapters] = useState<Map<string, string>>(new Map());
-  const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
+  const [, setSummaries] = useState<Map<string, string>>(new Map());
   const [processingTimes, setProcessingTimes] = useState<Map<string, number>>(new Map()); // Luu thoi gian xl (ms)
   const [viewMode, setViewMode] = useState<'original' | 'translated'>('original');
   const [excludedChapterIds, setExcludedChapterIds] = useState<Set<string>>(new Set());
@@ -51,13 +53,12 @@ export function StoryTranslatorWeb() {
   const [cooldownTime, setCooldownTime] = useState<number>(0); // Countdown between requests
   const [isWaitingResponse, setIsWaitingResponse] = useState<boolean>(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
+    useState<StoryPreviousAssistantOutputMode>('sampled');
+  const [previousAssistantOutputChapterCount, setPreviousAssistantOutputChapterCount] = useState(1);
 
   const STORY_WEB_STATE_FILE = 'story-translator-web.json';
   const STORY_SUMMARY_STATE_FILE = 'story-summary.json';
-  const WEB_MEMORY_SETTINGS: StoryMemoryRuntimeState = {
-    enabled: false,
-    topK: 6
-  };
 
   const loadStoryWebState = async () => {
     if (!projectId) return;
@@ -81,6 +82,8 @@ export function StoryTranslatorWeb() {
           viewMode?: 'original' | 'translated';
           selectedConfigId?: string;
           sessionContext?: { conversationId: string; responseId: string; choiceId: string } | null;
+          previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
+          previousAssistantOutputChapterCount?: number;
         };
 
         if (saved.filePath) setFilePath(saved.filePath);
@@ -93,6 +96,12 @@ export function StoryTranslatorWeb() {
         if (saved.viewMode) setViewMode(saved.viewMode);
         if (saved.selectedConfigId) setSelectedConfigId(saved.selectedConfigId);
         if (typeof saved.sessionContext !== 'undefined') setSessionContext(saved.sessionContext);
+        if (saved.previousAssistantOutputMode === 'sampled' || saved.previousAssistantOutputMode === 'full') {
+          setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
+        }
+        if (typeof saved.previousAssistantOutputChapterCount === 'number') {
+          setPreviousAssistantOutputChapterCount(saved.previousAssistantOutputChapterCount);
+        }
       }
     } catch (error) {
       console.error('[StoryTranslatorWeb] Loi khi tai du lieu project:', error);
@@ -114,7 +123,9 @@ export function StoryTranslatorWeb() {
       excludedChapterIds: Array.from(excludedChapterIds.values()),
       viewMode,
       selectedConfigId,
-      sessionContext
+      sessionContext,
+      previousAssistantOutputMode,
+      previousAssistantOutputChapterCount
     };
 
     await window.electronAPI.project.writeFeatureFile({
@@ -237,7 +248,9 @@ export function StoryTranslatorWeb() {
     excludedChapterIds,
     viewMode,
     selectedConfigId,
-    sessionContext
+    sessionContext,
+    previousAssistantOutputMode,
+    previousAssistantOutputChapterCount
   ]);
 
   const loadConfigurations = async () => {
@@ -342,7 +355,6 @@ export function StoryTranslatorWeb() {
 
   const handleTranslate = async () => {
     if (!selectedChapterId) return;
-    if (!selectedChapterId) return;
     if (!selectedConfigId) { 
         alert('Vui lòng chọn Cấu hình Web!'); 
         return; 
@@ -357,19 +369,11 @@ export function StoryTranslatorWeb() {
     const previousAssistantOutput = resolvePreviousAssistantOutput({
       chapters,
       chapterIndex,
-      summaries,
-      translatedChapters
+      summaries: new Map(),
+      translatedChapters,
+      mode: previousAssistantOutputMode,
+      chapterCount: previousAssistantOutputChapterCount
     });
-    const memoryPayload = buildStoryMemoryPayload({
-      projectId,
-      filePath,
-      chapter,
-      chapterIndex: chapterIndex + 1,
-      totalChapters: chapters.length,
-      previousAssistantOutput,
-      settings: WEB_MEMORY_SETTINGS
-    });
-
     setStatus('running');
     try {
       // 1. Prepare Prompt
@@ -377,7 +381,9 @@ export function StoryTranslatorWeb() {
         chapterContent: chapter.content,
         sourceLang,
         targetLang,
-        memory: memoryPayload
+        previousAssistantOutput: previousAssistantOutput || undefined,
+        previousAssistantOutputMode,
+        previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) throw new Error(prepareResult.error);
@@ -495,34 +501,29 @@ export function StoryTranslatorWeb() {
       }
 
       const chapter = chaptersToTranslate[i];
-      const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
-      const previousAssistantOutput = resolvePreviousAssistantOutput({
-        chapters,
-        chapterIndex,
-        summaries,
-        translatedChapters: sessionMap
-      });
-      const memoryPayload = buildStoryMemoryPayload({
-        projectId,
-        filePath,
-        chapter,
-        chapterIndex: chapterIndex + 1,
-        totalChapters: chapters.length,
-        previousAssistantOutput,
-        settings: WEB_MEMORY_SETTINGS
-      });
       setBatchProgress({ current: i + 1, total: chaptersToTranslate.length });
       setSelectedChapterId(chapter.id);
 
       console.group(`[StoryTranslator] Processing Chapter ${i + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
       
       try {
+        const chapterIndex = chapters.indexOf(chapter);
+        const previousAssistantOutput = resolvePreviousAssistantOutput({
+          chapters,
+          chapterIndex,
+          summaries: new Map(),
+          translatedChapters: sessionMap,
+          mode: previousAssistantOutputMode,
+          chapterCount: previousAssistantOutputChapterCount
+        });
         console.log('[StoryTranslator] Step 1: Preparing prompt...');
         const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
           chapterContent: chapter.content,
           sourceLang, 
           targetLang,
-          memory: memoryPayload
+          previousAssistantOutput: previousAssistantOutput || undefined,
+          previousAssistantOutputMode,
+          previousAssistantOutputChapterCount,
         }) as PreparePromptResult;
         console.log('[StoryTranslator] Step 2: Prompt prepared, success:', prepareResult.success);
         
@@ -765,7 +766,37 @@ export function StoryTranslatorWeb() {
            <Select label="Ngôn ngữ đích" value={targetLang} onChange={e => setTargetLang(e.target.value)} options={LANG_OPTIONS} />
         </div>
 
-        <div className="md:col-span-2 flex items-end gap-2 col-start-11 md:col-start-auto">
+        <div className="md:col-span-3 flex items-end gap-2">
+          <label className="flex items-center gap-1.5 text-xs">
+            <span className="text-text-secondary whitespace-nowrap">Previous</span>
+            <select
+              value={previousAssistantOutputMode}
+              onChange={(e) => setPreviousAssistantOutputMode(e.target.value as StoryPreviousAssistantOutputMode)}
+              className="h-8 rounded-md border border-border bg-card px-1.5 text-xs text-text-primary"
+              disabled={status === 'running'}
+            >
+              <option value="sampled">Sampled</option>
+              <option value="full">Full</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-xs">
+            <span className="text-text-secondary">Ch</span>
+            <select
+              value={previousAssistantOutputChapterCount}
+              onChange={(e) => setPreviousAssistantOutputChapterCount(Number(e.target.value) || 1)}
+              className="h-8 rounded-md border border-border bg-card px-1.5 text-xs text-text-primary"
+              disabled={status === 'running'}
+            >
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="md:col-span-2 flex items-end gap-2">
           <Button onClick={handleTranslate} disabled={!selectedChapterId || status === 'running'} className="flex-1" title="Dịch chương hiện tại">
             Dịch 1
           </Button>

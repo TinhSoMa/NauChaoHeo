@@ -1,26 +1,18 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 // import { TranslationProject, ChapterTranslation } from '@shared/types/project';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
-import {
-  MEMORY_CONTEXT_IPC_CHANNELS,
-  type MemoryContextHealthResult
-} from '@shared/types/memoryContext';
+
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { FileText, CheckSquare, Square, StopCircle, Loader, Clock, Sparkles, Download } from 'lucide-react';
 import { useProjectFeatureState } from '../../hooks/useProjectFeatureState';
 import {
-  buildStorySummaryMemoryPayload,
   type ProcessingChapterInfo,
-  type StoryPreviousAssistantOutputMode,
-  type StorySummaryMemoryRuntimeState
+  type StoryPreviousAssistantOutputMode
 } from './types';
-import {
-  resolvePreviousSummaryOutput,
-  resolvePreviousTranslatedOutput
-} from './utils/previousAssistantOutput';
+import { resolvePreviousSummaryOutput, resolvePreviousTranslatedOutput } from './utils/previousAssistantOutput';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from './utils/retryUtils';
 
 interface GeminiChatConfigLite {
@@ -43,33 +35,6 @@ const extractCookieKey = (cookie: string): string => {
 
 const buildTokenKey = (config: GeminiChatConfigLite): string => {
   return `${extractCookieKey(config.cookie || '')}|${(config.atToken || '').trim()}`;
-};
-
-const DEFAULT_MEMORY_TOP_K = 6;
-
-const computeStoryMemoryNamespace = async (
-  projectId: string,
-  filePath: string,
-  prefix: 'story' | 'story-summary' = 'story-summary'
-): Promise<string> => {
-  const source = filePath.trim() || '__default_story__';
-  const encoded = new TextEncoder().encode(source);
-  const digest = await window.crypto.subtle.digest('SHA-1', encoded);
-  const hash = Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 12);
-  return `${prefix}:${projectId}:${hash}`;
-};
-
-const formatMemoryUnavailableMessage = (health: MemoryContextHealthResult | null): string => {
-  const errorCode = health?.details?.errorCode;
-  if (errorCode && errorCode.startsWith('EMBEDDED_')) {
-    return `Memory mode chưa sẵn sàng.\n\nRuntime memory đóng gói bị thiếu hoặc hỏng (${errorCode}).\nVui lòng cài lại app hoặc build lại installer.`;
-  }
-  return health?.warning
-    ? `Memory mode chưa sẵn sàng.\n\n${health.warning}`
-    : 'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm';
 };
 
 export function StorySummary() {
@@ -118,16 +83,9 @@ export function StorySummary() {
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [retranslateSummary, setRetranslateSummary] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting'>('idle');
-  const [summaryMemoryEnabled, setSummaryMemoryEnabled] = useState(false);
-  const [summaryMemoryTopK, setSummaryMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
   const [previousAssistantOutputChapterCount, setPreviousAssistantOutputChapterCount] = useState(1);
-  const [summaryMemoryNamespace, setSummaryMemoryNamespace] = useState('');
-  const [translationMemoryNamespace, setTranslationMemoryNamespace] = useState('');
-  const [summaryMemoryStatus, setSummaryMemoryStatus] = useState<StorySummaryMemoryRuntimeState['status']>('error');
-  const [summaryMemoryHealth, setSummaryMemoryHealth] = useState<MemoryContextHealthResult | null>(null);
-  const [isClearingSummaryMemory, setIsClearingSummaryMemory] = useState(false);
   const runtimeSummariesRef = useRef<Map<string, string>>(new Map());
   const runtimeTranslatedChaptersRef = useRef<Map<string, string>>(new Map());
 
@@ -431,8 +389,6 @@ export function StorySummary() {
         sourceFilePath,
         model,
         translateMode,
-        summaryMemoryEnabled,
-        summaryMemoryTopK,
         previousAssistantOutputMode,
         previousAssistantOutputChapterCount,
         summaries: orderedSummaries,
@@ -472,8 +428,6 @@ export function StorySummary() {
           sourceChapterTitles?: Array<{ id: string; title: string }>;
           model?: string;
           translateMode?: 'api' | 'token' | 'both';
-          summaryMemoryEnabled?: boolean;
-          summaryMemoryTopK?: number;
           previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
           previousAssistantOutputChapterCount?: number;
           summaries?: Array<[string, string]>;
@@ -493,8 +447,6 @@ export function StorySummary() {
         if (saved.sourceFilePath) setSourceFilePath(saved.sourceFilePath);
         if (saved.model) setModel(saved.model);
         if (saved.translateMode) setTranslateMode(saved.translateMode);
-        if (typeof saved.summaryMemoryEnabled === 'boolean') setSummaryMemoryEnabled(saved.summaryMemoryEnabled);
-        if (typeof saved.summaryMemoryTopK === 'number') setSummaryMemoryTopK(saved.summaryMemoryTopK);
         if (saved.previousAssistantOutputMode === 'full' || saved.previousAssistantOutputMode === 'sampled') {
           setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
         }
@@ -566,8 +518,6 @@ export function StorySummary() {
       targetLang,
       model,
       translateMode,
-      summaryMemoryEnabled,
-      summaryMemoryTopK,
       previousAssistantOutputMode,
       previousAssistantOutputChapterCount,
       sourceFilePath,
@@ -583,22 +533,6 @@ export function StorySummary() {
       selectedChapterId
     ],
   });
-
-  const summaryMemorySettings = useMemo<StorySummaryMemoryRuntimeState>(() => ({
-    enabled: Boolean(projectId && summaryMemoryEnabled),
-    topK: summaryMemoryTopK,
-    namespace: summaryMemoryNamespace || undefined,
-    status: summaryMemoryStatus,
-    readFromTranslationMemory: true,
-    translationNamespace: translationMemoryNamespace || undefined
-  }), [
-    projectId,
-    summaryMemoryEnabled,
-    summaryMemoryNamespace,
-    summaryMemoryStatus,
-    summaryMemoryTopK,
-    translationMemoryNamespace
-  ]);
 
   useEffect(() => {
     let active = true;
@@ -665,136 +599,8 @@ export function StorySummary() {
     runtimeTranslatedChaptersRef.current = new Map(translatedChapters);
   }, [translatedChapters]);
 
-  useEffect(() => {
-    let active = true;
-    if (!projectId || !sourceFilePath.trim()) {
-      setSummaryMemoryNamespace('');
-      setTranslationMemoryNamespace('');
-      return;
-    }
-
-    computeStoryMemoryNamespace(projectId, sourceFilePath, 'story-summary')
-      .then((namespace) => {
-        if (active) {
-          setSummaryMemoryNamespace(namespace);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setSummaryMemoryNamespace('');
-        }
-      });
-
-    computeStoryMemoryNamespace(projectId, sourceFilePath, 'story')
-      .then((namespace) => {
-        if (active) {
-          setTranslationMemoryNamespace(namespace);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setTranslationMemoryNamespace('');
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [projectId, sourceFilePath]);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const result = await window.electronAPI.invoke(
-          MEMORY_CONTEXT_IPC_CHANNELS.GET_HEALTH
-        ) as MemoryContextHealthResult;
-        if (!active) return;
-        setSummaryMemoryHealth(result);
-        if (!result.success || !result.pythonOk || !result.mem0Ok || !result.spacyOk || !result.spacyModelOk) {
-          setSummaryMemoryStatus('missing_runtime');
-          return;
-        }
-        setSummaryMemoryStatus(result.providerConfigured ? 'ready' : 'missing_provider');
-      } catch {
-        if (!active) return;
-        setSummaryMemoryHealth(null);
-        setSummaryMemoryStatus('error');
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const ensureSummaryMemoryRuntimeReady = () => {
-    if (!summaryMemorySettings.enabled) {
-      return true;
-    }
-    if (summaryMemoryStatus === 'missing_runtime') {
-      alert(formatMemoryUnavailableMessage(summaryMemoryHealth));
-      return false;
-    }
-    return true;
-  };
-
-  const buildSummaryMemoryForChapter = (chapter: Chapter, chapterIndex: number) => {
-    const previousSummaryOutput = resolvePreviousSummaryOutput({
-      chapters,
-      chapterIndex,
-      summaries: runtimeSummariesRef.current,
-      mode: previousAssistantOutputMode
-    });
-    const previousTranslatedOutput = resolvePreviousTranslatedOutput({
-      chapters,
-      chapterIndex,
-      translatedChapters: runtimeTranslatedChaptersRef.current,
-      mode: previousAssistantOutputMode,
-      chapterCount: previousAssistantOutputChapterCount
-    });
-
-    return buildStorySummaryMemoryPayload({
-      projectId,
-      filePath: sourceFilePath,
-      chapter,
-      chapterIndex: chapterIndex + 1,
-      totalChapters: chapters.length,
-      previousSummaryOutput,
-      previousTranslatedOutput,
-      previousAssistantOutputMode,
-      previousAssistantOutputChapterCount,
-      settings: summaryMemorySettings
-    });
-  };
-
-  const clearSummaryMemoryNamespace = async () => {
-    if (!projectId || !summaryMemoryNamespace || isClearingSummaryMemory) {
-      return;
-    }
-    setIsClearingSummaryMemory(true);
-    try {
-      const result = await window.electronAPI.invoke(
-        MEMORY_CONTEXT_IPC_CHANNELS.CLEAR_NAMESPACE,
-        {
-          projectId,
-          feature: 'story.summary',
-          namespace: summaryMemoryNamespace
-        }
-      ) as { success: boolean; error?: string };
-      if (!result.success) {
-        alert(`Không thể xóa summary memory: ${result.error || 'Lỗi không xác định'}`);
-      }
-    } catch (error) {
-      alert(`Không thể xóa summary memory: ${String(error)}`);
-    } finally {
-      setIsClearingSummaryMemory(false);
-    }
-  };
-
   const handleTranslate = async () => {
     if (!selectedChapterId) return;
-    if (!ensureSummaryMemoryRuntimeReady()) return;
     
     // Kiem tra chuong hien tai co bi loai tru khong
     if (!isChapterIncluded(selectedChapterId)) {
@@ -816,9 +622,19 @@ export function StorySummary() {
     }
     const chapter = chapters.find((entry) => entry.id === selectedChapterId);
     const chapterIndex = chapter ? chapters.findIndex((entry) => entry.id === chapter.id) : -1;
-    const summaryMemoryPayload = chapter && chapterIndex >= 0
-      ? buildSummaryMemoryForChapter(chapter, chapterIndex)
-      : null;
+    const previousSummaryOutput = resolvePreviousSummaryOutput({
+      chapters,
+      chapterIndex,
+      summaries,
+      mode: previousAssistantOutputMode
+    });
+    const previousTranslatedOutput = resolvePreviousTranslatedOutput({
+      chapters,
+      chapterIndex,
+      translatedChapters,
+      mode: previousAssistantOutputMode,
+      chapterCount: previousAssistantOutputChapterCount
+    });
 
     setStatus('running');
     
@@ -829,7 +645,10 @@ export function StorySummary() {
         chapterContent: sourceContent,
         sourceLang,
         targetLang,
-        memory: summaryMemoryPayload
+        previousSummaryOutput: previousSummaryOutput || undefined,
+        previousTranslatedOutput: previousTranslatedOutput || undefined,
+        previousAssistantOutputMode,
+        previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -861,8 +680,7 @@ export function StorySummary() {
         webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
         useProxy: method === 'IMPIT' && useProxy,
         useImpit: method === 'IMPIT' && useImpit,
-        metadata: { chapterId: selectedChapterId, chapterTitle: chapter?.title || '' },
-        summaryMemory: summaryMemoryPayload
+        metadata: { chapterId: selectedChapterId, chapterTitle: chapter?.title || '' }
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (translateResult.success && translateResult.data) {
@@ -884,8 +702,7 @@ export function StorySummary() {
             webConfigId: method === 'IMPIT' && selectedTokenConfig ? selectedTokenConfig.id : undefined,
             useProxy: method === 'IMPIT' && useProxy,
             useImpit: method === 'IMPIT' && useImpit,
-            metadata: { chapterId: selectedChapterId, chapterTitle: chapter?.title || '' },
-            summaryMemory: summaryMemoryPayload
+            metadata: { chapterId: selectedChapterId, chapterTitle: chapter?.title || '' }
           }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
           
           if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
@@ -956,9 +773,6 @@ export function StorySummary() {
 
   // Tóm tắt tất cả các chương được chọn (continuous queue - gửi liên tục sau khi hoàn thành)
   const handleTranslateAll = async () => {
-    if (!ensureSummaryMemoryRuntimeReady()) {
-      return;
-    }
     if (currentBatchRunIdRef.current) {
       alert('Batch tóm tắt đang chạy. Vui lòng dừng batch hiện tại trước khi chạy lại.');
       return;
@@ -1052,15 +866,28 @@ export function StorySummary() {
 
       try {
         console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
-        const summaryMemoryPayload = actualChapterIndex >= 0
-          ? buildSummaryMemoryForChapter(chapter, actualChapterIndex)
-          : null;
+        const previousSummaryOutput = resolvePreviousSummaryOutput({
+          chapters,
+          chapterIndex: actualChapterIndex,
+          summaries: runtimeSummariesRef.current,
+          mode: previousAssistantOutputMode
+        });
+        const previousTranslatedOutput = resolvePreviousTranslatedOutput({
+          chapters,
+          chapterIndex: actualChapterIndex,
+          translatedChapters: runtimeTranslatedChaptersRef.current,
+          mode: previousAssistantOutputMode,
+          chapterCount: previousAssistantOutputChapterCount
+        });
 
         const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
           chapterContent: sourceContent,
           sourceLang,
           targetLang,
-          memory: summaryMemoryPayload
+          previousSummaryOutput: previousSummaryOutput || undefined,
+          previousTranslatedOutput: previousTranslatedOutput || undefined,
+          previousAssistantOutputMode,
+          previousAssistantOutputChapterCount,
         }) as PreparePromptResult;
 
         if (!prepareResult.success || !prepareResult.prompt) {
@@ -1095,8 +922,7 @@ export function StorySummary() {
               chapterId: chapter.id,
               chapterTitle: chapter.title,
               validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
-            },
-            summaryMemory: summaryMemoryPayload
+            }
           }
         ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
@@ -1257,9 +1083,19 @@ export function StorySummary() {
     }
     const chapter = chapters.find((entry) => entry.id === selectedChapterId);
     const chapterIndex = chapter ? chapters.findIndex((entry) => entry.id === chapter.id) : -1;
-    const summaryMemoryPayload = chapter && chapterIndex >= 0
-      ? buildSummaryMemoryForChapter(chapter, chapterIndex)
-      : null;
+    const previousSummaryOutput = resolvePreviousSummaryOutput({
+      chapters,
+      chapterIndex,
+      summaries,
+      mode: previousAssistantOutputMode
+    });
+    const previousTranslatedOutput = resolvePreviousTranslatedOutput({
+      chapters,
+      chapterIndex,
+      translatedChapters,
+      mode: previousAssistantOutputMode,
+      chapterCount: previousAssistantOutputChapterCount
+    });
 
     setSavingPrompt(true);
     try {
@@ -1268,7 +1104,10 @@ export function StorySummary() {
         chapterContent: sourceContent,
         sourceLang,
         targetLang,
-        memory: summaryMemoryPayload
+        previousSummaryOutput: previousSummaryOutput || undefined,
+        previousTranslatedOutput: previousTranslatedOutput || undefined,
+        previousAssistantOutputMode,
+        previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
 
       if (result.success && result.prompt) {
@@ -1611,36 +1450,7 @@ export function StorySummary() {
               <option value={10}>10</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
-            <input
-              type="checkbox"
-              checked={summaryMemoryEnabled}
-              onChange={(e) => setSummaryMemoryEnabled(e.target.checked)}
-              className="w-4 h-4 rounded border-border cursor-pointer"
-              disabled={!projectId || status === 'running'}
-            />
-            <span>Bật summary memory</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-sm text-text-secondary">Top K</span>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={summaryMemoryTopK}
-              disabled={!projectId || status === 'running'}
-              onChange={(e) => setSummaryMemoryTopK(Math.max(1, Math.min(20, Math.floor(Number(e.target.value) || 1))))}
-              className="h-8 w-16 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
-            />
-          </label>
-          <Button
-            onClick={clearSummaryMemoryNamespace}
-            variant="secondary"
-            disabled={!projectId || !summaryMemoryNamespace || status === 'running' || isClearingSummaryMemory}
-            className="h-8 px-3 text-xs"
-          >
-            {isClearingSummaryMemory ? 'Đang xóa...' : 'Clear summary memory'}
-          </Button>
+          
           <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
             <input
               type="checkbox"

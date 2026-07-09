@@ -10,8 +10,7 @@ import {
   StoryTranslateGeminiWebQueueResult
 } from '@shared/types';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
-import type { ProcessingChapterInfo, StoryChapterMethod, StoryMemoryRuntimeState, StoryPromptSaveSettings, StoryStatus } from '../types';
-import { buildStoryMemoryPayload } from '../types';
+import type { OperationType, ProcessingChapterInfo, StoryChapterMethod, StoryPromptSaveSettings, StoryStatus } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 import { resolvePreviousAssistantOutputDebug } from '../utils/previousAssistantOutput';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
@@ -36,9 +35,9 @@ interface UseStoryGeminiWebQueueTranslationParams {
   setChapterMethods: Dispatch<SetStateAction<Map<string, StoryChapterMethod>>>;
   projectId: string | null;
   filePath: string;
-  memorySettings: StoryMemoryRuntimeState;
   forceSequential?: boolean;
   promptSaveSettings: StoryPromptSaveSettings;
+  setActiveOperation?: Dispatch<SetStateAction<OperationType>>;
 }
 
 const AUTO_WORKERS_MAX = 8;
@@ -172,9 +171,9 @@ export function useStoryGeminiWebQueueTranslation(
     setChapterMethods,
     projectId,
     filePath,
-    memorySettings,
     forceSequential = false,
-    promptSaveSettings
+    promptSaveSettings,
+    setActiveOperation,
   } = params;
 
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
@@ -219,6 +218,7 @@ export function useStoryGeminiWebQueueTranslation(
     setBatchProgress(null);
     setResolvedWorkerCount(null);
     setStatus('idle');
+    setActiveOperation?.('idle');
     setProcessingChapters((prev) => {
       const next = new Map(prev);
       for (const [chapterId, info] of next.entries()) {
@@ -335,18 +335,6 @@ export function useStoryGeminiWebQueueTranslation(
       mode: promptSaveSettings.previousAssistantOutputMode,
       chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
     });
-    const previousAssistantOutput = previousAssistantOutputResult.content;
-    const memoryPayload = buildStoryMemoryPayload({
-      projectId,
-      filePath,
-      chapter,
-      chapterIndex,
-      totalChapters: chapters.length,
-      previousAssistantOutput,
-      previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
-      previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
-      settings: memorySettings
-    });
     const runId = options?.runId;
     if (!runId || currentRunIdRef.current !== runId || shouldStopRef.current) {
       return { status: 'stopped' };
@@ -377,7 +365,9 @@ export function useStoryGeminiWebQueueTranslation(
           sourceLang,
           targetLang,
           model,
-          memory: memoryPayload
+          previousAssistantOutput: previousAssistantOutputResult.content,
+          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
         }
       ) as PreparePromptResult;
 
@@ -409,7 +399,6 @@ export function useStoryGeminiWebQueueTranslation(
             workerId,
             mode: webQueueMode
           },
-          memory: memoryPayload
         }
       ) as StoryTranslateGeminiWebQueueResult;
 
@@ -421,7 +410,6 @@ export function useStoryGeminiWebQueueTranslation(
           method: 'gemini_webapi_queue',
           model,
           preparedPrompt: prepareResult.prompt,
-          prepareResult,
           storyFilePath: filePath,
           previousAssistantOutputDebug: previousAssistantOutputResult.debug,
           previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
@@ -525,6 +513,7 @@ export function useStoryGeminiWebQueueTranslation(
     setIsTranslating(true);
     setIsStopping(false);
     setStatus('running');
+    setActiveOperation?.('translating');
     setBatchProgress({ current: 0, total: chaptersToTranslate.length });
     const effectiveQueueMode: StoryWebQueueMode =
       ENFORCE_SEQUENTIAL_CHAPTER_LOCK || forceSequential ? 'sequential' : webQueueMode;
@@ -707,6 +696,7 @@ export function useStoryGeminiWebQueueTranslation(
         setIsTranslating(false);
         setIsStopping(false);
         setStatus('idle');
+        setActiveOperation?.('idle');
         setBatchProgress(null);
         setResolvedWorkerCount(null);
         currentBatchIdRef.current = null;

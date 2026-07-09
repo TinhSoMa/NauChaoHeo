@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useRef } from 'react';
+import { Dispatch, SetStateAction, useState, useRef } from 'react';
 import {
   Chapter,
   PreparePromptResult,
@@ -9,14 +9,13 @@ import { buildTokenKey } from '../utils/tokenUtils';
 import { extractTranslatedTitle } from '../utils/chapterUtils';
 import type {
   GeminiChatConfigLite,
+  OperationType,
   ProcessingChapterInfo,
   StoryChapterMethod,
-  StoryMemoryRuntimeState,
   StoryPromptSaveSettings,
   StoryStatus,
   StoryTranslationMethod
 } from '../types';
-import { buildStoryMemoryPayload } from '../types';
 import { saveTranslationPromptArtifact } from '../utils/promptArtifact';
 import { resolvePreviousAssistantOutputDebug } from '../utils/previousAssistantOutput';
 
@@ -43,9 +42,9 @@ interface UseStoryTranslationParams {
   summaries: Map<string, string>;
   projectId: string | null;
   filePath: string;
-  memorySettings: StoryMemoryRuntimeState;
   promptSaveSettings: StoryPromptSaveSettings;
   streamingEnabled?: boolean;
+  setActiveOperation?: Dispatch<SetStateAction<OperationType>>;
 }
 
 /**
@@ -76,25 +75,42 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     summaries,
     projectId,
     filePath,
-    memorySettings,
     promptSaveSettings,
     streamingEnabled = false,
   } = params;
+  const {
+    setActiveOperation
+  } = params;
   const activeRunIdRef = useRef<string | null>(null);
+  const shouldStopRef = useRef(false);
+  const [isSingleTranslating, setIsSingleTranslating] = useState(false);
+
+  const handleStopSingle = () => {
+    const runId = activeRunIdRef.current;
+    shouldStopRef.current = true;
+    activeRunIdRef.current = null;
+    setIsSingleTranslating(false);
+    setStatus('idle');
+    setActiveOperation?.('idle');
+    if (runId) {
+      window.electronAPI.invoke(STORY_IPC_CHANNELS.STOP_STORY_TRANSLATION, runId).catch(() => {});
+    }
+  };
 
   const handleTranslate = async (selectedChapterId: string | null) => {
     if (!selectedChapterId) return;
     if (!isChapterIncluded(selectedChapterId)) {
-      alert('Chuong nay da bi loai tru khoi danh sach dich. Vui long bo chon "Loai tru" hoac chon chuong khac.');
+      alert('[Dịch] Chương này đã bị loại trừ khỏi danh sách dịch.');
       return;
     }
 
-    // Kiểm tra nếu chương đã dịch và checkbox chưa được tick
     if (translatedChapters.has(selectedChapterId) && !retranslateExisting) {
-      alert('⚠️ Chương này đã được dịch rồi.\n\nNếu muốn dịch lại, vui lòng tick vào "Dịch lại các chương đã dịch" ở phần cấu hình.');
+      alert('[Dịch] Chương này đã được dịch rồi.\n\nNếu muốn dịch lại, vui lòng tick vào "Dịch lại các chương đã dịch" ở phần cấu hình.');
       return;
     }
     
+    if (shouldStopRef.current) return;
+
     const chapter = chapters.find(c => c.id === selectedChapterId);
     if (!chapter) return;
     const chapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
@@ -106,34 +122,23 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       mode: promptSaveSettings.previousAssistantOutputMode,
       chapterCount: promptSaveSettings.previousAssistantOutputChapterCount
     });
-    const previousAssistantOutput = previousAssistantOutputResult.content;
-    const memoryPayload = chapterIndex >= 0
-      ? buildStoryMemoryPayload({
-          projectId,
-          filePath,
-          chapter,
-          chapterIndex: chapterIndex + 1,
-          totalChapters: chapters.length,
-          previousAssistantOutput,
-          previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
-          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
-          settings: memorySettings
-        })
-      : null;
-
     if (activeRunIdRef.current) {
-      alert('Đang có tiến trình dịch chương khác. Vui lòng đợi hoàn tất.');
+      alert('[Dịch] Đang có tiến trình dịch chương khác. Vui lòng đợi hoàn tất.');
       return;
     }
 
+    if (shouldStopRef.current) return;
+
     const runId = `story-single-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     activeRunIdRef.current = runId;
+    shouldStopRef.current = false;
+    setIsSingleTranslating(true);
+    setActiveOperation?.('translating');
     const queueMode = translationMethod === 'gemini_webapi_queue' || translationMethod === 'api_gemini_webapi_queue';
     const processingChannel: 'api' | 'token' = translationMethod === 'api' ? 'api' : 'token';
 
     setStatus('running');
     
-    // Add processing status for single chapter
     setProcessingChapters(prev => {
       const next = new Map(prev);
       next.set(chapter.id, { 
@@ -149,19 +154,24 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     let wasTranslated = false;
 
     try {
+      if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
+
       console.log('[useStoryTranslation] Dang chuan bi prompt...');
-      // 1. Prepare Prompt
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
         chapterContent: chapter.content,
         sourceLang,
         targetLang,
         model,
-        memory: memoryPayload
+        previousAssistantOutput: previousAssistantOutputResult.content,
+        previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+        previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
       
       if (!prepareResult.success || !prepareResult.prompt) {
-        throw new Error(prepareResult.error || 'Loi chuan bi prompt');
+        throw new Error(prepareResult.error || '[Dịch] Lỗi chuẩn bị prompt');
       }
+
+      if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
 
       console.log('[useStoryTranslation] Da chuan bi prompt, dang gui den Gemini...');
 
@@ -205,15 +215,17 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       };
 
       const invokeApiOrToken = async (method: 'API' | 'IMPIT') => {
+        if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
         let selectedTokenConfig = method === 'IMPIT' ? getPreferredTokenConfig() : null;
         if (method === 'IMPIT' && !selectedTokenConfig) {
           await loadConfigurations();
           selectedTokenConfig = getPreferredTokenConfig();
           if (!selectedTokenConfig) {
-            alert('Không tìm thấy Cấu hình Web để chạy chế độ Token.');
+            alert('[Dịch] Không tìm thấy Cấu hình Web để chạy chế độ Token.');
             return null;
           }
         }
+        if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
 
         const tokenKey = method === 'IMPIT' && selectedTokenConfig ? buildTokenKey(selectedTokenConfig) : null;
 
@@ -234,7 +246,6 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
             sourceText: chapter.content,
             validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
           },
-          memory: memoryPayload,
           streamingEnabled: streamEnabled || undefined,
         }) as {
           success: boolean;
@@ -253,7 +264,6 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
             method: methodKey,
             model,
             preparedPrompt: prepareResult.prompt,
-            prepareResult,
             storyFilePath: filePath,
             previousAssistantOutputDebug: previousAssistantOutputResult.debug,
             previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
@@ -270,6 +280,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       };
 
       if (translationMethod === 'gemini_webapi_queue' || translationMethod === 'api_gemini_webapi_queue') {
+        if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
         const queueResult = await window.electronAPI.invoke(
           STORY_IPC_CHANNELS.TRANSLATE_CHAPTER_GEMINI_WEB_QUEUE,
           {
@@ -285,8 +296,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
               sourceText: chapter.content,
               validationRegex: 'hết\\s+chương|end\\s+of\\s+chapter|---\\s*hết\\s*---'
             },
-            memory: memoryPayload
-          }
+            }
         ) as StoryTranslateGeminiWebQueueResult;
 
         if (promptSaveSettings.autoSaveSentPrompt) {
@@ -297,7 +307,6 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
             method: 'gemini_webapi_queue',
             model,
             preparedPrompt: prepareResult.prompt,
-            prepareResult,
             storyFilePath: filePath,
             previousAssistantOutputDebug: previousAssistantOutputResult.debug,
             previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
@@ -396,16 +405,15 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       }
 
     } catch (error) {
-      console.error('[useStoryTranslation] Loi trong qua trinh dich:', error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[useStoryTranslation] Loi trong qua trinh dich:', errorMsg);
       if (!streamingEnabled) {
-        const rawMsg = error instanceof Error ? error.message : String(error);
-        const friendlyMsg = rawMsg === 'SERVER_OVERLOADED' ? 'Server Gemini quá tải, vui lòng thử lại sau.' : rawMsg;
-        alert(`Loi dich thuat: ${friendlyMsg}`);
+        const friendlyMsg = errorMsg === 'SERVER_OVERLOADED' ? 'Server Gemini quá tải, vui lòng thử lại sau.' : errorMsg;
+        if (!shouldStopRef.current) {
+          alert(`[Dịch] ${friendlyMsg}`);
+        }
       }
     } finally {
-      if (!wasTranslated && streamingEnabled) {
-        window.electronAPI.invoke(STORY_IPC_CHANNELS.STOP_STORY_TRANSLATION, runId).catch(() => {});
-      }
       setProcessingChapters(prev => {
         const next = new Map(prev);
         next.delete(chapter.id);
@@ -414,11 +422,15 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
       if (activeRunIdRef.current === runId) {
         activeRunIdRef.current = null;
         setStatus('idle');
+        setIsSingleTranslating(false);
+        setActiveOperation?.('idle');
       }
     }
   };
 
   return {
-    handleTranslate
+    handleTranslate,
+    handleStopSingle,
+    isSingleTranslating
   };
 }

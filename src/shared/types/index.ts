@@ -1,5 +1,4 @@
 export * from './story';
-export * from './memoryContext';
 export * from './prompt';
 export * from './proxy';
 export * from './project';

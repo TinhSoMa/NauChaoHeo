@@ -253,17 +253,17 @@ export function registerStoryHandlers(): void {
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.PREPARE_PROMPT,
-    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, memory }: StoryPreparePromptPayload) => {
+    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, previousAssistantOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount }: StoryPreparePromptPayload) => {
        console.log(`[StoryHandlers] Prepare prompt logic: ${sourceLang} -> ${targetLang}`);
-       return await StoryService.StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang, memory);
+       return await StoryService.StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang, previousAssistantOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount);
     }
   );
 
   ipcMain.handle(
     STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT,
-    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, memory }: StoryPrepareSummaryPromptPayload) => {
+    async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, previousSummaryOutput, previousTranslatedOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount }: StoryPrepareSummaryPromptPayload) => {
        console.log(`[StoryHandlers] Prepare summary prompt: ${sourceLang} -> ${targetLang}`);
-       return await StoryService.StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang, memory);
+       return await StoryService.StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang, previousSummaryOutput, previousTranslatedOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount);
     }
   );
 

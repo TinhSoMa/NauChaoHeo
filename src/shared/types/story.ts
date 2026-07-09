@@ -15,67 +15,18 @@ export interface PreparePromptResult {
   success: boolean;
   prompt?: any;
   error?: string;
-  memoryContext?: {
-    namespace?: string;
-    promptContext?: string;
-    memories?: string[];
-    debug?: import('./memoryContext').MemoryContextDebugItem[];
-    warning?: string;
-    status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
-  };
-}
-
-export interface StoryMemorySettings {
-  enabled: boolean;
-  topK: number;
-  namespace?: string;
-  status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
 }
 
 export type StoryPreviousAssistantOutputMode = 'full' | 'sampled';
-
-export interface StorySummaryMemorySettings {
-  enabled: boolean;
-  topK: number;
-  namespace?: string;
-  status?: 'ready' | 'missing_runtime' | 'missing_provider' | 'error';
-  readFromTranslationMemory: boolean;
-  translationNamespace?: string;
-}
-
-export interface StoryTranslationMemoryPayload {
-  projectId?: string | null;
-  storyFilePath?: string | null;
-  chapterId?: string | null;
-  chapterTitle?: string | null;
-  chapterIndex?: number | null;
-  totalChapters?: number | null;
-  previousAssistantOutput?: string | null;
-  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
-  previousAssistantOutputChapterCount?: number | null;
-  settings?: StoryMemorySettings | null;
-}
 
 export interface StoryPreparePromptPayload {
   chapterContent: string;
   sourceLang: string;
   targetLang: string;
   model?: string;
-  memory?: StoryTranslationMemoryPayload | null;
-}
-
-export interface StorySummaryMemoryPayload {
-  projectId?: string | null;
-  storyFilePath?: string | null;
-  chapterId?: string | null;
-  chapterTitle?: string | null;
-  chapterIndex?: number | null;
-  totalChapters?: number | null;
-  previousSummaryOutput?: string | null;
-  previousTranslatedOutput?: string | null;
+  previousAssistantOutput?: string | null;
   previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
   previousAssistantOutputChapterCount?: number | null;
-  settings?: StorySummaryMemorySettings | null;
 }
 
 export interface StoryPrepareSummaryPromptPayload {
@@ -83,7 +34,10 @@ export interface StoryPrepareSummaryPromptPayload {
   sourceLang: string;
   targetLang: string;
   model?: string;
-  memory?: StorySummaryMemoryPayload | null;
+  previousSummaryOutput?: string | null;
+  previousTranslatedOutput?: string | null;
+  previousAssistantOutputMode?: StoryPreviousAssistantOutputMode | null;
+  previousAssistantOutputChapterCount?: number | null;
 }
 
 export interface StoryTranslateChapterPayload {
@@ -95,8 +49,6 @@ export interface StoryTranslateChapterPayload {
   useProxy?: boolean;
   metadata?: Record<string, unknown>;
   onRetry?: (attempt: number, maxRetries: number) => void;
-  memory?: StoryTranslationMemoryPayload | null;
-  summaryMemory?: StorySummaryMemoryPayload | null;
   streamingEnabled?: boolean;
 }
 
@@ -115,7 +67,6 @@ export interface StoryTranslateGeminiWebQueuePayload {
   metadata?: Record<string, unknown>;
   conversationKey?: string;
   resetConversation?: boolean;
-  memory?: StoryTranslationMemoryPayload | null;
 }
 
 export interface StoryTranslateGeminiWebQueueMetadata extends Record<string, unknown> {

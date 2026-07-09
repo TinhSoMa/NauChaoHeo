@@ -1,17 +1,16 @@
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from 'react';
 import { Chapter, PreparePromptResult, STORY_IPC_CHANNELS } from '@shared/types';
 import {
-  buildStorySummaryMemoryPayload,
   GeminiChatConfigLite,
+  OperationType,
   TokenContext,
   ProcessingChapterInfo,
   StoryChapterMethod,
   StoryPromptSaveSettings,
   StoryPreviousAssistantOutputMode,
-  StoryStatus,
-  StorySummaryMemoryRuntimeState
+  StoryStatus
 } from '../types';
-import { resolvePreviousSummaryOutput, resolvePreviousTranslatedOutputDebug } from '../utils/previousAssistantOutput';
+import { resolvePreviousTranslatedOutputDebug, resolvePreviousSummaryOutput } from '../utils/previousAssistantOutput';
 import { saveSummaryPromptArtifact } from '../utils/promptArtifact';
 import { getInfiniteRetryDelayMs, normalizeRetryError } from '../utils/retryUtils';
 
@@ -39,7 +38,6 @@ interface UseStorySummaryGenerationProps {
   useProxy: boolean;
   projectId: string | null;
   filePath: string;
-  memorySettings: StorySummaryMemoryRuntimeState;
   loadConfigurations: () => Promise<void>;
   getPreferredTokenConfig: () => GeminiChatConfigLite | null;
   isChapterIncluded: (id: string) => boolean;
@@ -47,6 +45,7 @@ interface UseStorySummaryGenerationProps {
   getDistinctActiveTokenConfigs: (configs: GeminiChatConfigLite[]) => GeminiChatConfigLite[];
   previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
   promptSaveSettings: StoryPromptSaveSettings;
+  setActiveOperation?: Dispatch<SetStateAction<OperationType>>;
 }
 
 // Helper functions
@@ -98,7 +97,6 @@ export function useStorySummaryGeneration({
   useProxy,
   projectId,
   filePath,
-  memorySettings,
   loadConfigurations,
   getPreferredTokenConfig,
   setProcessingChapters,
@@ -106,7 +104,8 @@ export function useStorySummaryGeneration({
   tokenConfigs,
   getDistinctActiveTokenConfigs,
   previousAssistantOutputMode,
-  promptSaveSettings
+  promptSaveSettings,
+  setActiveOperation
 }: UseStorySummaryGenerationProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -186,6 +185,7 @@ export function useStorySummaryGeneration({
     isBatchRunningRef.current = false;
     setIsStopping(true);
     setProcessingChapters(() => new Map());
+    setActiveOperation?.('idle');
     for (const timeout of spawnTimeoutsRef.current) {
       clearTimeout(timeout);
     }
@@ -213,14 +213,6 @@ export function useStorySummaryGeneration({
       return;
     }
     const chapterIndex = chapter ? chapters.findIndex((entry) => entry.id === chapter.id) : -1;
-    const previousSummaryOutput = chapterIndex >= 0
-      ? resolvePreviousSummaryOutput({
-          chapters,
-          chapterIndex,
-          summaries: runtimeSummariesRef.current,
-          mode: previousAssistantOutputMode
-        })
-      : '';
     const previousTranslatedOutputResult = chapterIndex >= 0
       ? resolvePreviousTranslatedOutputDebug({
           chapters,
@@ -238,35 +230,30 @@ export function useStorySummaryGeneration({
             finalIncludedChapterIds: []
           }
         };
-    const previousTranslatedOutput = previousTranslatedOutputResult.content;
-    const summaryMemoryPayload = chapter && chapterIndex >= 0
-      ? buildStorySummaryMemoryPayload({
-          projectId,
-          filePath,
-          chapter,
-          chapterIndex: chapterIndex + 1,
-          totalChapters: chapters.length,
-          previousSummaryOutput,
-          previousTranslatedOutput,
-          previousAssistantOutputMode,
-          previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
-          settings: memorySettings
-        })
-      : null;
+    const previousSummaryOutput = resolvePreviousSummaryOutput({
+      chapters,
+      chapterIndex,
+      summaries,
+      mode: previousAssistantOutputMode
+    });
 
     setIsGenerating(true);
     setStatus('running');
+    setActiveOperation?.('summarizing');
     
     try {
       console.log('[useStorySummaryGeneration] Đang chuẩn bị prompt tóm tắt...');
       // 1. Prepare Summary Prompt
-      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
         targetLang,
-        memory: summaryMemoryPayload
+        previousSummaryOutput: previousSummaryOutput || undefined,
+        previousTranslatedOutput: previousTranslatedOutputResult.content,
+        previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+        previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
-      
+
       if (!prepareResult.success || !prepareResult.prompt) {
         throw new Error(prepareResult.error || 'Lỗi chuẩn bị prompt tóm tắt');
       }
@@ -311,8 +298,7 @@ export function useStorySummaryGeneration({
           chapterId: selectedChapterId,
           // Include regex for server-side validation and retry
           validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
-        },
-        summaryMemory: summaryMemoryPayload
+        }
       }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
       if (promptSaveSettings.autoSaveSentPrompt) {
@@ -323,7 +309,6 @@ export function useStorySummaryGeneration({
           method: methodKey,
           model,
           preparedPrompt: prepareResult.prompt,
-          prepareResult,
           storyFilePath: filePath,
           previousAssistantOutputDebug: previousTranslatedOutputResult.debug,
           previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
@@ -372,6 +357,7 @@ export function useStorySummaryGeneration({
     } finally {
       setIsGenerating(false);
       setStatus('idle');
+      setActiveOperation?.('idle');
       // Clear processing state
       setProcessingChapters(prev => {
           const next = new Map(prev);
@@ -419,14 +405,6 @@ export function useStorySummaryGeneration({
       }
 
       const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
-      const previousSummaryOutput = actualChapterIndex >= 0
-        ? resolvePreviousSummaryOutput({
-            chapters,
-            chapterIndex: actualChapterIndex,
-            summaries: runtimeSummariesRef.current,
-            mode: previousAssistantOutputMode
-          })
-        : '';
       const previousTranslatedOutputResult = actualChapterIndex >= 0
         ? resolvePreviousTranslatedOutputDebug({
             chapters,
@@ -444,27 +422,21 @@ export function useStorySummaryGeneration({
               finalIncludedChapterIds: []
             }
           };
-      const previousTranslatedOutput = previousTranslatedOutputResult.content;
-      const summaryMemoryPayload = actualChapterIndex >= 0
-        ? buildStorySummaryMemoryPayload({
-            projectId,
-            filePath,
-            chapter,
-            chapterIndex: actualChapterIndex + 1,
-            totalChapters: chapters.length,
-            previousSummaryOutput,
-            previousTranslatedOutput,
-            previousAssistantOutputMode,
-            previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
-            settings: memorySettings
-          })
-        : null;
+      const previousSummaryOutput = resolvePreviousSummaryOutput({
+        chapters,
+        chapterIndex: actualChapterIndex,
+        summaries: runtimeSummariesRef.current,
+        mode: previousAssistantOutputMode
+      });
 
-      const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
+const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
         targetLang,
-        memory: summaryMemoryPayload
+        previousSummaryOutput: previousSummaryOutput || undefined,
+        previousTranslatedOutput: previousTranslatedOutputResult.content,
+        previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
+        previousAssistantOutputChapterCount: promptSaveSettings.previousAssistantOutputChapterCount,
       }) as PreparePromptResult;
 
       if (!prepareResult.success || !prepareResult.prompt) {
@@ -503,8 +475,7 @@ export function useStorySummaryGeneration({
             chapterTitle: chapter.title,
             tokenInfo: tokenConfig ? (tokenConfig.email || tokenConfig.id) : 'API',
             validationRegex: 'hết\\s+tóm\\s+tắt|end\\s+of\\s+summary|---\\s*hết\\s*---|hết\\s+chương'
-          },
-          summaryMemory: summaryMemoryPayload
+          }
         }
       ) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
 
@@ -516,7 +487,6 @@ export function useStorySummaryGeneration({
           method: channel,
           model,
           preparedPrompt: prepareResult.prompt,
-          prepareResult,
           storyFilePath: filePath,
           previousAssistantOutputDebug: previousTranslatedOutputResult.debug,
           previousAssistantOutputMode: promptSaveSettings.previousAssistantOutputMode,
@@ -692,6 +662,7 @@ export function useStorySummaryGeneration({
         setIsGenerating(false);
         setIsStopping(false);
         setStatus('idle');
+        setActiveOperation?.('idle');
         setBatchSummaryProgress(null);
         if (shouldStopRef.current) {
           setProcessingChapters(() => new Map());
@@ -746,6 +717,7 @@ export function useStorySummaryGeneration({
     currentBatchRunIdRef.current = runId;
     setIsGenerating(true);
     setStatus('running');
+    setActiveOperation?.('summarizing');
     setBatchSummaryProgress({ current: 0, total: chaptersToSummarize.length });
     runtimeSummariesRef.current = new Map(summaries);
     runtimeTranslatedChaptersRef.current = new Map(translatedChapters);

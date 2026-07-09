@@ -58,8 +58,6 @@ interface StoryTranslatorStateSetters {
   setReadingTheme: (theme: StoryReadingTheme) => void;
   setChapterScrollPositions: (positions: Map<string, number>) => void;
   setChapters: (chapters: Chapter[]) => void;
-  setMemoryEnabled: (enabled: boolean) => void;
-  setMemoryTopK: (value: number) => void;
   setPreviousAssistantOutputMode: (mode: StoryPreviousAssistantOutputMode) => void;
   setPreviousAssistantOutputChapterCount: (count: number) => void;
   setAutoSaveSentPrompt: (enabled: boolean) => void;
@@ -85,8 +83,6 @@ interface StoryTranslatorStateValues {
   summaryTitles: Map<string, string>;
   readingTheme: StoryReadingTheme;
   chapterScrollPositions: Map<string, number>;
-  memoryEnabled: boolean;
-  memoryTopK: number;
   previousAssistantOutputMode: StoryPreviousAssistantOutputMode;
   previousAssistantOutputChapterCount: number;
   autoSaveSentPrompt: boolean;
@@ -120,12 +116,9 @@ export function useStoryTranslatorPersistence(
     summaryTitles?: Array<[string, string]>;
     readingTheme?: StoryReadingTheme;
     chapterScrollPositions?: Array<[string, number]>;
-    memoryEnabled?: boolean;
-    memoryTopK?: number;
-      summaryMemoryTopK?: number;
-      previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
-      previousAssistantOutputChapterCount?: number;
-      autoSaveSentPrompt?: boolean;
+    previousAssistantOutputMode?: StoryPreviousAssistantOutputMode;
+    previousAssistantOutputChapterCount?: number;
+    autoSaveSentPrompt?: boolean;
   }>({
     feature: 'story',
     fileName: STORY_STATE_FILE,
@@ -175,8 +168,6 @@ export function useStoryTranslatorPersistence(
         selectedChapterId: values.selectedChapterId,
         readingTheme: values.readingTheme,
         chapterScrollPositions: Array.from(values.chapterScrollPositions.entries()),
-        memoryEnabled: values.memoryEnabled,
-        memoryTopK: values.memoryTopK,
         previousAssistantOutputMode: values.previousAssistantOutputMode,
         previousAssistantOutputChapterCount: values.previousAssistantOutputChapterCount,
         autoSaveSentPrompt: values.autoSaveSentPrompt
@@ -229,12 +220,6 @@ export function useStoryTranslatorPersistence(
       if (typeof saved.selectedChapterId !== 'undefined') setters.setSelectedChapterId(saved.selectedChapterId);
       if (saved.readingTheme) setters.setReadingTheme(saved.readingTheme);
       if (saved.chapterScrollPositions) setters.setChapterScrollPositions(new Map(saved.chapterScrollPositions));
-      if (typeof saved.memoryEnabled === 'boolean') setters.setMemoryEnabled(saved.memoryEnabled);
-      if (typeof saved.memoryTopK === 'number') {
-        setters.setMemoryTopK(saved.memoryTopK);
-      } else if (typeof saved.summaryMemoryTopK === 'number') {
-        setters.setMemoryTopK(saved.summaryMemoryTopK);
-      }
       if (saved.previousAssistantOutputMode === 'full' || saved.previousAssistantOutputMode === 'sampled') {
         setters.setPreviousAssistantOutputMode(saved.previousAssistantOutputMode);
       }
@@ -261,8 +246,6 @@ export function useStoryTranslatorPersistence(
       values.selectedChapterId,
       values.readingTheme,
       values.chapterScrollPositions,
-      values.memoryEnabled,
-      values.memoryTopK,
       values.previousAssistantOutputMode,
       values.previousAssistantOutputChapterCount,
       values.autoSaveSentPrompt

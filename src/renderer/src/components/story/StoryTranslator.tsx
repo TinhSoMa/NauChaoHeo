@@ -4,26 +4,20 @@ import {
   STORY_IPC_CHANNELS,
   type StoryStreamChunk,
 } from '@shared/types';
-import {
-  MEMORY_CONTEXT_IPC_CHANNELS,
-  type MemoryContextHealthResult,
-  type MemoryContextStatsResult
-} from '../../../../shared/types/memoryContext';
 import type {
+  OperationType,
   StoryReadingTheme,
   StoryChapterMethod,
-  StoryMemoryRuntimeState,
   StoryPromptSaveSettings,
   StoryPreviousAssistantOutputMode,
   StoryStatus,
-  StorySummaryMemoryRuntimeState,
   StoryTranslationMethod
 } from './types';
 import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, Download, AlertTriangle } from 'lucide-react';
+import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, AlertTriangle } from 'lucide-react';
 import { extractTranslatedTitle } from './utils/chapterUtils';
 import { useChapterSelection } from './hooks/useChapterSelection';
 import { useTokenManagement } from './hooks/useTokenManagement';
@@ -32,7 +26,6 @@ import { useProxySettings } from './hooks/useProxySettings';
 import { useStoryFileManagement } from './hooks/useStoryFileManagement';
 import { useStoryTranslation } from './hooks/useStoryTranslation';
 import { useStoryBatchTranslation } from './hooks/useStoryBatchTranslation';
-import { useStoryExport } from './hooks/useStoryExport';
 import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
@@ -50,32 +43,8 @@ const getInitialViewportWidth = (): number => {
   return window.innerWidth;
 };
 
-const DEFAULT_MEMORY_TOP_K = 6;
 
-const computeStoryMemoryNamespace = async (
-  projectId: string,
-  filePath: string,
-  prefix: 'story' | 'story-summary' = 'story'
-): Promise<string> => {
-  const source = filePath.trim() || '__default_story__';
-  const encoded = new TextEncoder().encode(source);
-  const digest = await window.crypto.subtle.digest('SHA-1', encoded);
-  const hash = Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 12);
-  return `${prefix}:${projectId}:${hash}`;
-};
 
-const formatMemoryUnavailableMessage = (health: MemoryContextHealthResult | null): string => {
-  const errorCode = health?.details?.errorCode;
-  if (errorCode && errorCode.startsWith('EMBEDDED_')) {
-    return `Memory mode chưa sẵn sàng.\n\nRuntime memory đóng gói bị thiếu hoặc hỏng (${errorCode}).\nVui lòng cài lại app hoặc build lại installer.`;
-  }
-  return health?.warning
-    ? `Memory mode chưa sẵn sàng.\n\n${health.warning}`
-    : 'Memory mode chưa sẵn sàng.\n\nCài runtime:\n- pip install mem0ai[nlp]\n- python -m spacy download xx_ent_wiki_sm';
-};
 
 export function StoryTranslator() {
   const { projectId } = useProjectContext();
@@ -87,6 +56,7 @@ export function StoryTranslator() {
     () => GEMINI_MODEL_LIST.map((m: { id: string; label: string }) => ({ value: m.id, label: m.label }))
   );
   const [translationMethod, setTranslationMethod] = useState<StoryTranslationMethod>('api');
+  const [activeOperation, setActiveOperation] = useState<OperationType>('idle');
   const [status, setStatus] = useState<StoryStatus>('idle');
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -100,14 +70,6 @@ export function StoryTranslator() {
   const [viewMode, setViewMode] = useState<'original' | 'translated' | 'summary'>('original');
   const [isGeminiWebQueueEnabled, setIsGeminiWebQueueEnabled] = useState(false);
   const [webQueueMode, setWebQueueMode] = useState<StoryWebQueueMode>('multi_auto');
-  const [memoryEnabled, setMemoryEnabled] = useState(false);
-  const [memoryTopK, setMemoryTopK] = useState(DEFAULT_MEMORY_TOP_K);
-  const [memoryNamespace, setMemoryNamespace] = useState<string>('');
-  const [summaryMemoryNamespace, setSummaryMemoryNamespace] = useState<string>('');
-  const [memoryStatus, setMemoryStatus] = useState<StoryMemoryRuntimeState['status']>('error');
-  const [memoryHealth, setMemoryHealth] = useState<MemoryContextHealthResult | null>(null);
-  const [memoryStats, setMemoryStats] = useState<MemoryContextStatsResult | null>(null);
-  const [isClearingMemory, setIsClearingMemory] = useState(false);
   const [autoSaveSentPrompt, setAutoSaveSentPrompt] = useState(false);
   const [previousAssistantOutputMode, setPreviousAssistantOutputMode] =
     useState<StoryPreviousAssistantOutputMode>('sampled');
@@ -115,29 +77,6 @@ export function StoryTranslator() {
   const [geminiStreamingEnabled, setGeminiStreamingEnabled] = useState(true);
   const [streamingContent, setStreamingContent] = useState<ReadonlyMap<string, string>>(new Map());
   const [streamingErrors, setStreamingErrors] = useState<ReadonlyMap<string, string>>(new Map());
-  void memoryStats;
-  const isMemoryFeatureEnabled = Boolean(projectId && memoryEnabled);
-  const isSummaryMemoryFeatureEnabled = isMemoryFeatureEnabled;
-  const memoryRuntimeSettings = useMemo<StoryMemoryRuntimeState>(() => ({
-    enabled: isMemoryFeatureEnabled,
-    topK: memoryTopK,
-    namespace: memoryNamespace || undefined,
-    status: memoryStatus
-  }), [isMemoryFeatureEnabled, memoryNamespace, memoryStatus, memoryTopK]);
-  const summaryMemoryRuntimeSettings = useMemo<StorySummaryMemoryRuntimeState>(() => ({
-    enabled: isSummaryMemoryFeatureEnabled,
-    topK: memoryTopK,
-    namespace: summaryMemoryNamespace || undefined,
-    status: memoryStatus,
-    readFromTranslationMemory: true,
-    translationNamespace: memoryNamespace || undefined
-  }), [
-    isSummaryMemoryFeatureEnabled,
-    memoryTopK,
-    memoryNamespace,
-    memoryStatus,
-    summaryMemoryNamespace
-  ]);
   const promptSaveSettings = useMemo<StoryPromptSaveSettings>(() => ({
     autoSaveSentPrompt,
     previousAssistantOutputMode,
@@ -227,10 +166,10 @@ export function StoryTranslator() {
     setTokenContexts,
     projectId,
     filePath,
-    memorySettings: memoryRuntimeSettings,
-    forceSequential: isMemoryFeatureEnabled,
+    forceSequential: false,
     promptSaveSettings,
-    streamingEnabled: geminiStreamingEnabled
+    streamingEnabled: geminiStreamingEnabled,
+    setActiveOperation
   });
 
   const {
@@ -258,13 +197,17 @@ export function StoryTranslator() {
     setChapterMethods,
     projectId,
     filePath,
-    memorySettings: memoryRuntimeSettings,
-    forceSequential: isMemoryFeatureEnabled,
-    promptSaveSettings
+    forceSequential: false,
+    promptSaveSettings,
+    setActiveOperation
   });
 
   // Single translation hook (using processingChapters from batch hook)
-  const translation = useStoryTranslation({
+  const {
+    handleTranslate: handleSingleTranslate,
+    handleStopSingle,
+    isSingleTranslating
+  } = useStoryTranslation({
     chapters,
     sourceLang,
     targetLang,
@@ -287,9 +230,9 @@ export function StoryTranslator() {
     summaries,
     projectId,
     filePath,
-    memorySettings: memoryRuntimeSettings,
     promptSaveSettings,
-    streamingEnabled: geminiStreamingEnabled
+    streamingEnabled: geminiStreamingEnabled,
+    setActiveOperation
   });
 
   // Project state persistence
@@ -314,8 +257,6 @@ export function StoryTranslator() {
       summaryTitles,
       readingTheme,
       chapterScrollPositions,
-      memoryEnabled,
-      memoryTopK,
       previousAssistantOutputMode,
       previousAssistantOutputChapterCount,
       autoSaveSentPrompt
@@ -340,129 +281,12 @@ export function StoryTranslator() {
       setReadingTheme,
       setChapterScrollPositions,
       setChapters,
-      setMemoryEnabled,
-      setMemoryTopK,
       setPreviousAssistantOutputMode,
       setPreviousAssistantOutputChapterCount,
       setAutoSaveSentPrompt
     },
     fileManagement.parseFile
   );
-
-  useEffect(() => {
-    let active = true;
-    if (!projectId || !filePath.trim()) {
-      setMemoryNamespace('');
-      setSummaryMemoryNamespace('');
-      return;
-    }
-
-    computeStoryMemoryNamespace(projectId, filePath)
-      .then((namespace) => {
-        if (active) {
-          setMemoryNamespace(namespace);
-        }
-      })
-      .catch((error) => {
-        console.warn('[StoryTranslator] Failed to compute memory namespace:', error);
-        if (active) {
-          setMemoryNamespace('');
-        }
-      });
-
-    computeStoryMemoryNamespace(projectId, filePath, 'story-summary')
-      .then((namespace) => {
-        if (active) {
-          setSummaryMemoryNamespace(namespace);
-        }
-      })
-      .catch((error) => {
-        console.warn('[StoryTranslator] Failed to compute summary memory namespace:', error);
-        if (active) {
-          setSummaryMemoryNamespace('');
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [filePath, projectId]);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const result = await window.electronAPI.invoke(
-          MEMORY_CONTEXT_IPC_CHANNELS.GET_HEALTH
-        ) as MemoryContextHealthResult;
-        if (!active) return;
-        setMemoryHealth(result);
-        if (!result.success || !result.pythonOk || !result.mem0Ok || !result.spacyOk || !result.spacyModelOk) {
-          setMemoryStatus('missing_runtime');
-          return;
-        }
-        setMemoryStatus(result.providerConfigured ? 'ready' : 'missing_provider');
-      } catch (error) {
-        if (!active) return;
-        setMemoryHealth(null);
-        setMemoryStatus('error');
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    if (!projectId || !memoryNamespace) {
-      setMemoryStats(null);
-      return;
-    }
-
-    (async () => {
-      try {
-        const result = await window.electronAPI.invoke(
-          MEMORY_CONTEXT_IPC_CHANNELS.GET_STATS,
-          {
-            projectId,
-            feature: 'story.translation',
-            namespace: memoryNamespace
-          }
-        ) as MemoryContextStatsResult;
-        if (active) {
-          setMemoryStats(result);
-        }
-      } catch (error) {
-        if (active) {
-          setMemoryStats(null);
-        }
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [memoryNamespace, projectId, translatedChapters]);
-
-  useEffect(() => {
-    if (!projectId && memoryEnabled) {
-      setMemoryEnabled(false);
-    }
-  }, [memoryEnabled, projectId]);
-
-  useEffect(() => {
-    if (!isMemoryFeatureEnabled) {
-      return;
-    }
-    if (translationMethod === 'api_gemini_webapi_queue') {
-      setTranslationMethod(isGeminiWebQueueEnabled ? 'gemini_webapi_queue' : 'api');
-    }
-    if (webQueueMode !== 'sequential') {
-      setWebQueueMode('sequential');
-    }
-  }, [isGeminiWebQueueEnabled, isMemoryFeatureEnabled, translationMethod, webQueueMode]);
 
   useEffect(() => {
     chapterScrollPositionsRef.current = new Map(chapterScrollPositions);
@@ -685,17 +509,6 @@ export function StoryTranslator() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [goToAdjacentChapter, isReaderMode, scrollReaderByPage]);
 
-  // Export ebook hook
-  const { exportStatus, handleExportEbook } = useStoryExport({
-    translatedChapters,
-    translatedTitles,
-    chapters,
-    sourceLang,
-    targetLang,
-    filePath,
-    projectId
-  });
-
   // Summary generation hook
   const { 
     isGenerating: isGeneratingSummary, 
@@ -727,7 +540,6 @@ export function StoryTranslator() {
     useProxy,
     projectId,
     filePath,
-    memorySettings: summaryMemoryRuntimeSettings,
     loadConfigurations,
     getPreferredTokenConfig,
     setProcessingChapters,
@@ -735,7 +547,8 @@ export function StoryTranslator() {
       tokenConfigs,
       getDistinctActiveTokenConfigs,
       previousAssistantOutputMode,
-      promptSaveSettings
+      promptSaveSettings,
+      setActiveOperation
     });
   
   // Debug logging
@@ -896,22 +709,12 @@ export function StoryTranslator() {
   }, [setProcessingChapters]);
 
   const handleTranslate = async () => {
-    await translation.handleTranslate(selectedChapterId);
+    await handleSingleTranslate(selectedChapterId);
   };
 
   const handleTranslateAllByMethod = async () => {
     if (isQueueMethodSelected && !isGeminiWebQueueEnabled) {
       alert('Gemini WebAPI Queue hiện đang tắt. Vui lòng chọn mode khác.');
-      return;
-    }
-
-    if (isMemoryFeatureEnabled && memoryStatus === 'missing_runtime') {
-      alert(formatMemoryUnavailableMessage(memoryHealth));
-      return;
-    }
-
-    if (isMemoryFeatureEnabled && isQueueMethodSelected) {
-      await handleTranslateAllWebQueue();
       return;
     }
 
@@ -955,73 +758,7 @@ export function StoryTranslator() {
     await fileManagement.handleBrowse();
   };
 
-  const handleClearMemoryNamespace = useCallback(async () => {
-    if (!projectId || !memoryNamespace || isClearingMemory) {
-      return;
-    }
-    setIsClearingMemory(true);
-    try {
-      const result = await window.electronAPI.invoke(
-        MEMORY_CONTEXT_IPC_CHANNELS.CLEAR_NAMESPACE,
-        {
-          projectId,
-          feature: 'story.translation',
-          namespace: memoryNamespace
-        }
-      ) as { success: boolean; clearedCount?: number; error?: string };
-      if (!result.success) {
-        alert(`Không thể xóa memory context: ${result.error || 'Lỗi không xác định'}`);
-      }
-      const stats = await window.electronAPI.invoke(
-        MEMORY_CONTEXT_IPC_CHANNELS.GET_STATS,
-        {
-          projectId,
-          feature: 'story.translation',
-          namespace: memoryNamespace
-        }
-      ) as MemoryContextStatsResult;
-      setMemoryStats(stats);
-    } catch (error) {
-      alert(`Không thể xóa memory context: ${String(error)}`);
-    } finally {
-      setIsClearingMemory(false);
-    }
-  }, [isClearingMemory, memoryNamespace, projectId]);
 
-  const handleClearSummaryMemoryNamespace = useCallback(async () => {
-    if (!projectId || !summaryMemoryNamespace || isClearingMemory) {
-      return;
-    }
-    setIsClearingMemory(true);
-    try {
-      const result = await window.electronAPI.invoke(
-        MEMORY_CONTEXT_IPC_CHANNELS.CLEAR_NAMESPACE,
-        {
-          projectId,
-          feature: 'story.summary',
-          namespace: summaryMemoryNamespace
-        }
-      ) as { success: boolean; error?: string };
-      if (!result.success) {
-        alert(`Không thể xóa summary memory: ${result.error || 'Lỗi không xác định'}`);
-      }
-    } catch (error) {
-      alert(`Không thể xóa summary memory: ${String(error)}`);
-    } finally {
-      setIsClearingMemory(false);
-    }
-  }, [isClearingMemory, projectId, summaryMemoryNamespace]);
-
-  const ensureSummaryMemoryRuntimeReady = useCallback(() => {
-    if (!isSummaryMemoryFeatureEnabled) {
-      return true;
-    }
-    if (memoryStatus === 'missing_runtime') {
-      alert(formatMemoryUnavailableMessage(memoryHealth));
-      return false;
-    }
-    return true;
-  }, [isSummaryMemoryFeatureEnabled, memoryHealth, memoryStatus]);
 
   const compactModelLabel = (label: string): string => {
     const raw = (label || '').trim();
@@ -1033,60 +770,63 @@ export function StoryTranslator() {
       .trim();
   };
 
-  // const LANG_OPTIONS = [
-  //   { value: 'auto', label: 'Tự động phát hiện' },
-  //   { value: 'en', label: 'Tiếng Anh (English)' },
-  //   { value: 'vi', label: 'Tiếng Việt (Vietnamese)' },
-  //   { value: 'zh', label: 'Tiếng Trung (Chinese)' },
-  //   { value: 'ja', label: 'Tiếng Nhật (Japanese)' },
-  //   { value: 'ko', label: 'Tiếng Hàn (Korean)' },
-  // ];
+  const LANG_OPTIONS = [
+    { value: 'auto', label: 'Tự động' },
+    { value: 'en', label: 'English' },
+    { value: 'vi', label: 'Tiếng Việt' },
+    { value: 'zh', label: '中文' },
+    { value: 'ja', label: '日本語' },
+    { value: 'ko', label: '한국어' },
+  ];
 
   return (
     <div className={`flex flex-col w-full h-full min-h-0 overflow-hidden ${isReaderMode ? 'gap-0' : 'gap-3'}`}>
-      {/* Configuration Section */}
+      {/* Toolbar */}
       {!isReaderMode && (
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-2 p-2.5 bg-card border border-border rounded-xl shrink-0 overflow-hidden">
-        <div className="md:col-span-3 flex flex-col gap-1 min-w-0">
-           <label className="text-sm font-medium text-text-secondary">File</label>
-           <div className="flex gap-2">
-             <Input 
-               placeholder="Chọn file" 
-               value={filePath}
-               onChange={(e) => setFilePath(e.target.value)}
-               containerClassName="flex-1"
-             />
-             <Button
-               onClick={handleBrowse}
-               variant="secondary"
-               className="shrink-0 h-8 px-2 text-xs"
-               disabled={status === 'running'}
-               title={status === 'running' ? 'Đang chạy tiến trình, tạm thời không đổi file' : 'Chọn file truyện'}
-             >
-               <FileText size={16} />
-             </Button>
-           </div>
-        </div>
+      <div className="flex flex-col gap-1.5 p-3 bg-card border border-border rounded-xl shrink-0 overflow-hidden">
+        {/* Row 1: Controls (file, lang, model, mode, stream) */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {/* File */}
+          <div className="flex items-center gap-1">
+            <FileText size={15} className="text-text-secondary shrink-0" />
+            <Input
+              placeholder="Chọn file"
+              value={filePath}
+              onChange={(e) => setFilePath(e.target.value)}
+              containerClassName="w-44"
+            />
+            <Button
+              onClick={handleBrowse}
+              variant="secondary"
+              className="shrink-0 h-7 px-2 text-2xs"
+              disabled={status === 'running'}
+              title={status === 'running' ? 'Đang chạy tiến trình, tạm thời không đổi file' : 'Chọn file truyện'}
+            >
+              Browse
+            </Button>
+          </div>
 
-        {/* <div className="md:col-span-2">
-          <Select
-            label="Ngôn ngữ gốc"
-            value={sourceLang}
-            onChange={(e) => setSourceLang(e.target.value)}
-            options={LANG_OPTIONS}
-          />
-        </div>
+          {/* Language pair */}
+          <div className="flex items-center gap-1">
+            <span className="text-2xs text-text-secondary uppercase tracking-wider">Từ</span>
+            <Select
+              value={sourceLang}
+              onChange={(e) => setSourceLang(e.target.value)}
+              options={LANG_OPTIONS}
+              variant="small"
+              containerClassName="w-16"
+            />
+            <span className="text-2xs text-text-secondary">→</span>
+            <Select
+              value={targetLang}
+              onChange={(e) => setTargetLang(e.target.value)}
+              options={LANG_OPTIONS}
+              variant="small"
+              containerClassName="w-16"
+            />
+          </div>
 
-        <div className="md:col-span-2 min-w-0">
-           <Select
-            label="Ngôn ngữ đích"
-            value={targetLang}
-            onChange={(e) => setTargetLang(e.target.value)}
-            options={LANG_OPTIONS}
-          />
-        </div> */}
-
-        <div className="md:col-span-2">
+          {/* Model */}
           <Select
             label="Model"
             value={model}
@@ -1095,241 +835,92 @@ export function StoryTranslator() {
               value: m.value,
               label: compactModelLabel(m.label)
             }))}
+            variant="small"
+            containerClassName="w-32"
           />
-        </div>
 
-        <div className="md:col-span-1 min-w-0">
-          <Select
-            label="Mode"
-            value={translationMethod}
-            onChange={(e) => setTranslationMethod(e.target.value as StoryTranslationMethod)}
-            options={[
-              { value: 'api', label: 'API' },
-              { value: 'token', label: 'IMPIT Token' },
-              ...(isGeminiWebQueueEnabled
-                ? [
-                    { value: 'gemini_webapi_queue', label: 'Gemini WebAPI Queue' },
-                    ...(isMemoryFeatureEnabled ? [] : [{ value: 'api_gemini_webapi_queue', label: 'Kết hợp (API + Queue)' }])
-                  ]
-                : [])
-            ]}
-          />
-        </div>
-
-        {isGeminiWebQueueEnabled && isQueueMethodSelected && (
-          <div className="md:col-span-2 min-w-0">
-            <label className="text-xs text-text-secondary mb-1 block">Queue</label>
-            <select
-              value={webQueueMode}
-              onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
-              disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running' || isMemoryFeatureEnabled}
-              className="h-8 px-2 rounded-md border border-border bg-card text-text-primary text-xs w-full"
-            >
-              <option value="multi_auto">Auto</option>
-              <option value="sequential">Tuần tự</option>
-            </select>
-            {isMemoryFeatureEnabled ? (
-              <span className="text-2xs text-text-secondary block mt-1">
-                Memory mode bật: ép chạy tuần tự để chỉ dùng context từ chapter trước.
-              </span>
-            ) : webQueueMode === 'multi_auto' && (
-              <span className="text-2xs text-text-secondary block mt-1">
-                {isWebQueueTranslating
-                  ? `Auto workers: ${webQueueResolvedWorkerCount ?? 3}`
-                  : 'Tự điều phối'}
+          {/* Mode + Queue (inline group) */}
+          <div className="flex items-center gap-1">
+            <Select
+              label="Mode"
+              value={translationMethod}
+              onChange={(e) => setTranslationMethod(e.target.value as StoryTranslationMethod)}
+              options={[
+                { value: 'api', label: 'API' },
+                { value: 'token', label: 'IMPIT' },
+                ...(isGeminiWebQueueEnabled
+                  ? [
+                      { value: 'gemini_webapi_queue', label: 'Queue' },
+                      { value: 'api_gemini_webapi_queue', label: 'API+Queue' }
+                    ]
+                  : [])
+              ]}
+              variant="small"
+              containerClassName="w-20"
+            />
+            {isGeminiWebQueueEnabled && isQueueMethodSelected && (
+              <select
+                value={webQueueMode}
+                onChange={(e) => setWebQueueMode(e.target.value as StoryWebQueueMode)}
+                disabled={isWebQueueTranslating || isWebQueueStopping || status === 'running'}
+                className="h-7 px-1.5 rounded-md border border-border bg-card text-text-primary text-2xs"
+              >
+                <option value="multi_auto">Auto</option>
+                <option value="sequential">Tuần tự</option>
+              </select>
+            )}
+            {isGeminiWebQueueEnabled && isQueueMethodSelected && webQueueMode === 'multi_auto' && isWebQueueTranslating && (
+              <span className="text-2xs text-text-secondary whitespace-nowrap">
+                ({webQueueResolvedWorkerCount ?? 3}w)
               </span>
             )}
           </div>
-        )}
 
-        <div className="md:col-span-12 rounded-xl border border-border/70 bg-muted/20 p-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-text-primary">Memory Context</div>
-              <div className="text-xs text-text-secondary">
-                Query ký ức từ các chapter trước và bơm vào prompt dịch, tóm tắt.
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-xs text-text-primary">
-                <input
-                  type="checkbox"
-                  checked={memoryEnabled}
-                  disabled={status === 'running' || !projectId}
-                  onChange={(event) => setMemoryEnabled(event.target.checked)}
-                />
-                Bật memory mode
-              </label>
-
-              <label className="flex items-center gap-2 text-xs text-text-primary">
-                <span>Top K</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={memoryTopK}
-                  disabled={status === 'running' || !projectId}
-                  onChange={(event) => setMemoryTopK(Math.max(1, Math.min(20, Math.floor(Number(event.target.value) || 1))))}
-                  className="h-8 w-16 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
-                />
-              </label>
-
+          {/* Streaming toggle */}
+          {translationMethod === 'api' && (
+            <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
               <button
                 type="button"
-                onClick={handleClearMemoryNamespace}
-                disabled={status === 'running' || !projectId || !memoryNamespace || isClearingMemory}
-                className="h-8 rounded-md border border-border px-3 text-xs text-text-primary disabled:opacity-50"
-              >
-                {isClearingMemory ? 'Đang xóa...' : 'Clear memory'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleClearSummaryMemoryNamespace}
-                disabled={status === 'running' || !projectId || !summaryMemoryNamespace || isClearingMemory}
-                className="h-8 rounded-md border border-border px-3 text-xs text-text-primary disabled:opacity-50"
-              >
-                {isClearingMemory ? 'Đang xóa...' : 'Clear summary'}
-              </button>
-
-              {chapters.length > 0 && (
-                <span className="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full whitespace-nowrap">
-                  Đã dịch: {translatedChapters.size}/{chapters.length} chương
-                </span>
-              )}
-
-              {translatedChapters.size > 0 && (
-                <Button
-                  onClick={handleExportEbook}
-                  variant="primary"
-                  disabled={exportStatus === 'exporting'}
-                  className="h-8 px-3 text-xs shrink-0"
-                >
-                  <Download size={14} />
-                  {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button
-                onClick={handleTranslate}
-                variant="secondary"
-                disabled={!filePath || status === 'running' || !selectedChapterId}
-                className="h-8 px-2.5 text-xs shrink-0"
-                title="Dịch chương đang chọn"
-              >
-                <BookOpen size={16} />
-                Dịch 1
-              </Button>
-              <Button
                 onClick={() => {
-                  if (!ensureSummaryMemoryRuntimeReady()) {
-                    return;
-                  }
-                  handleGenerateSummary(selectedChapterId);
+                  const next = !geminiStreamingEnabled;
+                  setGeminiStreamingEnabled(next);
+                  window.electronAPI.appSettings.update({ geminiStreamingEnabled: next } as any).catch(() => {});
                 }}
-                variant="secondary"
-                disabled={!filePath || status === 'running' || !selectedChapterId || !translatedChapters.has(selectedChapterId) || isGeneratingSummary}
-                className="h-8 px-2.5 text-xs shrink-0"
-                title="Tóm tắt chương đang chọn"
+                disabled={status === 'running'}
+                className={`w-7 h-4 rounded-full transition-colors duration-300 relative ${
+                  geminiStreamingEnabled ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+                } ${status === 'running' ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <FileText size={16} />
-                {isGeneratingSummary ? 'Đang tóm...' : 'Tóm 1'}
-              </Button>
-            </div>
+                <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow-md transition-transform duration-300 ${
+                  geminiStreamingEnabled ? 'translate-x-3' : 'translate-x-0'
+                }`} />
+              </button>
+              <span className="text-2xs text-text-secondary">Stream</span>
+            </label>
+          )}
 
-            <div className="flex flex-wrap items-center gap-1.5 justify-end">
-              {isGeneratingSummary && batchSummaryProgress ? (
-                <Button
-                  onClick={stopSummaryGeneration}
-                  variant="secondary"
-                  className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-                  title="Dừng tóm tắt batch hiện tại"
-                >
-                  <StopCircle size={16} />
-                  {isSummaryStopping
-                    ? `Đang dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`
-                    : `Dừng TT (${batchSummaryProgress?.current}/${batchSummaryProgress?.total})`}
-                </Button>
-              ) : (isBatchTranslating || isWebQueueTranslating) && combinedBatchProgress ? (
-                <Button
-                  onClick={handleStopBatchByMethod}
-                  variant="secondary"
-                  className="h-8 px-2.5 text-xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-                  title="Dừng dịch batch hiện tại"
-                >
-                  <StopCircle size={16} />
-                  {isBatchStopping || isWebQueueStopping
-                    ? `Đang dừng Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`
-                    : `Dừng Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`}
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    variant="primary"
-                    onClick={handleTranslateAllByMethod}
-                    className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
-                    disabled={
-                      !filePath ||
-                      isGeneratingSummary ||
-                      isSummaryStopping ||
-                      isBatchStopping ||
-                      isWebQueueStopping ||
-                      status === 'running'
-                    }
-                    title="Dịch batch theo Mode đã chọn"
-                  >
-                    <FileText size={16} />
-                    Dịch
-                  </Button>
+          <div className="ml-auto" />
 
-                  <Button
-                    variant="secondary"
-                    onClick={
-                      isGeneratingSummary
-                        ? stopSummaryGeneration
-                        : async () => {
-                            if (!ensureSummaryMemoryRuntimeReady()) {
-                              return;
-                            }
-                            await handleGenerateAllSummaries();
-                          }
-                    }
-                    className="flex items-center gap-1.5 h-8 px-3 text-xs shrink-0"
-                    disabled={isBatchTranslating || isBatchStopping || isWebQueueTranslating || isWebQueueStopping || (status !== 'idle' && !isGeneratingSummary)}
-                    title="Tóm tắt các chương đã dịch nhưng chưa có tóm tắt"
-                  >
-                    {isGeneratingSummary ? <StopCircle size={16} /> : <Sparkles size={16} />}
-                    {isGeneratingSummary ? (isSummaryStopping ? 'Đang dừng tóm' : 'Dừng tóm') : 'Tóm tất cả'}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-            <label className="flex items-center gap-2">
-              <span>Previous output</span>
+          {/* Previous output + Chapters (inline, compact) */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1">
+              <span className="text-2xs text-text-secondary">Prev</span>
               <select
                 value={previousAssistantOutputMode}
                 onChange={(e) => setPreviousAssistantOutputMode(e.target.value as StoryPreviousAssistantOutputMode)}
-                className="h-8 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+                className="h-7 rounded border border-border bg-card px-1.5 text-2xs text-text-primary"
                 disabled={status === 'running'}
               >
                 <option value="sampled">Sampled</option>
                 <option value="full">Full</option>
               </select>
             </label>
-            <label className="flex items-center gap-2">
-              <span>Previous chapters</span>
+            <label className="flex items-center gap-1">
+              <span className="text-2xs text-text-secondary">Ch</span>
               <select
                 value={previousAssistantOutputChapterCount}
                 onChange={(e) => setPreviousAssistantOutputChapterCount(Number(e.target.value) || 1)}
-                className="h-8 rounded-md border border-border bg-card px-2 text-xs text-text-primary"
+                className="h-7 rounded border border-border bg-card px-1.5 text-2xs text-text-primary"
                 disabled={status === 'running'}
               >
                 <option value={1}>1</option>
@@ -1339,53 +930,148 @@ export function StoryTranslator() {
                 <option value={10}>10</option>
               </select>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+            <label className="flex items-center gap-1 cursor-pointer hover:text-primary">
               <input
                 type="checkbox"
                 checked={retranslateExisting}
                 onChange={(e) => setRetranslateExisting(e.target.checked)}
-                className="w-4 h-4 rounded border-border cursor-pointer"
+                className="w-3 h-3 rounded border-border cursor-pointer"
               />
-              <span>Dịch lại chương đã dịch</span>
+              <span className="text-2xs text-text-secondary">Dịch lại</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer hover:text-primary">
+            <label className="flex items-center gap-1 cursor-pointer hover:text-primary">
               <input
                 type="checkbox"
                 checked={autoSaveSentPrompt}
                 onChange={(e) => setAutoSaveSentPrompt(e.target.checked)}
-                className="w-4 h-4 rounded border-border cursor-pointer"
+                className="w-3 h-3 rounded border-border cursor-pointer"
                 disabled={!projectId || status === 'running'}
               />
-              <span>Tự động lưu prompt</span>
+              <span className="text-2xs text-text-secondary">Auto save</span>
             </label>
-            {translationMethod === 'api' && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !geminiStreamingEnabled;
-                    setGeminiStreamingEnabled(next);
-                    window.electronAPI.appSettings.update({ geminiStreamingEnabled: next } as any).catch(() => {});
-                  }}
-                  disabled={status === 'running'}
-                  className={`w-11 h-6 rounded-full transition-colors duration-300 relative shrink-0 ${
-                    geminiStreamingEnabled ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-                  } ${status === 'running' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-300 ${
-                    geminiStreamingEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`} />
-                </button>
-                <span className="text-xs text-text-primary">Streaming</span>
-              </label>
-            )}
-            {selectedChapterId && streamingErrors.has(selectedChapterId) && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-red-500/10 border border-red-500/30 text-red-400">
-                <AlertTriangle size={14} className="shrink-0" />
-                <span className="whitespace-nowrap">{streamingErrors.get(selectedChapterId)}</span>
-              </div>
-            )}
           </div>
+        </div>
+
+        {/* Row 2: Action buttons + errors */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Single actions */}
+          {isSingleTranslating ? (
+            <Button
+              onClick={handleStopSingle}
+              variant="secondary"
+              className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng dịch chương"
+            >
+              <StopCircle size={12} />
+              {activeOperation === 'translating' ? 'Đang dịch...' : 'Đang tóm...'}
+            </Button>
+          ) : (
+            <Button
+              onClick={handleTranslate}
+              variant="secondary"
+              disabled={!filePath || (activeOperation !== 'idle') || !selectedChapterId}
+              className="h-7 px-2 text-2xs shrink-0"
+              title="Dịch chương đang chọn"
+            >
+              <BookOpen size={12} />
+              Dịch 1
+            </Button>
+          )}
+          {isGeneratingSummary && !batchSummaryProgress ? (
+            <Button
+              onClick={stopSummaryGeneration}
+              variant="secondary"
+              className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng tóm tắt chương"
+            >
+              <StopCircle size={12} />
+              Đang tóm...
+            </Button>
+          ) : (
+            <Button
+              onClick={() => handleGenerateSummary(selectedChapterId)}
+              variant="secondary"
+              disabled={!filePath || activeOperation !== 'idle' || !selectedChapterId || !translatedChapters.has(selectedChapterId)}
+              className="h-7 px-2 text-2xs shrink-0"
+              title="Tóm tắt chương đang chọn"
+            >
+              <FileText size={12} />
+              Tóm 1
+            </Button>
+          )}
+
+          <div className="w-px h-5 bg-border/60 mx-1 shrink-0" />
+
+          {/* Batch actions + stop state */}
+          {isBatchTranslating || isWebQueueTranslating ? (
+            <Button
+              onClick={handleStopBatchByMethod}
+              variant="secondary"
+              className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng dịch hàng loạt"
+            >
+              <StopCircle size={12} />
+              {combinedBatchProgress
+                ? `Dịch (${combinedBatchProgress.current}/${combinedBatchProgress.total})`
+                : 'Đang dịch...'}
+            </Button>
+          ) : batchSummaryProgress ? (
+            <Button
+              onClick={stopSummaryGeneration}
+              variant="secondary"
+              className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng tóm tắt hàng loạt"
+            >
+              <StopCircle size={12} />
+              Tóm ({batchSummaryProgress.current}/{batchSummaryProgress.total})
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="primary"
+                onClick={handleTranslateAllByMethod}
+                className="h-7 px-2.5 text-2xs shrink-0"
+                disabled={
+                  !filePath ||
+                  isGeneratingSummary ||
+                  isSummaryStopping ||
+                  isBatchStopping ||
+                  isWebQueueStopping ||
+                  isSingleTranslating ||
+                  activeOperation !== 'idle'
+                }
+              >
+                Dịch
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleGenerateAllSummaries}
+                className="h-7 px-2.5 text-2xs shrink-0"
+                disabled={
+                  !filePath ||
+                  isBatchTranslating ||
+                  isWebQueueTranslating ||
+                  isBatchStopping ||
+                  isWebQueueStopping ||
+                  isSingleTranslating ||
+                  isGeneratingSummary ||
+                  isSummaryStopping ||
+                  activeOperation !== 'idle'
+                }
+              >
+                <Sparkles size={12} />
+                Tóm tất cả
+              </Button>
+            </>
+          )}
+
+          {/* Streaming error */}
+          {selectedChapterId && streamingErrors.has(selectedChapterId) && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-2xs ml-auto">
+              <AlertTriangle size={10} className="shrink-0" />
+              <span className="truncate max-w-48">{streamingErrors.get(selectedChapterId)}</span>
+            </div>
+          )}
         </div>
       </div>
       )}
