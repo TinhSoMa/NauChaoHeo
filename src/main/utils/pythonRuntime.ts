@@ -36,10 +36,6 @@ export interface PythonModuleAvailabilityResult {
     | 'PYTHON_MODULE_MISSING'
     | 'EMBEDDED_PYTHON_MISSING'
     | 'EMBEDDED_WORKER_MISSING'
-    | 'EMBEDDED_MEM0_MISSING'
-    | 'EMBEDDED_SPACY_MISSING'
-    | 'EMBEDDED_SPACY_MODEL_MISSING'
-    | 'EMBEDDED_UNDERTHESEA_MISSING'
     | 'EMBEDDED_RUNTIME_BROKEN';
 }
 
@@ -260,7 +256,7 @@ export async function checkPythonModuleAvailability(
     runtime: lastModuleFailure?.runtime,
     mode: lastModuleFailure?.runtime.mode ?? 'system',
     modules: lastModuleFailure?.modules,
-    errorCode: classifyModuleAvailabilityError(lastModuleFailure?.runtime, lastModuleFailure?.modules),
+    errorCode: classifyModuleAvailabilityError(lastModuleFailure?.runtime),
     error:
       lastModuleFailure?.detail ||
       `Thiếu module Python: ${normalizedModules.join(', ')}. Hãy cài lại bằng pip theo runtime đang dùng.`,
@@ -323,18 +319,8 @@ async function resolvePythonRuntimeCandidates(preferredVersion: string): Promise
 
 function classifyModuleAvailabilityError(
   runtime: PythonRuntimeResolution | undefined,
-  modules: Record<string, boolean> | undefined
 ): PythonModuleAvailabilityResult['errorCode'] {
   if (app.isPackaged && runtime?.mode === 'embedded') {
-    if (modules?.mem0 === false) {
-      return 'EMBEDDED_MEM0_MISSING';
-    }
-    if (modules?.spacy === false) {
-      return 'EMBEDDED_SPACY_MISSING';
-    }
-    if (modules?.underthesea === false) {
-      return 'EMBEDDED_UNDERTHESEA_MISSING';
-    }
     return 'EMBEDDED_RUNTIME_BROKEN';
   }
   return 'PYTHON_MODULE_MISSING';
