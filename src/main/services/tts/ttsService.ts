@@ -1771,7 +1771,9 @@ async function runEdgeTtsWorker(
     });
 
     proc.stderr?.on('data', (data) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      console.warn(`[TTS][EDGE][stderr] ${chunk.trimEnd()}`);
     });
 
     proc.on('close', (code) => {

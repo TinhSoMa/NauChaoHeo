@@ -1,14 +1,23 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -16,6 +25,8 @@ import (
 	"time"
 
 	edgetts "github.com/bytectlgo/edge-tts/pkg/edge_tts"
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 type workerPayload struct {
@@ -85,26 +96,420 @@ type jobExecutionStats struct {
 
 var proxyEnvMu sync.Mutex
 
+// globalTTSSem giới hạn tổng số kết nối Edge TTS đồng thời (giống Python asyncio.Semaphore(5))
+var globalTTSSem = make(chan struct{}, 5)
+
 const (
 	defaultTimeoutMs       int64 = 75000
-	defaultItemConcurrency int   = 10
+	defaultItemConcurrency int   = 4
 	minItemConcurrency     int   = 1
-	maxItemConcurrency     int   = 200
+	maxItemConcurrency     int   = 8
 	maxJobConcurrency      int   = 16
+	trustedClientToken           = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+	secMsGecVersion              = "1-143.0.3650.75"
+	wavOutputFormat              = "riff-24khz-16bit-mono-pcm"
+	clockSkewMaxRetries          = 1
+)
+
+// WebSocket headers for direct WAV connection
+var wssHeaders = http.Header{
+	"Pragma":          {"no-cache"},
+	"Cache-Control":   {"no-cache"},
+	"Origin":          {"chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"},
+	"Accept-Language": {"en-US,en;q=0.9"},
+	"User-Agent":      {"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"},
+}
+
+var (
+	clockSkewMu      sync.RWMutex
+	clockSkewSeconds float64
 )
 
 func emit(v any) {
-	line, err := json.Marshal(v)
+	data, err := json.Marshal(v)
 	if err != nil {
-		fallback, _ := json.Marshal(map[string]any{
+		data, _ = json.Marshal(map[string]any{
 			"event":   "worker_emit_error",
 			"success": false,
 			"error":   fmt.Sprintf("emit serialization failed: %v", err),
 		})
-		line = fallback
 	}
-	_, _ = os.Stdout.Write(append(line, '\n'))
+	// Escape non-ASCII to \uXXXX (giống Python ensure_ascii=True)
+	var buf bytes.Buffer
+	for _, r := range string(data) {
+		if r > 127 {
+			_, _ = fmt.Fprintf(&buf, "\\u%04x", r)
+		} else {
+			buf.WriteRune(r)
+		}
+	}
+	buf.WriteByte('\n')
+	_, _ = os.Stdout.Write(buf.Bytes())
 }
+
+// --- Utility functions ---
+
+var (
+	reLetterDigit = regexp.MustCompile(`\p{L}|\p{N}`)
+)
+
+func sanitizeText(s string) string {
+	var buf bytes.Buffer
+	for _, r := range s {
+		if r >= 0xD800 && r <= 0xDFFF {
+			continue
+		}
+		buf.WriteRune(r)
+	}
+	return buf.String()
+}
+
+func hasAnyLetterOrDigit(s string) bool {
+	return reLetterDigit.MatchString(s)
+}
+
+func looksLikeMP3Bytes(data []byte) bool {
+	if len(data) < 2 {
+		return false
+	}
+	if len(data) >= 3 && data[0] == 'I' && data[1] == 'D' && data[2] == '3' {
+		return true
+	}
+	return data[0] == 0xFF && (data[1]&0xE0) == 0xE0
+}
+
+func looksLikeMP3(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 3)
+	if _, err := io.ReadFull(f, head); err != nil {
+		return false
+	}
+	return looksLikeMP3Bytes(head)
+}
+
+func looksLikeWav(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 12)
+	if _, err := io.ReadFull(f, head); err != nil {
+		return false
+	}
+	return bytes.Equal(head[:4], []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WAVE"))
+}
+
+func generateSilentAudio(ctx context.Context, ffmpegPath, outputPath, format string) error {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	args := []string{
+		"-y", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+		"-t", "1",
+	}
+	if format == "mp3" {
+		args = append(args, "-c:a", "libmp3lame", "-b:a", "128k", outputPath)
+	} else {
+		args = append(args, "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "1", outputPath)
+	}
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := trimVisible(string(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("ffmpeg silent audio failed: %s", detail)
+	}
+	stat, err := os.Stat(outputPath)
+	if err != nil {
+		return fmt.Errorf("silent audio output missing: %w", err)
+	}
+	if stat.Size() <= 0 {
+		return errors.New("silent audio output is empty")
+	}
+	return nil
+}
+
+// --- End Utility functions ---
+
+// --- Direct WAV helpers ---
+
+func getUnixTimestamp() int64 {
+	clockSkewMu.RLock()
+	skew := clockSkewSeconds
+	clockSkewMu.RUnlock()
+	return time.Now().Unix() + int64(skew)
+}
+
+func adjustClockSkew(date string) {
+	t, err := time.Parse(time.RFC1123, date)
+	if err != nil {
+		return
+	}
+	clockSkewMu.Lock()
+	clockSkewSeconds = t.Sub(time.Now().UTC()).Seconds()
+	clockSkewMu.Unlock()
+}
+
+func generateSecMsGec() string {
+	ticks := (getUnixTimestamp() + 11644473600) * 10000000
+	ticks = ticks - (ticks % (300 * 10000000))
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%d%s", ticks, trustedClientToken)))
+	return strings.ToUpper(hex.EncodeToString(hash[:]))
+}
+
+func dateToString() string {
+	return time.Now().UTC().Format("Mon Jan 02 2006 15:04:05") + " GMT+0000 (Coordinated Universal Time)"
+}
+
+func headersWithMUID() http.Header {
+	h := http.Header{}
+	for k, v := range wssHeaders {
+		h[k] = v
+	}
+	muid := make([]byte, 16)
+	_, _ = rand.Read(muid)
+	muidStr := strings.ToUpper(hex.EncodeToString(muid))
+	h.Set("Cookie", "muid="+muidStr)
+	return h
+}
+
+func getHeadersAndData(data []byte, headerLen int) (map[string]string, []byte) {
+	headers := make(map[string]string)
+	if len(data) < 2 || headerLen < 2 {
+		return headers, nil
+	}
+	if headerLen > len(data) {
+		return headers, nil
+	}
+	for _, line := range bytes.Split(data[2:2+headerLen], []byte("\r\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		parts := bytes.SplitN(line, []byte(":"), 2)
+		if len(parts) == 2 {
+			headers[string(bytes.TrimSpace(parts[0]))] = string(bytes.TrimSpace(parts[1]))
+		}
+	}
+	if len(data) <= headerLen+2 {
+		return headers, nil
+	}
+	return headers, data[headerLen+2:]
+}
+
+func escapeXML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	s = strings.ReplaceAll(s, "'", "&apos;")
+	return s
+}
+
+func buildSSML(text, voice, rate, volume string) string {
+	return fmt.Sprintf(
+		"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>"+
+			"<voice name='%s'><prosody pitch='+0Hz' rate='%s' volume='%s'>%s</prosody></voice></speak>",
+		voice, rate, volume, escapeXML(text),
+	)
+}
+
+func synthesizeWavDirect(ctx context.Context, text, voice, rate, volume, outputPath string) error {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+		EnableCompression: true,
+	}
+
+	var conn *websocket.Conn
+	var err error
+	for attempt := 0; attempt <= clockSkewMaxRetries; attempt++ {
+		connID := uuid.New().String()
+		secGec := generateSecMsGec()
+		wsURL := fmt.Sprintf(
+			"wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=%s&ConnectionId=%s&Sec-MS-GEC=%s&Sec-MS-GEC-Version=%s",
+			trustedClientToken, connID, secGec, secMsGecVersion,
+		)
+
+		var resp *http.Response
+		conn, resp, err = dialer.DialContext(ctx, wsURL, headersWithMUID())
+		if err == nil {
+			break
+		}
+		if resp != nil {
+			if date := resp.Header.Get("Date"); date != "" {
+				adjustClockSkew(date)
+			}
+		}
+		if attempt < clockSkewMaxRetries {
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("ws dial: %w", err)
+	}
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	// Send speech.config
+	configPayload := fmt.Sprintf(
+		"X-Timestamp:%s\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n"+
+			`{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"%s"}}}}`+"\r\n",
+		dateToString(), wavOutputFormat,
+	)
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(configPayload)); err != nil {
+		return fmt.Errorf("send config: %w", err)
+	}
+
+	// Send SSML
+	ssml := fmt.Sprintf(
+		"X-RequestId:%s\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:%sZ\r\nPath:ssml\r\n\r\n%s",
+		uuid.New().String(), dateToString(), buildSSML(text, voice, rate, volume),
+	)
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(ssml)); err != nil {
+		return fmt.Errorf("send ssml: %w", err)
+	}
+
+	// Read responses
+	var audioParts [][]byte
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		msgType, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+				break
+			}
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue
+			}
+			return fmt.Errorf("read: %w", err)
+		}
+
+		if msgType == websocket.BinaryMessage {
+			if len(message) < 2 {
+				continue
+			}
+			headerLen := int(binary.BigEndian.Uint16(message[:2]))
+			if headerLen > len(message) {
+				continue
+			}
+			headers, data := getHeadersAndData(message, headerLen)
+			if path, ok := headers["Path"]; ok && path == "audio" {
+				if len(data) > 0 {
+					audioParts = append(audioParts, data)
+				}
+			}
+			continue
+		}
+
+		if msgType == websocket.TextMessage {
+			if bytes.Contains(message, []byte("Path:turn.end")) {
+				break
+			}
+		}
+	}
+
+	if len(audioParts) == 0 {
+		return fmt.Errorf("no audio data received")
+	}
+
+	merged := bytes.Join(audioParts, nil)
+	if err := os.WriteFile(outputPath, merged, 0644); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+
+	return nil
+}
+
+// --- End Direct WAV helpers ---
+
+// --- In-memory MP3 stream & pipe ---
+
+func streamMP3Bytes(ctx context.Context, safeText, voice, rate, volume string) ([]byte, error) {
+	communicate := edgetts.NewCommunicate(
+		safeText,
+		defaultIfEmpty(voice, "vi-VN-HoaiMyNeural"),
+		edgetts.WithRate(defaultIfEmpty(rate, "+0%")),
+		edgetts.WithVolume(defaultIfEmpty(volume, "+0%")),
+	)
+	ch, err := communicate.Stream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("edge-tts stream: %w", err)
+	}
+
+	var buf bytes.Buffer
+	for chunk := range ch {
+		switch chunk.Type {
+		case "audio":
+			buf.Write(chunk.Data)
+		case "error":
+			return nil, errors.New(string(chunk.Data))
+		}
+	}
+	if buf.Len() == 0 {
+		return nil, errors.New("empty mp3 audio stream")
+	}
+	return buf.Bytes(), nil
+}
+
+func pipeMP3ToWAV(ctx context.Context, ffmpegPath string, mp3Data []byte, dstPath string) error {
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return fmt.Errorf("create wav dir: %w", err)
+	}
+	args := []string{
+		"-y",
+		"-f", "mp3",
+		"-i", "pipe:0",
+		"-ac", "1",
+		dstPath,
+	}
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	cmd.Stdin = bytes.NewReader(mp3Data)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := trimVisible(string(output))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("ffmpeg pipe mp3->wav failed: %s", msg)
+	}
+	stat, err := os.Stat(dstPath)
+	if err != nil {
+		return fmt.Errorf("wav output missing: %w", err)
+	}
+	if stat.Size() <= 0 {
+		return errors.New("wav output is empty")
+	}
+	return nil
+}
+
+// --- End In-memory MP3 stream & pipe ---
 
 func normalizeWavMode(v string) string {
 	lower := strings.ToLower(strings.TrimSpace(v))
@@ -234,17 +639,6 @@ func findFFprobeCommand(ffmpegPath string) string {
 	return ""
 }
 
-func makeTempMP3Path(targetPath string) string {
-	base := filepath.Base(targetPath)
-	dir := filepath.Dir(targetPath)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
-	if name == "" {
-		name = "edge_tts"
-	}
-	stamp := time.Now().UnixNano()
-	return filepath.Join(dir, fmt.Sprintf("%s.tmp.%d.mp3", name, stamp))
-}
-
 func withProxyEnv(proxyURL string, fn func() error) error {
 	proxyURL = trimVisible(proxyURL)
 	if proxyURL == "" {
@@ -270,78 +664,11 @@ func withProxyEnv(proxyURL string, fn func() error) error {
 	return fn()
 }
 
-func runNativeEdgeTTS(ctx context.Context, job edgeJob, item edgeItem, outputPath string) error {
-	if trimVisible(item.Text) == "" {
-		return errors.New("empty text")
-	}
-	if trimVisible(outputPath) == "" {
-		return errors.New("missing output path")
-	}
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return fmt.Errorf("create output dir failed: %w", err)
-	}
-
-	communicate := edgetts.NewCommunicate(
-		item.Text,
-		defaultIfEmpty(job.Voice, "vi-VN-HoaiMyNeural"),
-		edgetts.WithRate(defaultIfEmpty(job.Rate, "+0%")),
-		edgetts.WithVolume(defaultIfEmpty(job.Volume, "+0%")),
-	)
-
-	err := communicate.Save(ctx, outputPath, "")
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return err
-		}
-		return fmt.Errorf("native edge-tts failed: %w", err)
-	}
-
-	stat, err := os.Stat(outputPath)
-	if err != nil {
-		return fmt.Errorf("native edge-tts output missing: %w", err)
-	}
-	if stat.Size() <= 0 {
-		return errors.New("native edge-tts output is empty")
-	}
-	return nil
-}
-
 func defaultIfEmpty(value string, fallback string) string {
 	if trimVisible(value) == "" {
 		return fallback
 	}
 	return value
-}
-
-func convertMP3ToWAV(ctx context.Context, ffmpegPath string, srcPath string, dstPath string) error {
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-		return fmt.Errorf("create wav dir failed: %w", err)
-	}
-	args := []string{
-		"-y",
-		"-i", srcPath,
-		"-ac", "1",
-		"-ar", "24000",
-		"-sample_fmt", "s16",
-		dstPath,
-	}
-	command := exec.CommandContext(ctx, ffmpegPath, args...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		msg := trimVisible(string(output))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("ffmpeg failed: %s", msg)
-	}
-	stat, err := os.Stat(dstPath)
-	if err != nil {
-		return fmt.Errorf("wav output missing: %w", err)
-	}
-	if stat.Size() <= 0 {
-		return errors.New("wav output is empty")
-	}
-	return nil
 }
 
 func probeAudioDurationMs(ctx context.Context, ffprobePath string, audioPath string) (int64, error) {
@@ -432,11 +759,35 @@ func processItem(
 	if outFormat == "" {
 		outFormat = "wav"
 	}
+	if outFormat != "mp3" && outFormat != "wav" {
+		res.errorText = "unsupported output format: " + outFormat
+		return res
+	}
+
+	safeText := sanitizeText(item.Text)
+	if !hasAnyLetterOrDigit(safeText) {
+		err := generateSilentAudio(ctx, ffmpegCmd, item.OutputPath, outFormat)
+		if err != nil {
+			res.errorText = err.Error()
+			return res
+		}
+		res.success = true
+		res.conversionMode = "silent"
+		return res
+	}
 
 	switch outFormat {
 	case "mp3":
-		err := runNativeEdgeTTS(ctx, job, item, item.OutputPath)
+		mp3Data, err := streamMP3Bytes(ctx, safeText, job.Voice, job.Rate, job.Volume)
 		if err != nil {
+			res.errorText = err.Error()
+			return res
+		}
+		if !looksLikeMP3Bytes(mp3Data) {
+			res.errorText = "generated audio is not valid MP3 data"
+			return res
+		}
+		if err := os.WriteFile(item.OutputPath, mp3Data, 0644); err != nil {
 			res.errorText = err.Error()
 			return res
 		}
@@ -449,19 +800,46 @@ func processItem(
 		res.conversionMode = "mp3_direct"
 		return res
 	case "wav":
-		tmpMP3 := makeTempMP3Path(item.OutputPath)
-		defer func() {
-			_ = os.Remove(tmpMP3)
-		}()
+		directTried := false
+		if wavMode == "direct" || wavMode == "auto" {
+			directTried = true
+			err := synthesizeWavDirect(ctx, safeText, job.Voice, job.Rate, job.Volume, item.OutputPath)
+			if err == nil {
+				if !looksLikeWav(item.OutputPath) {
+					err = errors.New("direct WAV output is not valid WAV data")
+				}
+			}
+			if err == nil {
+				err = validateGeneratedAudioFile(ctx, ffmpegCmd, ffprobeCmd, item.OutputPath)
+			}
+			if err == nil {
+				res.success = true
+				res.conversionMode = "direct_wav"
+				return res
+			}
+			if wavMode == "direct" {
+				res.errorText = fmt.Sprintf("direct wav failed: %v", err)
+				return res
+			}
+			// wavMode == "auto": fall through to mp3→wav fallback
+		}
 
-		err := runNativeEdgeTTS(ctx, job, item, tmpMP3)
+		mp3Data, err := streamMP3Bytes(ctx, safeText, job.Voice, job.Rate, job.Volume)
 		if err != nil {
 			res.errorText = err.Error()
 			return res
 		}
-		err = convertMP3ToWAV(ctx, ffmpegCmd, tmpMP3, item.OutputPath)
+		if !looksLikeMP3Bytes(mp3Data) {
+			res.errorText = "generated stream is not valid MP3 data"
+			return res
+		}
+		err = pipeMP3ToWAV(ctx, ffmpegCmd, mp3Data, item.OutputPath)
 		if err != nil {
 			res.errorText = err.Error()
+			return res
+		}
+		if !looksLikeWav(item.OutputPath) {
+			res.errorText = "converted audio is not valid WAV data"
 			return res
 		}
 		err = validateGeneratedAudioFile(ctx, ffmpegCmd, ffprobeCmd, item.OutputPath)
@@ -470,16 +848,14 @@ func processItem(
 			return res
 		}
 		res.success = true
-		if wavMode == "auto" || wavMode == "direct" {
+		if directTried {
 			res.conversionMode = "mp3_to_wav_fallback"
 		} else {
 			res.conversionMode = "mp3_to_wav"
 		}
 		return res
-	default:
-		res.errorText = "unsupported output format: " + outFormat
-		return res
 	}
+	return res
 }
 
 func executeJob(
@@ -487,7 +863,7 @@ func executeJob(
 	job edgeJob,
 	ffmpegCmd string,
 	ffprobeCmd string,
-	results []doneItem,
+	results map[int]doneItem,
 	resultMu *sync.Mutex,
 ) jobExecutionStats {
 	startedAt := time.Now()
@@ -506,12 +882,14 @@ func executeJob(
 
 		for _, item := range job.Items {
 			it := item
-			if it.Index <= 0 {
+			if it.Index < 0 {
 				continue
 			}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				globalTTSSem <- struct{}{}
+				defer func() { <-globalTTSSem }()
 				itemSem <- struct{}{}
 				defer func() { <-itemSem }()
 
@@ -572,17 +950,6 @@ func executeJob(
 	return stats
 }
 
-func collectOrderedResults(resultMap []doneItem) []doneItem {
-	out := make([]doneItem, 0, len(resultMap))
-	for _, item := range resultMap {
-		if item.Index <= 0 {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
 func main() {
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -618,20 +985,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "[GO_EDGE_WORKER] ffprobe not found, duration validation disabled")
 	}
 
-	maxIndex := 0
+	totalItems := 0
 	for _, job := range payload.Jobs {
-		for _, item := range job.Items {
-			if item.Index > maxIndex {
-				maxIndex = item.Index
-			}
-		}
+		totalItems += len(job.Items)
 	}
-	if maxIndex == 0 {
+	if totalItems == 0 {
 		emit(doneEvent{Event: "done", Results: []doneItem{}})
 		return
 	}
 
-	resultsMap := make([]doneItem, maxIndex+1)
+	resultsMap := make(map[int]doneItem)
 	var resultMu sync.Mutex
 	itemConcurrency := normalizeItemConcurrency(payload.ItemConcurrency)
 	jobConcurrency := normalizeJobConcurrency(len(payload.Jobs), itemConcurrency)
@@ -682,5 +1045,9 @@ func main() {
 		"[GO_EDGE_WORKER] done elapsedMs=%d totalOk=%d totalFail=%d timeoutFail=%d\n",
 		workerElapsedMs, totalOK, totalFail, totalTimeout)
 
-	emit(doneEvent{Event: "done", Results: collectOrderedResults(resultsMap)})
+	ordered := make([]doneItem, 0, len(resultsMap))
+	for _, item := range resultsMap {
+		ordered = append(ordered, item)
+	}
+	emit(doneEvent{Event: "done", Results: ordered})
 }

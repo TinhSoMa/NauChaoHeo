@@ -70,3 +70,4 @@ resources/tts/*
 extension/EbookExtension
 resources/tts/go/edge_tts_worker.exe
 
+src/main/services/tts/go/edge_tts_worker.exe

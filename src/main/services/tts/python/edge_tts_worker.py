@@ -9,7 +9,6 @@ import unicodedata
 import aiohttp
 import edge_tts
 import re
-
 try:
     from edge_tts.communicate import (
         connect_id,
@@ -161,8 +160,14 @@ async def synthesize_wav_bytes_direct(
                     split = encoded_data.find(b"\r\n\r\n")
                     if split < 0:
                         continue
-                    parameters, _ = get_headers_and_data(encoded_data, split)
+                    parameters, body = get_headers_and_data(encoded_data, split)
                     path = parameters.get(b"Path")
+                    # debug: verify TEXT frame parsing (2-byte offset in get_headers_and_data)
+                    sys.stderr.write(f"[WAV_DEBUG] TEXT raw[:100]={encoded_data[:100]!r} split={split}\n")
+                    sys.stderr.write(f"[WAV_DEBUG] TEXT parameters={dict((k.decode(),v.decode()) for k,v in parameters.items())}\n")
+                    if path == b"response" and body:
+                        sys.stderr.write(f"[WAV_DEBUG] RESPONSE body={body[:400]!r}\n")
+                    sys.stderr.flush()
                     if path == b"turn.end":
                         break
                     continue
@@ -187,12 +192,16 @@ async def synthesize_wav_bytes_direct(
 
     merged = b"".join(audio_parts)
     if len(merged) == 0:
+        sys.stderr.write(f"[WAV_DEBUG] Empty audio stream: {len(audio_parts)} binary frames collected\n")
+        sys.stderr.flush()
         raise RuntimeError("Direct WAV returned empty audio stream")
+    sys.stderr.write(f"[WAV_DEBUG] Direct WAV succeeded: {len(merged)} bytes from {len(audio_parts)} frames\n")
+    sys.stderr.flush()
     return merged
 
 
 async def generate_silent_audio(output_path: str, output_format: str) -> None:
-    duration = "0.1"
+    duration = "1"
     base = [
         "ffmpeg",
         "-y", "-hide_banner", "-loglevel", "error",
@@ -429,7 +438,7 @@ async def main() -> None:
     raw = read_stdin_utf8()
     payload = json.loads(raw) if raw.strip() else {}
     jobs = payload.get("jobs", [])
-    timeout_ms = payload.get("timeoutMs")
+    timeout_ms = payload.get("timeoutMs") or 75000
     wav_mode = parse_wav_mode(payload.get("wavMode"))
     item_concurrency = normalize_item_concurrency(payload.get("itemConcurrency"))
 
