@@ -8204,20 +8204,6 @@ export function CaptionTranslator() {
                   </select>
                 </div>
                 <div className={styles.inputGroup}>
-                  <label className={styles.label}>Output format (Edge)</label>
-                  <select
-                    value={settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT}
-                    onChange={(e) => settings.setEdgeOutputFormat(e.target.value)}
-                    className={styles.select}
-                  >
-                    {EDGE_OUTPUT_FORMAT_OPTIONS.map((format) => (
-                      <option key={format} value={format}>
-                        {format.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className={styles.inputGroup}>
                   <label className={styles.label}>Worker engine (Edge)</label>
                   <select
                     value={settings.edgeWorkerEngine || DEFAULT_EDGE_WORKER_ENGINE}
@@ -8256,22 +8242,35 @@ export function CaptionTranslator() {
                   </div>
                 )}
               </div>
-              <div
-                className={styles.stepCardHint}
-                title={`Format ${String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} | Batch ${safeEdgeBatchSizeForUi} (mặc định ${DEFAULT_EDGE_TTS_BATCH_SIZE}) | Jobs ~ ${estimatedEdgeJobCount} = ceil(${knownStep4TotalItems}/${safeEdgeBatchSizeForUi}) | Đồng thời ~ ${edgeConcurrentAudioLimit} audio (${estimatedEdgeJobCount} x ${edgeConcurrentAudioPerJob}).`}
-              >
-                Format {String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} · Batch {safeEdgeBatchSizeForUi} · Jobs ~ {estimatedEdgeJobCount} · Audio ~ {edgeConcurrentAudioLimit}
+            </div>
+          )}
+          <div className={styles.stepCard}>
+            <div className={styles.stepCardHeader}>
+              <div className={styles.stepCardTitle}>Output format</div>
+            </div>
+            <div className={styles.grid2Compact}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Format</label>
+                <select
+                  value={settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT}
+                  onChange={(e) => settings.setEdgeOutputFormat(e.target.value)}
+                  className={styles.select}
+                >
+                  {EDGE_OUTPUT_FORMAT_OPTIONS.map((format) => (
+                    <option key={format} value={format}>
+                      {format.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          )}
-          {isCapCutVoiceSelected && (
             <div
-              className={styles.stepInfoCard}
-              title="Giọng CapCut dùng thông số mặc định từ provider, không áp dụng Rate/Volume của Edge."
+              className={styles.stepCardHint}
+              title={`Format ${String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} | Batch ${safeEdgeBatchSizeForUi} (mặc định ${DEFAULT_EDGE_TTS_BATCH_SIZE}) | Jobs ~ ${estimatedEdgeJobCount} = ceil(${knownStep4TotalItems}/${safeEdgeBatchSizeForUi}) | Đồng thời ~ ${edgeConcurrentAudioLimit} audio (${estimatedEdgeJobCount} x ${edgeConcurrentAudioPerJob}).`}
             >
-              CapCut: dùng config mặc định.
+              Format {String(settings.edgeOutputFormat || DEFAULT_EDGE_OUTPUT_FORMAT).toUpperCase()} · Batch {safeEdgeBatchSizeForUi} · Jobs ~ {estimatedEdgeJobCount} · Audio ~ {edgeConcurrentAudioLimit}
             </div>
-          )}
+          </div>
           {ttsErrorItems.length > 0 && (
             <div className={styles.stepCard}>
               <div className={styles.stepCardHeader}>
