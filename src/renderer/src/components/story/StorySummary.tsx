@@ -835,7 +835,7 @@ export function StorySummary() {
 
     const processChapter = async (
       chapter: Chapter,
-      index: number,
+      _index: number,
       workerId: number
     ): Promise<SummaryBatchResult> => {
       if (shouldStopRef.current || currentBatchRunIdRef.current !== runId) {

@@ -12,20 +12,20 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 
 - **Three separate tsc checks**: `npx tsc -p tsconfig.main.json --noEmit` (main/preload/shared), `npx tsc --noEmit` (renderer), `npx tsc -p tsconfig.node.json --noEmit` (vite config). All must pass.
 - `composite: true` on `tsconfig.main.json` generates `.d.ts` in `dist/main/`. After editing shared types, rebuild main first: `npx tsc -p tsconfig.main.json`, else renderer resolves stale `.d.ts`.
-- `noUnusedLocals` / `noUnusedParameters` are on — TS errors on unused imports/vars.
+- `noUnusedLocals` / `noUnusedParameters` only on renderer tsconfig — unused imports error there but not in main/preload.
 - **No lint, no formatter, no CI.** Only TypeScript checks. No pre-commit hooks.
 
 ## Architecture
 
-- **3 Electron layers**: `src/main/` (Node), `src/preload/` (contextBridge), `src/renderer/` (React 19)
+- **3 Electron layers**: `src/main/` (Node), `src/preload/` (contextBridge), `src/renderer/` (React 19). Single `electron.vite.config.ts` builds all three.
 - **Path aliases**: `@/` = `src/renderer/src/`, `@shared/` = `src/shared/`
-- **IPC wiring**: handlers in `src/main/ipc/` registered via `registerAllHandlers()`; preload exposes 21 per-domain API files under `window.electronAPI.*` via `contextBridge`
+- **IPC wiring**: handlers in `src/main/ipc/` registered via `registerAllHandlers()`; preload exposes 21 per-domain API files under `window.electronAPI.*` via `contextBridge`. Types declared in `src/renderer/src/global.d.ts` (~1465 lines).
 - **Router**: React Router v7 **HashRouter** (not BrowserRouter)
-- **Database**: better-sqlite3, `nauchaoheo.db` at `app.getPath('userData')`, managed via `getDatabase()` in `src/main/database/schema.ts`. Native addon needs `asarUnpack` and `postinstall rebuild`.
+- **Database**: better-sqlite3, `nauchaoheo.db` at `app.getPath('userData')`, managed via `getDatabase()` in `src/main/database/schema.ts`. Native addon needs `asarUnpack` and `postinstall rebuild`. `index.ts` is empty — new DB modules must be imported directly.
 - **State**: Zustand (one store file visible at `src/renderer/src/stores/`)
-- **Python workers**: stdin/stdout JSON-line protocol, scripts at `src/main/services/*/python/`, bundled via `electron-builder.yml:51-78`. Embedded Python runtime at `resources/python/`.
+- **Python workers**: stdin/stdout JSON-line protocol, scripts at `src/main/services/*/python/`, bundled via `electron-builder.yml`. Embedded Python runtime at `resources/python/`.
 - **Go TTS worker**: source at `src/main/services/tts/go/`, built to `resources/tts/go/edge_tts_worker.exe`. Default is NOT bundled — run `npm run build:go-worker` if TTS fails.
-- **Shared types**: `src/shared/types/` used by all layers via `@shared/types/`
+- **Shared types**: `src/shared/types/` used by all layers via `@shared/types/`. Barrel `index.ts` only re-exports 7 domains; import others (caption, deepseek, gemini, etc.) directly from their files.
 - **Tailwind CSS v4**: `@import "tailwindcss"` + `@config` in CSS (v3 `@tailwind` directives do NOT work)
 - **Theming**: CSS custom properties, light "Ocean Breeze" / dark "Deep Ocean"
 
@@ -33,13 +33,14 @@ Electron + Vite + React 19 desktop app (TypeScript). Vietnamese personal tool fo
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Start dev (requires `chcp 65001` UTF-8 on Windows) |
+| `npm run dev` | Start dev (script includes `chcp 65001` for UTF-8 on Windows) |
 | `npm run build:win` | Full Windows build: prepare tools → build → electron-rebuild → electron-builder |
 | `npm run prepare:{python-runtime,yt-dlp,aria2c,go-worker}` | Fetch/bundle external tools |
 | `npm run test:extension` | `node --test tests/extension/*.test.mjs` |
 | `npm run test:extension:background` | `node --test tests/extension/background.logic.test.mjs` |
 | `npx tsc -p tsconfig.main.json --noEmit` | Typecheck main/preload/shared |
 | `npx tsc --noEmit` | Typecheck renderer |
+| `npx tsc -p tsconfig.node.json --noEmit` | Typecheck vite config |
 | `npm run build:go-worker` | Requires Go toolchain (`go` in PATH or `D:/Program Files/Go/bin/go.exe`) |
 | `npm run bench:rotation-queue` | `npx tsc -p tsconfig.main.json && node dist/main/.../queueBenchmark.js` |
 

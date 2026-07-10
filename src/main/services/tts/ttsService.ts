@@ -1037,17 +1037,33 @@ async function requestCapCutBatchAudio(args: {
 }
 
 /**
- * Tạo một file audio từ text sử dụng edge-tts CLI.
- * Giữ tên hàm cũ để compatibility.
+ * Tạo một file audio từ text bằng Edge hoặc CapCut TTS.
  */
 export async function generateSingleAudio(
   text: string,
   outputPath: string,
   voice: string = DEFAULT_VOICE,
   rate: string = DEFAULT_RATE,
-  volume: string = DEFAULT_VOLUME
+  volume: string = DEFAULT_VOLUME,
+  outputFormat: 'mp3' | 'wav' = 'mp3'
 ): Promise<SingleGenerateResult> {
-  const resolvedVoice = resolveVoiceSelection({ voice, provider: 'edge' });
+  const resolvedVoice = resolveVoiceSelection({ voice });
+
+  if (resolvedVoice.provider === 'capcut') {
+    const cfgResult = loadCapCutRuntimeConfig();
+    if (!cfgResult.ok) {
+      return { success: false, error: cfgResult.error };
+    }
+    return generateSingleAudioCapCut({
+      text,
+      outputPath,
+      voiceId: resolvedVoice.voiceId,
+      rate,
+      volume,
+      outputFormat,
+    }, cfgResult.config);
+  }
+
   return generateSingleAudioEdge({
     text,
     outputPath,

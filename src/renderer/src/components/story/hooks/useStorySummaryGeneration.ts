@@ -752,8 +752,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
     const finalConfigsToUse = tokenConfigsForRun.slice(0, tokenWorkerCount);
     batchStateRef.current.activeWorkerConfigIds = new Set(finalConfigsToUse.map(c => c.id));
 
-    const totalWorkers = apiWorkerCount + tokenWorkerCount;
-    /* console.log(`[useStorySummaryGeneration] 🎯 Bắt đầu tóm tắt ${chaptersToSummarize.length} chapters với ${totalWorkers} worker tuần tự`) */;
+    /* console.log(`[useStorySummaryGeneration] 🎯 Bắt đầu tóm tắt ${chaptersToSummarize.length} chapters với ${apiWorkerCount + tokenWorkerCount} worker tuần tự`) */;
 
     if (apiWorkerCount > 0) {
       startWorker('api', null, runId);

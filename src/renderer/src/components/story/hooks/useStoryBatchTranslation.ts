@@ -642,8 +642,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     const finalIds = new Set(finalConfigsToUse.map(c => c.id));
     batchStateRef.current.activeWorkerConfigIds = finalIds;
 
-    const totalWorkers = apiWorkerCount + tokenWorkerCount;
-    /* console.log(`[useStoryBatchTranslation] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers`) */;
+    /* console.log(`[useStoryBatchTranslation] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${apiWorkerCount + tokenWorkerCount} workers`) */;
 
     // Start API workers
     for (let i = 0; i < apiWorkerCount; i += 1) {

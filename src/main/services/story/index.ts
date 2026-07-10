@@ -4,3 +4,4 @@
 
 export { parseStoryFile } from './storyParser';
 export { StoryService } from './storyService';
+export { generateChapterAudio } from './storyTtsService';

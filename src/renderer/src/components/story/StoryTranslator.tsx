@@ -17,7 +17,7 @@ import { GEMINI_MODEL_LIST } from '@shared/constants';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
-import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, AlertTriangle, Check } from 'lucide-react';
+import { FileText, BookOpen, Clock, CheckSquare, Square, Loader, Sparkles, StopCircle, AlertTriangle, Check, Volume2 } from 'lucide-react';
 import { extractTranslatedTitle } from './utils/chapterUtils';
 import { useChapterSelection } from './hooks/useChapterSelection';
 import { useTokenManagement } from './hooks/useTokenManagement';
@@ -30,9 +30,71 @@ import { useStorySummaryGeneration } from './hooks/useStorySummaryGeneration';
 import { useStoryGeminiWebQueueTranslation } from './hooks/useStoryGeminiWebQueueTranslation';
 import type { StoryWebQueueMode } from './hooks/useStoryGeminiWebQueueTranslation';
 import { useStoryExport } from './hooks/useStoryExport';
+import { useStoryTtsExport } from './hooks/useStoryTtsExport';
 import { resolveStoryReadingThemePalette } from './styles/readerThemes';
 import { ReaderPane } from './components/ReaderPane';
 import { useProjectContext } from '../../context/ProjectContext';
+import { VOLUME_OPTIONS } from '../../config/captionConfig';
+
+interface TtsUiVoiceOption {
+  value: string;
+  label: string;
+  provider: 'edge' | 'capcut';
+  tier: 'free' | 'pro';
+}
+
+function normalizeVoiceValue(value: string): string {
+  const trimmed = (value || '').trim();
+  const match = trimmed.match(/^(edge|capcut):(.+)$/i);
+  if (match) {
+    const provider = match[1].toLowerCase();
+    const voiceId = match[2].trim();
+    if (voiceId) return `${provider}:${voiceId}`;
+  }
+  if (trimmed) return `edge:${trimmed}`;
+  return 'edge:vi-VN-HoaiMyNeural';
+}
+
+interface VoiceInfoData {
+  name: string;
+  provider: 'edge' | 'capcut';
+  voiceId: string;
+  displayName: string;
+  language: string;
+  gender: 'Male' | 'Female';
+  tier?: 'free' | 'pro';
+  value?: string;
+}
+
+function toUiVoiceOption(voice: VoiceInfoData): TtsUiVoiceOption {
+  const provider = voice.provider === 'capcut' ? 'capcut' : 'edge';
+  const voiceId = (voice.voiceId || voice.name || '').trim();
+  const canonical = normalizeVoiceValue(voice.value || `${provider}:${voiceId}`);
+  const tier = voice.tier === 'pro' ? 'pro' : 'free';
+  const providerLabel = provider === 'capcut' ? 'CapCut' : 'Edge';
+  const tierSuffix = provider === 'capcut' && tier === 'pro' ? ' [PRO]' : '';
+  const displayName = (voice.displayName || voice.name || canonical).trim();
+  return { value: canonical, label: `${displayName} (${providerLabel})${tierSuffix}`, provider, tier };
+}
+
+function ensureVoiceOptionExists(options: TtsUiVoiceOption[], selectedVoice: string): TtsUiVoiceOption[] {
+  const normalized = normalizeVoiceValue(selectedVoice);
+  if (options.some((o) => o.value === normalized)) return options;
+  const provider = normalized.startsWith('capcut:') ? 'capcut' : 'edge';
+  return [...options, { value: normalized, label: `${normalized} (Saved)`, provider, tier: 'free' }];
+}
+
+const STORY_RATE_OPTIONS = Array.from({ length: 11 }, (_, i) => {
+  const multiplier = 1.0 + i * 0.1;
+  const pct = Math.round((multiplier - 1.0) * 100);
+  return { value: `${pct >= 0 ? '+' : ''}${pct}%`, label: `${multiplier.toFixed(1)}x` };
+});
+
+const FALLBACK_TTS_VOICES: TtsUiVoiceOption[] = [
+  { value: 'edge:vi-VN-HoaiMyNeural', label: 'Hoài My (Nữ) (Edge)', provider: 'edge', tier: 'free' },
+  { value: 'edge:vi-VN-NamMinhNeural', label: 'Nam Minh (Nam) (Edge)', provider: 'edge', tier: 'free' },
+];
+
 const READER_MODE_BREAKPOINT = 1024;
 const READER_PAGE_OVERLAP_PX = 72;
 const READER_MIN_PAGE_STEP = 220;
@@ -568,6 +630,68 @@ export function StoryTranslator() {
     filePath,
     projectId
   });
+
+  // Story TTS audio export hook
+  const {
+    audioExportProgress,
+    isAudioGenerating,
+    voice,
+    rate,
+    volume,
+    setVoice,
+    setRate,
+    setVolume,
+    handleGenerateAudioBatch,
+    handleStopAudioBatch,
+  } = useStoryTtsExport({
+    chapters,
+    translatedChapters,
+    summaries,
+    isChapterIncluded,
+    filePath,
+  });
+
+  const [ttsVoiceOptions, setTtsVoiceOptions] = useState<TtsUiVoiceOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTtsVoices = async () => {
+      try {
+        const response = await window.electronAPI.tts.getVoices();
+        if (!response?.success || !Array.isArray(response.data) || response.data.length === 0) {
+          if (!cancelled) setTtsVoiceOptions(FALLBACK_TTS_VOICES);
+          return;
+        }
+        const deduped = new Map<string, TtsUiVoiceOption>();
+        for (const v of response.data) {
+          const mapped = toUiVoiceOption(v as VoiceInfoData);
+          if (!deduped.has(mapped.value)) deduped.set(mapped.value, mapped);
+        }
+        if (!cancelled) setTtsVoiceOptions(Array.from(deduped.values()));
+      } catch {
+        if (!cancelled) setTtsVoiceOptions(FALLBACK_TTS_VOICES);
+      }
+    };
+    loadTtsVoices();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    setTtsVoiceOptions((prev) => ensureVoiceOptionExists(prev, voice));
+  }, [voice]);
+
+  const edgeVoiceOptions = useMemo(
+    () => ttsVoiceOptions.filter((v) => v.provider === 'edge'),
+    [ttsVoiceOptions]
+  );
+  const capCutVoiceOptions = useMemo(
+    () => ttsVoiceOptions.filter((v) => v.provider === 'capcut'),
+    [ttsVoiceOptions]
+  );
+  const selectedVoiceLabel = useMemo(
+    () => ttsVoiceOptions.find((v) => v.value === voice)?.label || voice,
+    [voice, ttsVoiceOptions]
+  );
 
   // Debug logging
   /* console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size) */;
@@ -1215,6 +1339,90 @@ export function StoryTranslator() {
             >
               {exportStatus === 'exporting' ? 'Đang export...' : 'Export EPUB'}
             </Button>
+          )}
+
+          {filePath && ttsVoiceOptions.length > 0 && (
+            <div className="flex items-center gap-1 shrink-0 bg-surface/40 border border-border/50 rounded-md px-2 py-0.5">
+              <span className="text-2xs text-text-secondary mr-0.5">Giọng</span>
+              <select
+                value={voice}
+                onChange={(e) => setVoice(e.target.value)}
+                className="h-6 max-w-36 px-1 text-2xs bg-surface border border-border rounded cursor-pointer"
+                title={`Giọng đọc: ${selectedVoiceLabel}`}
+              >
+                {edgeVoiceOptions.length > 0 && (
+                  <optgroup label="Edge">
+                    {edgeVoiceOptions.map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {capCutVoiceOptions.length > 0 && (
+                  <optgroup label="CapCut">
+                    {capCutVoiceOptions.map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <span className="text-2xs text-text-secondary ml-1 mr-0.5">Tốc độ</span>
+              <select
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                className="h-6 w-16 px-1 text-2xs bg-surface border border-border rounded cursor-pointer"
+                title="Tốc độ đọc"
+              >
+                {STORY_RATE_OPTIONS.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+              <span className="text-2xs text-text-secondary ml-1 mr-0.5">Âm lượng</span>
+              <select
+                value={volume}
+                onChange={(e) => setVolume(e.target.value)}
+                className="h-6 w-16 px-1 text-2xs bg-surface border border-border rounded cursor-pointer"
+                title="Âm lượng"
+              >
+                {VOLUME_OPTIONS.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {isAudioGenerating ? (
+            <Button
+              onClick={handleStopAudioBatch}
+              variant="secondary"
+              className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+              title="Dừng tạo audio"
+            >
+              <StopCircle size={12} />
+              Audio ({audioExportProgress?.current ?? 0}/{audioExportProgress?.total ?? 0})
+            </Button>
+          ) : (
+            <>
+              <Button
+                onClick={() => handleGenerateAudioBatch('translation')}
+                variant="secondary"
+                disabled={translatedChapters.size === 0 || chapters.filter(c => isChapterIncluded(c.id) && translatedChapters.has(c.id)).length === 0}
+                className="h-7 px-2 text-2xs shrink-0"
+                title="Tạo audio cho bản dịch các chương được chọn"
+              >
+                <Volume2 size={12} />
+                Audio bản dịch
+              </Button>
+              <Button
+                onClick={() => handleGenerateAudioBatch('summary')}
+                variant="secondary"
+                disabled={summaries.size === 0 || chapters.filter(c => isChapterIncluded(c.id) && summaries.has(c.id)).length === 0}
+                className="h-7 px-2 text-2xs shrink-0"
+                title="Tạo audio cho tóm tắt các chương được chọn"
+              >
+                <Volume2 size={12} />
+                Audio tóm tắt
+              </Button>
+            </>
           )}
 
           {/* Streaming error */}
