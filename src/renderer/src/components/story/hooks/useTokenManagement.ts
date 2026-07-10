@@ -31,7 +31,7 @@ export function useTokenManagement() {
           return prev;
         });
 
-        console.log(`[StoryTranslator] Loaded ${uniqueActive.length} unique active tokens`);
+        /* console.log(`[StoryTranslator] Loaded ${uniqueActive.length} unique active tokens`) */;
       }
     } catch (e) {
       console.error('[StoryTranslator] Error loading config:', e);
@@ -107,7 +107,7 @@ export function useTokenManagement() {
     loadConfigurations();
 
     const removeListener = window.electronAPI.onMessage('geminiChat:configChanged', () => {
-      console.log('[useTokenManagement] Config changed, reloading...');
+      /* console.log('[useTokenManagement] Config changed, reloading...') */;
       loadConfigurations();
     });
 
@@ -122,7 +122,7 @@ export function useTokenManagement() {
     
     const { map, changed } = migrateTokenContextsToTokenKey(tokenConfigs, tokenContexts);
     if (changed) {
-      console.log('[useTokenManagement] Auto-migrating token contexts to token keys');
+      /* console.log('[useTokenManagement] Auto-migrating token contexts to token keys') */;
       setTokenContexts(map);
     }
   }, [tokenConfigs, tokenContexts, migrateTokenContextsToTokenKey]);

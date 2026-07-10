@@ -314,7 +314,7 @@ function fixMojibakeDeep(value: unknown): unknown {
  * Đăng ký tất cả IPC handlers cho Caption
  */
 export function registerCaptionHandlers(): void {
-  console.log('[CaptionHandlers] Đăng ký handlers...');
+  /* console.log('[CaptionHandlers] Đăng ký handlers...') */;
 
   // ============================================
   // DIALOG OPEN FILE
@@ -322,7 +322,7 @@ export function registerCaptionHandlers(): void {
   ipcMain.handle(
     'dialog:openFile',
     async (_event: IpcMainInvokeEvent, options?: { filters?: { name: string; extensions: string[] }[]; properties?: any[] }) => {
-      console.log('[CaptionHandlers] Mở dialog chọn file...');
+      /* console.log('[CaptionHandlers] Mở dialog chọn file...') */;
       
       const result = await dialog.showOpenDialog({
         properties: options?.properties || ['openFile'],
@@ -346,7 +346,7 @@ export function registerCaptionHandlers(): void {
         filters?: { name: string; extensions: string[] }[];
       }
     ) => {
-      console.log('[CaptionHandlers] Mở dialog lưu file...');
+      /* console.log('[CaptionHandlers] Mở dialog lưu file...') */;
 
       const result = await dialog.showSaveDialog({
         title: options?.title,
@@ -364,7 +364,7 @@ export function registerCaptionHandlers(): void {
   ipcMain.handle(
     CAPTION_IPC_CHANNELS.PARSE_SRT,
     async (_event: IpcMainInvokeEvent, filePath: string): Promise<IpcResponse<ParseSrtResult>> => {
-      console.log(`[CaptionHandlers] Parse SRT: ${filePath}`);
+      /* console.log(`[CaptionHandlers] Parse SRT: ${filePath}`) */;
 
       try {
         const result = await CaptionService.parseSrtFile(filePath);
@@ -442,7 +442,7 @@ export function registerCaptionHandlers(): void {
   ipcMain.handle(
     'caption:parseDraft',
     async (_event: IpcMainInvokeEvent, filePath: string): Promise<IpcResponse<ParseSrtResult>> => {
-      console.log(`[CaptionHandlers] Parse Draft JSON: ${filePath}`);
+      /* console.log(`[CaptionHandlers] Parse Draft JSON: ${filePath}`) */;
 
       try {
         const result = await CaptionService.parseDraftJson(filePath);
@@ -463,7 +463,7 @@ export function registerCaptionHandlers(): void {
       event: IpcMainInvokeEvent,
       options: SingleBatchOptions
     ): Promise<IpcResponse<SingleBatchResult>> => {
-      console.log(`[CaptionHandlers] Translate batch #${options.batchIndex + 1}/${options.totalBatches}: ${options.entries.length} entries`);
+      /* console.log(`[CaptionHandlers] Translate batch #${options.batchIndex + 1}/${options.totalBatches}: ${options.entries.length} entries`) */;
 
       const runId = typeof options.runId === 'string' ? options.runId : undefined;
       let isError = false;
@@ -488,7 +488,7 @@ export function registerCaptionHandlers(): void {
             };
             if (!firstChunkSent) {
               firstChunkSent = true;
-              console.log(`[CaptionIPC] FIRST chunk sent: +${Date.now() - chunkSendStart}ms since handler start`);
+              /* console.log(`[CaptionIPC] FIRST chunk sent: +${Date.now() - chunkSendStart}ms since handler start`) */;
             }
             event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, chunkData);
           }
@@ -505,7 +505,7 @@ export function registerCaptionHandlers(): void {
           event.sender.send(CAPTION_IPC_CHANNELS.TRANSLATE_CHUNK, statusData);
         };
 
-        console.log(`[CaptionIPC] translateBatch: streamingEnabled=${options.streamingEnabled}, hasOnChunk=${!!onChunk}`);
+        /* console.log(`[CaptionIPC] translateBatch: streamingEnabled=${options.streamingEnabled}, hasOnChunk=${!!onChunk}`) */;
 
         const result = await CaptionService.translateSingleBatch(options, onChunk, onStatus);
 
@@ -582,7 +582,7 @@ export function registerCaptionHandlers(): void {
           const buffer = Buffer.from(data.imageBase64, 'base64');
           fs.writeFileSync(path.join(dir, 'frame.png'), buffer);
         }
-        console.log(`[CaptionHandlers] Saved thumbnail prompt debug → ${dir}`);
+        /* console.log(`[CaptionHandlers] Saved thumbnail prompt debug → ${dir}`) */;
         return { success: true, data: { savePath: dir } };
       } catch (error) {
         console.error('[CaptionHandlers] debug:saveThumbnailPromptDebug error:', error);
@@ -643,7 +643,7 @@ export function registerCaptionHandlers(): void {
       entries: SubtitleEntry[],
       outputPath: string
     ): Promise<IpcResponse<string>> => {
-      console.log(`[CaptionHandlers] Export SRT: ${entries.length} entries -> ${outputPath}`);
+      /* console.log(`[CaptionHandlers] Export SRT: ${entries.length} entries -> ${outputPath}`) */;
 
       try {
         const result = await CaptionService.exportToSrt(entries, outputPath, true);
@@ -667,7 +667,7 @@ export function registerCaptionHandlers(): void {
       _event: IpcMainInvokeEvent,
       options: { entries: SubtitleEntry[]; splitByLines: boolean; value: number; outputDir: string }
     ): Promise<IpcResponse<{ partsCount: number; files: string[] }>> => {
-      console.log(`[CaptionHandlers] Split: ${options.entries.length} entries, splitByLines=${options.splitByLines}, value=${options.value}`);
+      /* console.log(`[CaptionHandlers] Split: ${options.entries.length} entries, splitByLines=${options.splitByLines}, value=${options.value}`) */;
 
       try {
         const result = await CaptionService.splitText(options);
@@ -762,7 +762,7 @@ export function registerCaptionHandlers(): void {
       outputType?: 'video' | 'audio_only';
       timingPayload?: Record<string, unknown>;
     }>> => {
-      console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`);
+      /* console.log(`[CaptionHandlers] Render video: ${options.srtPath} -> ${options.outputPath}`) */;
 
       try {
         // Progress callback - gửi về renderer
@@ -823,7 +823,7 @@ export function registerCaptionHandlers(): void {
       content: string,
       outputPath: string
     ): Promise<IpcResponse<string>> => {
-      console.log(`[CaptionHandlers] Export plain text -> ${outputPath}`);
+      /* console.log(`[CaptionHandlers] Export plain text -> ${outputPath}`) */;
 
       try {
         const result = await CaptionService.exportPlainText(content, outputPath);
@@ -845,7 +845,7 @@ export function registerCaptionHandlers(): void {
       options: RenderVideoPreviewFrameOptions
     ): Promise<IpcResponse<RenderVideoPreviewFrameResult>> => {
       const safeVideoPath = typeof options?.videoPath === 'string' ? options.videoPath : '';
-      console.log(`[CaptionHandlers] Render video preview frame: ${safeVideoPath || '(empty)'}`);
+      /* console.log(`[CaptionHandlers] Render video preview frame: ${safeVideoPath || '(empty)'}`) */;
       try {
         const result = await CaptionService.renderVideoPreviewFrame(options);
         if (result.success) {
@@ -888,7 +888,7 @@ export function registerCaptionHandlers(): void {
       event: IpcMainInvokeEvent,
       options: RenderAudioPreviewOptions
     ): Promise<IpcResponse<RenderAudioPreviewResult>> => {
-      console.log(`[CaptionHandlers] Mix audio preview: ${options.outputPath}`);
+      /* console.log(`[CaptionHandlers] Mix audio preview: ${options.outputPath}`) */;
       try {
         const progressCallback = (progress: RenderAudioPreviewProgress) => {
           const window = BrowserWindow.fromWebContents(event.sender);
@@ -1062,7 +1062,7 @@ export function registerCaptionHandlers(): void {
       width: number;
       height: number;
     }>> => {
-      console.log(`[CaptionHandlers] Extract frame: ${videoPath}, frame=${frameNumber || 'random'}`);
+      /* console.log(`[CaptionHandlers] Extract frame: ${videoPath}, frame=${frameNumber || 'random'}`) */;
 
       try {
         const result = await CaptionService.extractVideoFrame(videoPath, frameNumber, crop);
@@ -1094,7 +1094,7 @@ export function registerCaptionHandlers(): void {
       options: RenderThumbnailPreviewFrameOptions
     ): Promise<IpcResponse<RenderThumbnailPreviewFrameResult>> => {
       const safeVideoPath = typeof options?.videoPath === 'string' ? options.videoPath : '';
-      console.log(`[CaptionHandlers] Render thumbnail preview frame: ${safeVideoPath || '(empty)'}`);
+      /* console.log(`[CaptionHandlers] Render thumbnail preview frame: ${safeVideoPath || '(empty)'}`) */;
       try {
         const result = await CaptionService.renderThumbnailPreviewFrame(options);
         if (result.success) {
@@ -1134,7 +1134,7 @@ export function registerCaptionHandlers(): void {
         const sanitizedBase64 = String(result.frameData || '').replace(/^data:[^;]+;base64,/, '');
         const buffer = Buffer.from(sanitizedBase64, 'base64');
         await fs.writeFile(outputPath, buffer);
-        console.log(`[CaptionHandlers] Render thumbnail file -> ${outputPath}`);
+        /* console.log(`[CaptionHandlers] Render thumbnail file -> ${outputPath}`) */;
         return { success: true, data: { success: true, outputPath } };
       } catch (error) {
         console.error('[CaptionHandlers] Lỗi render thumbnail file:', error);
@@ -1154,7 +1154,7 @@ export function registerCaptionHandlers(): void {
     ): Promise<IpcResponse<{ videoPath?: string; metadata?: VideoMetadata }>> => {
       const folderPaths = Array.isArray(payload) ? payload : (Array.isArray(payload?.folderPaths) ? payload.folderPaths : []);
       const audioPreference = Array.isArray(payload) ? 'all' : (payload?.audioPreference || 'all');
-      console.log(`[CaptionHandlers] Find best video in ${folderPaths.length} folders`);
+      /* console.log(`[CaptionHandlers] Find best video in ${folderPaths.length} folders`) */;
 
       try {
         const result = await CaptionService.findBestVideoInFolders(folderPaths, { audioPreference });
@@ -1367,7 +1367,7 @@ export function registerCaptionHandlers(): void {
       _event: IpcMainInvokeEvent,
       options: { filePath: string; data: unknown }
     ): Promise<IpcResponse<string>> => {
-      console.log(`[CaptionHandlers] Lưu JSON: ${options.filePath}`);
+      /* console.log(`[CaptionHandlers] Lưu JSON: ${options.filePath}`) */;
 
       try {
         const fs = await import('fs/promises');
@@ -1430,7 +1430,7 @@ export function registerCaptionHandlers(): void {
         const { filePath, content } = args;
         const fsPromises = await import('fs/promises');
         await fsPromises.writeFile(filePath, content, 'utf-8');
-        console.log(`[CaptionHandlers] fs:writeFile → ${filePath}`);
+        /* console.log(`[CaptionHandlers] fs:writeFile → ${filePath}`) */;
         return { success: true };
       } catch (error) {
         console.error('[CaptionHandlers] fs:writeFile error:', error);
@@ -1457,7 +1457,7 @@ export function registerCaptionHandlers(): void {
         const fsPromises = await import('fs/promises');
         const buffer = Buffer.from(sanitizedBase64, 'base64');
         await fsPromises.writeFile(filePath, buffer);
-        console.log(`[CaptionHandlers] fs:writeBase64File -> ${filePath}`);
+        /* console.log(`[CaptionHandlers] fs:writeBase64File -> ${filePath}`) */;
         return { success: true };
       } catch (error) {
         console.error('[CaptionHandlers] fs:writeBase64File error:', error);
@@ -1466,7 +1466,7 @@ export function registerCaptionHandlers(): void {
     }
   );
 
-  console.log('[CaptionHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[CaptionHandlers] Đã đăng ký handlers thành công') */;
 }
 
 

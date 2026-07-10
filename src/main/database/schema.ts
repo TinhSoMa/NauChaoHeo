@@ -119,7 +119,7 @@ function seedGeminiModelsIfEmpty(dbRef: Database.Database): void {
     });
 
     tx();
-    console.log(`[Database] Seeded gemini_models with ${GEMINI_MODEL_LIST.length} model(s)`);
+    /* console.log(`[Database] Seeded gemini_models with ${GEMINI_MODEL_LIST.length} model(s)`) */;
   } catch (error) {
     console.error('[Database] Seed gemini_models failed:', error);
   }
@@ -385,7 +385,7 @@ function migrateLegacyGeminiTables(dbRef: Database.Database): void {
 
       try {
         dbRef.exec(`DROP TABLE IF EXISTS gemini_api_keys`);
-        console.log('[Database] Dropped legacy table gemini_api_keys');
+        /* console.log('[Database] Dropped legacy table gemini_api_keys') */;
       } catch (e) {
         console.error('[Database] Drop legacy gemini_api_keys failed:', e);
       }
@@ -432,7 +432,7 @@ function migrateLegacyGeminiTables(dbRef: Database.Database): void {
 
       try {
         dbRef.exec(`DROP TABLE IF EXISTS gemini_api_state`);
-        console.log('[Database] Dropped legacy table gemini_api_state');
+        /* console.log('[Database] Dropped legacy table gemini_api_state') */;
       } catch (e) {
         console.error('[Database] Drop legacy gemini_api_state failed:', e);
       }
@@ -449,7 +449,7 @@ export function getDatabase(): Database.Database {
     if (app) {
       const userDataPath = app.getPath('userData');
       const dbPath = path.join(userDataPath, 'nauchaoheo.db');
-      console.log('[Database] Path:', dbPath);
+      /* console.log('[Database] Path:', dbPath) */;
       db = new Database(dbPath);
     } else {
       throw new Error('Database not initialized and app is not ready');
@@ -467,7 +467,7 @@ export function initDatabase(): void {
   }
 
   const dbPath = path.join(userDataPath, 'nauchaoheo.db');
-  console.log('[Database] Initializing at:', dbPath);
+  /* console.log('[Database] Initializing at:', dbPath) */;
   
   db = new Database(dbPath);
   if (!db) {
@@ -515,23 +515,23 @@ export function initDatabase(): void {
     
     if (!columnNames.includes('req_id')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
-        console.log('[Database] Added missing column: req_id');
+        /* console.log('[Database] Added missing column: req_id') */;
     }
     if (!columnNames.includes('proxy_id')) {
       db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
-      console.log('[Database] Added missing column: proxy_id');
+      /* console.log('[Database] Added missing column: proxy_id') */;
     }
     if (!columnNames.includes('user_agent')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
-        console.log('[Database] Added missing column: user_agent');
+        /* console.log('[Database] Added missing column: user_agent') */;
     }
     if (!columnNames.includes('accept_language')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
-        console.log('[Database] Added missing column: accept_language');
+        /* console.log('[Database] Added missing column: accept_language') */;
     }
     if (!columnNames.includes('platform')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
-        console.log('[Database] Added missing column: platform');
+        /* console.log('[Database] Added missing column: platform') */;
     }
   } catch (e) {
       console.error('[Database] Migration error:', e);
@@ -543,7 +543,7 @@ export function initDatabase(): void {
     const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
     
     if (cookieData && configCount.count === 0) {
-      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      /* console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...') */;
       const now = Date.now();
       const { v4: uuidv4 } = require('uuid');
       
@@ -562,11 +562,11 @@ export function initDatabase(): void {
         now,
         now
       );
-      console.log('[Database] Migration from gemini_cookie completed');
+      /* console.log('[Database] Migration from gemini_cookie completed') */;
     }
   } catch (e) {
     // Ignore if gemini_cookie doesn't exist or migration fails
-    console.log('[Database] No migration needed from gemini_cookie');
+    /* console.log('[Database] No migration needed from gemini_cookie') */;
   }
 
   // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
@@ -584,7 +584,7 @@ export function initDatabase(): void {
           insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
         }
       }
-      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+      /* console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config') */;
     }
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
@@ -636,23 +636,23 @@ export function initDatabase(): void {
     
     if (!columnNames.includes('req_id')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
-        console.log('[Database] Added missing column: req_id');
+        /* console.log('[Database] Added missing column: req_id') */;
     }
     if (!columnNames.includes('proxy_id')) {
       db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
-      console.log('[Database] Added missing column: proxy_id');
+      /* console.log('[Database] Added missing column: proxy_id') */;
     }
     if (!columnNames.includes('user_agent')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
-        console.log('[Database] Added missing column: user_agent');
+        /* console.log('[Database] Added missing column: user_agent') */;
     }
     if (!columnNames.includes('accept_language')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
-        console.log('[Database] Added missing column: accept_language');
+        /* console.log('[Database] Added missing column: accept_language') */;
     }
     if (!columnNames.includes('platform')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
-        console.log('[Database] Added missing column: platform');
+        /* console.log('[Database] Added missing column: platform') */;
     }
   } catch (e) {
       console.error('[Database] Migration error:', e);
@@ -664,7 +664,7 @@ export function initDatabase(): void {
     const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
     
     if (cookieData && configCount.count === 0) {
-      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      /* console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...') */;
       const now = Date.now();
       const { v4: uuidv4 } = require('uuid');
       
@@ -683,11 +683,11 @@ export function initDatabase(): void {
         now,
         now
       );
-      console.log('[Database] Migration from gemini_cookie completed');
+      /* console.log('[Database] Migration from gemini_cookie completed') */;
     }
   } catch (e) {
     // Ignore if gemini_cookie doesn't exist or migration fails
-    console.log('[Database] No migration needed from gemini_cookie');
+    /* console.log('[Database] No migration needed from gemini_cookie') */;
   }
 
   // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
@@ -705,7 +705,7 @@ export function initDatabase(): void {
           insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
         }
       }
-      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+      /* console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config') */;
     }
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
@@ -743,23 +743,23 @@ export function initDatabase(): void {
     
     if (!columnNames.includes('req_id')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
-        console.log('[Database] Added missing column: req_id');
+        /* console.log('[Database] Added missing column: req_id') */;
     }
     if (!columnNames.includes('proxy_id')) {
       db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
-      console.log('[Database] Added missing column: proxy_id');
+      /* console.log('[Database] Added missing column: proxy_id') */;
     }
     if (!columnNames.includes('user_agent')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
-        console.log('[Database] Added missing column: user_agent');
+        /* console.log('[Database] Added missing column: user_agent') */;
     }
     if (!columnNames.includes('accept_language')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
-        console.log('[Database] Added missing column: accept_language');
+        /* console.log('[Database] Added missing column: accept_language') */;
     }
     if (!columnNames.includes('platform')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
-        console.log('[Database] Added missing column: platform');
+        /* console.log('[Database] Added missing column: platform') */;
     }
   } catch (e) {
       console.error('[Database] Migration error:', e);
@@ -771,7 +771,7 @@ export function initDatabase(): void {
     const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
     
     if (cookieData && configCount.count === 0) {
-      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      /* console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...') */;
       const now = Date.now();
       const { v4: uuidv4 } = require('uuid');
       
@@ -790,11 +790,11 @@ export function initDatabase(): void {
         now,
         now
       );
-      console.log('[Database] Migration from gemini_cookie completed');
+      /* console.log('[Database] Migration from gemini_cookie completed') */;
     }
   } catch (e) {
     // Ignore if gemini_cookie doesn't exist or migration fails
-    console.log('[Database] No migration needed from gemini_cookie');
+    /* console.log('[Database] No migration needed from gemini_cookie') */;
   }
 
   // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
@@ -812,7 +812,7 @@ export function initDatabase(): void {
           insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
         }
       }
-      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+      /* console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config') */;
     }
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
@@ -1002,7 +1002,7 @@ export function initDatabase(): void {
           now
         );
       });
-      console.log('[Database] Seeded grok_ui_profiles from AppSettings');
+      /* console.log('[Database] Seeded grok_ui_profiles from AppSettings') */;
     }
   } catch (e) {
     console.error('[Database] Seed grok_ui_profiles failed:', e);
@@ -1069,7 +1069,7 @@ export function initDatabase(): void {
     });
 
     if (!hasHostPortTypeUnique && hasHostPortUnique) {
-      console.log('[Database] Migrating proxies unique constraint to include type...');
+      /* console.log('[Database] Migrating proxies unique constraint to include type...') */;
       database.exec('BEGIN');
       database.exec('ALTER TABLE proxies RENAME TO proxies_old');
       database.exec(`
@@ -1105,7 +1105,7 @@ export function initDatabase(): void {
       `);
       database.exec('DROP TABLE proxies_old');
       database.exec('COMMIT');
-      console.log('[Database] Proxies unique constraint migration completed');
+      /* console.log('[Database] Proxies unique constraint migration completed') */;
     }
   } catch (e) {
     try {
@@ -1133,7 +1133,7 @@ export function initDatabase(): void {
     const colInfo = db.prepare(`PRAGMA table_info(deepseek_config)`).all() as Array<{ name: string }>;
     if (!colInfo.some((col) => col.name === 'system_prompt')) {
       db.exec(`ALTER TABLE deepseek_config ADD COLUMN system_prompt TEXT`);
-      console.log('[Database] Migration: added system_prompt column to deepseek_config');
+      /* console.log('[Database] Migration: added system_prompt column to deepseek_config') */;
     }
   } catch (e) {
     console.error('[Database] Migration: failed to add system_prompt column:', e);
@@ -1160,35 +1160,35 @@ export function initDatabase(): void {
     
     if (!columnNames.includes('req_id')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN req_id TEXT');
-        console.log('[Database] Added missing column: req_id');
+        /* console.log('[Database] Added missing column: req_id') */;
     }
     if (!columnNames.includes('proxy_id')) {
       db.exec('ALTER TABLE gemini_chat_config ADD COLUMN proxy_id TEXT');
-      console.log('[Database] Added missing column: proxy_id');
+      /* console.log('[Database] Added missing column: proxy_id') */;
     }
     if (!columnNames.includes('user_agent')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN user_agent TEXT');
-        console.log('[Database] Added missing column: user_agent');
+        /* console.log('[Database] Added missing column: user_agent') */;
     }
     if (!columnNames.includes('accept_language')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN accept_language TEXT');
-        console.log('[Database] Added missing column: accept_language');
+        /* console.log('[Database] Added missing column: accept_language') */;
     }
     if (!columnNames.includes('platform')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN platform TEXT');
-        console.log('[Database] Added missing column: platform');
+        /* console.log('[Database] Added missing column: platform') */;
     }
     if (!columnNames.includes('is_error')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN is_error INTEGER DEFAULT 0');
-        console.log('[Database] Added missing column: is_error');
+        /* console.log('[Database] Added missing column: is_error') */;
     }
     if (!columnNames.includes('__Secure-1PSID')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN "__Secure-1PSID" TEXT');
-        console.log('[Database] Added missing column: __Secure-1PSID');
+        /* console.log('[Database] Added missing column: __Secure-1PSID') */;
     }
     if (!columnNames.includes('__Secure-1PSIDTS')) {
         db.exec('ALTER TABLE gemini_chat_config ADD COLUMN "__Secure-1PSIDTS" TEXT');
-        console.log('[Database] Added missing column: __Secure-1PSIDTS');
+        /* console.log('[Database] Added missing column: __Secure-1PSIDTS') */;
     }
   } catch (e) {
       console.error('[Database] Migration error:', e);
@@ -1200,7 +1200,7 @@ export function initDatabase(): void {
     const configCount = db.prepare('SELECT COUNT(*) as count FROM gemini_chat_config').get() as any;
     
     if (cookieData && configCount.count === 0) {
-      console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...');
+      /* console.log('[Database] Migrating data from gemini_cookie to gemini_chat_config...') */;
       const now = Date.now();
       const { v4: uuidv4 } = require('uuid');
       
@@ -1219,11 +1219,11 @@ export function initDatabase(): void {
         now,
         now
       );
-      console.log('[Database] Migration from gemini_cookie completed');
+      /* console.log('[Database] Migration from gemini_cookie completed') */;
     }
   } catch (e) {
     // Ignore if gemini_cookie doesn't exist or migration fails
-    console.log('[Database] No migration needed from gemini_cookie');
+    /* console.log('[Database] No migration needed from gemini_cookie') */;
   }
 
   // Migration: Backfill gemini_chat_context from gemini_chat_config if empty
@@ -1241,7 +1241,7 @@ export function initDatabase(): void {
           insert.run(row.id, row.conv_id || '', row.resp_id || '', row.cand_id || '', now);
         }
       }
-      console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config');
+      /* console.log('[Database] Backfilled gemini_chat_context from gemini_chat_config') */;
     }
   } catch (e) {
     console.error('[Database] Backfill gemini_chat_context failed:', e);
@@ -1277,7 +1277,7 @@ export function initDatabase(): void {
     }
 
     if (updatedCount > 0) {
-      console.log(`[Database] Backfilled secure cookie columns for ${updatedCount} gemini_chat_config rows`);
+      /* console.log(`[Database] Backfilled secure cookie columns for ${updatedCount} gemini_chat_config rows`) */;
     }
   } catch (e) {
     console.error('[Database] Backfill secure cookie columns failed:', e);
@@ -1405,11 +1405,11 @@ export function initDatabase(): void {
             }
           }
 
-          console.log('[Database] Migration: migrated ' + rows.length + ' configs from capcut_tts_configs');
+          /* console.log('[Database] Migration: migrated ' + rows.length + ' configs from capcut_tts_configs') */;
         }
 
         // Drop old table
-        try { _db2.exec('DROP TABLE IF EXISTS capcut_tts_configs'); console.log('[Database] Dropped legacy table capcut_tts_configs'); } catch (e) { console.error('[Database] Drop capcut_tts_configs failed:', e); }
+        try { _db2.exec('DROP TABLE IF EXISTS capcut_tts_configs'); /* console.log('[Database] Dropped legacy table capcut_tts_configs') */; } catch (e) { console.error('[Database] Drop capcut_tts_configs failed:', e); }
         return;
       }
 
@@ -1431,10 +1431,10 @@ export function initDatabase(): void {
             VALUES (?, ?, ?, 1, ?, ?)
           `).run('1.5.0', 'Mặc định', oldRow.token, now, now);
 
-          console.log('[Database] Migration: migrated from capcut_tts_secrets');
+          /* console.log('[Database] Migration: migrated from capcut_tts_secrets') */;
         }
 
-        try { _db2.exec('DROP TABLE IF EXISTS capcut_tts_secrets'); console.log('[Database] Dropped legacy table capcut_tts_secrets'); } catch (e) { console.error('[Database] Drop capcut_tts_secrets failed:', e); }
+        try { _db2.exec('DROP TABLE IF EXISTS capcut_tts_secrets'); /* console.log('[Database] Dropped legacy table capcut_tts_secrets') */; } catch (e) { console.error('[Database] Drop capcut_tts_secrets failed:', e); }
       }
     } catch (e) {
       console.error('[Database] Migration to new schema failed:', e);
@@ -1451,7 +1451,7 @@ export function initDatabase(): void {
         INSERT INTO capcut_tts_shared_config (id, app_key, ws_url, user_agent, x_ss_dp, extra_headers, updated_at)
         VALUES (1, NULL, 'wss://wss-global.zijieapi.com/ws', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', NULL, NULL, ?)
       `).run(Date.now());
-      console.log('[Database] Created default capcut_tts_shared_config');
+      /* console.log('[Database] Created default capcut_tts_shared_config') */;
     }
   } catch (e) {
     console.error('[Database] Ensure shared config failed:', e);
@@ -1495,5 +1495,5 @@ export function initDatabase(): void {
     console.error('[Database] Ensure thumbnail_generator_config failed:', e);
   }
 
-  console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens, thumbnail_generation_history, thumbnail_generator_config)');
+  /* console.log('[Database] Schema initialized (prompts, gemini_chat_config, gemini_chat_context, gemini_cookie, proxies, caption_gemini_web_conversation, downloader_cookies, capcut_tts_shared_config, capcut_tts_tokens, thumbnail_generation_history, thumbnail_generator_config)') */;
 }

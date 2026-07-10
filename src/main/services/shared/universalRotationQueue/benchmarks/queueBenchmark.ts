@@ -299,7 +299,7 @@ async function main(): Promise<void> {
     compareWithBaseline(output, args.baselinePath);
   }
 
-  console.log(serialized);
+  /* console.log(serialized) */;
 }
 
 void main().catch((error) => {

@@ -204,9 +204,9 @@ export class GeminiWebApiService {
       return failed;
     }
 
-    console.log(
+    /* console.log(
       `[GeminiWebApiService] Refreshed cookie (${response.data.sourceBrowser}) 1PSID=${maskSecret(parsed.secure1psid)} 1PSIDTS=${maskSecret(parsed.secure1psidts)}`,
-    );
+    ) */;
 
     const successResult: GeminiCookieRefreshResult = {
       success: true,
@@ -336,13 +336,13 @@ export class GeminiWebApiService {
     let proxyMode: ProxyMode = proxySelection.proxyUrl ? 'proxy' : 'direct';
     let fallbackUsed = false;
     if (proxySelection.source === 'manual' && proxySelection.proxyUrl) {
-      console.log(
+      /* console.log(
         `[GeminiWebApiService] Proxy route mode=manual scope=${proxySelection.scope} accountConfigId=${accountConfigId} endpoint=${this.maskProxyForLog(proxySelection.proxyUrl)}`
-      );
+      ) */;
     } else if (proxySelection.source === 'pool' && proxySelection.proxyConfig) {
-      console.log(
+      /* console.log(
         `[GeminiWebApiService] Proxy route mode=pool scope=${proxySelection.scope} accountConfigId=${accountConfigId} assignment=${proxySelection.assignmentState} proxyId=${proxySelection.proxyConfig.id} endpoint=${proxySelection.proxyConfig.host}:${proxySelection.proxyConfig.port}`
-      );
+      ) */;
     } else if (proxySelection.useProxySetting && proxySelection.source === 'none') {
       if (proxyModeSetting === 'rotating-endpoint') {
         const failed: GeminiGenerateResult = {
@@ -536,9 +536,9 @@ export class GeminiWebApiService {
     if (useChatSession) {
       const conversationState = conversationContinued ? 'reused' : 'created_new';
       const conversationTraceId = this.extractConversationTraceId(outputConversationMetadata || inputConversationMetadata);
-      console.log(
+      /* console.log(
         `[GeminiWebApiService] Chat session accountConfigId=${accountConfigId} state=${conversationState} conversationId=${conversationTraceId} key=${request.conversationKey || '(none)'}`
-      );
+      ) */;
       if (!outputConversationMetadata) {
         console.warn(
           `[GeminiWebApiService] Missing conversation metadata accountConfigId=${accountConfigId} key=${request.conversationKey || '(none)'} reason=${conversationMetadataReason || 'unknown'} textLen=${(response.data?.text || '').length} debug=${JSON.stringify(conversationMetadataDebug || {})}`
@@ -723,9 +723,9 @@ export class GeminiWebApiService {
 
     if (!proxyConfig.isRotatingEndpoint) {
       this.proxyAssignmentByAccount.set(accountConfigId, proxyConfig.id);
-      console.log(
+      /* console.log(
         `[GeminiWebApiService] Proxy assigned accountConfigId=${accountConfigId} proxyId=${proxyConfig.id} endpoint=${proxyConfig.host}:${proxyConfig.port}`
-      );
+      ) */;
     }
 
     return {

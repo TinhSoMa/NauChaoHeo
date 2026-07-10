@@ -3193,12 +3193,12 @@ export function CaptionTranslator() {
     const activeInputPath = processing.currentFolder?.path ?? idleFocusedFolderPath ?? inputPaths[0] ?? fallbackInputPath;
     if (!activeInputPath) {
       if (import.meta?.env?.DEV) {
-        console.log('[CaptionTranslator][SessionHydrate] No active input path', {
+        /* console.log('[CaptionTranslator][SessionHydrate] No active input path', {
           inputType: settings.inputType,
           filePath: fileManager.filePath,
           processingInputPaths: inputPaths,
           idleFocusedFolderPath,
-        });
+        }) */;
       }
       setSessionTimingSnapshot(null);
       setSessionStep3BatchState(null);
@@ -3213,13 +3213,13 @@ export function CaptionTranslator() {
     try {
       const sessionPath = getSessionPathForInputPath(settings.inputType, activeInputPath);
       if (import.meta?.env?.DEV) {
-        console.log('[CaptionTranslator][SessionHydrate] Start', {
+        /* console.log('[CaptionTranslator][SessionHydrate] Start', {
           inputType: settings.inputType,
           filePath: fileManager.filePath,
           processingInputPaths: inputPaths,
           activeInputPath,
           sessionPath,
-        });
+        }) */;
       }
       const session = await readCaptionSession(sessionPath, {
         projectId,
@@ -3230,7 +3230,7 @@ export function CaptionTranslator() {
           : activeInputPath.replace(/[^/\\]+$/, ''),
       });
       if (isCancelled()) return;
-      console.log('[CaptionTranslator][SessionHydrate]', {
+      /* console.log('[CaptionTranslator][SessionHydrate]', {
         sessionPath,
         activeInputPath,
         steps: {
@@ -3241,7 +3241,7 @@ export function CaptionTranslator() {
           step6: session.steps.step6?.status,
           step7: session.steps.step7?.status,
         },
-      });
+      }) */;
 
       const nextStepStatus: Partial<Record<Step, string>> = {
         1: session.steps.step1?.status,
@@ -4489,9 +4489,9 @@ export function CaptionTranslator() {
         let resolvedDuration: number | null = null;
 
         for (const audioPath of uniqueAudioPaths) {
-          console.log('Fetching metadata for audio path:', audioPath);
+          /* console.log('Fetching metadata for audio path:', audioPath) */;
           const res = await (window.electronAPI as any).captionVideo.getVideoMetadata(audioPath);
-          console.log('Metadata response:', res);
+          /* console.log('Metadata response:', res) */;
           if (!res?.success || !res.data?.duration) {
             continue;
           }
@@ -4667,7 +4667,7 @@ export function CaptionTranslator() {
   };
 
   useEffect(() => {
-    console.log(`[CaptionTranslator] 🕒 THỜI GIAN GỐC & TÍNH TOÁN (AUTO-FIT):
+    /* console.log(`[CaptionTranslator] 🕒 THỜI GIAN GỐC & TÍNH TOÁN (AUTO-FIT):
 - File audio trên đĩa (diskAudioDuration): ${diskAudioDuration ? diskAudioDuration.toFixed(2) + 's' : 'null'}
 - Thời gian gốc dự phòng (fallbackBaseAudioDurationMs): ${(fallbackBaseAudioDurationMs / 1000).toFixed(2)}s
 - Mốc subtitle cuối (scaled theo srtSpeed): ${scaledSrtDurationSec.toFixed(2)}s
@@ -4685,7 +4685,7 @@ export function CaptionTranslator() {
 - 👉 Tốc độ Video tự động chỉnh (autoVideoSpeed): ${autoVideoSpeed.toFixed(3)}x
 - 🎯 Mốc video chuẩn (gốc): ${videoMarkerSec.toFixed(2)}s
 - Timing source: ${timingDisplaySource}
-    `);
+    `) */;
   }, [diskAudioDuration, diskSubtitleDuration, diskSubtitleAlreadyScaled, fallbackBaseAudioDurationMs, scaledSrtDurationSec, baseAudioDuration, settings.renderAudioSpeed, audioExpectedDuration, step4Scale, step7Speed, audioEffectiveSpeed, subRenderDuration, videoSubBaseDuration, autoVideoSpeed, videoMarkerSec, timingDisplaySource]);
 
   useEffect(() => {

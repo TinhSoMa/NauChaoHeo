@@ -32,7 +32,7 @@ export class ProxyManager {
       fallbackToDirect: true,
     };
     
-    console.log('[ProxyManager] Initialized with database storage');
+    /* console.log('[ProxyManager] Initialized with database storage') */;
   }
 
   private getScopeSettings(scope: ProxyScope = 'other'): ProxyScopeSettings {
@@ -146,7 +146,7 @@ export class ProxyManager {
         console.warn('[ProxyManager] Rotating endpoint mode đang bật nhưng endpoint không hợp lệ/trống');
         return null;
       }
-      console.log(`[ProxyManager] Sử dụng rotating endpoint: ${rotatingProxy.host}:${rotatingProxy.port} (${rotatingProxy.type})`);
+      /* console.log(`[ProxyManager] Sử dụng rotating endpoint: ${rotatingProxy.host}:${rotatingProxy.port} (${rotatingProxy.type})`) */;
       return rotatingProxy;
     }
 
@@ -166,7 +166,7 @@ export class ProxyManager {
     const proxy = availableProxies[this.currentIndex % availableProxies.length];
     this.currentIndex = (this.currentIndex + 1) % availableProxies.length;
 
-    console.log(`[ProxyManager] Sử dụng proxy: ${proxy.host}:${proxy.port} (${proxy.type})`);
+    /* console.log(`[ProxyManager] Sử dụng proxy: ${proxy.host}:${proxy.port} (${proxy.type})`) */;
     return proxy;
   }
 
@@ -204,7 +204,7 @@ export class ProxyManager {
       const proxy = ProxyDatabase.getById(proxyId);
       
       if (proxy) {
-        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} thành công (${proxy.successCount} success)`);
+        /* console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} thành công (${proxy.successCount} success)`) */;
       }
     } catch (error) {
       console.error('[ProxyManager] Lỗi markProxySuccess:', error);
@@ -250,7 +250,7 @@ export class ProxyManager {
     };
 
     const created = ProxyDatabase.create(newProxy);
-    console.log(`[ProxyManager] ➕ Đã thêm proxy: ${created.host}:${created.port}`);
+    /* console.log(`[ProxyManager] ➕ Đã thêm proxy: ${created.host}:${created.port}`) */;
     return created;
   }
 
@@ -262,7 +262,7 @@ export class ProxyManager {
     if (proxy) {
       const deleted = ProxyDatabase.delete(proxyId);
       if (deleted) {
-        console.log(`[ProxyManager] ➖ Đã xóa proxy: ${proxy.host}:${proxy.port}`);
+        /* console.log(`[ProxyManager] ➖ Đã xóa proxy: ${proxy.host}:${proxy.port}`) */;
         return true;
       }
     }
@@ -277,7 +277,7 @@ export class ProxyManager {
     if (updated) {
       const proxy = ProxyDatabase.getById(proxyId);
       if (proxy) {
-        console.log(`[ProxyManager] 🔄 Đã cập nhật proxy: ${proxy.host}:${proxy.port}`);
+        /* console.log(`[ProxyManager] 🔄 Đã cập nhật proxy: ${proxy.host}:${proxy.port}`) */;
       }
       return true;
     }
@@ -348,7 +348,7 @@ export class ProxyManager {
       const latency = Date.now() - startTime;
       const data = await response.json() as { origin: string };
       
-      console.log(`[ProxyManager] ✅ Test proxy thành công: ${proxy.host}:${proxy.port} (${latency}ms) - IP: ${data.origin}`);
+      /* console.log(`[ProxyManager] ✅ Test proxy thành công: ${proxy.host}:${proxy.port} (${latency}ms) - IP: ${data.origin}`) */;
       
       return { success: true, latency };
     } catch (error) {
@@ -397,7 +397,7 @@ export class ProxyManager {
       if (success) {
         ProxyDatabase.update(proxyId, { enabled: true });
         ProxyDatabase.incrementSuccessNoReset(proxyId);
-        console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} check OK (${status})`);
+        /* console.log(`[ProxyManager] ✅ Proxy ${proxy.host}:${proxy.port} check OK (${status})`) */;
       } else {
         ProxyDatabase.update(proxyId, { enabled: false });
         ProxyDatabase.incrementFailed(proxyId);
@@ -495,7 +495,7 @@ export class ProxyManager {
       added++;
     }
 
-    console.log(`[ProxyManager] Import hoàn thành: ${added} added, ${skipped} skipped`);
+    /* console.log(`[ProxyManager] Import hoàn thành: ${added} added, ${skipped} skipped`) */;
     return { added, skipped };
   }
 
@@ -525,7 +525,7 @@ export class ProxyManager {
     proxies.forEach(proxy => {
       ProxyDatabase.update(proxy.id, { failedCount: 0, enabled: true });
     });
-    console.log('[ProxyManager] 🔄 Đã reset failed count của tất cả proxies');
+    /* console.log('[ProxyManager] 🔄 Đã reset failed count của tất cả proxies') */;
   }
 
   /**
@@ -544,7 +544,7 @@ export class ProxyManager {
       }
     }
     if (removed > 0) {
-      console.log(`[ProxyManager] 🧹 Removed ${removed} proxies for platform=${platform}`);
+      /* console.log(`[ProxyManager] 🧹 Removed ${removed} proxies for platform=${platform}`) */;
     }
     return removed;
   }

@@ -161,7 +161,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
   }, []);
 
   const handleStopTranslation = () => {
-    console.log('[useStoryBatchTranslation] Dừng dịch thủ công...');
+    /* console.log('[useStoryBatchTranslation] Dừng dịch thủ công...') */;
     const runId = currentBatchRunIdRef.current;
     shouldStopRef.current = true;
     currentBatchRunIdRef.current = null;
@@ -225,7 +225,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     });
 
     try {
-      console.log(`[useStoryBatchTranslation] 📖 Dịch chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
+      /* console.log(`[useStoryBatchTranslation] 📖 Dịch chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`) */;
       const actualChapterIndex = chapters.findIndex((entry) => entry.id === chapter.id);
       const previousAssistantOutputResult = actualChapterIndex >= 0
         ? resolvePreviousAssistantOutputDebug({
@@ -395,7 +395,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
     const workerId = ++workerIdRef.current;
     activeWorkerCountRef.current += 1;
-    console.log(`[useStoryBatchTranslation] 🚀 Worker ${workerId} started (${channel})`);
+    /* console.log(`[useStoryBatchTranslation] 🚀 Worker ${workerId} started (${channel})`) */;
 
     let hasDispatched = false;
 
@@ -420,9 +420,9 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
 
             if (!batchStateRef.current.isFirstChapterTaken) {
                 batchStateRef.current.isFirstChapterTaken = true;
-                console.log(`[useStoryBatchTranslation] 🚀 Worker ${workerId} lấy chương đầu tiên`);
+                /* console.log(`[useStoryBatchTranslation] 🚀 Worker ${workerId} lấy chương đầu tiên`) */;
             } else {
-                console.log(`[useStoryBatchTranslation] 📖 Worker ${workerId} lấy chương ${index + 1}`);
+                /* console.log(`[useStoryBatchTranslation] 📖 Worker ${workerId} lấy chương ${index + 1}`) */;
             }
 
             let result: ChapterProcessResult = { status: 'stopped' };
@@ -444,9 +444,9 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
                       });
                       return next;
                     });
-                    console.log(
+                    /* console.log(
                       `[useStoryBatchTranslation] ⚠️ Worker ${workerId} retrying chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`
-                    );
+                    ) */;
                     await new Promise(r => setTimeout(r, delayMs));
                 }
 
@@ -492,7 +492,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
         if (channel === 'token' && tokenConfig) {
             batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
         }
-        console.log(`[useStoryBatchTranslation] ✓ Worker ${workerId} finished`);
+        /* console.log(`[useStoryBatchTranslation] ✓ Worker ${workerId} finished`) */;
         
         // Check if all workers are done
         if (
@@ -534,10 +534,10 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     
     if (newConfigs.length === 0) return;
     
-    console.log(`[useStoryBatchTranslation] 🔥 Hot-adding ${newConfigs.length} new token worker(s) during batch...`);
+    /* console.log(`[useStoryBatchTranslation] 🔥 Hot-adding ${newConfigs.length} new token worker(s) during batch...`) */;
     
     for (const config of newConfigs) {
-      console.log(`[useStoryBatchTranslation] 🚀 Hot-starting worker for ${config.email || config.id}`);
+      /* console.log(`[useStoryBatchTranslation] 🚀 Hot-starting worker for ${config.email || config.id}`) */;
       const runId = currentBatchRunIdRef.current;
       if (!runId) {
         break;
@@ -643,7 +643,7 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
     batchStateRef.current.activeWorkerConfigIds = finalIds;
 
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
-    console.log(`[useStoryBatchTranslation] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers`);
+    /* console.log(`[useStoryBatchTranslation] 🎯 Bắt đầu dịch ${chaptersToTranslate.length} chapters với ${totalWorkers} workers`) */;
 
     // Start API workers
     for (let i = 0; i < apiWorkerCount; i += 1) {
@@ -659,15 +659,15 @@ export function useStoryBatchTranslation(params: UseStoryBatchTranslationParams)
       const config = finalConfigsToUse[i];
       
       if (i === 0) {
-        console.log(`[useStoryBatchTranslation] 🚀 Starting worker 1/${finalConfigsToUse.length} immediately`);
+        /* console.log(`[useStoryBatchTranslation] 🚀 Starting worker 1/${finalConfigsToUse.length} immediately`) */;
         startWorker('token', config, runId);
       } else {
         const spawnDelay = getRandomInt(MIN_SPAWN_DELAY, MAX_SPAWN_DELAY);
         cumulativeDelay += spawnDelay;
-        console.log(`[useStoryBatchTranslation] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`);
+        /* console.log(`[useStoryBatchTranslation] ⏳ Worker ${i + 1}/${finalConfigsToUse.length} will start in ${cumulativeDelay}ms from now`) */;
         spawnTimeoutsRef.current.push(setTimeout(() => {
           if (!shouldStopRef.current && currentBatchRunIdRef.current === runId) {
-            console.log(`[useStoryBatchTranslation] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`);
+            /* console.log(`[useStoryBatchTranslation] 🚀 Starting worker ${i + 1}/${finalConfigsToUse.length}`) */;
             startWorker('token', config, runId);
           }
         }, cumulativeDelay));

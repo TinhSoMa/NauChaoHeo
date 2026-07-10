@@ -62,11 +62,11 @@ function debugLog(message: string, details?: Record<string, unknown>): void {
   if (!DEBUG_AUDIO_MERGER) return;
 
   if (details) {
-    console.log(`[AudioMerger][DEBUG] ${message}`, details);
+    /* console.log(`[AudioMerger][DEBUG] ${message}`, details) */;
     return;
   }
 
-  console.log(`[AudioMerger][DEBUG] ${message}`);
+  /* console.log(`[AudioMerger][DEBUG] ${message}`) */;
 }
 
 function resolveFfmpegBinary(): string {
@@ -400,7 +400,7 @@ export async function analyzeAudioFiles(
   audioFiles: AudioFile[],
   srtDuration: number
 ): Promise<MergeAnalysis> {
-  console.log(`[AudioMerger] Phân tích ${audioFiles.length} audio files`);
+  /* console.log(`[AudioMerger] Phân tích ${audioFiles.length} audio files`) */;
   
   const segments: AudioSegmentInfo[] = [];
   let maxOverflowRatio = 1.0;
@@ -452,8 +452,8 @@ export async function analyzeAudioFiles(
     segments,
   };
   
-  console.log(`[AudioMerger] Phân tích xong: ${overflowCount} segments vượt thời gian`);
-  console.log(`[AudioMerger] Scale đề xuất: ${recommendedScale.toFixed(2)}x`);
+  /* console.log(`[AudioMerger] Phân tích xong: ${overflowCount} segments vượt thời gian`) */;
+  /* console.log(`[AudioMerger] Scale đề xuất: ${recommendedScale.toFixed(2)}x`) */;
   
   return analysis;
 }
@@ -712,7 +712,7 @@ export async function mergeAudioFiles(
     finalOutputPath = path.join(path.dirname(parentDir), path.basename(outputPath));
   }
   
-  console.log(`[AudioMerger] Ghép ${audioFiles.length} files, scale: ${timeScale}x -> ${finalOutputPath}`);
+  /* console.log(`[AudioMerger] Ghép ${audioFiles.length} files, scale: ${timeScale}x -> ${finalOutputPath}`) */;
   
   // Filter files thành công
   const candidateFiles = audioFiles.filter((f) => {
@@ -852,7 +852,7 @@ export async function mergeAudioFiles(
       throwIfTtsStopped();
       const batch = batches[batchIdx];
       const lastItem = batch[batch.length - 1];
-      console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${batches.length}`);
+      /* console.log(`[AudioMerger] Ghép batch ${batchIdx + 1}/${batches.length}`) */;
 
       const tempPath = path.join(outputDir, `${baseName}_temp_${batchIdx}${ext}`);
       const batchStartMs = batch[0].startMs;
@@ -946,7 +946,7 @@ export async function mergeAudioFiles(
     }
     
     // Ghép các temp files lại
-    console.log(`[AudioMerger] Ghép ${tempFiles.length} batch files...`);
+    /* console.log(`[AudioMerger] Ghép ${tempFiles.length} batch files...`) */;
     
     if (onProgress) {
       onProgress({ currentBatch: batches.length, totalBatches: batches.length, phase: 'finalizing', message: 'Đang ghép final...' });
@@ -979,7 +979,7 @@ export async function mergeAudioFiles(
         };
       }
 
-      console.log(`[AudioMerger] Ghép thành công: ${finalOutputPath}`);
+      /* console.log(`[AudioMerger] Ghép thành công: ${finalOutputPath}`) */;
       debugLog('mergeAudioFiles thành công', {
         outputPath: finalOutputPath,
         totalInputFiles: audioFiles.length,
@@ -1030,7 +1030,7 @@ export async function mergeAudioFiles(
 export async function smartMerge(options: MergeOptions): Promise<MergeResult> {
   const { audioDir, srtPath, outputPath, autoAdjust = true, customScale } = options;
   
-  console.log(`[AudioMerger] Smart merge: ${audioDir} -> ${outputPath}`);
+  /* console.log(`[AudioMerger] Smart merge: ${audioDir} -> ${outputPath}`) */;
   
   // TODO: Implement full smart merge with SRT parsing
   // Hiện tại chỉ merge các file trong thư mục
@@ -1311,9 +1311,9 @@ export async function fitAudioToDuration(
   // );
 
   const ratio = actualDurationMs / allowedDurationMs; // > 1.0
-  console.log(
+  /* console.log(
     `[AudioMerger] fitAudio SCALE: ${fileName} actual=${actualDurationMs}ms, allowed=${allowedDurationMs}ms, speed=${ratio.toFixed(2)}x`
-  );
+  ) */;
 
   // Xây dựng chuỗi atempo filters
   // FFmpeg giới hạn mỗi atempo trong khoảng [0.5, 2.0]

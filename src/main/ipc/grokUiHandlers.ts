@@ -5,7 +5,7 @@ import { GrokUiProfileDatabase } from '../database/grokUiProfileDatabase';
 import { AppSettingsService } from '../services/appSettings';
 
 export function registerGrokUiHandlers(): void {
-  console.log('[GrokUiHandlers] Dang ky handlers...');
+  /* console.log('[GrokUiHandlers] Dang ky handlers...') */;
 
   ipcMain.handle(GROK_UI_IPC_CHANNELS.GET_HEALTH, async () => {
     try {
@@ -165,5 +165,5 @@ export function registerGrokUiHandlers(): void {
     }
   );
 
-  console.log('[GrokUiHandlers] Da dang ky handlers thanh cong');
+  /* console.log('[GrokUiHandlers] Da dang ky handlers thanh cong') */;
 }

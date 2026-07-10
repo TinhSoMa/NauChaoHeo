@@ -29,7 +29,7 @@ import { registerDialogHandlers } from './dialogHandlers';
  * Đăng ký tất cả IPC handlers
  */
 export function registerAllHandlers(): void {
-  console.log('[IPC] Đang đăng ký tất cả handlers...');
+  /* console.log('[IPC] Đang đăng ký tất cả handlers...') */;
 
   // Đăng ký Gemini handlers
   registerGeminiHandlers();
@@ -95,7 +95,7 @@ export function registerAllHandlers(): void {
   // Đăng ký Thumbnail Generator handlers
   registerThumbnailGeneratorHandlers();
 
-  console.log('[IPC] Da dang ky xong tat ca handlers');
+  /* console.log('[IPC] Da dang ky xong tat ca handlers') */;
 }
 
 // Export individual handlers

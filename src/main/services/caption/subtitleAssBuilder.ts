@@ -238,7 +238,7 @@ async function prepareSubtitleAndDurationCore(
     } catch (e) {}
   }
 
-  console.log(
+  /* console.log(
     `[VideoRenderer] Duration sync | source=${speedCalcSource}, step4Scale=${step4Scale.toFixed(4)}, step7Speed=${step7Speed.toFixed(4)}, ` +
     `audioEffectiveSpeed=${audioEffectiveSpeed.toFixed(4)}, subRenderDuration=${subRenderDuration.toFixed(3)}s, ` +
     `videoSubBaseDuration=${videoSubBaseDuration.toFixed(3)}s, audioScaledDuration=${newAudioDuration.toFixed(3)}s, ` +
@@ -247,7 +247,7 @@ async function prepareSubtitleAndDurationCore(
     `ttsRate=${options.ttsRate || 'n/a'}, audioModel=${audioSpeedModel}, ` +
     `videoTotal=${originalVideoDuration.toFixed(3)}s, durationUsed=${duration.toFixed(3)}s, ` +
     `subtitleSource=${options.step7SubtitleSource || 'unknown'}, audioSource=${options.step7AudioSource || 'unknown'}`
-  );
+  ) */;
 
   let scaleFactor = 1;
   if (!portraitAssCanvas) {
@@ -272,18 +272,18 @@ async function prepareSubtitleAndDurationCore(
       finalHeight = Math.max(64, Math.min(4320, ensureEvenResolution(finalHeight * scaleFactor, 64)));
     }
 
-    console.log('[VideoRenderer][Resolution][Landscape]', {
+    /* console.log('[VideoRenderer][Resolution][Landscape]', {
       sourceSize: `${sourceVideoWidth}x${sourceVideoHeight}`,
       targetResolution: options.renderResolution || '1080p',
       outputSize: `${renderWidth}x${renderHeight}`,
       scaleFactor: Number(scaleFactor.toFixed(6)),
       isUpscale: outputSize.isUpscale,
       isDownscale: outputSize.isDownscale,
-    });
+    }) */;
   }
 
   const s = options.style || { fontName: 'Arial', fontSize: 48, fontColor: '#FFFF00', shadow: 2, marginV: 0, alignment: 5 };
-  console.log(`[VideoRenderer][Font] ASS font selected: "${s.fontName}"`);
+  /* console.log(`[VideoRenderer][Font] ASS font selected: "${s.fontName}"`) */;
   const normalizedUserFontSize = normalizeSubtitleFontSize(s.fontSize);
   const shadowBase = normalizeSubtitleShadow(s.shadow);
   const effectiveFontSize = Math.max(1, Math.round(normalizedUserFontSize * scaleFactor));
@@ -292,12 +292,12 @@ async function prepareSubtitleAndDurationCore(
     : Math.max(1, Math.round(effectiveFontSize * 0.04 * (shadowBase / 4)));
   const shadowLayers = buildSubtitleShadowLayers(effectiveShadow);
   const orderedShadowLayers = [...shadowLayers].reverse();
-  console.log('[VideoRenderer][SubtitleShadow]', {
+  /* console.log('[VideoRenderer][SubtitleShadow]', {
     shadowLayers: shadowLayers.length,
     shadowAlphaRange: '0.95->0.05',
     effectiveShadow,
     fontSize: effectiveFontSize,
-  });
+  }) */;
 
   const assColor = hexToAssColor(s.fontColor);
   const assAlignment = 5;
@@ -430,7 +430,7 @@ export function getSubtitleFilter(tempAssPath: string) {
     if (fontsDir && existsSync(fontsDir)) {
       const fontsDirEscaped = fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:');
       fontsDirParam = `:fontsdir='${fontsDirEscaped}'`;
-      console.log(`[VideoRenderer][Font] ASS fontsdir: ${fontsDir}`);
+      /* console.log(`[VideoRenderer][Font] ASS fontsdir: ${fontsDir}`) */;
     } else {
       console.warn('[VideoRenderer][Font] Không tìm thấy resources/fonts. FFmpeg có thể fallback font mặc định.');
     }

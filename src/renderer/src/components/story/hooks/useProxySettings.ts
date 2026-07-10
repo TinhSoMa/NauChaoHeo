@@ -23,7 +23,7 @@ export function useProxySettings() {
     loadProxySetting();
 
     const removeListener = window.electronAPI.onMessage('geminiChat:configChanged', () => {
-      console.log('[useProxySettings] Config changed, reloading proxy settings...');
+      /* console.log('[useProxySettings] Config changed, reloading proxy settings...') */;
       loadProxySetting();
     });
 

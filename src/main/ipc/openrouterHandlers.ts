@@ -21,7 +21,7 @@ import {
 } from '../services/openrouter/index.js'
 
 export function registerOpenRouterHandlers(): void {
-  console.log('[IPC] Đang đăng ký OpenRouter handlers...')
+  /* console.log('[IPC] Đang đăng ký OpenRouter handlers...') */
 
   ipcMain.handle(
     OPENROUTER_IPC_CHANNELS.CHAT,
@@ -294,5 +294,5 @@ export function registerOpenRouterHandlers(): void {
     }
   )
 
-  console.log('[IPC] Đã đăng ký xong OpenRouter handlers')
+  /* console.log('[IPC] Đã đăng ký xong OpenRouter handlers') */
 }

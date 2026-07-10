@@ -88,27 +88,27 @@ export class StoryService {
       ? { stopSignal: extra.signal, stopErrorMessage: 'STOP_REQUESTED' as const }
       : undefined;
     try {
-      console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default');
+      /* console.log('[StoryService] Starting translation...', options.method || 'API', options.model || 'default') */;
       
       if (options.method === 'IMPIT') {
            // WEB METHOD (Gemini Protocol)
            const promptText = this.extractPromptText(options.prompt);
             
-            console.log('[StoryService] Extracted promptText length:', promptText.length);
+            /* console.log('[StoryService] Extracted promptText length:', promptText.length) */;
             if (!promptText) console.warn('[StoryService] promptText is empty!');
 
            const webConfigId = options.webConfigId?.trim() || '';
            
-           console.log('[StoryService] Using IMPIT for translation...');
+           /* console.log('[StoryService] Using IMPIT for translation...') */;
            const result = await GeminiChatService.sendMessageImpit(promptText, webConfigId, options.context, options.useProxy, options.metadata, options.onRetry);
            
             if (result.success && result.data) {
-              console.log('[StoryService] Translation completed.');
+              /* console.log('[StoryService] Translation completed.') */;
              
              // Log context update for debugging re-translation issues
              const ctx = result.data.context;
              if (ctx && (ctx.conversationId || ctx.responseId)) {
-                 console.log(`[StoryService] Context updated: convId=${ctx.conversationId ? ctx.conversationId.slice(0, 20) + '...' : '(empty)'}, respId length=${ctx.responseId ? ctx.responseId.length : 0}`);
+                 /* console.log(`[StoryService] Context updated: convId=${ctx.conversationId ? ctx.conversationId.slice(0, 20) + '...' : '(empty)'}, respId length=${ctx.responseId ? ctx.responseId.length : 0}`) */;
              } else {
                  console.warn('[StoryService] ⚠️ Response context is empty - context may not be updated properly');
              }
@@ -918,11 +918,11 @@ export class StoryService {
       }
     }
 
-    console.log('[StoryGeminiWebQueue][CancelBatch]', {
+    /* console.log('[StoryGeminiWebQueue][CancelBatch]', {
       batchId: normalizedBatchId,
       requestedJobCount: matchingJobs.length,
       cancelledJobIds
-    });
+    }) */;
 
     this.clearStoryBatchStickyState(normalizedBatchId, 'cancelled_by_user');
 
@@ -988,9 +988,9 @@ export class StoryService {
     if (!this.storyStickyAccountByBatchId.delete(normalizedBatchId)) {
       return;
     }
-    console.log(
+    /* console.log(
       `[StoryGeminiWebQueue][Sticky] Cleared sticky state batchId=${normalizedBatchId} reason=${reason}`
-    );
+    ) */;
   }
 
   private static pruneStoryBatchStickyStates(nowMs = Date.now()): void {
@@ -999,9 +999,9 @@ export class StoryService {
         continue;
       }
       this.storyStickyAccountByBatchId.delete(batchId);
-      console.log(
+      /* console.log(
         `[StoryGeminiWebQueue][Sticky] Pruned stale state batchId=${batchId}`
-      );
+      ) */;
     }
   }
 
@@ -1094,9 +1094,9 @@ export class StoryService {
 
     stickyState.stickyResourceId = enabledResourceIds[0];
     this.touchStoryBatchStickyState(stickyState);
-    console.log(
+    /* console.log(
       `[StoryGeminiWebQueue][Sticky] Locked account batchId=${stickyState.batchId} resourceId=${stickyState.stickyResourceId}`
-    );
+    ) */;
     return stickyState.stickyResourceId;
   }
 

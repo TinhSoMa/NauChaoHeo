@@ -55,11 +55,11 @@ export class ApiKeyManager {
   private lastRecoveryMs = 0;
 
   constructor() {
-    console.log('[ApiManager] Khởi tạo API Key Manager...');
+    /* console.log('[ApiManager] Khởi tạo API Key Manager...') */;
     this.config = this.loadConfig();
     // Không gọi autoRecoverAll + checkDailyReset ở constructor
     // Chúng chạy lazy qua tryLazyRecovery()
-    console.log('[ApiManager] Đã khởi tạo xong');
+    /* console.log('[ApiManager] Đã khởi tạo xong') */;
   }
 
   /**
@@ -204,7 +204,7 @@ export class ApiKeyManager {
     }
 
     if (recoveredCount > 0) {
-      console.log(`[ApiManager] Đã auto-recover ${recoveredCount} projects từ rate_limited`);
+      /* console.log(`[ApiManager] Đã auto-recover ${recoveredCount} projects từ rate_limited`) */;
       this.saveConfig();
     }
   }
@@ -218,7 +218,7 @@ export class ApiKeyManager {
     const lastReset = rotationState.lastDailyReset;
 
     if (lastReset !== currentDate) {
-      console.log(`[ApiManager] Đang reset daily stats (last: ${lastReset}, current: ${currentDate})`);
+      /* console.log(`[ApiManager] Đang reset daily stats (last: ${lastReset}, current: ${currentDate})`) */;
 
       for (const account of this.config.accounts) {
         for (const project of account.projects) {
@@ -355,7 +355,7 @@ export class ApiKeyManager {
       projectIndex: entry.projIdx,
     }));
 
-    console.log(`[ApiManager] Có ${keys.length} key(s) available`);
+    /* console.log(`[ApiManager] Có ${keys.length} key(s) available`) */;
     return keys;
   }
 
@@ -364,7 +364,7 @@ export class ApiKeyManager {
    * Dùng khi chuyển model
    */
   resetAllStatusExceptDisabled(): void {
-    console.log('[ApiManager] Đang reset tất cả trạng thái keys...');
+    /* console.log('[ApiManager] Đang reset tất cả trạng thái keys...') */;
     let resetCount = 0;
 
     for (const account of this.config.accounts) {
@@ -378,13 +378,13 @@ export class ApiKeyManager {
           project.limitTracking.minuteRequestCount = 0;
           project.stats.lastErrorMessage = '';
           resetCount++;
-          console.log(`[ApiManager] Reset project: ${project.projectName} (was: ${status})`);
+          /* console.log(`[ApiManager] Reset project: ${project.projectName} (was: ${status})`) */;
         }
       }
     }
 
     this.saveConfig();
-    console.log(`[ApiManager] Đã reset ${resetCount} project(s)`);
+    /* console.log(`[ApiManager] Đã reset ${resetCount} project(s)`) */;
   }
 
   /**
@@ -542,11 +542,11 @@ export class ApiKeyManager {
    * Reload config từ file
    */
   reload(): void {
-    console.log('[ApiManager] Đang reload config...');
+    /* console.log('[ApiManager] Đang reload config...') */;
     this.config = this.loadConfig();
     this.lastRecoveryMs = 0; // buộc recovery ở lần gọi tiếp theo
     this.invalidateCache();
-    console.log('[ApiManager] Đã reload xong');
+    /* console.log('[ApiManager] Đã reload xong') */;
   }
 
   /**
@@ -558,7 +558,7 @@ export class ApiKeyManager {
     state.currentProjectIndex = 0;
     state.rotationRound = 1;
     this.saveConfig();
-    console.log('[ApiManager] Đã reset rotation state');
+    /* console.log('[ApiManager] Đã reset rotation state') */;
   }
 
   disableAccount(accountId: string): boolean {

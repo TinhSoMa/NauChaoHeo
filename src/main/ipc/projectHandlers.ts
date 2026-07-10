@@ -66,7 +66,7 @@ function resolveProjectPaths(projectId: string): ProjectResolvedPaths {
 function scanProjects(basePath: string): ProjectMetadata[] {
   try {
     if (!fs.existsSync(basePath)) {
-      console.log('[ProjectHandlers] Thư mục projects không tồn tại:', basePath)
+      /* console.log('[ProjectHandlers] Thư mục projects không tồn tại:', basePath) */
       return []
     }
 
@@ -133,7 +133,7 @@ function createProject(basePath: string, projectName: string): ProjectMetadata |
     const metadataPath = path.join(projectPath, PROJECT_FILE)
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
 
-    console.log('[ProjectHandlers] Đã tạo project:', projectId)
+    /* console.log('[ProjectHandlers] Đã tạo project:', projectId) */
     return metadata
   } catch (error) {
     console.error('[ProjectHandlers] Lỗi tạo project:', error)
@@ -275,7 +275,7 @@ export function registerProjectHandlers(): void {
         currentWin.close()
       }
 
-      console.log(`[Hệ thống] Đã mở project ${projectId} và đóng Dashboard`)
+      /* console.log(`[Hệ thống] Đã mở project ${projectId} và đóng Dashboard`) */
       return { success: true }
     } catch (error) {
       console.error('[Lỗi] Không thể chuyển đổi cửa sổ:', error)
@@ -307,7 +307,7 @@ export function registerProjectHandlers(): void {
         currentWin.close()
       }
 
-      console.log(`[Hệ thống] Đã tạo và mở project ${metadata.id}`)
+      /* console.log(`[Hệ thống] Đã tạo và mở project ${metadata.id}`) */
       return { success: true, data: metadata }
     } catch (error) {
       console.error('[Lỗi] Không thể tạo và mở project:', error)

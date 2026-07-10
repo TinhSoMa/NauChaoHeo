@@ -100,7 +100,7 @@ export function saveApiKeys(accounts: EmbeddedAccount[]): void {
     }
     
     fs.writeFileSync(filePath, encryptedData, 'utf8');
-    console.log(`[KeyStorage] Đã lưu ${accounts.length} accounts vào ${filePath}`);
+    /* console.log(`[KeyStorage] Đã lưu ${accounts.length} accounts vào ${filePath}`) */;
   } catch (error) {
     console.error('[KeyStorage] Lỗi lưu keys:', error);
     throw error;
@@ -116,7 +116,7 @@ export function loadApiKeys(): EmbeddedAccount[] {
     
     // Kiểm tra file tồn tại
     if (!fs.existsSync(filePath)) {
-      console.log('[KeyStorage] Chưa có file keys, trả về danh sách rỗng');
+      /* console.log('[KeyStorage] Chưa có file keys, trả về danh sách rỗng') */;
       return [];
     }
     
@@ -124,7 +124,7 @@ export function loadApiKeys(): EmbeddedAccount[] {
     const jsonData = decrypt(encryptedData);
     const accounts: EmbeddedAccount[] = JSON.parse(jsonData);
     
-    console.log(`[KeyStorage] Đã load ${accounts.length} accounts từ file`);
+    /* console.log(`[KeyStorage] Đã load ${accounts.length} accounts từ file`) */;
     return accounts;
   } catch (error) {
     console.error('[KeyStorage] Lỗi đọc keys:', error);
@@ -148,12 +148,12 @@ export function addAccount(email: string, projects: EmbeddedProject[]): Embedded
       ...accounts[existingIndex].projects,
       ...projects
     ];
-    console.log(`[KeyStorage] Đã thêm ${projects.length} projects vào account ${email}`);
+    /* console.log(`[KeyStorage] Đã thêm ${projects.length} projects vào account ${email}`) */;
   } else {
     // Thêm account mới
     const newAccount: EmbeddedAccount = { email, projects };
     accounts.push(newAccount);
-    console.log(`[KeyStorage] Đã thêm account mới: ${email}`);
+    /* console.log(`[KeyStorage] Đã thêm account mới: ${email}`) */;
   }
   
   saveApiKeys(accounts);
@@ -171,11 +171,11 @@ export function removeAccount(email: string): boolean {
   
   if (filteredAccounts.length < initialLength) {
     saveApiKeys(filteredAccounts);
-    console.log(`[KeyStorage] Đã xóa account: ${email}`);
+    /* console.log(`[KeyStorage] Đã xóa account: ${email}`) */;
     return true;
   }
   
-  console.log(`[KeyStorage] Không tìm thấy account: ${email}`);
+  /* console.log(`[KeyStorage] Không tìm thấy account: ${email}`) */;
   return false;
 }
 
@@ -187,7 +187,7 @@ export function removeProject(email: string, projectName: string): boolean {
   const account = accounts.find(acc => acc.email === email);
   
   if (!account) {
-    console.log(`[KeyStorage] Không tìm thấy account: ${email}`);
+    /* console.log(`[KeyStorage] Không tìm thấy account: ${email}`) */;
     return false;
   }
   
@@ -196,7 +196,7 @@ export function removeProject(email: string, projectName: string): boolean {
   
   if (account.projects.length < initialLength) {
     saveApiKeys(accounts);
-    console.log(`[KeyStorage] Đã xóa project ${projectName} khỏi account ${email}`);
+    /* console.log(`[KeyStorage] Đã xóa project ${projectName} khỏi account ${email}`) */;
     return true;
   }
   
@@ -230,7 +230,7 @@ export function importFromJson(jsonString: string): { success: boolean; count: n
     saveApiKeys(data);
     const totalKeys = data.reduce((sum: number, acc: EmbeddedAccount) => sum + acc.projects.length, 0);
     
-    console.log(`[KeyStorage] Import thành công: ${data.length} accounts, ${totalKeys} keys`);
+    /* console.log(`[KeyStorage] Import thành công: ${data.length} accounts, ${totalKeys} keys`) */;
     return { success: true, count: totalKeys };
   } catch (error) {
     console.error('[KeyStorage] Lỗi import:', error);

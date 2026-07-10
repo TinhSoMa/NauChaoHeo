@@ -867,12 +867,12 @@ export const DownloaderPage = () => {
     setShowPlaylistPicker(true)
     setPlaylistPickerLoading(true)
     setPlaylistPickerError(null)
-    console.log('[Downloader][Playlist] openPicker', { url: target })
+    /* console.log('[Downloader][Playlist] openPicker', { url: target }) */
     try {
       const res = await api().checkPlaylist({ url: target, limit: 0 })
       if (res.success && res.data) {
         const rawEntries = res.data.entries || []
-        console.log('[Downloader][Playlist] openPicker raw entries', rawEntries.slice(0, 3))
+        /* console.log('[Downloader][Playlist] openPicker raw entries', rawEntries.slice(0, 3)) */
         const entries = normalizePlaylistEntries(rawEntries.map((entry: PlaylistEntry) => {
           const resolvedUrl = resolvePlaylistEntryUrl(target, entry)
           return {
@@ -881,7 +881,7 @@ export const DownloaderPage = () => {
             title: entry.title || entry.id || entry.url,
           }
         }))
-        console.log('[Downloader][Playlist] openPicker mapped entries', entries.slice(0, 3))
+        /* console.log('[Downloader][Playlist] openPicker mapped entries', entries.slice(0, 3)) */
         if (!res.data.entryCount) {
           setPlaylistInfo({ ...res.data, entryCount: entries.length, entries })
         }

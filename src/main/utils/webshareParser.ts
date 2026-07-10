@@ -34,7 +34,7 @@ export function parseWebshareProxies(
   const lines = input.trim().split('\n');
   const proxies: Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>[] = [];
 
-  console.log(`[WebshareParser] Parsing ${lines.length} lines...`);
+  /* console.log(`[WebshareParser] Parsing ${lines.length} lines...`) */;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -121,7 +121,7 @@ export function parseWebshareProxies(
     });
   }
 
-  console.log(`[WebshareParser] Parsed ${proxies.length} proxies from Webshare format`);
+  /* console.log(`[WebshareParser] Parsed ${proxies.length} proxies from Webshare format`) */;
   return proxies;
 }
 

@@ -39,7 +39,7 @@ export function AppSettings() {
 
   const handleSave = useCallback(async () => {
     await updateFontSettings({ uiFontFamily: localFontFamily, uiFontSize: localFontSize });
-    console.log('[AppSettings] Luu cai dat giao dien:', { theme, language, localFontFamily, localFontSize });
+    /* console.log('[AppSettings] Luu cai dat giao dien:', { theme, language, localFontFamily, localFontSize }) */;
     alert('Đã lưu cài đặt giao diện!');
   }, [theme, language, localFontFamily, localFontSize, updateFontSettings]);
 

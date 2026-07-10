@@ -36,7 +36,7 @@ export class ProgressTracker {
     this.currentChapterId = null;
     this.waitingStartTime = 0;
     this.sessionStartTime = Date.now();
-    console.log('[ProgressTracker] Session started');
+    /* console.log('[ProgressTracker] Session started') */;
   }
 
   /**
@@ -52,7 +52,7 @@ export class ProgressTracker {
     this.chapters.set(chapterId, metrics);
     this.currentChapterId = chapterId;
 
-    console.log(`[ProgressTracker] Chapter started: ${chapterId}`);
+    /* console.log(`[ProgressTracker] Chapter started: ${chapterId}`) */;
   }
 
   /**
@@ -78,7 +78,7 @@ export class ProgressTracker {
       this.currentChapterId = null;
     }
 
-    console.log(`[ProgressTracker] Chapter completed: ${chapterId} (${duration}ms)`);
+    /* console.log(`[ProgressTracker] Chapter completed: ${chapterId} (${duration}ms)`) */;
     return duration;
   }
 
@@ -102,7 +102,7 @@ export class ProgressTracker {
       this.currentChapterId = null;
     }
 
-    console.log(`[ProgressTracker] Chapter failed: ${chapterId}`, error);
+    /* console.log(`[ProgressTracker] Chapter failed: ${chapterId}`, error) */;
   }
 
   /**
@@ -205,7 +205,7 @@ export class ProgressTracker {
     this.currentChapterId = null;
     this.waitingStartTime = 0;
     this.sessionStartTime = 0;
-    console.log('[ProgressTracker] Reset');
+    /* console.log('[ProgressTracker] Reset') */;
   }
 
   /**

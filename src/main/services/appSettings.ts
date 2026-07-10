@@ -713,7 +713,7 @@ class AppSettingsServiceClass {
     const userDataPath = app.getPath('userData');
     this.settingsPath = path.join(userDataPath, 'appSettings.json');
     this.load();
-    console.log('[AppSettings] Initialized at:', this.settingsPath);
+    /* console.log('[AppSettings] Initialized at:', this.settingsPath) */;
   }
 
   /**
@@ -765,9 +765,9 @@ class AppSettingsServiceClass {
           geminiStreamingEnabled: loaded?.geminiStreamingEnabled !== false,
         };
         applyNativeTheme(this.settings.theme);
-        console.log('[AppSettings] Loaded settings successfully');
+        /* console.log('[AppSettings] Loaded settings successfully') */;
       } else {
-        console.log('[AppSettings] No settings file found, using defaults');
+        /* console.log('[AppSettings] No settings file found, using defaults') */;
         this.settings = { ...DEFAULT_SETTINGS };
         applyNativeTheme(this.settings.theme);
       }
@@ -784,7 +784,7 @@ class AppSettingsServiceClass {
   private save(): void {
     try {
       fs.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), 'utf-8');
-      console.log('[AppSettings] Saved settings');
+      /* console.log('[AppSettings] Saved settings') */;
     } catch (error) {
       console.error('[AppSettings] Error saving settings:', error);
     }

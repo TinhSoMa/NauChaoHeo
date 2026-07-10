@@ -118,7 +118,7 @@ export async function exportToEbook(options: ExportOptions): Promise<ExportResul
       return { success: false, error: 'Không tìm thấy nội dung để đóng gói' };
     }
 
-    console.log(`[EbookExporter] Đóng gói ${ebookChapters.length} chương...`);
+    /* console.log(`[EbookExporter] Đóng gói ${ebookChapters.length} chương...`) */;
     const outputDir = saveDialogResult.filePath.substring(0, saveDialogResult.filePath.lastIndexOf('\\')); 
     const filename = saveDialogResult.filePath.substring(saveDialogResult.filePath.lastIndexOf('\\') + 1).replace('.epub', '');
 
@@ -136,7 +136,7 @@ export async function exportToEbook(options: ExportOptions): Promise<ExportResul
     ) as { success: boolean; filePath?: string; error?: string };
 
     if (result.success && result.filePath) {
-      console.log('[EbookExporter] Export thành công:', result.filePath);
+      /* console.log('[EbookExporter] Export thành công:', result.filePath) */;
       return {
         success: true,
         filePath: result.filePath,

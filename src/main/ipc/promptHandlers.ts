@@ -3,7 +3,7 @@ import { PromptService } from '../services/promptService';
 import { PROMPT_IPC_CHANNELS } from '../../shared/types/prompt';
 
 export function registerPromptHandlers(): void {
-  console.log('[PromptHandlers] Đăng ký handlers...');
+  /* console.log('[PromptHandlers] Đăng ký handlers...') */;
 
   ipcMain.handle(PROMPT_IPC_CHANNELS.GET_ALL, async () => {
     return PromptService.getAll();
@@ -72,5 +72,5 @@ export function registerPromptHandlers(): void {
     return PromptService.resolveLatestByFamily(familyId);
   });
 
-  console.log('[PromptHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[PromptHandlers] Đã đăng ký handlers thành công') */;
 }

@@ -252,17 +252,17 @@ export const EMBEDDED_API_KEYS: EmbeddedAccount[] = [];
 
 export function tryImportDevKeys(): void {
   if (countTotalKeys() > 0) {
-    console.log('[SQLiteStorage] Đã có keys trong DB, bỏ qua auto-import');
+    /* console.log('[SQLiteStorage] Đã có keys trong DB, bỏ qua auto-import') */;
     return;
   }
   const devKeysPath = 'd:\\NauChaoHeo\\gemini_keys.json';
   if (fs.existsSync(devKeysPath)) {
-    console.log(`[SQLiteStorage] Tìm thấy file keys dev tại: ${devKeysPath}`);
+    /* console.log(`[SQLiteStorage] Tìm thấy file keys dev tại: ${devKeysPath}`) */;
     try {
       const content = fs.readFileSync(devKeysPath, 'utf-8');
       const result = importFromJsonToDb(content);
       if (result.success) {
-        console.log(`[SQLiteStorage] Auto-import thành công: ${result.count} keys`);
+        /* console.log(`[SQLiteStorage] Auto-import thành công: ${result.count} keys`) */;
       } else {
         console.error(`[SQLiteStorage] Auto-import thất bại: ${result.error}`);
       }
@@ -270,7 +270,7 @@ export function tryImportDevKeys(): void {
       console.error('[SQLiteStorage] Loi doc file dev keys:', error);
     }
   } else {
-    console.log('[SQLiteStorage] Không tìm thấy file gemini_keys.json');
+    /* console.log('[SQLiteStorage] Không tìm thấy file gemini_keys.json') */;
   }
 }
 

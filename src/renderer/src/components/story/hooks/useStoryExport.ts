@@ -42,7 +42,7 @@ export function useStoryExport(params: UseStoryExportParams) {
     setExportStatus('exporting');
 
     try {
-      console.log('[useStoryExport] Bắt đầu export ebook...', { exportMode });
+      /* console.log('[useStoryExport] Bắt đầu export ebook...', { exportMode }) */;
       
       // Load summary data if needed
       let summaries = new Map<string, string>();
@@ -71,7 +71,7 @@ export function useStoryExport(params: UseStoryExportParams) {
             if (summaryData.summaries) summaries = new Map(summaryData.summaries);
             if (summaryData.summaryTitles) summaryTitles = new Map(summaryData.summaryTitles);
             
-            console.log(`[useStoryExport] Đã load ${summaries.size} tóm tắt`);
+            /* console.log(`[useStoryExport] Đã load ${summaries.size} tóm tắt`) */;
           }
         } catch (err) {
           console.error('[useStoryExport] Lỗi load summary data:', err);

@@ -91,7 +91,7 @@ export async function callDeepSeekChat(
           }
         }
       }
-      console.log(`[DeepSeek] Cache: hit=${cacheHitTokens ?? 0} miss=${cacheMissTokens ?? 0}`);
+      /* console.log(`[DeepSeek] Cache: hit=${cacheHitTokens ?? 0} miss=${cacheMissTokens ?? 0}`) */;
     }
 
     return { success: true, data: content };

@@ -8,7 +8,7 @@ import { PROXY_IPC_CHANNELS, ProxyConfig, ProxyStats, ProxyTestResult, RotatingP
  * Register IPC handlers cho proxy management
  */
 export function registerProxyHandlers(): void {
-  console.log('[ProxyHandlers] Đăng ký handlers...');
+  /* console.log('[ProxyHandlers] Đăng ký handlers...') */;
 
   const manager = getProxyManager();
 
@@ -38,7 +38,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.ADD,
     async (_event: IpcMainInvokeEvent, config: Omit<ProxyConfig, 'id' | 'createdAt' | 'successCount' | 'failedCount'>): Promise<{ success: boolean; data?: ProxyConfig; error?: string }> => {
       try {
-        console.log(`[ProxyHandlers] Thêm proxy: ${config.host}:${config.port}`);
+        /* console.log(`[ProxyHandlers] Thêm proxy: ${config.host}:${config.port}`) */;
         const newProxy = manager.addProxy(config);
         
         // Mask password
@@ -60,7 +60,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.REMOVE,
     async (_event: IpcMainInvokeEvent, proxyId: string): Promise<{ success: boolean; error?: string }> => {
       try {
-        console.log(`[ProxyHandlers] Xóa proxy: ${proxyId}`);
+        /* console.log(`[ProxyHandlers] Xóa proxy: ${proxyId}`) */;
         const removed = manager.removeProxy(proxyId);
         
         if (removed) {
@@ -80,7 +80,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.UPDATE,
     async (_event: IpcMainInvokeEvent, proxyId: string, updates: Partial<ProxyConfig>): Promise<{ success: boolean; error?: string }> => {
       try {
-        console.log(`[ProxyHandlers] Cập nhật proxy: ${proxyId}`);
+        /* console.log(`[ProxyHandlers] Cập nhật proxy: ${proxyId}`) */;
         const updated = manager.updateProxy(proxyId, updates);
         
         if (updated) {
@@ -100,7 +100,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.TEST,
     async (_event: IpcMainInvokeEvent, proxyId: string): Promise<ProxyTestResult> => {
       try {
-        console.log(`[ProxyHandlers] Test proxy: ${proxyId}`);
+        /* console.log(`[ProxyHandlers] Test proxy: ${proxyId}`) */;
         const result = await manager.testProxy(proxyId);
         
         return {
@@ -125,7 +125,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.CHECK_ALL,
     async (): Promise<{ success: boolean; checked?: number; passed?: number; failed?: number; error?: string }> => {
       try {
-        console.log('[ProxyHandlers] Check all proxies...');
+        /* console.log('[ProxyHandlers] Check all proxies...') */;
         const result = await manager.checkAllProxies('https://generativelanguage.googleapis.com');
         return { success: true, ...result };
       } catch (error) {
@@ -154,7 +154,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.IMPORT,
     async (_event: IpcMainInvokeEvent, data: string): Promise<{ success: boolean; added?: number; skipped?: number; error?: string }> => {
       try {
-        console.log('[ProxyHandlers] Import proxies...');
+        /* console.log('[ProxyHandlers] Import proxies...') */;
         const result = manager.importProxies(data);
         return { success: true, ...result };
       } catch (error) {
@@ -169,7 +169,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.EXPORT,
     async (): Promise<{ success: boolean; data?: string; error?: string }> => {
       try {
-        console.log('[ProxyHandlers] Export proxies...');
+        /* console.log('[ProxyHandlers] Export proxies...') */;
         const data = manager.exportProxies();
         return { success: true, data };
       } catch (error) {
@@ -187,7 +187,7 @@ export function registerProxyHandlers(): void {
       payload: string | { text: string; type?: 'http' | 'https' | 'socks5' }
     ): Promise<{ success: boolean; added?: number; skipped?: number; error?: string }> => {
       try {
-        console.log('[ProxyHandlers] Bulk import Webshare proxies...');
+        /* console.log('[ProxyHandlers] Bulk import Webshare proxies...') */;
         const { parseWebshareProxies } = await import('../utils/webshareParser.js');
 
         const text = typeof payload === 'string' ? payload : payload?.text || '';
@@ -216,7 +216,7 @@ export function registerProxyHandlers(): void {
           added++;
         }
 
-        console.log(`[ProxyHandlers] Bulk import complete: ${added} added, ${skipped} skipped`);
+        /* console.log(`[ProxyHandlers] Bulk import complete: ${added} added, ${skipped} skipped`) */;
         return { success: true, added, skipped };
       } catch (error) {
         console.error('[ProxyHandlers] Lỗi bulk import Webshare:', error);
@@ -230,7 +230,7 @@ export function registerProxyHandlers(): void {
     'proxy:quickAddWebshare',
     async (): Promise<{ success: boolean; added?: number; error?: string }> => {
       try {
-        console.log('[ProxyHandlers] Quick add Webshare free proxies...');
+        /* console.log('[ProxyHandlers] Quick add Webshare free proxies...') */;
         const { getWebshareFreeProxies } = await import('../utils/webshareParser.js');
         
         const proxiesToAdd = getWebshareFreeProxies();
@@ -250,7 +250,7 @@ export function registerProxyHandlers(): void {
           added++;
         }
 
-        console.log(`[ProxyHandlers] Quick add complete: ${added} proxies added`);
+        /* console.log(`[ProxyHandlers] Quick add complete: ${added} proxies added`) */;
         return { success: true, added };
       } catch (error) {
         console.error('[ProxyHandlers] Lỗi quick add Webshare:', error);
@@ -444,7 +444,7 @@ export function registerProxyHandlers(): void {
     PROXY_IPC_CHANNELS.RESET,
     async (): Promise<{ success: boolean; error?: string }> => {
       try {
-        console.log('[ProxyHandlers] Reset all proxies...');
+        /* console.log('[ProxyHandlers] Reset all proxies...') */;
         manager.resetAllFailedCounts();
         return { success: true };
       } catch (error) {
@@ -454,5 +454,5 @@ export function registerProxyHandlers(): void {
     }
   );
 
-  console.log('[ProxyHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[ProxyHandlers] Đã đăng ký handlers thành công') */;
 }

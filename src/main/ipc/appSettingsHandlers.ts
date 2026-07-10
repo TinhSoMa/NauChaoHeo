@@ -24,13 +24,13 @@ interface IpcApiResponse<T = unknown> {
 }
 
 export function registerAppSettingsHandlers(): void {
-  console.log('[AppSettingsHandlers] Đăng ký handlers...');
+  /* console.log('[AppSettingsHandlers] Đăng ký handlers...') */;
 
   // ============================================
   // DIALOG OPEN DIRECTORY
   // ============================================
   ipcMain.handle('dialog:openDirectory', async () => {
-    console.log('[AppSettingsHandlers] Mở dialog chọn thư mục...');
+    /* console.log('[AppSettingsHandlers] Mở dialog chọn thư mục...') */;
     
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
@@ -127,5 +127,5 @@ export function registerAppSettingsHandlers(): void {
     }
   });
 
-  console.log('[AppSettingsHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[AppSettingsHandlers] Đã đăng ký handlers thành công') */;
 }

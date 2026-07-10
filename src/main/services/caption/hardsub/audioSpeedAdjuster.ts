@@ -75,7 +75,7 @@ export async function buildSpeedAdjustedAudioFile(
 
     proc.on('close', (code) => {
       if (code === 0) {
-        console.log(`[VideoRenderer] Đã tạo audio speed-adjusted: ${adjustedAudioPath} (speed=${audioSpeed})`);
+        /* console.log(`[VideoRenderer] Đã tạo audio speed-adjusted: ${adjustedAudioPath} (speed=${audioSpeed})`) */;
         resolve({ success: true, audioPath: adjustedAudioPath, generated: true });
       } else {
         resolve({

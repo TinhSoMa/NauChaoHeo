@@ -24,7 +24,7 @@ interface ShutdownSchedulePayload {
 }
 
 export function registerShutdownHandlers(): void {
-  console.log('[ShutdownHandlers] Đăng ký handlers...');
+  /* console.log('[ShutdownHandlers] Đăng ký handlers...') */;
 
   ipcMain.handle(
     SHUTDOWN_IPC_CHANNELS.SCHEDULE,
@@ -65,5 +65,5 @@ export function registerShutdownHandlers(): void {
     }
   );
 
-  console.log('[ShutdownHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[ShutdownHandlers] Đã đăng ký handlers thành công') */;
 }

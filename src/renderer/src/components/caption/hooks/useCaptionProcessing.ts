@@ -3328,9 +3328,9 @@ export function useCaptionProcessing({
         });
         if (result?.success) {
           shutdownScheduleRequested = true;
-          console.log(
+          /* console.log(
             `[CaptionProcessing] Đã lên lịch auto shutdown (${source}) sau ${shutdownDelayMinutes} phút.`
-          );
+          ) */;
         } else if (result && !result.success) {
           console.warn('[CaptionProcessing] Không thể lên lịch auto shutdown:', result.error || 'Unknown error');
         }
@@ -4290,7 +4290,7 @@ export function useCaptionProcessing({
 
         const previousBatches: import('@shared/types/caption').PreviousBatchTranslations[] = [];
         const geminiStreamingEnabled = (settings as any)?.geminiStreamingEnabled === true;
-        console.log(`[CaptionProcessing] Step3 streaming check: geminiStreamingEnabled=${geminiStreamingEnabled}, translateMethod=${cfg.translateMethod}, willStream=${geminiStreamingEnabled && cfg.translateMethod === 'api'}`);
+        /* console.log(`[CaptionProcessing] Step3 streaming check: geminiStreamingEnabled=${geminiStreamingEnabled}, translateMethod=${cfg.translateMethod}, willStream=${geminiStreamingEnabled && cfg.translateMethod === 'api'}`) */;
         let unsubStream: (() => void) | null = null;
         setStreamingChunks({});
         const cleanupStream = () => {
@@ -4588,7 +4588,7 @@ export function useCaptionProcessing({
               // @ts-ignore
               const plainTextResult = await window.electronAPI.caption.exportPlainText(plainTextContent, plainTextPath);
               if (plainTextResult?.success) {
-                console.log(`[CaptionProcessing][Step3] Đã lưu text thuần: ${plainTextPath}`);
+                /* console.log(`[CaptionProcessing][Step3] Đã lưu text thuần: ${plainTextPath}`) */;
               } else {
                 console.warn('[CaptionProcessing][Step3] Export text thuần thất bại:', plainTextResult?.error || 'unknown');
               }
@@ -4738,7 +4738,7 @@ export function useCaptionProcessing({
             });
             if (thumbnailResult?.success && thumbnailResult?.data?.prompt) {
               const autoThumbnailPrompt = thumbnailResult.data.prompt;
-              console.log(`[CaptionProcessing] Auto thumbnail prompt generated (${autoThumbnailPrompt.length} chars)`);
+              /* console.log(`[CaptionProcessing] Auto thumbnail prompt generated (${autoThumbnailPrompt.length} chars)`) */;
               await updateSessionForStep(currentPath, step, folderIdx, (session) => ({
                 ...session,
                 data: {
@@ -5868,7 +5868,7 @@ export function useCaptionProcessing({
         const scaledSrtResult = await window.electronAPI.caption.exportSrt(scaledEntries, scaledSrtPath);
         if (scaledSrtResult?.success) {
           srtFileForVideo = scaledSrtPath;
-          console.log(`[CaptionProcessing] Dùng SRT scaled cho render: ${scaledSrtPath} (scale=${srtScale}, source=session_translated_entries)`);
+          /* console.log(`[CaptionProcessing] Dùng SRT scaled cho render: ${scaledSrtPath} (scale=${srtScale}, source=session_translated_entries)`) */;
         } else {
           throw new Error(`[${folderName}] Không thể tạo SRT scaled từ dữ liệu dịch trong session.`);
         }
@@ -5922,9 +5922,9 @@ export function useCaptionProcessing({
           console.warn('[CaptionProcessing][Step7] Không tải được appSettings cho output dir:', err);
         }
         const finalOutputPath = joinFilePath(renderOutputDir, finalOutputFileName);
-        console.log(
+        /* console.log(
           `[CaptionProcessing][Step7] Output filename: ${finalOutputFileName}, outputDir: ${renderOutputDir || '(empty)'}, outputType=${outputTypeForRender}`
-        );
+        ) */;
         const timingContextPath = getCaptionSessionPathFromOutputDir(processOutputDir);
         const step7AudioSpeed = cfg.renderAudioSpeed && cfg.renderAudioSpeed > 0
           ? cfg.renderAudioSpeed : 1.0;
@@ -6045,7 +6045,7 @@ export function useCaptionProcessing({
               || cfg.thumbnailTextSecondaryColor
               || '#FFFF00'
             );
-        console.log(
+        /* console.log(
           `[CaptionProcessing][Step7][TextOverlay] folderIdx=${folderIdx + 1}/${totalFolders}, folder=${folderName}, durationSec=${cfg.thumbnailDurationSec ?? 0.5}, ` +
           `font1=${step7TextPrimaryFontName} size1=${step7TextPrimaryFontSize}, ` +
           `color1=${step7TextPrimaryColor.toUpperCase()}, ` +
@@ -6053,7 +6053,7 @@ export function useCaptionProcessing({
           `color2=${step7TextSecondaryColor.toUpperCase()}, ` +
           `lineHeight=${Number(cfg.thumbnailLineHeightRatio ?? 1.16).toFixed(2)}x, ` +
           `videoText1="${hardsubTextPrimaryForRender}", videoText2="${hardsubTextSecondaryForRender}"`
-        );
+        ) */;
 
         const thumbnailEnabledForRender = cfg.thumbnailPrependEnabled !== false;
         const thumbnailTimeSecForRender = cfg.thumbnailFrameTimeSec ?? 0;
@@ -6174,7 +6174,7 @@ export function useCaptionProcessing({
               videoSpeedMultiplier: typeof afterScale.videoSpeedNeeded === 'number' ? afterScale.videoSpeedNeeded : undefined,
               videoMarkerSec: typeof afterScale.videoMarkerSec === 'number' ? afterScale.videoMarkerSec : undefined,
             };
-            console.log(`[CaptionProcessing][Step7] Đã nhận timing payload từ backend cho ${folderName}.`);
+            /* console.log(`[CaptionProcessing][Step7] Đã nhận timing payload từ backend cho ${folderName}.`) */;
           } else {
             console.warn(`[CaptionProcessing][Step7] Backend không trả timing payload cho ${folderName}.`);
           }
@@ -6249,7 +6249,7 @@ export function useCaptionProcessing({
             nextSession = setStepArtifacts(nextSession, step as CaptionStepNumber, stepArtifacts);
             return nextSession;
           });
-          console.log(`[CaptionProcessing][Step7] Đã lưu timing payload vào caption_session.json cho ${folderName}.`);
+          /* console.log(`[CaptionProcessing][Step7] Đã lưu timing payload vào caption_session.json cho ${folderName}.`) */;
         } else {
           const stopByUser = abortRef.current
             || (typeof renderRes.error === 'string' && renderRes.error.toLowerCase().includes('đã dừng render'));

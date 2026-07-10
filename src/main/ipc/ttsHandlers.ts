@@ -537,7 +537,7 @@ async function collectFitAudioAuditItemsFromSessions(
  * Đăng ký tất cả IPC handlers cho TTS
  */
 export function registerTTSHandlers(): void {
-  console.log('[TTSHandlers] Đăng ký handlers...');
+  /* console.log('[TTSHandlers] Đăng ký handlers...') */;
 
   // ============================================
   // GET VOICES
@@ -545,7 +545,7 @@ export function registerTTSHandlers(): void {
   ipcMain.handle(
     CAPTION_IPC_CHANNELS.TTS_GET_VOICES,
     async (): Promise<IpcResponse<VoiceInfo[]>> => {
-      console.log('[TTSHandlers] Get voices');
+      /* console.log('[TTSHandlers] Get voices') */;
       return { success: true, data: TTSService.getAvailableVoices() };
     }
   );
@@ -568,7 +568,7 @@ export function registerTTSHandlers(): void {
         if (!sampleVoice) {
           return { success: false, error: 'Voice test giọng không hợp lệ.' };
         }
-        console.log(`[TTSHandlers] Test voice: ${sampleVoice}`);
+        /* console.log(`[TTSHandlers] Test voice: ${sampleVoice}`) */;
         const data = await TTSService.testVoiceSample({
           text: sampleText,
           voice: sampleVoice,
@@ -600,7 +600,7 @@ export function registerTTSHandlers(): void {
           return { success: false, error: 'Thiếu outputDir để lưu audio test proxy.' };
         }
 
-        console.log(`[TTSHandlers] Test proxies with voice: ${sampleVoice}`);
+        /* console.log(`[TTSHandlers] Test proxies with voice: ${sampleVoice}`) */;
         const data = await TTSService.testEdgeTtsProxies(request);
         return { success: true, data };
       } catch (error) {
@@ -620,7 +620,7 @@ export function registerTTSHandlers(): void {
       entries: SubtitleEntry[],
       options: Partial<TTSOptions>
     ): Promise<IpcResponse<TTSResult>> => {
-      console.log(`[TTSHandlers] Generate TTS: ${entries.length} entries`);
+      /* console.log(`[TTSHandlers] Generate TTS: ${entries.length} entries`) */;
 
       try {
         // Progress callback - gửi về renderer
@@ -676,7 +676,7 @@ export function registerTTSHandlers(): void {
       audioFiles: TTSResult['audioFiles'],
       srtDuration: number
     ): Promise<IpcResponse<unknown>> => {
-      console.log(`[TTSHandlers] Analyze audio: ${audioFiles.length} files`);
+      /* console.log(`[TTSHandlers] Analyze audio: ${audioFiles.length} files`) */;
 
       try {
         const analysis = await TTSService.analyzeAudioFiles(audioFiles, srtDuration);
@@ -699,7 +699,7 @@ export function registerTTSHandlers(): void {
       outputPath: string,
       timeScale: number = 1.0
     ): Promise<IpcResponse<MergeResult>> => {
-      console.log(`[TTSHandlers] Merge audio: ${audioFiles.length} files -> ${outputPath}, scale: ${timeScale}`);
+      /* console.log(`[TTSHandlers] Merge audio: ${audioFiles.length} files -> ${outputPath}, scale: ${timeScale}`) */;
 
       try {
         TTSService.resetTtsStopRequest();
@@ -729,7 +729,7 @@ export function registerTTSHandlers(): void {
       _event: IpcMainInvokeEvent,
       audioPaths: string[]
     ): Promise<IpcResponse<TrimSilenceResult>> => {
-      console.log(`[TTSHandlers] Trim silence: ${audioPaths.length} files`);
+      /* console.log(`[TTSHandlers] Trim silence: ${audioPaths.length} files`) */;
 
       try {
         let trimmedCount = 0;
@@ -770,7 +770,7 @@ export function registerTTSHandlers(): void {
       _event: IpcMainInvokeEvent,
       audioPaths: string[]
     ): Promise<IpcResponse<TrimSilenceResult>> => {
-      console.log(`[TTSHandlers] Trim silence end: ${audioPaths.length} files`);
+      /* console.log(`[TTSHandlers] Trim silence end: ${audioPaths.length} files`) */;
 
       try {
         let trimmedCount = 0;
@@ -814,7 +814,7 @@ export function registerTTSHandlers(): void {
     ): Promise<IpcResponse<TrimSilenceResult>> => {
       const safeTargets = Array.isArray(trimTargets) ? trimTargets : [];
       const workerCount = Math.max(1, Math.min(safeTargets.length || 1, clampTrimConcurrency(options?.concurrency)));
-      console.log(`[TTSHandlers] Trim silence to paths: ${safeTargets.length} files (${workerCount} workers)`);
+      /* console.log(`[TTSHandlers] Trim silence to paths: ${safeTargets.length} files (${workerCount} workers)`) */;
 
       try {
         const result = await processTrimTargetsInParallel(
@@ -845,7 +845,7 @@ export function registerTTSHandlers(): void {
     ): Promise<IpcResponse<TrimSilenceResult>> => {
       const safeTargets = Array.isArray(trimTargets) ? trimTargets : [];
       const workerCount = Math.max(1, Math.min(safeTargets.length || 1, clampTrimConcurrency(options?.concurrency)));
-      console.log(`[TTSHandlers] Trim silence end to paths: ${safeTargets.length} files (${workerCount} workers)`);
+      /* console.log(`[TTSHandlers] Trim silence end to paths: ${safeTargets.length} files (${workerCount} workers)`) */;
 
       try {
         const result = await processTrimTargetsInParallel(
@@ -999,5 +999,5 @@ export function registerTTSHandlers(): void {
     }
   );
 
-  console.log('[TTSHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[TTSHandlers] Đã đăng ký handlers thành công') */;
 }

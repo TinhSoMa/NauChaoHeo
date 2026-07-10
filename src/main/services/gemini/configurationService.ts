@@ -169,7 +169,7 @@ export class ConfigurationService {
       // Invalidate cache
       this.invalidateCache();
 
-      console.log('[ConfigurationService] Config saved successfully');
+      /* console.log('[ConfigurationService] Config saved successfully') */;
       return { success: true };
     } catch (error) {
       console.error('[ConfigurationService] Error saving config:', error);

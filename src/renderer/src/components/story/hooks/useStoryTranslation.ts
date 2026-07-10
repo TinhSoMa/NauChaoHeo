@@ -157,7 +157,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
     try {
       if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
 
-      console.log('[useStoryTranslation] Dang chuan bi prompt...');
+      /* console.log('[useStoryTranslation] Dang chuan bi prompt...') */;
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
         chapterContent: chapter.content,
         sourceLang,
@@ -174,7 +174,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
 
       if (shouldStopRef.current) throw new Error('[Dịch] Đã huỷ');
 
-      console.log('[useStoryTranslation] Da chuan bi prompt, dang gui den Gemini...');
+      /* console.log('[useStoryTranslation] Da chuan bi prompt, dang gui den Gemini...') */;
 
       const commitTranslatedChapter = (
         text: string,
@@ -402,7 +402,7 @@ export function useStoryTranslation(params: UseStoryTranslationParams) {
 
       if (wasTranslated) {
         setViewMode('translated');
-        console.log('[useStoryTranslation] Dich thanh cong!');
+        /* console.log('[useStoryTranslation] Dich thanh cong!') */;
       }
 
     } catch (error) {

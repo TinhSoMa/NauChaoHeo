@@ -348,10 +348,10 @@ export function StorySummary() {
   };
 
   // Debug logging
-  console.log('[StorySummary] Render - summaries.size:', summaries.size);
-  console.log('[StorySummary] Render - status:', status);
-  console.log('[StorySummary] Render - chapters.length:', chapters.length);
-  console.log('[StorySummary] Render - sourceChapters.size:', sourceChapters.size);
+  /* console.log('[StorySummary] Render - summaries.size:', summaries.size) */;
+  /* console.log('[StorySummary] Render - status:', status) */;
+  /* console.log('[StorySummary] Render - chapters.length:', chapters.length) */;
+  /* console.log('[StorySummary] Render - sourceChapters.size:', sourceChapters.size) */;
 
   // === useProjectFeatureState: auto load/save project state ===
   // StorySummary dùng customLoad để nạp file nguồn + trạng thái summary
@@ -407,11 +407,11 @@ export function StorySummary() {
     customLoad: async () => {
       const pid = projectId;
       if (!pid) {
-        console.log('[StorySummary] Không có projectId, bỏ qua load');
+        /* console.log('[StorySummary] Không có projectId, bỏ qua load') */;
         return;
       }
 
-      console.log('[StorySummary] Bắt đầu load dữ liệu...');
+      /* console.log('[StorySummary] Bắt đầu load dữ liệu...') */;
 
       // 1. Load summary data
       const summaryRes = await window.electronAPI.project.readFeatureFile({
@@ -565,7 +565,7 @@ export function StorySummary() {
     loadProxySetting();
 
     const removeListener = window.electronAPI.onMessage('geminiChat:configChanged', () => {
-      console.log('[StorySummary] Config changed, reloading...');
+      /* console.log('[StorySummary] Config changed, reloading...') */;
       loadConfigurations();
       loadProxySetting();
     });
@@ -639,7 +639,7 @@ export function StorySummary() {
     setStatus('running');
     
     try {
-      console.log('[StorySummary] Đang chuẩn bị prompt tóm tắt...');
+      /* console.log('[StorySummary] Đang chuẩn bị prompt tóm tắt...') */;
       // 1. Prepare Summary Prompt
       const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
@@ -655,7 +655,7 @@ export function StorySummary() {
         throw new Error(prepareResult.error || 'Lỗi chuẩn bị prompt tóm tắt');
       }
 
-      console.log('[StorySummary] Đã chuẩn bị prompt, đang gửi đến Gemini...');
+      /* console.log('[StorySummary] Đã chuẩn bị prompt, đang gửi đến Gemini...') */;
       
       const method = translateMode === 'token' ? 'IMPIT' : 'API';
       const methodKey: 'api' | 'token' = method === 'IMPIT' ? 'token' : 'api';
@@ -706,7 +706,7 @@ export function StorySummary() {
           }) as { success: boolean; data?: string; error?: string; context?: { conversationId: string; responseId: string; choiceId: string }; configId?: string; metadata?: { chapterId: string } };
           
           if (retryResult.success && retryResult.data && hasSummaryEndMarker(retryResult.data)) {
-            console.log('[StorySummary] ✅ Retry thành công, bản tóm tắt đã có "Hết tóm tắt"');
+            /* console.log('[StorySummary] ✅ Retry thành công, bản tóm tắt đã có "Hết tóm tắt"') */;
             translateResult.data = retryResult.data;
             if (retryResult.context) translateResult.context = retryResult.context;
           } else {
@@ -750,7 +750,7 @@ export function StorySummary() {
         }
 
         setViewMode('summary');
-        console.log('[StorySummary] Tóm tắt thành công!');
+        /* console.log('[StorySummary] Tóm tắt thành công!') */;
       } else {
         throw new Error(translateResult.error || 'Tóm tắt thất bại');
       }
@@ -764,7 +764,7 @@ export function StorySummary() {
   };
 
   const handleStopTranslation = () => {
-    console.log('[StorySummary] Dừng tóm tắt thủ công...');
+    /* console.log('[StorySummary] Dừng tóm tắt thủ công...') */;
     shouldStopRef.current = true;
     currentBatchRunIdRef.current = null;
     setShouldStop(true);
@@ -865,7 +865,7 @@ export function StorySummary() {
       });
 
       try {
-        console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`);
+        /* console.log(`[StorySummary] 📖 Tóm tắt chương ${index + 1}/${chaptersToTranslate.length}: ${chapter.title}`) */;
         const previousSummaryOutput = resolvePreviousSummaryOutput({
           chapters,
           chapterIndex: actualChapterIndex,
@@ -984,7 +984,7 @@ export function StorySummary() {
           return next;
         });
 
-        console.log(`[StorySummary] ✅ Tóm tắt xong: ${chapter.title}`);
+        /* console.log(`[StorySummary] ✅ Tóm tắt xong: ${chapter.title}`) */;
         return { status: 'success', id: chapter.id, text: translateResult.data };
       } catch (error) {
         const errorMessage = normalizeRetryError(error);
@@ -995,7 +995,7 @@ export function StorySummary() {
 
     let completed = 0;
     const workerId = 1;
-    console.log(`[StorySummary] 🎯 Bắt đầu tóm tắt ${chaptersToTranslate.length} chapters với 1 worker tuần tự`);
+    /* console.log(`[StorySummary] 🎯 Bắt đầu tóm tắt ${chaptersToTranslate.length} chapters với 1 worker tuần tự`) */;
 
     try {
       for (let index = 0; index < chaptersToTranslate.length; index += 1) {
@@ -1022,7 +1022,7 @@ export function StorySummary() {
               });
               return next;
             });
-            console.log(`[StorySummary] ⚠️ Retry chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`);
+            /* console.log(`[StorySummary] ⚠️ Retry chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`) */;
             await new Promise(resolve => setTimeout(resolve, delayMs));
           } else if (channel === 'api' && completed > 0 && apiRequestDelayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, apiRequestDelayMs));
@@ -1032,7 +1032,7 @@ export function StorySummary() {
           if (result.status === 'success') {
             completed++;
             setBatchProgress({ current: completed, total: chaptersToTranslate.length });
-            console.log(`[StorySummary] 📊 Progress: ${completed}/${chaptersToTranslate.length}`);
+            /* console.log(`[StorySummary] 📊 Progress: ${completed}/${chaptersToTranslate.length}`) */;
             break;
           }
 
@@ -1068,9 +1068,9 @@ export function StorySummary() {
     }
 
     if (shouldStopRef.current) {
-      console.log(`[StorySummary] 🛑 Đã dừng: ${completed}/${chaptersToTranslate.length} chapters đã tóm tắt`);
+      /* console.log(`[StorySummary] 🛑 Đã dừng: ${completed}/${chaptersToTranslate.length} chapters đã tóm tắt`) */;
     } else {
-      console.log(`[StorySummary] 🎉 Hoàn thành: ${completed}/${chaptersToTranslate.length} chapters`);
+      /* console.log(`[StorySummary] 🎉 Hoàn thành: ${completed}/${chaptersToTranslate.length} chapters`) */;
     }
   };
 
@@ -1099,7 +1099,7 @@ export function StorySummary() {
 
     setSavingPrompt(true);
     try {
-      console.log('[StorySummary] Đang chuẩn bị prompt...');
+      /* console.log('[StorySummary] Đang chuẩn bị prompt...') */;
       const result = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
         sourceLang,
@@ -1116,7 +1116,7 @@ export function StorySummary() {
         // Copy to clipboard
         try {
           await navigator.clipboard.writeText(promptString);
-          console.log('[StorySummary] Đã copy prompt vào clipboard');
+          /* console.log('[StorySummary] Đã copy prompt vào clipboard') */;
         } catch (clipboardErr) {
           console.warn('[StorySummary] Không thể copy vào clipboard:', clipboardErr);
         }
@@ -1176,7 +1176,7 @@ export function StorySummary() {
     setExportStatus('exporting');
 
     try {
-      console.log('[StorySummary] Bắt đầu export ebook...', { exportMode });
+      /* console.log('[StorySummary] Bắt đầu export ebook...', { exportMode }) */;
 
       // Validate data based on mode
       if ((exportMode === 'translation' || exportMode === 'combined') && sourceChapters.size === 0) {
@@ -1268,7 +1268,7 @@ export function StorySummary() {
         return;
       }
 
-      console.log(`[StorySummary] Đóng gói ${ebookChapters.length} mục...`);
+      /* console.log(`[StorySummary] Đóng gói ${ebookChapters.length} mục...`) */;
       const outputDir = saveDialogResult.filePath.substring(0, saveDialogResult.filePath.lastIndexOf('\\'));
       const filename = saveDialogResult.filePath.substring(saveDialogResult.filePath.lastIndexOf('\\') + 1).replace('.epub', '');
 
@@ -1286,7 +1286,7 @@ export function StorySummary() {
       ) as { success: boolean; filePath?: string; error?: string };
 
       if (result.success && result.filePath) {
-        console.log('[StorySummary] Export thành công:', result.filePath);
+        /* console.log('[StorySummary] Export thành công:', result.filePath) */;
         const modeText = exportMode === 'translation' ? 'Nội dung' :
           exportMode === 'summary' ? 'Tóm tắt' : 'Kết hợp';
         alert(`✅ Đã export thành công!\n\nLoại: ${modeText}\nFile: ${result.filePath}\n\nSố mục: ${ebookChapters.length}`);

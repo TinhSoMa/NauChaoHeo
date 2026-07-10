@@ -138,7 +138,7 @@ function inspectorDisabledResponse<T>(): IpcResponse<T> {
 }
 
 export function registerRotationQueueHandlers(): void {
-  console.log('[RotationQueueHandlers] Registering rotation queue inspector handlers...');
+  /* console.log('[RotationQueueHandlers] Registering rotation queue inspector handlers...') */;
 
   ipcMain.handle(
     ROTATION_QUEUE_IPC_CHANNELS.GET_STATUS,

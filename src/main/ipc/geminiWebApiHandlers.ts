@@ -11,7 +11,7 @@ type GeminiChatAccountRow = {
 };
 
 export function registerGeminiWebApiHandlers(): void {
-  console.log('[GeminiWebApiHandlers] Dang ky handlers...');
+  /* console.log('[GeminiWebApiHandlers] Dang ky handlers...') */;
 
   ipcMain.handle(GEMINI_WEB_API_IPC_CHANNELS.GET_HEALTH, async () => {
     try {
@@ -90,5 +90,5 @@ export function registerGeminiWebApiHandlers(): void {
     }
   });
 
-  console.log('[GeminiWebApiHandlers] Da dang ky handlers thanh cong');
+  /* console.log('[GeminiWebApiHandlers] Da dang ky handlers thanh cong') */;
 }

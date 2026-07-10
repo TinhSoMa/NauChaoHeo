@@ -1244,7 +1244,7 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
 
   const thumbTextLog = summarizeThumbnailTextForLog(opts.thumbnailText);
   const thumbText2Log = summarizeThumbnailTextForLog(opts.thumbnailTextSecondary);
-  console.log(
+  /* console.log(
     `[Thumbnail] create clip params | timeSec=${opts.timeSec}, durationSec=${opts.durationSec}, ` +
     `mode=${isPortraitMode ? 'hardsub_portrait_9_16' : 'hardsub'}, ` +
     `source=${sourceWidth}x${sourceHeight}, output=${safeW}x${safeH}, fps=${safeFps}, includeAudio=${includeAudio}, ` +
@@ -1262,7 +1262,7 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     `textPos2=${JSON.stringify(drawTextContext.secondaryPosition)}, textLayout1=${JSON.stringify(summarizeLayoutForLog(drawTextContext.primaryLayout))}, ` +
     `textLayout2=${JSON.stringify(summarizeLayoutForLog(drawTextContext.secondaryLayout))}, ` +
     `layout=${JSON.stringify(layoutResult.debug)}`
-  );
+  ) */;
 
   const clipArgs = includeAudio
     ? [
@@ -1309,7 +1309,7 @@ async function createThumbnailClip(opts: ThumbnailClipOptions): Promise<{ succes
     return { success: false, error: `Không tạo được thumbnail clip\n${clipStderr.slice(-400)}` };
   }
 
-  console.log(`[Thumbnail] clip tạo thành công: ${clipPath}`);
+  /* console.log(`[Thumbnail] clip tạo thành công: ${clipPath}`) */;
   return { success: true, clipPath };
 }
 
@@ -1351,7 +1351,7 @@ async function prependThumbnailClip(
   };
 
   return new Promise((resolve) => {
-    console.log(`[Thumbnail] Bắt đầu concat demuxer (tách luồng, không render lại toàn bộ video), hasAudio=${hasAudio}...`);
+    /* console.log(`[Thumbnail] Bắt đầu concat demuxer (tách luồng, không render lại toàn bộ video), hasAudio=${hasAudio}...`) */;
     const proc = spawn(ffmpegPath, args);
     proc.stderr?.on('data', (d) => { pushStderr(d.toString()); });
     proc.on('close', async (code) => {
@@ -1441,11 +1441,11 @@ export async function renderThumbnailPreviewFrame(
     const effectiveSW = resolvedCrop ? resolvedCrop.width : sourceWidth;
     const effectiveSH = resolvedCrop ? resolvedCrop.height : sourceHeight;
     const cropInputLabel = resolvedCrop ? '[v_preview_cropped]' : '[0:v]';
-    console.log('[ThumbnailPreview] crop check', {
+    /* console.log('[ThumbnailPreview] crop check', {
       hasCropOption: !!options.crop,
       cropEnabled: options.crop?.enabled,
       resolved: resolvedCrop ? { x: resolvedCrop.x, y: resolvedCrop.y, w: resolvedCrop.width, h: resolvedCrop.height, filter: resolvedCrop.filter } : null,
-    });
+    }) */;
 
     const outputCanvas = options.renderMode === 'hardsub_portrait_9_16'
       ? resolvePortraitCanvasByPreset(options.renderResolution)
@@ -1516,7 +1516,7 @@ export async function renderThumbnailPreviewFrame(
     const frameBuffer = Buffer.concat(chunks);
     const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
     const thumbText2Log = summarizeThumbnailTextForLog(options.thumbnailTextSecondary);
-    console.log('[ThumbnailPreview] render frame success', {
+    /* console.log('[ThumbnailPreview] render frame success', {
       mode: options.renderMode || 'hardsub',
       renderResolution: options.renderResolution || 'original',
       sourceSize: `${sourceWidth}x${sourceHeight}`,
@@ -1541,7 +1541,7 @@ export async function renderThumbnailPreviewFrame(
       textPrimaryLayout: summarizeLayoutForLog(drawTextContext.primaryLayout),
       textSecondaryLayout: summarizeLayoutForLog(drawTextContext.secondaryLayout),
       layout: layoutResult.debug,
-    });
+    }) */;
 
     return {
       success: true,
@@ -1584,9 +1584,9 @@ export async function applyThumbnailPostProcess(
   result: RenderResult
 ): Promise<RenderResult> {
   const thumbnailDurationSec = normalizeThumbnailDurationSec(options.thumbnailDurationSec);
-  console.log(
+  /* console.log(
     `[VideoRenderer] Thumbnail check: enabled=${options.thumbnailEnabled}, videoPath=${!!options.videoPath}, timeSec=${options.thumbnailTimeSec}, durationSec=${thumbnailDurationSec}, mode=${options.renderMode || 'black_bg'}`
-  );
+  ) */;
   if (!result.success || !options.thumbnailEnabled) {
     return result;
   }
@@ -1614,17 +1614,17 @@ export async function applyThumbnailPostProcess(
     ? (sourceMeta.metadata.actualHeight || sourceMeta.metadata.height)
     : undefined;
 
-  console.log('[VideoRenderer] Thumbnail output metadata', {
+  /* console.log('[VideoRenderer] Thumbnail output metadata', {
     width: outputMeta.metadata.width,
     height: outputMeta.metadata.actualHeight || outputMeta.metadata.height,
     fps: outputMeta.metadata.fps,
     hasAudio: !!outputMeta.metadata.hasAudio,
     duration: outputMeta.metadata.duration,
-  });
+  }) */;
 
   const thumbTextLog = summarizeThumbnailTextForLog(options.thumbnailText);
   const thumbText2Log = summarizeThumbnailTextForLog(options.thumbnailTextSecondary);
-  console.log(
+  /* console.log(
     `[VideoRenderer] 🖼 Tạo thumbnail tại ${options.thumbnailTimeSec}s`,
     {
       renderMode: options.renderMode || 'black_bg',
@@ -1646,7 +1646,7 @@ export async function applyThumbnailPostProcess(
       thumbnailTextPrimaryPosition: options.thumbnailTextPrimaryPosition || DEFAULT_THUMBNAIL_TEXT1_POSITION,
       thumbnailTextSecondaryPosition: options.thumbnailTextSecondaryPosition || DEFAULT_THUMBNAIL_TEXT2_POSITION,
     }
-  );
+  ) */;
 
   const thumbResult = await createThumbnailClip({
     videoPath: options.videoPath,
@@ -1680,7 +1680,7 @@ export async function applyThumbnailPostProcess(
     return { success: false, error: `Tạo thumbnail thất bại: ${thumbResult.error || 'unknown error'}` };
   }
 
-  console.log('[VideoRenderer] Ghép thumbnail vào đầu video...');
+  /* console.log('[VideoRenderer] Ghép thumbnail vào đầu video...') */;
   const prependResult = await prependThumbnailClip(
     thumbResult.clipPath,
     options.outputPath,
@@ -1691,6 +1691,6 @@ export async function applyThumbnailPostProcess(
     return { success: false, error: `Ghép thumbnail thất bại: ${prependResult.error || 'unknown error'}` };
   }
 
-  console.log('[VideoRenderer] ✅ Thumbnail đã ghép thành công');
+  /* console.log('[VideoRenderer] ✅ Thumbnail đã ghép thành công') */;
   return result;
 }

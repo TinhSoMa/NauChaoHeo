@@ -87,7 +87,7 @@ export class GeminiChatServiceClass {
         const tokenKey = (tokenKeyRaw || '').trim();
         const requestId = Math.random().toString(36).substring(7);
         
-        console.log(`[GeminiChatService][${requestId}] Request queued for token: '${tokenKey.substring(0, 10)}...'`);
+        /* console.log(`[GeminiChatService][${requestId}] Request queued for token: '${tokenKey.substring(0, 10)}...'`) */;
 
         // Get the previous task completion promise
         const previousTask = this.tokenLocks.get(tokenKey) || Promise.resolve();
@@ -112,11 +112,11 @@ export class GeminiChatServiceClass {
         const waitTime = Math.ceil(Math.max(0, nextAllowedTime - now));
         
         if (waitTime > 0) {
-            console.log(`[GeminiChatService][${requestId}] Cooling down: Waiting ${waitTime}ms...`);
+            /* console.log(`[GeminiChatService][${requestId}] Cooling down: Waiting ${waitTime}ms...`) */;
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
 
-        console.log(`[GeminiChatService][${requestId}] Executing task NOW.`);
+        /* console.log(`[GeminiChatService][${requestId}] Executing task NOW.`) */;
         
         try {
             // 2. Run the actual task
@@ -133,7 +133,7 @@ export class GeminiChatServiceClass {
             const nextTime = completionTime + intervalMs;
             
             this.nextAvailableTimeByTokenKey.set(tokenKey, nextTime);
-            console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${intervalMs}ms, mode=${intervalConfig.mode})`);
+            /* console.log(`[GeminiChatService][${requestId}] Task Complete. Next request allowed at: ${nextTime} (Delay: ${intervalMs}ms, mode=${intervalConfig.mode})`) */;
             
             // Signal that this task is done
             if (typeof signalTaskDone === 'function') signalTaskDone();
@@ -341,12 +341,12 @@ export class GeminiChatServiceClass {
             }
             
             bestConfig = readyCandidates[nextIndex];
-            console.log(`[GeminiChatService] Selected READY config: ${bestConfig.name} (Wait: 0ms)`);
+            /* console.log(`[GeminiChatService] Selected READY config: ${bestConfig.name} (Wait: 0ms)`) */;
         } else {
             // 2. No ready candidates, pick the one with minimum wait time
             // bestConfig is already set to minWaitTime candidate
             if (bestConfig) {
-                console.log(`[GeminiChatService] All busy. Selected BEST config: ${bestConfig.name} (Wait: ${minWaitTime}ms)`);
+                /* console.log(`[GeminiChatService] All busy. Selected BEST config: ${bestConfig.name} (Wait: ${minWaitTime}ms)`) */;
             }
         }
 
@@ -588,7 +588,7 @@ export class GeminiChatServiceClass {
         const setting = this.getUseProxySetting(proxyScope);
         const useProxy = typeof useProxyOverride === 'boolean' ? useProxyOverride : setting;
         
-        console.log(`[GeminiChatService] fetchWithProxy - Override: ${useProxyOverride}, Setting: ${setting}, Final: ${useProxy}`);
+        /* console.log(`[GeminiChatService] fetchWithProxy - Override: ${useProxyOverride}, Setting: ${setting}, Final: ${useProxy}`) */;
 
         const proxyManager = getProxyManager();
         let currentProxy: ProxyConfig | null = null;
@@ -721,7 +721,7 @@ export class GeminiChatServiceClass {
         // Nếu đã gán rồi thì trả về cái cũ
         const existing = this.impitBrowserAssignments.get(accountKey);
         if (existing) {
-            console.log(`[GeminiChatService] Impit browser đã gán cho ${accountKey}: ${existing}`);
+            /* console.log(`[GeminiChatService] Impit browser đã gán cho ${accountKey}: ${existing}`) */;
             return existing;
         }
 
@@ -735,7 +735,7 @@ export class GeminiChatServiceClass {
         const browser = available[0];
         this.impitBrowserAssignments.set(accountKey, browser);
         this.impitBrowsersInUse.add(browser);
-        console.log(`[GeminiChatService] Gán impit browser '${browser}' cho ${accountKey} (còn ${available.length - 1} trình duyệt)`);
+        /* console.log(`[GeminiChatService] Gán impit browser '${browser}' cho ${accountKey} (còn ${available.length - 1} trình duyệt)`) */;
         return browser;
     }
 
@@ -747,7 +747,7 @@ export class GeminiChatServiceClass {
         if (browser) {
             this.impitBrowserAssignments.delete(accountKey);
             this.impitBrowsersInUse.delete(browser);
-            console.log(`[GeminiChatService] Giải phóng impit browser '${browser}' từ ${accountKey}`);
+            /* console.log(`[GeminiChatService] Giải phóng impit browser '${browser}' từ ${accountKey}`) */;
         }
     }
 
@@ -757,7 +757,7 @@ export class GeminiChatServiceClass {
     releaseAllImpitBrowsers(): void {
         this.impitBrowserAssignments.clear();
         this.impitBrowsersInUse.clear();
-        console.log('[GeminiChatService] Đã giải phóng tất cả trình duyệt impit');
+        /* console.log('[GeminiChatService] Đã giải phóng tất cả trình duyệt impit') */;
     }
 
     /**
@@ -956,7 +956,7 @@ export class GeminiChatServiceClass {
         throw e;
     }
 
-    console.log('[GeminiChatService] Da tao cau hinh moi:', id);
+    /* console.log('[GeminiChatService] Da tao cau hinh moi:', id) */;
     return this.getById(id)!;
   }
 
@@ -1018,9 +1018,9 @@ export class GeminiChatServiceClass {
     const sql = `UPDATE gemini_chat_config SET ${updates.join(', ')} WHERE id = @id`;
     
     // Debug logging
-    // console.log('[GeminiChatService] Updating config:', id);
-    // console.log('[GeminiChatService] SQL:', sql);
-    // console.log('[GeminiChatService] Params:', params);
+    // /* console.log('[GeminiChatService] Updating config:', id) */;
+    // /* console.log('[GeminiChatService] SQL:', sql) */;
+    // /* console.log('[GeminiChatService] Params:', params) */;
 
     try {
         db.prepare(sql).run(params);
@@ -1441,7 +1441,7 @@ export class GeminiChatServiceClass {
                     if (!newContext.responseId && effectiveContext) newContext.responseId = effectiveContext.responseId;
                     if (!newContext.choiceId && effectiveContext) newContext.choiceId = effectiveContext.choiceId;
 
-                    console.log(`[GeminiChatService] Impit: Nhận phản hồi thành công (${foundText.length} ký tự)`);
+                    /* console.log(`[GeminiChatService] Impit: Nhận phản hồi thành công (${foundText.length} ký tự)`) */;
                     
                     this.saveContext(newContext, config.id);
                     this.firstSendByTokenKey.add(tokenKey);

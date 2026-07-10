@@ -63,7 +63,7 @@ export class TokenRotationQueue {
     const key = (tokenKey || '').trim();
     const reqId = Math.random().toString(36).substring(7);
 
-    console.log(`[${this.label}][${reqId}] Queued for key: '${key.substring(0, 12)}...'`);
+    /* console.log(`[${this.label}][${reqId}] Queued for key: '${key.substring(0, 12)}...'`) */;
 
     // Lấy task trước đó và đặt task mới vào map ngay
     const previousTask = this.tokenLocks.get(key) ?? Promise.resolve();
@@ -81,11 +81,11 @@ export class TokenRotationQueue {
     const waitTime = Math.max(0, nextAllowedTime - now);
 
     if (waitTime > 0) {
-      console.log(`[${this.label}][${reqId}] Cooling down ${waitTime}ms...`);
+      /* console.log(`[${this.label}][${reqId}] Cooling down ${waitTime}ms...`) */;
       await new Promise((r) => setTimeout(r, waitTime));
     }
 
-    console.log(`[${this.label}][${reqId}] Executing NOW.`);
+    /* console.log(`[${this.label}][${reqId}] Executing NOW.`) */;
 
     try {
       return await fn();
@@ -95,7 +95,7 @@ export class TokenRotationQueue {
       const completionTime = Date.now();
       this.nextAvailableTimeByKey.set(key, completionTime + cooldown);
 
-      console.log(`[${this.label}][${reqId}] Done. Next allowed in ${cooldown}ms.`);
+      /* console.log(`[${this.label}][${reqId}] Done. Next allowed in ${cooldown}ms.`) */;
 
       signalDone();
 
@@ -159,9 +159,9 @@ export class TokenRotationQueue {
       }
 
       bestConfig = readyCandidates[nextIndex];
-      console.log(`[${this.label}] Selected READY config: ${getId(bestConfig)} (wait: 0ms)`);
+      /* console.log(`[${this.label}] Selected READY config: ${getId(bestConfig)} (wait: 0ms)`) */;
     } else if (bestConfig) {
-      console.log(`[${this.label}] All busy. Selected BEST config: ${getId(bestConfig)} (wait: ${minWait}ms)`);
+      /* console.log(`[${this.label}] All busy. Selected BEST config: ${getId(bestConfig)} (wait: ${minWait}ms)`) */;
     }
 
     if (bestConfig) {

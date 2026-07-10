@@ -104,7 +104,7 @@ export async function convertSrtToAss(options: ConvertToAssOptions): Promise<{
 }> {
   const { srtPath, assPath, videoResolution, style, position } = options;
   
-  console.log(`[ASSConverter] Bắt đầu convert: ${path.basename(srtPath)}`);
+  /* console.log(`[ASSConverter] Bắt đầu convert: ${path.basename(srtPath)}`) */;
   
   try {
     // Parse file SRT
@@ -162,7 +162,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     // Ghi file ASS
     await fs.writeFile(assPath, content, 'utf-8');
     
-    console.log(`[ASSConverter] Convert thành công: ${entries.length} entries -> ${path.basename(assPath)}`);
+    /* console.log(`[ASSConverter] Convert thành công: ${entries.length} entries -> ${path.basename(assPath)}`) */;
     
     return {
       success: true,

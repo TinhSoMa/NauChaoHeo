@@ -24,13 +24,13 @@ export function unregisterTempFile(filePath: string): void {
  * Hàm gọi khi ứng dụng sắp tắt để dọn dẹp tất cả các file rác còn sót lại trong Set
  */
 export function cleanTempFiles(): void {
-  console.log(`[GarbageCollector] Đang dọn dẹp ${trackedTempFiles.size} file rác...`);
+  /* console.log(`[GarbageCollector] Đang dọn dẹp ${trackedTempFiles.size} file rác...`) */;
   
   for (const filePath of trackedTempFiles) {
     try {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath); // Dùng synchronous để đảm bảo chạy xong trước khi app tắt
-        console.log(`[GarbageCollector] Đã xóa file rác: ${filePath}`);
+        /* console.log(`[GarbageCollector] Đã xóa file rác: ${filePath}`) */;
       }
     } catch (e) {
       console.error(`[GarbageCollector] Lỗi khi xóa file rác ${filePath}:`, e);

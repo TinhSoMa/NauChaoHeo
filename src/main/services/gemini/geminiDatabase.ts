@@ -95,7 +95,7 @@ function migrateLegacyKeys(dbRef: any): void {
       const json = decrypt(encryptedData);
       const accounts = JSON.parse(json);
       upsertAccountsToDb(dbRef, accounts);
-      console.log('[GeminiDatabase] Đã migrate file api-keys.encrypted sang bảng có cột');
+      /* console.log('[GeminiDatabase] Đã migrate file api-keys.encrypted sang bảng có cột') */;
       return;
     }
 
@@ -120,7 +120,7 @@ function migrateLegacyKeys(dbRef: any): void {
 
     try {
       dbRef.exec(`DROP TABLE IF EXISTS gemini_api_keys`);
-      console.log('[GeminiDatabase] Đã xóa bảng legacy gemini_api_keys');
+      /* console.log('[GeminiDatabase] Đã xóa bảng legacy gemini_api_keys') */;
     } catch (e) {
       console.error('[GeminiDatabase] Không thể drop bảng legacy gemini_api_keys:', e);
     }
@@ -142,7 +142,7 @@ function migrateLegacyState(dbRef: any): void {
         stateJson = row?.state_json || null;
         try {
           dbRef.exec(`DROP TABLE IF EXISTS gemini_api_state`);
-          console.log('[GeminiDatabase] Đã xóa bảng legacy gemini_api_state');
+          /* console.log('[GeminiDatabase] Đã xóa bảng legacy gemini_api_state') */;
         } catch (e) {
           console.error('[GeminiDatabase] Không thể drop bảng legacy gemini_api_state:', e);
         }
@@ -158,7 +158,7 @@ function migrateLegacyState(dbRef: any): void {
         dbRef.prepare(
           `INSERT OR REPLACE INTO gemini_state (id, settings_json, rotation_state_json, updated_at) VALUES (1, ?, ?, ?)`
         ).run(settingsJson, rotationJson, now);
-        console.log('[GeminiDatabase] Đã migrate legacy state sang bảng gemini_state');
+        /* console.log('[GeminiDatabase] Đã migrate legacy state sang bảng gemini_state') */;
       } catch (err) {
         console.error('[GeminiDatabase] Lỗi parse legacy state:', err);
       }
@@ -280,7 +280,7 @@ export function saveApiKeysToDb(accounts: EmbeddedAccount[]): void {
       });
     });
     tx();
-    console.log(`[GeminiDatabase] Đã lưu ${accounts.length} accounts vào SQLite`);
+    /* console.log(`[GeminiDatabase] Đã lưu ${accounts.length} accounts vào SQLite`) */;
   } catch (error) {
     console.error('[GeminiDatabase] Lỗi lưu keys vào SQLite:', error);
     throw error;
@@ -313,7 +313,7 @@ export function removeAccountFromDb(accountId: string): boolean {
   });
   const removed = tx();
   if (removed) {
-    console.log(`[GeminiDatabase] Đã xóa account: ${accountId}`);
+    /* console.log(`[GeminiDatabase] Đã xóa account: ${accountId}`) */;
   }
   return removed;
 }
@@ -326,7 +326,7 @@ export function removeProjectFromDb(accountId: string, projectIndex: number): bo
     .run(accountId, projectIndex);
   const removed = (info as any).changes > 0;
   if (removed) {
-    console.log(`[GeminiDatabase] Đã xóa project index=${projectIndex} từ account ${accountId}`);
+    /* console.log(`[GeminiDatabase] Đã xóa project index=${projectIndex} từ account ${accountId}`) */;
   }
   return removed;
 }
@@ -586,7 +586,7 @@ export function saveApiStateToDb(state: ApiState): boolean {
     db.prepare(
       `INSERT OR REPLACE INTO gemini_state (id, settings_json, rotation_state_json, updated_at) VALUES (1, ?, ?, ?)`
     ).run(JSON.stringify(state.settings || {}), JSON.stringify(state.rotationState || {}), now);
-    console.log('[GeminiDatabase] Đã lưu state vào SQLite');
+    /* console.log('[GeminiDatabase] Đã lưu state vào SQLite') */;
     return true;
   } catch (error) {
     console.error('[GeminiDatabase] Lỗi lưu state vào SQLite:', error);

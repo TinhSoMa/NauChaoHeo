@@ -68,7 +68,7 @@ export async function makeRequestWithProxy(
         currentProxy = proxyManager.getNextProxy(undefined, proxyScope);
       }
 
-      console.log(`[ApiClient] Request ${method} ${url} scope=${proxyScope} (Attempt ${attempt + 1}/${maxRetries})${currentProxy ? ` via ${currentProxy.host}:${currentProxy.port}` : ' (direct)'}`);
+      /* console.log(`[ApiClient] Request ${method} ${url} scope=${proxyScope} (Attempt ${attempt + 1}/${maxRetries})${currentProxy ? ` via ${currentProxy.host}:${currentProxy.port}` : ' (direct)'}`) */;
 
       const result = await makeRequest(url, {
         method,
@@ -111,7 +111,7 @@ export async function makeRequestWithProxy(
       // Retry (có thể qua proxy hoặc direct)
       if (attempt < maxRetries - 1) {
         const label = useProxy ? 'proxy khác' : 'direct';
-        console.log(`[ApiClient] 🔄 Retry với ${label}...`);
+        /* console.log(`[ApiClient] 🔄 Retry với ${label}...`) */;
         // Retry delay: dùng retryAfter nếu có (từ 429), fallback exponential backoff
         const delay = retryAfter && retryAfter > 0
           ? Math.min(retryAfter * 1000, 30_000)
@@ -131,7 +131,7 @@ export async function makeRequestWithProxy(
 
   // Hết retry, thử fallback về direct connection
   if (useProxy && proxyManager.shouldFallbackToDirect()) {
-    console.log('[ApiClient] 🔄 Fallback về direct connection...');
+    /* console.log('[ApiClient] 🔄 Fallback về direct connection...') */;
     try {
       const result = await makeRequest(url, {
         method,
@@ -142,7 +142,7 @@ export async function makeRequestWithProxy(
         proxy: null,
       });
 
-      console.log('[ApiClient] ✅ Direct connection thành công');
+      /* console.log('[ApiClient] ✅ Direct connection thành công') */;
       
       return {
         success: true,

@@ -32,7 +32,7 @@ export function mergeTranslatedTexts(
   entries: SubtitleEntry[],
   translatedTexts: string[]
 ): SubtitleEntry[] {
-  console.log(`[TextSplitter] Merge ${translatedTexts.length} translated texts`);
+  /* console.log(`[TextSplitter] Merge ${translatedTexts.length} translated texts`) */;
   
   return entries.map((entry, index) => ({
     ...entry,
@@ -98,7 +98,7 @@ export function createTranslationPrompt(
       prompt += formatMemoryContextMarkdown(memoryContext);
     }
 
-    console.log('[TextSplitter] Sử dụng custom prompt + memory context, format: json');
+    /* console.log('[TextSplitter] Sử dụng custom prompt + memory context, format: json') */;
     savePromptDebug(debugSaveDir, batchIndex, prompt);
     return { prompt, responseFormat: 'json' };
   }
@@ -159,7 +159,7 @@ ${JSON.stringify(sourcePayload, null, 2)}
     prompt += formatMemoryContextMarkdown(memoryContext);
   }
 
-  console.log('[TextSplitter] Sử dụng default prompt (markdown), format: json');
+  /* console.log('[TextSplitter] Sử dụng default prompt (markdown), format: json') */;
   savePromptDebug(debugSaveDir, batchIndex, prompt);
   return { prompt, responseFormat: 'json' };
 }
@@ -245,7 +245,7 @@ export function createDeepSeekPrompt(
       userPrompt += formatMemoryContextMarkdown(memoryContext);
     }
 
-    console.log('[TextSplitter] DeepSeek custom prompt (system+user), format: json');
+    /* console.log('[TextSplitter] DeepSeek custom prompt (system+user), format: json') */;
     savePromptDebug(debugSaveDir, batchIndex, `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userPrompt}`);
     return { prompt: userPrompt, systemPrompt, responseFormat: 'json' };
   }
@@ -310,7 +310,7 @@ ${JSON.stringify(sourcePayload, null, 2)}
     userPrompt += formatMemoryContextMarkdown(memoryContext);
   }
 
-  console.log('[TextSplitter] DeepSeek default prompt (system+user), format: json');
+  /* console.log('[TextSplitter] DeepSeek default prompt (system+user), format: json') */;
   savePromptDebug(debugSaveDir, batchIndex, `[SYSTEM]\n${systemPrompt}\n\n[USER]\n${userPrompt}`);
   return { prompt: userPrompt, systemPrompt, responseFormat: 'json' };
 }
@@ -325,7 +325,7 @@ function savePromptDebug(debugSaveDir?: string, batchIndex?: number, prompt?: st
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(path.join(dir, fileName), prompt, 'utf-8');
-    console.log(`[TextSplitter] Đã lưu prompt debug: ${path.join(dir, fileName)}`);
+    /* console.log(`[TextSplitter] Đã lưu prompt debug: ${path.join(dir, fileName)}`) */;
   } catch (error) {
     console.warn('[TextSplitter] Không thể lưu prompt debug:', error);
   }
@@ -369,7 +369,7 @@ export function parseJsonTranslationResponse(
   const translatedTexts = new Array<string>(safeExpectedCount).fill('');
   const raw = typeof response === 'string' ? response.trim() : '';
 
-  console.log(`[TextSplitter] Parse JSON response, expected ${safeExpectedCount} lines`);
+  /* console.log(`[TextSplitter] Parse JSON response, expected ${safeExpectedCount} lines`) */;
 
   if (!raw) {
     return failJsonParse(translatedTexts, 'JSON_PARSE_FAILED', 'Response rỗng');
@@ -503,7 +503,7 @@ export function parseJsonTranslationResponse(
     return failJsonParse(translatedTexts, 'ERROR_INVALID_INPUT', 'Schema không hợp lệ: summary.language_style phải là string');
   }
 
-  console.log(`[TextSplitter] [JSON] Parse được ${translatedTexts.filter((r) => r).length}/${safeExpectedCount} dòng`);
+  /* console.log(`[TextSplitter] [JSON] Parse được ${translatedTexts.filter((r) => r).length}/${safeExpectedCount} dòng`) */;
   return {
     ok: true,
     translatedTexts,
@@ -517,7 +517,7 @@ export function parsePipeResponse(
   response: string,
   expectedCount: number
 ): string[] {
-  console.log(`[TextSplitter] Parse pipe response, expected ${expectedCount} lines`);
+  /* console.log(`[TextSplitter] Parse pipe response, expected ${expectedCount} lines`) */;
 
   // Tìm đoạn |...|...|...|  trong response (bỏ qua text thừa trước/sau)
   const pipeMatch = response.match(/\|[^]*/);
@@ -541,7 +541,7 @@ export function parsePipeResponse(
     console.warn(`[TextSplitter] [Pipe] Thiếu dịch cho dòng ${i + 1}`);
   }
 
-  console.log(`[TextSplitter] [Pipe] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`);
+  /* console.log(`[TextSplitter] [Pipe] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`) */;
   return results;
 }
 
@@ -553,7 +553,7 @@ export function parseTranslationResponse(
   response: string,
   expectedCount: number
 ): string[] {
-  console.log(`[TextSplitter] Parse translation response, expected ${expectedCount} lines`);
+  /* console.log(`[TextSplitter] Parse translation response, expected ${expectedCount} lines`) */;
   
   const results: string[] = [];
   const lines = response.trim().split('\n');
@@ -581,7 +581,7 @@ export function parseTranslationResponse(
     }
   }
   
-  console.log(`[TextSplitter] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`);
+  /* console.log(`[TextSplitter] Parse được ${results.filter(r => r).length}/${expectedCount} dòng`) */;
   return results;
 }
 
@@ -591,7 +591,7 @@ export function parseTranslationResponse(
  */
 export async function splitText(options: SplitOptions): Promise<SplitResult> {
   const { entries, splitByLines, value, outputDir } = options;
-  console.log(`[TextSplitter] Split text: ${entries.length} entries, splitByLines=${splitByLines}, value=${value}`);
+  /* console.log(`[TextSplitter] Split text: ${entries.length} entries, splitByLines=${splitByLines}, value=${value}`) */;
 
   try {
     // Tạo thư mục output nếu chưa tồn tại
@@ -633,10 +633,10 @@ export async function splitText(options: SplitOptions): Promise<SplitResult> {
       fs.writeFileSync(filePath, content, 'utf-8');
       
       files.push(filePath);
-      console.log(`[TextSplitter] Đã ghi file: ${filePath} (${batch.length} dòng)`);
+      /* console.log(`[TextSplitter] Đã ghi file: ${filePath} (${batch.length} dòng)`) */;
     }
 
-    console.log(`[TextSplitter] Đã chia thành ${files.length} files`);
+    /* console.log(`[TextSplitter] Đã chia thành ${files.length} files`) */;
     return {
       success: true,
       partsCount: files.length,

@@ -227,7 +227,7 @@ function startStoryQueueStream(webContents: WebContents): void {
 }
 
 export function registerStoryHandlers(): void {
-  console.log('[StoryHandlers] Đăng ký handlers...');
+  /* console.log('[StoryHandlers] Đăng ký handlers...') */;
 
   ipcMain.removeHandler('dialog:showSaveDialog');
   ipcMain.handle(
@@ -246,7 +246,7 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.PARSE,
     async (_event: IpcMainInvokeEvent, filePath: string) => {
-      console.log(`[StoryHandlers] Parse story: ${filePath}`);
+      /* console.log(`[StoryHandlers] Parse story: ${filePath}`) */;
       return await StoryService.parseStoryFile(filePath);
     }
   );
@@ -254,7 +254,7 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.PREPARE_PROMPT,
     async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, previousAssistantOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount }: StoryPreparePromptPayload) => {
-       console.log(`[StoryHandlers] Prepare prompt logic: ${sourceLang} -> ${targetLang}`);
+       /* console.log(`[StoryHandlers] Prepare prompt logic: ${sourceLang} -> ${targetLang}`) */;
        return await StoryService.StoryService.prepareTranslationPrompt(chapterContent, sourceLang, targetLang, previousAssistantOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount);
     }
   );
@@ -262,7 +262,7 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT,
     async (_event: IpcMainInvokeEvent, { chapterContent, sourceLang, targetLang, previousSummaryOutput, previousTranslatedOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount }: StoryPrepareSummaryPromptPayload) => {
-       console.log(`[StoryHandlers] Prepare summary prompt: ${sourceLang} -> ${targetLang}`);
+       /* console.log(`[StoryHandlers] Prepare summary prompt: ${sourceLang} -> ${targetLang}`) */;
        return await StoryService.StoryService.prepareSummaryPrompt(chapterContent, sourceLang, targetLang, previousSummaryOutput, previousTranslatedOutput, previousAssistantOutputMode, previousAssistantOutputChapterCount);
     }
   );
@@ -270,7 +270,7 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.SAVE_PROMPT,
     async (_event: IpcMainInvokeEvent, content: string) => {
-      console.log('[StoryHandlers] Save prompt to file...');
+      /* console.log('[StoryHandlers] Save prompt to file...') */;
       const { canceled, filePath } = await dialog.showSaveDialog({
         title: 'Lưu Prompt',
         defaultPath: 'prompt.txt',
@@ -302,7 +302,7 @@ export function registerStoryHandlers(): void {
       
       if (options && options.metadata) {
           const { chapterTitle, tokenInfo, chapterId } = options.metadata;
-          console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || 'Unknown'})`);
+          /* console.log(`[StoryHandlers] 📖 Translating: ${chapterTitle || chapterId} (Token: ${tokenInfo || 'Unknown'})`) */;
       }
       
       const runId = toOptionalString(options.metadata?.runId);
@@ -488,7 +488,7 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.CREATE_EBOOK,
     async (_event: IpcMainInvokeEvent, options: CreateEbookPayload) => {
-        console.log('[StoryHandlers] Create ebook:', options.title);
+        /* console.log('[StoryHandlers] Create ebook:', options.title) */;
         return await StoryService.StoryService.createEbook(options);
     }
   );
@@ -501,5 +501,5 @@ export function registerStoryHandlers(): void {
     }
   );
 
-  console.log('[StoryHandlers] Đã đăng ký handlers thành công');
+  /* console.log('[StoryHandlers] Đã đăng ký handlers thành công') */;
 }

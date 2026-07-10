@@ -38,7 +38,7 @@ export class SessionContextManager {
       ...newContext
     };
 
-    console.log('[SessionContextManager] Context updated:', this.currentContext);
+    /* console.log('[SessionContextManager] Context updated:', this.currentContext) */;
   }
 
   /**
@@ -46,7 +46,7 @@ export class SessionContextManager {
    */
   setContext(context: SessionContext | null): void {
     this.currentContext = context ? { ...context } : null;
-    console.log('[SessionContextManager] Context set:', this.currentContext);
+    /* console.log('[SessionContextManager] Context set:', this.currentContext) */;
   }
 
   /**
@@ -54,7 +54,7 @@ export class SessionContextManager {
    */
   resetSession(): void {
     this.currentContext = null;
-    console.log('[SessionContextManager] Session reset');
+    /* console.log('[SessionContextManager] Session reset') */;
   }
 
   /**
@@ -118,7 +118,7 @@ export class SessionContextManager {
         responseIdLength: newContext.responseId ? String(newContext.responseId).length : 0,
         choiceId: newContext.choiceId ? `${String(newContext.choiceId).slice(0, 24)}...` : ''
       };
-      // console.log('[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):', contextSummary);
+      // /* console.log('[SessionContextManager] Đã parse ngữ cảnh (tóm tắt):', contextSummary) */;
     } catch (error) {
       console.error('[SessionContextManager] Failed to parse fetch response:', error);
     }
@@ -179,7 +179,7 @@ export class SessionContextManager {
         }
       }
 
-      console.log('[SessionContextManager] Parsed context from stream response:', newContext);
+      /* console.log('[SessionContextManager] Parsed context from stream response:', newContext) */;
     } catch (error) {
       console.error('[SessionContextManager] Failed to parse stream response:', error);
     }

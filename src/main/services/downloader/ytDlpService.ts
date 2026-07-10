@@ -336,7 +336,7 @@ class YtDlpService {
     ]
     if (cookiePath) args.push('--cookies', cookiePath)
     args.push(url)
-    console.log('[Downloader][Playlist] yt-dlp args', args.join(' '))
+    /* console.log('[Downloader][Playlist] yt-dlp args', args.join(' ')) */
 
     return new Promise((resolve, reject) => {
       let stdout = ''
@@ -373,14 +373,14 @@ class YtDlpService {
             entryCount: entries.length,
             entries: mapped,
           }
-          console.log('[Downloader][Playlist] parsed', {
+          /* console.log('[Downloader][Playlist] parsed', {
             title: result.title,
             entryCount: result.entryCount,
             returnedEntries: result.entries.length,
             limit,
-          })
+          }) */
           if (result.entries.length > 0) {
-            console.log('[Downloader][Playlist] sample entry', result.entries[0])
+            /* console.log('[Downloader][Playlist] sample entry', result.entries[0]) */
           }
           resolve(result)
         } catch (e: any) {

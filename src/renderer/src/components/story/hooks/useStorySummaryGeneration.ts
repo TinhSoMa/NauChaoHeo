@@ -178,7 +178,7 @@ export function useStorySummaryGeneration({
   }, []);
 
   const stopGeneration = () => {
-    console.log('[useStorySummaryGeneration] Dừng tóm tắt thủ công...');
+    /* console.log('[useStorySummaryGeneration] Dừng tóm tắt thủ công...') */;
     shouldStopRef.current = true;
     currentBatchRunIdRef.current = null;
     setShouldStop(true);
@@ -243,7 +243,7 @@ export function useStorySummaryGeneration({
     setActiveOperation?.('summarizing');
     
     try {
-      console.log('[useStorySummaryGeneration] Đang chuẩn bị prompt tóm tắt...');
+      /* console.log('[useStorySummaryGeneration] Đang chuẩn bị prompt tóm tắt...') */;
       // 1. Prepare Summary Prompt
 const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_SUMMARY_PROMPT, {
         chapterContent: sourceContent,
@@ -259,7 +259,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
         throw new Error(prepareResult.error || 'Lỗi chuẩn bị prompt tóm tắt');
       }
 
-      console.log('[useStorySummaryGeneration] Đã chuẩn bị prompt, đang gửi đến Gemini...');
+      /* console.log('[useStorySummaryGeneration] Đã chuẩn bị prompt, đang gửi đến Gemini...') */;
       
       // Use IMPIT for token mode, consistent with useStoryTranslation
       const method = translateMode === 'token' ? 'IMPIT' : 'API';
@@ -347,7 +347,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
         }
 
         setViewMode('summary');
-        console.log('[useStorySummaryGeneration] Tóm tắt thành công!');
+        /* console.log('[useStorySummaryGeneration] Tóm tắt thành công!') */;
       } else {
         throw new Error(translateResult.error || 'Tóm tắt thất bại');
       }
@@ -396,7 +396,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
     });
 
     try {
-      console.log(`[useStorySummaryGeneration] 📝 Tóm tắt chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`);
+      /* console.log(`[useStorySummaryGeneration] 📝 Tóm tắt chương ${index + 1}/${batchStateRef.current.chapters.length}: ${chapter.title} (Token: ${tokenConfig?.email || tokenConfig?.id || 'API'})`) */;
 
       const sourceContent = runtimeTranslatedChaptersRef.current.get(chapter.id);
       if (!sourceContent) {
@@ -557,7 +557,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
 
     const workerId = ++workerIdRef.current;
     activeWorkerCountRef.current += 1;
-    console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} started (${channel})`);
+    /* console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} started (${channel})`) */;
 
     let hasDispatched = false;
 
@@ -579,9 +579,9 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
 
         if (!batchStateRef.current.isFirstChapterTaken) {
           batchStateRef.current.isFirstChapterTaken = true;
-          console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} lấy chương đầu tiên`);
+          /* console.log(`[useStorySummaryGeneration] 🚀 Worker ${workerId} lấy chương đầu tiên`) */;
         } else {
-          console.log(`[useStorySummaryGeneration] 📝 Worker ${workerId} lấy chương ${index + 1}`);
+          /* console.log(`[useStorySummaryGeneration] 📝 Worker ${workerId} lấy chương ${index + 1}`) */;
         }
 
         let result: SummaryProcessResult = { status: 'stopped' };
@@ -603,9 +603,9 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
               });
               return next;
             });
-            console.log(
+            /* console.log(
               `[useStorySummaryGeneration] ⚠️ Worker ${workerId} retrying chapter ${index + 1} (${chapter.id}) attempt ${retryCount} in ${delayMs}ms`
-            );
+            ) */;
             await new Promise(r => setTimeout(r, delayMs));
           }
 
@@ -648,7 +648,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
       if (channel === 'token' && tokenConfig) {
         batchStateRef.current.activeWorkerConfigIds.delete(tokenConfig.id);
       }
-      console.log(`[useStorySummaryGeneration] ✓ Worker ${workerId} finished`);
+      /* console.log(`[useStorySummaryGeneration] ✓ Worker ${workerId} finished`) */;
 
       if (
         activeWorkerCountRef.current === 0 &&
@@ -753,7 +753,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
     batchStateRef.current.activeWorkerConfigIds = new Set(finalConfigsToUse.map(c => c.id));
 
     const totalWorkers = apiWorkerCount + tokenWorkerCount;
-    console.log(`[useStorySummaryGeneration] 🎯 Bắt đầu tóm tắt ${chaptersToSummarize.length} chapters với ${totalWorkers} worker tuần tự`);
+    /* console.log(`[useStorySummaryGeneration] 🎯 Bắt đầu tóm tắt ${chaptersToSummarize.length} chapters với ${totalWorkers} worker tuần tự`) */;
 
     if (apiWorkerCount > 0) {
       startWorker('api', null, runId);
@@ -761,7 +761,7 @@ const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE
     }
 
     if (finalConfigsToUse.length > 0) {
-      console.log('[useStorySummaryGeneration] 🚀 Starting token worker 1/1');
+      /* console.log('[useStorySummaryGeneration] 🚀 Starting token worker 1/1') */;
       startWorker('token', finalConfigsToUse[0], runId);
     }
   };

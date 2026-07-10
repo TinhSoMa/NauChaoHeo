@@ -138,7 +138,7 @@ export function StoryTranslatorWeb() {
 
   const handleStop = () => {
       stopRef.current = true;
-      console.log('[StoryTranslator] Stop requested by user.');
+      /* console.log('[StoryTranslator] Stop requested by user.') */;
   };
 
   const loadProxySetting = async () => {
@@ -202,7 +202,7 @@ export function StoryTranslatorWeb() {
       });
       if (result.success) {
         setUseProxy(enabled);
-        console.log(`[StoryTranslatorWeb] Proxy ${enabled ? 'enabled' : 'disabled'} for Story scope`);
+        /* console.log(`[StoryTranslatorWeb] Proxy ${enabled ? 'enabled' : 'disabled'} for Story scope`) */;
       }
     } catch (error) {
       console.error('[StoryTranslatorWeb] Lỗi toggle proxy:', error);
@@ -412,7 +412,7 @@ export function StoryTranslatorWeb() {
         
         // Update Session Context from response
         if (translateResult.context) {
-            console.log('Cập nhật Session Context:', translateResult.context);
+            /* console.log('Cập nhật Session Context:', translateResult.context) */;
             setSessionContext(translateResult.context);
         }
 
@@ -463,7 +463,7 @@ export function StoryTranslatorWeb() {
               filename: title,
               sourceEpubPath: filePath.toLowerCase().endsWith('.epub') ? filePath : undefined
           });
-          console.log(`Đã đóng gói Ebook: ${title}`);
+          /* console.log(`Đã đóng gói Ebook: ${title}`) */;
       } catch (e) {
           console.error('Lỗi đóng gói ebook:', e);
       }
@@ -516,7 +516,7 @@ export function StoryTranslatorWeb() {
           mode: previousAssistantOutputMode,
           chapterCount: previousAssistantOutputChapterCount
         });
-        console.log('[StoryTranslator] Step 1: Preparing prompt...');
+        /* console.log('[StoryTranslator] Step 1: Preparing prompt...') */;
         const prepareResult = await window.electronAPI.invoke(STORY_IPC_CHANNELS.PREPARE_PROMPT, {
           chapterContent: chapter.content,
           sourceLang, 
@@ -525,10 +525,10 @@ export function StoryTranslatorWeb() {
           previousAssistantOutputMode,
           previousAssistantOutputChapterCount,
         }) as PreparePromptResult;
-        console.log('[StoryTranslator] Step 2: Prompt prepared, success:', prepareResult.success);
+        /* console.log('[StoryTranslator] Step 2: Prompt prepared, success:', prepareResult.success) */;
         
         if (prepareResult.success && prepareResult.prompt) {
-             console.log('[StoryTranslator] Step 3: Calling TRANSLATE_CHAPTER...');
+             /* console.log('[StoryTranslator] Step 3: Calling TRANSLATE_CHAPTER...') */;
              
              // Start waiting timer
              setIsWaitingResponse(true);
@@ -553,11 +553,11 @@ export function StoryTranslatorWeb() {
             }
             setIsWaitingResponse(false);
             
-            console.log('[StoryTranslator] Step 4: TRANSLATE_CHAPTER returned, success:', translateResult.success);
+            /* console.log('[StoryTranslator] Step 4: TRANSLATE_CHAPTER returned, success:', translateResult.success) */;
 
             if (translateResult.success && translateResult.data) {
                 const translatedText = translateResult.data!;
-                console.log('[StoryTranslator] Step 5: Translated length:', translatedText.length);
+                /* console.log('[StoryTranslator] Step 5: Translated length:', translatedText.length) */;
 
                 setTranslatedChapters(prev => {
                     const next = new Map(prev);
@@ -574,7 +574,7 @@ export function StoryTranslatorWeb() {
 
                 // Auto-Pack Interval Logic
                 if (packInterval > 0 && chaptersSinceLastPack.length >= packInterval) {
-                     console.log('[StoryTranslator] Auto-Packing...');
+                     /* console.log('[StoryTranslator] Auto-Packing...') */;
                      const packBatchIndex = Math.ceil((i + 1) / packInterval);
                      await createEbook(
                          chaptersSinceLastPack, 
@@ -585,7 +585,7 @@ export function StoryTranslatorWeb() {
 
                 if (translateResult.context) {
                     currentContext = translateResult.context;
-                    console.log('[StoryTranslator] Step 6: Context updated');
+                    /* console.log('[StoryTranslator] Step 6: Context updated') */;
                     setSessionContext(currentContext);
                 }
             } else {
@@ -596,7 +596,7 @@ export function StoryTranslatorWeb() {
         // Cooldown delay between chapters (5 seconds to avoid rate limiting)
         const DELAY_SECONDS = 5;
         if (i < chaptersToTranslate.length - 1 && !stopRef.current) {
-            console.log(`[StoryTranslator] Step 7: Waiting ${DELAY_SECONDS}s before next chapter...`);
+            /* console.log(`[StoryTranslator] Step 7: Waiting ${DELAY_SECONDS}s before next chapter...`) */;
             for (let countdown = DELAY_SECONDS; countdown > 0 && !stopRef.current; countdown--) {
                 setCooldownTime(countdown);
                 await new Promise(r => setTimeout(r, 1000));

@@ -38,10 +38,10 @@ export function getCaptionOutputDirFromInput(inputType: 'srt' | 'draft', inputPa
   if (captionIndex >= 0) {
     const resolved = joinPath(segments.slice(0, captionIndex + 1));
     if (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
-      console.log('[CaptionSession] Resolved caption_output from SRT path:', {
+      /* console.log('[CaptionSession] Resolved caption_output from SRT path:', {
         inputPath,
         outputDir: resolved,
-      });
+      }) */;
     }
     return resolved;
   }

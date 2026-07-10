@@ -120,7 +120,7 @@ export function registerCutVideoHandlers(): void {
           overwrite,
           onLog: (logStr) => {
             // Option to pipe detailed ffmpeg logs here if needed
-            // console.log(logStr)
+            // /* console.log(logStr) */
           }
         });
 

@@ -36,7 +36,7 @@ export function msToSrtTime(ms: number): string {
  * Parse file SRT và trả về danh sách SubtitleEntry
  */
 export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
-  console.log(`[SrtParser] Đang parse file: ${path.basename(filePath)}`);
+  /* console.log(`[SrtParser] Đang parse file: ${path.basename(filePath)}`) */;
   
   try {
     // Kiểm tra file tồn tại
@@ -95,7 +95,7 @@ export async function parseSrtFile(filePath: string): Promise<ParseSrtResult> {
     // Sort entries theo startMs để đảm bảo thứ tự đúng
     entries.sort((a, b) => a.startMs - b.startMs);
     
-    console.log(`[SrtParser] Parse thành công: ${entries.length} entries`);
+    /* console.log(`[SrtParser] Parse thành công: ${entries.length} entries`) */;
     
     return {
       success: true,
@@ -132,7 +132,7 @@ export async function exportToSrt(
   outputPath: string,
   useTranslated: boolean = true
 ): Promise<{ success: boolean; error?: string }> {
-  console.log(`[SrtParser] Đang export ${entries.length} entries ra: ${path.basename(outputPath)}`);
+  /* console.log(`[SrtParser] Đang export ${entries.length} entries ra: ${path.basename(outputPath)}`) */;
   
   try {
     // Đảm bảo thư mục tồn tại
@@ -151,7 +151,7 @@ export async function exportToSrt(
     // Ghi file
     await fs.writeFile(outputPath, srtContent + '\n', 'utf-8');
     
-    console.log(`[SrtParser] Export thành công: ${outputPath}`);
+    /* console.log(`[SrtParser] Export thành công: ${outputPath}`) */;
     return { success: true };
     
   } catch (error) {
@@ -248,7 +248,7 @@ export async function exportPlainText(
   content: string,
   outputPath: string
 ): Promise<{ success: boolean; error?: string }> {
-  console.log(`[SrtParser] Đang export text thuần ra: ${path.basename(outputPath)}`);
+  /* console.log(`[SrtParser] Đang export text thuần ra: ${path.basename(outputPath)}`) */;
 
   try {
     const dir = path.dirname(outputPath);
@@ -257,7 +257,7 @@ export async function exportPlainText(
     const safeContent = typeof content === 'string' ? content : '';
     await fs.writeFile(outputPath, safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`, 'utf-8');
 
-    console.log(`[SrtParser] Export text thuần thành công: ${outputPath}`);
+    /* console.log(`[SrtParser] Export text thuần thành công: ${outputPath}`) */;
     return { success: true };
   } catch (error) {
     const errorMsg = `Lỗi export text thuần: ${error}`;

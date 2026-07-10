@@ -304,7 +304,7 @@ export function useStoryGeminiWebQueueTranslation(
 
       if (capacityResult?.success && capacityResult.data) {
         const workerCount = Math.max(1, capacityResult.data.workerCount || capacityResult.data.resourceCount || 1);
-        console.log('[StoryGeminiWebQueue][Capacity]', capacityResult.data);
+        /* console.log('[StoryGeminiWebQueue][Capacity]', capacityResult.data) */;
         return clampWorkers(workerCount);
       }
       return 1;
@@ -420,11 +420,11 @@ export function useStoryGeminiWebQueueTranslation(
       }
       const pacingDebug = toQueuePacingDebug(translateResult.metadata);
       if (pacingDebug) {
-        console.log('[StoryGeminiWebQueue][Pacing]', {
+        /* console.log('[StoryGeminiWebQueue][Pacing]', {
           chapterId: expectedChapterId,
           resourceId: translateResult.resourceId,
           ...pacingDebug
-        });
+        }) */;
       }
 
       if (translateResult.success && translateResult.data) {

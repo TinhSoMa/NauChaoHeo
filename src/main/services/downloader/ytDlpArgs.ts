@@ -267,7 +267,7 @@ export function buildArgs(
         .filter((value) => Number.isFinite(value) && value > 0)
       if (sanitized.length > 0) {
         const uniqueSorted = Array.from(new Set(sanitized)).sort((a, b) => a - b)
-        console.log('[Downloader][Playlist] apply --playlist-items', uniqueSorted.join(','))
+        /* console.log('[Downloader][Playlist] apply --playlist-items', uniqueSorted.join(',')) */
         args.push('--playlist-items', uniqueSorted.join(','))
       }
     }

@@ -216,7 +216,7 @@ export function GeminiChat() {
       }
       // Neu useContext = false hoac khong co context cu, context = undefined -> Backend tu tao moi
 
-      console.log('Sending with context:', context);
+      /* console.log('Sending with context:', context) */;
 
       // Goi Gemini Web API thong qua IPC
       const result = await window.electronAPI.geminiChat.sendMessage(userMessage.content, activeSessionId, context);
@@ -233,7 +233,7 @@ export function GeminiChat() {
         // Cap nhat context moi vao DB va State
         if (result.data.context) {
             const newContext = result.data.context;
-            console.log('Received new context:', newContext);
+            /* console.log('Received new context:', newContext) */;
             
             // 1. Cap nhat DB
             window.electronAPI.geminiChat.update(activeSessionId, {

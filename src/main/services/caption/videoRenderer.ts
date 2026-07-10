@@ -1017,7 +1017,7 @@ async function injectInlineThumbnailAtEnd(input: {
     input.filterComplexParts.push(
       `${finalVideoRawLabel}setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
     );
-    console.log('[VideoRenderer][ThumbnailInline]', {
+    /* console.log('[VideoRenderer][ThumbnailInline]', {
       enabled: true,
       mode: input.options.renderMode || 'hardsub',
       thumbnailTimeSec: input.options.thumbnailTimeSec,
@@ -1028,7 +1028,7 @@ async function injectInlineThumbnailAtEnd(input: {
       audioPrefixMode: 'adelay',
       audioDelayMs: delayMs,
       thumbnailDebug: thumbVideo.debug,
-    });
+    }) */;
     return {
       finalVideoLabel,
       finalAudioLabel: '[a_out_inline]',
@@ -1043,7 +1043,7 @@ async function injectInlineThumbnailAtEnd(input: {
   input.filterComplexParts.push(
     `${finalVideoRawLabel}setsar=1[${extractFilterLabelName(finalVideoLabel)}]`
   );
-  console.log('[VideoRenderer][ThumbnailInline]', {
+  /* console.log('[VideoRenderer][ThumbnailInline]', {
     enabled: true,
     mode: input.options.renderMode || 'hardsub',
     thumbnailTimeSec: input.options.thumbnailTimeSec,
@@ -1052,7 +1052,7 @@ async function injectInlineThumbnailAtEnd(input: {
     sourceSize: `${input.sourceWidth}x${input.sourceHeight}`,
     hasMainAudio: false,
     thumbnailDebug: thumbVideo.debug,
-  });
+  }) */;
   return {
     finalVideoLabel,
     finalAudioLabel: null,
@@ -1145,11 +1145,11 @@ export async function renderHardsubVideo(
     stretchedVideoDuration > 0 ? stretchedVideoDuration : 0,
     prep.newAudioDuration > 0 ? prep.newAudioDuration : 0
   ) || prep.newAudioDuration;
-  console.log(
+  /* console.log(
     `[VideoRenderer] Hardsub duration | videoTotal=${prep.originalVideoDuration.toFixed(3)}s, ` +
     `videoSpeedMultiplier=${prep.videoSpeedMultiplier.toFixed(4)}, stretchedVideo=${stretchedVideoDuration.toFixed(3)}s, ` +
     `audioForSync=${prep.newAudioDuration.toFixed(3)}s, outputDuration=${mainOutputDuration.toFixed(3)}s`
-  );
+  ) */;
 
   const inputArgs = [...encoderProfile.hwaccelArgs, '-i', renderOptions.videoPath!];
   let hasTtsAudio = false;
@@ -1210,14 +1210,14 @@ export async function renderHardsubVideo(
   const audioVolumeInput = renderOptions.audioVolume;
   const safeVideoVolume = clampVolumePercent(videoVolumeInput, 0, 200, 100);
   const safeAudioVolume = clampVolumePercent(audioVolumeInput, 0, 400, 100);
-  console.log('[VideoRenderer][Hardsub][AudioGain]', {
+  /* console.log('[VideoRenderer][Hardsub][AudioGain]', {
     videoVolumeInput,
     videoVolumeApplied: safeVideoVolume,
     videoGainApplied: safeVideoVolume / 100,
     audioVolumeInput,
     audioVolumeApplied: safeAudioVolume,
     audioGainApplied: safeAudioVolume / 100,
-  });
+  }) */;
   const audioMix = buildHardsubAudioMix({
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
@@ -1309,10 +1309,10 @@ export async function renderHardsubVideo(
     };
   }
   if (!inlineThumbnailError && options.thumbnailEnabled) {
-    console.log('[VideoRenderer][ThumbnailInline] inline_applied', {
+    /* console.log('[VideoRenderer][ThumbnailInline] inline_applied', {
       mode: options.renderMode || 'hardsub',
       durationSec: inlineThumbnail.thumbnailDurationSec,
-    });
+    }) */;
   }
   const outputDuration = mainOutputDuration + inlineThumbnail.thumbnailDurationSec;
   const finalDurationStr = outputDuration.toFixed(3);
@@ -1344,14 +1344,14 @@ export async function renderHardsubVideo(
     '-y',
     outputPath,
   ];
-  console.log('[VideoRenderer][FilterGraph]', filterComplexParts.join(';'));
-  console.log('[VideoRenderer][Hardsub] Encoder profile', {
+  /* console.log('[VideoRenderer][FilterGraph]', filterComplexParts.join(';')) */;
+  /* console.log('[VideoRenderer][Hardsub] Encoder profile', {
     hardware: options.hardwareAcceleration || 'none',
     codec: encoderProfile.videoCodec,
     pixelFormat: encoderProfile.pixelFormat,
     decodePath: encoderProfile.decodePath,
     hwaccelArgs: encoderProfile.hwaccelArgs,
-  });
+  }) */;
 
   const hardsubTimingDebug = buildHardsubTimingPayload({
     options,
@@ -1405,7 +1405,7 @@ export async function renderHardsubVideo(
     },
   });
 
-  console.log('[VideoRenderer][Hardsub] Render config', {
+  /* console.log('[VideoRenderer][Hardsub] Render config', {
     inputVideo: renderOptions.videoPath,
     inputAudio: renderOptions.audioPath ?? null,
     outputVideo: outputPath,
@@ -1466,8 +1466,8 @@ export async function renderHardsubVideo(
       trimApplied,
     },
     note: 'Không trim audio/video. mergeWindowInVideo là timeline video gốc; mergeWindowInOutputTimeline là timeline sau setpts.',
-  });
-  console.log('[VideoRenderer][Hardsub][TimingPayload]', hardsubTimingDebug);
+  }) */;
+  /* console.log('[VideoRenderer][Hardsub][TimingPayload]', hardsubTimingDebug) */;
 
   const totalFrames = Math.floor(outputDuration * fps);
   const includeFullStderrOnError =
@@ -1545,7 +1545,7 @@ export async function renderHardsubVideo(
     });
     finalResult = await applyThumbnailPostProcess(options, finalResult);
     if (finalResult.success) {
-      console.log('[VideoRenderer][ThumbnailInline] fallback_applied');
+      /* console.log('[VideoRenderer][ThumbnailInline] fallback_applied') */;
     } else {
       console.error('[VideoRenderer][ThumbnailInline] fallback_failed', finalResult.error);
     }
@@ -1606,11 +1606,11 @@ export async function renderHardsubPortraitVideo(
     stretchedVideoDuration > 0 ? stretchedVideoDuration : 0,
     prep.newAudioDuration > 0 ? prep.newAudioDuration : 0
   ) || prep.newAudioDuration;
-  console.log(
+  /* console.log(
     `[VideoRenderer] HardsubPortrait duration | videoTotal=${prep.originalVideoDuration.toFixed(3)}s, ` +
     `videoSpeedMultiplier=${prep.videoSpeedMultiplier.toFixed(4)}, stretchedVideo=${stretchedVideoDuration.toFixed(3)}s, ` +
     `audioForSync=${prep.newAudioDuration.toFixed(3)}s, outputDuration=${mainOutputDuration.toFixed(3)}s`
-  );
+  ) */;
 
   const inputArgs = [...encoderProfile.hwaccelArgs, '-i', renderOptions.videoPath!];
   let hasTtsAudio = false;
@@ -1735,14 +1735,14 @@ export async function renderHardsubPortraitVideo(
   const audioVolumeInput = renderOptions.audioVolume;
   const safeVideoVolume = clampVolumePercent(videoVolumeInput, 0, 200, 100);
   const safeAudioVolume = clampVolumePercent(audioVolumeInput, 0, 400, 100);
-  console.log('[VideoRenderer][HardsubPortrait][AudioGain]', {
+  /* console.log('[VideoRenderer][HardsubPortrait][AudioGain]', {
     videoVolumeInput,
     videoVolumeApplied: safeVideoVolume,
     videoGainApplied: safeVideoVolume / 100,
     audioVolumeInput,
     audioVolumeApplied: safeAudioVolume,
     audioGainApplied: safeAudioVolume / 100,
-  });
+  }) */;
   const audioMix = buildHardsubAudioMix({
     hasVideoAudio: prep.hasVideoAudio,
     hasTtsAudio,
@@ -1887,10 +1887,10 @@ export async function renderHardsubPortraitVideo(
     };
   }
   if (!inlineThumbnailError && options.thumbnailEnabled) {
-    console.log('[VideoRenderer][ThumbnailInline] inline_applied', {
+    /* console.log('[VideoRenderer][ThumbnailInline] inline_applied', {
       mode: options.renderMode || 'hardsub_portrait_9_16',
       durationSec: inlineThumbnail.thumbnailDurationSec,
-    });
+    }) */;
   }
   const outputDuration = mainOutputDuration + inlineThumbnail.thumbnailDurationSec;
   const finalDurationStr = outputDuration.toFixed(3);
@@ -1923,7 +1923,7 @@ export async function renderHardsubPortraitVideo(
     outputPath,
   ];
 
-  console.log('[VideoRenderer][FilterGraph]', filterComplexParts.join(';'));
+  /* console.log('[VideoRenderer][FilterGraph]', filterComplexParts.join(';')) */;
 
   const hardsubTimingDebug = buildHardsubTimingPayload({
     options,
@@ -1995,7 +1995,7 @@ export async function renderHardsubPortraitVideo(
     },
   });
 
-  console.log('[VideoRenderer][HardsubPortrait] Render config', {
+  /* console.log('[VideoRenderer][HardsubPortrait] Render config', {
     inputVideo: renderOptions.videoPath,
     inputAudio: renderOptions.audioPath ?? null,
     outputVideo: outputPath,
@@ -2055,12 +2055,12 @@ export async function renderHardsubPortraitVideo(
       hasQuad: !!options.coverQuad,
     },
     mainTextOverlay: portraitMainTextOverlay.debug,
-  });
+  }) */;
   const extraCleanupFiles = [
     ...portraitMainTextOverlay.cleanupFiles,
     ...inlineThumbnail.cleanupFiles,
   ];
-  console.log('[VideoRenderer][HardsubPortrait][TimingPayload]', hardsubTimingDebug);
+  /* console.log('[VideoRenderer][HardsubPortrait][TimingPayload]', hardsubTimingDebug) */;
 
   const totalFrames = Math.floor(outputDuration * fps);
   const includeFullStderrOnError =
@@ -2132,13 +2132,13 @@ export async function renderHardsubPortraitVideo(
     } as Record<string, unknown>;
     const outputAspectMeta = await probeOutputAspectForLog(outputPath);
     if (outputAspectMeta) {
-      console.log('[VideoRenderer][HardsubPortrait] Output aspect check', {
+      /* console.log('[VideoRenderer][HardsubPortrait] Output aspect check', {
         width: outputAspectMeta.width,
         height: outputAspectMeta.height,
         sampleAspectRatio: outputAspectMeta.sampleAspectRatio,
         displayAspectRatio: outputAspectMeta.displayAspectRatio,
         frameRate: outputAspectMeta.frameRate,
-      });
+      }) */;
     }
   }
   let finalResult = renderResult;
@@ -2148,7 +2148,7 @@ export async function renderHardsubPortraitVideo(
     });
     finalResult = await applyThumbnailPostProcess(options, finalResult);
     if (finalResult.success) {
-      console.log('[VideoRenderer][ThumbnailInline] fallback_applied');
+      /* console.log('[VideoRenderer][ThumbnailInline] fallback_applied') */;
     } else {
       console.error('[VideoRenderer][ThumbnailInline] fallback_failed', finalResult.error);
     }
@@ -2205,11 +2205,11 @@ export async function renderBlackBackgroundVideo(
   const audioVolumeInput = renderOptions.audioVolume;
   const safeAudioVolume = clampVolumePercent(audioVolumeInput, 0, 400, 100);
   const volAud = safeAudioVolume / 100;
-  console.log('[VideoRenderer][BlackBg][AudioGain]', {
+  /* console.log('[VideoRenderer][BlackBg][AudioGain]', {
     audioVolumeInput,
     audioVolumeApplied: safeAudioVolume,
     audioGainApplied: volAud,
-  });
+  }) */;
   const audAtempo = (prep.audioSpeed !== 1.0) ? `,${buildAtempoFilter(prep.audioSpeed)}` : '';
   if (hasTtsAudio && (volAud !== 1.0 || !!audAtempo)) {
     filterComplexParts.push(`[1:a]volume=${volAud}${audAtempo}[a_out]`);
@@ -2450,7 +2450,7 @@ export async function renderVideo(
   progressCallback?: (progress: RenderProgress) => void
 ): Promise<RenderResult> {
   clearRenderStopRequest();
-  console.log(`[VideoRenderer] Route to ${options.outputType || 'video'} / ${options.renderMode || 'black_bg'} mode`);
+  /* console.log(`[VideoRenderer] Route to ${options.outputType || 'video'} / ${options.renderMode || 'black_bg'} mode`) */;
   if (!isFFmpegAvailable()) {
     return { success: false, error: 'FFmpeg không được cài đặt' };
   }
@@ -2473,7 +2473,7 @@ export async function renderVideo(
     result.outputType = options.outputType === 'audio_only' ? 'audio_only' : 'video';
   }
 
-  console.log('[VideoRenderer] Thumbnail render config', {
+  /* console.log('[VideoRenderer] Thumbnail render config', {
     renderMode: options.renderMode || 'black_bg',
     renderResolution: options.renderResolution || 'original',
     thumbnailEnabled: !!options.thumbnailEnabled,
@@ -2519,10 +2519,10 @@ export async function renderVideo(
     portraitTextSecondaryColor: options.portraitTextSecondaryColor || null,
     portraitTextPrimaryPosition: options.portraitTextPrimaryPosition ?? null,
     portraitTextSecondaryPosition: options.portraitTextSecondaryPosition ?? null,
-  });
+  }) */;
 
   if (options.renderMode === 'black_bg') {
-    console.log('[VideoRenderer] Thumbnail post-process fallback (black_bg)');
+    /* console.log('[VideoRenderer] Thumbnail post-process fallback (black_bg)') */;
     result = await applyThumbnailPostProcess(options, result);
   }
   return result;

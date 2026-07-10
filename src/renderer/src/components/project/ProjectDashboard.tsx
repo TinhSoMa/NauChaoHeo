@@ -61,7 +61,7 @@ export function ProjectDashboard() {
 
   const handleOpen = async (projectId: string) => {
     try {
-      console.log('[UI] Đang yêu cầu mở project:', projectId)
+      /* console.log('[UI] Đang yêu cầu mở project:', projectId) */
       await window.electronAPI.project.openProject(projectId)
     } catch (err) {
       console.error('[Lỗi] Không thể mở project:', err)
@@ -83,7 +83,7 @@ export function ProjectDashboard() {
     try {
       setCreating(true)
       setError(null)
-      console.log('[UI] Đang tạo và mở project:', name)
+      /* console.log('[UI] Đang tạo và mở project:', name) */
       const res = await window.electronAPI.project.createAndOpen(name)
       if (res?.success) {
         setNewName('')

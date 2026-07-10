@@ -41,7 +41,7 @@ export function registerDownloaderHandlers(): void {
     const limit = typeof payload === 'string' ? undefined : payload?.limit
     if (!url) return { success: false, error: 'Missing URL' }
     try {
-      console.log('[Downloader][Playlist] checkPlaylist', { url, limit })
+      /* console.log('[Downloader][Playlist] checkPlaylist', { url, limit }) */
       const cookie = cookieDatabase.getByDomain(url)
       let tmpPath: string | undefined
       if (cookie) {
@@ -49,11 +49,11 @@ export function registerDownloaderHandlers(): void {
       }
       try {
         const info: PlaylistInfo = await ytDlpService.fetchPlaylistInfo(url, tmpPath, typeof limit === 'number' ? limit : undefined)
-        console.log('[Downloader][Playlist] result', {
+        /* console.log('[Downloader][Playlist] result', {
           title: info.title,
           entryCount: info.entryCount,
           entries: info.entries?.length || 0,
-        })
+        }) */
         return { success: true, data: info, cookieFound: !!cookie, cookieDomain: cookie?.domain }
       } finally {
         if (tmpPath) ytDlpService.cleanupTempCookie(tmpPath)

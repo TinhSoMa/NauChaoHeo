@@ -70,7 +70,7 @@ function extractTextFromContent(content: string): string {
  * Parse file draft_content.json và trả về danh sách subtitle entries
  */
 export async function parseDraftJson(filePath: string): Promise<ParseDraftResult> {
-  console.log(`[DraftParser] Đang parse: ${filePath}`);
+  /* console.log(`[DraftParser] Đang parse: ${filePath}`) */;
   
   try {
     // Đọc file JSON
@@ -116,7 +116,7 @@ export async function parseDraftJson(filePath: string): Promise<ParseDraftResult
     
     // Phương pháp 2: Nếu không có từ extra_info, lấy từ materials.texts + tracks
     if (entries.length === 0 && data.materials?.texts && data.tracks) {
-      console.log('[DraftParser] Sử dụng phương pháp materials.texts + tracks');
+      /* console.log('[DraftParser] Sử dụng phương pháp materials.texts + tracks') */;
       
       // Lấy text track
       const textTracks = data.tracks.filter((t: { type: string }) => t.type === 'text');
@@ -153,7 +153,7 @@ export async function parseDraftJson(filePath: string): Promise<ParseDraftResult
     
     // Phương pháp 3: Chỉ lấy từ materials.texts (không có timing)
     if (entries.length === 0 && data.materials?.texts) {
-      console.log('[DraftParser] Sử dụng phương pháp materials.texts (không có timing)');
+      /* console.log('[DraftParser] Sử dụng phương pháp materials.texts (không có timing)') */;
       
       for (const textItem of data.materials.texts) {
         const text = extractTextFromContent(textItem.content) || textItem.recognize_text || '';
@@ -180,7 +180,7 @@ export async function parseDraftJson(filePath: string): Promise<ParseDraftResult
       entry.index = idx + 1;
     });
     
-    console.log(`[DraftParser] Đã parse ${entries.length} entries`);
+    /* console.log(`[DraftParser] Đã parse ${entries.length} entries`) */;
     
     return {
       success: true,
@@ -218,7 +218,7 @@ export async function exportDraftToSrt(
     }
     
     await fs.writeFile(outputPath, srtContent, 'utf-8');
-    console.log(`[DraftParser] Đã xuất SRT: ${outputPath}`);
+    /* console.log(`[DraftParser] Đã xuất SRT: ${outputPath}`) */;
     
     return { success: true };
   } catch (error) {

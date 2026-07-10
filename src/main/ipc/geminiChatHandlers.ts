@@ -31,7 +31,7 @@ const CHANNELS = {
 };
 
 export function registerGeminiChatHandlers(): void {
-  console.log('[GeminiChatHandlers] Dang ky handlers...');
+  /* console.log('[GeminiChatHandlers] Dang ky handlers...') */;
 
   // Lay tat ca cau hinh
   ipcMain.handle(CHANNELS.GET_ALL, async () => {
@@ -211,5 +211,5 @@ export function registerGeminiChatHandlers(): void {
     }
   });
 
-  console.log('[GeminiChatHandlers] Da dang ky handlers thanh cong');
+  /* console.log('[GeminiChatHandlers] Da dang ky handlers thanh cong') */;
 }

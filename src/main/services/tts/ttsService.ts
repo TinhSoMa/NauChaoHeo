@@ -1440,8 +1440,8 @@ async function generateBatchAudioWithProvider(
   const errors: string[] = [];
   let completed = 0;
 
-  console.log(`[TTS] Provider: ${voiceSelection.provider}, voice: ${voiceSelection.canonicalValue}`);
-  console.log(`[TTS] Bắt đầu tạo ${entries.length} audio files`);
+  /* console.log(`[TTS] Provider: ${voiceSelection.provider}, voice: ${voiceSelection.canonicalValue}`) */;
+  /* console.log(`[TTS] Bắt đầu tạo ${entries.length} audio files`) */;
 
   for (let i = 0; i < entries.length; i += maxConcurrent) {
     throwIfTtsStopped();
@@ -1491,7 +1491,7 @@ async function generateBatchAudioWithProvider(
         throwIfTtsStopped();
         retryCount++;
         const delay = Math.pow(2, retryCount) * 1000;
-        console.log(`[TTS] [${providerLabel}] lỗi ${filename}, retry ${retryCount}/${MAX_TTS_RETRIES}`);
+        /* console.log(`[TTS] [${providerLabel}] lỗi ${filename}, retry ${retryCount}/${MAX_TTS_RETRIES}`) */;
         await new Promise((resolve) => setTimeout(resolve, delay));
         throwIfTtsStopped();
         result = await providerGenerator({
@@ -1677,9 +1677,9 @@ async function runEdgeTtsWorker(
 
     const expectedItems = jobs.reduce((sum, job) => sum + job.items.length, 0);
 
-    console.log(`[TTS][EDGE][asyncio] Worker kind=${worker.kind}`);
-    console.log(`[TTS][EDGE][asyncio] Spawn worker: ${command} ${args.join(' ')}`);
-    console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${expectedItems}`);
+    /* console.log(`[TTS][EDGE][asyncio] Worker kind=${worker.kind}`) */;
+    /* console.log(`[TTS][EDGE][asyncio] Spawn worker: ${command} ${args.join(' ')}`) */;
+    /* console.log(`[TTS][EDGE][asyncio] Jobs=${jobs.length}, totalItems=${expectedItems}`) */;
 
     const proc = spawn(command, args, {
       windowsHide: true,
@@ -1789,30 +1789,30 @@ async function runEdgeTtsWorker(
       const timeoutFailed = Array.from(results.values()).reduce((acc, row) => (
         !row.success && isTimeoutErrorText(row.error) ? acc + 1 : acc
       ), 0);
-      console.log(
+      /* console.log(
         `[TTS][EDGE][asyncio] Worker summary elapsedMs=${elapsedMs} expected=${expectedItems} `
         + `reported=${reportedItems} missing=${missingItems} progressEvents=${progressEvents} `
         + `ok=${progressSuccess} fail=${progressFailed} timeoutFail=${timeoutFailed}`
-      );
+      ) */;
 
       for (let i = 0; i < jobs.length; i += 1) {
         const job = jobs[i];
         const stat = summarizeJobResult(job, results);
         const proxyLabel = job.proxyId || 'direct';
-        console.log(
+        /* console.log(
           `[TTS][EDGE][asyncio] Job#${i + 1} proxy=${proxyLabel} items=${job.items.length} `
           + `ok=${stat.success} fail=${stat.failed} timeout=${stat.timeout} missing=${stat.missing}`
-        );
+        ) */;
       }
 
       if (progressByProxy.size > 0) {
         const proxyRows = Array.from(progressByProxy.entries()).map(([proxyId, stat]) => (
           `${proxyId}:ok=${stat.ok},fail=${stat.fail}`
         ));
-        console.log(`[TTS][EDGE][asyncio] Progress by proxy => ${proxyRows.join(' | ')}`);
+        /* console.log(`[TTS][EDGE][asyncio] Progress by proxy => ${proxyRows.join(' | ')}`) */;
       }
 
-      console.log(`[TTS][EDGE][asyncio] Worker closed code=${code ?? 'unknown'} done=${doneReceived}`);
+      /* console.log(`[TTS][EDGE][asyncio] Worker closed code=${code ?? 'unknown'} done=${doneReceived}`) */;
       resolve({ results, errors });
     });
 
@@ -2010,9 +2010,9 @@ async function generateEdgeAudioWithProxyOptimized(args: {
         break;
       }
 
-      console.log(
+      /* console.log(
         `[TTS][EDGE][proxy-optimized] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`,
-      );
+      ) */;
       jobs.push({
         proxyId: proxy.id || null,
         proxyUrl: toProxyUrl(proxy),
@@ -2038,11 +2038,11 @@ async function generateEdgeAudioWithProxyOptimized(args: {
       const last = job.items[job.items.length - 1]?.index;
       return `#${idx + 1}:${job.proxyId || 'direct'}(${job.items.length}|${first || 0}-${last || 0})`;
     });
-    console.log(`[TTS][EDGE][proxy-optimized] Attempt plan => ${planningSummary.join(' | ')}`);
+    /* console.log(`[TTS][EDGE][proxy-optimized] Attempt plan => ${planningSummary.join(' | ')}`) */;
 
-    console.log(
+    /* console.log(
       `[TTS][EDGE][proxy-optimized] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, jobs=${jobs.length}, remaining=${remaining.length}`,
-    );
+    ) */;
 
     const workerRuntime: EdgeWorkerRuntimeOptions = {
       timeoutMs: effectiveProxyItemTimeoutMs,
@@ -2111,10 +2111,10 @@ async function generateEdgeAudioWithProxyOptimized(args: {
       errors.push(...runResult.errors);
     }
 
-    console.log(
+    /* console.log(
       `[TTS][EDGE][proxy-optimized] Attempt ${attempt} completed in ${Date.now() - attemptStartedAt}ms `
       + `(results=${runResult.results.size}, errors=${runResult.errors.length})`
-    );
+    ) */;
 
     if (runResult.results.size === 0 && runResult.errors.length > 0) {
       const fatal = runResult.errors.join(' | ').trim() || 'Edge worker exited unexpectedly';
@@ -2253,7 +2253,7 @@ async function generateEdgeAudioWithProxyOptimized(args: {
     remaining = nextRemaining;
     if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
       const backoffMs = Math.min(2 ** (attempt - 1) * 1000, 10000);
-      console.log(`[TTS][EDGE][proxy-optimized] Requeue ${remaining.length} items for next attempt, backing off ${backoffMs}ms.`);
+      /* console.log(`[TTS][EDGE][proxy-optimized] Requeue ${remaining.length} items for next attempt, backing off ${backoffMs}ms.`) */;
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
@@ -2304,9 +2304,9 @@ export async function testEdgeTtsProxies(request: TTSTestProxyRequest): Promise<
   const proxyTestRootDir = resolveProxyTestRootDir(outputRootDir);
   const runDir = path.join(proxyTestRootDir, `run_${Date.now()}`);
   await fs.mkdir(runDir, { recursive: true });
-  console.log(`[TTS][EDGE][proxy-test] outputRootDir=${outputRootDir}`);
-  console.log(`[TTS][EDGE][proxy-test] proxyTestRootDir=${proxyTestRootDir}`);
-  console.log(`[TTS][EDGE][proxy-test] runDir=${runDir}`);
+  /* console.log(`[TTS][EDGE][proxy-test] outputRootDir=${outputRootDir}`) */;
+  /* console.log(`[TTS][EDGE][proxy-test] proxyTestRootDir=${proxyTestRootDir}`) */;
+  /* console.log(`[TTS][EDGE][proxy-test] runDir=${runDir}`) */;
 
   const proxyManager = getProxyManager();
   const proxies = proxyManager.getAvailableProxies(undefined, 'tts');
@@ -2405,7 +2405,7 @@ export async function testEdgeTtsProxies(request: TTSTestProxyRequest): Promise<
     if (successFromWorker && verifiedFileOk) {
       proxyManager.markProxySuccess(proxyId);
       const durationMs = await getAudioDuration(outputPath);
-      console.log(`[TTS][EDGE][proxy-test] PASS proxy=${proxyLabel} path=${outputPath}`);
+      /* console.log(`[TTS][EDGE][proxy-test] PASS proxy=${proxyLabel} path=${outputPath}`) */;
       results.push({
         proxyId,
         proxyLabel,
@@ -2484,12 +2484,12 @@ export async function generateAsyncioAudioWithProvider(
     options.edgeWorkerTimeoutMs ?? process.env.EDGE_TTS_ITEM_TIMEOUT_MS
   );
 
-  console.log(`[TTS][EDGE][asyncio] Start entries=${entries.length}, voice=${voiceSelection.voiceId}, format=${outputFormat}`);
-  console.log(`[TTS][EDGE][asyncio] Batch size=${effectiveBatchSize}`);
-  console.log(
+  /* console.log(`[TTS][EDGE][asyncio] Start entries=${entries.length}, voice=${voiceSelection.voiceId}, format=${outputFormat}`) */;
+  /* console.log(`[TTS][EDGE][asyncio] Batch size=${effectiveBatchSize}`) */;
+  /* console.log(
     `[TTS][EDGE][asyncio] Worker mode=${edgeWavMode}, `
     + `itemConcurrency=${edgeWorkerItemConcurrency}, timeoutMs=${edgeWorkerTimeoutMs || 0}`
-  );
+  ) */;
 
   if (!outputDir) {
     return {
@@ -2573,7 +2573,7 @@ export async function generateAsyncioAudioWithProvider(
   const checkpoint = await loadEdgeTtsCheckpoint(outputDir, entries.length);
   const checkpointSet = new Set(checkpoint?.completedIndices || []);
   if (checkpoint && checkpointSet.size > 0) {
-    console.log(`[${providerLabel}] Checkpoint: ${checkpointSet.size}/${entries.length} items already completed, resuming...`);
+    /* console.log(`[${providerLabel}] Checkpoint: ${checkpointSet.size}/${entries.length} items already completed, resuming...`) */;
   }
 
   const pendingItems: EdgeAsyncioItem[] = [];
@@ -2652,7 +2652,7 @@ export async function generateAsyncioAudioWithProvider(
       durationMs: entry.durationMs,
       filename,
     });
-    // console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
+    // /* console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`) */;
   }
 
   if (checkpoint) {
@@ -2688,18 +2688,18 @@ export async function generateAsyncioAudioWithProvider(
   const proxyAlgorithmMode = normalizeEdgeProxyAlgorithmMode(
     options.edgeProxyAlgorithmMode ?? process.env.EDGE_TTS_PROXY_ALGORITHM_MODE,
   );
-  console.log(
+  /* console.log(
     `[TTS][EDGE][asyncio] useProxy=${useProxySetting}`
     + (useRotatingEndpoint
       ? ` (rotating-endpoint=${proxyContext.rotatingEndpointMasked || 'configured'})`
       : (preferredType ? ` (${preferredType}-only)` : (hasPreferredProxy ? ' (proxy)' : '')))
-  );
+  ) */;
   if (useProxySetting && !hasPreferredProxy && !useRotatingEndpoint) {
     console.warn('[TTS][EDGE][asyncio] Không có proxy theo typePreference khả dụng, fallback dùng proxy thường nếu có.');
   }
 
   if (useProxySetting && proxyAlgorithmMode === 'optimized') {
-    console.log('[TTS][EDGE][proxy-optimized] Dedicated proxy pipeline enabled');
+    /* console.log('[TTS][EDGE][proxy-optimized] Dedicated proxy pipeline enabled') */;
     return generateEdgeAudioWithProxyOptimized({
       entries,
       pendingItems,
@@ -2744,9 +2744,9 @@ export async function generateAsyncioAudioWithProvider(
         }
       }
       if (proxy) {
-        console.log(`[TTS][EDGE][asyncio] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`);
+        /* console.log(`[TTS][EDGE][asyncio] Assign proxy ${proxy.host}:${proxy.port} -> items ${chunk.length}`) */;
       } else {
-        console.log(`[TTS][EDGE][asyncio] Assign direct (no proxy) -> items ${chunk.length}`);
+        /* console.log(`[TTS][EDGE][asyncio] Assign direct (no proxy) -> items ${chunk.length}`) */;
       }
       jobs.push({
         proxyId: proxy?.id || null,
@@ -2780,7 +2780,7 @@ export async function generateAsyncioAudioWithProvider(
     throwIfTtsStopped();
     attempt++;
     const attemptStartedAt = Date.now();
-    console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`);
+    /* console.log(`[TTS][EDGE][asyncio] Attempt ${attempt}/${MAX_TTS_RETRIES + 1}, remaining=${remaining.length}`) */;
     const jobs = buildJobs(remaining);
     if (useProxySetting) {
       const planningSummary = jobs.map((job, idx) => {
@@ -2788,7 +2788,7 @@ export async function generateAsyncioAudioWithProvider(
         const last = job.items[job.items.length - 1]?.index;
         return `#${idx + 1}:${job.proxyId || 'direct'}(${job.items.length}|${first || 0}-${last || 0})`;
       });
-      console.log(`[TTS][EDGE][asyncio] Attempt plan => ${planningSummary.join(' | ')}`);
+      /* console.log(`[TTS][EDGE][asyncio] Attempt plan => ${planningSummary.join(' | ')}`) */;
     }
     const runResult = await runEdgeTtsWorker(
       jobs,
@@ -2822,10 +2822,10 @@ export async function generateAsyncioAudioWithProvider(
       errors.push(...runResult.errors);
     }
     if (useProxySetting) {
-      console.log(
+      /* console.log(
         `[TTS][EDGE][asyncio] Attempt ${attempt} completed in ${Date.now() - attemptStartedAt}ms `
         + `(results=${runResult.results.size}, errors=${runResult.errors.length})`
-      );
+      ) */;
     }
 
     const nextRemaining: EdgeAsyncioItem[] = [];
@@ -2918,7 +2918,7 @@ export async function generateAsyncioAudioWithProvider(
     remaining = nextRemaining;
     if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
       const backoffMs = Math.min(2 ** (attempt - 1) * 1000, 10000);
-      console.log(`[TTS][EDGE][asyncio] Requeue ${remaining.length} items for next attempt, backing off ${backoffMs}ms.`);
+      /* console.log(`[TTS][EDGE][asyncio] Requeue ${remaining.length} items for next attempt, backing off ${backoffMs}ms.`) */;
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
@@ -3055,9 +3055,9 @@ export async function generateBatchAudioCapCut(
         }
 
         const attemptItems = unresolvedLocalIndexes.map((localIndex) => chunk[localIndex]);
-        console.log(
+        /* console.log(
           `[TTS] [${providerLabel}] Batch socket attempt ${attempt}/${maxBatchAttempts}: ${attemptItems.length} dòng`
-        );
+        ) */;
 
         const batchResult = await requestCapCutBatchAudio({
           texts: attemptItems.map((item) => item.text),

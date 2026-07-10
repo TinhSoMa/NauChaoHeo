@@ -570,11 +570,11 @@ export function StoryTranslator() {
   });
 
   // Debug logging
-  console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size);
-  console.log('[StoryTranslator] Render - status:', status);
-  console.log('[StoryTranslator] Render - chapters.length:', chapters.length);
-  console.log('[StoryTranslator] Render - isBatchTranslating:', isBatchTranslating);
-  console.log('[StoryTranslator] Render - batchTranslationProgress:', batchTranslationProgress);
+  /* console.log('[StoryTranslator] Render - translatedChapters.size:', translatedChapters.size) */;
+  /* console.log('[StoryTranslator] Render - status:', status) */;
+  /* console.log('[StoryTranslator] Render - chapters.length:', chapters.length) */;
+  /* console.log('[StoryTranslator] Render - isBatchTranslating:', isBatchTranslating) */;
+  /* console.log('[StoryTranslator] Render - batchTranslationProgress:', batchTranslationProgress) */;
 
   const isQueueMethodSelected =
     translationMethod === 'gemini_webapi_queue' ||
