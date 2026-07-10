@@ -5,6 +5,7 @@ import subprocess
 import sys
 from typing import Any, Dict, List
 
+import unicodedata
 import aiohttp
 import edge_tts
 import re
@@ -51,6 +52,13 @@ def emit(event: Dict[str, Any]) -> None:
     sys.stdout.buffer.write((line + "\n").encode("ascii"))
     sys.stdout.buffer.flush()
 
+
+def has_any_letter_or_digit(text: str) -> bool:
+    for ch in text:
+        cat = unicodedata.category(ch)
+        if cat.startswith("L") or cat.startswith("N"):
+            return True
+    return False
 
 def sanitize_text(text: str) -> str:
     if not text:
@@ -183,6 +191,28 @@ async def synthesize_wav_bytes_direct(
     return merged
 
 
+async def generate_silent_audio(output_path: str, output_format: str) -> None:
+    duration = "0.1"
+    base = [
+        "ffmpeg",
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+        "-t", duration,
+    ]
+    if output_format == "mp3":
+        base += ["-c:a", "libmp3lame", "-b:a", "128k", output_path]
+    else:
+        base += ["-c:a", "pcm_s16le", "-ar", "44100", "-ac", "1", output_path]
+    proc = await asyncio.create_subprocess_exec(
+        *base,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        detail = (stderr or b"ffmpeg failed").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"ffmpeg silent audio failed: {detail}")
+
 def looks_like_mp3(file_path: str) -> bool:
     try:
         with open(file_path, "rb") as f:
@@ -263,6 +293,10 @@ async def process_item(item: Dict[str, Any], job: Dict[str, Any], wav_mode: str)
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
         safe_text = sanitize_text(item.get("text", ""))
+        if not has_any_letter_or_digit(safe_text):
+            await generate_silent_audio(output_path, output_format)
+            emit({"event": "progress", "index": index, "filename": item.get("filename"), "proxyId": job.get("proxyId"), "success": True, "conversionMode": "silent"})
+            return {"index": index, "success": True, "conversionMode": "silent"}
         communicate = edge_tts.Communicate(
             safe_text,
             voice=job.get("voice"),
@@ -340,13 +374,23 @@ async def process_job(
     timeout_ms: int | None,
     wav_mode: str,
     item_concurrency: int,
+    global_semaphore: asyncio.Semaphore,
 ) -> List[Dict[str, Any]]:
     items = job.get("items", [])
 
     async def run_one(item: Dict[str, Any]) -> Dict[str, Any]:
         try:
             if timeout_ms:
-                return await asyncio.wait_for(process_item(item, job, wav_mode), timeout_ms / 1000)
+                comm_task = asyncio.create_task(process_item(item, job, wav_mode))
+                try:
+                    return await asyncio.wait_for(comm_task, timeout=timeout_ms / 1000)
+                except asyncio.TimeoutError:
+                    comm_task.cancel()
+                    try:
+                        await asyncio.wait_for(comm_task, timeout=5)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+                    raise
             return await process_item(item, job, wav_mode)
         except Exception as exc:
             message = str(exc)
@@ -375,7 +419,7 @@ async def process_job(
     semaphore = asyncio.Semaphore(item_concurrency)
 
     async def run_guarded(item: Dict[str, Any]) -> Dict[str, Any]:
-        async with semaphore:
+        async with global_semaphore, semaphore:
             return await run_one(item)
 
     return await asyncio.gather(*[run_guarded(item) for item in items])
@@ -395,9 +439,10 @@ async def main() -> None:
     )
     sys.stderr.flush()
 
+    global_semaphore = asyncio.Semaphore(5)
     tasks = []
     for job in jobs:
-        tasks.append(process_job(job, timeout_ms, wav_mode, item_concurrency))
+        tasks.append(process_job(job, timeout_ms, wav_mode, item_concurrency, global_semaphore))
 
     results: List[Dict[str, Any]] = []
     completed = await asyncio.gather(*tasks, return_exceptions=True)

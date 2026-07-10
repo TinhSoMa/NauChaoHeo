@@ -3,7 +3,7 @@
  * Provider được xác định qua options.provider hoặc prefix của options.voice.
  */
 
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execFile, type ChildProcess } from 'child_process';
 import { app } from 'electron';
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
@@ -15,7 +15,7 @@ import { CapcutTtsSharedConfigDatabase } from '../../database/capcutTtsSharedCon
 import { CapcutTtsTokensDatabase } from '../../database/capcutTtsTokensDatabase';
 import { getProxyManager } from '../proxy/proxyManager';
 import { checkPythonModuleAvailability } from '../../utils/pythonRuntime';
-import { getFFprobePath } from '../../utils/ffmpegPath';
+import { getFFmpegPath, getFFprobePath } from '../../utils/ffmpegPath';
 import { EdgeProxyScheduler } from './edgeProxyScheduler';
 import {
   AudioFile,
@@ -42,15 +42,15 @@ const PROVIDER_PREFIX_PATTERN = /^(edge|capcut):(.*)$/i;
 const DEFAULT_CAPCUT_WS_URL = 'wss://sami-normal-sg.capcutapi.com/internal/api/v1/ws';
 const DEFAULT_CAPCUT_USER_AGENT = 'Cronet/TTNetVersion:e159bc05 2022-08-16 QuicVersion:68cae75d 2021-08-12';
 const DEFAULT_CAPCUT_X_SS_DP = '359289';
-const MAX_TTS_RETRIES = 1;
+const MAX_TTS_RETRIES = 3;
 const CAPCUT_BATCH_SIZE = 1000;
 const DEFAULT_EDGE_TTS_BATCH_SIZE = 250;
 const MIN_EDGE_TTS_BATCH_SIZE = 1;
 const MAX_EDGE_TTS_BATCH_SIZE = 500;
 const DEFAULT_EDGE_WAV_MODE = 'auto';
-const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 10;
+const DEFAULT_EDGE_WORKER_ITEM_CONCURRENCY = 4;
 const MIN_EDGE_WORKER_ITEM_CONCURRENCY = 1;
-const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 200;
+const MAX_EDGE_WORKER_ITEM_CONCURRENCY = 8;
 const DEFAULT_EDGE_WORKER_TIMEOUT_MS = 75000;
 const DEFAULT_EDGE_PROXY_ALGORITHM_MODE = 'optimized';
 const DEFAULT_EDGE_PROXY_MAX_WORKERS = 8;
@@ -172,7 +172,7 @@ interface EdgeWorkerResolution {
   workerPath: string;
 }
 
-type EdgeConversionMode = 'direct_wav' | 'mp3_to_wav' | 'mp3_to_wav_fallback' | 'mp3_direct';
+type EdgeConversionMode = 'direct_wav' | 'mp3_to_wav' | 'mp3_to_wav_fallback' | 'mp3_direct' | 'silent';
 
 interface ExistingEdgeAudioLookup {
   byIndex: Map<number, string>;
@@ -286,6 +286,89 @@ function sanitizeTextForTts(text: string): string {
   if (!text) return '';
   // Remove lone surrogate code units to avoid UTF-8 encode errors.
   return text.replace(/[\uD800-\uDFFF]/g, '');
+}
+
+function isEmptyTtsText(text: string): boolean {
+  if (!text) return true;
+  return !/\p{L}|\p{N}/u.test(text);
+}
+
+async function generateSilentAudio(outputPath: string, format: 'wav' | 'mp3'): Promise<void> {
+  const ffmpegPath = getFFmpegPath();
+  const args = [
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono',
+    '-t', '0.1',
+  ];
+  if (format === 'mp3') {
+    args.push('-c:a', 'libmp3lame', '-b:a', '128k', outputPath);
+  } else {
+    args.push('-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '1', outputPath);
+  }
+  await new Promise<void>((resolve, reject) => {
+    execFile(ffmpegPath, args, (err) => {
+      if (err) reject(new Error(`ffmpeg silent audio failed: ${err.message}`));
+      else resolve();
+    });
+  });
+}
+
+interface EdgeTtsCheckpoint {
+  version: 1;
+  outputDir: string;
+  totalEntries: number;
+  completedIndices: number[];
+  audioFiles: AudioFile[];
+  updatedAt: string;
+}
+
+function getCheckpointPath(outputDir: string): string {
+  return path.join(outputDir, '.edge_tts_checkpoint.json');
+}
+
+async function loadEdgeTtsCheckpoint(
+  outputDir: string,
+  totalEntries: number,
+): Promise<EdgeTtsCheckpoint | null> {
+  const cpPath = getCheckpointPath(outputDir);
+  try {
+    const raw = await fs.readFile(cpPath, 'utf-8');
+    const cp: EdgeTtsCheckpoint = JSON.parse(raw);
+    if (cp.version !== 1 || cp.outputDir !== outputDir || cp.totalEntries !== totalEntries) {
+      return null;
+    }
+    return cp;
+  } catch {
+    return null;
+  }
+}
+
+async function saveEdgeTtsCheckpoint(
+  outputDir: string,
+  completedIndices: number[],
+  audioFiles: AudioFile[],
+  totalEntries: number,
+): Promise<void> {
+  const cpPath = getCheckpointPath(outputDir);
+  const tmpPath = cpPath + '.tmp';
+  const data: EdgeTtsCheckpoint = {
+    version: 1,
+    outputDir,
+    totalEntries,
+    completedIndices,
+    audioFiles: audioFiles.map((f) => ({ ...f })),
+    updatedAt: new Date().toISOString(),
+  };
+  await fs.writeFile(tmpPath, JSON.stringify(data), 'utf-8');
+  await fs.rename(tmpPath, cpPath);
+}
+
+async function deleteEdgeTtsCheckpoint(outputDir: string): Promise<void> {
+  try {
+    await fs.unlink(getCheckpointPath(outputDir));
+  } catch {
+    // ignore if not exists
+  }
 }
 
 function fixMojibake(text: string): string {
@@ -522,6 +605,9 @@ function getEdgeConversionModeLabel(mode: unknown): string | null {
   }
   if (mode === 'mp3_direct') {
     return 'MP3 trực tiếp';
+  }
+  if (mode === 'silent') {
+    return 'Audio rỗng';
   }
   return null;
 }
@@ -1465,6 +1551,7 @@ async function generateBatchAudioWithProvider(
   const totalGenerated = audioFiles.filter((file) => file.success).length;
   const totalFailed = audioFiles.filter((file) => !file.success).length;
 
+  await deleteEdgeTtsCheckpoint(outputDir);
   progressCallback?.({
     current: entries.length,
     total: entries.length,
@@ -1520,12 +1607,12 @@ async function runEdgeTtsWorker(
     proxyId?: string;
     conversionMode?: EdgeConversionMode;
   }) => void,
-): Promise<{ results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>; errors: string[] }> {
+): Promise<{ results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>; errors: string[] }> {
   throwIfTtsStopped();
   const isPythonWorker = worker.kind === 'python';
   if (isPythonWorker && !runtime) {
     return {
-      results: new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>(),
+      results: new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>(),
       errors: ['Python runtime unavailable for edge_tts_worker.py'],
     };
   }
@@ -1545,7 +1632,7 @@ async function runEdgeTtsWorker(
     itemConcurrency: effectiveItemConcurrency,
   };
   const errors: string[] = [];
-  const results = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>();
+  const results = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>();
 
   const isTimeoutErrorText = (value: string | undefined): boolean => {
     const text = String(value || '').toLowerCase();
@@ -1554,7 +1641,7 @@ async function runEdgeTtsWorker(
 
   const summarizeJobResult = (
     job: EdgeAsyncioJob,
-    resultMap: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>
+    resultMap: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>
   ): { success: number; failed: number; timeout: number; missing: number } => {
     let success = 0;
     let failed = 0;
@@ -1671,6 +1758,7 @@ async function runEdgeTtsWorker(
                   conversionMode: typeof item.conversionMode === 'string'
                     ? item.conversionMode as EdgeConversionMode
                     : undefined,
+                  skipped: typeof item.skipped === 'string' ? item.skipped : undefined,
                 });
               }
             }
@@ -1753,11 +1841,11 @@ async function runGoProxyJobsInParallel(
     conversionMode?: EdgeConversionMode;
   }) => void,
 ): Promise<{
-  results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>;
+  results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>;
   errors: string[];
   jobElapsedMsByOrder: Map<number, number>;
 }> {
-  const mergedResults = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>();
+  const mergedResults = new Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>();
   const mergedErrors: string[] = [];
   const jobElapsedMsByOrder = new Map<number, number>();
   const concurrency = Math.max(1, Math.min(maxWorkers, jobs.length));
@@ -1987,7 +2075,7 @@ async function generateEdgeAudioWithProxyOptimized(args: {
     };
 
     let runResult: {
-      results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode }>;
+      results: Map<number, { success: boolean; error?: string; conversionMode?: EdgeConversionMode; skipped?: string }>;
       errors: string[];
     };
     let jobElapsedMsByOrder = new Map<number, number>();
@@ -2062,8 +2150,9 @@ async function generateEdgeAudioWithProxyOptimized(args: {
         const result = runResult.results.get(item.index);
         let itemSuccess = !!result?.success;
         let itemError = result?.error;
+        const isSkippedEmpty = result?.conversionMode === 'silent';
 
-        if (itemSuccess) {
+        if (itemSuccess && !isSkippedEmpty) {
           try {
             await ensureGeneratedAudioIntegrity(item.outputPath, outputFormat);
           } catch (error) {
@@ -2159,9 +2248,13 @@ async function generateEdgeAudioWithProxyOptimized(args: {
       );
     }
 
+    const successfulIndices = audioFiles.filter((f) => f.success).map((f) => f.index);
+    await saveEdgeTtsCheckpoint(outputDir, successfulIndices, audioFiles.filter((f) => f.success), entries.length);
     remaining = nextRemaining;
     if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
-      console.log(`[TTS][EDGE][proxy-optimized] Requeue ${remaining.length} items for next attempt.`);
+      const backoffMs = Math.min(2 ** (attempt - 1) * 1000, 10000);
+      console.log(`[TTS][EDGE][proxy-optimized] Requeue ${remaining.length} items for next attempt, backing off ${backoffMs}ms.`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
 
@@ -2169,6 +2262,7 @@ async function generateEdgeAudioWithProxyOptimized(args: {
   const totalGenerated = audioFiles.filter((file) => file.success).length;
   const totalFailed = audioFiles.filter((file) => !file.success).length;
 
+  await deleteEdgeTtsCheckpoint(outputDir);
   progressCallback?.({
     current: entries.length,
     total: entries.length,
@@ -2476,14 +2570,52 @@ export async function generateAsyncioAudioWithProvider(
   const progressSeen = new Set<number>();
   const existingAudioLookup = await buildExistingEdgeAudioLookup(outputDir, outputFormat);
 
+  const checkpoint = await loadEdgeTtsCheckpoint(outputDir, entries.length);
+  const checkpointSet = new Set(checkpoint?.completedIndices || []);
+  if (checkpoint && checkpointSet.size > 0) {
+    console.log(`[${providerLabel}] Checkpoint: ${checkpointSet.size}/${entries.length} items already completed, resuming...`);
+  }
+
   const pendingItems: EdgeAsyncioItem[] = [];
   for (const entry of entries) {
     throwIfTtsStopped();
+
+    if (checkpointSet.has(entry.index)) {
+      completed++;
+      progressCallback?.({
+        current: completed,
+        total: entries.length,
+        status: 'generating',
+        currentFile: '',
+        message: `[${providerLabel}] Skip (checkpoint): #${entry.index}`,
+      });
+      continue;
+    }
+
     const rawText = entry.translatedText || entry.text;
     const normalizedText = fixMojibake(rawText);
     const cleanText = sanitizeTextForTts(normalizedText);
     const filename = getSafeFilename(entry.index, cleanText, outputFormat);
     const outputPath = path.join(outputDir, filename);
+    if (isEmptyTtsText(cleanText)) {
+      await generateSilentAudio(outputPath, outputFormat);
+      audioFiles.push({
+        index: entry.index,
+        path: outputPath,
+        startMs: entry.startMs,
+        durationMs: entry.durationMs,
+        success: true,
+      });
+      completed++;
+      progressCallback?.({
+        current: completed,
+        total: entries.length,
+        status: 'generating',
+        currentFile: filename,
+        message: `[${providerLabel}] Silent: ${filename}`,
+      });
+      continue;
+    }
 
     const normalizedExpectedPath = normalizePathForLookup(outputPath);
     const indexMatchedPath = existingAudioLookup.byIndex.get(entry.index);
@@ -2521,6 +2653,15 @@ export async function generateAsyncioAudioWithProvider(
       filename,
     });
     // console.log(`[TTS][EDGE][asyncio] Text#${entry.index}: ${cleanText.slice(0, 160)}`);
+  }
+
+  if (checkpoint) {
+    for (const file of checkpoint.audioFiles) {
+      if (!progressSeen.has(file.index)) {
+        progressSeen.add(file.index);
+        audioFiles.push(file);
+      }
+    }
   }
 
   const proxyManager = getProxyManager();
@@ -2696,8 +2837,9 @@ export async function generateAsyncioAudioWithProvider(
         const result = runResult.results.get(item.index);
         let itemSuccess = !!result?.success;
         let itemError = result?.error;
+        const isSkippedEmpty = result?.conversionMode === 'silent';
 
-        if (itemSuccess) {
+        if (itemSuccess && !isSkippedEmpty) {
           try {
             await ensureGeneratedAudioIntegrity(item.outputPath, outputFormat);
           } catch (error) {
@@ -2771,9 +2913,13 @@ export async function generateAsyncioAudioWithProvider(
       }
     }
 
+    const successfulIndices = audioFiles.filter((f) => f.success).map((f) => f.index);
+    await saveEdgeTtsCheckpoint(outputDir, successfulIndices, audioFiles.filter((f) => f.success), entries.length);
     remaining = nextRemaining;
     if (remaining.length > 0 && attempt <= MAX_TTS_RETRIES) {
-      console.log(`[TTS][EDGE][asyncio] Requeue ${remaining.length} items for next attempt.`);
+      const backoffMs = Math.min(2 ** (attempt - 1) * 1000, 10000);
+      console.log(`[TTS][EDGE][asyncio] Requeue ${remaining.length} items for next attempt, backing off ${backoffMs}ms.`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
 
@@ -2781,6 +2927,7 @@ export async function generateAsyncioAudioWithProvider(
   const totalGenerated = audioFiles.filter((file) => file.success).length;
   const totalFailed = audioFiles.filter((file) => !file.success).length;
 
+  await deleteEdgeTtsCheckpoint(outputDir);
   progressCallback?.({
     current: entries.length,
     total: entries.length,
@@ -3010,6 +3157,7 @@ export async function generateBatchAudioCapCut(
   const totalGenerated = audioFiles.filter((file) => file.success).length;
   const totalFailed = audioFiles.filter((file) => !file.success).length;
 
+  await deleteEdgeTtsCheckpoint(outputDir);
   progressCallback?.({
     current: entries.length,
     total: entries.length,
