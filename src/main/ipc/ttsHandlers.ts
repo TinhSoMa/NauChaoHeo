@@ -634,7 +634,11 @@ export function registerTTSHandlers(): void {
         const result = await TTSService.generateBatchAudio(entries, options, progressCallback);
         return { success: result.success, data: result, error: result.errors?.join(', ') };
       } catch (error) {
-        console.error('[TTSHandlers] Lỗi generate TTS:', error);
+        if (String(error).includes(CAPTION_PROCESS_STOP_SIGNAL)) {
+          /* console.log('[TTSHandlers] Người dùng dừng TTS') */;
+        } else {
+          console.error('[TTSHandlers] Lỗi generate TTS:', error);
+        }
         return { success: false, error: String(error) };
       }
     }

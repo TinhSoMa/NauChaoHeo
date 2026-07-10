@@ -34,7 +34,6 @@ MIN_ITEM_CONCURRENCY = 1
 MAX_ITEM_CONCURRENCY = 32
 DIRECT_WAV_FORMAT = "riff-24khz-16bit-mono-pcm"
 
-
 def emit(event: Dict[str, Any]) -> None:
     try:
         # Emit ASCII-safe JSON so Windows code pages never fail on Vietnamese chars.
@@ -107,11 +106,7 @@ def build_speech_config_request(output_format: str) -> str:
         f"X-Timestamp:{date_to_string()}\r\n"
         "Content-Type:application/json; charset=utf-8\r\n"
         "Path:speech.config\r\n\r\n"
-        '{"context":{"synthesis":{"audio":{"metadataoptions":{'
-        '"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"'
-        "},"
-        f'"outputFormat":"{output_format}"'
-        "}}}}\r\n"
+        f'{{"context":{{"synthesis":{{"audio":{{"outputFormat":"{output_format}"}}}}}}}}\r\n'
     )
 
 
