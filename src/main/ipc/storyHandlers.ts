@@ -29,6 +29,7 @@ import {
   CreateEbookPayload,
   type StoryGenerateAudioPayload,
   type StoryGenerateAudioResult,
+  type StoryAudioProgressEvent,
 } from '../../shared/types';
 
 const STORY_GEMINI_WEB_QUEUE_RUNTIME_KEY = 'story.translation.geminiWeb';
@@ -506,8 +507,12 @@ export function registerStoryHandlers(): void {
   ipcMain.handle(
     STORY_IPC_CHANNELS.GENERATE_CHAPTER_AUDIO,
     async (_event: IpcMainInvokeEvent, payload: StoryGenerateAudioPayload): Promise<StoryGenerateAudioResult> => {
-      /* console.log('[StoryHandlers] Generate chapter audio...') */;
-      return await StoryService.generateChapterAudio(
+      const textLen = payload.chapterText?.length ?? 0;
+      console.log(`[StoryTTS IPC] Generating audio: voice=${payload.voice}, filename=${payload.filename}, textLen=${textLen}, title=${payload.chapterTitle}`);
+      const onProgress = (event: StoryAudioProgressEvent) => {
+        _event.sender.send(STORY_IPC_CHANNELS.AUDIO_PROGRESS, event);
+      };
+      const result = await StoryService.generateChapterAudio(
         payload.chapterText,
         payload.voice,
         payload.outputDir,
@@ -516,8 +521,12 @@ export function registerStoryHandlers(): void {
         payload.sourceType,
         payload.rate,
         payload.volume,
-        payload.outputFormat
+        payload.outputFormat,
+        payload.chapterTitle,
+        onProgress
       );
+      console.log(`[StoryTTS IPC] Result: success=${result.success}, filePath=${result.filePath}, error=${result.error}`);
+      return result;
     }
   );
 

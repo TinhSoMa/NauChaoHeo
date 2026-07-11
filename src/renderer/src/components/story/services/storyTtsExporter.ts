@@ -10,6 +10,7 @@ export interface StoryTtsExportOptions {
   rate?: string;
   volume?: string;
   outputFormat?: 'mp3' | 'wav';
+  chapterTitle?: string;
 }
 
 export async function exportChapterAudio(
@@ -28,6 +29,7 @@ export async function exportChapterAudio(
         rate: options.rate,
         volume: options.volume,
         outputFormat: options.outputFormat,
+        chapterTitle: options.chapterTitle,
       }
     ) as StoryGenerateAudioResult;
 

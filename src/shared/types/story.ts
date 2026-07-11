@@ -166,6 +166,15 @@ export interface CreateEbookPayload {
   sourceEpubPath?: string;
 }
 
+export interface StoryAudioProgressEvent {
+  chapterTitle?: string;
+  chunkIndex?: number;
+  chunkTotal?: number;
+  status: 'chunk_start' | 'chunk_done' | 'chunk_error' | 'merging' | 'saving' | 'done' | 'error';
+  message: string;
+  durationMs?: number;
+}
+
 export interface StoryGenerateAudioPayload {
   chapterText: string;
   voice: string;
@@ -176,6 +185,7 @@ export interface StoryGenerateAudioPayload {
   rate?: string;
   volume?: string;
   outputFormat?: 'mp3' | 'wav';
+  chapterTitle?: string;
 }
 
 export interface StoryGenerateAudioResult {
@@ -205,5 +215,6 @@ export const STORY_IPC_CHANNELS = {
   TRANSLATE_CHAPTER_STREAM_REPLY: 'story:translateChapterStreamReply',
   STOP_STORY_TRANSLATION: 'story:stopStoryTranslation',
   CREATE_EBOOK: 'story:createEbook',
-  GENERATE_CHAPTER_AUDIO: 'story:generateChapterAudio'
+  GENERATE_CHAPTER_AUDIO: 'story:generateChapterAudio',
+  AUDIO_PROGRESS: 'story:audioProgress'
 } as const;

@@ -634,6 +634,7 @@ export function StoryTranslator() {
   // Story TTS audio export hook
   const {
     audioExportProgress,
+    audioDetail,
     isAudioGenerating,
     voice,
     rate,
@@ -1391,15 +1392,22 @@ export function StoryTranslator() {
           )}
 
           {isAudioGenerating ? (
-            <Button
-              onClick={handleStopAudioBatch}
-              variant="secondary"
-              className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
-              title="Dừng tạo audio"
-            >
-              <StopCircle size={12} />
-              Audio ({audioExportProgress?.current ?? 0}/{audioExportProgress?.total ?? 0})
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                onClick={handleStopAudioBatch}
+                variant="secondary"
+                className="h-7 px-2 text-2xs shrink-0 bg-red-500/10 hover:bg-red-500/20 text-red-500 border-red-500/30"
+                title="Dừng tạo audio"
+              >
+                <StopCircle size={12} />
+                Audio ({audioExportProgress?.current ?? 0}/{audioExportProgress?.total ?? 0})
+              </Button>
+              {audioDetail && (
+                <span className="text-2xs text-text-secondary truncate max-w-48" title={audioDetail.message}>
+                  {audioDetail.message}
+                </span>
+              )}
+            </div>
           ) : (
             <>
               <Button
