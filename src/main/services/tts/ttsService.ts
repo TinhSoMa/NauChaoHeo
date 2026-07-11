@@ -68,6 +68,7 @@ const GO_WORKER_SCAFFOLD_SIGNATURE = 'Go Edge worker scaffold is not implemented
 const MAX_TTS_ERROR_ITEMS = 80;
 
 const activeTtsProcesses = new Set<ChildProcess>();
+let activeCapCutWs: WebSocket | null = null;
 let ttsStopRequested = false;
 
 function registerActiveTtsProcess(proc: ChildProcess): void {
@@ -99,6 +100,15 @@ export function throwIfTtsStopped(): void {
 export function stopActiveTts(): { stopped: boolean; message: string } {
   ttsStopRequested = true;
   let hadActive = false;
+
+  if (activeCapCutWs) {
+    try {
+      activeCapCutWs.close();
+      hadActive = true;
+    } catch {}
+    activeCapCutWs = null;
+  }
+
   for (const proc of Array.from(activeTtsProcesses)) {
     if (proc.killed) continue;
     hadActive = true;
@@ -122,6 +132,8 @@ interface CapCutRuntimeConfig {
   token: string;
   headers: Record<string, string>;
 }
+
+export type { CapCutRuntimeConfig };
 
 interface ResolvedVoiceSelection {
   provider: TTSProvider;
@@ -777,7 +789,7 @@ function shouldPersistCapcutSecrets(
   return currentJson !== nextJson;
 }
 
-function loadCapCutRuntimeConfig(): { ok: true; config: CapCutRuntimeConfig } | { ok: false; error: string } {
+export function loadCapCutRuntimeConfig(): { ok: true; config: CapCutRuntimeConfig } | { ok: false; error: string } {
   const sharedConfig = CapcutTtsSharedConfigDatabase.get();
   const activeToken = CapcutTtsTokensDatabase.getActive();
 
@@ -883,20 +895,25 @@ function rawDataToBuffer(raw: RawData): Buffer {
   return Buffer.from(raw as ArrayBufferLike);
 }
 
-interface CapCutBatchSocketResult {
+export interface CapCutBatchSocketResult {
   audioBuffers: Buffer[];
   taskFinished: boolean;
   taskFailed: boolean;
   lastError: string;
 }
 
-async function requestCapCutBatchAudio(args: {
+export async function requestCapCutBatchAudio(args: {
   texts: string[];
   voiceId: string;
   outputFormat: 'wav' | 'mp3';
   config: CapCutRuntimeConfig;
 }): Promise<CapCutBatchSocketResult> {
   const { texts, voiceId, outputFormat, config } = args;
+
+  if (isTtsStopRequested()) {
+    return { audioBuffers: [], taskFinished: false, taskFailed: true, lastError: 'TTS stopped before request' };
+  }
+
   return new Promise((resolve) => {
     const total = texts.length;
     const chunkBuckets: Buffer[][] = Array.from({ length: total }, () => []);
@@ -911,6 +928,7 @@ async function requestCapCutBatchAudio(args: {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
+      if (activeCapCutWs === ws) activeCapCutWs = null;
       const audioBuffers = chunkBuckets.map((parts) => (parts.length > 0 ? Buffer.concat(parts) : Buffer.alloc(0)));
       resolve({
         audioBuffers,
@@ -932,7 +950,16 @@ async function requestCapCutBatchAudio(args: {
       handshakeTimeout: 15000,
     });
 
+    activeCapCutWs = ws;
+
     ws.on('open', () => {
+      if (isTtsStopRequested()) {
+        taskFailed = true;
+        lastError = 'TTS stopped during WebSocket open';
+        ws.close();
+        return;
+      }
+
       const audioConfig: Record<string, unknown> = {
         bit_rate: 64000,
         sample_rate: 24000,
@@ -1164,19 +1191,15 @@ async function generateSingleAudioEdge(args: {
       resolve(result);
     };
 
-    const safeText = text.replace(/"/g, '\\"');
     const argsList = [
       '--voice', voiceId,
       '--rate', rate,
       '--volume', volume,
-      '--text', `"${safeText}"`,
-      '--write-media', `"${outputPath}"`,
+      '--text', text,
+      '--write-media', outputPath,
     ];
 
-    const proc = spawn('edge-tts', argsList, {
-      windowsHide: true,
-      shell: true,
-    });
+    const proc = spawn('edge-tts', argsList, { windowsHide: true });
     registerActiveTtsProcess(proc);
 
     let stderr = '';
@@ -1195,9 +1218,11 @@ async function generateSingleAudioEdge(args: {
           if (stats.size > 0) {
             settle({ success: true });
           } else {
+            console.error(`[EdgeTTS] Exit 0 but empty file: ${outputPath}, stderr: ${stderr.slice(-300)}`);
             settle({ success: false, error: 'File created but empty' });
           }
         } catch {
+          console.error(`[EdgeTTS] Exit 0 but file not found: ${outputPath}, stderr: ${stderr.slice(-300)}`);
           settle({ success: false, error: 'File not created' });
         }
         return;

@@ -178,6 +178,7 @@ export function useStoryTtsExport(params: UseStoryTtsExportParams) {
 
   const handleStopAudioBatch = useCallback(() => {
     shouldStopRef.current = true;
+    window.electronAPI.tts?.stop?.();
   }, []);
 
   const handleResetAudioResults = useCallback(() => {

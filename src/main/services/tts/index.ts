@@ -18,6 +18,9 @@ export {
   resolveVoiceSelection,
   getSafeFilename,
   getAudioDuration,
+  loadCapCutRuntimeConfig,
+  requestCapCutBatchAudio,
+  CapCutBatchSocketResult,
 } from './ttsService';
 
 // Audio Merger
